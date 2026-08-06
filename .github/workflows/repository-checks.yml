@@ -1,0 +1,80 @@
+name: Repository checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify required baseline files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_files=(
+            "README.md"
+            "AGENTS.md"
+            ".gitignore"
+            ".aiignore.md"
+            ".env.example"
+            "docs/PRD.md"
+            "specs/0001-repository-bootstrap/requirements.md"
+            "specs/0001-repository-bootstrap/tasks.md"
+            "specs/0001-repository-bootstrap/STATE.md"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "::error file=$file::Required baseline file is missing or empty"
+              exit 1
+            fi
+          done
+
+      - name: Verify canonical naming
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_files=("README.md" "AGENTS.md" "docs/PRD.md")
+          for file in "${canonical_files[@]}"; do
+            if ! grep -q 'LumiRSS' "$file"; then
+              echo "::error file=$file::Canonical product name is missing"
+              exit 1
+            fi
+          done
+
+          if git grep -nE 'Lumi[[:space:]]+RSS' \
+            -- . ':(exclude).github/workflows/repository-checks.yml'; then
+            echo "::error::Non-canonical spacing in the product name was found"
+            exit 1
+          fi
+
+      - name: Reject tracked sensitive runtime files
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_sensitive="$(
+            git ls-files |
+              grep -E '(^|/)([.]env($|[.])|data/|backups/|logs/|AGENTS[.]local[.]md$)|[.](sqlite|sqlite-[^/]+|db)$' |
+              grep -v -E '(^|/)[.]env[.]example$' || true
+          )"
+
+          if [[ -n "$tracked_sensitive" ]]; then
+            echo "::error::Sensitive or runtime files are tracked"
+            printf '%s\n' "$tracked_sensitive"
+            exit 1
+          fi

@@ -1,0 +1,34 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Local agent overrides
+AGENTS.local.md
+
+# Runtime data
+data/
+backups/
+logs/
+
+# Databases
+*.sqlite
+*.sqlite-*
+*.db
+
+# Python
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
