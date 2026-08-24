@@ -1,48 +1,27 @@
-## Outcome
+## What changed
 
-<!-- Lead with the observable result. -->
+<!-- One short summary of the observable result. -->
 
-Closes #<issue>
+## Why
 
-## Scope
-
--
-
-## Out of scope
-
--
-
-## Architecture and contract impact
-
-- ADR required: Yes / No
-- OpenAPI changed: Yes / No
-- Migration or rollback impact: None / Describe
+<!-- Which goal, issue or spec this change serves. -->
 
 ## Verification
 
+<!-- List what you actually ran and the real result of each check.
+     Allowed values: Passed / Failed / Not run / Cannot verify.
+     Never report an expected or simulated result as Passed. -->
+
 | Check | Status | Evidence |
 |---|---|---|
-| Targeted tests | Not run | |
-| Lint | Not run | |
-| Type check | Not run | |
-| Contract tests | Not run | |
-| Manual verification | Not run | |
-
-Allowed status values: Passed, Failed, Not run, Cannot verify.
-
-## Security and privacy
-
-- [ ] No secret, `.env`, database, backup or log file is included.
-- [ ] External calls and data sent to third parties are documented.
-- [ ] Logs and screenshots are redacted.
+| | | |
 
 ## Diff review
 
-- [ ] The diff is limited to this Issue.
-- [ ] Generated files and dependency changes are intentional.
-- [ ] Documentation matches actual behavior.
-- [ ] `STATE.md` is evidence-based.
+- [ ] The diff is limited to the current goal.
+- [ ] No secret, `.env`, database, backup or log file is included.
+- [ ] Documentation matches the actual behavior.
 
-## Risks and follow-up
+## Known limitations
 
--
+<!-- Remaining risks, unverified items and follow-ups. -->

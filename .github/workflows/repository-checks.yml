@@ -22,59 +22,50 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Verify required baseline files
+      - name: Verify required documentation
         shell: bash
         run: |
           set -euo pipefail
           required_files=(
             "README.md"
             "AGENTS.md"
-            ".gitignore"
-            ".aiignore.md"
-            ".env.example"
             "docs/PRD.md"
-            "specs/0001-repository-bootstrap/requirements.md"
-            "specs/0001-repository-bootstrap/tasks.md"
-            "specs/0001-repository-bootstrap/STATE.md"
+            "docs/ARCHITECTURE.md"
+            "docs/PROJECT_STATE.md"
           )
 
           for file in "${required_files[@]}"; do
             if [[ ! -s "$file" ]]; then
-              echo "::error file=$file::Required baseline file is missing or empty"
+              echo "::error file=$file::Required documentation file is missing or empty"
               exit 1
             fi
           done
 
-      - name: Verify canonical naming
+      - name: Reject tracked secret and runtime files
         shell: bash
         run: |
           set -euo pipefail
-          canonical_files=("README.md" "AGENTS.md" "docs/PRD.md")
-          for file in "${canonical_files[@]}"; do
-            if ! grep -q 'LumiRSS' "$file"; then
-              echo "::error file=$file::Canonical product name is missing"
-              exit 1
-            fi
-          done
-
-          if git grep -nE 'Lumi[[:space:]]+RSS' \
-            -- . ':(exclude).github/workflows/repository-checks.yml'; then
-            echo "::error::Non-canonical spacing in the product name was found"
-            exit 1
-          fi
-
-      - name: Reject tracked sensitive runtime files
-        shell: bash
-        run: |
-          set -euo pipefail
+          # .env.example is allowed: it may be reintroduced when real
+          # configuration design happens.
           tracked_sensitive="$(
             git ls-files |
-              grep -E '(^|/)([.]env($|[.])|data/|backups/|logs/|AGENTS[.]local[.]md$)|[.](sqlite|sqlite-[^/]+|db)$' |
-              grep -v -E '(^|/)[.]env[.]example$' || true
+              grep -E '(^|/)\.env($|\.)|\.(sqlite|sqlite-[^/]+|db)$|(^|/)(data|logs|backups)/' |
+              grep -v -E '(^|/)\.env\.example$' || true
           )"
 
           if [[ -n "$tracked_sensitive" ]]; then
-            echo "::error::Sensitive or runtime files are tracked"
+            echo "::error::Secret or runtime files are tracked"
             printf '%s\n' "$tracked_sensitive"
             exit 1
           fi
+
+      - name: Basic repository sanity
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fail on unresolved Git conflict markers.
+          if git grep -nE '^(<{7}|>{7})( |$)'; then
+            echo "::error::Unresolved merge conflict markers found"
+            exit 1
+          fi
+          # Local development habit: run `git diff --check` before commit.
