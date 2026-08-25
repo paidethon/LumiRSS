@@ -52,11 +52,23 @@ Explanation of each part: `docs/ARCHITECTURE.md`.
 
 ## Development commands
 
-Setup, run, test and Docker commands: **Not implemented yet.**
+FreshRSS development environment (milestone 0001):
+
+```bash
+docker compose up -d   # start FreshRSS on http://localhost:8080
+docker compose down     # stop (add -v to also delete data)
+```
+
+First-time setup (browser): complete the FreshRSS install wizard, log
+in, enable "Allow API access" (Configuration → Authentication), and set
+an API password (user menu → Account). See
+`docs/specs/0001-freshrss-development-environment.md`.
+
+Other commands: **Not implemented yet.**
 
 ## Next milestone
 
-FreshRSS development environment. See `docs/PROJECT_STATE.md`.
+Phase 2 — BFF (FastAPI + FreshRSSAdapter). See `docs/PROJECT_STATE.md`.
 
 ## Security
 
