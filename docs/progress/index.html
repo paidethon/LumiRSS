@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LumiRSS Project Board</title>
+<style>
+  :root {
+    --bg: #f7f7f4;
+    --surface: #ffffff;
+    --border: #e4e4dd;
+    --border-strong: #d4d4cc;
+    --text: #24292f;
+    --text-muted: #636c76;
+    --text-faint: #8b949e;
+    --accent: #0969da;
+    --green-bg: #dafbe1; --green-fg: #116329;
+    --blue-bg: #ddf4ff;  --blue-fg: #0550ae;
+    --amber-bg: #fff8c5; --amber-fg: #7d4e00;
+    --gray-bg: #eff1f3;  --gray-fg: #57606a;
+    --red-bg: #ffebe9;   --red-fg: #a40e26;
+    --radius: 8px;
+    /* architecture map palette (categorical, soft) */
+    --arch-src-bg: #f2f2ef;    --arch-src-border: #c9c9c0;
+    --arch-rss-bg: #e9f5ec;    --arch-rss-border: #9ecfa9;
+    --arch-core-bg: #e3f0fd;   --arch-core-border: #8fb9e8;
+    --arch-data-bg: #fdf4e0;   --arch-data-border: #dfc284;
+    --arch-client-bg: #efecfb; --arch-client-border: #b3a8e8;
+    --arch-deploy-bg: #fbfaf6; --arch-deploy-border: #d4d4cc;
+    --arch-deploy2-bg: #f5f4ee;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }
+
+  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-muted); margin: 0 0 20px; font-size: 0.9rem; }
+  h2 {
+    font-size: 1.05rem; margin: 0 0 12px; letter-spacing: -0.01em;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  h2 .hint { font-size: 0.78rem; font-weight: 400; color: var(--text-faint); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 20px;
+  }
+
+  /* ---------- header stats ---------- */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .stat .k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+  .stat .v { font-size: 0.98rem; font-weight: 600; margin-top: 2px; }
+  .stat .v small { font-weight: 400; color: var(--text-muted); }
+  .sot-note {
+    margin: 10px 0 0; font-size: 0.8rem; color: var(--text-muted);
+  }
+
+  /* ---------- badges ---------- */
+  .badge {
+    display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-size: 0.74rem; font-weight: 600; white-space: nowrap;
+  }
+  .badge-completed  { background: var(--green-bg); color: var(--green-fg); }
+  .badge-next       { background: var(--blue-bg);  color: var(--blue-fg); }
+  .badge-current    { background: var(--blue-bg);  color: var(--blue-fg); }
+  .badge-in-progress{ background: var(--amber-bg); color: var(--amber-fg); }
+  .badge-planned    { background: var(--gray-bg);  color: var(--gray-fg); }
+  .badge-blocked    { background: var(--red-bg);   color: var(--red-fg); }
+
+  /* ---------- phase flow ---------- */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; row-gap: 10px; }
+  .flow-node {
+    appearance: none; border: 1px solid var(--border-strong); background: var(--surface);
+    border-radius: var(--radius); padding: 8px 12px; cursor: pointer;
+    font: inherit; color: var(--text); text-align: left;
+    display: flex; flex-direction: column; gap: 4px; min-width: 108px; flex: 1 1 108px;
+  }
+  .flow-node:hover { border-color: var(--accent); }
+  .flow-node.is-selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .flow-node .fn-name { font-weight: 600; font-size: 0.88rem; }
+  .flow-node .fn-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .flow-node .fn-count { font-size: 0.74rem; color: var(--text-faint); }
+  .flow-arrow { align-self: center; color: var(--text-faint); font-size: 0.85rem; }
+
+  /* ---------- architecture (SVG map) ---------- */
+  .arch-scroller { overflow-x: auto; }
+  .arch-scroller svg { display: block; width: 100%; min-width: 720px; height: auto; }
+  .arch-svg text { font-family: inherit; }
+  .arch-svg .node rect { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+  .arch-svg .node:hover rect { stroke-width: 2.2; }
+  .arch-svg .node:focus { outline: none; }
+  .arch-svg .node:focus rect { stroke: var(--accent); stroke-width: 2.2; }
+  .arch-svg .n-src    rect { fill: var(--arch-src-bg);    stroke: var(--arch-src-border); }
+  .arch-svg .n-rss    rect { fill: var(--arch-rss-bg);    stroke: var(--arch-rss-border); }
+  .arch-svg .n-core   rect { fill: var(--arch-core-bg);   stroke: var(--arch-core-border); }
+  .arch-svg .n-data   rect { fill: var(--arch-data-bg);   stroke: var(--arch-data-border); }
+  .arch-svg .n-client rect { fill: var(--arch-client-bg); stroke: var(--arch-client-border); }
+  .arch-svg .n-optional rect { stroke-dasharray: 5 3; }
+  .arch-svg .n-hub rect { stroke-width: 2; }
+  .arch-svg .node-title { font-size: 18px; font-weight: 600; fill: var(--text); text-anchor: middle; }
+  .arch-svg .node-mid   { font-size: 14px; font-weight: 600; fill: var(--text); text-anchor: middle; }
+  .arch-svg .node-sub   { font-size: 12.5px; fill: var(--text-muted); text-anchor: middle; }
+  .arch-svg .node-note  { font-size: 11px; fill: var(--text-faint); text-anchor: middle; font-style: italic; }
+  .arch-svg .boundary { fill: var(--arch-deploy-bg); stroke: var(--arch-deploy-border); stroke-width: 1.2; }
+  .arch-svg .boundary-inner { fill: var(--arch-deploy2-bg); stroke-dasharray: 6 4; }
+  .arch-svg .b-label { font-size: 15px; font-weight: 600; fill: var(--text-muted); }
+  .arch-svg .b-sub   { font-size: 11.5px; fill: var(--text-faint); }
+  .arch-svg .edge { fill: none; stroke: var(--text-faint); stroke-width: 1.5; }
+  .arch-svg .edge-dashed { stroke-dasharray: 5 4; }
+  .arch-svg .edge-label {
+    font-size: 12px; fill: var(--text-muted); text-anchor: middle;
+    paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round;
+  }
+  .arch-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .arch-legend .lg {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; color: var(--text-muted);
+    background: #fbfbf8; border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+  }
+  .arch-legend .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .arch-legend .dot-rss { background: var(--arch-rss-border); }
+  .arch-legend .dot-data { background: var(--arch-data-border); }
+  .arch-legend .dot-optional { background: transparent; border: 1.5px dashed var(--text-faint); }
+  .callout {
+    margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--accent); border-radius: var(--radius);
+    background: #fbfbf8; font-size: 0.86rem;
+  }
+  .callout strong { display: block; margin-bottom: 4px; }
+  .callout ul { margin: 6px 0 0; padding-left: 20px; }
+  .callout li { margin-bottom: 4px; }
+
+  /* ---------- roadmap rows ---------- */
+  .rows { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .row {
+    display: grid; grid-template-columns: 64px minmax(180px, 1.4fr) 118px minmax(200px, 1.6fr);
+    gap: 10px; align-items: center; width: 100%;
+    padding: 9px 14px; border: 0; border-bottom: 1px solid var(--border);
+    background: var(--surface); font: inherit; color: var(--text); text-align: left;
+  }
+  .row:last-child { border-bottom: 0; }
+  button.row { cursor: pointer; }
+  button.row:hover { background: #f6f8fa; }
+  button.row.is-selected { background: #eef5fc; box-shadow: inset 3px 0 0 var(--accent); }
+  .row.head {
+    background: #f6f6f2; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-faint); font-weight: 600;
+  }
+  .row.phase-row { background: #fbfbf8; font-weight: 600; }
+  .row.phase-row .pr-meta { font-weight: 400; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .cell-label { display: none; }
+  .c-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; color: var(--text-muted); }
+  .c-goal { color: var(--text-muted); font-size: 0.87rem; }
+  .phase-row .c-label-main { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- layout: board + detail ---------- */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .detail {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; align-self: start;
+  }
+  .detail h3 { margin: 0 0 2px; font-size: 1.05rem; }
+  .detail .d-sub { color: var(--text-faint); font-size: 0.8rem; margin-bottom: 12px; }
+  .detail h4 {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-faint); margin: 16px 0 6px;
+  }
+  .detail ul { margin: 0; padding-left: 20px; }
+  .detail li { margin-bottom: 4px; font-size: 0.9rem; }
+  .detail p { margin: 0 0 6px; font-size: 0.9rem; }
+  .detail .d-empty { color: var(--text-faint); font-size: 0.88rem; font-style: italic; }
+  .detail a { color: var(--accent); }
+  .d-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .d-progress .bar {
+    flex: 1 1 auto; height: 6px; border-radius: 999px; background: #eef0f2; overflow: hidden;
+  }
+  .d-progress .bar > span { display: block; height: 100%; background: #4c9a2a; border-radius: 999px; }
+  .d-progress .num { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+
+  /* ---------- footer ---------- */
+  footer {
+    margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border);
+    color: var(--text-faint); font-size: 0.8rem;
+  }
+  footer p { margin: 0 0 4px; }
+
+  /* ---------- desktop ---------- */
+  @media (min-width: 1024px) {
+    .layout { grid-template-columns: minmax(0, 1fr) 380px; }
+    .detail { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 767px) {
+    .wrap { padding: 18px 14px 40px; }
+    .stats { grid-template-columns: 1fr; }
+    .row { grid-template-columns: 1fr; gap: 3px; padding: 10px 14px; }
+    .row.head { display: none; }
+    .cell-label {
+      display: inline-block; font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--text-faint); margin-right: 6px;
+    }
+    .c-id { font-size: 0.78rem; }
+    .flow-node { min-width: 132px; flex: 1 1 132px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>LumiRSS Project Board</h1>
+    <p class="subtitle">Single-user, self-hosted, AI-enhanced RSS reader — roadmap, current stage and development history.</p>
+    <div class="stats" id="stats"></div>
+    <p class="sot-note" id="sot-note"></p>
+  </header>
+
+  <main class="layout">
+    <div class="board">
+      <section class="card">
+        <h2>Phases <span class="hint">Foundation → RSS → Backend → Reading → RSSHub → AI → Production</span></h2>
+        <div class="flow" id="flow"></div>
+      </section>
+
+      <section class="card">
+        <h2>Architecture <span class="hint">frozen — see docs/ARCHITECTURE.md</span></h2>
+        <div class="arch-scroller">
+          <svg class="arch-svg" viewBox="0 0 960 580" xmlns="http://www.w3.org/2000/svg"
+               role="img" aria-labelledby="arch-title arch-desc">
+            <title id="arch-title">LumiRSS system architecture</title>
+            <desc id="arch-desc">Native RSS feeds go directly into FreshRSS. Non-RSS websites are
+              converted into feeds by RSSHub first. FreshRSS is the only RSS source of truth.
+              The FastAPI BFF reads FreshRSS through the FreshRSSAdapter and stores only
+              LumiRSS-derived data (AI results, cache, settings) in SQLite. The browser runs the
+              React Web client (responsive, installable PWA) and reaches the system through Caddy
+              over HTTPS: Caddy serves the web assets and proxies /api requests to the BFF. The
+              runtime AI provider is an optional external dependency of the BFF only. Caddy, the
+              BFF, SQLite, FreshRSS and RSSHub run as Docker Compose services on a single
+              Alibaba Cloud ECS host.</desc>
+            <defs>
+              <marker id="arch-arrow" viewBox="0 0 10 10" refX="8.5" refY="5"
+                      markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#636c76"/>
+              </marker>
+            </defs>
+
+            <!-- deployment boundaries (hosts / orchestration, not data-flow nodes) -->
+            <rect class="boundary" x="250" y="22" width="472" height="540" rx="10"/>
+            <text class="b-label" x="266" y="46">Alibaba Cloud ECS</text>
+            <text class="b-sub" x="266" y="61">deployment host</text>
+            <rect class="boundary boundary-inner" x="266" y="70" width="440" height="472" rx="8"/>
+            <text class="b-label" x="282" y="93">Docker Compose</text>
+            <text class="b-sub" x="282" y="108">service orchestration</text>
+
+            <!-- edges -->
+            <g>
+              <path class="edge" d="M 182 129 H 486" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="334" y="121">feed</text>
+
+              <path class="edge" d="M 182 283 H 294" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="238" y="275">source</text>
+
+              <path class="edge" d="M 422 282 C 468 276, 498 244, 519 192" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="481" y="248">RSS feed</text>
+
+              <path class="edge" d="M 578 220 V 192" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="588" y="210" text-anchor="start">Google Reader API</text>
+
+              <path class="edge" d="M 578 270 V 308" marker-end="url(#arch-arrow)"/>
+
+              <path class="edge" d="M 487 348 H 420" marker-start="url(#arch-arrow)" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="453" y="339">derived data</text>
+
+              <path class="edge" d="M 578 438 V 388" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="590" y="417" text-anchor="start">/api/*</text>
+
+              <path class="edge" d="M 772 322 C 728 352, 698 412, 672 450" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="740" y="376">HTTPS</text>
+
+              <path class="edge" d="M 676 490 C 744 520, 826 500, 834 372" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="790" y="514">web assets</text>
+
+              <path class="edge edge-dashed" d="M 650 320 C 702 286, 760 216, 820 178" marker-end="url(#arch-arrow)"/>
+              <text class="edge-label" x="752" y="238">optional AI</text>
+            </g>
+
+            <!-- nodes -->
+            <g class="node n-src" tabindex="0" role="img" aria-label="Native RSS / Atom — websites that already publish feeds">
+              <title>Native RSS / Atom — enters FreshRSS directly</title>
+              <rect x="18" y="100" width="164" height="58" rx="8"/>
+              <text class="node-title" x="100" y="125">Native RSS / Atom</text>
+              <text class="node-sub" x="100" y="143">websites with feeds</text>
+            </g>
+
+            <g class="node n-src" tabindex="0" role="img" aria-label="Non-RSS Website — no standard feed, needs RSSHub">
+              <title>Non-RSS Website — converted into a feed by RSSHub first</title>
+              <rect x="18" y="254" width="164" height="58" rx="8"/>
+              <text class="node-title" x="100" y="279">Non-RSS Website</text>
+              <text class="node-sub" x="100" y="297">no standard feed</text>
+            </g>
+
+            <g class="node n-rss" tabindex="0" role="img" aria-label="RSSHub — feed generator, upstream of FreshRSS">
+              <title>RSSHub — converts non-RSS websites into feeds; upstream of FreshRSS, never a LumiRSS backend</title>
+              <rect x="300" y="254" width="122" height="56" rx="8"/>
+              <text class="node-title" x="361" y="277">RSSHub</text>
+              <text class="node-sub" x="361" y="295">Feed Generator</text>
+            </g>
+
+            <g class="node n-rss n-hub" tabindex="0" role="img" aria-label="FreshRSS — RSS source of truth">
+              <title>FreshRSS — the only RSS source of truth: feeds, categories, entries, read and starred state</title>
+              <rect x="492" y="118" width="172" height="70" rx="8"/>
+              <text class="node-title" x="578" y="149">FreshRSS</text>
+              <text class="node-sub" x="578" y="168">RSS Source of Truth</text>
+            </g>
+
+            <g class="node n-core" tabindex="0" role="img" aria-label="FreshRSSAdapter — translation layer between BFF and FreshRSS">
+              <title>FreshRSSAdapter — translates the FreshRSS API into LumiRSS domain models; a layer inside the BFF, not a separate service</title>
+              <rect x="528" y="222" width="100" height="46" rx="7"/>
+              <text class="node-title" x="578" y="243">Adapter</text>
+              <text class="node-sub" x="578" y="260">API translation</text>
+            </g>
+
+            <g class="node n-core n-hub" tabindex="0" role="img" aria-label="FastAPI BFF — LumiRSS API">
+              <title>FastAPI BFF — LumiRSS's own backend and the only API the web client talks to</title>
+              <rect x="491" y="314" width="174" height="68" rx="8"/>
+              <text class="node-title" x="578" y="345">FastAPI BFF</text>
+              <text class="node-sub" x="578" y="364">LumiRSS API</text>
+            </g>
+
+            <g class="node n-data" tabindex="0" role="img" aria-label="SQLite — AI results, cache and LumiRSS settings only">
+              <title>SQLite — stores only LumiRSS-derived data: AI results, cache, settings. Never a second RSS database.</title>
+              <rect x="272" y="314" width="144" height="68" rx="8"/>
+              <text class="node-title" x="344" y="345">SQLite</text>
+              <text class="node-sub" x="344" y="364">AI · Cache · Settings</text>
+            </g>
+
+            <g class="node n-core" tabindex="0" role="img" aria-label="Caddy — HTTPS entry, web assets and /api reverse proxy">
+              <title>Caddy — production entry point: HTTPS, serves the React web assets, proxies /api to the BFF</title>
+              <rect x="491" y="442" width="174" height="62" rx="8"/>
+              <text class="node-title" x="578" y="471">Caddy</text>
+              <text class="node-sub" x="578" y="490">HTTPS · Web · /api proxy</text>
+            </g>
+
+            <g class="node n-src n-optional" tabindex="0" role="img" aria-label="AI Provider — optional external dependency">
+              <title>Runtime AI provider — optional OpenAI-compatible API called only by the BFF; failure never blocks reading</title>
+              <rect x="774" y="92" width="168" height="80" rx="8"/>
+              <text class="node-title" x="858" y="118">AI Provider</text>
+              <text class="node-sub" x="858" y="137">OpenAI-compatible</text>
+              <text class="node-note" x="858" y="156">failure never blocks reading</text>
+            </g>
+
+            <g class="node n-client" tabindex="0" role="img" aria-label="Browser — React Web client, responsive with PWA">
+              <title>Browser — runs the React Web client (responsive, installable PWA); talks only to Caddy</title>
+              <rect x="774" y="246" width="172" height="116" rx="8"/>
+              <text class="node-title" x="860" y="280">Browser</text>
+              <text class="node-mid" x="860" y="304">React Web</text>
+              <text class="node-sub" x="860" y="324">Responsive · PWA</text>
+            </g>
+          </svg>
+        </div>
+        <div class="arch-legend" aria-label="Architecture rules">
+          <span class="lg"><span class="dot dot-rss"></span>FreshRSS — RSS source of truth</span>
+          <span class="lg"><span class="dot dot-rss"></span>RSSHub — upstream feed generator</span>
+          <span class="lg"><span class="dot dot-data"></span>SQLite — LumiRSS-derived data only</span>
+          <span class="lg"><span class="dot dot-optional"></span>AI — optional</span>
+        </div>
+        <div class="callout">
+          <strong>RSSHub is not missing — two different things:</strong>
+          <ul>
+            <li><strong>Architecture position (day one):</strong> RSSHub sits <em>upstream of FreshRSS</em> — see the top of the diagram. Non-RSS websites go <em>Non-RSS → RSSHub → FreshRSS</em>. The BFF never talks to RSSHub directly.</li>
+            <li><strong>Development milestone (Phase 4 / 0008):</strong> integrating RSSHub is scheduled later in the roadmap, after the main reading path works. The architecture exists from day one; the milestone comes in Phase 4.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Development Roadmap <span class="hint">click any phase or milestone for details</span></h2>
+        <div class="rows" id="rows"></div>
+      </section>
+    </div>
+
+    <aside class="detail" id="detail" aria-live="polite"></aside>
+  </main>
+
+  <footer id="footer"></footer>
+</div>
+
+<script src="project-data.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var DATA = window.LUMIRSS_PROJECT;
+  var STATUS_LABEL = {
+    "completed": "Completed",
+    "next": "Next",
+    "in-progress": "In Progress",
+    "current": "Current",
+    "planned": "Planned",
+    "blocked": "Blocked"
+  };
+
+  var milestonesById = {};
+  DATA.milestones.forEach(function (m) { milestonesById[m.id] = m; });
+  var phasesById = {};
+  DATA.phases.forEach(function (p) { phasesById[p.id] = p; });
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function badge(status) {
+    return '<span class="badge badge-' + status + '">' + STATUS_LABEL[status] + "</span>";
+  }
+
+  function phaseStatus(phase) {
+    var ms = phase.milestoneIds.map(function (id) { return milestonesById[id].status; });
+    if (ms.indexOf("blocked") !== -1) return "blocked";
+    if (ms.every(function (s) { return s === "completed"; })) return "completed";
+    if (ms.indexOf("next") !== -1 || ms.indexOf("in-progress") !== -1) return "current";
+    return "planned";
+  }
+
+  function phaseCounts(phase) {
+    var done = phase.milestoneIds.filter(function (id) {
+      return milestonesById[id].status === "completed";
+    }).length;
+    return { done: done, total: phase.milestoneIds.length };
+  }
+
+  var totals = (function () {
+    var done = DATA.milestones.filter(function (m) { return m.status === "completed"; }).length;
+    return { done: done, total: DATA.milestones.length };
+  })();
+
+  /* ---------- header ---------- */
+  function renderStats() {
+    var phase = phasesById[DATA.currentPhaseId];
+    var ms = milestonesById[DATA.currentMilestoneId];
+    document.getElementById("stats").innerHTML =
+      '<div class="stat"><div class="k">Current Phase</div>' +
+      '<div class="v">' + esc(phase.label) + "</div></div>" +
+      '<div class="stat"><div class="k">Current Milestone</div>' +
+      '<div class="v">' + esc(ms.id) + " " + esc(ms.name) +
+      " <small>" + STATUS_LABEL[ms.status] + "</small></div></div>" +
+      '<div class="stat"><div class="k">Progress</div>' +
+      '<div class="v">' + totals.done + " / " + totals.total + " milestones completed</div></div>";
+    document.getElementById("sot-note").innerHTML =
+      "Source of truth: <strong>" + esc(DATA.sourceOfTruth) +
+      "</strong> — this page is only its web-view summary. If they disagree, the markdown file wins.";
+  }
+
+  /* ---------- phase flow ---------- */
+  function renderFlow() {
+    var html = "";
+    DATA.phases.forEach(function (p, i) {
+      if (i > 0) html += '<span class="flow-arrow" aria-hidden="true">→</span>';
+      var c = phaseCounts(p);
+      html +=
+        '<button type="button" class="flow-node" data-kind="phase" data-id="' + p.id + '">' +
+        '<span class="fn-name">' + esc(p.name) + "</span>" +
+        '<span class="fn-meta">' + badge(phaseStatus(p)) +
+        '<span class="fn-count">' + c.done + "/" + c.total + "</span></span>" +
+        "</button>";
+    });
+    document.getElementById("flow").innerHTML = html;
+  }
+
+  /* ---------- roadmap ---------- */
+  function renderRoadmap() {
+    var html =
+      '<div class="row head" aria-hidden="true"><span>ID</span><span>Milestone</span><span>Status</span><span>Short Goal</span></div>';
+    DATA.phases.forEach(function (p) {
+      var c = phaseCounts(p);
+      html +=
+        '<button type="button" class="row phase-row" data-kind="phase" data-id="' + p.id + '">' +
+        '<span class="c-label-main"><span>' + esc(p.label) + "</span>" +
+        '<span class="pr-meta">' + badge(phaseStatus(p)) +
+        '<span class="fn-count">' + c.done + "/" + c.total + " milestones</span></span></span>" +
+        "</button>";
+      p.milestoneIds.forEach(function (id) {
+        var m = milestonesById[id];
+        html +=
+          '<button type="button" class="row milestone-row" data-kind="milestone" data-id="' + m.id + '">' +
+          '<span class="c-id">' + esc(m.id) + "</span>" +
+          '<span class="c-name"><span class="cell-label">Milestone</span>' + esc(m.name) + "</span>" +
+          '<span class="c-status"><span class="cell-label">Status</span>' + badge(m.status) + "</span>" +
+          '<span class="c-goal"><span class="cell-label">Goal</span>' + esc(m.shortGoal) + "</span>" +
+          "</button>";
+      });
+    });
+    document.getElementById("rows").innerHTML = html;
+  }
+
+  /* ---------- detail panel ---------- */
+  function sectionList(title, items, emptyText) {
+    if (!items || items.length === 0) {
+      return emptyText
+        ? "<h4>" + title + '</h4><p class="d-empty">' + esc(emptyText) + "</p>"
+        : "";
+    }
+    return "<h4>" + title + "</h4><ul>" +
+      items.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") +
+      "</ul>";
+  }
+
+  function renderMilestoneDetail(m) {
+    var p = phasesById[m.phaseId];
+    var html =
+      "<h3>" + esc(m.id) + " — " + esc(m.name) + "</h3>" +
+      '<div class="d-sub">' + esc(p.label) + " · " + badge(m.status) + "</div>" +
+      "<h4>Goal</h4><p>" + esc(m.goal) + "</p>" +
+      sectionList("What was implemented", m.implemented, "Not started yet.") +
+      "<h4>Acceptance result</h4><p>" + esc(m.acceptance) + "</p>" +
+      sectionList("Problems encountered", m.problems, "None recorded yet.") +
+      sectionList("What I learned", m.learned, "Nothing recorded yet.") +
+      "<h4>Development log</h4>" +
+      (m.devlog
+        ? '<p><a href="' + esc(m.devlog) + '">' + esc(m.devlog.replace("../devlog/", "docs/devlog/")) + "</a></p>"
+        : '<p class="d-empty">No devlog yet — written when the milestone is done.</p>');
+    document.getElementById("detail").innerHTML = html;
+  }
+
+  function renderPhaseDetail(p) {
+    var c = phaseCounts(p);
+    var pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+    var msList = p.milestoneIds.map(function (id) {
+      var m = milestonesById[id];
+      return "<li>" + esc(m.id) + " — " + esc(m.name) + " · " + badge(m.status) + "</li>";
+    }).join("");
+    var html =
+      "<h3>" + esc(p.label) + "</h3>" +
+      '<div class="d-sub">' + badge(phaseStatus(p)) + "</div>" +
+      "<h4>Purpose</h4><p>" + esc(p.purpose) + "</p>" +
+      "<h4>Why this phase exists</h4><p>" + esc(p.why) + "</p>" +
+      "<h4>Milestones</h4><ul>" + msList + "</ul>" +
+      "<h4>Progress</h4>" +
+      '<div class="d-progress"><span class="bar"><span style="width:' + pct + '%"></span></span>' +
+      '<span class="num">' + c.done + " / " + c.total + " completed</span></div>";
+    document.getElementById("detail").innerHTML = html;
+  }
+
+  /* ---------- selection ---------- */
+  var selected = null;
+
+  function select(kind, id) {
+    selected = { kind: kind, id: id };
+    document.querySelectorAll(".flow-node, .row").forEach(function (el) {
+      var isMatch = el.getAttribute("data-kind") === kind && el.getAttribute("data-id") === id;
+      el.classList.toggle("is-selected", isMatch);
+    });
+    if (kind === "phase") renderPhaseDetail(phasesById[id]);
+    else renderMilestoneDetail(milestonesById[id]);
+  }
+
+  document.addEventListener("click", function (ev) {
+    var el = ev.target.closest("[data-kind]");
+    if (el) select(el.getAttribute("data-kind"), el.getAttribute("data-id"));
+  });
+
+  /* ---------- footer ---------- */
+  function renderFooter() {
+    document.getElementById("footer").innerHTML =
+      "<p>Updated: " + esc(DATA.updatedAt) +
+      " · Data: docs/progress/project-data.js · Source of truth: " + esc(DATA.sourceOfTruth) + "</p>" +
+      "<p>Maintenance rule: update the board only when a milestone starts or completes " +
+      "(PROJECT_STATE.md → project-data.js → new devlog file). Never per-task updates.</p>";
+  }
+
+  /* ---------- init ---------- */
+  renderStats();
+  renderFlow();
+  renderRoadmap();
+  renderFooter();
+  select("milestone", DATA.currentMilestoneId);
+})();
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 1 — FreshRSS (first dev milestone completed)
+Phase 2 — BFF (next up; Phase 1 milestone 0001 completed)
 
 ## Current status
 
@@ -14,6 +14,9 @@ and the Google Reader API (ClientLogin + subscription/list) works
 against a real subscription.
 
 Spec: `docs/specs/0001-freshrss-development-environment.md`
+
+A static web view of this state (project progress board) is available at
+`docs/progress/index.html`; development history lives in `docs/devlog/`.
 
 No LumiRSS runtime application service is implemented yet.
 
