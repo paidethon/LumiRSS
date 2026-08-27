@@ -48,6 +48,7 @@ Explanation of each part: `docs/ARCHITECTURE.md`.
 | `docs/PRD.md` | Product requirements, v5.0 Reboot Baseline (highest product authority) |
 | `docs/ARCHITECTURE.md` | What each component is and why it exists |
 | `docs/PROJECT_STATE.md` | Where the project is right now |
+| `docs/progress/index.html` | Project progress board (static web view of project state) |
 | `AGENTS.md` | Project map for coding agents |
 
 ## Development commands
