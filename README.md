@@ -8,11 +8,12 @@ plus optional on-demand AI summary and translation.
 
 ## Current status
 
-The project is in the **Reboot / Foundation** stage.
+The project is in the **Phase 2 — BFF** stage.
 
-Application services are not implemented yet. This repository currently
-contains only product and architecture documentation plus minimal
-repository guardrails. There is no runnable application code.
+Milestone 0002 is complete: a minimal FastAPI BFF (`services/bff`) with a
+FreshRSSAdapter exposes `GET /api/v1/feeds`, which returns the real FreshRSS
+subscription list through ClientLogin + subscription/list. No React, no
+SQLite, no AI yet. See `docs/specs/0002-bff-freshrss-adapter.md`.
 
 ## Architecture (frozen)
 
@@ -65,11 +66,25 @@ in, enable "Allow API access" (Configuration → Authentication), and set
 an API password (user menu → Account). See
 `docs/specs/0001-freshrss-development-environment.md`.
 
-Other commands: **Not implemented yet.**
+BFF development (milestone 0002, requires FreshRSS running):
+
+```bash
+cd services/bff
+cp .env.example .env      # then fill in your real FreshRSS credentials
+uv sync                   # install dependencies (creates uv.lock + .venv)
+uv run pytest             # run automated tests (all mocked, no secrets)
+uv run uvicorn lumirss.main:app --reload   # start the BFF on http://127.0.0.1:8000
+curl http://127.0.0.1:8000/health/live     # → {"status":"ok"}
+curl http://127.0.0.1:8000/api/v1/feeds    # → real feeds from FreshRSS
+```
+
+Note: `services/bff/.env` holds the real API password and is gitignored;
+never commit it.
 
 ## Next milestone
 
-Phase 2 — BFF (FastAPI + FreshRSSAdapter). See `docs/PROJECT_STATE.md`.
+Phase 2 continues: Entry Read Path (article list + article detail API).
+See `docs/PROJECT_STATE.md`.
 
 ## Security
 
