@@ -2,23 +2,22 @@
 
 ## Current phase
 
-Phase 2 — BFF (next up; Phase 1 milestone 0001 completed)
+Phase 2 — BFF (milestone 0002 completed; next up 0003 Entry Read Path)
 
 ## Current status
 
 PRD v5.0 has been adopted.
 
-Milestone 0001 (FreshRSS development environment) is complete and
-verified: FreshRSS 1.29.1 runs via Docker Compose on localhost:8080,
-and the Google Reader API (ClientLogin + subscription/list) works
-against a real subscription.
+Milestone 0002 (BFF + FreshRSSAdapter) is complete and verified: a minimal
+FastAPI BFF runs under `services/bff` (uv-managed), and `GET /api/v1/feeds`
+returns the real FreshRSS subscription list through FreshRSSAdapter
+(ClientLogin → auth token in process memory → subscription/list →
+normalization to `{title, feedUrl}`).
 
-Spec: `docs/specs/0001-freshrss-development-environment.md`
+Spec: `docs/specs/0002-bff-freshrss-adapter.md`
 
 A static web view of this state (project progress board) is available at
 `docs/progress/index.html`; development history lives in `docs/devlog/`.
-
-No LumiRSS runtime application service is implemented yet.
 
 ## Implemented
 
@@ -29,13 +28,21 @@ No LumiRSS runtime application service is implemented yet.
   FreshRSS 1.29.1, bound to 127.0.0.1:8080, data in named volume)
 - FreshRSS API access enabled and verified (Google Reader API:
   ClientLogin authentication + subscription/list)
+- FastAPI BFF skeleton (`services/bff`, uv-managed, src layout)
+- FreshRSSAdapter ClientLogin (async httpx, token in process memory only,
+  one-shot re-login on 401)
+- FreshRSS subscription read (`subscription/list` normalized to the
+  minimal LumiRSS feed model: title + feedUrl)
+- GET /api/v1/feeds (real feeds from FreshRSS) and GET /health/live
+- automated adapter/route tests (all mocked; health, ClientLogin parsing,
+  subscription mapping, config/secret, route wiring, error mapping)
 
 ## Not implemented
 
 - RSSHub
-- FreshRSSAdapter
-- FastAPI BFF
 - React Web
+- Entry (article) API
+- read/star state APIs
 - SQLite application persistence
 - Runtime AI
 - PWA
@@ -44,7 +51,7 @@ No LumiRSS runtime application service is implemented yet.
 
 ## Next milestone
 
-Phase 2 — BFF (FastAPI + FreshRSSAdapter)
+0003 — Entry Read Path (Phase 2 — BFF continues)
 
 Goal:
 
@@ -52,16 +59,7 @@ Goal:
 FreshRSS
 → FreshRSSAdapter
 → FastAPI
-→ /api
+→ article list + article detail API
 ```
 
-At least feeds, article list and article detail.
-
-## Do not start yet
-
-- React
-- AI
-- production deployment
-- Folo
-- multi-backend
-- advanced infrastructure
+Together with 0002 this completes the minimal Phase 2 backend set.

@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-08-26",
+  updatedAt: "2026-08-27",
   sourceOfTruth: "docs/PROJECT_STATE.md",
   currentPhaseId: "phase-2",
-  currentMilestoneId: "0002",
+  currentMilestoneId: "0003",
 
   phases: [
     {
@@ -147,20 +147,38 @@ window.LUMIRSS_PROJECT = {
       id: "0002",
       phaseId: "phase-2",
       name: "BFF + FreshRSSAdapter",
-      status: "next",
+      status: "completed",
       shortGoal: "FreshRSS → FreshRSSAdapter → FastAPI /api",
       goal: "搭建 LumiRSS 自己的后端骨架：FastAPI BFF + FreshRSSAdapter，通过 /api 读出 Feed 列表，打通 FreshRSS → Adapter → BFF 的第一条数据链路（目标出自 PRD §11 Phase 2 与 PROJECT_STATE）。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "services/bff 最小 FastAPI 骨架（uv 管理，src 布局，手工 pyproject + uv.lock）",
+        "FreshRSSAdapter：async ClientLogin + subscription/list，Token 仅存进程内存，401 时一次性重登",
+        "归一化为最小 LumiRSS Feed 模型（title + feedUrl）",
+        "GET /health/live 与 GET /api/v1/feeds 两个路由",
+        "懒创建配置/Adapter（lifespan 只管共享 AsyncClient，health 不依赖 FreshRSS 配置）",
+        "15 个自动化测试全 Mock（health/ClientLogin解析/映射/配置秘密/route wiring/错误映射）",
+        "真实 Smoke Test：curl /api/v1/feeds 返回真实订阅（FreshRSS releases + 阮一峰的网络日志）",
+        "故障验证：无效凭据 → 502 authentication_error，无泄漏、不崩溃"
+      ],
+      acceptance: "Spec 0002 的 AC1–AC10 全部达成：分支隔离、BFF 启动、health 200、配置来自环境且 Secret 不进 Git、ClientLogin 真实成功且 Token 仅内存、subscription 真实读取、/api/v1/feeds 真实返回订阅、15 个测试通过、secret 扫描零命中、无越界实现。",
+      problems: [
+        "PyPI 网络不稳：uv sync 首次 5 分钟超时，拉取 hatchling 构建依赖时连接中断，重试后成功",
+        "首个测试发现 bug：ClientLogin 请求本身的连接错误未映射为 UpstreamConnectionError，修复后 15/15 通过",
+        "route 测试初版在 lifespan 启动前注入 fake adapter 被 lifespan 重置，改为启动后注入"
+      ],
+      learned: [
+        "httpx.AsyncClient + trust_env=False 避免 WSL/Windows 代理劫持 localhost 请求",
+        "pydantic SecretStr 防止 repr/日志泄漏密码；空字符串密码必须视为无效配置",
+        "TestClient 的 with 语句会触发 lifespan，测试注入依赖要在启动后进行",
+        "懒创建 Adapter 让 /health/live 与 FreshRSS 配置彻底解耦"
+      ],
+      devlog: "../devlog/0002-bff-freshrss-adapter.md"
     },
     {
       id: "0003",
       phaseId: "phase-2",
       name: "Entry Read Path",
-      status: "planned",
+      status: "next",
       shortGoal: "Article list + article detail API",
       goal: "在 0002 的链路上补全 Entry 读取：文章列表与文章详情 API，与 0002 共同达成 Phase 2 的最小集。",
       implemented: [],
