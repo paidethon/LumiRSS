@@ -21,8 +21,8 @@
 window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
-  currentPhaseId: "phase-4",
-  currentMilestoneId: "0008",
+  currentPhaseId: "phase-5",
+  currentMilestoneId: "0009",
 
   phases: [
     {
@@ -343,20 +343,41 @@ window.LUMIRSS_PROJECT = {
       id: "0008",
       phaseId: "phase-4",
       name: "RSSHub Integration",
-      status: "next",
+      status: "completed",
       shortGoal: "Non-RSS → RSSHub → FreshRSS real link",
       goal: "证明至少一条真实链路：非 RSS 网站 → RSSHub → FreshRSS → LumiRSS。只解决真实需要 RSSHub 的订阅源，不做 Route 搜索/编辑器。",
-      implemented: [],
-      acceptance: "Not started yet.",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "docker-compose.yml 新增最小 rsshub service：官方镜像 digest 固定（diygod/rsshub@sha256:387fd32e…，2026-08-28 官方构建），127.0.0.1:1200 仅本机，/healthz healthcheck（含 start_period），NODE_ENV=production + CACHE_TYPE=memory",
+        "无 Redis / 无 Browserless / 无 Chromium：单用户单实例场景官方最小部署形态",
+        "三层健康验证：container running → /healthz 200 ok → 真实 Route 200（/ithome/ranking/24h：网页 HTML → RSS 2.0，12 items，requireConfig=false / requirePuppeteer=false）",
+        "Docker service DNS 验证：FreshRSS 容器内 rsshub 解析成功；订阅 URL 用 http://rsshub:1200/<route>（人工 checkpoint，不新增 Feed CRUD）",
+        "BFF End-to-End：/api/v1/feeds 出现 RSSHub Feed → /entries?feedUrl= 返回 12 条（read/starred 正常）→ Detail 200（contentText 449 字符 + contentHtml 918 字符）；BFF/Web 零代码修改",
+        "Web 真实浏览器 smoke：All 列表混排无感知差异 → 点击文章 Reader 完整渲染 → Sidebar 选 Feed 专项列表（12 条）；Web 不知道 Feed 来自 RSSHub",
+        "Failure isolation：stop rsshub 后 BFF /health/live 200、3 feeds 正常、原生 RSS 3 条正常、已存 RSSHub 12 条照常可读（含 Detail 全文）；restart 后 health + Route 恢复",
+        "资源观测：idle CPU ≈0%，内存 ≈253 MiB（对比 freshrss 73 MiB）",
+        "IT之家 Demo 订阅经用户确认保留"
+      ],
+      acceptance: "Spec 0008 的 AC1–AC26 全部达成：分支隔离、baseline 健康（BFF 121 / Web 121 + lint + build）、官方镜像 + digest 固定、最小服务、loopback 端口、healthz 真实 200 + healthy、真实 Route 有效 RSS + 12 items、非 RSS 来源证明、service DNS 订阅 URL、FreshRSS 成功抓取、BFF feeds/entries/detail 全验证、Web Reader smoke、无 RSSHub-specific code（bff/web diff = 0）、failure isolation + recovery、数据安全（无 down -v / volume rm）、无 Secret、零新依赖、回归全绿（BFF 121 / Web 121）、资源记录、Demo 保留（用户批准）、无越界。未 commit，停在工作区等待 Review。",
+      problems: [
+        "Docker Hub Registry API 直连不可达（已知网络限制），但 daemon 代理仍生效，docker pull 一次成功",
+        "browser-use click 工具对列表项点击超时，改用 evaluate_script 直接触发 click 完成 Web smoke；截图能力不可用（浏览器视图不可见，同 0006/0007 工具限制），以 a11y snapshot 作为验证证据",
+        "/tmp 沙箱只读导致 probe 临时文件无法删除（不在仓库内，无影响）"
+      ],
+      learned: [
+        "官方 RSSHub 最小部署 = 单服务 + CACHE_TYPE:memory：Redis/Browserless 只是多实例缓存和浏览器 Route 的可选依赖",
+        "Image pin 用 docker image inspect 的 RepoDigests（@sha256:…），比日期 tag 更不可漂移",
+        "三层健康概念：container running ≠ /healthz 200 ≠ 具体 Route 正常（Route 还依赖上游网站），验收要逐层验证",
+        "宿主机 127.0.0.1:1200 与容器内 rsshub:1200 是同一服务的两个视角：订阅 URL 必须用 service DNS，因为 FreshRSS 容器里的 localhost 是它自己",
+        "Failure isolation 的根源是架构分层：RSSHub 只在生成 Feed 时参与，阅读链路永远走 FreshRSS，所以 RSSHub 宕机只影响增量不影响存量",
+        "浏览器自动化工具超时时用 evaluate_script 直接触发 DOM click 是可靠的降级手段"
+      ],
+      devlog: "../devlog/0008-rsshub-source-expansion.md"
     },
     {
       id: "0009",
       phaseId: "phase-5",
       name: "AI Summary",
-      status: "planned",
+      status: "next",
       shortGoal: "On-demand summary + SQLite cache",
       goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。",
       implemented: [],

@@ -10,5 +10,25 @@ services:
     volumes:
       - freshrss-data:/var/www/FreshRSS/data
 
+  rsshub:
+    image: diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc
+    container_name: rsshub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1200:1200" # 仅本机可访问
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:1200/healthz
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 volumes:
   freshrss-data:
