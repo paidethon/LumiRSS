@@ -59,6 +59,7 @@ MISSING_FIELDS_ITEM = {
 }
 
 # Detail fixture: body HTML must become safe plain text (Test D).
+# Carries the read marker (no starred marker) so state mapping is exercised.
 DETAIL_ITEM = {
     "id": "tag:google.com,2005:reader/item/000659e07aaee24d",
     "title": "科技爱好者周刊（第 409 期）",
@@ -73,7 +74,7 @@ DETAIL_ITEM = {
     },
     "alternate": [{"href": "http://example.com/weekly-409"}],
     "origin": {"streamId": "feed/2", "htmlUrl": "http://example.com/", "title": "阮一峰的网络日志"},
-    "categories": ["user/-/state/com.google/reading-list"],
+    "categories": ["user/-/state/com.google/reading-list", "user/-/state/com.google/read"],
 }
 
 
@@ -122,7 +123,8 @@ async def test_list_entries_maps_fields_correctly():
 
     adapter, requested = make_adapter(handler)
 
-    entries = await adapter.list_entries()
+    page = await adapter.list_entries()
+    entries = page.items
 
     assert len(entries) == 2
     first = entries[0]
@@ -131,6 +133,9 @@ async def test_list_entries_maps_fields_correctly():
     assert first.author == "阮一峰"
     assert first.url == "http://example.com/weekly-409"
     assert first.publishedAt == "2026-08-20T23:53:54Z"  # 1787270034 as RFC3339 UTC
+    assert first.read is False  # fixture carries no read/starred markers
+    assert first.starred is False
+    assert page.upstreamContinuation is None  # fixture has no continuation
     assert first.entryRef.startswith("e1.")
     # Round-trip through the adapter's own ref.
     from lumirss.entryref import decode_entry_ref
@@ -170,7 +175,7 @@ async def test_list_entries_never_returns_body():
 
     adapter, _ = make_adapter(handler)
 
-    entries = await adapter.list_entries()
+    entries = (await adapter.list_entries()).items
 
     serialized = entries[0].model_dump_json() + entries[1].model_dump_json()
     assert "SECRET_BODY_ONE" not in serialized
@@ -190,7 +195,7 @@ async def test_list_entries_tolerates_missing_optional_fields():
 
     adapter, _ = make_adapter(handler)
 
-    entries = await adapter.list_entries()
+    entries = (await adapter.list_entries()).items
 
     assert len(entries) == 1
     entry = entries[0]
@@ -199,6 +204,8 @@ async def test_list_entries_tolerates_missing_optional_fields():
     assert entry.author is None
     assert entry.url is None
     assert entry.publishedAt is None
+    assert entry.read is False  # missing categories must not 500
+    assert entry.starred is False
     assert entry.entryRef.startswith("e1.")
 
 
@@ -214,7 +221,7 @@ async def test_list_entries_skips_items_without_id():
 
     adapter, _ = make_adapter(handler)
 
-    entries = await adapter.list_entries()
+    entries = (await adapter.list_entries()).items
 
     assert len(entries) == 1
     assert entries[0].title == "科技爱好者周刊（第 409 期）"
@@ -248,7 +255,7 @@ async def test_list_entries_relogin_once_on_401():
 
     adapter, _ = make_adapter(handler)
 
-    entries = await adapter.list_entries()
+    entries = (await adapter.list_entries()).items
 
     assert len(reading_calls) == 2
     assert entries[0].title == "科技爱好者周刊（第 409 期）"
@@ -288,6 +295,8 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     assert detail.author == "阮一峰"
     assert detail.url == "http://example.com/weekly-409"
     assert detail.publishedAt == "2026-08-20T23:53:54Z"
+    assert detail.read is True  # fixture carries the read marker
+    assert detail.starred is False  # ... but no starred marker
     assert detail.entryRef.startswith("e1.")
     # HTML is turned into plain text: no tags, entity decoded, script gone.
     assert "alert(1)" not in detail.contentText
@@ -370,6 +379,8 @@ async def test_get_entry_tolerates_missing_optional_fields():
     assert detail.author is None
     assert detail.url is None
     assert detail.publishedAt is None
+    assert detail.read is False  # missing categories must not 500
+    assert detail.starred is False
     assert detail.contentText == "只有正文。"
 
 

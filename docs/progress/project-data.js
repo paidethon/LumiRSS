@@ -21,8 +21,8 @@
 window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
-  currentPhaseId: "phase-2",
-  currentMilestoneId: "0004",
+  currentPhaseId: "phase-3",
+  currentMilestoneId: "0005",
 
   phases: [
     {
@@ -210,20 +210,39 @@ window.LUMIRSS_PROJECT = {
       id: "0004",
       phaseId: "phase-2",
       name: "State / Filter / Pagination",
-      status: "next",
-      shortGoal: "Read/star state, filters, pagination",
-      goal: "补全 Phase 2 的后端能力：已读/收藏状态写入、未读/收藏/Feed/分类筛选与分页。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
-      problems: [],
-      learned: [],
-      devlog: null
+      status: "completed",
+      shortGoal: "Read/star state, filters, cursor pagination",
+      goal: "补全 Phase 2 的后端能力：已读/收藏状态写入、未读/收藏/Feed 筛选与游标分页（Category 筛选 deferred 到后续里程碑）。",
+      implemented: [
+        "Entry list/detail 新增 read/starred 布尔字段（来自 FreshRSS categories 状态 marker，缺失容错 false）",
+        "GET /api/v1/entries?view=all|unread|starred：view 翻译为上游 it= 参数，由 FreshRSS 筛选，无 Python post-filter",
+        "GET /api/v1/entries?feedUrl=<url>：feed URL percent-encode 进 feed stream path；可与 view 组合（同一上游请求）",
+        "游标分页：cursor/nextCursor 不透明封装（c1. + base64url JSON，携带 continuation + view + feedUrl scope），不暴露原始 continuation；cursor 可独立请求下一页；scope 不匹配 400 且不触达 FreshRSS",
+        "PATCH /api/v1/entries/{entryRef}/state：set 语义（非 toggle）、严格 bool、空/null body 422、成功 204、双状态合并为一个 edit-tag 请求（repeated a=/r= form 字段）",
+        "Action Token 写路径：GET /token 内存缓存、拒绝空/纯空白/x 兼容捷径、edit-tag 成功校验 body=OK",
+        "写 401 一次性恢复：清 auth+action token → 重登 → 重取 token → 重试一次；/token 401 同样恢复一次",
+        "62 个新增自动化测试（全 Mock），含回归共 120 个通过",
+        "真实 Smoke：filters/分页/状态写入全部验证，状态写入后恢复原状（cleanup 验收）"
+      ],
+      acceptance: "Spec 0004 的 AC1–AC20 全部达成：分支隔离、0002/0003 无回归（120 测试全过）、真实状态字段、view/feed/组合筛选真实生效、cursor 封装与校验、pagination 转换、Action Token 安全缓存、read/starred 真实同步、set 语义、PATCH 契约（204/422）、一次性重试、smoke cleanup、secret 扫描零命中、无越界实现（Category/Mark all read/Batch 未做）。",
+      problems: [
+        "httpx 0.28.1 AsyncClient 不接受 list-of-tuples 作为 form data（被当作 sync stream → RuntimeError），重复 a=/r= 字段改用 urllib.parse.urlencode + content= 传参",
+        "httpx url.path 会 percent-decode，断言线上路径需用 raw_path",
+        "Pydantic v2 默认把 1/0 隐式转 bool，需 Field(strict=True) 达到严格 bool 验证"
+      ],
+      learned: [
+        "FreshRSS edit-tag 成功返回 200 + body 'OK'；写响应体也要校验，异常 body → UpstreamError",
+        "Action Token 与 Auth Token 同生命周期：任何重登路径必须同步清两者，避免新旧 token 混用",
+        "Cursor 携带 filter scope 让“只带 cursor 翻页”可行，同时用显式 view/feedUrl 与 scope 不一致拒绝防混用",
+        "set 语义（目标状态而非 toggle）让写 API 幂等，客户端可安全重试"
+      ],
+      devlog: "../devlog/0004-entry-state-filter-pagination.md"
     },
     {
       id: "0005",
       phaseId: "phase-3",
       name: "Web Shell",
-      status: "planned",
+      status: "next",
       shortGoal: "React app shell + layout",
       goal: "搭建 React 应用外壳与整体布局骨架（导航 / 文章列表 / 阅读区），接入 BFF /api。",
       implemented: [],
