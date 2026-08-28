@@ -2,8 +2,8 @@
 
 ## Current phase
 
-Phase 3 — Reading Experience (milestone 0005 Web Shell completed; next up
-0006 Reader)
+Phase 3 — Reading Experience (milestones 0005 Web Shell and 0006 Reader
+completed; next up 0007 Mobile + PWA)
 
 ## Current status
 
@@ -14,19 +14,6 @@ under `services/bff` (uv-managed) serves feeds, entry lists, entry detail,
 view/feed filters, opaque cursor pagination and set-semantics state writes,
 all backed by FreshRSS through the FreshRSSAdapter (tokens stay in process
 memory; state stays in FreshRSS).
-
-Milestone 0005 (Web Shell) is complete and verified: the first real LumiRSS
-web app lives in `apps/web` (pnpm + React + TypeScript + Vite + Tailwind
-CSS v4 + TanStack Query + Zustand). It renders a desktop-first three-pane
-shell (sidebar navigation / entry list / reader placeholder), talks only to
-relative `/api/v1/*` through the Vite dev proxy (no CORS on the BFF), shows
-real feeds and real entries, supports All/Unread/Starred views, feed
-filtering (with All Feeds restore), cursor Load More via `useInfiniteQuery`,
-and UI-only entry selection. TanStack Query owns all server state; Zustand
-owns only view/selectedFeedUrl/selectedEntryRef. 31 automated frontend
-tests (Vitest + React Testing Library, mocked fetch); BFF regression 120
-passed; real integration smoke (Vite → BFF → FreshRSS) and visual checks
-(1440/1280/1024) verified.
 
 Milestone 0002 (BFF + FreshRSSAdapter) is complete and verified: a minimal
 FastAPI BFF runs under `services/bff` (uv-managed), and `GET /api/v1/feeds`
@@ -55,10 +42,40 @@ and `PATCH /api/v1/entries/{entryRef}/state` sets (never toggles)
 read/starred through Action Token + `edit-tag`, with one-shot 401
 recovery. State stays in FreshRSS; tokens stay in process memory.
 
+Milestone 0005 (Web Shell) is complete and verified: a React 19 +
+TypeScript + Vite app lives in `apps/web` (pnpm-managed) and renders a
+desktop-first three-pane shell — sidebar (All / Unread / Starred + real
+feeds), entry list with read/starred indicators and Load More cursor
+pagination, and a reader pane — talking to the BFF only through relative
+`/api/v1/*` paths via the Vite dev proxy. TanStack Query owns all server
+state; Zustand owns only the UI selection state (view / feed / entry).
+
+Milestone 0006 (Reader) is complete and verified: the reader pane is a
+real article reader. Selecting an entry triggers a TanStack Query detail
+query (`["entry", entryRef]`, enabled only when something is selected,
+AbortSignal cancellation on selection change). The BFF's entry detail now
+also returns `contentHtml` — the raw upstream FreshRSS HTML, explicitly
+documented as UNTRUSTED (the BFF only transports it; the entry list never
+gains any body fields). The web client sanitizes it with DOMPurify
+(HTML-only profile; form/input/button/textarea/select/option/iframe/
+object/embed/style/template forbidden; inline style removed) inside the
+single sanctioned `dangerouslySetInnerHTML` boundary (`ArticleContent`),
+with `contentText` as plain-text fallback and an explicit empty-body
+state. Reader states cover no-selection / loading / success / 404 /
+error. The「打开原文」link only renders for absolute http/https URLs
+(`safeExternalHttpUrl`). Reading never marks anything read: explicit
+read/unread and star/unstar buttons send set-semantics PATCH requests
+through one shared `useMutation` (no AbortController on writes); on
+success the mutation invalidates `["entry", variables.entryRef]` + the
+`["entries"]` prefix so the UI reflects FreshRSS's real state — no
+optimistic update. All of this was verified live against real FreshRSS
+articles (including reversible read/star smokes with full state
+restoration).
+
 Specs: `docs/specs/0002-bff-freshrss-adapter.md`,
 `docs/specs/0003-entry-read-path.md`,
 `docs/specs/0004-entry-state-filter-pagination.md`,
-`docs/specs/0005-web-shell.md`
+`docs/specs/0005-web-shell.md`, `docs/specs/0006-reader.md`
 
 A static web view of this state (project progress board) is available at
 `docs/progress/index.html`; development history lives in `docs/devlog/`.
@@ -109,28 +126,41 @@ A static web view of this state (project progress board) is available at
   postcss/tailwind.config.js)
 - BFF API client (fetch only; relative `/api/v1` base; ApiError with safe
   messages; cancellation rethrown as-is, never wrapped as network errors;
-  detail/state endpoints intentionally absent — they belong to 0006)
+  0006 added getEntry + setEntryState — 204 responses are not JSON-parsed)
 - TanStack Query server-state layer (`useFeeds`, `useEntries` with
   `useInfiniteQuery` + `initialPageParam`/`getNextPageParam` over the
-  opaque cursor)
+  opaque cursor; 0006 added `useEntryDetail` + `useEntryStateMutation`)
 - Zustand UI state (view / selectedFeedUrl / selectedEntryRef only;
   selection cleared on view/feed change; no persist)
 - Web Shell UI: three-pane grid (240/400/rest at 100dvh, per-pane
   scrolling), sidebar with views + real feeds + loading/error states,
   entry list with loading/error/empty states, entry rows with
-  read/starred/publishedAt display, Load More button, reader placeholder
-  fed from the query cache (no detail fetch)
+  read/starred/publishedAt display, Load More button (the 0005 reader
+  placeholder is now only the no-selection state of the 0006 Reader)
 - frontend automated tests (Vitest + jsdom + React Testing Library +
   jest-dom, all mocked fetch; 31 tests)
 - real integration verified: Vite dev proxy → BFF → FreshRSS with real
   feeds/entries in the browser; visual checks at 1440/1280/1024
+- Entry Detail Reader with per-selection TanStack Query detail fetching
+  (`["entry", entryRef]`, enabled only when something is selected)
+- Safe RSS HTML rendering: DOMPurify sanitization boundary
+  (`sanitize-article-html`, HTML-only profile + FORBID_TAGS/ATTR) +
+  `contentText` plain-text fallback + explicit empty-body state
+- BFF EntryDetail `contentHtml` (raw untrusted upstream HTML, detail only;
+  entry list never gains body fields)
+- Original article link (absolute http/https only via
+  `safeExternalHttpUrl`, target=_blank + rel=noopener noreferrer)
+- Read/unread UI and star/unstar UI (explicit set-semantics writes,
+  no auto mark-read, shared mutation, no AbortController on writes)
+- TanStack mutation synchronization (invalidate `["entry",
+  variables.entryRef]` + `["entries"]` prefix, no optimistic update)
+- Reader states: no-selection / loading / success / 404 / error
+- reader automated tests (0006; 97 frontend tests total, 121 backend
+  tests total, all mocked)
 
 ## Not implemented
 
 - RSSHub
-- Reader detail / reading view and state mutation UI in the web app
-  (entry detail API and PATCH exist on the BFF; the web UI intentionally
-  does not use them yet — 0006 Reader)
 - Category management and category filtering (deferred — PRD still lists
   it for the reading experience; belongs to a later milestone, it was
   planned for 0004 in an earlier PROJECT_STATE draft but explicitly
@@ -146,17 +176,15 @@ A static web view of this state (project progress board) is available at
 
 ## Next milestone
 
-0006 — Reader (Phase 3 — Reading Experience continues)
+0007 — Mobile + PWA (Phase 3 — Reading Experience continues)
 
 Goal:
 
 ```text
-Real reading: entry detail (contentText),
-read/star interactions, reader UX
-on top of the 0005 Web Shell
+Responsive mobile layout
+PWA packaging
 ```
 
-The 0005 Web Shell provides navigation, lists, pagination and selection;
-0006 turns the right pane into a real reader and wires the existing
-`GET /api/v1/entries/{entryRef}` and `PATCH /api/v1/entries/{entryRef}/state`
-endpoints into the UI.
+The reading experience core is now complete end to end: the web client
+can browse, read (safely rendered), and manage real article state through
+the BFF against FreshRSS.

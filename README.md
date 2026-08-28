@@ -10,20 +10,36 @@ plus optional on-demand AI summary and translation.
 
 The project is in **Phase 3 — Reading Experience**.
 
+Milestone 0006 (Reader) is complete: the right pane of the web shell is a
+real reader. Clicking an entry fetches `GET /api/v1/entries/{entryRef}`
+through a TanStack Query detail query (`["entry", entryRef]`, only
+enabled when something is selected) and renders title / feed / author /
+time, a safe "open original" link (only absolute http/https URLs pass
+`safeExternalHttpUrl`), and the article body. The BFF now also returns
+`contentHtml` (raw upstream HTML — explicitly untrusted; the BFF only
+transports it). Before rendering, the web client sanitizes it with
+DOMPurify (HTML-only profile + forbidden interactive/embed/style tags) in
+the single sanctioned `dangerouslySetInnerHTML` boundary
+(`ArticleContent`), with `contentText` as the plain-text fallback. Reading
+an article never marks it read: explicit「标记为已读 / 标记为未读」and
+「收藏 / 取消收藏」buttons send set-semantics PATCH requests through
+`useMutation`; on success the detail query and all entry list queries are
+invalidated so the UI shows FreshRSS's real state (no optimistic update).
+See `docs/specs/0006-reader.md`.
+
 Milestone 0005 (Web Shell) is complete: a React + TypeScript + Vite web app
 lives in `apps/web` (pnpm-managed). It renders a desktop-first three-pane
 shell — sidebar navigation (All / Unread / Starred / real feeds), entry
-list (real entries with read/starred indicators), and a reader placeholder
-— wired to the BFF through relative `/api/v1/*` requests and the Vite dev
-proxy (no CORS on the BFF). TanStack Query owns all server state
-(`useInfiniteQuery` + Load More over the opaque cursor); Zustand owns only
-the UI selection state (view / feed / entry). No reader detail, no state
-mutation UI yet — that is 0006. See `docs/specs/0005-web-shell.md`.
+list (real entries with read/starred indicators), and the reader pane —
+wired to the BFF through relative `/api/v1/*` requests and the Vite dev
+proxy (no CORS on the BFF). TanStack Query owns all server state;
+Zustand owns only the UI selection state (view / feed / entry). See
+`docs/specs/0005-web-shell.md`.
 
 Phase 2 — Backend Core (0002–0004) is complete: feeds, entry list, entry
-detail, view/feed filters, opaque cursor pagination and set-semantics
-state writes are all available on the BFF. See
-`docs/specs/0004-entry-state-filter-pagination.md`.
+detail (plain text + raw HTML), view/feed filters, opaque cursor
+pagination and set-semantics state writes are all available on the BFF.
+See `docs/specs/0004-entry-state-filter-pagination.md`.
 
 ## Architecture (frozen)
 
@@ -95,7 +111,7 @@ curl "http://127.0.0.1:8000/api/v1/entries?view=unread&feedUrl=<feed-url>"
 # pagination (opaque cursor; a cursor can be replayed on its own):
 curl "http://127.0.0.1:8000/api/v1/entries?cursor=<nextCursor>"
 # one article:
-curl http://127.0.0.1:8000/api/v1/entries/<entryRef>   # → one article as plain text
+curl http://127.0.0.1:8000/api/v1/entries/<entryRef>   # → one article (contentText + untrusted contentHtml)
 # set state (set semantics, not toggle):
 curl -X PATCH http://127.0.0.1:8000/api/v1/entries/<entryRef>/state \
   -H 'Content-Type: application/json' -d '{"read": true}'
@@ -106,7 +122,7 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/entries/<entryRef>/state \
 Note: `services/bff/.env` holds the real API password and is gitignored;
 never commit it.
 
-Web development (milestone 0005, requires the BFF running on :8000):
+Web development (milestones 0005–0006, requires the BFF running on :8000):
 
 ```bash
 cd apps/web
@@ -124,8 +140,8 @@ needs no environment variables — it only ever talks to relative
 
 ## Next milestone
 
-0006 — Reader: real article reading (entry detail, read/star interactions)
-on top of the Web Shell. See `docs/PROJECT_STATE.md`.
+0007 — Mobile + PWA: responsive mobile layout and offline-capable
+packaging. See `docs/PROJECT_STATE.md`.
 
 ## Security
 

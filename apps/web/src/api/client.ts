@@ -1,7 +1,13 @@
-/** LumiRSS API client — 只访问相对 /api/v1/*，只实现 0005 需要的两个读操作。
- * detail（GET /entries/{ref}）与 state（PATCH）属于 0006，这里故意不存在。 */
+/** LumiRSS API client — 只访问相对 /api/v1/*，所有 BFF HTTP 调用集中在此。
+ * 读：getFeeds / getEntries / getEntry；写：setEntryState（set 语义）。 */
 
-import type { ApiErrorResponse, EntryListResponse, EntryView, Feed } from './types'
+import type {
+  ApiErrorResponse,
+  EntryDetail,
+  EntryListResponse,
+  EntryView,
+  Feed,
+} from './types'
 
 const API_BASE = '/api/v1'
 
@@ -52,13 +58,26 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, type, message)
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted) {
+/** 发起请求并把非 2xx / 网络失败转成 ApiError；返回原始 Response，
+ * 由调用方决定是否解析 JSON（PATCH 204 无响应体，不能 json()）。 */
+async function rawRequest(
+  path: string,
+  init?: { method?: string; body?: string; contentType?: string; signal?: AbortSignal },
+): Promise<Response> {
+  if (init?.signal?.aborted) {
     throw new DOMException('The request was aborted.', 'AbortError')
   }
   let response: Response
   try {
-    response = await fetch(path, { signal })
+    response = await fetch(path, {
+      method: init?.method,
+      body: init?.body,
+      headers:
+        init?.contentType !== undefined
+          ? { 'Content-Type': init.contentType }
+          : undefined,
+      signal: init?.signal,
+    })
   } catch (error) {
     if (isAbortError(error)) {
       // 正常的 query cancellation：原样上抛，TanStack Query 自己处理，
@@ -70,6 +89,14 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   if (!response.ok) {
     throw await toApiError(response)
   }
+  return response
+}
+
+async function request<T>(
+  path: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await rawRequest(path, { signal })
   return (await response.json()) as T
 }
 
@@ -93,4 +120,32 @@ export async function getEntries(
     query.set('cursor', params.cursor)
   }
   return request<EntryListResponse>(`${API_BASE}/entries?${query}`, signal)
+}
+
+/** 读单篇文章 Detail。entryRef 虽是 URL-safe base64url，仍统一
+ * encodeURIComponent（路径段安全）。signal 供 useQuery cancellation。 */
+export async function getEntry(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<EntryDetail> {
+  return request<EntryDetail>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}`,
+    signal,
+  )
+}
+
+/** 写文章状态（set 语义，非 toggle）。
+ *
+ * 注意：刻意不接 AbortSignal——Query cancellation 与 Mutation 严格区分；
+ * PATCH 一旦发出就允许正常完成，不因切换 Entry / 组件卸载而 abort。 */
+export async function setEntryState(
+  entryRef: string,
+  patch: { read: boolean } | { starred: boolean },
+): Promise<void> {
+  // 成功 = 204 No Content：不解析响应体。
+  await rawRequest(`${API_BASE}/entries/${encodeURIComponent(entryRef)}/state`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
 }

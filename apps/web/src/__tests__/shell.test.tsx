@@ -207,32 +207,52 @@ describe('Test J — Feed 切换', () => {
 })
 
 describe('Test K — Entry selection', () => {
-  it('点击 entry → selected UI + ReaderPlaceholder 响应 + 不调用 detail API', async () => {
-    const fetchMock = mockApi(
-      () => jsonResponse(FEEDS),
-      () => jsonResponse(page([entry('e1.a', { title: '可点击的文章' })])),
-    )
+  it('点击 entry → selected UI + Reader 发起 Detail 请求（0006 行为）', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/feeds')) return jsonResponse(FEEDS)
+      // Detail：/api/v1/entries/{ref}（无 query）
+      if (/^\/api\/v1\/entries\/e1\./.test(url)) {
+        return jsonResponse({
+          entryRef: 'e1.a',
+          title: '可点击的文章',
+          feedTitle: '示例源 A',
+          author: null,
+          url: null,
+          publishedAt: null,
+          read: false,
+          starred: false,
+          contentText: '纯文本正文',
+          contentHtml: null,
+        })
+      }
+      if (url.startsWith('/api/v1/entries')) {
+        return jsonResponse(page([entry('e1.a', { title: '可点击的文章' })]))
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
     expect(screen.getByText('选择一篇文章开始阅读')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /可点击的文章/ }))
 
-    // 右栏响应：显示该文章 title（来自 Query cache，不是 detail API）
-    expect(await screen.findAllByText('可点击的文章')).toHaveLength(2)
+    // 0006：选择后真实请求 Detail（GET /api/v1/entries/e1.a）
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => /\/api\/v1\/entries\/e1\./.test(String(c[0])))).toBe(true)
+    })
     // selected 状态体现在 aria-pressed
     expect(screen.getByRole('button', { name: /可点击的文章/ })).toHaveAttribute('aria-pressed', 'true')
-
-    // 只调用了 /feeds 和 /entries —— 没有任何 detail 请求
-    const calls = fetchMock.mock.calls.map((c) => String(c[0]))
-    expect(calls.every((u) => u.startsWith('/api/v1/feeds') || u.startsWith('/api/v1/entries?'))).toBe(true)
-    expect(calls.some((u) => /\/api\/v1\/entries\/e1\./.test(u))).toBe(false)
   })
 
   it('切换 view 后 selection 清空，右栏回到占位文案', async () => {
     vi.stubGlobal('fetch', mockApi(
       () => jsonResponse(FEEDS),
-      () => jsonResponse(page([entry('e1.a', { title: '会被取消选中的文章' })])),
+      (url) =>
+        // Reader（Detail）请求 pending：切 view 后回到占位文案即可
+        /\/api\/v1\/entries\/e1\./.test(url)
+          ? new Promise<Response>(() => {})
+          : jsonResponse(page([entry('e1.a', { title: '会被取消选中的文章' })])),
     ))
     renderApp()
 
