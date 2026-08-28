@@ -11,11 +11,14 @@ from pydantic import ValidationError
 from lumirss.adapters.freshrss import (
     AuthenticationError,
     ConfigError,
+    EntryNotFound,
     FreshRSSAdapter,
     UpstreamConnectionError,
     UpstreamError,
 )
 from lumirss.config import FreshRSSSettings
+from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+from lumirss.models import EntryDetail, EntryListResponse
 
 
 @asynccontextmanager
@@ -46,6 +49,8 @@ _ERROR_RESPONSES = {
     AuthenticationError: (502, "authentication_error"),
     UpstreamConnectionError: (502, "connection_error"),
     UpstreamError: (502, "upstream_error"),
+    InvalidEntryReference: (400, "invalid_entry_reference"),
+    EntryNotFound: (404, "entry_not_found"),
 }
 
 
@@ -53,6 +58,8 @@ _ERROR_RESPONSES = {
 @app.exception_handler(AuthenticationError)
 @app.exception_handler(UpstreamConnectionError)
 @app.exception_handler(UpstreamError)
+@app.exception_handler(InvalidEntryReference)
+@app.exception_handler(EntryNotFound)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -69,6 +76,29 @@ async def feeds(request: Request) -> list[dict[str, str]]:
     read/validated here, never at startup) and then cached on app.state so
     later requests reuse it and its in-memory auth token.
     """
+    adapter = _get_adapter(request)
+    feeds = await adapter.list_feeds()
+    return [{"title": feed.title, "feedUrl": feed.feed_url} for feed in feeds]
+
+
+@app.get("/api/v1/entries", response_model=EntryListResponse)
+async def entries(request: Request) -> EntryListResponse:
+    """Newest entries (bounded, read-only) — list fields only, never bodies."""
+    adapter = _get_adapter(request)
+    return EntryListResponse(items=await adapter.list_entries())
+
+
+@app.get("/api/v1/entries/{entry_ref}", response_model=EntryDetail)
+async def entry_detail(entry_ref: str, request: Request) -> EntryDetail:
+    """One entry as plain text. Invalid refs are rejected before FreshRSS;
+    reading a detail never marks anything as read (read-only milestone)."""
+    item_id = decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    adapter = _get_adapter(request)
+    return await adapter.get_entry(item_id)
+
+
+def _get_adapter(request: Request) -> FreshRSSAdapter:
+    """Lazily create and cache the FreshRSSAdapter on app.state."""
     adapter = request.app.state.freshrss_adapter
     if adapter is None:
         try:
@@ -80,5 +110,4 @@ async def feeds(request: Request) -> list[dict[str, str]]:
             ) from exc
         adapter = FreshRSSAdapter(request.app.state.http_client, settings)
         request.app.state.freshrss_adapter = adapter
-    feeds = await adapter.list_feeds()
-    return [{"title": feed.title, "feedUrl": feed.feed_url} for feed in feeds]
+    return adapter

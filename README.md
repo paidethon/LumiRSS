@@ -10,10 +10,12 @@ plus optional on-demand AI summary and translation.
 
 The project is in the **Phase 2 — BFF** stage.
 
-Milestone 0002 is complete: a minimal FastAPI BFF (`services/bff`) with a
-FreshRSSAdapter exposes `GET /api/v1/feeds`, which returns the real FreshRSS
-subscription list through ClientLogin + subscription/list. No React, no
-SQLite, no AI yet. See `docs/specs/0002-bff-freshrss-adapter.md`.
+Milestone 0003 is complete: the BFF now exposes the entry read path —
+`GET /api/v1/entries` (newest entries, bounded n=20, no bodies) and
+`GET /api/v1/entries/{entryRef}` (one article as plain text) — reading
+through the FreshRSS Google Reader API (`stream/contents/reading-list` /
+`stream/items/contents`). Everything is read-only. See
+`docs/specs/0003-entry-read-path.md`.
 
 ## Architecture (frozen)
 
@@ -66,7 +68,7 @@ in, enable "Allow API access" (Configuration → Authentication), and set
 an API password (user menu → Account). See
 `docs/specs/0001-freshrss-development-environment.md`.
 
-BFF development (milestone 0002, requires FreshRSS running):
+BFF development (milestones 0002/0003, requires FreshRSS running):
 
 ```bash
 cd services/bff
@@ -76,6 +78,9 @@ uv run pytest             # run automated tests (all mocked, no secrets)
 uv run uvicorn lumirss.main:app --reload   # start the BFF on http://127.0.0.1:8000
 curl http://127.0.0.1:8000/health/live     # → {"status":"ok"}
 curl http://127.0.0.1:8000/api/v1/feeds    # → real feeds from FreshRSS
+curl http://127.0.0.1:8000/api/v1/entries  # → newest entries (no bodies)
+# pick an entryRef from the list above, then:
+curl http://127.0.0.1:8000/api/v1/entries/<entryRef>   # → one article as plain text
 ```
 
 Note: `services/bff/.env` holds the real API password and is gitignored;
@@ -83,8 +88,8 @@ never commit it.
 
 ## Next milestone
 
-Phase 2 continues: Entry Read Path (article list + article detail API).
-See `docs/PROJECT_STATE.md`.
+Phase 2 continues: State / Filter / Pagination (read/star state writes,
+filters, pagination). See `docs/PROJECT_STATE.md`.
 
 ## Security
 

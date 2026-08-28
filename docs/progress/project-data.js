@@ -178,20 +178,39 @@ window.LUMIRSS_PROJECT = {
       id: "0003",
       phaseId: "phase-2",
       name: "Entry Read Path",
-      status: "next",
+      status: "completed",
       shortGoal: "Article list + article detail API",
       goal: "在 0002 的链路上补全 Entry 读取：文章列表与文章详情 API，与 0002 共同达成 Phase 2 的最小集。",
-      implemented: [],
-      acceptance: "Not started yet.",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "GET /api/v1/entries：reading-list（n=20，read+unread），主动丢弃正文，只返回列表字段",
+        "GET /api/v1/entries/{entryRef}：POST stream/items/contents（单个 i），正文转安全纯文本 contentText",
+        "entryRef：e1. + base64url(upstream id)，URL-safe/opaque/可逆；非法 ref 在触达 FreshRSS 前拒绝（400）",
+        "EntryNotFound：上游对不存在 item 返回 200+空 items → 映射 404；多 item 防御性 UpstreamError",
+        "HTML→text：标准库 HTMLParser（tag 剥离/entity 还原/段落换行/script+style 内容丢弃），0 新依赖",
+        "严格只读：MockTransport 断言只触达 ClientLogin/reading-list/items/contents，无任何写 endpoint",
+        "43 个新增自动化测试（全部 Mock），含 0002 回归共 58 个通过",
+        "真实 Smoke Test：13 条真实文章列表 + 详情 200（contentText 5804 字）+ 400/404 验证"
+      ],
+      acceptance: "Spec 0003 的 AC1–AC14 全部达成：分支隔离、0002 无回归、真实文章列表（n=20 上限）、列表模型不含正文、entryRef 全部性质、真实详情、contentText 纯文本、缺字段不 500、400/404/502 错误映射、58 测试通过、真实 Smoke 链路、只读性断言、无越界实现。",
+      problems: [
+        "Build 前修订：Detail endpoint 从未知假设改为源码已验证（POST stream/items/contents + form i=），Live Probe 确认真实容器与源码一致",
+        "reading-list 语义修正：All except hidden，无 it/xt 时 STATE_ALL（已读+未读），非“未读优先”",
+        "两次编辑事故（docstring 与 try 粘连、UpstreamError 类误删）由测试立即暴露并修复",
+        "手写期望时间戳算错一次，以 datetime.fromtimestamp 为准修正测试"
+      ],
+      learned: [
+        "FreshRSS items/contents 对不存在 item 返回 200+空 items 而非 404——Adapter 层要做“空即 404”映射",
+        "entryRef 版本前缀（e1.）+ base64url 是“不透明引用”的最小实现：无签名/无数据库/无 UUID 就够用",
+        "List 接口即使上游已带正文也必须主动丢弃——否则列表接口变成正文批量下载器",
+        "标准库 html.parser 足够做 text-only normalization（不是 sanitizer）：tags 剥离+entity 还原+块级换行+script 丢弃"
+      ],
+      devlog: "../devlog/0003-entry-read-path.md"
     },
     {
       id: "0004",
       phaseId: "phase-2",
       name: "State / Filter / Pagination",
-      status: "planned",
+      status: "next",
       shortGoal: "Read/star state, filters, pagination",
       goal: "补全 Phase 2 的后端能力：已读/收藏状态写入、未读/收藏/Feed/分类筛选与分页。",
       implemented: [],

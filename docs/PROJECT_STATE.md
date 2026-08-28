@@ -2,7 +2,8 @@
 
 ## Current phase
 
-Phase 2 — BFF (milestone 0002 completed; next up 0003 Entry Read Path)
+Phase 2 — BFF (milestones 0002 and 0003 completed; next up 0004 State /
+Filter / Pagination)
 
 ## Current status
 
@@ -14,7 +15,17 @@ returns the real FreshRSS subscription list through FreshRSSAdapter
 (ClientLogin → auth token in process memory → subscription/list →
 normalization to `{title, feedUrl}`).
 
-Spec: `docs/specs/0002-bff-freshrss-adapter.md`
+Milestone 0003 (Entry Read Path) is complete and verified: the BFF can now
+read articles. `GET /api/v1/entries` returns the newest entries (bounded
+n=20, list fields only — bodies are deliberately dropped) from FreshRSS
+`stream/contents/reading-list`, and `GET /api/v1/entries/{entryRef}`
+returns one article through `POST stream/items/contents` (single `i`), with
+the HTML body converted to safe plain text (`contentText`). Entries are
+referenced by an opaque, URL-safe, versioned `entryRef` (`e1.` +
+base64url(upstream item id)). The whole path is strictly read-only.
+
+Specs: `docs/specs/0002-bff-freshrss-adapter.md`,
+`docs/specs/0003-entry-read-path.md`
 
 A static web view of this state (project progress board) is available at
 `docs/progress/index.html`; development history lives in `docs/devlog/`.
@@ -36,13 +47,24 @@ A static web view of this state (project progress board) is available at
 - GET /api/v1/feeds (real feeds from FreshRSS) and GET /health/live
 - automated adapter/route tests (all mocked; health, ClientLogin parsing,
   subscription mapping, config/secret, route wiring, error mapping)
+- Entry list read path: GET /api/v1/entries (reading-list, n=20,
+  read + unread, bodies dropped)
+- Entry detail read path: GET /api/v1/entries/{entryRef}
+  (stream/items/contents, single `i`, HTML → contentText)
+- entryRef (opaque URL-safe `e1.` + base64url, round-trip, invalid refs
+  rejected with 400 before touching FreshRSS)
+- text-only entry content (stdlib HTMLParser; no contentHtml exposed)
+- entry read automated tests (43 new; 58 total, all mocked)
 
 ## Not implemented
 
 - RSSHub
 - React Web
-- Entry (article) API
-- read/star state APIs
+- read/star state APIs (writes)
+- unread/starred/feed/category filters
+- pagination (public cursor/limit contract)
+- search
+- feed add/delete
 - SQLite application persistence
 - Runtime AI
 - PWA
@@ -51,15 +73,15 @@ A static web view of this state (project progress board) is available at
 
 ## Next milestone
 
-0003 — Entry Read Path (Phase 2 — BFF continues)
+0004 — State / Filter / Pagination (Phase 2 — BFF continues)
 
 Goal:
 
 ```text
-FreshRSS
-→ FreshRSSAdapter
-→ FastAPI
-→ article list + article detail API
+read/star state writes
++ unread/starred/feed/category filters
++ pagination
+→ on top of the existing read path
 ```
 
-Together with 0002 this completes the minimal Phase 2 backend set.
+This completes the Phase 2 backend set.
