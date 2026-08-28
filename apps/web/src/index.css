@@ -7,6 +7,13 @@
   --accent: #2563eb;
   --text: #1f2937;
   --text-muted: #6b7280;
+  /* 0007 Mobile：四方向 safe area（viewport-fit=cover 下被刘海 /
+   * Home indicator / 横屏圆角占用的区域）。集中定义，少量使用，
+   * 不逐组件散落。 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 html,
@@ -88,6 +95,7 @@ body {
 .article-content code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.875em;
+  overflow-wrap: anywhere; /* 0007：行内代码长 token 不撑破手机屏 */
 }
 
 .article-content pre code {

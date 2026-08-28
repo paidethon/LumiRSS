@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- LumiRSS 图标源（普通版，0007）——复用 favicon.svg 的紫色系，
+       简化几何：粗笔画 L + 水平"流光"光条。扁平配色（PNG 体积小、
+       栅格化可靠）；白底由栅格化时填充。 -->
+  <!-- L 主体（粗笔画） -->
+  <path d="M156 104 h72 v232 h128 v72 H156 z" fill="#7e14ff"/>
+  <!-- 流光：两条水平圆角光条 -->
+  <rect x="264" y="128" width="180" height="28" rx="14" fill="#47bfff"/>
+  <rect x="264" y="184" width="120" height="28" rx="14" fill="#a78bfa"/>
+</svg>

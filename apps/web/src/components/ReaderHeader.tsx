@@ -50,7 +50,7 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
           disabled={pending}
           aria-pressed={detail.read}
           onClick={() => mutation.mutate({ entryRef: detail.entryRef, patch: { read: !detail.read } })}
-          className="rounded-md border border-[var(--border)] px-3 py-1 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="min-h-11 rounded-md border border-[var(--border)] px-3 py-1 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           {pending ? '处理中…' : detail.read ? '标记为未读' : '标记为已读'}
         </button>
@@ -61,7 +61,7 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
           onClick={() =>
             mutation.mutate({ entryRef: detail.entryRef, patch: { starred: !detail.starred } })
           }
-          className="rounded-md border border-[var(--border)] px-3 py-1 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="min-h-11 rounded-md border border-[var(--border)] px-3 py-1 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
           {pending ? '处理中…' : detail.starred ? '取消收藏' : '收藏'}
         </button>
@@ -70,7 +70,7 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
             href={articleUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-md border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="min-h-11 rounded-md border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
           >
             打开原文
           </a>

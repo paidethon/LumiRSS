@@ -101,7 +101,13 @@ export default function Reader() {
   const detail = data
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">
-      <article className="mx-auto max-w-[44rem] px-8 py-6">
+      {/* 0007：手机上左右留白收紧到约 16–20px（max-lg:px-5），
+          桌面维持 max-w-[44rem]（max-width 只在宽于 704px 时生效，
+          窄屏不构成额外固定宽度）；底部计入 safe area */}
+      <article
+        className="mx-auto max-w-[44rem] px-8 py-6 max-lg:px-5"
+        style={{ paddingBottom: 'max(1.5rem, var(--safe-bottom))' }}
+      >
         {/* key=entryRef：切换 Entry = 组件重挂载，旧 mutation 的
             pending / error UI 不泄漏到新 Entry。 */}
         <ReaderHeader key={detail.entryRef} detail={detail} />

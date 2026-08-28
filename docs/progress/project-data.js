@@ -21,8 +21,8 @@
 window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
-  currentPhaseId: "phase-3",
-  currentMilestoneId: "0007",
+  currentPhaseId: "phase-4",
+  currentMilestoneId: "0008",
 
   phases: [
     {
@@ -311,20 +311,39 @@ window.LUMIRSS_PROJECT = {
       id: "0007",
       phaseId: "phase-3",
       name: "Mobile + PWA",
-      status: "next",
+      status: "completed",
       shortGoal: "Mobile reading flow + basic PWA",
       goal: "移动端“列表 → 详情 → 返回”的纵向阅读流，加上基础 PWA（manifest / 图标 / standalone 启动）。",
-      implemented: [],
-      acceptance: "Not started yet.",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "同一棵组件树的响应式布局：<1024px Mobile Header + 单主内容区 + 导航抽屉，≥1024px 三栏桌面不变（纯 CSS media query，无 JS 宽度探测）",
+        "导航抽屉复用同一份 Sidebar（onNavigate 显式关闭；backdrop / ✕ / Escape；非 modal <aside> landmark，无 aria-modal）",
+        "手机 list↔reader 切换由既有 selectedEntryRef 驱动，返回复用 Query cache 不 reload",
+        "≥44px 触摸目标、手机标题 wrap、紧凑 metadata、正文移动端 padding",
+        "viewport-fit=cover + 四方向 safe-area CSS variables",
+        "静态 manifest.webmanifest（standalone）+ 本地生成 192/512/maskable/apple-touch 图标",
+        "无 Service Worker / 无离线缓存 / 零新增依赖（installability ≠ offline）",
+        "24 个新增自动测试（导航/Reader 流/PWA 验证），前端 121 全绿，BFF 121 全绿零修改"
+      ],
+      acceptance: "AC1–AC28：核心全 PASS（含真实浏览器 856px 移动布局全交互、可逆 read/star smoke、31 图文章零横向 overflow、manifest+icons HTTP 200）；OS 级真实安装为 USER/MANUAL VERIFICATION；390/430/768/1024+/1440 真实视口截图 UNVERIFIED（浏览器 resize 被忽略），布局模式由 856px 真实验证 + CSS 规则检查 + 全量回归覆盖。",
+      problems: [
+        "playwright MCP 缺浏览器二进制、browser-use 无法 POST 本机、手工转录长 base64 出错（FNV 校验拦截）",
+        "Tailwind v4 不生成 lg:max-[1100px] 叠加变体（按 Spec 预案退化为统一列宽）",
+        "jsdom 无 crypto.subtle；不支持真实 resize；测试需处理 drawer 新 observer 的 stale-on-mount 后台 refetch"
+      ],
+      learned: [
+        "PWA installability ≠ offline：manifest + secure context 已足够，Service Worker 是离线能力而非安装前提",
+        "同一棵组件树 + CSS 决定布局：复用 Sidebar/Reader/EntryList，只新增 MobileHeader/Drawer 两个小组件和 mobileSidebarOpen 一个状态",
+        "本机无任何 CLI rasterizer 时，纯 Node stdlib（zlib + 手写 PNG 编码器 + supersampling 抗锯齿）可以零依赖生成精确尺寸图标",
+        "远程浏览器 canvas 导出 → base64 经上下文转录不可靠；跨系统搬大数据必须带长度+哈希双校验或改用本地生成",
+        "jsdom 只能断言 DOM/class 语义，真实视觉必须真浏览器（smoke 用 a11y snapshot + overflow 度量 + 截图三重验证）"
+      ],
+      devlog: "../devlog/0007-mobile-pwa.md"
     },
     {
       id: "0008",
       phaseId: "phase-4",
       name: "RSSHub Integration",
-      status: "planned",
+      status: "next",
       shortGoal: "Non-RSS → RSSHub → FreshRSS real link",
       goal: "证明至少一条真实链路：非 RSS 网站 → RSSHub → FreshRSS → LumiRSS。只解决真实需要 RSSHub 的订阅源，不做 Route 搜索/编辑器。",
       implemented: [],

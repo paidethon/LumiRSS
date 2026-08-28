@@ -55,7 +55,7 @@ export default function EntryList() {
             <button
               type="button"
               onClick={() => refetch()}
-              className="mt-2 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="mt-2 min-h-11 rounded border border-gray-300 px-3 text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] max-lg:w-full"
             >
               重试
             </button>
@@ -80,13 +80,16 @@ export default function EntryList() {
       </div>
 
       {!isPending && !isError && entries.length > 0 && (
-        <footer className="border-t border-[var(--border)] p-3">
+        <footer
+          className="border-t border-[var(--border)] p-3"
+          style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
+        >
           {hasNextPage ? (
             <button
               type="button"
               disabled={isFetchingNextPage}
               onClick={() => fetchNextPage()}
-              className="w-full rounded-md border border-[var(--accent)] px-3 py-1.5 text-sm text-[var(--accent)] transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="min-h-11 w-full rounded-md border border-[var(--accent)] px-3 text-sm text-[var(--accent)] transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               {isFetchingNextPage ? '加载中…' : '加载更多'}
             </button>

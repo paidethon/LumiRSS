@@ -22,7 +22,7 @@ function NavButton({
       type="button"
       onClick={onClick}
       aria-current={active ? 'true' : undefined}
-      className={`w-full rounded-md border px-3 py-1.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+      className={`w-full rounded-md border px-3 py-1.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] max-lg:min-h-11 ${
         active
           ? 'border-[var(--accent)] bg-blue-50 font-medium text-[var(--accent)]'
           : 'border-transparent text-[var(--text)] hover:bg-gray-100'
@@ -33,7 +33,17 @@ function NavButton({
   )
 }
 
-export default function Sidebar() {
+/** Sidebar — 导航（视图 + 订阅）。
+ *
+ * 可选 onNavigate：仅在真正完成一次导航选择（view / feed）后回调。
+ * Desktop 挂载时不传（行为不变）；移动端 Drawer 传
+ * closeMobileSidebar，用于导航后关闭抽屉。非导航按钮（如订阅加载
+ * 失败的「重试」）不触发。 */
+export default function Sidebar({
+  onNavigate,
+}: {
+  onNavigate?: () => void
+}) {
   const view = useReaderUi((s) => s.view)
   const selectedFeedUrl = useReaderUi((s) => s.selectedFeedUrl)
   const selectView = useReaderUi((s) => s.selectView)
@@ -42,7 +52,7 @@ export default function Sidebar() {
   const feeds = useFeeds()
 
   return (
-    <nav className="flex flex-col gap-4 p-3" aria-label="主导航">
+    <nav className="flex flex-col gap-4 p-3 max-lg:gap-1" aria-label="主导航">
       <div className="px-2 pt-1">
         <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">
           LumiRSS
@@ -55,7 +65,10 @@ export default function Sidebar() {
           <NavButton
             key={v}
             active={view === v}
-            onClick={() => selectView(v)}
+            onClick={() => {
+              selectView(v)
+              onNavigate?.()
+            }}
           >
             {VIEW_LABELS[v]}
           </NavButton>
@@ -67,7 +80,13 @@ export default function Sidebar() {
           Feeds
         </p>
 
-        <NavButton active={selectedFeedUrl === null} onClick={() => selectFeed(null)}>
+        <NavButton
+          active={selectedFeedUrl === null}
+          onClick={() => {
+            selectFeed(null)
+            onNavigate?.()
+          }}
+        >
           All Feeds
         </NavButton>
 
@@ -96,7 +115,10 @@ export default function Sidebar() {
           <NavButton
             key={feed.feedUrl}
             active={selectedFeedUrl === feed.feedUrl}
-            onClick={() => selectFeed(feed.feedUrl)}
+            onClick={() => {
+              selectFeed(feed.feedUrl)
+              onNavigate?.()
+            }}
           >
             <span className="block truncate" title={feed.title}>
               {feed.title}
