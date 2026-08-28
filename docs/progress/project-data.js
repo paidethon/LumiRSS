@@ -22,7 +22,7 @@ window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
   currentPhaseId: "phase-3",
-  currentMilestoneId: "0006",
+  currentMilestoneId: "0007",
 
   phases: [
     {
@@ -275,20 +275,43 @@ window.LUMIRSS_PROJECT = {
       id: "0006",
       phaseId: "phase-3",
       name: "Reader",
-      status: "next",
+      status: "completed",
       shortGoal: "List / read / mark / star interactions",
       goal: "完成阅读闭环：文章列表、阅读正文、标记已读、收藏/取消收藏，先做 Desktop 体验。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "BFF EntryDetail 最小扩展：contentHtml（上游原始 HTML，明确标注 untrusted，BFF 只搬运不 sanitize；空正文归一化为 null；List 永远不含正文字段）",
+        "Web client 新增 getEntry / setEntryState（所有 HTTP 仍集中在 client.ts；204 响应不解析 body；PATCH 无 AbortSignal——写请求不因切换/卸载而中断）",
+        "TanStack Query：useEntryDetail（key [entry, entryRef]，enabled，切换选择自动 abort 旧请求）+ useEntryStateMutation（onSuccess 用 variables.entryRef 精确 invalidate + [entries] 前缀，不读当前 selection）",
+        "安全渲染边界：DOMPurify（唯一新增 runtime 依赖 3.4.14）HTML-only profile + FORBID_TAGS（form/input/button/textarea/select/option/iframe/object/embed/style/template）+ FORBID_ATTR style，sanitize 后不再二次修改字符串；dangerouslySetInnerHTML 全应用仅 ArticleContent 一处",
+        "contentText 纯文本 fallback（pre-wrap，不包装成 HTML）+ 空正文状态（非 Error）",
+        "打开原文：safeExternalHttpUrl 纯函数只放行绝对 http/https（javascript:/data:/file:/相对/malformed 一律 null），target=_blank + rel=noopener noreferrer",
+        "显式状态按钮：标记已读/未读 + 收藏/取消收藏（set 语义非 toggle，无自动已读；共用一个 mutation，任一 pending 两按钮均 disabled；ReaderHeader 以 entryRef 为 React key 防止旧 mutation UI 泄漏到新文章）",
+        "Reader 状态机：no-selection / loading skeleton / success / 404（返回文章列表）/ error（重试）；切文章滚回顶部",
+        "97 个前端测试（含 sanitizer 安全测试 + mutation invalidation race）+ 121 个后端测试全绿，lint/build 通过",
+        "真实 Smoke：Detail 200 + 富 HTML（含图片/链接）真实渲染；read/star 可逆写入验证后全部恢复原状（cleanup 验收）"
+      ],
+      acceptance: "Spec 0006 的 AC1–AC28 全部达成：分支隔离、baseline 健康、Detail API 真实工作、enabled query、Server/UI 边界、contentHtml 仅 Detail、DOMPurify 唯一清洗点、sanitizer 安全测试、dangerouslySetInnerHTML 唯一例外、text fallback、empty body、五状态 Reader、安全原文链接、read/star 真实双向同步、set 语义、invalidation 同步、无 optimistic、写失败安全、无自动已读、smoke 状态恢复、97+121 测试全绿、lint/build、真实链路、视觉验证（856px 真实视口 + 1024/1280/1440 近似布局验证无溢出）、仅 dompurify 一个新依赖、无越界。未 commit，停在工作区等待 Review。",
+      problems: [
+        "feat/0006-reader 分支基于 0004 创建，缺已合并到 main 的 0005——经用户授权 fast-forward 合并后开工",
+        "jsdom 元素无 scrollTo 方法，Reader 滚回顶部改用 scrollTop 赋值",
+        "DOMPurify 对危险 href 直接移除属性（返回 null），测试断言需容错 ?? ''",
+        "0005 旧 Test K（点击不触发 detail API）与 0006 新行为冲突，按 Spec 语义更新为断言点击真实发起 Detail 请求",
+        "1440/1280/1024 真实视口 resize 工具不可用（window.resizeTo 被忽略、Playwright 浏览器下载网络受限），改用强制 grid 宽度近似验证布局无溢出 + 856px 真实视口验证"
+      ],
+      learned: [
+        "不可信 HTML 边界：BFF 运输 ≠ 可信，DOMPurify 是唯一清洗点，sanitize 后绝不再改字符串",
+        "Query 与 Mutation 的 cancellation 区分：GET 用 AbortSignal 快速切换，PATCH 不建 AbortController 让写请求自然完成",
+        "mutation onSuccess 必须用 variables.entryRef 而非当前 selection——完成前 selection 可能已切换，读 Zustand 会 invalidate 错误的 key",
+        "React key=entryRef 重挂载是最小的跨 Entry mutation UI 泄漏防护，无需 mutation.reset 或状态管理层",
+        "204 No Content 响应不能 response.json()，client 需要一条不解析响应体的请求路径"
+      ],
+      devlog: "../devlog/0006-reader.md"
     },
     {
       id: "0007",
       phaseId: "phase-3",
       name: "Mobile + PWA",
-      status: "planned",
+      status: "next",
       shortGoal: "Mobile reading flow + basic PWA",
       goal: "移动端“列表 → 详情 → 返回”的纵向阅读流，加上基础 PWA（manifest / 图标 / standalone 启动）。",
       implemented: [],

@@ -211,10 +211,13 @@ class FreshRSSAdapter:
         )
 
     async def get_entry(self, item_id: str) -> EntryDetail:
-        """Return one entry with its body as plain text (read-only).
+        """Return one entry with its body (read-only).
 
-        FreshRSS answers a missing item with HTTP 200 + empty items (not
-        404), and this method always sends exactly one ``i``.
+        contentText is the HTML-to-text rendering; contentHtml carries the
+        raw upstream HTML (untrusted — see models.EntryDetail). Missing or
+        empty upstream HTML is normalized to None. FreshRSS answers a
+        missing item with HTTP 200 + empty items (not 404), and this method
+        always sends exactly one ``i``.
         """
         token = await self._get_auth_token()
         try:
@@ -243,6 +246,7 @@ class FreshRSSAdapter:
             read=base["read"],
             starred=base["starred"],
             contentText=html_to_text(base["content_html"]),
+            contentHtml=base["content_html"] or None,
         )
 
     async def _get_auth_token(self) -> str:

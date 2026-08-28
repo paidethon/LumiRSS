@@ -39,7 +39,14 @@ class EntryListResponse(BaseModel):
 
 
 class EntryDetail(BaseModel):
-    """One article with its body as plain text (contentText, never HTML)."""
+    """One article with its body.
+
+    contentText is the safe plain-text rendering (always present);
+    contentHtml is the raw upstream HTML from FreshRSS. contentHtml is
+    UNTRUSTED upstream HTML (it comes from external RSS feeds) — the BFF
+    only transports it; sanitizing before rendering is the web client's
+    responsibility. Missing/empty upstream HTML is normalized to None.
+    """
 
     entryRef: str
     title: str
@@ -50,3 +57,4 @@ class EntryDetail(BaseModel):
     read: bool
     starred: bool
     contentText: str
+    contentHtml: str | None = None

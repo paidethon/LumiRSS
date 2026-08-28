@@ -50,6 +50,7 @@ DETAIL_FIXTURE = EntryDetail(
     read=False,
     starred=False,
     contentText="这里是文章正文纯文本。",
+    contentHtml="<p>这里是文章正文纯文本。</p>",
 )
 
 
@@ -99,6 +100,9 @@ def test_entries_route_returns_items_envelope():
             "read": False,
             "starred": False,
         }
+        # 0006 Test C — the list never carries any body fields.
+        assert "contentHtml" not in body["items"][0]
+        assert "contentText" not in body["items"][0]
         assert fake.calls == [("all", None, None)]
     finally:
         app.state.freshrss_adapter = None
@@ -152,6 +156,7 @@ def test_entry_detail_route_returns_detail():
             "read": False,
             "starred": False,
             "contentText": "这里是文章正文纯文本。",
+            "contentHtml": "<p>这里是文章正文纯文本。</p>",
         }
     finally:
         app.state.freshrss_adapter = None

@@ -303,6 +303,14 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     assert "<p>" not in detail.contentText
     assert "这里记录每周值得分享的科技内容，& 周五发布。" in detail.contentText
     assert "第二段正文。" in detail.contentText
+    # 0006 Test A — raw upstream HTML is transported verbatim in contentHtml
+    # (untrusted; sanitizing is the web client's job — NOT done here).
+    assert (
+        detail.contentHtml
+        == "<p>这里记录每周值得分享的科技内容，&amp; 周五发布。</p>"
+        "<script>alert(1)</script>"
+        "<p>第二段正文。</p>"
+    )
     # Read-only: only ClientLogin + items/contents were hit.
     paths = [r.url.path for r in requested]
     assert all(not fragment in path for path in paths for fragment in WRITE_ENDPOINTS)
@@ -382,6 +390,7 @@ async def test_get_entry_tolerates_missing_optional_fields():
     assert detail.read is False  # missing categories must not 500
     assert detail.starred is False
     assert detail.contentText == "只有正文。"
+    assert detail.contentHtml == "<p>只有正文。</p>"
 
 
 @pytest.mark.anyio
@@ -398,6 +407,30 @@ async def test_get_entry_without_content_yields_empty_content_text():
     detail = await adapter.get_entry("tag:google.com,2005:reader/item/000659e07aaee250")
 
     assert detail.contentText == ""
+    # 0006 Test B — missing upstream body normalizes to None (never "").
+    assert detail.contentHtml is None
+
+
+@pytest.mark.anyio
+async def test_get_entry_empty_upstream_html_normalizes_to_none():
+    """0006 Test B — empty-string upstream HTML also normalizes to None."""
+    item = {
+        "id": "tag:google.com,2005:reader/item/000659e07aaee251",
+        "title": "空正文",
+        "summary": {"content": ""},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts/ClientLogin"):
+            return login_ok(request)
+        return httpx.Response(200, json=item_contents_response([item]))
+
+    adapter, _ = make_adapter(handler)
+
+    detail = await adapter.get_entry("tag:google.com,2005:reader/item/000659e07aaee251")
+
+    assert detail.contentText == ""
+    assert detail.contentHtml is None
 
 
 @pytest.mark.anyio

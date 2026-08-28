@@ -1,12 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getEntries, getFeeds } from '../api/client'
-import type { EntryListResponse } from '../api/types'
+import { ApiError, getEntries, getEntry, getFeeds, setEntryState } from '../api/client'
+import type { EntryDetail, EntryListResponse } from '../api/types'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+const entryDetail: EntryDetail = {
+  entryRef: 'e1.fake1',
+  title: '第一篇',
+  feedTitle: '示例源',
+  author: null,
+  url: 'https://example.com/a',
+  publishedAt: '2026-08-28T00:00:00Z',
+  read: false,
+  starred: false,
+  contentText: '纯文本正文',
+  contentHtml: '<p>纯文本正文</p>',
 }
 
 const entriesPage: EntryListResponse = {
@@ -174,5 +187,153 @@ describe('Test C — API error 安全化', () => {
     expect(error).toBeInstanceOf(DOMException)
     expect((error as DOMException).name).toBe('AbortError')
     expect(error).not.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('Test E — getEntry', () => {
+  it('请求 /api/v1/entries/{encodeURIComponent(entryRef)}，signal 透传', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entryDetail))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await getEntry('e1.fake1', controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/v1/entries/e1.fake1')
+    expect(init.signal).toBe(controller.signal)
+  })
+
+  it('含需转义字符的 entryRef 被 encodeURIComponent（如 e1.a+b/c）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entryDetail))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getEntry('e1.a+b/c')
+
+    const path = fetchMock.mock.calls[0]![0] as string
+    expect(path).toBe('/api/v1/entries/e1.a%2Bb%2Fc')
+    // 最后一个路径段（entryRef 部分）不含未转义的 + 或 /
+    const segment = path.split('/').pop()!
+    expect(segment).toBe('e1.a%2Bb%2Fc')
+  })
+
+  it('预先 abort 的 signal → AbortError 原样上抛', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await getEntry('e1.fake1', controller.signal).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DOMException)
+    expect((error as DOMException).name).toBe('AbortError')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('Test F — setEntryState（set 语义，PATCH JSON，204 不解析响应体）', () => {
+  function noContentResponse(): Response {
+    return new Response(null, { status: 204 })
+  }
+
+  it.each([
+    [{ read: true } as const],
+    [{ read: false } as const],
+    [{ starred: true } as const],
+    [{ starred: false } as const],
+  ])('%o → PATCH /state，JSON body，Content-Type application/json', async (patch) => {
+    const fetchMock = vi.fn().mockResolvedValue(noContentResponse())
+    vi.stubGlobal('fetch', fetchMock)
+
+    await setEntryState('e1.fake1', patch)
+
+    const [path, init] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ]
+    expect(path).toBe('/api/v1/entries/e1.fake1/state')
+    expect(init.method).toBe('PATCH')
+    expect(init.body).toBe(JSON.stringify(patch))
+    expect(init.headers?.['Content-Type']).toBe('application/json')
+  })
+
+  it('204 成功时不尝试解析响应体（json 未被调用）', async () => {
+    const response = new Response(null, { status: 204 })
+    const jsonSpy = vi.spyOn(response, 'json')
+    const fetchMock = vi.fn().mockResolvedValue(response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await setEntryState('e1.fake1', { read: true })
+
+    expect(jsonSpy).not.toHaveBeenCalled()
+  })
+
+  it('entryRef 同样被 encodeURIComponent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(noContentResponse())
+    vi.stubGlobal('fetch', fetchMock)
+
+    await setEntryState('e1.a+b', { starred: true })
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/entries/e1.a%2Bb/state')
+  })
+})
+
+describe('Test G — getEntry / setEntryState 的错误安全化', () => {
+  it('getEntry 4xx BFF envelope → ApiError(status/type/message)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { error: { type: 'entry_not_found', message: '文章不存在' } },
+          404,
+        ),
+      ),
+    )
+
+    const error = await rejectsWithApiError(getEntry('e1.missing'))
+    expect(error.status).toBe(404)
+    expect(error.type).toBe('entry_not_found')
+    expect(error.message).toBe('文章不存在')
+  })
+
+  it('getEntry 5xx 非 JSON → 安全 fallback', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('<html>502</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+      ),
+    )
+
+    const error = await rejectsWithApiError(getEntry('e1.fake1'))
+    expect(error.status).toBe(502)
+    expect(error.type).toBe('http_error')
+  })
+
+  it('getEntry 网络失败 → ApiError(status=0)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const error = await rejectsWithApiError(getEntry('e1.fake1'))
+    expect(error.status).toBe(0)
+    expect(error.type).toBe('network_error')
+  })
+
+  it('setEntryState PATCH 4xx → ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: { type: 'invalid_entry_reference', message: '引用无效' } }, 400),
+      ),
+    )
+
+    const error = await rejectsWithApiError(setEntryState('bad-ref', { read: true }))
+    expect(error.status).toBe(400)
+    expect(error.type).toBe('invalid_entry_reference')
+  })
+
+  it('setEntryState PATCH 网络失败 → ApiError(status=0)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const error = await rejectsWithApiError(setEntryState('e1.fake1', { read: true }))
+    expect(error.status).toBe(0)
+    expect(error.type).toBe('network_error')
   })
 })
