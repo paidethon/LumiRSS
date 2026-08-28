@@ -13,7 +13,7 @@ from lumirss.adapters.freshrss import (
 )
 from lumirss.entryref import encode_entry_ref
 from lumirss.main import app
-from lumirss.models import EntryDetail, EntryListItem
+from lumirss.models import EntryDetail, EntryListItem, EntryPage
 
 VALID_REF = encode_entry_ref("tag:google.com,2005:reader/item/000659e07aaee24d")
 
@@ -25,6 +25,8 @@ ENTRY_FIXTURES = [
         author="阮一峰",
         url="http://example.com/weekly-409",
         publishedAt="2026-08-20T23:53:54Z",
+        read=False,
+        starred=False,
     ),
     EntryListItem(
         entryRef=encode_entry_ref("tag:google.com,2005:reader/item/000659e07aaee24e"),
@@ -33,6 +35,8 @@ ENTRY_FIXTURES = [
         author=None,
         url=None,
         publishedAt=None,
+        read=True,
+        starred=False,
     ),
 ]
 
@@ -43,29 +47,29 @@ DETAIL_FIXTURE = EntryDetail(
     author="阮一峰",
     url="http://example.com/weekly-409",
     publishedAt="2026-08-20T23:53:54Z",
+    read=False,
+    starred=False,
     contentText="这里是文章正文纯文本。",
 )
 
 
 class FakeAdapter:
-    def __init__(self, entries=None, detail=None, error=None) -> None:
+    def __init__(self, entries=None, detail=None, error=None, calls=None) -> None:
         self.entries = entries if entries is not None else ENTRY_FIXTURES
         self.detail = detail if detail is not None else DETAIL_FIXTURE
         self.error = error
-        self.list_calls = 0
-        self.detail_calls: list[str] = []
+        self.calls = calls if calls is not None else []  # (view, feed_url, continuation)
 
     async def list_feeds(self):
         return []  # not under test here; routes only use entry methods
 
-    async def list_entries(self) -> list[EntryListItem]:
-        self.list_calls += 1
+    async def list_entries(self, *, view="all", feed_url=None, continuation=None):
+        self.calls.append((view, feed_url, continuation))
         if self.error is not None:
             raise self.error
-        return self.entries
+        return EntryPage(items=self.entries, upstreamContinuation=None)
 
     async def get_entry(self, item_id: str) -> EntryDetail:
-        self.detail_calls.append(item_id)
         if self.error is not None:
             raise self.error
         return self.detail
@@ -82,8 +86,9 @@ def test_entries_route_returns_items_envelope():
 
         assert response.status_code == 200
         body = response.json()
-        assert list(body.keys()) == ["items"]
+        assert list(body.keys()) == ["items", "nextCursor"]
         assert len(body["items"]) == 2
+        assert body["nextCursor"] is None
         assert body["items"][0] == {
             "entryRef": VALID_REF,
             "title": "科技爱好者周刊（第 409 期）",
@@ -91,8 +96,10 @@ def test_entries_route_returns_items_envelope():
             "author": "阮一峰",
             "url": "http://example.com/weekly-409",
             "publishedAt": "2026-08-20T23:53:54Z",
+            "read": False,
+            "starred": False,
         }
-        assert fake.list_calls == 1
+        assert fake.calls == [("all", None, None)]
     finally:
         app.state.freshrss_adapter = None
 
@@ -142,11 +149,10 @@ def test_entry_detail_route_returns_detail():
             "author": "阮一峰",
             "url": "http://example.com/weekly-409",
             "publishedAt": "2026-08-20T23:53:54Z",
+            "read": False,
+            "starred": False,
             "contentText": "这里是文章正文纯文本。",
         }
-        assert fake.detail_calls == [
-            "tag:google.com,2005:reader/item/000659e07aaee24d"
-        ]
     finally:
         app.state.freshrss_adapter = None
 
@@ -164,8 +170,7 @@ def test_entry_detail_route_invalid_ref_is_400_and_never_touches_adapter():
         assert response.status_code == 400
         body = response.json()
         assert body["error"]["type"] == "invalid_entry_reference"
-        assert fake.list_calls == 0
-        assert fake.detail_calls == []  # FreshRSS was never contacted
+        assert fake.calls == []  # FreshRSS was never contacted
     finally:
         app.state.freshrss_adapter = None
 

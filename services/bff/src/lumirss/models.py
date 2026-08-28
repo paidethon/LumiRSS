@@ -1,4 +1,4 @@
-"""LumiRSS entry models (0003 scope).
+"""LumiRSS entry models (0003/0004 scope).
 
 One definition point for the entry API shapes: the adapter builds these
 directly and the routes return them, so there is no second mapping layer.
@@ -16,12 +16,26 @@ class EntryListItem(BaseModel):
     author: str | None = None
     url: str | None = None
     publishedAt: str | None = None
+    read: bool
+    starred: bool
+
+
+class EntryPage(BaseModel):
+    """Adapter-level page: items + the raw FreshRSS continuation.
+
+    The adapter understands upstream continuations only; turning them into
+    public nextCursor values (and back) is the route layer's job.
+    """
+
+    items: list[EntryListItem]
+    upstreamContinuation: str | None
 
 
 class EntryListResponse(BaseModel):
-    """Envelope for GET /api/v1/entries (pagination fields come in 0004)."""
+    """Envelope for GET /api/v1/entries."""
 
     items: list[EntryListItem]
+    nextCursor: str | None
 
 
 class EntryDetail(BaseModel):
@@ -33,4 +47,6 @@ class EntryDetail(BaseModel):
     author: str | None = None
     url: str | None = None
     publishedAt: str | None = None
+    read: bool
+    starred: bool
     contentText: str

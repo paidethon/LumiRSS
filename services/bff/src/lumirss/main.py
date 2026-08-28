@@ -2,11 +2,12 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from lumirss.adapters.freshrss import (
     AuthenticationError,
@@ -17,6 +18,7 @@ from lumirss.adapters.freshrss import (
     UpstreamError,
 )
 from lumirss.config import FreshRSSSettings
+from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.models import EntryDetail, EntryListResponse
 
@@ -51,6 +53,7 @@ _ERROR_RESPONSES = {
     UpstreamError: (502, "upstream_error"),
     InvalidEntryReference: (400, "invalid_entry_reference"),
     EntryNotFound: (404, "entry_not_found"),
+    InvalidCursor: (400, "invalid_cursor"),
 }
 
 
@@ -60,6 +63,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(UpstreamError)
 @app.exception_handler(InvalidEntryReference)
 @app.exception_handler(EntryNotFound)
+@app.exception_handler(InvalidCursor)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -81,11 +85,59 @@ async def feeds(request: Request) -> list[dict[str, str]]:
     return [{"title": feed.title, "feedUrl": feed.feed_url} for feed in feeds]
 
 
+class EntryStateUpdate(BaseModel):
+    """PATCH body: set (never toggle) read/starred; one bool is required.
+
+    Strict bools: Pydantic does not coerce 1/0/"true" into bool.
+    """
+
+    read: bool | None = Field(default=None, strict=True)
+    starred: bool | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def at_least_one_bool(self) -> "EntryStateUpdate":
+        if self.read is None and self.starred is None:
+            raise ValueError("At least one of 'read' or 'starred' must be provided.")
+        return self
+
+
 @app.get("/api/v1/entries", response_model=EntryListResponse)
-async def entries(request: Request) -> EntryListResponse:
-    """Newest entries (bounded, read-only) — list fields only, never bodies."""
+async def entries(
+    request: Request,
+    view: Literal["all", "unread", "starred"] | None = None,
+    feedUrl: str | None = None,
+    cursor: str | None = None,
+) -> EntryListResponse:
+    """One filtered page of entries — list fields only, never bodies.
+
+    Filtering happens upstream (FreshRSS). Cursor rules: without a cursor,
+    a missing view means "all"; with a cursor, a missing view/feedUrl
+    adopts the cursor's scope, while an explicit view/feedUrl must match
+    the cursor's scope exactly (else 400, before touching FreshRSS).
+    """
+    effective_view = view or "all"
+    continuation: str | None = None
+    if cursor is not None:
+        scope = decode_cursor(cursor)  # raises InvalidCursor → 400
+        if view is not None and scope.view != view:
+            raise InvalidCursor("cursor scope does not match the requested view.")
+        if feedUrl is not None and scope.feed_url != feedUrl:
+            raise InvalidCursor("cursor scope does not match the requested feedUrl.")
+        effective_view = scope.view
+        feedUrl = scope.feed_url
+        continuation = scope.continuation
     adapter = _get_adapter(request)
-    return EntryListResponse(items=await adapter.list_entries())
+    page = await adapter.list_entries(
+        view=effective_view,
+        feed_url=feedUrl,
+        continuation=continuation,
+    )
+    next_cursor = (
+        encode_cursor(page.upstreamContinuation, effective_view, feedUrl)
+        if page.upstreamContinuation is not None
+        else None
+    )
+    return EntryListResponse(items=page.items, nextCursor=next_cursor)
 
 
 @app.get("/api/v1/entries/{entry_ref}", response_model=EntryDetail)
@@ -95,6 +147,22 @@ async def entry_detail(entry_ref: str, request: Request) -> EntryDetail:
     item_id = decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
     adapter = _get_adapter(request)
     return await adapter.get_entry(item_id)
+
+
+@app.patch("/api/v1/entries/{entry_ref}/state", status_code=204)
+async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request) -> Response:
+    """Set the read/starred state of one entry (set semantics, not toggle).
+
+    204 means FreshRSS accepted the write; it does not re-confirm that the
+    entry exists. Invalid refs and invalid bodies are rejected before any
+    FreshRSS call.
+    """
+    item_id = decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    adapter = _get_adapter(request)
+    await adapter.set_entry_state(
+        item_id, read=update.read, starred=update.starred
+    )
+    return Response(status_code=204)
 
 
 def _get_adapter(request: Request) -> FreshRSSAdapter:
