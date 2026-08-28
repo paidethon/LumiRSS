@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-08-27",
+  updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
   currentPhaseId: "phase-2",
-  currentMilestoneId: "0003",
+  currentMilestoneId: "0004",
 
   phases: [
     {
@@ -214,7 +214,7 @@ window.LUMIRSS_PROJECT = {
       shortGoal: "Read/star state, filters, pagination",
       goal: "补全 Phase 2 的后端能力：已读/收藏状态写入、未读/收藏/Feed/分类筛选与分页。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
       problems: [],
       learned: [],
       devlog: null
