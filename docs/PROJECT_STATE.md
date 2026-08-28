@@ -2,8 +2,9 @@
 
 ## Current phase
 
-Phase 3 — Reading Experience (milestones 0005 Web Shell and 0006 Reader
-completed; next up 0007 Mobile + PWA)
+Phase 3 — Reading Experience **completed** (0005 Web Shell, 0006 Reader
+and 0007 Mobile + PWA all done); next up 0008 — RSSHub (Phase 4 —
+Source Expansion)
 
 ## Current status
 
@@ -71,6 +72,26 @@ success the mutation invalidates `["entry", variables.entryRef]` + the
 optimistic update. All of this was verified live against real FreshRSS
 articles (including reversible read/star smokes with full state
 restoration).
+
+Milestone 0007 (Mobile + PWA) is complete and verified: the same React
+app is now responsive. Below 1024px the shell switches (CSS media
+queries only, no JS width detection) to a Mobile Header + single main
+pane + navigation drawer holding the very same `<Sidebar />`; the
+mobile list↔reader switch is driven by the existing `selectedEntryRef`
+state (null → Entry List, set → full-screen Reader; back =
+`selectEntry(null)`, TanStack Query cache is reused, no reload). The
+only new UI state is `mobileSidebarOpen` in the existing Zustand store.
+Touch targets are ≥44px on mobile, the viewport gained
+`viewport-fit=cover` with four `--safe-*` CSS variables, entry-row
+titles wrap on phones and the reader uses tighter mobile padding. PWA
+installability metadata is in place: a hand-written static
+`manifest.webmanifest` (standalone, start_url `/`), locally generated
+192/512/maskable-512/apple-touch icons and theme-color — deliberately
+**without any Service Worker, offline cache or new dependency**
+(installability ≠ offline). All real-browser smokes ran against live
+FreshRSS data (856px mobile viewport: drawer open/close/navigation,
+entry→reader→back, read/star reversible with full state restoration,
+zero horizontal overflow on a 31-image article).
 
 Specs: `docs/specs/0002-bff-freshrss-adapter.md`,
 `docs/specs/0003-entry-read-path.md`,
@@ -157,9 +178,32 @@ A static web view of this state (project progress board) is available at
 - Reader states: no-selection / loading / success / 404 / error
 - reader automated tests (0006; 97 frontend tests total, 121 backend
   tests total, all mocked)
+- Responsive mobile layout (<1024px: Mobile Header + single main pane;
+  ≥1024px: unchanged three-pane desktop shell; CSS-first, same
+  component tree)
+- Mobile navigation drawer (same `<Sidebar />` component, explicit
+  `onNavigate` close callback, backdrop/✕/Escape close, non-modal
+  `<aside>` landmark without aria-modal)
+- Mobile Reader flow driven by existing `selectedEntryRef` (no second
+  page state; back reuses TanStack Query cache, no reload)
+- Touch-friendly controls (≥44px mobile touch targets), phone entry-row
+  title wrapping, compact metadata
+- Safe-area support (viewport-fit=cover + `--safe-top/right/bottom/left`
+  CSS variables used in Mobile Header / drawer / list footer / reader)
+- PWA manifest (static `manifest.webmanifest`, standalone display)
+- PWA icons (192/512 PNG + 512 maskable + 180 apple-touch-icon, all
+  repo-local, generated with a pure Node stdlib PNG encoder)
+- Standalone installability metadata (manifest link / theme-color /
+  apple-touch-icon in index.html; manifest + icons verified HTTP 200
+  with correct content types on the dev server)
+- mobile + PWA automated tests (0007; 121 frontend tests total, all
+  mocked)
 
 ## Not implemented
 
+- Offline support / Service Worker / push notifications (deliberately
+  out of scope for the MVP: PWA installability is provided without any
+  Service Worker; no offline reading is claimed anywhere)
 - RSSHub
 - Category management and category filtering (deferred — PRD still lists
   it for the reading experience; belongs to a later milestone, it was
@@ -170,21 +214,20 @@ A static web view of this state (project progress board) is available at
 - Search
 - Mark all as read / batch state writes (single-entry operations only)
 - Runtime AI
-- PWA and mobile-specific layout
 - Caddy production deployment
 - Alibaba ECS deployment
 
 ## Next milestone
 
-0007 — Mobile + PWA (Phase 3 — Reading Experience continues)
+0008 — RSSHub (Phase 4 — Source Expansion begins)
 
 Goal:
 
 ```text
-Responsive mobile layout
-PWA packaging
+Non-RSS website → RSSHub → FreshRSS → LumiRSS
 ```
 
-The reading experience core is now complete end to end: the web client
-can browse, read (safely rendered), and manage real article state through
-the BFF against FreshRSS.
+The reading experience core is complete end to end: the web client
+can browse, read (safely rendered), and manage real article state
+through the BFF against FreshRSS — on desktop and mobile, installable
+as a PWA.

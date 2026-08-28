@@ -8,7 +8,9 @@ plus optional on-demand AI summary and translation.
 
 ## Current status
 
-The project is in **Phase 3 — Reading Experience**.
+The project is in **Phase 4 — Source Expansion**. Milestones 0005
+(Web Shell), 0006 (Reader) and 0007 (Mobile + PWA) completed Phase 3 —
+Reading Experience.
 
 Milestone 0006 (Reader) is complete: the right pane of the web shell is a
 real reader. Clicking an entry fetches `GET /api/v1/entries/{entryRef}`
@@ -26,6 +28,21 @@ an article never marks it read: explicit「标记为已读 / 标记为未读」a
 `useMutation`; on success the detail query and all entry list queries are
 invalidated so the UI shows FreshRSS's real state (no optimistic update).
 See `docs/specs/0006-reader.md`.
+
+Milestone 0007 (Mobile + PWA) is complete: the same web app is
+responsive. At ≥1024px the three-pane desktop shell is unchanged;
+below 1024px it becomes a Mobile Header + single main pane — a
+navigation drawer (opened from ☰) holds the very same sidebar, and the
+list↔reader switch reuses the existing entry selection state (back =
+list, no reload). Touch targets are ≥44px on phones, the viewport uses
+`viewport-fit=cover` with safe-area insets, and entry titles wrap
+instead of truncating. Basic PWA installability is provided by a static
+`manifest.webmanifest` (standalone display) plus locally generated
+192/512/maskable/apple-touch icons — deliberately **without** any
+Service Worker or offline cache: installing LumiRSS does not make it
+usable offline. To install, use the browser's native "Install app" /
+"Add to Home Screen" action (development works on localhost, which is
+a secure context). See `docs/specs/0007-mobile-pwa.md`.
 
 Milestone 0005 (Web Shell) is complete: a React + TypeScript + Vite web app
 lives in `apps/web` (pnpm-managed). It renders a desktop-first three-pane
@@ -140,8 +157,8 @@ needs no environment variables — it only ever talks to relative
 
 ## Next milestone
 
-0007 — Mobile + PWA: responsive mobile layout and offline-capable
-packaging. See `docs/PROJECT_STATE.md`.
+0008 — RSSHub: prove at least one real non-RSS → RSSHub → FreshRSS →
+LumiRSS path. See `docs/PROJECT_STATE.md`.
 
 ## Security
 

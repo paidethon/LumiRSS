@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- LumiRSS 图标源（maskable 版，0007）——整幅 512×512 铺满背景，
+       主体（白色 L + 光条）落在中央圆形 safe zone（直径约 70%，
+       比标准最小安全区 80% 更保守）：外缘允许被平台裁剪。
+       扁平配色（PNG 体积小）。 -->
+  <!-- 背景铺满整个画布（maskable 必需） -->
+  <rect width="512" height="512" fill="#7e14ff"/>
+  <!-- 主体：白色 L（缩至安全区内） -->
+  <path d="M186 146 h60 v196 h106 v60 H186 z" fill="#ffffff"/>
+  <!-- 流光：两条水平圆角光条 -->
+  <rect x="286" y="160" width="144" height="24" rx="12" fill="#47bfff"/>
+  <rect x="286" y="212" width="96" height="24" rx="12" fill="#ede6ff"/>
+</svg>

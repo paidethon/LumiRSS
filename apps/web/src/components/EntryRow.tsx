@@ -44,8 +44,10 @@ export default function EntryRow({
             aria-label="未读"
           />
         )}
+        {/* 0007：手机上标题必须 wrap（最多 3 行），不能一行截到看不懂；
+            桌面保持单行 truncate */}
         <span
-          className={`min-w-0 flex-1 truncate text-sm ${
+          className={`min-w-0 flex-1 text-sm max-lg:line-clamp-3 lg:truncate ${
             item.read ? 'font-normal text-[var(--text-muted)]' : 'font-medium text-[var(--text)]'
           }`}
           title={item.title}
@@ -58,7 +60,8 @@ export default function EntryRow({
           </span>
         )}
       </div>
-      <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+      {/* 0007：手机上 metadata 更紧凑（次要信息密度降低） */}
+      <p className="mt-1 truncate text-xs text-[var(--text-muted)] max-lg:mt-0.5">
         {item.feedTitle}
         {item.author !== null && <span> · {item.author}</span>}
         <span> · {formatPublishedAt(item.publishedAt)}</span>
