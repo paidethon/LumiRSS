@@ -246,7 +246,7 @@ window.LUMIRSS_PROJECT = {
       shortGoal: "React app shell + layout",
       goal: "搭建 React 应用外壳与整体布局骨架（导航 / 文章列表 / 阅读区），接入 BFF /api。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
       problems: [],
       learned: [],
       devlog: null
