@@ -22,7 +22,7 @@ window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-28",
   sourceOfTruth: "docs/PROJECT_STATE.md",
   currentPhaseId: "phase-3",
-  currentMilestoneId: "0005",
+  currentMilestoneId: "0006",
 
   phases: [
     {
@@ -242,24 +242,44 @@ window.LUMIRSS_PROJECT = {
       id: "0005",
       phaseId: "phase-3",
       name: "Web Shell",
-      status: "next",
+      status: "completed",
       shortGoal: "React app shell + layout",
       goal: "搭建 React 应用外壳与整体布局骨架（导航 / 文章列表 / 阅读区），接入 BFF /api。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
-      problems: [],
-      learned: [],
-      devlog: null
+      implemented: [
+        "apps/web：pnpm + React 19 + TypeScript + Vite 8（create-vite react-ts 模板，demo 清理，无嵌套 git repo）",
+        "Tailwind CSS v4 官方 @tailwindcss/vite plugin（无旧式 postcss/tailwind.config.js）",
+        "Vite dev proxy：/api → 127.0.0.1:8000，React 只写相对 /api/v1/*（BFF 零修改、无 CORS）",
+        "API client：fetch + ApiError 安全化（cancellation 原样 rethrow 不当网络错误；detail/state 端点故意不存在）",
+        "TanStack Query：useFeeds + useEntries（useInfiniteQuery，key 含 view/feedUrl scope，opaque cursor 原样透传）",
+        "Zustand：仅 view/selectedFeedUrl/selectedEntryRef，切 view/feed 清空 selection，无 persist",
+        "三栏 Web Shell：Sidebar（views + 真实 feeds + loading/error）/ EntryList（loading/error/empty）/ EntryRow（read/starred/publishedAt）/ Load More / ReaderPlaceholder（Query cache 查找，不 fetch detail）",
+        "31 个前端自动化测试（Vitest + jsdom + RTL + jest-dom，全 mock fetch），lint 0 警告，production build 成功",
+        "真实链路验证：Vite → /api proxy → FastAPI → FreshRSS，真实 feeds/entries 显示，1440/1280/1024 零溢出"
+      ],
+      acceptance: "Spec 0005 的 AC1–AC22 全部达成：分支隔离、Web 项目可启动、冻结技术栈、相对路径 + Vite proxy（BFF 零修改）、真实 feeds/entries、view/feed 筛选、cursor Load More（真实 nextCursor 不可用因数据 ≤ 20 条，自动测试覆盖）、Query/Zustand 边界、列表各状态、entry 选中不触 detail API、31 测试全绿、lint/build 通过、BFF regression 120 passed、真实链路 smoke + 视觉验证通过。未 commit，停在工作区等待 Review。",
+      problems: [
+        "pnpm create vite 首次运行卡在交互确认（管道吞掉 stdin），终止后用 printf 'y' 管道重试成功",
+        "DOMException 在 Node 运行时不继承 Error：AbortError 检测改用 name 判断而非 instanceof",
+        "mock fetch 返回同一 Response 对象时 body 只能读一次，测试改为单次调用断言",
+        "测试初稿误用 @testing-library/user-event（未在批准依赖清单），改用 RTL 内置 fireEvent，0 新增依赖"
+      ],
+      learned: [
+        "Server state（TanStack Query）与 UI state（Zustand）的边界是 0005 最重要架构概念：Zustand 不复制任何 server 数据",
+        "query key 必须包含 view/feedUrl scope，否则切换筛选返回错误缓存",
+        "AbortSignal 透传给 fetch 时，cancellation 必须原样 rethrow 而不是包装成网络错误，否则正常切换筛选会触发 error UI",
+        "Vite server.proxy 让浏览器同源请求 /api，开发不需要 CORS，未来 Caddy 同模式替换，React 代码不变"
+      ],
+      devlog: "../devlog/0005-web-shell.md"
     },
     {
       id: "0006",
       phaseId: "phase-3",
       name: "Reader",
-      status: "planned",
+      status: "next",
       shortGoal: "List / read / mark / star interactions",
       goal: "完成阅读闭环：文章列表、阅读正文、标记已读、收藏/取消收藏，先做 Desktop 体验。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
       problems: [],
       learned: [],
       devlog: null

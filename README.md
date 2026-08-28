@@ -8,16 +8,21 @@ plus optional on-demand AI summary and translation.
 
 ## Current status
 
-The project has completed **Phase 2 — Backend Core**.
+The project is in **Phase 3 — Reading Experience**.
 
-Milestone 0004 is complete: the BFF now supports entry state, filters and
-cursor pagination — `GET /api/v1/entries?view=all|unread|starred&feedUrl=<url>`
-(filtered upstream by FreshRSS), opaque cursor pagination
-(`cursor`/`nextCursor`, the raw FreshRSS continuation is never exposed),
-entry `read`/`starred` fields from FreshRSS, and
-`PATCH /api/v1/entries/{entryRef}/state` (set semantics, not toggle) via
-Action Token + `edit-tag`. Everything state-related stays in FreshRSS; the
-BFF keeps tokens in process memory only. See
+Milestone 0005 (Web Shell) is complete: a React + TypeScript + Vite web app
+lives in `apps/web` (pnpm-managed). It renders a desktop-first three-pane
+shell — sidebar navigation (All / Unread / Starred / real feeds), entry
+list (real entries with read/starred indicators), and a reader placeholder
+— wired to the BFF through relative `/api/v1/*` requests and the Vite dev
+proxy (no CORS on the BFF). TanStack Query owns all server state
+(`useInfiniteQuery` + Load More over the opaque cursor); Zustand owns only
+the UI selection state (view / feed / entry). No reader detail, no state
+mutation UI yet — that is 0006. See `docs/specs/0005-web-shell.md`.
+
+Phase 2 — Backend Core (0002–0004) is complete: feeds, entry list, entry
+detail, view/feed filters, opaque cursor pagination and set-semantics
+state writes are all available on the BFF. See
 `docs/specs/0004-entry-state-filter-pagination.md`.
 
 ## Architecture (frozen)
@@ -101,10 +106,26 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/entries/<entryRef>/state \
 Note: `services/bff/.env` holds the real API password and is gitignored;
 never commit it.
 
+Web development (milestone 0005, requires the BFF running on :8000):
+
+```bash
+cd apps/web
+pnpm install              # install dependencies (creates pnpm-lock.yaml)
+pnpm dev                  # start Vite dev server on http://localhost:5173
+                          # (/api/* is proxied to the BFF on :8000)
+pnpm test                 # run Vitest suites (no real network, mocked fetch)
+pnpm lint                 # oxlint
+pnpm build                # production build (tsc -b + vite build → dist/)
+```
+
+Prerequisites: Node.js (LTS, nvm-managed is fine) and pnpm. The web app
+needs no environment variables — it only ever talks to relative
+`/api/v1/*` paths.
+
 ## Next milestone
 
-Phase 3 — Reading Experience starts with 0005 Web Shell (React app shell
-+ layout wired to the BFF /api). See `docs/PROJECT_STATE.md`.
+0006 — Reader: real article reading (entry detail, read/star interactions)
+on top of the Web Shell. See `docs/PROJECT_STATE.md`.
 
 ## Security
 
