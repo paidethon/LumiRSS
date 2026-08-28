@@ -2,12 +2,31 @@
 
 ## Current phase
 
-Phase 2 — Backend Core (milestones 0002–0004 completed; next up 0005
-Web Shell, Phase 3 — Reading Experience)
+Phase 3 — Reading Experience (milestone 0005 Web Shell completed; next up
+0006 Reader)
 
 ## Current status
 
 PRD v5.0 has been adopted.
+
+Phase 2 — Backend Core (0002–0004) is complete and verified: a FastAPI BFF
+under `services/bff` (uv-managed) serves feeds, entry lists, entry detail,
+view/feed filters, opaque cursor pagination and set-semantics state writes,
+all backed by FreshRSS through the FreshRSSAdapter (tokens stay in process
+memory; state stays in FreshRSS).
+
+Milestone 0005 (Web Shell) is complete and verified: the first real LumiRSS
+web app lives in `apps/web` (pnpm + React + TypeScript + Vite + Tailwind
+CSS v4 + TanStack Query + Zustand). It renders a desktop-first three-pane
+shell (sidebar navigation / entry list / reader placeholder), talks only to
+relative `/api/v1/*` through the Vite dev proxy (no CORS on the BFF), shows
+real feeds and real entries, supports All/Unread/Starred views, feed
+filtering (with All Feeds restore), cursor Load More via `useInfiniteQuery`,
+and UI-only entry selection. TanStack Query owns all server state; Zustand
+owns only view/selectedFeedUrl/selectedEntryRef. 31 automated frontend
+tests (Vitest + React Testing Library, mocked fetch); BFF regression 120
+passed; real integration smoke (Vite → BFF → FreshRSS) and visual checks
+(1440/1280/1024) verified.
 
 Milestone 0002 (BFF + FreshRSSAdapter) is complete and verified: a minimal
 FastAPI BFF runs under `services/bff` (uv-managed), and `GET /api/v1/feeds`
@@ -38,7 +57,8 @@ recovery. State stays in FreshRSS; tokens stay in process memory.
 
 Specs: `docs/specs/0002-bff-freshrss-adapter.md`,
 `docs/specs/0003-entry-read-path.md`,
-`docs/specs/0004-entry-state-filter-pagination.md`
+`docs/specs/0004-entry-state-filter-pagination.md`,
+`docs/specs/0005-web-shell.md`
 
 A static web view of this state (project progress board) is available at
 `docs/progress/index.html`; development history lives in `docs/devlog/`.
@@ -83,11 +103,34 @@ A static web view of this state (project progress board) is available at
   one-shot 401 recovery clearing both tokens)
 - entry state/filter/pagination automated tests (62 new; 120 total, all
   mocked)
+- React + TypeScript + Vite web app (`apps/web`, pnpm-managed,
+  create-vite react-ts template, demo cleaned)
+- Tailwind CSS v4 via the official `@tailwindcss/vite` plugin (no legacy
+  postcss/tailwind.config.js)
+- BFF API client (fetch only; relative `/api/v1` base; ApiError with safe
+  messages; cancellation rethrown as-is, never wrapped as network errors;
+  detail/state endpoints intentionally absent — they belong to 0006)
+- TanStack Query server-state layer (`useFeeds`, `useEntries` with
+  `useInfiniteQuery` + `initialPageParam`/`getNextPageParam` over the
+  opaque cursor)
+- Zustand UI state (view / selectedFeedUrl / selectedEntryRef only;
+  selection cleared on view/feed change; no persist)
+- Web Shell UI: three-pane grid (240/400/rest at 100dvh, per-pane
+  scrolling), sidebar with views + real feeds + loading/error states,
+  entry list with loading/error/empty states, entry rows with
+  read/starred/publishedAt display, Load More button, reader placeholder
+  fed from the query cache (no detail fetch)
+- frontend automated tests (Vitest + jsdom + React Testing Library +
+  jest-dom, all mocked fetch; 31 tests)
+- real integration verified: Vite dev proxy → BFF → FreshRSS with real
+  feeds/entries in the browser; visual checks at 1440/1280/1024
 
 ## Not implemented
 
 - RSSHub
-- React Web
+- Reader detail / reading view and state mutation UI in the web app
+  (entry detail API and PATCH exist on the BFF; the web UI intentionally
+  does not use them yet — 0006 Reader)
 - Category management and category filtering (deferred — PRD still lists
   it for the reading experience; belongs to a later milestone, it was
   planned for 0004 in an earlier PROJECT_STATE draft but explicitly
@@ -97,22 +140,23 @@ A static web view of this state (project progress board) is available at
 - Search
 - Mark all as read / batch state writes (single-entry operations only)
 - Runtime AI
-- PWA
+- PWA and mobile-specific layout
 - Caddy production deployment
 - Alibaba ECS deployment
 
 ## Next milestone
 
-0005 — Web Shell (Phase 3 — Reading Experience starts)
+0006 — Reader (Phase 3 — Reading Experience continues)
 
 Goal:
 
 ```text
-React app shell + overall layout
-navigation / article list / reading area
-wired to the BFF /api
+Real reading: entry detail (contentText),
+read/star interactions, reader UX
+on top of the 0005 Web Shell
 ```
 
-Phase 2 Backend Core is complete: the BFF now covers feeds, entry list,
-entry detail, state writes, filters and cursor pagination — enough to
-support the first React reader.
+The 0005 Web Shell provides navigation, lists, pagination and selection;
+0006 turns the right pane into a real reader and wires the existing
+`GET /api/v1/entries/{entryRef}` and `PATCH /api/v1/entries/{entryRef}/state`
+endpoints into the UI.
