@@ -2,9 +2,8 @@
 
 ## Current phase
 
-Phase 3 — Reading Experience **completed** (0005 Web Shell, 0006 Reader
-and 0007 Mobile + PWA all done); next up 0008 — RSSHub (Phase 4 —
-Source Expansion)
+Phase 4 — Source Expansion **completed** (0008 RSSHub done); next up
+0009 — AI Summary (Phase 5 — AI Enhancement)
 
 ## Current status
 
@@ -96,7 +95,23 @@ zero horizontal overflow on a 31-image article).
 Specs: `docs/specs/0002-bff-freshrss-adapter.md`,
 `docs/specs/0003-entry-read-path.md`,
 `docs/specs/0004-entry-state-filter-pagination.md`,
-`docs/specs/0005-web-shell.md`, `docs/specs/0006-reader.md`
+`docs/specs/0005-web-shell.md`, `docs/specs/0006-reader.md`,
+`docs/specs/0008-rsshub-source-expansion.md`
+
+Milestone 0008 (RSSHub Source Expansion) is complete and verified: a
+minimal official RSSHub service (`diygod/rsshub` pinned by digest) now
+runs in the development Compose environment (127.0.0.1:1200, /healthz
+healthcheck, memory cache — no Redis, no Browserless, no Chromium). A
+real non-RSS source was proven end to end: IT之家热榜
+(`http://rsshub:1200/ithome/ranking/24h`, subscribed in FreshRSS via
+Docker service DNS) → FreshRSS → `GET /api/v1/feeds` →
+`GET /api/v1/entries?feedUrl=...` → `GET /api/v1/entries/{entryRef}`
+→ Web Reader, with zero BFF/Web code changes (RSSHub-backed feeds are
+indistinguishable from native RSS downstream). Failure isolation was
+verified live: with `docker compose stop rsshub`, BFF health, native
+RSS entries and already-fetched RSSHub entries all remained readable;
+recovery restored health + route. The IT之家 demo subscription was
+kept (user-approved).
 
 A static web view of this state (project progress board) is available at
 `docs/progress/index.html`; development history lives in `docs/devlog/`.
@@ -198,13 +213,33 @@ A static web view of this state (project progress board) is available at
   with correct content types on the dev server)
 - mobile + PWA automated tests (0007; 121 frontend tests total, all
   mocked)
+- RSSHub Docker service (official image pinned by digest
+  `diygod/rsshub@sha256:387fd32e...`, 127.0.0.1:1200 loopback only,
+  /healthz healthcheck with start_period, NODE_ENV=production +
+  CACHE_TYPE=memory — single-instance memory cache)
+- RSSHub → FreshRSS internal service-DNS path (subscription URL
+  `http://rsshub:1200/<route>`; Compose default network DNS verified:
+  `rsshub` → container IP from inside FreshRSS)
+- Non-RSS → RSSHub → FreshRSS → LumiRSS verified end to end
+  (/ithome/ranking/24h: webpage HTML → RSS 2.0 with 12 items →
+  BFF feeds/entries/detail → Web Reader; route requires no config,
+  no puppeteer, no cookie, no secrets)
+- RSSHub failure isolation verified (rsshub stopped → BFF health,
+  native RSS entries and stored RSSHub entries all still readable;
+  restart → health + route restored)
+- RSSHub idle resource measurement recorded (≈0% CPU, ≈253 MiB memory)
 
 ## Not implemented
 
 - Offline support / Service Worker / push notifications (deliberately
   out of scope for the MVP: PWA installability is provided without any
   Service Worker; no offline reading is claimed anywhere)
-- RSSHub
+- Redis / Browserless / Chromium for RSSHub (deliberately not added in
+  0008: single user, single instance, memory cache suffices; browser-
+  requiring or secret-requiring RSSHub routes are unsupported)
+- Authenticated RSSHub routes, custom RSSHub routes and RSSHub route
+  discovery UI (out of scope; feeds are added through the FreshRSS UI
+  using official RSSHub route docs)
 - Category management and category filtering (deferred — PRD still lists
   it for the reading experience; belongs to a later milestone, it was
   planned for 0004 in an earlier PROJECT_STATE draft but explicitly
@@ -219,15 +254,12 @@ A static web view of this state (project progress board) is available at
 
 ## Next milestone
 
-0008 — RSSHub (Phase 4 — Source Expansion begins)
+0009 — AI Summary (Phase 5 — AI Enhancement begins)
 
-Goal:
+Goal: on-demand, user-triggered single-article summaries through an
+OpenAI-compatible HTTP API, with results and cache stored in LumiRSS
+SQLite. AI failure must never block normal reading.
 
-```text
-Non-RSS website → RSSHub → FreshRSS → LumiRSS
-```
-
-The reading experience core is complete end to end: the web client
-can browse, read (safely rendered), and manage real article state
-through the BFF against FreshRSS — on desktop and mobile, installable
-as a PWA.
+The reading experience core and the source expansion path are complete
+end to end: native RSS and RSSHub-generated feeds both flow through
+FreshRSS → BFF → Web, on desktop and mobile, installable as a PWA.

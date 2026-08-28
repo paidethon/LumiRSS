@@ -8,9 +8,13 @@ plus optional on-demand AI summary and translation.
 
 ## Current status
 
-The project is in **Phase 4 — Source Expansion**. Milestones 0005
-(Web Shell), 0006 (Reader) and 0007 (Mobile + PWA) completed Phase 3 —
-Reading Experience.
+The project is in **Phase 5 — AI Enhancement** (next up 0009). Phase 4 —
+Source Expansion is complete: milestone 0008 added a minimal RSSHub
+service to the development Compose environment and proved a real
+non-RSS → RSSHub → FreshRSS → LumiRSS path (IT之家热榜 via
+`/ithome/ranking/24h`), including failure isolation — with RSSHub
+stopped, already-fetched entries remain fully readable through the BFF
+and Web. See `docs/specs/0008-rsshub-source-expansion.md`.
 
 Milestone 0006 (Reader) is complete: the right pane of the web shell is a
 real reader. Clicking an entry fetches `GET /api/v1/entries/{entryRef}`
@@ -109,6 +113,28 @@ in, enable "Allow API access" (Configuration → Authentication), and set
 an API password (user menu → Account). See
 `docs/specs/0001-freshrss-development-environment.md`.
 
+RSSHub development (milestone 0008) — converts websites without RSS
+feeds into standard feeds, upstream of FreshRSS:
+
+```bash
+docker compose up -d rsshub   # start RSSHub on http://127.0.0.1:1200
+curl http://127.0.0.1:1200/healthz   # → ok
+```
+
+Two different views of the same service:
+
+- The **host** (browser, curl) reaches it at `http://127.0.0.1:1200`
+  (loopback binding only — for debugging/probing routes);
+- The **FreshRSS container** must subscribe using the Docker service
+  DNS name: `http://rsshub:1200/<route>`. Inside the FreshRSS container,
+  `localhost` means FreshRSS itself, not RSSHub — so never use
+  `127.0.0.1:1200` as a subscription URL.
+
+Verified example: `http://rsshub:1200/ithome/ranking/24h` (IT之家 24h
+hot articles, scraped from the website's HTML ranking page). This is a
+**basic** RSSHub setup: no Redis, no Browserless, no Chromium — routes
+requiring a browser or secrets are not supported.
+
 BFF development (milestones 0002–0004, requires FreshRSS running):
 
 ```bash
@@ -157,8 +183,9 @@ needs no environment variables — it only ever talks to relative
 
 ## Next milestone
 
-0008 — RSSHub: prove at least one real non-RSS → RSSHub → FreshRSS →
-LumiRSS path. See `docs/PROJECT_STATE.md`.
+0009 — AI Summary (Phase 5): on-demand single-article summaries through
+an OpenAI-compatible API, cached in SQLite; AI failure must never block
+reading. See `docs/PROJECT_STATE.md`.
 
 ## Security
 
