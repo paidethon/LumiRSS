@@ -31,7 +31,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   }
 
   return (
-    <p className="article-content text-sm text-[var(--text-muted)]">
+    <p className="article-content text-sm text-[var(--lumi-text-secondary)]">
       这篇文章没有可显示的正文。
     </p>
   )

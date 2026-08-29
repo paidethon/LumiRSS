@@ -1,0 +1,123 @@
+/* Lumi Mist 主题 — 0009 Gate 1
+ *
+ * 默认主题 Lumi Mist / 雾光：暖中性低饱和背景 + 偏蓝淡靛 Accent。
+ * Light 定义在 :root（即默认），Dark 覆盖在 [data-theme="dark"]。
+ * 挂载机制：<html data-theme="light|dark">（由 lib/theme.ts + index.html
+ * 内联防闪烁脚本设置）。
+ *
+ * 色板为 UI_REBOOT.md §4 起始候选值，Gate 1 对照实测校准后如有调整
+ * 需同步记录回 docs/ui/UI_REBOOT.md。
+ */
+
+:root {
+  /* ---- 表面族 ---- */
+  --lumi-canvas: #f6f4f4;
+  --lumi-sidebar: #f1eeee;
+  --lumi-surface: #fbfafa;
+  --lumi-surface-elevated: #ffffff;
+  --lumi-reader: #fcfbfb;
+
+  --lumi-surface-hover: #efeced;
+  --lumi-surface-selected: #e7e5e9;
+  --lumi-surface-pressed: #dfdde2;
+
+  /* ---- 文本族 ---- */
+  --lumi-text-primary: #29282c;
+  --lumi-text-secondary: #77747b;
+  --lumi-text-tertiary: #9b979f;
+  --lumi-text-disabled: #bbb7be;
+
+  /* ---- 边框族 ---- */
+  --lumi-border: rgba(52, 47, 57, 0.1);
+  --lumi-separator: rgba(52, 47, 57, 0.075);
+  --lumi-focus-ring: rgba(109, 120, 232, 0.38);
+
+  /* ---- Accent 族（偏蓝淡靛） ---- */
+  --lumi-accent: #6d78e8;
+  --lumi-accent-hover: #616cd8;
+  --lumi-accent-pressed: #5660c8;
+  --lumi-accent-soft: #eceeff;
+  --lumi-accent-contrast: #ffffff;
+
+  /* ---- 状态（最小集：danger 供 Button danger 变体） ---- */
+  --lumi-danger: #b8656b;
+  --lumi-danger-hover: #a75a60;
+
+  /* ---- 分类柔彩（低饱和，仅小图标/圆点/低透明 tint） ---- */
+  --lumi-category-blue: #79a9d6;
+  --lumi-category-green: #76a08b;
+  --lumi-category-orange: #c98d59;
+  --lumi-category-purple: #8b79b8;
+  --lumi-category-cyan: #6f9fae;
+  --lumi-category-rose: #b87d91;
+  --lumi-category-red: #b8656b;
+
+  /* ---- 阴影（仅浮层用：popover / dialog / floating） ---- */
+  --lumi-shadow-popover: 0 4px 16px rgba(41, 40, 44, 0.08);
+  --lumi-shadow-dialog: 0 16px 48px rgba(41, 40, 44, 0.16);
+  --lumi-shadow-floating: 0 24px 64px rgba(41, 40, 44, 0.2);
+}
+
+[data-theme='dark'] {
+  /* ---- 表面族（多层深灰，非纯黑） ---- */
+  --lumi-canvas: #18181a;
+  --lumi-sidebar: #1d1d20;
+  --lumi-surface: #222226;
+  --lumi-surface-elevated: #28282d;
+  --lumi-reader: #1b1b1e;
+
+  --lumi-surface-hover: #29292d;
+  --lumi-surface-selected: #303036;
+  --lumi-surface-pressed: #38383f;
+
+  /* ---- 文本族 ---- */
+  --lumi-text-primary: #ececef;
+  --lumi-text-secondary: #aaa8b0;
+  --lumi-text-tertiary: #77757d;
+  --lumi-text-disabled: #5f5d64;
+
+  /* ---- 边框族 ---- */
+  --lumi-border: rgba(255, 255, 255, 0.1);
+  --lumi-separator: rgba(255, 255, 255, 0.07);
+  --lumi-focus-ring: rgba(137, 147, 245, 0.48);
+
+  /* ---- Accent 族 ---- */
+  --lumi-accent: #8993f5;
+  --lumi-accent-hover: #98a1ff;
+  --lumi-accent-pressed: #7782e6;
+  --lumi-accent-soft: rgba(137, 147, 245, 0.14);
+  --lumi-accent-contrast: #15151a;
+
+  /* ---- 状态 ---- */
+  --lumi-danger: #d08087;
+  --lumi-danger-hover: #da9298;
+
+  /* ---- 阴影（深色下加深） ---- */
+  --lumi-shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.32);
+  --lumi-shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.48);
+  --lumi-shadow-floating: 0 24px 64px rgba(0, 0, 0, 0.56);
+}
+
+/* 分类柔彩在两主题下保持一致，不随主题重定义。
+ * color-scheme 让浏览器原生控件（select/scrollbar）跟随主题。 */
+:root {
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* ---- Reader 独立背景变体（AC14：App Theme 与 Reader Theme 分离）----
+ * 挂载机制：设置 data-reader="sepia|warm"（任意元素，作用于其内的
+ * --lumi-reader-bg）。默认不挂 = 跟随 App 主题的 --lumi-reader。
+ * 当前由测试与 playground 消费；正式切换 UI 在 0014 统一设置。 */
+[data-reader='sepia'] {
+  --lumi-reader-bg: #f6efe2;
+  color-scheme: light;
+}
+
+[data-reader='warm'] {
+  --lumi-reader-bg: #faf5ec;
+  color-scheme: light;
+}

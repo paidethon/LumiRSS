@@ -1,0 +1,90 @@
+/* Lumi semantic tokens — 0009 Gate 1
+ *
+ * 静态 token（与主题无关）：圆角 / 动效 / 字体 / 层级。
+ * 主题相关的颜色与阴影 token 在 themes.css（:root = Light，
+ * [data-theme="dark"] = Dark）。
+ *
+ * 圆角 scale 同时注册进 Tailwind v4 的 @theme，使 rounded-md/lg/xl/2xl/3xl
+ * 与 Lumi scale 对齐（4/6/8/10/12/14/16px），既有组件的 rounded-md 自动
+ * 从 6px 对齐到 8px（Spec §设计规格）。
+ */
+
+@theme {
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+}
+
+:root {
+  /* 圆角（语义引用，供 CSS/arbitrary 值使用） */
+  --lumi-radius-xs: 4px; /* 徽标 / 细节 */
+  --lumi-radius-sm: 6px; /* 小控件 / 缩略图 */
+  --lumi-radius-md: 8px; /* 按钮 / nav item / IconButton */
+  --lumi-radius-lg: 10px; /* input / select / menu / popover item */
+  --lumi-radius-xl: 12px; /* 设置组 / dialog body */
+  --lumi-radius-2xl: 14px; /* AI 摘要卡 / 大内容卡 */
+  --lumi-radius-3xl: 16px; /* 浮动面板 / 大 overlay */
+  --lumi-radius-full: 999px; /* pill / switch */
+
+  /* 动效（简单交互一律 CSS transition；数值为 Spec 冻结区间取中值） */
+  --lumi-motion-fast: 110ms; /* hover / focus 反馈 */
+  --lumi-motion-normal: 140ms; /* menu / popover */
+  --lumi-motion-slow: 200ms; /* drawer / panel */
+  --lumi-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* 字体（Folo 实测 system 栈；不打包专有字体） */
+  --lumi-font-sans:
+    system-ui, 'SN Pro', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+
+  /* 层级（z-index 只允许经由这些 token） */
+  --lumi-z-tooltip: 30;
+  --lumi-z-popover: 40;
+  --lumi-z-dialog: 50;
+  --lumi-z-floating: 60;
+
+  /* Reader 独立背景钩子（Gate 3 接线；默认跟随 App surface） */
+  --lumi-reader-bg: var(--lumi-reader);
+}
+
+/* reduced-motion：关闭非必要动效（AC6） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- 统一 scrollbar（0009 Gate 4，Folo 实测模式：6px thumb）----
+ * 全局应用（Sidebar / Timeline / Reader 各自滚动的 pane 统一观感）；
+ * 颜色 token 化，双主题自动适配；悬停加深。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--lumi-text-disabled) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: var(--lumi-radius-full);
+  background: var(--lumi-text-disabled);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lumi-text-tertiary);
+}

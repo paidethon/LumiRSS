@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-08-28",
+  updatedAt: "2026-08-29",
   sourceOfTruth: "docs/PROJECT_STATE.md",
   currentPhaseId: "phase-5",
-  currentMilestoneId: "0009",
+  currentMilestoneId: "0010",
 
   phases: [
     {
@@ -73,20 +73,47 @@ window.LUMIRSS_PROJECT = {
     {
       id: "phase-5",
       num: 5,
-      name: "AI",
-      label: "Phase 5 — AI Enhancement",
-      purpose: "增加按需摘要、翻译与 SQLite 缓存。",
-      why: "AI 是可选增强：用户主动触发、结果归 LumiRSS 自己（存 SQLite），AI 故障不得阻塞普通阅读。",
-      milestoneIds: ["0009", "0010"]
+      name: "UI",
+      label: "Phase 5 — UI Reboot & Product Shell",
+      purpose: "用统一的 Lumi Mist 主题体系、semantic tokens、UI primitives 与响应式 App Shell 替换临时视觉外壳，行为与 API 零变更。",
+      why: "在继续叠加 AI 与来源功能之前先稳定视觉架构，避免在用户已否定的 UI 上不断扩建页面。",
+      milestoneIds: ["0009"]
     },
     {
       id: "phase-6",
       num: 6,
+      name: "Source Control",
+      label: "Phase 6 — Lumi-native Source Control",
+      purpose: "让普通用户在 Lumi 内完成订阅增删、分类、OPML、刷新与来源发现（RSSHub 路由搜索/预览/一键订阅）。",
+      why: "Lumi 必须成为唯一日常用户界面；FreshRSS/RSSHub 原生页面只保留为高级逃生门。",
+      milestoneIds: ["0010", "0011"]
+    },
+    {
+      id: "phase-7",
+      num: 7,
+      name: "AI",
+      label: "Phase 7 — AI Enhancement",
+      purpose: "按需单篇摘要、翻译与文章上下文对话（OpenAI-compatible Provider，SQLite 缓存），AI 关闭或失败不影响阅读。",
+      why: "AI 是可选增强：用户主动触发、结果归 LumiRSS 自己（存 SQLite），阅读优先于 AI。",
+      milestoneIds: ["0012", "0013"]
+    },
+    {
+      id: "phase-8",
+      num: 8,
+      name: "Completion",
+      label: "Phase 8 — Reader Power UX & Unified Settings",
+      purpose: "搜索、键盘、批量操作、阅读偏好（字体/字号/行距/宽度）、主题自定义与统一设置中心。",
+      why: "在进入生产部署前完成日常产品体验的收尾。",
+      milestoneIds: ["0014"]
+    },
+    {
+      id: "phase-9",
+      num: 9,
       name: "Production",
-      label: "Phase 6 — Production",
-      purpose: "Docker Compose → Caddy → HTTPS → 阿里云 ECS → Desktop / Mobile / PWA，随后增加备份与恢复。",
+      label: "Phase 9 — Production & Release",
+      purpose: "Caddy + HTTPS + 单用户访问保护 + 阿里云 ECS + 备份恢复演练 + 回归/可访问性/性能收尾，发布正式 MVP。",
       why: "最终形态是单台普通 Linux 服务器上的自托管部署：简单、可备份、可恢复。",
-      milestoneIds: ["0011", "0012"]
+      milestoneIds: ["0015", "0016"]
     }
   ],
 
@@ -376,23 +403,40 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0009",
       phaseId: "phase-5",
-      name: "AI Summary",
-      status: "next",
-      shortGoal: "On-demand summary + SQLite cache",
-      goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。",
-      implemented: [],
-      acceptance: "Not started yet.",
-      problems: [],
-      learned: [],
-      devlog: null
+      name: "UI Reboot & Reference Lab",
+      status: "completed",
+      shortGoal: "Design system + responsive shell, zero API change",
+      goal: "用统一的 Lumi Mist 主题（semantic tokens、Light/Dark/System）、共享 UI primitives 和精化的 Sidebar/Timeline/Reader 替换临时视觉外壳。参考基线：Folo（交互/密度）+ OrigRead Desktop（设置/阅读工具）；行为、API 与数据契约零变更。原 0009 AI Summary 移至 0012。",
+      implemented: [
+        "Gate 0：仓库/代码/文档全量核验；参考仓库钉 SHA（Folo dev 78f6bd1b / OrigRead 18d3281 / OrigRead-Desktop 8b59bcb4）；许可证决策 AGPL-3.0-only；Folo 实机审计；v6 文档基线",
+        "Gate 1：styles/tokens.css（圆角/动效/z-index/scrollbar/reduced-motion）+ styles/themes.css（Lumi Mist Light/Dark + Reader sepia/warm 变体）；三态主题逻辑（localStorage 持久化 + FOUC 防闪烁）；lucide-react@1.34.0（ISC，用户批准）；11 个 UI primitives + dev-only playground（生产 bundle 零包含）",
+        "Gate 2：App Shell Grid（240/400/minmax(0,1fr) + pane 分层）；Sidebar Folo 密度（32px 行 + lucide 图标 + 确定性分类色圆点）；Timeline 两级行层级（字重区分已读/未读，不只靠颜色）",
+        "Gate 3：Reader 重建（图标工具栏 + 27px 标题 + 46rem 正文宽 + 17px/1.75 排版）；Reader 独立背景钩子（--lumi-reader-bg + data-reader 变体，App/Reader 主题分离实测验证）",
+        "Gate 4：Settings 壳（Appearance 真实可用：主题模式 + 阅读背景；其余分组明确标注 planned，无假控件）；统一 6px scrollbar；视口矩阵 12 截图零溢出零 console error"
+      ],
+      acceptance: "AC1–AC27 全部达成：BFF 零变化（git diff 空）；硬编码色全量清零；162 前端测试全绿（121 既有 + 41 新增，零回归）+ BFF 121 通过；Lumi Mist 双主题 + System/Light/Dark 三态 + 刷新持久化 + reduced-motion；primitives 全部可访问（focus trap/Escape/aria）；5 尺寸 × 双主题零横向溢出；真实 FreshRSS 数据下可逆 read/star smoke + 零前端直连上游请求；无 icons/mgc、无私人截图入库。未 commit，停在待人工 Review。",
+      problems: [
+        "截图工具两轮修复：browser-use 需面板可见 + playwright MCP 缺系统 Chrome → 免 sudo 方案（本地 chromium + 用户目录库/字体 + LD_LIBRARY_PATH）打通，后经用户 sudo 授权永久化（系统 Chrome 152 + 系统库 + Noto CJK）",
+        "Playwright 版本错位：npx 缓存 playwright 期望 chromium-1237，实际下载 1234 → 脚本显式 executablePath 解决",
+        "lucide-react registry 缓存延迟：latest 1.35.0 未同步，锁定 1.34.0（同为 ISC）",
+        "React Compiler 对 render-prop（Popover/Menu trigger）与组件+导出混存文件（SettingsDialog）报 fast-refresh warning（非错误）：后者已抽 lib/reader-bg.ts 规范化"
+      ],
+      learned: [
+        "旧 CSS 变量别名策略：--bg/--surface 等指向 lumi token，既有组件零改动即获双主题，迁移期平滑过渡",
+        "Folo 主题机制可复用：html[data-theme] + 语义变量 + oklab 低透明度选中态，实现成本低于自创",
+        "未读状态用字重 + 圆点双信号（非仅颜色），测试断言从 aria-label 转为类名/结构断言",
+        "data-reader 独立背景钩子：任意元素挂属性切换 --lumi-reader-bg，App/Reader 主题分离的最小实现",
+        "免 sudo 依赖安装模式：apt-get download + dpkg -x 到用户目录 + LD_LIBRARY_PATH（后续已永久化为系统安装）"
+      ],
+      devlog: "../devlog/0009-ui-reboot-reference-lab.md"
     },
     {
       id: "0010",
-      phaseId: "phase-5",
-      name: "Translation",
-      status: "planned",
-      shortGoal: "On-demand title/body translation",
-      goal: "用户主动触发的标题/正文翻译，尽量复用缓存；失败明确显示状态，不阻塞阅读。",
+      phaseId: "phase-6",
+      name: "Unified Subscription Center",
+      status: "next",
+      shortGoal: "Feed CRUD + categories + OPML inside Lumi",
+      goal: "普通用户在 Lumi 内完成订阅添加/删除/重命名/分类、OPML 导入导出、手动刷新与 FreshRSS 状态展示，不再需要进入 FreshRSS 原生界面（经 FreshRSSControlAdapter 控制平面）。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -402,10 +446,10 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0011",
       phaseId: "phase-6",
-      name: "Production Deployment",
+      name: "Source Discovery & RSSHub Integration",
       status: "planned",
-      shortGoal: "Caddy + HTTPS + Compose production",
-      goal: "生产形态：Caddy（HTTPS + 静态资源 + /api 反代）+ Docker Compose 单机部署。",
+      shortGoal: "Paste URL → discover → preview → subscribe",
+      goal: "粘贴普通 URL 即可发现来源：RSS/Atom 检测 → rel=alternate → 常见 endpoint → RSSHub 路由匹配 → 参数表单 → 预览 → 一键订阅进 FreshRSS；含 SSRF/超时/输出限制等安全防护。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -414,11 +458,63 @@ window.LUMIRSS_PROJECT = {
     },
     {
       id: "0012",
-      phaseId: "phase-6",
-      name: "Alibaba ECS + Backup / Restore",
+      phaseId: "phase-7",
+      name: "AI Foundation & Summary",
       status: "planned",
-      shortGoal: "ECS deployment + backup/restore",
-      goal: "部署到阿里云 ECS，并完成数据备份与恢复流程。",
+      shortGoal: "On-demand summary + SQLite cache",
+      goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。（由原 0009 重新编号而来）",
+      implemented: [],
+      acceptance: "Not started yet.",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0013",
+      phaseId: "phase-7",
+      name: "Translation & AI Conversation",
+      status: "planned",
+      shortGoal: "Translation + article-scoped AI chat",
+      goal: "标题/正文翻译与双语阅读；文章上下文 AI 对话（共享 AiChatCore：桌面浮动窗口/Drawer、移动 Bottom Sheet/全屏）。",
+      implemented: [],
+      acceptance: "Not started yet.",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0014",
+      phaseId: "phase-8",
+      name: "Reader Power UX & Unified Settings",
+      status: "planned",
+      shortGoal: "Search, keyboard, reading prefs, settings",
+      goal: "搜索、键盘导航、批量操作、阅读位置恢复、字体/字号/行距/宽度偏好、主题自定义与 FreshRSS/RSSHub/AI 统一设置中心。",
+      implemented: [],
+      acceptance: "Not started yet.",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0015",
+      phaseId: "phase-9",
+      name: "Production & Operations",
+      status: "planned",
+      shortGoal: "Caddy + HTTPS + ECS + backup/restore",
+      goal: "生产形态：Caddy（HTTPS + 静态资源 + /api 反代）+ Docker Compose 单机部署到阿里云 ECS，备份/恢复演练、日志脱敏与 CI hardening。",
+      implemented: [],
+      acceptance: "Not started yet.",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0016",
+      phaseId: "phase-9",
+      name: "MVP Stabilization & Release",
+      status: "planned",
+      shortGoal: "Regression + a11y + release tag",
+      goal: "全量回归、可访问性审查、响应式矩阵、性能预算、安全审查、新用户部署演练与正式 MVP tag。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],

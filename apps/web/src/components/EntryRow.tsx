@@ -1,5 +1,7 @@
+import { Star } from 'lucide-react'
 import type { EntryListItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
+import { cx } from './ui/cx'
 
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -17,6 +19,18 @@ function formatPublishedAt(value: string | null): string {
   return Number.isNaN(date.getTime()) ? '—' : dateFormatter.format(date)
 }
 
+/** EntryRow — Timeline 行（0009 Gate 2 重建）。
+ *
+ * Folo 式信息层级（现有 API 字段内的最大近似，缺 favicon/摘要/缩略图
+ * 时优雅降级——契约缺口已记录给 0010+，不在前端伪造）：
+ *
+ *   第一行：来源 feedTitle · 作者(可选) · 时间        [★ 收藏标记]
+ *   第二行：标题（未读=primary 字重 500；已读=secondary 常规）
+ *
+ * 状态表达不只靠颜色（AC10）：未读=字重+左侧 accent 圆点；选中=
+ * selected surface + accent 圆点常亮；收藏=星形图标。
+ * 连续列表（无卡片、无行阴影）；hover=中性 surface；选中=低透明
+ * surface（非浓色大填充）。 */
 export default function EntryRow({
   item,
   selected,
@@ -31,41 +45,52 @@ export default function EntryRow({
       type="button"
       onClick={() => selectEntry(item.entryRef)}
       aria-pressed={selected}
-      className={`block w-full border-l-2 px-4 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--accent)] ${
+      className={cx(
+        'flex w-full flex-col gap-1 px-4 py-3 text-left',
+        'transition-colors duration-[var(--lumi-motion-fast)]',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         selected
-          ? 'border-l-[var(--accent)] bg-blue-50/60'
-          : 'border-l-transparent hover:bg-gray-50'
-      }`}
+          ? 'bg-[var(--lumi-surface-selected)]'
+          : 'hover:bg-[var(--lumi-surface-hover)]',
+      )}
     >
-      <div className="flex items-center gap-2">
-        {!item.read && (
-          <span
-            className="inline-block h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]"
-            aria-label="未读"
+      {/* 元信息行：来源 · 作者 · 时间 + 收藏星标 */}
+      <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+        {/* 未读圆点：非颜色冗余信号之一（与字重互补） */}
+        <span
+          aria-hidden="true"
+          className={cx(
+            'size-1.5 shrink-0 rounded-full',
+            item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
+          )}
+        />
+        <span className="truncate font-medium">{item.feedTitle}</span>
+        {item.author !== null && (
+          <span className="hidden truncate lg:inline">· {item.author}</span>
+        )}
+        <span className="ml-auto shrink-0">{formatPublishedAt(item.publishedAt)}</span>
+        {item.starred && (
+          <Star
+            aria-label="已收藏"
+            className="size-3.5 shrink-0 fill-[var(--lumi-category-orange)] text-[var(--lumi-category-orange)]"
           />
         )}
-        {/* 0007：手机上标题必须 wrap（最多 3 行），不能一行截到看不懂；
-            桌面保持单行 truncate */}
-        <span
-          className={`min-w-0 flex-1 text-sm max-lg:line-clamp-3 lg:truncate ${
-            item.read ? 'font-normal text-[var(--text-muted)]' : 'font-medium text-[var(--text)]'
-          }`}
-          title={item.title}
-        >
-          {item.title}
-        </span>
-        {item.starred && (
-          <span className="shrink-0 text-sm text-amber-500" aria-label="已收藏">
-            ★
-          </span>
-        )}
       </div>
-      {/* 0007：手机上 metadata 更紧凑（次要信息密度降低） */}
-      <p className="mt-1 truncate text-xs text-[var(--text-muted)] max-lg:mt-0.5">
-        {item.feedTitle}
-        {item.author !== null && <span> · {item.author}</span>}
-        <span> · {formatPublishedAt(item.publishedAt)}</span>
-      </p>
+
+      {/* 标题：未读 medium/primary，已读 normal/secondary（不只靠颜色：
+          字重差异在两种主题下都可见）。
+          0007 语义保留：手机 wrap（最多 3 行），桌面单行 truncate。 */}
+      <span
+        className={cx(
+          'min-w-0 text-sm max-lg:line-clamp-3 lg:truncate',
+          item.read
+            ? 'font-normal text-[var(--lumi-text-secondary)]'
+            : 'font-medium text-[var(--lumi-text-primary)]',
+        )}
+        title={item.title}
+      >
+        {item.title}
+      </span>
     </button>
   )
 }

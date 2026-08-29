@@ -34,7 +34,7 @@ export default function MobileHeader() {
 
   return (
     <header
-      className="flex min-h-11 items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-2 lg:hidden"
+      className="flex min-h-11 items-center gap-2 border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-2 lg:hidden"
       style={{ paddingTop: 'var(--safe-top)' }}
     >
       {selectedEntryRef === null ? (
@@ -44,7 +44,7 @@ export default function MobileHeader() {
           aria-expanded={mobileSidebarOpen}
           aria-controls="mobile-navigation-drawer"
           aria-label="打开导航"
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-xl leading-none text-[var(--text)] transition-colors hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--lumi-radius-md)] px-2 text-xl leading-none text-[var(--lumi-text-primary)] transition-colors hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
         >
           ☰
         </button>
@@ -53,17 +53,17 @@ export default function MobileHeader() {
           type="button"
           onClick={() => selectEntry(null)}
           aria-label="返回文章列表"
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-sm text-[var(--accent)] transition-colors hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--lumi-radius-md)] px-2 text-sm text-[var(--lumi-accent)] transition-colors hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
         >
           ← 返回
         </button>
       )}
 
       <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-[var(--text)]">
+        <span className="block truncate text-sm font-semibold text-[var(--lumi-text-primary)]">
           {selectedEntryRef === null ? 'LumiRSS' : '阅读'}
         </span>
-        <span className="block truncate text-xs text-[var(--text-muted)]">
+        <span className="block truncate text-xs text-[var(--lumi-text-secondary)]">
           {scopeTitle}
         </span>
       </div>

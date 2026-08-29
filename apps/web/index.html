@@ -13,6 +13,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 0009 Gate 1：主题防首帧闪烁（FOUC）。在 React 加载前读同一
+         个 localStorage key（lumirss-theme）并挂 data-theme；逻辑与
+         src/lib/theme.ts 保持一致。 -->
+    <script>
+      ;(function () {
+        try {
+          var raw = localStorage.getItem('lumirss-theme')
+          var theme =
+            raw === 'light' || raw === 'dark'
+              ? raw
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light')
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
