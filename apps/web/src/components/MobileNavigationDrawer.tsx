@@ -41,13 +41,13 @@ export default function MobileNavigationDrawer() {
         type="button"
         aria-label="关闭导航"
         onClick={closeMobileSidebar}
-        className="absolute inset-0 h-full w-full cursor-default bg-black/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        className="absolute inset-0 h-full w-full cursor-default bg-[var(--lumi-text-primary)]/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
       />
 
       <aside
         id="mobile-navigation-drawer"
         aria-label="导航"
-        className="absolute inset-y-0 left-0 flex w-[85%] max-w-80 flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] shadow-xl"
+        className="absolute inset-y-0 left-0 flex w-[85%] max-w-80 flex-col overflow-y-auto border-r border-[var(--lumi-border)] bg-[var(--lumi-sidebar)] shadow-[var(--lumi-shadow-dialog)]"
         style={{
           paddingTop: 'var(--safe-top)',
           paddingBottom: 'var(--safe-bottom)',
@@ -56,14 +56,14 @@ export default function MobileNavigationDrawer() {
         }}
       >
         <div className="flex items-center justify-between px-4 pb-1 pt-3">
-          <span className="text-sm font-semibold text-[var(--text-muted)]">
+          <span className="text-sm font-semibold text-[var(--lumi-text-secondary)]">
             导航
           </span>
           <button
             type="button"
             onClick={closeMobileSidebar}
             aria-label="关闭"
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-lg leading-none text-[var(--text-muted)] transition-colors hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--lumi-radius-md)] px-2 text-lg leading-none text-[var(--lumi-text-secondary)] transition-colors hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >
             ✕
           </button>

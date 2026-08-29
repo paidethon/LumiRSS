@@ -100,10 +100,16 @@ describe('Test F — Entry list 渲染', () => {
     expect(screen.getByText('已读收藏')).toBeInTheDocument()
     // feedTitle 出现在 sidebar feed 按钮与 entry 行两处
     expect(screen.getAllByText('示例源 A').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByLabelText('未读')).toBeInTheDocument()
+    // 0009 Gate 2：收藏标记改为 lucide 星形图标（aria-label 保留）
     expect(screen.getByLabelText('已收藏')).toBeInTheDocument()
-    // 已读文章没有 unread 圆点
-    expect(screen.queryAllByLabelText('未读')).toHaveLength(1)
+    // 未读状态不只靠颜色：标题字重差异（font-medium vs font-normal）。
+    // 圆点是纯视觉信号（aria-hidden），语义由字重 + 结构承载（AC10）。
+    const unreadTitle = screen.getByText('未读文章')
+    const readTitle = screen.getByText('已读收藏')
+    expect(unreadTitle.className).toContain('font-medium')
+    expect(readTitle.className).toContain('font-normal')
+    // 已读文章没有收藏星标
+    expect(screen.queryAllByLabelText('已收藏')).toHaveLength(1)
     // 列表契约：数据里没有 contentText，正文绝不出现在 UI
     expect(document.body.textContent).not.toContain('contentText')
   })

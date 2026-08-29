@@ -1,192 +1,275 @@
 # LumiRSS
 
-LumiRSS is a single-user, self-hosted, AI-enhanced RSS reader.
+LumiRSS is a single-user, self-hosted, source-first information reader.
 
-It combines mature open-source components (FreshRSS for RSS, RSSHub for
-non-RSS sources) with a project-owned FastAPI BFF and a React web client,
-plus optional on-demand AI summary and translation.
+Its current foundation combines:
+
+- **FreshRSS** as the RSS-domain engine and source of truth;
+- **RSSHub** as an upstream generator for supported non-RSS sources;
+- a project-owned **FastAPI BFF**;
+- a responsive **React Web / PWA** client;
+- optional AI assistance planned after the UI and source workflows are stable.
+
+> Status: v6 baseline adopted 2026-08-28 (verified against the local repository during 0009 Gate 0).
+
+---
 
 ## Current status
 
-The project is in **Phase 5 — AI Enhancement** (next up 0009). Phase 4 —
-Source Expansion is complete: milestone 0008 added a minimal RSSHub
-service to the development Compose environment and proved a real
-non-RSS → RSSHub → FreshRSS → LumiRSS path (IT之家热榜 via
-`/ithome/ranking/24h`), including failure isolation — with RSSHub
-stopped, already-fetched entries remain fully readable through the BFF
-and Web. See `docs/specs/0008-rsshub-source-expansion.md`.
+Milestone 0009 (UI Reboot & Reference Lab) is complete (2026-08-29):
+the temporary visual shell has been replaced by a coherent **Lumi Mist**
+design system — semantic tokens with Light/Dark/System themes, 11 shared
+UI primitives, a Folo-density Sidebar/Timeline/Reader, Reader theme
+separation (sepia/warm backgrounds), and a Settings shell (Appearance
+works today; Sources/AI groups are explicitly planned) — with **zero
+BFF changes** and zero behavior regression (Web 162 / BFF 121 tests
+green; 5-viewport × 2-theme screenshot matrix clean). See
+`docs/devlog/0009-ui-reboot-reference-lab.md`.
 
-Milestone 0006 (Reader) is complete: the right pane of the web shell is a
-real reader. Clicking an entry fetches `GET /api/v1/entries/{entryRef}`
-through a TanStack Query detail query (`["entry", entryRef]`, only
-enabled when something is selected) and renders title / feed / author /
-time, a safe "open original" link (only absolute http/https URLs pass
-`safeExternalHttpUrl`), and the article body. The BFF now also returns
-`contentHtml` (raw upstream HTML — explicitly untrusted; the BFF only
-transports it). Before rendering, the web client sanitizes it with
-DOMPurify (HTML-only profile + forbidden interactive/embed/style tags) in
-the single sanctioned `dangerouslySetInnerHTML` boundary
-(`ArticleContent`), with `contentText` as the plain-text fallback. Reading
-an article never marks it read: explicit「标记为已读 / 标记为未读」and
-「收藏 / 取消收藏」buttons send set-semantics PATCH requests through
-`useMutation`; on success the detail query and all entry list queries are
-invalidated so the UI shows FreshRSS's real state (no optimistic update).
-See `docs/specs/0006-reader.md`.
+Milestones 0001–0008 are complete: RSS reading foundation end to end —
+FreshRSS + minimal RSSHub (verified non-RSS ingestion path with failure
+isolation), FastAPI BFF (feeds / entries / filters / cursor pagination /
+set-semantics state writes), React Web shell + Reader + responsive
+mobile flow + basic installable PWA.
 
-Milestone 0007 (Mobile + PWA) is complete: the same web app is
-responsive. At ≥1024px the three-pane desktop shell is unchanged;
-below 1024px it becomes a Mobile Header + single main pane — a
-navigation drawer (opened from ☰) holds the very same sidebar, and the
-list↔reader switch reuses the existing entry selection state (back =
-list, no reload). Touch targets are ≥44px on phones, the viewport uses
-`viewport-fit=cover` with safe-area insets, and entry titles wrap
-instead of truncating. Basic PWA installability is provided by a static
-`manifest.webmanifest` (standalone display) plus locally generated
-192/512/maskable/apple-touch icons — deliberately **without** any
-Service Worker or offline cache: installing LumiRSS does not make it
-usable offline. To install, use the browser's native "Install app" /
-"Add to Home Screen" action (development works on localhost, which is
-a secure context). See `docs/specs/0007-mobile-pwa.md`.
+See:
 
-Milestone 0005 (Web Shell) is complete: a React + TypeScript + Vite web app
-lives in `apps/web` (pnpm-managed). It renders a desktop-first three-pane
-shell — sidebar navigation (All / Unread / Starred / real feeds), entry
-list (real entries with read/starred indicators), and the reader pane —
-wired to the BFF through relative `/api/v1/*` requests and the Vite dev
-proxy (no CORS on the BFF). TanStack Query owns all server state;
-Zustand owns only the UI selection state (view / feed / entry). See
-`docs/specs/0005-web-shell.md`.
+- `docs/PROJECT_STATE.md`
+- `docs/ROADMAP.md`
+- `docs/specs/0009-ui-reboot-reference-lab.md`
 
-Phase 2 — Backend Core (0002–0004) is complete: feeds, entry list, entry
-detail (plain text + raw HTML), view/feed filters, opaque cursor
-pagination and set-semantics state writes are all available on the BFF.
-See `docs/specs/0004-entry-state-filter-pagination.md`.
+---
 
-## Architecture (frozen)
+## Product direction
+
+Normal users should use **LumiRSS as the only daily interface**.
+
+The target experience is:
 
 ```text
-Native RSS ──────────────┐
-                         ↓
-Non-RSS → RSSHub → FreshRSS
-                         ↓
-                  FreshRSSAdapter
-                         ↓
-                    FastAPI BFF
-                   ↙           ↘
-             FreshRSS         SQLite
-                           AI / Cache / Settings
-                   ↘           ↙
-                    React Web
-                         ↓
-                Responsive + PWA
-                         ↓
-                      Caddy
-                         ↓
-                 Docker Compose
-                         ↓
-                  Alibaba ECS
+Add source
+  ↓
+Lumi discovers direct RSS or an RSSHub route
+  ↓
+Preview and subscribe in Lumi
+  ↓
+FreshRSS stores RSS-domain state
+  ↓
+Read, star, search, summarize and configure in Lumi
 ```
 
-Explanation of each part: `docs/ARCHITECTURE.md`.
+FreshRSS and RSSHub remain mature internal services. Their original Web pages may remain available as advanced diagnostic escape hatches, but normal workflows should not require switching between multiple products.
+
+Long-term, Lumi may expand into an integrated knowledge workspace containing RSS, web clips, structured APIs, email newsletters, Obsidian-library information and an Agent context layer. These Phase 2 capabilities are not part of the current MVP implementation.
+
+---
+
+## Architecture
+
+### RSS read path
+
+```text
+Native RSS / Atom ───────────────┐
+                                  ▼
+Non-RSS source → RSSHub → FreshRSS
+                                  ▼
+                         FreshRSSAdapter
+                                  ▼
+                           FastAPI BFF
+                                  ▼
+                              React Web
+```
+
+Rules:
+
+- FreshRSS owns subscriptions, entries, read state and starred state for the RSS domain;
+- RSSHub generates feeds upstream and is not the entry database;
+- Web talks only to the Lumi BFF;
+- the BFF keeps upstream credentials and maps upstream protocols to Lumi contracts;
+- Lumi SQLite is reserved for application settings, AI/cache metadata and future non-RSS connector data, not a duplicate RSS database.
+
+### Planned source control path
+
+```text
+React Web
+   ↓
+FastAPI BFF
+   ├─ FreshRSSControlAdapter
+   └─ RSSHubCatalog / Control Adapter
+```
+
+This future control plane will enable subscribe/unsubscribe/category/OPML, route search, parameter forms, preview, health and selected safe settings inside Lumi without bypassing FreshRSS in the normal read path.
+
+Full explanation: `docs/ARCHITECTURE.md`.
+
+---
+
+## Current API baseline
+
+Verified against local code (2026-08-28):
+
+```text
+GET   /health/live
+GET   /api/v1/feeds
+GET   /api/v1/entries
+GET   /api/v1/entries/{entryRef}
+PATCH /api/v1/entries/{entryRef}/state
+```
+
+Important behavior:
+
+- entry references and cursors are opaque;
+- opening an article does not automatically mark it read;
+- read/star writes use explicit set semantics;
+- article HTML is untrusted and sanitized before rendering;
+- server state belongs to TanStack Query; lightweight UI selection belongs to Zustand.
+
+---
+
+## UI direction
+
+The proposed UI reboot uses:
+
+- **Folo** as the primary interaction/layout reference;
+- **OrigRead Desktop** as the secondary Settings/source/reader-tools reference;
+- a Lumi-owned muted theme named **Lumi Mist / 雾光**;
+- pale blue-indigo as the default accent;
+- warm-neutral low-saturation surfaces and restrained category colors;
+- independent app and Reader themes;
+- responsive desktop/tablet/mobile layouts;
+- a future floating desktop AI panel and mobile Bottom Sheet built around a shared core.
+
+The goal is:
+
+```text
+Folo interaction parity, not Folo product parity.
+```
+
+Lumi does not copy Folo's community, reward, recommendation or social product scope.
+
+---
+
+## Repository structure
+
+The exact local tree is authoritative. Public baseline:
+
+```text
+LumiRSS/
+├── apps/web/              React Web / PWA
+├── services/bff/          FastAPI BFF
+├── docs/
+│   ├── PRD.md
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_STATE.md
+│   ├── ROADMAP.md
+│   └── specs/
+├── docker-compose.yml     development services
+├── AGENTS.md
+└── README.md
+```
+
+Reference projects for 0009 must be cloned as read-only sibling directories, not committed into LumiRSS.
+
+---
+
+## Development
+
+### FreshRSS and RSSHub
+
+```bash
+docker compose up -d
+```
+
+Use the exact Compose documentation and pinned versions from the local repository. Do not place real credentials in Git.
+
+### BFF
+
+Likely commands, verify locally:
+
+```bash
+cd services/bff
+cp .env.example .env
+uv sync
+uv run pytest
+uv run uvicorn lumirss.main:app --reload
+```
+
+### Web
+
+Likely commands, verify locally:
+
+```bash
+cd apps/web
+pnpm install
+pnpm dev
+pnpm test
+pnpm lint
+pnpm build
+```
+
+The Web client uses relative `/api/v1/*` requests and must not receive FreshRSS/RSSHub/AI secrets.
+
+---
 
 ## Documentation
 
 | File | Purpose |
-| --- | --- |
-| `docs/PRD.md` | Product requirements, v5.0 Reboot Baseline (highest product authority) |
-| `docs/ARCHITECTURE.md` | What each component is and why it exists |
-| `docs/PROJECT_STATE.md` | Where the project is right now |
-| `docs/progress/index.html` | Project progress board (static web view of project state) |
-| `AGENTS.md` | Project map for coding agents |
+|---|---|
+| `docs/PRD.md` | product requirements and scope |
+| `docs/ARCHITECTURE.md` | component responsibilities and data/control paths |
+| `docs/PROJECT_STATE.md` | factual current state and immediate next work |
+| `docs/ROADMAP.md` | milestone order and future phases |
+| `docs/ui/UI_REBOOT.md` | detailed visual/responsive design direction |
+| `docs/specs/0009-ui-reboot-reference-lab.md` | executable next milestone spec |
+| `AGENTS.md` | durable rules for coding agents |
+| `docs/reference/*` | pinned upstreams, source map and license gate |
 
-## Development commands
-
-FreshRSS development environment (milestone 0001):
-
-```bash
-docker compose up -d   # start FreshRSS on http://localhost:8080
-docker compose down     # stop (add -v to also delete data)
-```
-
-First-time setup (browser): complete the FreshRSS install wizard, log
-in, enable "Allow API access" (Configuration → Authentication), and set
-an API password (user menu → Account). See
-`docs/specs/0001-freshrss-development-environment.md`.
-
-RSSHub development (milestone 0008) — converts websites without RSS
-feeds into standard feeds, upstream of FreshRSS:
-
-```bash
-docker compose up -d rsshub   # start RSSHub on http://127.0.0.1:1200
-curl http://127.0.0.1:1200/healthz   # → ok
-```
-
-Two different views of the same service:
-
-- The **host** (browser, curl) reaches it at `http://127.0.0.1:1200`
-  (loopback binding only — for debugging/probing routes);
-- The **FreshRSS container** must subscribe using the Docker service
-  DNS name: `http://rsshub:1200/<route>`. Inside the FreshRSS container,
-  `localhost` means FreshRSS itself, not RSSHub — so never use
-  `127.0.0.1:1200` as a subscription URL.
-
-Verified example: `http://rsshub:1200/ithome/ranking/24h` (IT之家 24h
-hot articles, scraped from the website's HTML ranking page). This is a
-**basic** RSSHub setup: no Redis, no Browserless, no Chromium — routes
-requiring a browser or secrets are not supported.
-
-BFF development (milestones 0002–0004, requires FreshRSS running):
-
-```bash
-cd services/bff
-cp .env.example .env      # then fill in your real FreshRSS credentials
-uv sync                   # install dependencies (creates uv.lock + .venv)
-uv run pytest             # run automated tests (all mocked, no secrets)
-uv run uvicorn lumirss.main:app --reload   # start the BFF on http://127.0.0.1:8000
-curl http://127.0.0.1:8000/health/live     # → {"status":"ok"}
-curl http://127.0.0.1:8000/api/v1/feeds    # → real feeds from FreshRSS
-curl http://127.0.0.1:8000/api/v1/entries  # → newest entries (no bodies)
-# filters (applied upstream by FreshRSS):
-curl "http://127.0.0.1:8000/api/v1/entries?view=unread"
-curl "http://127.0.0.1:8000/api/v1/entries?view=starred"
-curl "http://127.0.0.1:8000/api/v1/entries?feedUrl=<feed-url>"
-curl "http://127.0.0.1:8000/api/v1/entries?view=unread&feedUrl=<feed-url>"
-# pagination (opaque cursor; a cursor can be replayed on its own):
-curl "http://127.0.0.1:8000/api/v1/entries?cursor=<nextCursor>"
-# one article:
-curl http://127.0.0.1:8000/api/v1/entries/<entryRef>   # → one article (contentText + untrusted contentHtml)
-# set state (set semantics, not toggle):
-curl -X PATCH http://127.0.0.1:8000/api/v1/entries/<entryRef>/state \
-  -H 'Content-Type: application/json' -d '{"read": true}'
-curl -X PATCH http://127.0.0.1:8000/api/v1/entries/<entryRef>/state \
-  -H 'Content-Type: application/json' -d '{"starred": true}'
-```
-
-Note: `services/bff/.env` holds the real API password and is gitignored;
-never commit it.
-
-Web development (milestones 0005–0006, requires the BFF running on :8000):
-
-```bash
-cd apps/web
-pnpm install              # install dependencies (creates pnpm-lock.yaml)
-pnpm dev                  # start Vite dev server on http://localhost:5173
-                          # (/api/* is proxied to the BFF on :8000)
-pnpm test                 # run Vitest suites (no real network, mocked fetch)
-pnpm lint                 # oxlint
-pnpm build                # production build (tsc -b + vite build → dist/)
-```
-
-Prerequisites: Node.js (LTS, nvm-managed is fine) and pnpm. The web app
-needs no environment variables — it only ever talks to relative
-`/api/v1/*` paths.
-
-## Next milestone
-
-0009 — AI Summary (Phase 5): on-demand single-article summaries through
-an OpenAI-compatible API, cached in SQLite; AI failure must never block
-reading. See `docs/PROJECT_STATE.md`.
+---
 
 ## Security
 
-Never commit environment files, credentials, databases, backups or logs.
+Never commit:
+
+- `.env` or API credentials;
+- FreshRSS API passwords;
+- RSSHub cookies/tokens;
+- AI keys;
+- databases/backups/private logs;
+- browser profiles/cookies/localStorage;
+- logged-in reference screenshots containing private data.
+
+RSS/website HTML is untrusted. Keep sanitization and safe-link checks intact. Future source discovery must include SSRF, redirect, timeout and response-size defenses.
+
+---
+
+## License
+
+LumiRSS is licensed under **AGPL-3.0-only** (see `LICENSE`, adopted by user decision on 2026-08-28). This enables compliant adaptation of AGPL-licensed upstream references while preserving copyright obligations.
+
+Known constraints:
+
+- Folo uses AGPL-3.0 and explicitly restricts redistribution of its `icons/mgc` content (never copy it);
+- OrigRead Desktop uses AGPL-3.0-only;
+- OrigRead Android uses GPL-3.0;
+- source-derived work must be recorded in `docs/reference/SOURCE_MAP.md` and relevant notices;
+- restricted upstream icons/assets must not be copied.
+
+See `docs/reference/LICENSE_AUDIT.md`.
+
+---
+
+## Roadmap at a glance
+
+```text
+0001–0008  RSS reader foundation                         implemented baseline
+0009       UI Reboot & Reference Lab                     completed 2026-08-29
+0010       Unified Subscription Center                   next
+0011       Source Discovery & RSSHub Integration         planned
+0012       AI Foundation & Summary                       planned
+0013       Translation & AI Conversation                 planned
+0014       Reader Power UX & Unified Settings            planned
+0015       Production & Operations                       planned
+0016       MVP Stabilization & Release                   planned
+Phase 2    Web/API/Email/Obsidian/Agent Workbench        deferred
+```
+

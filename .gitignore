@@ -32,3 +32,6 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# IDE agent session state (Qoder/Mimosa)
+.mimosa/

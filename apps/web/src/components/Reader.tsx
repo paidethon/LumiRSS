@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useEntryDetail } from '../api/queries'
 import { ApiError } from '../api/client'
 import { useReaderUi } from '../store/reader-ui'
 import ArticleContent from './ArticleContent'
 import ReaderHeader from './ReaderHeader'
 import ReaderPlaceholder from './ReaderPlaceholder'
+import { Button } from './ui/Button'
+import { Skeleton } from './ui/Skeleton'
 
-/** Reader — 右栏状态机（0006）：
+/** Reader — 右栏状态机（0006 行为 / 0009 Gate 3 视觉重建）：
  *
  *   no selection → ReaderPlaceholder（不发 Detail 请求）
  *   pending      → Reader skeleton（Sidebar / EntryList 不受影响）
@@ -14,6 +17,12 @@ import ReaderPlaceholder from './ReaderPlaceholder'
  *   其它 error   → 「文章加载失败」+ 安全错误信息 + 重试
  *   success      → ReaderHeader（key=entryRef，防止旧 mutation UI 泄漏到
  *                  新 Entry）+ ArticleContent
+ *
+ * 0009 Gate 3：
+ * - 容器背景用 --lumi-reader-bg（Reader 独立背景钩子，tokens.css 默认
+ *   指向 --lumi-reader；App Theme 与 Reader Theme 分离的接线点）；
+ * - 正文最大宽度 46rem（~736px，Spec 720–780 区间），居中；
+ * - skeleton / error / 404 全部 token 化 + primitives。
  *
  * Reader 自己滚动；切换选择时滚回文章顶部。 */
 export default function Reader() {
@@ -32,7 +41,7 @@ export default function Reader() {
 
   if (selectedEntryRef === null) {
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto">
+      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <ReaderPlaceholder />
       </div>
     )
@@ -40,15 +49,17 @@ export default function Reader() {
 
   if (isPending) {
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto">
-        <div className="mx-auto flex max-w-[44rem] flex-col gap-3 p-8" aria-label="文章加载中">
-          <div className="h-7 w-3/4 animate-pulse rounded bg-gray-100" />
-          <div className="h-4 w-1/2 animate-pulse rounded bg-gray-100" />
-          <div className="h-8 w-40 animate-pulse rounded bg-gray-100" />
-          <div className="mt-4 h-4 w-full animate-pulse rounded bg-gray-100" />
-          <div className="h-4 w-11/12 animate-pulse rounded bg-gray-100" />
-          <div className="h-4 w-10/12 animate-pulse rounded bg-gray-100" />
-          <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
+      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+        <div className="mx-auto flex max-w-[46rem] flex-col gap-3 p-8 max-lg:px-5" aria-label="文章加载中">
+          <Skeleton className="h-3 w-2/5" />
+          <Skeleton className="h-8 w-11/12" />
+          <Skeleton className="h-8 w-3/4" />
+          <div className="mt-4 flex flex-col gap-2.5">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-11/12" />
+            <Skeleton className="h-4 w-10/12" />
+            <Skeleton className="h-4 w-full" />
+          </div>
         </div>
       </div>
     )
@@ -59,39 +70,40 @@ export default function Reader() {
       error instanceof ApiError && error.status === 404
     if (isNotFound) {
       return (
-        <div ref={scrollRef} className="h-full overflow-y-auto">
+        <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
           <div className="flex h-full items-center justify-center p-8">
             <div className="max-w-sm text-center">
-              <p className="text-base font-medium text-[var(--text)]">
+              <p className="text-base font-medium text-[var(--lumi-text-primary)]">
                 这篇文章已经不存在或不可用了。
               </p>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => selectEntry(null)}
-                className="mt-4 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                className="mt-4"
               >
                 返回文章列表
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )
     }
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto">
+      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-sm text-center" role="alert">
-            <p className="text-base font-medium text-[var(--text)]">文章加载失败</p>
-            <p className="mt-2 text-sm text-[var(--text-muted)]">
+            <p className="text-base font-medium text-[var(--lumi-text-primary)]">文章加载失败</p>
+            <p className="mt-2 text-sm text-[var(--lumi-text-secondary)]">
               {error instanceof Error ? error.message : '请稍后重试。'}
             </p>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => refetch()}
-              className="mt-4 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              className="mt-4"
             >
+              <RefreshCw aria-hidden className="size-3.5" />
               重试
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -100,12 +112,11 @@ export default function Reader() {
 
   const detail = data
   return (
-    <div ref={scrollRef} className="h-full overflow-y-auto">
-      {/* 0007：手机上左右留白收紧到约 16–20px（max-lg:px-5），
-          桌面维持 max-w-[44rem]（max-width 只在宽于 704px 时生效，
-          窄屏不构成额外固定宽度）；底部计入 safe area */}
+    <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      {/* 0009 Gate 3：正文宽度 46rem（~736px，Spec 720–780 区间）；
+          0007 语义保留：手机左右留白收紧（max-lg:px-5），底部计入 safe area */}
       <article
-        className="mx-auto max-w-[44rem] px-8 py-6 max-lg:px-5"
+        className="mx-auto max-w-[46rem] px-8 py-6 max-lg:px-5"
         style={{ paddingBottom: 'max(1.5rem, var(--safe-bottom))' }}
       >
         {/* key=entryRef：切换 Entry = 组件重挂载，旧 mutation 的

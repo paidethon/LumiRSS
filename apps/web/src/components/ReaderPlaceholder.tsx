@@ -19,11 +19,11 @@ export default function ReaderPlaceholder() {
     return (
       <div className="flex h-full items-center justify-center p-8">
         <div className="max-w-sm text-center">
-          <p className="text-base font-medium text-[var(--text)]">
+          <p className="text-base font-medium text-[var(--lumi-text-primary)]">
             选择一篇文章开始阅读
           </p>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">
-            这里将在下一个里程碑（0006 — Reader）展示文章正文。
+          <p className="mt-2 text-sm text-[var(--lumi-text-secondary)]">
+            正文将在右侧展示；也可以用 ← 返回列表。
           </p>
         </div>
       </div>
@@ -31,16 +31,16 @@ export default function ReaderPlaceholder() {
   }
 
   return (
-    <article className="mx-auto max-w-2xl p-8" aria-label="已选文章概要">
-      <h2 className="text-xl font-semibold leading-snug text-[var(--text)]">
+    <article className="mx-auto max-w-[46rem] p-8 max-lg:px-5" aria-label="已选文章概要">
+      <h2 className="text-xl font-semibold leading-snug text-[var(--lumi-text-primary)]">
         {selected.title}
       </h2>
-      <p className="mt-2 text-sm text-[var(--text-muted)]">
+      <p className="mt-2 text-sm text-[var(--lumi-text-secondary)]">
         {selected.feedTitle}
         {selected.author !== null && <span> · {selected.author}</span>}
       </p>
-      <p className="mt-8 text-sm text-[var(--text-muted)]">
-        正文阅读将在 0006 — Reader 中实现。
+      <p className="mt-8 text-sm text-[var(--lumi-text-secondary)]">
+        正文加载中…
       </p>
     </article>
   )

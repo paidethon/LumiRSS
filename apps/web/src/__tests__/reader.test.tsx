@@ -356,11 +356,13 @@ describe('Mutation pending / error UI', () => {
     renderReader()
 
     fireEvent.click(await screen.findByRole('button', { name: '标记为已读' }))
-    // 同一 mutation 实例：read/star 两个按钮都 pending + disabled
+    // 同一 mutation 实例：read/star 两个按钮都 pending + disabled。
+    // 0009 Gate 3：pending 态从文字按钮改为 disabled IconButton（label
+    // "处理中"），语义等价（双禁用仍成立）。
     await waitFor(() => {
-      expect(screen.getAllByRole('button', { name: '处理中…' })).toHaveLength(2)
+      expect(screen.getAllByRole('button', { name: '处理中' })).toHaveLength(2)
     })
-    for (const button of screen.getAllByRole('button', { name: '处理中…' })) {
+    for (const button of screen.getAllByRole('button', { name: '处理中' })) {
       expect(button).toBeDisabled()
     }
   })
