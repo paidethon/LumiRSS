@@ -1,8 +1,8 @@
 # LumiRSS Project State
 
-> v6.3 — 0011 Mobile UI Navigation & Five-Screen Alignment active
-> (Gate 0 approved 2026-08-30); roadmap renumbered again (0011 replaced
-> by Mobile UI, old 0011–0018 → 0012–0019).
+> v6.4 — 0012 Reader Style Deep Customization active
+> (spec approved 2026-08-30, from user 0012 directive; roadmap
+> unchanged since the 0011 renumbering).
 
 ---
 
@@ -27,7 +27,9 @@ Completed milestones:
 ```text
 0009 — UI Reboot & Reference Lab          (completed 2026-08-29)
 0010 — Settings Center & Adaptive Shell   (completed 2026-08-30, incl. 0010a)
-0011 — Mobile UI Navigation & Five-Screen Alignment (active spec)
+0011 — Mobile UI Navigation & Five-Screen Alignment (completed 2026-08-30,
+       incl. follow-up fix PR #18 rss-scope/category-tree)
+0012 — Reader Style Deep Customization     (active spec)
 ```
 
 AI Summary (renumbered from old 0009, four times) stays at milestone 0015.
@@ -63,8 +65,8 @@ Inspection:    2026-08-28
 | 0008 RSSHub source expansion | Implemented | minimal RSSHub service and verified ingestion chain | Preserve |
 | 0009 UI Reboot & Reference Lab | **Implemented** | design system, responsive shell, Folo/OrigRead audit | Completed 2026-08-29 |
 | 0010 Settings Center & Adaptive Shell | **Implemented** | settings center, sidebar IA, adaptive panes, mobile tabs | Completed 2026-08-30 |
-| 0011 Mobile UI Five-Screen Alignment | **Active** | AppSection + 四 tab 导航岛 + 五页面对齐（docs/specs/0011-mobile-ui-five-screen-alignment.md） | In progress |
-| 0012 Reader Style Deep Customization | Planned | font import, Chinese typography, theme packs | After 0011 |
+| 0011 Mobile UI Five-Screen Alignment | **Implemented** | AppSection + 四 tab 导航岛 + 五页面对齐 + rss-scope/category-tree 修复（PR #17/#18） | Completed 2026-08-30 |
+| 0012 Reader Style Deep Customization | **Active** | 字体导入/中文排版/.lumitheme 主题包/Aa 面板/Shiki（docs/specs/0012-reader-style-deep-customization.md） | In progress |
 | 0013 Unified Subscription Center | Planned | add/manage subscriptions inside Lumi; BFF-layer filtering + OPML | After 0012 |
 | 0014 Source Discovery & RSSHub | Planned | URL/RSSHub discovery, route forms and preview; RSSHub instance testing | After 0013 |
 | 0015 AI Foundation & Summary | Planned | on-demand summary, cache and safe status | Replaces old 0009 |
@@ -288,6 +290,71 @@ Board:       Light/Dark + 1280/768/390 zero overflow, 0010 visible
 
 ---
 
+## 10c. Completed work: 0012 — Reader Style Deep Customization
+
+All gates executed 2026-08-30 (spec approved from user 0012 directive;
+report submitted, awaiting user review before commit).
+
+### Delivered
+
+- **Gate 0**: spec 0012 + active-milestone docs revision (0011 →
+  completed incl. PR #18, 0012 → active).
+- **Gate 1**: 10 new reader settings fields inside the existing
+  app-settings normalize/migration system (indent / hanging punctuation /
+  S↔T conversion / reading time / code highlight + theme / bionic /
+  custom-font id + URL reference).
+- **Gate 2/3**: custom fonts — local WOFF2 (triple validation → IndexedDB
+  → FontFace, content-hash dedupe, reload restore, delete-active fallback)
+  and font URLs (http/https allowlist, remote FontFace, no local copy,
+  structured CORS failure).
+- **Gate 4**: Chinese typography (first-line indent scoped to top-level
+  `p`; hanging punctuation behind `@supports`; OpenCC S↔T conversion
+  display-layer only) + **new presentation pipeline security model**:
+  raw HTML → inert DOM → controlled DOM-API transforms → DOMPurify as
+  final boundary (comments/docs updated across ArticleContent,
+  sanitize-article-html, AGENTS, ARCHITECTURE).
+- **Gate 5**: CJK-aware `estimateReadingTime` (Han 300/min + Latin
+  220/min weighted; "< 1 分钟" floor) with ReaderHeader toggle.
+- **Gate 6**: `.lumitheme` theme pack (reader-field whitelist export,
+  parse→validate→normalize→preview→confirm→apply import, round-trip,
+  0010a reader-presets compatibility, missing-font fallback warning).
+- **Gate 7**: in-Reader Aa quick panel (desktop popover / mobile bottom
+  sheet with focus trap) wired directly to useAppSettings — no second
+  store; "更多阅读设置" deep-links to the Settings center.
+- **Gate 8**: Shiki code highlight, fine-grained lazy (core + JS-regex
+  engine + per-lang/per-theme chunks; 14-language allowlist; unknown →
+  plaintext; token colors as classes to comply with the no-inline-style
+  sanitize policy).
+- **Gate 9**: experimental word-initial emphasis (Latin-only text nodes,
+  default off, no speed claims).
+- **Gate 10**: paged reading — **deferred** with documented prototype
+  conclusion (CSS multi-column selection/column-reflow/table-overflow/
+  keyboard/scroll-conflict issues; candidate remains for 0017).
+- **Gate 11/12**: Playground reader fixtures (8 scenarios), viewport
+  matrix 390–1920 zero overflow (one real bug found & fixed:
+  `min-width:0` for code-block min-content), malicious-HTML live
+  regression, real-app smoke incl. Aa panel and reading time.
+
+### Verification (final numbers)
+
+```text
+Web tests:   399 passed (30 files; 313 baseline + 86 new)
+Web lint:    0 errors (3 pre-existing React Compiler notes)
+Web build:   success (initial js 451.00KB / gzip 132.66KB, +11.0KB gzip;
+             OpenCC/Shiki fully lazy: t2cn 55.06 / cn2t 474.85 / shiki
+             core+engine 55.96 gzip, per-lang 0.77–60.65KB)
+BFF tests:   134 passed, git diff -- services/bff empty
+Live checks: indent/heading scope computed styles; real OpenCC s2t/tw
+             conversion + full restore; bionic 12 spans / 0 in code;
+             shiki 2 blocks + 154 tokens, plaintext kept; malicious
+             fixture renders zero dangerous nodes; 2400px image fits;
+             7-viewport zero overflow; real-app Aa panel (popover +
+             mobile sheet 44px targets) + "约 2 分钟" reading time;
+             console zero errors
+```
+
+---
+
 ## 10b. Completed work: 0009 — UI Reboot & Reference Lab
 
 All gates user-approved (Gate 0: 2026-08-28; Gates 1–4: 2026-08-29).
@@ -337,19 +404,17 @@ Smoke: read/star reversible; console 0 errors; 0 direct upstream requests
 
 ---
 
-## 11. Test state (final 0010a run, 2026-08-30)
+## 11. Test state (final 0012 run, 2026-08-30)
 
 ```text
-BFF tests:          121 passed  (uv run pytest, zero diff — V1 ✓)
-Web tests:          244 passed  (pnpm test, 19 test files)
-Web lint:           0 errors, 2 warnings (React Compiler notes)
+BFF tests:          134 passed  (uv run pytest, zero diff — V1 ✓)
+Web tests:          399 passed  (pnpm test, 30 test files)
+Web lint:           0 errors, 3 warnings (React Compiler notes)
 Web build:          success
-Integration checks: backup round-trip 16/16 (encrypted export → restore →
-                    bad-file reject → no-secret restore keeps keys);
-                    accent/preset/custom-CSS/custom-bg/filter live checks;
-                    viewport matrix 10/10 (5 sizes × 2 themes, zero overflow)
+Integration checks: see devlog 0012 §12 (visual matrix + real-app
+                    smoke via Playwright; malicious-HTML live regression)
 Date run:           2026-08-30
-Commit tested:      feat/0010-settings-center-adaptive-shell (worktree)
+Commit tested:      feat/0012-reader-style-deep-customization (worktree)
 ```
 
 A failure unrelated to 0009 must be reported separately rather than
@@ -411,7 +476,8 @@ contract.
 
 ## 14. Where things live
 
-- Active spec: `docs/specs/0011-mobile-ui-five-screen-alignment.md`
+- Active spec: `docs/specs/0012-reader-style-deep-customization.md`
+- 0011 spec (completed): `docs/specs/0011-mobile-ui-five-screen-alignment.md`
 - Mobile reference matrix (0011): `docs/ui/0011-mobile-reference-matrix.md`
 - Visual/responsive design direction: `docs/ui/UI_REBOOT.md`
 - Roadmap: `docs/ROADMAP.md`

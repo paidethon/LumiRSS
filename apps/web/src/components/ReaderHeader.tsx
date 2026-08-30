@@ -3,6 +3,9 @@ import type { EntryDetail } from '../api/types'
 import { useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
+import { formatReadingTime, textFromHtml } from '../lib/reading-time'
+import { useAppSettings } from '../store/app-settings'
+import ReaderAaPanel from './ReaderAaPanel'
 import { IconButton } from './ui/IconButton'
 import { Tooltip } from './ui/Tooltip'
 import { cx } from './ui/cx'
@@ -39,6 +42,7 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
   const mutation = useEntryStateMutation()
   const { isReadLater, toggleReadLater } = useToggleReadLater()
   const readLaterMarked = isReadLater(detail.entryRef)
+  const showReadingTime = useAppSettings((s) => s.settings.readerShowReadingTime)
 
   // url 与 contentHtml 一样来自外部 RSS，是不可信输入：
   // 只放行绝对 http/https，其余一律不渲染「打开原文」。
@@ -46,13 +50,26 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
   const published = formatPublishedAt(detail.publishedAt)
   const pending = mutation.isPending
 
+  // 0012 Gate 5：CJK 感知阅读时间（弱化展示；开关控制）。
+  // 输入用 contentText（BFF 已产出的安全纯文本）优先，回退从
+  // contentHtml 提取（本地 DOMParser，不进入渲染）。仅对不可信
+  // HTML做只读解析，输出只有数字。文本量极小，不 memo。
+  const readingTime = showReadingTime
+    ? formatReadingTime(
+        detail.contentText.trim() !== ''
+          ? detail.contentText
+          : textFromHtml(detail.contentHtml ?? ''),
+      )
+    : null
+
   return (
     <header className="border-b border-[var(--lumi-separator)] pb-5">
-      {/* 元信息行（弱化）：来源 · 作者 · 时间 */}
+      {/* 元信息行（弱化）：来源 · 作者 · 时间 · 阅读时间 */}
       <p className="text-xs text-[var(--lumi-text-tertiary)]">
         {detail.feedTitle}
         {detail.author !== null && <span> · {detail.author}</span>}
         {published !== '' && <span> · {published}</span>}
+        {readingTime !== null && <span> · {readingTime}</span>}
       </p>
 
       {/* 强标题（Folo 锚点 27px/700；移动端略小） */}
@@ -159,6 +176,10 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
             打开原文
           </a>
         )}
+
+        {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心
+            同一 settings source，不遮挡正文关键操作。 */}
+        <ReaderAaPanel />
       </div>
 
       {mutation.isError && (

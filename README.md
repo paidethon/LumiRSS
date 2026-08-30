@@ -16,12 +16,21 @@ Its current foundation combines:
 
 ## Current status
 
-Milestone **0011 — Mobile UI Navigation & Five-Screen Alignment** is the
-active spec (approved 2026-08-30): align the mobile Web home /
-subscriptions / search / favorites / sidebar surfaces with the user's
-five reference images via an `AppSection` navigation model, a four-tab
-floating bottom bar, a shared mobile page header and honest data
-degradation (no fabricated backend fields; zero BFF changes). See
+Milestone **0012 — Reader Style Deep Customization** is the active
+spec (approved 2026-08-30): upgrade the Reader into a deeply
+customizable reading surface on top of the 0010a reader-style system —
+WOFF2 custom fonts (IndexedDB + FontFace) and font URLs, Chinese
+typography (first-line indent / punctuation hanging / S↔T conversion),
+CJK-aware reading time, `.lumitheme` theme packs, an in-Reader quick
+Aa panel, lazy Shiki code highlight and an experimental word-initial
+emphasis mode — all client-side with a hardened transforms → DOMPurify
+presentation pipeline and **zero BFF changes**. See
+`docs/specs/0012-reader-style-deep-customization.md`.
+
+Milestone 0011 (Mobile UI Navigation & Five-Screen Alignment) is
+complete (2026-08-30, incl. follow-up fix PR #18): `AppSection`
+navigation model, four-tab floating bottom bar, unified settings entry
+in the sidebar brand area, honest data degradation. See
 `docs/specs/0011-mobile-ui-five-screen-alignment.md` and
 `docs/ui/0011-mobile-reference-matrix.md`.
 
@@ -49,7 +58,7 @@ See:
 
 - `docs/PROJECT_STATE.md`
 - `docs/ROADMAP.md`
-- `docs/specs/0011-mobile-ui-five-screen-alignment.md`
+- `docs/specs/0012-reader-style-deep-customization.md`
 
 ---
 
@@ -233,7 +242,8 @@ The Web client uses relative `/api/v1/*` requests and must not receive FreshRSS/
 | `docs/PROJECT_STATE.md` | factual current state and immediate next work |
 | `docs/ROADMAP.md` | milestone order and future phases |
 | `docs/ui/UI_REBOOT.md` | detailed visual/responsive design direction |
-| `docs/specs/0011-mobile-ui-five-screen-alignment.md` | active milestone spec |
+| `docs/specs/0012-reader-style-deep-customization.md` | active milestone spec |
+| `docs/specs/0011-mobile-ui-five-screen-alignment.md` | 0011 mobile UI spec (completed) |
 | `docs/ui/0011-mobile-reference-matrix.md` | 0011 reference-image alignment matrix |
 | `AGENTS.md` | durable rules for coding agents |
 | `docs/reference/*` | pinned upstreams, source map and license gate |
@@ -278,8 +288,8 @@ See `docs/reference/LICENSE_AUDIT.md`.
 0001–0008  RSS reader foundation                         implemented baseline
 0009       UI Reboot & Reference Lab                     completed 2026-08-29
 0010       Settings Center & Adaptive Shell (+0010a)     completed 2026-08-30
-0011       Mobile UI Navigation & Five-Screen Alignment  active spec
-0012       Reader Style Deep Customization               planned
+0011       Mobile UI Navigation & Five-Screen Alignment  completed 2026-08-30
+0012       Reader Style Deep Customization               active spec
 0013       Unified Subscription Center                   planned
 0014       Source Discovery & RSSHub Integration         planned
 0015       AI Foundation & Summary                       planned

@@ -232,7 +232,7 @@ Every interactive control genuinely works and persists; planned items are disabl
 
 ## 0011 — Mobile UI Navigation & Five-Screen Alignment
 
-**Status:** **Active spec**（docs/specs/0011-mobile-ui-five-screen-alignment.md，2026-08-30 用户批准）
+**Status:** **Implemented**（spec docs/specs/0011-mobile-ui-five-screen-alignment.md，2026-08-30 用户批准；含后续 fix PR #18 rss-scope/category-tree）
 
 ### Goal
 
@@ -257,8 +257,7 @@ Playground 五场景 fixture 与七视口截图矩阵。纯前端，BFF 零改�
 
 ## 0012 — Reader Style Deep Customization
 
-**Status:** Planned（spec 待写；调研依据 docs/reference/reader-style-survey.md；
-0011 路线修订自原 0011 顺延）
+**Status:** **Active spec**（docs/specs/0012-reader-style-deep-customization.md，2026-08-30 用户指令批准；调研依据 docs/reference/reader-style-survey.md）
 
 ### Goal
 

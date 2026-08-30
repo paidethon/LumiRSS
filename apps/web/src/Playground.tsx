@@ -19,6 +19,14 @@ import { Switch } from './components/ui/Switch'
 import { Tooltip } from './components/ui/Tooltip'
 import { useTheme } from './store/theme'
 import type { ThemeMode } from './lib/theme'
+// 0012 Gate 11：Reader fixture（视觉/响应式/安全验证）
+import { READER_FIXTURES } from './lib/playground-reader-fixtures'
+import ArticleContent from './components/ArticleContent'
+import { useAppSettings } from './store/app-settings'
+import type {
+  ReaderChineseConversion,
+  ReaderTextIndent,
+} from './store/app-settings'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -151,6 +159,8 @@ export default function Playground() {
             }
           />
         </Section>
+
+        <ReaderFixtureSection />
       </div>
 
       <Dialog
@@ -177,5 +187,76 @@ export default function Playground() {
         </div>
       </Sheet>
     </div>
+  )
+}
+
+/** 0012 Gate 11：Reader fixtures × transforms 开关矩阵（dev-only）。 */
+function ReaderFixtureSection() {
+  const [fixtureId, setFixtureId] = useState('chinese-long')
+  const settings = useAppSettings((s) => s.settings)
+  const update = useAppSettings((s) => s.update)
+  const fixture = READER_FIXTURES.find((f) => f.id === fixtureId) ?? READER_FIXTURES[0]
+
+  return (
+    <section className="min-w-0 rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4 lg:col-span-2">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+        Reader Fixtures（0012）
+      </h2>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Select
+          aria-label="fixture"
+          value={fixtureId}
+          onChange={(e) => setFixtureId(e.target.value)}
+          options={READER_FIXTURES.map((f) => ({ value: f.id, label: f.label }))}
+        />
+        <Select
+          aria-label="简繁"
+          value={settings.readerChineseConversion}
+          onChange={(e) =>
+            update({ readerChineseConversion: e.target.value as ReaderChineseConversion })
+          }
+          options={[
+            { value: 'off', label: '原文' },
+            { value: 's2t', label: '简→繁' },
+            { value: 't2s', label: '繁→简' },
+            { value: 'tw', label: '繁（台）' },
+            { value: 'hk', label: '繁（港）' },
+          ]}
+        />
+        <Select
+          aria-label="首行缩进"
+          value={settings.readerTextIndent}
+          onChange={(e) => update({ readerTextIndent: e.target.value as ReaderTextIndent })}
+          options={[
+            { value: 'off', label: '无缩进' },
+            { value: '2em', label: '缩进 2em' },
+          ]}
+        />
+        <Switch
+          checked={settings.readerBionic}
+          onCheckedChange={(v) => update({ readerBionic: v })}
+          label="词首强调"
+        />
+        <Switch
+          checked={settings.readerHangingPunctuation}
+          onCheckedChange={(v) => update({ readerHangingPunctuation: v })}
+          label="标点悬挂"
+        />
+        <Switch
+          checked={settings.readerCodeHighlight === 'auto'}
+          onCheckedChange={(v) => update({ readerCodeHighlight: v ? 'auto' : 'off' })}
+          label="代码高亮"
+        />
+      </div>
+      {/* .lumi-reader 作用域（custom CSS / reader 变量消费同正式 Reader） */}
+      <div className="lumi-reader rounded-[var(--lumi-radius-lg)] bg-[var(--lumi-reader-bg,transparent)] p-6 max-lg:p-4">
+        <h3 className="text-[1.7rem] font-bold leading-snug text-[var(--lumi-text-primary)] max-lg:text-2xl">
+          {fixture.detail.title}
+        </h3>
+        <div className="pt-4">
+          <ArticleContent detail={fixture.detail} />
+        </div>
+      </div>
+    </section>
   )
 }
