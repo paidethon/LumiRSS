@@ -5,29 +5,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LumiRSS Project Board</title>
 <style>
+  /* 0010 Gate D：Lumi Mist 色板（与主站 apps/web styles/themes.css 同值副本；
+     看板零依赖约束不变——纯内联 CSS 变量，不 import 主站文件） */
   :root {
-    --bg: #f7f7f4;
-    --surface: #ffffff;
-    --border: #e4e4dd;
-    --border-strong: #d4d4cc;
-    --text: #24292f;
-    --text-muted: #636c76;
-    --text-faint: #8b949e;
-    --accent: #0969da;
-    --green-bg: #dafbe1; --green-fg: #116329;
-    --blue-bg: #ddf4ff;  --blue-fg: #0550ae;
-    --amber-bg: #fff8c5; --amber-fg: #7d4e00;
-    --gray-bg: #eff1f3;  --gray-fg: #57606a;
-    --red-bg: #ffebe9;   --red-fg: #a40e26;
+    color-scheme: light;
+    --bg: #f6f4f4;
+    --surface: #fbfafa;
+    --border: rgba(52, 47, 57, 0.10);
+    --border-strong: rgba(52, 47, 57, 0.16);
+    --text: #29282c;
+    --text-muted: #77747b;
+    --text-faint: #9b979f;
+    --accent: #6d78e8;
+    --green-bg: #e8f0ea; --green-fg: #3d6b4d;
+    --blue-bg: #eceeff;  --blue-fg: #4a54b8;
+    --amber-bg: #f5ecdd; --amber-fg: #8a5a24;
+    --gray-bg: #efeced;  --gray-fg: #5f5c64;
+    --red-bg: #f5e4e5;   --red-fg: #94424a;
+    --surface-hover: #efeced;
+    --surface-selected: #e7e5e9;
     --radius: 8px;
-    /* architecture map palette (categorical, soft) */
-    --arch-src-bg: #f2f2ef;    --arch-src-border: #c9c9c0;
-    --arch-rss-bg: #e9f5ec;    --arch-rss-border: #9ecfa9;
-    --arch-core-bg: #e3f0fd;   --arch-core-border: #8fb9e8;
-    --arch-data-bg: #fdf4e0;   --arch-data-border: #dfc284;
-    --arch-client-bg: #efecfb; --arch-client-border: #b3a8e8;
-    --arch-deploy-bg: #fbfaf6; --arch-deploy-border: #d4d4cc;
-    --arch-deploy2-bg: #f5f4ee;
+    /* architecture map palette (Lumi Mist 分类柔彩) */
+    --arch-src-bg: #f2f0f1;    --arch-src-border: #c9c4ca;
+    --arch-rss-bg: #e8f0ea;    --arch-rss-border: #a3bfae;
+    --arch-core-bg: #e3ecfb;   --arch-core-border: #a3bce0;
+    --arch-data-bg: #f5ecdd;   --arch-data-border: #dfc284;
+    --arch-client-bg: #eceaf5; --arch-client-border: #b3a8e8;
+    --arch-deploy-bg: #f7f5f5; --arch-deploy-border: #d4d0d4;
+    --arch-deploy2-bg: #f2f0f0;
+  }
+  /* Dark：跟随系统（看板无 JS 状态框架，保持零依赖简单性；
+     手动切换只在主站提供） */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #18181a;
+      --surface: #222226;
+      --border: rgba(255, 255, 255, 0.10);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #ececef;
+      --text-muted: #aaa8b0;
+      --text-faint: #77757d;
+      --accent: #8993f5;
+      --green-bg: #22302a; --green-fg: #8fc4a6;
+      --blue-bg: #232338;  --blue-fg: #a3adf5;
+      --amber-bg: #33291a; --amber-fg: #d9b078;
+      --gray-bg: #2b2b30;  --gray-fg: #a5a3ab;
+      --red-bg: #342327;   --red-fg: #d8989f;
+      --surface-hover: #29292d;
+      --surface-selected: #303036;
+      --arch-src-bg: #232326;    --arch-src-border: #4a4a50;
+      --arch-rss-bg: #22302a;    --arch-rss-border: #4a6b56;
+      --arch-core-bg: #232338;   --arch-core-border: #4a5478;
+      --arch-data-bg: #33291a;   --arch-data-border: #6b5630;
+      --arch-client-bg: #26243a; --arch-client-border: #554d78;
+      --arch-deploy-bg: #232326; --arch-deploy-border: #4a4a50;
+      --arch-deploy2-bg: #202023;
+    }
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -35,8 +69,9 @@
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
-      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    /* 0010 Gate D：与主站 --lumi-font-sans 同栈 */
+    font-family: system-ui, "SN Pro", "PingFang SC", "Hiragino Sans GB",
+      "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     font-size: 15px;
     line-height: 1.6;
   }
@@ -158,13 +193,13 @@
   }
   .row:last-child { border-bottom: 0; }
   button.row { cursor: pointer; }
-  button.row:hover { background: #f6f8fa; }
-  button.row.is-selected { background: #eef5fc; box-shadow: inset 3px 0 0 var(--accent); }
+  button.row:hover { background: var(--surface-hover, #efeced); }
+  button.row.is-selected { background: var(--surface-selected, #e7e5e9); box-shadow: inset 3px 0 0 var(--accent); }
   .row.head {
-    background: #f6f6f2; font-size: 0.72rem; text-transform: uppercase;
+    background: var(--surface-hover, #efeced); font-size: 0.72rem; text-transform: uppercase;
     letter-spacing: 0.06em; color: var(--text-faint); font-weight: 600;
   }
-  .row.phase-row { background: #fbfbf8; font-weight: 600; }
+  .row.phase-row { background: var(--surface, #fbfafa); font-weight: 600; }
   .row.phase-row .pr-meta { font-weight: 400; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .cell-label { display: none; }
   .c-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; color: var(--text-muted); }
@@ -185,6 +220,9 @@
   }
   .detail ul { margin: 0; padding-left: 20px; }
   .detail li { margin-bottom: 4px; font-size: 0.9rem; }
+  /* 0010 Gate D：长文本（长词/URL/中英混排长句）不撑破移动端布局 */
+  .detail li, .detail p, .detail .d-sub { overflow-wrap: anywhere; }
+  .detail { min-width: 0; }
   .detail p { margin: 0 0 6px; font-size: 0.9rem; }
   .detail .d-empty { color: var(--text-faint); font-size: 0.88rem; font-style: italic; }
   .detail a { color: var(--accent); }

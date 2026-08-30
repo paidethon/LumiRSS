@@ -19,9 +19,9 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-08-29",
+  updatedAt: "2026-08-30",
   sourceOfTruth: "docs/PROJECT_STATE.md",
-  currentPhaseId: "phase-5",
+  currentPhaseId: "phase-6",
   currentMilestoneId: "0010",
 
   phases: [
@@ -71,49 +71,49 @@ window.LUMIRSS_PROJECT = {
       milestoneIds: ["0008"]
     },
     {
-      id: "phase-5",
-      num: 5,
-      name: "UI",
-      label: "Phase 5 — UI Reboot & Product Shell",
-      purpose: "用统一的 Lumi Mist 主题体系、semantic tokens、UI primitives 与响应式 App Shell 替换临时视觉外壳，行为与 API 零变更。",
-      why: "在继续叠加 AI 与来源功能之前先稳定视觉架构，避免在用户已否定的 UI 上不断扩建页面。",
-      milestoneIds: ["0009"]
-    },
-    {
       id: "phase-6",
       num: 6,
-      name: "Source Control",
-      label: "Phase 6 — Lumi-native Source Control",
-      purpose: "让普通用户在 Lumi 内完成订阅增删、分类、OPML、刷新与来源发现（RSSHub 路由搜索/预览/一键订阅）。",
-      why: "Lumi 必须成为唯一日常用户界面；FreshRSS/RSSHub 原生页面只保留为高级逃生门。",
-      milestoneIds: ["0010", "0011"]
+      name: "Product Shell",
+      label: "Phase 6 — Product Shell（设置中心与自适应外壳）",
+      purpose: "完成设置中心（Folo 式 Modal + 声明式设置行 + 9 分类）、侧栏信息架构分组（信息来源/工作区）、三栏拖拽/折叠与移动端底部 Tab——Lumi 的产品骨架。",
+      why: "设置与外壳是所有后续功能的承载面；在订阅管理/AI 之前先完成骨架，避免在临时 UI 上继续扩建。",
+      milestoneIds: ["0009", "0010", "0011"]
     },
     {
       id: "phase-7",
       num: 7,
-      name: "AI",
-      label: "Phase 7 — AI Enhancement",
-      purpose: "按需单篇摘要、翻译与文章上下文对话（OpenAI-compatible Provider，SQLite 缓存），AI 关闭或失败不影响阅读。",
-      why: "AI 是可选增强：用户主动触发、结果归 LumiRSS 自己（存 SQLite），阅读优先于 AI。",
+      name: "Source Control",
+      label: "Phase 7 — Lumi-native Source Control",
+      purpose: "让普通用户在 Lumi 内完成订阅增删、分类、OPML、刷新与来源发现（RSSHub 路由搜索/预览/一键订阅）。",
+      why: "Lumi 必须成为唯一日常用户界面；FreshRSS/RSSHub 原生页面只保留为高级逃生门。",
       milestoneIds: ["0012", "0013"]
     },
     {
       id: "phase-8",
       num: 8,
-      name: "Completion",
-      label: "Phase 8 — Reader Power UX & Unified Settings",
-      purpose: "搜索、键盘、批量操作、阅读偏好（字体/字号/行距/宽度）、主题自定义与统一设置中心。",
-      why: "在进入生产部署前完成日常产品体验的收尾。",
-      milestoneIds: ["0014"]
+      name: "AI",
+      label: "Phase 8 — AI Enhancement",
+      purpose: "按需单篇摘要、翻译与文章上下文对话（OpenAI-compatible Provider，SQLite 缓存），AI 关闭或失败不影响阅读。",
+      why: "AI 是可选增强：用户主动触发、结果归 LumiRSS 自己（存 SQLite），阅读优先于 AI。",
+      milestoneIds: ["0014", "0015"]
     },
     {
       id: "phase-9",
       num: 9,
+      name: "Completion",
+      label: "Phase 9 — Reader Power UX & Unified Settings",
+      purpose: "搜索、键盘、批量操作、阅读偏好（字体/字号/行距/宽度）、主题自定义与 FreshRSS/RSSHub/AI 统一设置中心（服务端设置 API 在此落地）。",
+      why: "在进入生产部署前完成日常产品体验的收尾。",
+      milestoneIds: ["0016"]
+    },
+    {
+      id: "phase-10",
+      num: 10,
       name: "Production",
-      label: "Phase 9 — Production & Release",
+      label: "Phase 10 — Production & Release",
       purpose: "Caddy + HTTPS + 单用户访问保护 + 阿里云 ECS + 备份恢复演练 + 回归/可访问性/性能收尾，发布正式 MVP。",
       why: "最终形态是单台普通 Linux 服务器上的自托管部署：简单、可备份、可恢复。",
-      milestoneIds: ["0015", "0016"]
+      milestoneIds: ["0017", "0018"]
     }
   ],
 
@@ -402,7 +402,7 @@ window.LUMIRSS_PROJECT = {
     },
     {
       id: "0009",
-      phaseId: "phase-5",
+      phaseId: "phase-6",
       name: "UI Reboot & Reference Lab",
       status: "completed",
       shortGoal: "Design system + responsive shell, zero API change",
@@ -433,8 +433,57 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0010",
       phaseId: "phase-6",
-      name: "Unified Subscription Center",
+      name: "Settings Center & Adaptive Shell",
+      status: "in-progress",
+      shortGoal: "Folo-style settings + adaptive panes + mobile tabs",
+      goal: "Folo 式设置中心（声明式设置行 + 9 分类：5 真实可用 + 4 planned）、侧栏信息架构分组（信息来源/工作区，Phase 2 项可见禁用）、三栏拖拽/折叠/持久化、移动端底部 Tab——全部纯前端（localStorage），BFF 零变化。原 0010 Unified Subscription Center 顺延为 0011。",
+      implemented: [
+        "Gate A：app-settings store（类型化模型 + localStorage 单 key + 旧 key 迁移）+ SettingItem 声明式渲染器（五型）+ SettingsModal 框架（左导航 9 分类，Folo 实测尺寸）；修复 Dialog 遮罩点击关闭 bug（0009 遗留）",
+        "Gate B：快捷键 j/k/u/s（Query cache key 修复）+ 速查表页；数据控制（清缓存/重置真实可用）+ 关于页；4 个 planned 页（订阅 0011/0012、AI 0013/0014、账户与服务、工作区 Phase 2）；未读圆点开关真实生效",
+        "Gate C：Sidebar 信息架构分组（信息来源/工作区，9 个 Phase 2 项可见禁用+徽标）+ PaneSeparator（拖拽/键盘/双击重置 + aria）+ 折叠/展开 + localStorage 持久化；修复分隔条高度塌陷 bug",
+        "Gate D：<768px 底部 Tab（时间线/收藏/设置，Reader 时隐藏）+ 设置移动端全屏化 + 看板修订（内容顺延 + Lumi Mist 样式统一）+ 文档修订（PRD v6.1/ROADMAP/PROJECT_STATE/AGENTS/README）",
+        "0010a Gate E：修复移动端设置布局 bug（Dialog+chip 条方案重设计为 Folo 移动端模式：全屏分组列表 → push 子页）+ 分类 9→13（翻译/文章过滤/RSSHub/备份与恢复）+ 通用页 4 项（已读变暗/按日期分组/启动仅未读/实验性滚动已读）",
+        "0010a Gate F：外观补全（accent 色板/全局字号/UI 字体/减少动效）+ 阅读样式 P0（字体族四档/背景色板+自定义 hex+WCAG 自适应文字/段距/两端对齐/图片三模式）+ P1（自定义 CSS .lumi-reader 前缀注入 + 5 套排版预设+派生导入导出）+ OrigRead 四页复刻（翻译 Provider 卡片/过滤规则+显示层过滤/RSSHub 16 内置实例/加密配置备份 Web Crypto）",
+        "0010a Gate G：加密备份往返实测 16/16 + 视口矩阵 10/10 + 文档 v6.2（0011 插入，0012-0018 顺延）+ 阅读器样式调研归档（reader-style-survey.md）"
+      ],
+      acceptance: "达成：244 前端测试全绿（0010a 后）、lint 0 errors、build 成功、BFF 零变化；备份往返 16/16、视口矩阵 10/10、accent/预设/自定义 CSS/自定义背景/显示层过滤全部真实浏览器实测通过。",
+      problems: [
+        "Query cache key 不匹配：快捷键模块构造 ['entries', {view}] 而 useEntries 实际用 {view, feedUrl}——单测预置缓存用同一错误 key 假绿，真实浏览器实测暴露后修复",
+        "PaneSeparator 高度塌陷：hidden lg:block wrapper 在 flex-row 中不拉伸导致分隔条 height=0 完全不可点（jsdom 无布局测不出）——wrapper 改 lg:flex + self-stretch 修复",
+        "「侧栏隐藏已读」中途纠偏：本想存偏好暂不生效，识别出违反诚实原则（假控件）——改为 planned·0012（需要 feeds unreadCount 契约）",
+        "0010a Gate D 移动端设置布局损坏（容器缺 max-md:flex-col，内容区被挤出视口）：根因是 Gate D 验证只测 isVisible 没查视觉——Gate E 按 Folo 移动端模式重设计并全部实测布局",
+        "CSS 前缀解析器嵌套配对 bug：indexOf('}') 命中嵌套块内层 } 导致 @media 整段拒绝——改为深度配对 matchingClose",
+        "无密钥备份恢复清空本机 API Key（违反 OrigRead「无密钥备份不清空凭据」语义）：加密往返实测发现——修复为仅当备份携带且解密成功才替换"
+      ],
+      learned: [
+        "声明式设置行（Folo setting-builder 模式）：新增设置=加一行数据，视觉天然一致",
+        "真实浏览器实测是单测的必要补充：cache key 不匹配与分隔条高度塌陷都是 jsdom 测不出、实测立即暴露的",
+        "localStorage 单 key + 逐字段归一化：损坏 JSON/非法值回退默认不抛错，旧 key 首次加载自动迁移",
+        "移动端设置用「分组列表 → push 子页」而非 Modal（Folo mobile 同款）：桌面/移动共享 CategoryPage 组件与 store，仅外壳不同",
+        "自托管阅读器自定义 CSS 是刚需（Miniflux/CommaFeed/FreshRSS 三先例）：作用域限定 .lumi-reader 前缀注入 + 解析失败整段拒绝",
+        "主题 = CSS 变量快照（TTRSS/NetNewsWire 先例）：预设切换即批量写变量，派生+导入导出形成分享生态雏形（Web 端无先例——0011 差异化）",
+        "真实浏览器实测再次证明不可替代：布局 bug、CSS 解析 bug、备份语义 bug 三个都是单测测不出、实测立即暴露"
+      ],
+      devlog: "../devlog/0010-settings-center-adaptive-shell.md"
+    },
+    {
+      id: "0011",
+      phaseId: "phase-6",
+      name: "Reader Style Deep Customization",
       status: "next",
+      shortGoal: "Font import + Chinese typography + theme packs",
+      goal: "阅读样式深度自定义（纯前端）：字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式解决 CJK 体积）、中文排版深度（首行缩进/标点悬挂/简繁转换/CJK 阅读时长）、主题包分享（.lumitheme JSON 完整快照导入导出——Web 阅读器无先例的差异化）、代码高亮主题（shiki 按需加载）、Bionic Reading、分页滚动（候选）。依据：docs/reference/reader-style-survey.md（10+ 阅读器调研）。",
+      implemented: [],
+      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0012",
+      phaseId: "phase-7",
+      name: "Unified Subscription Center",
+      status: "planned",
       shortGoal: "Feed CRUD + categories + OPML inside Lumi",
       goal: "普通用户在 Lumi 内完成订阅添加/删除/重命名/分类、OPML 导入导出、手动刷新与 FreshRSS 状态展示，不再需要进入 FreshRSS 原生界面（经 FreshRSSControlAdapter 控制平面）。",
       implemented: [],
@@ -444,25 +493,25 @@ window.LUMIRSS_PROJECT = {
       devlog: null
     },
     {
-      id: "0011",
-      phaseId: "phase-6",
+      id: "0013",
+      phaseId: "phase-7",
       name: "Source Discovery & RSSHub Integration",
       status: "planned",
       shortGoal: "Paste URL → discover → preview → subscribe",
       goal: "粘贴普通 URL 即可发现来源：RSS/Atom 检测 → rel=alternate → 常见 endpoint → RSSHub 路由匹配 → 参数表单 → 预览 → 一键订阅进 FreshRSS；含 SSRF/超时/输出限制等安全防护。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
       problems: [],
       learned: [],
       devlog: null
     },
     {
-      id: "0012",
-      phaseId: "phase-7",
+      id: "0014",
+      phaseId: "phase-8",
       name: "AI Foundation & Summary",
       status: "planned",
       shortGoal: "On-demand summary + SQLite cache",
-      goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。（由原 0009 重新编号而来）",
+      goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。（由原 0009 AI Summary 二次顺延而来）",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -470,8 +519,8 @@ window.LUMIRSS_PROJECT = {
       devlog: null
     },
     {
-      id: "0013",
-      phaseId: "phase-7",
+      id: "0015",
+      phaseId: "phase-8",
       name: "Translation & AI Conversation",
       status: "planned",
       shortGoal: "Translation + article-scoped AI chat",
@@ -483,8 +532,8 @@ window.LUMIRSS_PROJECT = {
       devlog: null
     },
     {
-      id: "0014",
-      phaseId: "phase-8",
+      id: "0016",
+      phaseId: "phase-9",
       name: "Reader Power UX & Unified Settings",
       status: "planned",
       shortGoal: "Search, keyboard, reading prefs, settings",
@@ -496,8 +545,8 @@ window.LUMIRSS_PROJECT = {
       devlog: null
     },
     {
-      id: "0015",
-      phaseId: "phase-9",
+      id: "0017",
+      phaseId: "phase-10",
       name: "Production & Operations",
       status: "planned",
       shortGoal: "Caddy + HTTPS + ECS + backup/restore",
@@ -509,8 +558,8 @@ window.LUMIRSS_PROJECT = {
       devlog: null
     },
     {
-      id: "0016",
-      phaseId: "phase-9",
+      id: "0018",
+      phaseId: "phase-10",
       name: "MVP Stabilization & Release",
       status: "planned",
       shortGoal: "Regression + a11y + release tag",

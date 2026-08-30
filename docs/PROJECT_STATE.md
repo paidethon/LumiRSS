@@ -1,7 +1,8 @@
 # LumiRSS Project State
 
-> v6.0 — verified against the local repository; 0009 implementation
-> completed 2026-08-29 (Gates 0–4, all user-approved).
+> v6.2 — 0010 + 0010a expansion complete (Gates A–G, all user-approved,
+> 2026-08-30); roadmap renumbered again (0011 Reader Style Deep
+> Customization inserted, old 0011–0017 → 0012–0018).
 
 ---
 
@@ -21,14 +22,15 @@ LumiRSS has completed its initial RSS reader foundation through milestone
 
 The project is now at the **Lumi-native source control** stage.
 
-Completed next milestone:
+Completed milestones:
 
 ```text
-0009 — UI Reboot & Reference Lab   (completed 2026-08-29)
-0010 — Unified Subscription Center (next)
+0009 — UI Reboot & Reference Lab          (completed 2026-08-29)
+0010 — Settings Center & Adaptive Shell   (completed 2026-08-30, incl. 0010a)
+0011 — Reader Style Deep Customization    (next)
 ```
 
-AI Summary (renumbered from old 0009) stays at milestone 0012.
+AI Summary (renumbered from old 0009, thrice) stays at milestone 0014.
 
 ---
 
@@ -60,13 +62,15 @@ Inspection:    2026-08-28
 | 0007 Mobile + PWA | Implemented | responsive list/detail flow and static installability | Preserve/refine |
 | 0008 RSSHub source expansion | Implemented | minimal RSSHub service and verified ingestion chain | Preserve |
 | 0009 UI Reboot & Reference Lab | **Implemented** | design system, responsive shell, Folo/OrigRead audit | Completed 2026-08-29 |
-| 0010 Unified Subscription Center | **Next** | add/manage subscriptions inside Lumi | After 0009 |
-| 0011 Source Discovery & RSSHub | Planned | URL/RSSHub discovery, route forms and preview | After 0010 |
-| 0012 AI Foundation & Summary | Planned | on-demand summary, cache and safe status | Replaces old 0009 |
-| 0013 Translation & AI Conversation | Planned | translation and responsive AI chat surfaces | After 0012 |
-| 0014 Reader Power UX & Unified Settings | Planned | reading preferences, settings, power navigation | Later MVP |
-| 0015 Production & Operations | Planned | Caddy, deployment, backup, diagnostics | Later MVP |
-| 0016 MVP Stabilization | Planned | regression, docs, accessibility and release | MVP exit |
+| 0010 Settings Center & Adaptive Shell | **Implemented** | settings center, sidebar IA, adaptive panes, mobile tabs | Completed 2026-08-30 |
+| 0011 Reader Style Deep Customization | **Next** | font import, Chinese typography, theme packs | After 0010a |
+| 0012 Unified Subscription Center | Planned | add/manage subscriptions inside Lumi; BFF-layer filtering + OPML | After 0011 |
+| 0013 Source Discovery & RSSHub | Planned | URL/RSSHub discovery, route forms and preview; RSSHub instance testing | After 0012 |
+| 0014 AI Foundation & Summary | Planned | on-demand summary, cache and safe status | Replaces old 0009 |
+| 0015 Translation & AI Conversation | Planned | translation execution, test-connection, DeepL usage | After 0014 |
+| 0016 Reader Power UX & Unified Settings | Planned | reading preferences, power navigation; server-side settings API; scroll-mark-read formalized | Later MVP |
+| 0017 Production & Operations | Planned | Caddy, deployment, backup, diagnostics | Later MVP |
+| 0018 MVP Stabilization | Planned | regression, docs, accessibility and release | MVP exit |
 
 ---
 
@@ -211,7 +215,78 @@ These limitations are not permission to rewrite working behavior.
 
 ---
 
-## 10. Completed work: 0009 — UI Reboot & Reference Lab
+## 10. Completed work: 0010 + 0010a — Settings Center & Adaptive Shell
+
+All gates user-approved (A/B/C/D: 2026-08-29–30; E/F/G (0010a): 2026-08-30).
+
+### Delivered
+
+- **Gate A — settings framework**: typed `app-settings` store
+  (`store/app-settings.ts`: single localStorage key `lumirss-settings`,
+  per-field normalization, legacy key migration from `lumirss-theme` /
+  `lumirss-reader-bg`); `SettingItem` declarative renderer (title / toggle
+  → Switch / enum → Select / action → Button / custom); `SettingsModal`
+  (9-category left nav at Folo-measured metrics; blank-overlay / Escape /
+  ✕ close — fixed a latent Dialog overlay-click bug from 0009).
+- **Gate B — category pages**: keyboard shortcuts j/k/u/s
+  (`lib/keyboard-shortcuts.ts`; genuine bug found & fixed: query cache key
+  mismatch with `useEntries`); shortcuts cheatsheet page; data control
+  (clear cache + reset settings, both real); about page (version / AGPL /
+  repo / THIRD_PARTY_NOTICES); 4 planned pages (sources 0011/0012, AI
+  0013/0014, services, workspace Phase 2) all disabled with milestone
+  labels; unread-dot toggle wired to EntryRow (real).
+- **Gate C — sidebar IA & adaptive panes**: Sidebar regrouped into
+  信息来源 / 工作区 (9 Phase 2 items visible-but-disabled with badges);
+  `PaneSeparator` (pointer drag with clamp 220–300 / 360–460, arrow-key
+  ±10px, double-click reset, role=separator aria); collapse/expand for
+  both panes; widths & collapse persisted (fixed a real separator
+  height-collapse bug found only via live browser testing).
+- **Gate D — mobile Folo-style + board + docs**: bottom tab bar
+  (<768px: timeline / starred / settings, ≥44px + safe-area, hidden while
+  reading); progress board revision (roadmap renumber + Lumi Mist light/dark
+  unification + mobile overflow fix); PRD v6.1 / ROADMAP / PROJECT_STATE /
+  AGENTS / README updates.
+- **0010a Gate E — mobile settings redesign + IA + general**: fixed the
+  broken <768 settings layout (missing `max-md:flex-col`) by replacing the
+  Dialog+chips approach with a Folo-style full-screen settings page (grouped
+  list → push subpages, shared CategoryPage components & store with desktop);
+  categories 9 → 13 (translation / filters / rsshub / backup); general page
+  additions (dimRead / groupByDate / unreadOnly / experimental
+  scrollMarkUnread with badge).
+- **0010a Gate F — appearance + reader style P0/P1 + OrigRead pages**:
+  accent color picker (8 presets + custom, derived hover/pressed/soft),
+  global UI font size (rem scaling) & font stacks, reduce motion, custom CSS
+  editor with `.lumi-reader` prefixing (matchingClose bug found & fixed);
+  reader font stacks ×4, background palette (paper/mint/custom hex +
+  WCAG-adaptive text), paragraph spacing, justify, image modes; 5 built-in
+  typography presets + derive/import/export; translation provider cards
+  (microsoft/deepl/dlx), filter rules (CRUD + display-layer filtering +
+  stats), RSSHub 16 built-in instances management, encrypted config backup
+  (Web Crypto PBKDF2+AES-GCM; no-secret restore must not clear local keys —
+  genuine bug found via live testing & fixed).
+- **0010a Gate G — regression + docs**: backup round-trip live test 16/16
+  (export encrypted → wrong-password reject → restore all → bad-file reject
+  → no-secret restore keeps keys); viewport matrix 10/10; PRD v6.2 / ROADMAP /
+  PROJECT_STATE / AGENTS / README / SOURCE_MAP / reader-style survey
+  (docs/reference/reader-style-survey.md) / board renumber (0011 inserted,
+  0012–0018 shifted).
+
+### Verification (final numbers)
+
+```text
+Web tests:   208 passed (17 files; 162 pre-0010 + 46 new; zero regression)
+Web lint:    0 errors, 1 warning (React Compiler note)
+Web build:   success (js 317.42KB / gzip 99.36KB)
+BFF tests:   121 passed, git diff -- services/bff empty
+Live checks: drag 240→277 + reload restore; collapse/expand both panes;
+             double-click reset; keyboard j/k/u/s in real browser;
+             9 Phase-2 badges visible; mobile 390 zero overflow
+Board:       Light/Dark + 1280/768/390 zero overflow, 0010 visible
+```
+
+---
+
+## 10b. Completed work: 0009 — UI Reboot & Reference Lab
 
 All gates user-approved (Gate 0: 2026-08-28; Gates 1–4: 2026-08-29).
 
@@ -260,19 +335,19 @@ Smoke: read/star reversible; console 0 errors; 0 direct upstream requests
 
 ---
 
-## 11. Test state (final 0009 run, 2026-08-29)
+## 11. Test state (final 0010a run, 2026-08-30)
 
 ```text
-BFF tests:          121 passed  (uv run pytest, unchanged code)
-Web tests:          162 passed  (pnpm test, 13 test files)
-Web lint:           0 errors, 2 warnings (oxlint; React Compiler notes)
-Web build:          success (js 290.54KB / gzip 92.03KB)
-Integration checks: reversible read/star smoke via real FreshRSS data;
-                    console 0 errors; 0 direct upstream requests
-Visual viewport checks: 12 screenshots (5 sizes × 2 themes + settings
-                    dialog + mobile reader), zero horizontal overflow
-Date run:           2026-08-29
-Commit tested:      feat/0009-ui-reboot-reference-lab (worktree)
+BFF tests:          121 passed  (uv run pytest, zero diff — V1 ✓)
+Web tests:          244 passed  (pnpm test, 19 test files)
+Web lint:           0 errors, 2 warnings (React Compiler notes)
+Web build:          success
+Integration checks: backup round-trip 16/16 (encrypted export → restore →
+                    bad-file reject → no-secret restore keeps keys);
+                    accent/preset/custom-CSS/custom-bg/filter live checks;
+                    viewport matrix 10/10 (5 sizes × 2 themes, zero overflow)
+Date run:           2026-08-30
+Commit tested:      feat/0010-settings-center-adaptive-shell (worktree)
 ```
 
 A failure unrelated to 0009 must be reported separately rather than

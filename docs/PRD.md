@@ -1,9 +1,9 @@
 # LumiRSS 产品需求文档
 
-> 文档版本：v6.0 — UI Reboot / Unified Information Reader Baseline  
-> 日期：2026-08-28  
-> 状态：Adopted（已经 0009 Gate 0 本地仓库事实校准，用户于 2026-08-28 批准）  
-> 适用范围：0009–0016 与后续 Phase 2 方向
+> 文档版本：v6.2 — Reader Style Deep Customization 路线修订  
+> 日期：2026-08-30  
+> 状态：Adopted（v6.1 经 0010a 补丁轮路线修订，用户于 2026-08-30 批准插排）  
+> 适用范围：0009–0018 与后续 Phase 2 方向
 
 ---
 
@@ -562,7 +562,27 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - screenshot regression；
 - 不改 BFF API 和业务行为。
 
-### 0010 — Unified Subscription Center
+### 0010 — Settings Center & Adaptive Shell
+
+- Folo 式设置中心（声明式设置行 + 9 分类）；
+- 侧栏信息架构分组（信息来源 / 工作区）；
+- 三栏拖拽 / 折叠 / 持久化；
+- 移动端底部 Tab（时间线 / 收藏 / 设置）；
+- 快捷键基础集（j / k / u / s）；
+- 纯前端（localStorage），BFF 零变化。
+
+### 0011 — Reader Style Deep Customization
+
+- 字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式）；
+- 中文排版深度（首行缩进 / 标点悬挂 / 简繁转换 / CJK 阅读时长估算）；
+- 主题包分享（.lumitheme JSON：预设 + 自定义 CSS 完整快照，导入导出）；
+- 代码高亮主题（shiki 按需加载，届时评估依赖）；
+- Bionic Reading（按词加粗）；
+- 分页滚动（候选）。
+
+依据：docs/reference/reader-style-survey.md（10+ 阅读器调研的差异化层）。
+
+### 0012 — Unified Subscription Center
 
 - Feed CRUD；
 - Category；
@@ -571,7 +591,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - FreshRSS status；
 - 所有高频订阅操作进入 Lumi。
 
-### 0011 — Source Discovery & RSSHub
+### 0013 — Source Discovery & RSSHub
 
 - URL discovery；
 - route catalog；
@@ -581,7 +601,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - one-click subscribe；
 - RSSHub health / config。
 
-### 0012 — AI Foundation & Summary
+### 0014 — AI Foundation & Summary
 
 - SQLite；
 - provider；
@@ -589,7 +609,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - cache；
 - failure states。
 
-### 0013 — Translation & AI Conversation
+### 0015 — Translation & AI Conversation
 
 - translation；
 - bilingual reader；
@@ -597,7 +617,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - mobile sheet；
 - entry context。
 
-### 0014 — Reader Power UX & Unified Settings
+### 0016 — Reader Power UX & Unified Settings
 
 - search；
 - keyboard；
@@ -605,9 +625,10 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - reading position；
 - settings；
 - theme customisation；
-- backup / diagnostics UI。
+- backup / diagnostics UI；
+- 服务端设置 API（localStorage 偏好迁移点）。
 
-### 0015 — Production & Operations
+### 0017 — Production & Operations
 
 - Caddy；
 - HTTPS；
@@ -617,7 +638,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - logging；
 - CI hardening。
 
-### 0016 — MVP Stabilization
+### 0018 — MVP Stabilization
 
 - full regression；
 - accessibility；

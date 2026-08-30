@@ -111,10 +111,10 @@ describe('Test B — Open / Close', () => {
     expect(menuButton()).toHaveAttribute('aria-expanded', 'true')
     expect(drawer()).not.toBeNull()
     // 抽屉里是同一份 Sidebar 导航
-    expect(withinDrawer('All')).toBeInTheDocument()
-    expect(withinDrawer('Unread')).toBeInTheDocument()
-    expect(withinDrawer('Starred')).toBeInTheDocument()
-    expect(withinDrawer('All Feeds')).toBeInTheDocument()
+    expect(withinDrawer('全部信息流')).toBeInTheDocument()
+    expect(withinDrawer(/ME 时间线 · 未读/)).toBeInTheDocument()
+    expect(withinDrawer(/ME 时间线 · 收藏/)).toBeInTheDocument()
+    expect(withinDrawer('全部信息流')).toBeInTheDocument()
   })
 
   it('backdrop 点击 → drawer 关闭', async () => {
@@ -169,7 +169,7 @@ describe('Test C — View selection', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回文章列表' }))
 
     fireEvent.click(menuButton())
-    fireEvent.click(withinDrawer('Unread'))
+    fireEvent.click(withinDrawer(/ME 时间线 · 未读/))
 
     expect(useReaderUi.getState().view).toBe('unread')
     expect(useReaderUi.getState().selectedEntryRef).toBeNull()
@@ -196,9 +196,9 @@ describe('Test D — Feed selection', () => {
     renderApp()
 
     useReaderUi.setState({ selectedFeedUrl: 'https://a.example.com/feed.xml' })
-    await screen.findByRole('button', { name: 'All Feeds' })
+    await screen.findByRole('button', { name: /全部信息流/ })
     fireEvent.click(menuButton())
-    fireEvent.click(withinDrawer('All Feeds'))
+    fireEvent.click(withinDrawer('全部信息流'))
 
     expect(useReaderUi.getState().selectedFeedUrl).toBeNull()
     expect(drawer()).toBeNull()
@@ -265,10 +265,14 @@ describe('Drawer accessibility', () => {
 })
 
 /** 在 drawer panel 内按可访问名找 button（drawer 与 desktop sidebar
- * 是同一组件的两份实例，必须限定查询范围；文本 trim 容忍 JSX 缩进）。 */
-function withinDrawer(name: string): HTMLElement {
+ * 是同一组件的两份实例，必须限定查询范围；文本 trim 容忍 JSX 缩进；
+ * 0010 Gate C：支持 string（精确）与 RegExp（包含匹配））。 */
+function withinDrawer(name: string | RegExp): HTMLElement {
   const buttons = Array.from(drawer()?.querySelectorAll('button') ?? [])
-  const found = buttons.find((b) => b.textContent?.trim() === name)
+  const found = buttons.find((b) => {
+    const text = b.textContent?.trim() ?? ''
+    return typeof name === 'string' ? text === name : name.test(text)
+  })
   if (found === undefined) {
     throw new Error(`button ${name} not found inside drawer`)
   }

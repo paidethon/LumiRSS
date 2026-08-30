@@ -202,6 +202,26 @@ Font:  system-ui, "SN Pro", "PingFang SC", "Hiragino Sans GB",
 Theme mechanism: `html[data-theme="dark|light"]` + `html[data-viewport]`;
 scrollbar thumb 6px, dark oklch(0.556 0 0), hover rgba(161,161,161,.5).
 
+### Settings modal measurements (0010 audit, 2026-08-29)
+
+Read-only audit of Folo's settings modal (user's logged-in session,
+computed styles only):
+
+```text
+Modal:      951×801, radius 12px (top corners), white bg, thin border
+Left nav:   13 categories, row 34px / pad 2px 10px / radius 8px / 16px font
+Content:    px-32 padding, independent scroll area
+Section:    title 13px/700/51% opacity, margin-top 40px between groups
+Setting row: flex justify-between gap-4, label 14px/500 left,
+            control right (Switch 40×24), row mt-16px mb-12px
+```
+
+Source-code cross-check: `modules/settings/modal/layout.tsx` (Resizable
+950×800 default, minWidth 700) + `helper/setting-builder.tsx` (declarative
+item model) + `tabs/` (13 category pages).
+
+---
+
 ### Audit limitations
 
 - Qoder browser panel viewport is limited (~1025–1211px wide); 1920/1440

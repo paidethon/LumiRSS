@@ -113,11 +113,15 @@ export default function Reader() {
   const detail = data
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
-      {/* 0009 Gate 3：正文宽度 46rem（~736px，Spec 720–780 区间）；
+      {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
+          ≈ 736px，设置中心可调 680/760/900）；
           0007 语义保留：手机左右留白收紧（max-lg:px-5），底部计入 safe area */}
       <article
-        className="mx-auto max-w-[46rem] px-8 py-6 max-lg:px-5"
-        style={{ paddingBottom: 'max(1.5rem, var(--safe-bottom))' }}
+        className="mx-auto px-8 py-6 max-lg:px-5"
+        style={{
+          maxWidth: 'var(--lumi-reader-content-width, 46rem)',
+          paddingBottom: 'max(1.5rem, var(--safe-bottom))',
+        }}
       >
         {/* key=entryRef：切换 Entry = 组件重挂载，旧 mutation 的
             pending / error UI 不泄漏到新 Entry。 */}

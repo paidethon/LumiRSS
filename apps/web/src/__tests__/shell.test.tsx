@@ -134,7 +134,7 @@ describe('Test G — Empty state', () => {
     ))
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Starred' }))
+    fireEvent.click(await screen.findByRole('button', { name: /ME 时间线 · 收藏/ }))
     expect(await screen.findByText('还没有收藏文章')).toBeInTheDocument()
   })
 })
@@ -170,14 +170,14 @@ describe('Test I — View 切换', () => {
     renderApp()
     await screen.findByText('没有未读文章').catch(() => {}) // 等初始加载完成
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Unread' }))
+    fireEvent.click(await screen.findByRole('button', { name: /ME 时间线 · 未读/ }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       const unreadCall = calls.find((u) => u.includes('view=unread'))
       expect(unreadCall).toBeDefined()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Starred' }))
+    fireEvent.click(screen.getByRole('button', { name: /ME 时间线 · 收藏/ }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(calls.find((u) => u.includes('view=starred'))).toBeDefined()
@@ -203,7 +203,7 @@ describe('Test J — Feed 切换', () => {
       ).toBeDefined()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'All Feeds' }))
+    fireEvent.click(screen.getByRole('button', { name: /全部信息流/ }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       const allFeedsCalls = calls.filter((u) => u.startsWith('/api/v1/entries') && !u.includes('feedUrl='))
@@ -265,7 +265,7 @@ describe('Test K — Entry selection', () => {
     fireEvent.click(await screen.findByRole('button', { name: /会被取消选中的文章/ }))
     expect(screen.queryByText('选择一篇文章开始阅读')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unread' }))
+    fireEvent.click(screen.getByRole('button', { name: /ME 时间线 · 未读/ }))
     expect(await screen.findByText('选择一篇文章开始阅读')).toBeInTheDocument()
   })
 })

@@ -16,15 +16,19 @@ Its current foundation combines:
 
 ## Current status
 
-Milestone 0009 (UI Reboot & Reference Lab) is complete (2026-08-29):
-the temporary visual shell has been replaced by a coherent **Lumi Mist**
-design system — semantic tokens with Light/Dark/System themes, 11 shared
-UI primitives, a Folo-density Sidebar/Timeline/Reader, Reader theme
-separation (sepia/warm backgrounds), and a Settings shell (Appearance
-works today; Sources/AI groups are explicitly planned) — with **zero
-BFF changes** and zero behavior regression (Web 162 / BFF 121 tests
-green; 5-viewport × 2-theme screenshot matrix clean). See
-`docs/devlog/0009-ui-reboot-reference-lab.md`.
+Milestone 0010 + 0010a expansion (Settings Center & Adaptive Shell) is
+complete (2026-08-30): a Folo-style settings center (13 categories —
+appearance/accent picker, reader typography P0, custom CSS + 5 typography
+presets, translation providers, filter rules with display-layer filtering,
+RSSHub instances, encrypted config backup via Web Crypto), Folo-style
+mobile push settings, adaptive panes, and a Lumi Mist unified progress
+board — all client-side (localStorage), **zero BFF changes** (Web 244 /
+BFF 121 tests green). See `docs/devlog/0010-settings-center-adaptive-shell.md`.
+
+Milestone 0009 (UI Reboot & Reference Lab) is complete (2026-08-29): the
+Lumi Mist design system — semantic tokens with Light/Dark/System themes,
+11 shared UI primitives, Folo-density Sidebar/Timeline/Reader, Reader
+theme separation. See `docs/devlog/0009-ui-reboot-reference-lab.md`.
 
 Milestones 0001–0008 are complete: RSS reading foundation end to end —
 FreshRSS + minimal RSSHub (verified non-RSS ingestion path with failure
@@ -263,13 +267,15 @@ See `docs/reference/LICENSE_AUDIT.md`.
 ```text
 0001–0008  RSS reader foundation                         implemented baseline
 0009       UI Reboot & Reference Lab                     completed 2026-08-29
-0010       Unified Subscription Center                   next
-0011       Source Discovery & RSSHub Integration         planned
-0012       AI Foundation & Summary                       planned
-0013       Translation & AI Conversation                 planned
-0014       Reader Power UX & Unified Settings            planned
-0015       Production & Operations                       planned
-0016       MVP Stabilization & Release                   planned
+0010       Settings Center & Adaptive Shell (+0010a)     completed 2026-08-30
+0011       Reader Style Deep Customization               next
+0012       Unified Subscription Center                   planned
+0013       Source Discovery & RSSHub Integration         planned
+0014       AI Foundation & Summary                       planned
+0015       Translation & AI Conversation                 planned
+0016       Reader Power UX & Unified Settings            planned
+0017       Production & Operations                       planned
+0018       MVP Stabilization & Release                   planned
 Phase 2    Web/API/Email/Obsidian/Agent Workbench        deferred
 ```
 
