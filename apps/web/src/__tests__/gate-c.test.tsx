@@ -42,13 +42,21 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.getByRole('group', { name: '工作区' })).toBeInTheDocument()
   })
 
-  it('可用项：全部信息流 / RSS 订阅 / ME 时间线·未读 / 收藏 / 设置', () => {
+  it('可用项：全部信息流 / RSS 订阅（disclosure）/ 时间线+未读 / 收藏 / 设置（品牌区）', () => {
     renderSidebar()
     expect(screen.getByRole('button', { name: /全部信息流/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /RSS 订阅/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /ME 时间线 · 未读/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /ME 时间线 · 收藏/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '设置' })).toBeEnabled()
+    // 0011：RSS 订阅为 disclosure（aria-expanded，默认收起）
+    const rssToggle = screen.getByRole('button', { name: /RSS 订阅/ })
+    expect(rssToggle).toBeEnabled()
+    expect(rssToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(rssToggle).toHaveAttribute('aria-controls', 'sidebar-rss-feeds')
+    // 0011：工作区去重——时间线 + 未读过滤子项 + 收藏（去掉 ME 前缀）
+    expect(screen.getByRole('button', { name: /时间线/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '未读' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '收藏' })).toBeEnabled()
+    // 0011：设置入口在品牌区右上角（SidebarHeader），底部设置行已删除
+    expect(screen.getByRole('button', { name: '打开设置' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
   })
 
   it('Phase 2 项可见但禁用（9 项 + Phase 2 徽标）', () => {
@@ -71,10 +79,10 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.queryByRole('button', { name: /Agent 工作台/ })).toBeNull()
   })
 
-  it('ME 时间线·未读 点击 → view=unread + selection 清空', () => {
+  it('未读过滤子项点击 → view=unread + selection 清空', () => {
     useReaderUi.setState({ view: 'all', selectedEntryRef: 'x', selectedFeedUrl: null })
     renderSidebar()
-    fireEvent.click(screen.getByRole('button', { name: /ME 时间线 · 未读/ }))
+    fireEvent.click(screen.getByRole('button', { name: '未读' }))
     expect(useReaderUi.getState().view).toBe('unread')
     expect(useReaderUi.getState().selectedEntryRef).toBeNull()
   })

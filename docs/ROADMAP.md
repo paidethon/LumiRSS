@@ -15,29 +15,34 @@ Completed foundation
 UI and product shell
 0009–0010
     ↓
-Reader style deep customization
+Mobile UI five-screen alignment
 0011
     ↓
+Reader style deep customization
+0012
+    ↓
 Lumi-native source control
-0012–0013
+0013–0014
     ↓
 AI reading assistance
-0014–0015
+0015–0016
     ↓
 Reader/settings completion
-0016
+0017
     ↓
 Production and MVP release
-0017–0018
+0018–0019
     ↓
 Knowledge Workbench Phase 2
 ```
 
-The former `0009 — AI Summary` is renumbered to `0013 — AI Foundation & Summary`（0010 路线修订二次顺延）。
+The former `0009 — AI Summary` is renumbered to `0015 — AI Foundation & Summary`（0010/0010a/0011 三次路线修订顺延）。
 
 0010 路线修订（2026-08-29，用户批准）：插入 `0010 — Settings Center & Adaptive Shell`（设置中心 + 自适应外壳，纯前端）；原 0010–0016 顺延为 0011–0017。原因：设置与外壳是所有后续功能的承载面，优先于订阅管理。
 
 0010a 路线修订（2026-08-30，用户批准）：插入 `0011 — Reader Style Deep Customization`（阅读样式深度自定义：字体导入/中文排版/主题包分享，依据 reader-style-survey 调研）；原 0011–0017 顺延为 0012–0018。同时决策：JSON 规则/网站解析规则（自造源）不做——违反冻结架构，同等需求由 RSSHub 承担（0013）；OrigRead 规则页 UI 模式作为 0013 设计蓝本。
+
+0011 路线修订（2026-08-30，用户批准）：尚未开工的原 `0011 — Reader Style Deep Customization`（spec 未写）被替换为 `0011 — Mobile UI Navigation & Five-Screen Alignment`（移动端导航与五页面 UI 对齐，依据用户提供的 Spec0011 Bundle 与五张参考图）；原 0011–0018 顺延为 0012–0019。同时决策：搜索能力不做在 0011 内（诚实空态），立候选里程碑 `0011a Basic Global Search`（待用户单独批准 BFF 契约后再排期）。
 
 ---
 
@@ -225,9 +230,35 @@ Every interactive control genuinely works and persists; planned items are disabl
 
 ---
 
-## 0011 — Reader Style Deep Customization
+## 0011 — Mobile UI Navigation & Five-Screen Alignment
 
-**Status:** Planned（spec 待写；调研依据 docs/reference/reader-style-survey.md）
+**Status:** **Active spec**（docs/specs/0011-mobile-ui-five-screen-alignment.md，2026-08-30 用户批准）
+
+### Goal
+
+对齐移动端 Web 的首页/订阅/搜索/收藏/侧边栏五个界面（用户提供的五张参考图）：
+建立 AppSection 一级导航模型与四项底部导航岛（首页/订阅/搜索/收藏）、
+设置入口统一到侧边栏品牌区右上角、RSS 源 disclosure 默认收起、
+共享 EntryCard 与移动页 Header、订阅/搜索页诚实降级（无契约不造假）、
+Playground 五场景 fixture 与七视口截图矩阵。纯前端，BFF 零改动。
+
+### Acceptance
+
+见 active spec AC1–AC13（四 tab 状态转换、设置同位、RSS 折叠语义、
+收藏复用 starred 查询、抽屉 modal/focus trap、无横向 overflow、
+不伪造数据、既有行为零回归）。
+
+### 候选：0011a — Basic Global Search
+
+仅当用户单独批准搜索 BFF 契约后启动（FreshRSS greader 协议无搜索能力，
+需评估其他方案）；在此之前搜索页保持诚实空态。
+
+---
+
+## 0012 — Reader Style Deep Customization
+
+**Status:** Planned（spec 待写；调研依据 docs/reference/reader-style-survey.md；
+0011 路线修订自原 0011 顺延）
 
 ### Goal
 
@@ -244,7 +275,7 @@ typography options verifiable in computed styles; zero BFF changes.
 
 ---
 
-## 0012 — Unified Subscription Center
+## 0013 — Unified Subscription Center
 
 **Status:** Planned
 
@@ -273,7 +304,7 @@ A user can add, categorize and remove a normal RSS feed from Lumi without openin
 
 ---
 
-## 0013 — Source Discovery & RSSHub Integration
+## 0014 — Source Discovery & RSSHub Integration
 
 **Status:** Planned
 
@@ -308,9 +339,9 @@ A supported non-RSS website can be discovered, configured, previewed and subscri
 
 ---
 
-## 0014 — AI Foundation & Summary
+## 0015 — AI Foundation & Summary
 
-**Status:** Planned; renumbered from old 0009 (0009→0012→0013→0014)
+**Status:** Planned; renumbered from old 0009 (0009→0012→0013→0014→0015)
 
 ### Goal
 
@@ -335,7 +366,7 @@ AI can fail completely and normal reading/state/source workflows still work.
 
 ---
 
-## 0015 — Translation & AI Conversation
+## 0016 — Translation & AI Conversation
 
 **Status:** Planned
 
@@ -363,7 +394,7 @@ Add translation and context-aware article conversation on top of the AI foundati
 
 ---
 
-## 0016 — Reader Power UX & Unified Settings
+## 0017 — Reader Power UX & Unified Settings
 
 **Status:** Planned
 
@@ -391,7 +422,7 @@ A normal user can configure Lumi, Reader, FreshRSS-backed sources, RSSHub and AI
 
 ---
 
-## 0017 — Production & Operations
+## 0018 — Production & Operations
 
 **Status:** Planned
 
@@ -419,7 +450,7 @@ A fresh server can deploy, back up, restore, upgrade and roll back using documen
 
 ---
 
-## 0018 — MVP Stabilization & Release
+## 0019 — MVP Stabilization & Release
 
 **Status:** Planned
 
@@ -547,39 +578,47 @@ Reference patterns may be studied from projects such as Readeck, but implementat
  ├─ no backend dependency (localStorage only)
  └─ enables coherent settings/panes for all later features
 
-0011 Reader Style Deep Customization
+0011 Mobile UI Navigation & Five-Screen Alignment
+ ├─ no backend dependency (AppSection store + responsive shell)
+ └─ shared EntryCard/MobilePageHeader feed subscriptions/search/
+    favorites surfaces (0013/0011a) and all later mobile UX
+
+0012 Reader Style Deep Customization
  ├─ no backend dependency (FontFace/IndexedDB/local presets)
  └─ builds on 0010a reader-style variable system
 
-0012 Subscription Center
+0013 Subscription Center
  └─ depends on FreshRSS control capability; activates BFF-layer
     filtering (0010a display-layer rules migrate) + OPML backup
 
-0013 Source Discovery
- ├─ depends on 0012 subscribe flow
+0014 Source Discovery
+ ├─ depends on 0013 subscribe flow
  └─ introduces RSSHub catalog/control boundary; activates RSSHub
     instance testing (0010a instance list migrates); OrigRead
     rule-page UI patterns as design reference
 
-0014 AI Summary
+0015 AI Summary
  └─ depends on Reader/design/settings foundations
 
-0015 Translation/Chat
- └─ depends on 0014 provider/cache foundation; activates
+0016 Translation/Chat
+ └─ depends on 0015 provider/cache foundation; activates
     translation execution + test-connection + DeepL usage
     (0010a saved provider configs migrate)
 
-0016 Unified Settings
+0017 Unified Settings
  ├─ consolidates 0009/0010 theme & client settings
- ├─ consolidates 0012/0013 source settings
- ├─ consolidates 0014/0015 AI settings + server-side API
+ ├─ consolidates 0013/0014 source settings
+ ├─ consolidates 0015/0016 AI settings + server-side API
  └─ formalizes experimental scroll-mark-read
 
-0017 Production
+0018 Production
  └─ depends on stable service and secret boundaries
 
-0018 Stabilization
+0019 Stabilization
  └─ depends on all MVP feature milestones
+
+0011a Basic Global Search (candidate, requires user-approved
+search contract; otherwise search stays honest-empty in 0011)
 ```
 
 ---

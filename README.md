@@ -16,6 +16,15 @@ Its current foundation combines:
 
 ## Current status
 
+Milestone **0011 — Mobile UI Navigation & Five-Screen Alignment** is the
+active spec (approved 2026-08-30): align the mobile Web home /
+subscriptions / search / favorites / sidebar surfaces with the user's
+five reference images via an `AppSection` navigation model, a four-tab
+floating bottom bar, a shared mobile page header and honest data
+degradation (no fabricated backend fields; zero BFF changes). See
+`docs/specs/0011-mobile-ui-five-screen-alignment.md` and
+`docs/ui/0011-mobile-reference-matrix.md`.
+
 Milestone 0010 + 0010a expansion (Settings Center & Adaptive Shell) is
 complete (2026-08-30): a Folo-style settings center (13 categories —
 appearance/accent picker, reader typography P0, custom CSS + 5 typography
@@ -40,7 +49,7 @@ See:
 
 - `docs/PROJECT_STATE.md`
 - `docs/ROADMAP.md`
-- `docs/specs/0009-ui-reboot-reference-lab.md`
+- `docs/specs/0011-mobile-ui-five-screen-alignment.md`
 
 ---
 
@@ -224,7 +233,8 @@ The Web client uses relative `/api/v1/*` requests and must not receive FreshRSS/
 | `docs/PROJECT_STATE.md` | factual current state and immediate next work |
 | `docs/ROADMAP.md` | milestone order and future phases |
 | `docs/ui/UI_REBOOT.md` | detailed visual/responsive design direction |
-| `docs/specs/0009-ui-reboot-reference-lab.md` | executable next milestone spec |
+| `docs/specs/0011-mobile-ui-five-screen-alignment.md` | active milestone spec |
+| `docs/ui/0011-mobile-reference-matrix.md` | 0011 reference-image alignment matrix |
 | `AGENTS.md` | durable rules for coding agents |
 | `docs/reference/*` | pinned upstreams, source map and license gate |
 
@@ -268,14 +278,15 @@ See `docs/reference/LICENSE_AUDIT.md`.
 0001–0008  RSS reader foundation                         implemented baseline
 0009       UI Reboot & Reference Lab                     completed 2026-08-29
 0010       Settings Center & Adaptive Shell (+0010a)     completed 2026-08-30
-0011       Reader Style Deep Customization               next
-0012       Unified Subscription Center                   planned
-0013       Source Discovery & RSSHub Integration         planned
-0014       AI Foundation & Summary                       planned
-0015       Translation & AI Conversation                 planned
-0016       Reader Power UX & Unified Settings            planned
-0017       Production & Operations                       planned
-0018       MVP Stabilization & Release                   planned
+0011       Mobile UI Navigation & Five-Screen Alignment  active spec
+0012       Reader Style Deep Customization               planned
+0013       Unified Subscription Center                   planned
+0014       Source Discovery & RSSHub Integration         planned
+0015       AI Foundation & Summary                       planned
+0016       Translation & AI Conversation                 planned
+0017       Reader Power UX & Unified Settings            planned
+0018       Production & Operations                       planned
+0019       MVP Stabilization & Release                   planned
 Phase 2    Web/API/Email/Obsidian/Agent Workbench        deferred
 ```
 

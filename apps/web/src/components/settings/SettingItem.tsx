@@ -30,7 +30,7 @@ export type SettingRowBase = {
   plannedFor?: string
   /** 实验性行（0010a）：控件真实可用 + 实验徽标 + 正式版归属 */
   experimental?: boolean
-  /** 正式版归属里程碑（实验性行展示，如 "0016"） */
+  /** 正式版归属里程碑（实验性行展示，如 "0017"） */
   experimentalFor?: string
 }
 

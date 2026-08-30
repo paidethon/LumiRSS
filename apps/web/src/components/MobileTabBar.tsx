@@ -1,97 +1,76 @@
-/** MobileTabBar — <768px 底部 Tab 导航（0010 Gate D，Folo 同款模式）。
+/** MobileTabBar — <768px 底部导航岛（0011 Gate 1，四入口重构）。
  *
- * 三个 Tab（Folo 移动端验证过的拇指可达模式）：
- *   时间线（列表页）/ 收藏（Starred 视图）/ 设置（全屏设置页）
+ * 四个一级入口（Spec §设计规格，替代 0010 的 时间线/收藏/设置 三 tab）：
+ *   首页（AppSection home）/ 订阅（subscriptions）/ 搜索（search）/ 收藏（favorites）
  *
- * 行为：
- * - 触摸目标 ≥44px + safe-bottom 计入（硬边界 9）；
- * - Reader 打开时（selectedEntryRef != null）Tab 栏隐藏（全屏阅读）；
- * - 时间线/收藏切换 view（复用既有 store 语义），设置 Tab 打开全屏设置页
- *   （非 Modal——手机屏幕小，Modal 装不下设置中心）；
- * - 仅 <768px 渲染（768–1023 仍是 Drawer + list/detail，硬边界 16）。 */
+ * 导航岛形态（参考图 05-home 意图，非像素复刻）：
+ * - 悬浮圆角容器：左右响应式 inset + 底部 safe-area 计入；
+ * - 轻边框 + 克制阴影 + 实色表面（半透明/blur 仅点缀；无 backdrop-blur
+ *   依赖，实色降级即默认态）；
+ * - 触摸目标 ≥44px；图标与文字垂直排列；active 不只靠颜色（图标
+ *   fill + 字重）+ aria-current="page"；
+ * - 页面内容需自行预留底部 padding（App 层动态注入），最后一条不被遮挡。
+ *
+ * 设置不在底栏（Spec 硬性要求）：统一在侧边栏品牌区右上角
+ * （SidebarHeader），移动端开 MobileSettingsScreen、桌面开 SettingsModal。
+ * Reader 打开（selectedEntryRef != null）时隐藏（全屏阅读）。
+ *
+ * 仅 <768px 渲染；768–1023 保持 Drawer + list/detail（用户已确认）。 */
 
-import { Inbox, Settings, Star } from 'lucide-react'
-import { useState } from 'react'
-import { useReaderUi } from '../store/reader-ui'
-import MobileSettingsScreen from './MobileSettingsScreen'
+import { Home, Rss, Search, Star } from 'lucide-react'
+import { useReaderUi, type AppSection } from '../store/reader-ui'
 import { cx } from './ui/cx'
 
-type TabKey = 'timeline' | 'starred' | 'settings'
-
 export default function MobileTabBar() {
-  const view = useReaderUi((s) => s.view)
+  const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
-  const selectView = useReaderUi((s) => s.selectView)
-  const selectFeed = useReaderUi((s) => s.selectFeed)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const selectSection = useReaderUi((s) => s.selectSection)
 
-  // Reader 打开 → Tab 隐藏（但设置页打开时仍要渲染 MobileSettingsScreen）
+  // Reader 打开 → 底栏隐藏（全屏阅读）
   const readerOpen = selectedEntryRef !== null
 
-  const activeTab: TabKey = settingsOpen ? 'settings' : view === 'starred' ? 'starred' : 'timeline'
-
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode; onClick: () => void }[] = [
-    {
-      key: 'timeline',
-      label: '时间线',
-      icon: <Inbox aria-hidden className="size-5" />,
-      onClick: () => {
-        selectView('all')
-        selectFeed(null)
-      },
-    },
-    {
-      key: 'starred',
-      label: '收藏',
-      icon: <Star aria-hidden className="size-5" />,
-      onClick: () => {
-        selectView('starred')
-        selectFeed(null)
-      },
-    },
-    {
-      key: 'settings',
-      label: '设置',
-      icon: <Settings aria-hidden className="size-5" />,
-      onClick: () => setSettingsOpen(true),
-    },
+  const tabs: { key: AppSection; label: string; icon: React.ReactNode }[] = [
+    { key: 'home', label: '首页', icon: <Home aria-hidden className="size-5" /> },
+    { key: 'subscriptions', label: '订阅', icon: <Rss aria-hidden className="size-5" /> },
+    { key: 'search', label: '搜索', icon: <Search aria-hidden className="size-5" /> },
+    { key: 'favorites', label: '收藏', icon: <Star aria-hidden className="size-5" /> },
   ]
 
-  return (
-    <>
-      {/* 全屏设置页（0010a Gate E：Folo 移动端模式，非 Modal） */}
-      <MobileSettingsScreen
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
+  if (readerOpen) return null
 
-      {!readerOpen && (
-        <nav
-          aria-label="底部导航"
-          className="flex border-t border-[var(--lumi-separator)] bg-[var(--lumi-surface)] md:hidden"
-          style={{ paddingBottom: 'var(--safe-bottom)' }}
-        >
-          {tabs.map((tab) => (
+  return (
+    <nav aria-label="底部导航" className="px-3 pb-2 md:hidden" style={{ paddingBottom: 'calc(var(--safe-bottom) + 0.5rem)' }}>
+      <div
+        className={cx(
+          'flex rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)]',
+          'bg-[var(--lumi-elevated)] shadow-[var(--lumi-shadow-floating)]',
+        )}
+      >
+        {tabs.map((tab) => {
+          const active = section === tab.key
+          return (
             <button
               key={tab.key}
               type="button"
-              onClick={tab.onClick}
-              aria-current={activeTab === tab.key ? 'true' : undefined}
+              onClick={() => selectSection(tab.key)}
+              aria-current={active ? 'page' : undefined}
               className={cx(
-                'flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1',
+                'flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1.5',
                 'transition-colors duration-[var(--lumi-motion-fast)]',
                 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-                activeTab === tab.key
-                  ? 'text-[var(--lumi-accent)]'
+                active
+                  ? 'text-[var(--lumi-accent)] [&_svg]:fill-[var(--lumi-accent-soft)]'
                   : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
               )}
             >
               {tab.icon}
-              <span className="text-[11px] leading-none">{tab.label}</span>
+              <span className={cx('text-[11px] leading-none', active && 'font-semibold')}>
+                {tab.label}
+              </span>
             </button>
-          ))}
-        </nav>
-      )}
-    </>
+          )
+        })}
+      </div>
+    </nav>
   )
 }
