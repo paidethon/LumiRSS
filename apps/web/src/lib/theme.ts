@@ -6,7 +6,7 @@
  * store/theme.ts（Zustand）。
  *
  * 持久化是临时方案（Spec AC5）：非敏感外观偏好存 localStorage，
- * 0014 统一设置时迁移到服务端。 */
+ * 0017 统一设置时迁移到服务端。 */
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type Theme = 'light' | 'dark'

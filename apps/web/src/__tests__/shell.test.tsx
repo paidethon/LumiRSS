@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
@@ -71,6 +71,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/** 0011：RSS 订阅默认收起（disclosure）——展开后才能看到 feed 列表。
+ * 主导航查询统一限定在侧栏 nav 内，避免与底部导航岛/移动顶栏同名控件歧义。 */
+const sidebarNav = () => within(screen.getByRole('navigation', { name: '主导航' }))
+
+function expandRssDisclosure() {
+  fireEvent.click(sidebarNav().getByRole('button', { name: /RSS 订阅/ }))
+}
+
 describe('Test E — Shell loading', () => {
   it('feeds / entries pending 时存在 loading UI', () => {
     vi.stubGlobal(
@@ -79,6 +87,8 @@ describe('Test E — Shell loading', () => {
     )
     renderApp()
 
+    // 0011：RSS 根节点默认收起，展开后才出现订阅 skeleton（AC3）
+    expandRssDisclosure()
     expect(screen.getByLabelText('订阅加载中')).toBeInTheDocument()
     expect(screen.getByLabelText('文章加载中')).toBeInTheDocument()
   })
@@ -96,20 +106,21 @@ describe('Test F — Entry list 渲染', () => {
     ))
     renderApp()
 
-    expect(await screen.findByText('未读文章')).toBeInTheDocument()
-    expect(screen.getByText('已读收藏')).toBeInTheDocument()
+    expect((await screen.findAllByText('未读文章')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('已读收藏').length).toBeGreaterThan(0)
     // feedTitle 出现在 sidebar feed 按钮与 entry 行两处
+    //（0011：feed 按钮在 disclosure 内，先展开）
+    expandRssDisclosure()
     expect(screen.getAllByText('示例源 A').length).toBeGreaterThanOrEqual(2)
     // 0009 Gate 2：收藏标记改为 lucide 星形图标（aria-label 保留）
-    expect(screen.getByLabelText('已收藏')).toBeInTheDocument()
+    //（0011：桌面 EntryRow + 移动 EntryCard 双渲染 → 两个星标）
+    expect(screen.getAllByLabelText('已收藏').length).toBe(2)
     // 未读状态不只靠颜色：标题字重差异（font-medium vs font-normal）。
     // 圆点是纯视觉信号（aria-hidden），语义由字重 + 结构承载（AC10）。
-    const unreadTitle = screen.getByText('未读文章')
-    const readTitle = screen.getByText('已读收藏')
-    expect(unreadTitle.className).toContain('font-medium')
-    expect(readTitle.className).toContain('font-normal')
-    // 已读文章没有收藏星标
-    expect(screen.queryAllByLabelText('已收藏')).toHaveLength(1)
+    const unreadTitles = screen.getAllByText('未读文章')
+    const readTitles = screen.getAllByText('已读收藏')
+    for (const t of unreadTitles) expect(t.className).toContain('font-medium')
+    for (const t of readTitles) expect(t.className).toContain('font-normal')
     // 列表契约：数据里没有 contentText，正文绝不出现在 UI
     expect(document.body.textContent).not.toContain('contentText')
   })
@@ -134,7 +145,8 @@ describe('Test G — Empty state', () => {
     ))
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: /ME 时间线 · 收藏/ }))
+    // 0011：工作区「收藏」限定在主导航内（底部导航岛同名 tab 不歧义）
+    fireEvent.click(sidebarNav().getByRole('button', { name: '收藏' }))
     expect(await screen.findByText('还没有收藏文章')).toBeInTheDocument()
   })
 })
@@ -156,7 +168,7 @@ describe('Test H — Error state', () => {
 
     fail = false
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(await screen.findByText('文章 e1.a')).toBeInTheDocument()
+    expect((await screen.findAllByText('文章 e1.a')).length).toBeGreaterThan(0)
   })
 })
 
@@ -170,14 +182,15 @@ describe('Test I — View 切换', () => {
     renderApp()
     await screen.findByText('没有未读文章').catch(() => {}) // 等初始加载完成
 
-    fireEvent.click(await screen.findByRole('button', { name: /ME 时间线 · 未读/ }))
+    // 0011：「未读」为时间线行的过滤子项（在主导航内）
+    fireEvent.click(sidebarNav().getByRole('button', { name: '未读' }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       const unreadCall = calls.find((u) => u.includes('view=unread'))
       expect(unreadCall).toBeDefined()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /ME 时间线 · 收藏/ }))
+    fireEvent.click(sidebarNav().getByRole('button', { name: '收藏' }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(calls.find((u) => u.includes('view=starred'))).toBeDefined()
@@ -193,9 +206,12 @@ describe('Test J — Feed 切换', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
-    await screen.findByText('文章 e1.a')
+    // 0011：桌面 Row + 移动 Card 双渲染（双份文本）
+    expect((await screen.findAllByText('文章 e1.a')).length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: '示例源 A' }))
+    // 0011：feed 在 RSS disclosure 内（默认收起），先展开
+    expandRssDisclosure()
+    fireEvent.click(sidebarNav().getByRole('button', { name: '示例源 A' }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(
@@ -241,14 +257,18 @@ describe('Test K — Entry selection', () => {
     renderApp()
 
     expect(screen.getByText('选择一篇文章开始阅读')).toBeInTheDocument()
-    fireEvent.click(await screen.findByRole('button', { name: /可点击的文章/ }))
+    // 0011：双渲染下取第一个可点击实例
+    const clickables = await screen.findAllByRole('button', { name: /可点击的文章/ })
+    fireEvent.click(clickables[0]!)
 
     // 0006：选择后真实请求 Detail（GET /api/v1/entries/e1.a）
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((c) => /\/api\/v1\/entries\/e1\./.test(String(c[0])))).toBe(true)
     })
-    // selected 状态体现在 aria-pressed
-    expect(screen.getByRole('button', { name: /可点击的文章/ })).toHaveAttribute('aria-pressed', 'true')
+    // selected 状态体现在 aria-pressed（两个实例均应选中）
+    for (const b of screen.getAllByRole('button', { name: /可点击的文章/ })) {
+      expect(b).toHaveAttribute('aria-pressed', 'true')
+    }
   })
 
   it('切换 view 后 selection 清空，右栏回到占位文案', async () => {
@@ -262,16 +282,34 @@ describe('Test K — Entry selection', () => {
     ))
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: /会被取消选中的文章/ }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /会被取消选中的文章/ }))[0]!)
     expect(screen.queryByText('选择一篇文章开始阅读')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /ME 时间线 · 未读/ }))
+    fireEvent.click(sidebarNav().getByRole('button', { name: '未读' }))
     expect(await screen.findByText('选择一篇文章开始阅读')).toBeInTheDocument()
   })
 })
 
-describe('Test L — Load more', () => {
-  it('第一页 nextCursor → 点击加载更多 → cursor 原样传回 → 两页都渲染', async () => {
+describe('Test L — 无限滚动（0011：替换「加载更多」按钮）', () => {
+  // jsdom 无 IntersectionObserver 真实回调：mock 为手动触发 isIntersecting，
+  // 验证哨兵滚入 → 自动 fetchNextPage（cursor 原样透传）。
+  let intersectCb: IntersectionObserverCallback | null = null
+  beforeEach(() => {
+    intersectCb = null
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          intersectCb = cb
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+      },
+    )
+  })
+
+  it('哨兵滚入视口 → 自动拉下一页，cursor 原样传回，两页都渲染', async () => {
     const cursor = 'c1.fake-_cursor_0005'
     let callCount = 0
     const fetchMock = mockApi(
@@ -286,11 +324,17 @@ describe('Test L — Load more', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
-    expect(await screen.findByText('第一页文章')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+    expect((await screen.findAllByText('第一页文章')).length).toBeGreaterThan(0)
+    // 哨兵滚入（IntersectionObserver 回调 isIntersecting=true）
+    act(() => {
+      intersectCb?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      )
+    })
 
-    expect(await screen.findByText('第二页文章')).toBeInTheDocument()
-    expect(screen.getByText('第一页文章')).toBeInTheDocument()
+    expect((await screen.findAllByText('第二页文章')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('第一页文章').length).toBeGreaterThan(0)
     expect(screen.getByText('已经到底了')).toBeInTheDocument()
 
     // 第二次请求的 cursor 与第一页返回的 nextCursor 完全一致（opaque 透传）
@@ -298,15 +342,16 @@ describe('Test L — Load more', () => {
     expect(new URL(secondCall, 'http://local.test').searchParams.get('cursor')).toBe(cursor)
   })
 
-  it('无 nextCursor → 不显示加载更多按钮', async () => {
+  it('无 nextCursor → 无哨兵拉取，显示「已经到底了」终态', async () => {
     vi.stubGlobal('fetch', mockApi(
       () => jsonResponse(FEEDS),
       () => jsonResponse(page([entry('e1.only', { title: '唯一一篇文章' })], null)),
     ))
     renderApp()
 
-    expect(await screen.findByText('唯一一篇文章')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument()
+    expect((await screen.findAllByText('唯一一篇文章')).length).toBeGreaterThan(0)
     expect(screen.getByText('已经到底了')).toBeInTheDocument()
+    // 无下一页：哨兵不注册观察器（无回调可触发）
+    expect(intersectCb).toBeNull()
   })
 })

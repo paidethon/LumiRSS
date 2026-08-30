@@ -1,8 +1,8 @@
 # LumiRSS Project State
 
-> v6.2 — 0010 + 0010a expansion complete (Gates A–G, all user-approved,
-> 2026-08-30); roadmap renumbered again (0011 Reader Style Deep
-> Customization inserted, old 0011–0017 → 0012–0018).
+> v6.3 — 0011 Mobile UI Navigation & Five-Screen Alignment active
+> (Gate 0 approved 2026-08-30); roadmap renumbered again (0011 replaced
+> by Mobile UI, old 0011–0018 → 0012–0019).
 
 ---
 
@@ -27,10 +27,10 @@ Completed milestones:
 ```text
 0009 — UI Reboot & Reference Lab          (completed 2026-08-29)
 0010 — Settings Center & Adaptive Shell   (completed 2026-08-30, incl. 0010a)
-0011 — Reader Style Deep Customization    (next)
+0011 — Mobile UI Navigation & Five-Screen Alignment (active spec)
 ```
 
-AI Summary (renumbered from old 0009, thrice) stays at milestone 0014.
+AI Summary (renumbered from old 0009, four times) stays at milestone 0015.
 
 ---
 
@@ -63,14 +63,15 @@ Inspection:    2026-08-28
 | 0008 RSSHub source expansion | Implemented | minimal RSSHub service and verified ingestion chain | Preserve |
 | 0009 UI Reboot & Reference Lab | **Implemented** | design system, responsive shell, Folo/OrigRead audit | Completed 2026-08-29 |
 | 0010 Settings Center & Adaptive Shell | **Implemented** | settings center, sidebar IA, adaptive panes, mobile tabs | Completed 2026-08-30 |
-| 0011 Reader Style Deep Customization | **Next** | font import, Chinese typography, theme packs | After 0010a |
-| 0012 Unified Subscription Center | Planned | add/manage subscriptions inside Lumi; BFF-layer filtering + OPML | After 0011 |
-| 0013 Source Discovery & RSSHub | Planned | URL/RSSHub discovery, route forms and preview; RSSHub instance testing | After 0012 |
-| 0014 AI Foundation & Summary | Planned | on-demand summary, cache and safe status | Replaces old 0009 |
-| 0015 Translation & AI Conversation | Planned | translation execution, test-connection, DeepL usage | After 0014 |
-| 0016 Reader Power UX & Unified Settings | Planned | reading preferences, power navigation; server-side settings API; scroll-mark-read formalized | Later MVP |
-| 0017 Production & Operations | Planned | Caddy, deployment, backup, diagnostics | Later MVP |
-| 0018 MVP Stabilization | Planned | regression, docs, accessibility and release | MVP exit |
+| 0011 Mobile UI Five-Screen Alignment | **Active** | AppSection + 四 tab 导航岛 + 五页面对齐（docs/specs/0011-mobile-ui-five-screen-alignment.md） | In progress |
+| 0012 Reader Style Deep Customization | Planned | font import, Chinese typography, theme packs | After 0011 |
+| 0013 Unified Subscription Center | Planned | add/manage subscriptions inside Lumi; BFF-layer filtering + OPML | After 0012 |
+| 0014 Source Discovery & RSSHub | Planned | URL/RSSHub discovery, route forms and preview; RSSHub instance testing | After 0013 |
+| 0015 AI Foundation & Summary | Planned | on-demand summary, cache and safe status | Replaces old 0009 |
+| 0016 Translation & AI Conversation | Planned | translation execution, test-connection, DeepL usage | After 0015 |
+| 0017 Reader Power UX & Unified Settings | Planned | reading preferences, power navigation; server-side settings API; scroll-mark-read formalized | Later MVP |
+| 0018 Production & Operations | Planned | Caddy, deployment, backup, diagnostics | Later MVP |
+| 0019 MVP Stabilization | Planned | regression, docs, accessibility and release | MVP exit |
 
 ---
 
@@ -103,12 +104,13 @@ Verified behavior:
 
 ### Backend gaps intentionally left for future milestones
 
-- subscription control API (0010);
-- OPML API (0010);
-- RSSHub route catalog/preview API (0011);
-- unified settings API (0014);
-- AI provider/cache/jobs (0012–0013);
-- deployment authentication (0015);
+- subscription control API (0013);
+- OPML API (0013);
+- RSSHub route catalog/preview API (0014);
+- global search API (0011a candidate, user-approved honest-empty for now);
+- unified settings API (0017);
+- AI provider/cache/jobs (0015–0016);
+- deployment authentication (0018);
 - web clip/API/email/Obsidian connectors (Phase 2).
 
 ---
@@ -156,7 +158,7 @@ These limitations are not permission to rewrite working behavior.
   BFF → Web Reader, with failure isolation (RSSHub stopped → stored
   entries still readable);
 - BFF and Web run via local dev commands; Caddy/production remains
-  planned (0015).
+  planned (0018).
 
 ---
 
@@ -381,27 +383,36 @@ The next product sequence is intentionally:
 ```text
 UI foundation
   ↓
-Lumi-native subscription management        (0010)
+mobile five-screen alignment                 (0011, active)
   ↓
-source discovery and RSSHub route builder  (0011)
+reader style deep customization              (0012)
   ↓
-AI summary                                 (0012)
+Lumi-native subscription management           (0013)
   ↓
-translation and AI conversation            (0013)
+source discovery and RSSHub route builder     (0014)
   ↓
-unified settings / reader power features   (0014)
+AI summary                                    (0015)
   ↓
-production deployment and stabilization    (0015–0016)
+translation and AI conversation               (0016)
+  ↓
+unified settings / reader power features      (0017)
+  ↓
+production deployment                         (0018)
+  ↓
+stabilization and release                     (0019)
 ```
 
 This order avoids building more product surface on top of a UI
-architecture the user already rejects.
+architecture the user already rejects. Global search stays an honest
+empty state until the user approves the `0011a Basic Global Search`
+contract.
 
 ---
 
 ## 14. Where things live
 
-- Active spec: `docs/specs/0009-ui-reboot-reference-lab.md`
+- Active spec: `docs/specs/0011-mobile-ui-five-screen-alignment.md`
+- Mobile reference matrix (0011): `docs/ui/0011-mobile-reference-matrix.md`
 - Visual/responsive design direction: `docs/ui/UI_REBOOT.md`
 - Roadmap: `docs/ROADMAP.md`
 - Upstream baselines and measurements: `docs/reference/UPSTREAMS.md`

@@ -2,7 +2,7 @@
  * OrigRead filter-rules 数据模型 + UI 复刻（inspired）：
  * 统计卡片 + 添加规则（keyword/regex + 行内校验）+ 导入导出 + 规则列表
  * （范围·类型 + 启用开关 + 删除）。本轮语义 = 显示层过滤（BFF 层
- * planned·0012）。 */
+ * planned·0013）。 */
 
 import { useRef, useState } from 'react'
 import { Download, Trash2, Upload } from 'lucide-react'
@@ -126,8 +126,8 @@ export function FilterRulesSection() {
         </p>
         <p className="mt-1 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
           当前为显示层过滤（列表渲染时隐藏匹配项，不改动 FreshRSS 数据）；
-          BFF 读取层过滤将在 0012 订阅中心提供。设置页仅添加全局规则，
-          来源级规则从订阅管理侧入口添加（0012）。
+          BFF 读取层过滤将在 0013 订阅中心提供。设置页仅添加全局规则，
+          来源级规则从订阅管理侧入口添加（0013）。
         </p>
       </div>
 

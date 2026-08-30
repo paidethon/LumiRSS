@@ -4,7 +4,7 @@
  * 单一 interface + zustand + localStorage 单 key（lumirss-settings）持久化。
  *
  * 迁移（AC17/V11）：旧 key lumirss-theme / lumirss-reader-bg 的数据在
- * 首次读取时并入（旧 key 保留不删——兼容一个版本，0015 服务端设置
+ * 首次读取时并入（旧 key 保留不删——兼容一个版本，0017 服务端设置
  * 落地时统一收口）。themeMode/readerBackground 迁入后，旧 store
  * （store/theme.ts、lib/reader-bg.ts）改为本 store 的薄封装（Gate A
  * 先并存，Gate B 完成接线后旧模块退役）。
@@ -116,7 +116,7 @@ export interface AppSettings {
   dimRead: boolean
   groupByDate: boolean
   unreadOnly: boolean
-  /** 实验性：默认关；正式版 planned·0016（Reader Power UX） */
+  /** 实验性：默认关；正式版 planned·0017（Reader Power UX） */
   scrollMarkUnread: boolean
   /** 外观（0010a F1，Folo UISettings inspired） */
   accentColor: string // #RRGGBB

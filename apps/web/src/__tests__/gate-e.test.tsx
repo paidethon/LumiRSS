@@ -108,10 +108,10 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
     useAppSettings.getState().update({ dimRead: false })
   })
 
-  it('实验性徽标（AC9）：滚动已读带「实验性 · 正式版 0016」且控件可用', () => {
+  it('实验性徽标（AC9）：滚动已读带「实验性 · 正式版 0017」且控件可用', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '通用' }))
-    expect(screen.getByText('实验性 · 正式版 0016')).toBeInTheDocument()
+    expect(screen.getByText('实验性 · 正式版 0017')).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: '滚动时标记已读开关' })).toBeEnabled()
   })
 

@@ -7,8 +7,7 @@
  * E3（AC4）：分类 9 → 13——新增 翻译 / 文章过滤 / RSSHub / 备份与恢复
  * （本 Gate 为占位页，Gate F 填充完整功能）。
  *
- * planned 归属编号已按 0010a Spec §8.2 路线顺延更新
- * （0011→0012、0012→0013、0013→0014、0014→0015、0016→0017）。 */
+ * planned 归属编号随路线修订顺延（当前归属见 docs/ROADMAP.md 变更记录）。 */
 
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -271,11 +270,11 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'toggle',
           label: '侧栏隐藏已读',
           description:
-            '隐藏没有未读条目的订阅（需要 feeds 接口提供未读数，0012 接线）。',
+            '隐藏没有未读条目的订阅（需要 feeds 接口提供未读数，0013 接线）。',
           checked: settings.sidebarHideRead,
           onCheckedChange: (v) => update({ sidebarHideRead: v }),
           planned: true,
-          plannedFor: '0012',
+          plannedFor: '0013',
         },
         { type: 'title', value: '时间线' },
         {
@@ -314,7 +313,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           checked: settings.scrollMarkUnread,
           onCheckedChange: (v) => update({ scrollMarkUnread: v }),
           experimental: true,
-          experimentalFor: '0016',
+          experimentalFor: '0017',
         },
       ]
     case 'shortcuts':
@@ -360,29 +359,29 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '添加订阅',
-          description: '直接输入 RSS 地址或从发现页搜索（0012 Unified Subscription Center）。',
+          description: '直接输入 RSS 地址或从发现页搜索（0013 Unified Subscription Center）。',
           buttonText: '添加',
           action: () => {},
           planned: true,
-          plannedFor: '0012',
+          plannedFor: '0013',
         },
         {
           type: 'action',
           label: '导入 / 导出 OPML',
-          description: '迁移订阅列表（0012 经 FreshRSSControlAdapter）。',
+          description: '迁移订阅列表（0013 经 FreshRSSControlAdapter）。',
           buttonText: '导入',
           action: () => {},
           planned: true,
-          plannedFor: '0012',
+          plannedFor: '0013',
         },
         {
           type: 'action',
           label: 'RSSHub 路由',
-          description: '搜索与预览 RSSHub 路由（0013 Source Discovery）。',
+          description: '搜索与预览 RSSHub 路由（0014 Source Discovery）。',
           buttonText: '打开',
           action: () => {},
           planned: true,
-          plannedFor: '0013',
+          plannedFor: '0014',
         },
       ]
     case 'ai':
@@ -391,32 +390,32 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'toggle',
           label: 'AI 总结',
-          description: '阅读时生成单篇摘要（0014 AI Foundation & Summary）。',
-          checked: false,
-          onCheckedChange: () => {},
-          planned: true,
-          plannedFor: '0014',
-        },
-        {
-          type: 'toggle',
-          label: 'AI 翻译',
-          description: '标题与正文翻译（0015）。',
+          description: '阅读时生成单篇摘要（0015 AI Foundation & Summary）。',
           checked: false,
           onCheckedChange: () => {},
           planned: true,
           plannedFor: '0015',
         },
         {
+          type: 'toggle',
+          label: 'AI 翻译',
+          description: '标题与正文翻译（0016）。',
+          checked: false,
+          onCheckedChange: () => {},
+          planned: true,
+          plannedFor: '0016',
+        },
+        {
           type: 'select',
           label: 'Provider',
-          description: 'OpenAI-compatible API 配置（0014）。',
+          description: 'OpenAI-compatible API 配置（0015）。',
           value: 'openai' as const,
           options: [
             { value: 'openai', label: 'OpenAI compatible' },
           ],
           onChange: () => {},
           planned: true,
-          plannedFor: '0014',
+          plannedFor: '0015',
         },
       ]
     case 'data':
@@ -444,11 +443,11 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '数据备份 / 恢复',
-          description: 'FreshRSS 数据与服务设置的备份演练（0017 Production）。',
+          description: 'FreshRSS 数据与服务设置的备份演练（0018 Production）。',
           buttonText: '备份',
           action: () => {},
           planned: true,
-          plannedFor: '0017',
+          plannedFor: '0018',
         },
       ]
     case 'services':
@@ -457,20 +456,20 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: 'FreshRSS 状态',
-          description: '连接状态与健康检查（0012 接入控制平面后提供）。',
-          buttonText: '查看',
-          action: () => {},
-          planned: true,
-          plannedFor: '0012',
-        },
-        {
-          type: 'action',
-          label: 'RSSHub 状态',
-          description: '实例健康与路由可用性（0013）。',
+          description: '连接状态与健康检查（0013 接入控制平面后提供）。',
           buttonText: '查看',
           action: () => {},
           planned: true,
           plannedFor: '0013',
+        },
+        {
+          type: 'action',
+          label: 'RSSHub 状态',
+          description: '实例健康与路由可用性（0014）。',
+          buttonText: '查看',
+          action: () => {},
+          planned: true,
+          plannedFor: '0014',
         },
       ]
     case 'workspace':
@@ -490,7 +489,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
                 网页剪藏、API 来源、邮件简报、Obsidian 库与 Agent
-                工作台将在 MVP（0018）之后按真实需求逐项设计（见 ROADMAP
+                工作台将在 MVP（0019）之后按真实需求逐项设计（见 ROADMAP
                 Phase 2）。本页为占位，无可用功能。
               </p>
             </div>

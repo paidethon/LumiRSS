@@ -189,13 +189,13 @@ describe('翻译页（F2，AC23）', () => {
     })
   })
 
-  it('API Key 草稿保存状态行 + planned·0015 测试连接（AC23）', () => {
+  it('API Key 草稿保存状态行 + planned·0016 测试连接（AC23）', () => {
     openCategory(/^翻译$/)
     expect(screen.getAllByText('未设置').length).toBeGreaterThanOrEqual(2) // deepl/dlx 未存 key
     // DeepL 卡片的测试连接 disabled + planned 徽标
     const deeplCard = screen.getByText('DeepL（免费版）').closest('div.mb-3')!
     expect(deeplCard.querySelector('button[disabled]')).toBeTruthy()
-    expect(screen.getAllByText('planned · 0015').length).toBeGreaterThanOrEqual(3)
+    expect(screen.getAllByText('planned · 0016').length).toBeGreaterThanOrEqual(3)
   })
 })
 
@@ -266,7 +266,7 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
     openCategory(/备份与恢复/)
     expect(screen.getByRole('button', { name: /导出备份/ })).toBeEnabled()
     expect(screen.getByRole('button', { name: /选择备份文件/ })).toBeEnabled()
-    expect(screen.getByText('planned · 0012')).toBeInTheDocument()
+    expect(screen.getByText('planned · 0013')).toBeInTheDocument()
   })
 })
 

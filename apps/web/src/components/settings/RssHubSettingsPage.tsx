@@ -1,7 +1,7 @@
 /** RssHubSettingsPage — RSSHub 实例管理（0010a F4，AC25）。
  * OrigRead rsshub 设置页复刻（inspired）：总开关 Banner + 实例列表
  * （启停/删除 + url·地区·维护者）+ 添加实例 + 恢复默认。
- * 测试连接 planned·0013（BFF 代理）；前端零直连 RSSHub（架构边界）。 */
+ * 测试连接 planned·0014（BFF 代理）；前端零直连 RSSHub（架构边界）。 */
 
 import { useState } from 'react'
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
@@ -31,7 +31,7 @@ export function RssHubSettingsSection() {
     update({ rsshubSettings: { ...r, instances } })
 
   /** 添加实例（OrigRead「测试并添加」语义的纯前端版：URL 校验 + 查重；
-   * 连通测试 0013 BFF 代理后接入）。 */
+   * 连通测试 0014 BFF 代理后接入）。 */
   const addInstance = () => {
     const url = newUrl.trim()
     if (!/^https?:\/\/[\w.-]+/.test(url)) {
@@ -74,7 +74,7 @@ export function RssHubSettingsSection() {
         <div>
           <p className="text-sm font-medium text-[var(--lumi-text-primary)]">RSSHub 集成</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-            实例列表将用于 0013 来源发现（路由匹配与预览）；当前为实例管理。
+            实例列表将用于 0014 来源发现（路由匹配与预览）；当前为实例管理。
           </p>
         </div>
         <Switch
@@ -108,7 +108,7 @@ export function RssHubSettingsSection() {
         </div>
         {addError && <p className="mt-1.5 text-xs text-[var(--lumi-danger)]">{addError}</p>}
         <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-          连通性测试将在 0013 提供（经 BFF 代理，浏览器不直连 RSSHub）。
+          连通性测试将在 0014 提供（经 BFF 代理，浏览器不直连 RSSHub）。
         </p>
       </div>
 

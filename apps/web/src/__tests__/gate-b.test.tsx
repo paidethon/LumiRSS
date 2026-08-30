@@ -133,7 +133,7 @@ describe('分类页 planned 语义（AC10）', () => {
     for (const b of buttons) expect(b).toBeDisabled()
   })
 
-  it('AI 页：3 个 planned（0013/0014）', async () => {
+  it('AI 页：3 个 planned（0015/0016）', async () => {
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /^AI$/ }))
     await waitFor(() => {
@@ -155,8 +155,8 @@ describe('分类页 planned 语义（AC10）', () => {
     // 真实按钮可点
     expect(screen.getByRole('button', { name: '清除' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '重置' })).toBeEnabled()
-    // 备份 planned（0010a 编号顺延 0016→0017）
-    expect(screen.getByText(/planned · 0017/)).toBeInTheDocument()
+    // 备份 planned（0011 路线修订顺延 0017→0018）
+    expect(screen.getByText(/planned · 0018/)).toBeInTheDocument()
   })
 
   it('重置真实生效：改设置 → 点重置 → 恢复默认', async () => {

@@ -1,4 +1,4 @@
-import { Inbox, PanelLeftClose } from 'lucide-react'
+import { Inbox, Loader2, PanelLeftClose } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { useEntries, useEntryStateMutation } from '../api/queries'
 import type { EntryView } from '../api/types'
@@ -6,6 +6,7 @@ import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { groupEntriesByDate } from '../lib/entry-groups'
 import { matchesFilterRules } from './settings/FilterRulesPage'
+import EntryCard from './EntryCard'
 import EntryRow from './EntryRow'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
@@ -33,7 +34,7 @@ export default function EntryList() {
   const groupByDate = useAppSettings((s) => s.settings.groupByDate)
   // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
   const scrollMarkUnread = useAppSettings((s) => s.settings.scrollMarkUnread)
-  // 0010a Gate F（AC24）：显示层过滤（全局规则，BFF 层 planned·0012）
+  // 0010a Gate F（AC24）：显示层过滤（全局规则，BFF 层 planned·0013）
   const filterRules = useAppSettings((s) => s.settings.filterRules)
   const filterEnabled = filterRules.some((r) => r.enabled)
 
@@ -49,6 +50,27 @@ export default function EntryList() {
   const hasNextPage = feedsTitle.hasNextPage
   const isFetchingNextPage = feedsTitle.isFetchingNextPage
   const fetchNextPage = feedsTitle.fetchNextPage
+
+  // ---- 无限滚动（0011：替换「加载更多」按钮，用户指令） ----
+  // 哨兵 li 滚入视口 → 自动 fetchNextPage；IntersectionObserver 仅在
+  // hasNextPage 且未在拉取时触发（拉取完成后 entries 变化重新观察）。
+  const sentinelRef = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || !hasNextPage || isFetchingNextPage) return
+    let observer: IntersectionObserver | null = null
+    observer = new IntersectionObserver(
+      (records) => {
+        if (records.some((r) => r.isIntersecting) && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      // 提前半屏预拉取，减少等待感
+      { rootMargin: '0px 0px 50% 0px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, entries])
 
   // ---- 滚动标记已读（AC9）：IntersectionObserver + 保守策略 ----
   const { mutate: markReadMutate } = useEntryStateMutation()
@@ -125,6 +147,8 @@ export default function EntryList() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* 0011：卡片化后取消行分隔线（卡片自带圆角表面）；仍保留
+            列表语义 ul/li（分组小节与滚动标记已读依赖）。 */}
         {isPending && (
           <div className="flex flex-col gap-3 p-4" aria-label="文章加载中">
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -160,7 +184,7 @@ export default function EntryList() {
         )}
 
         {entries.length > 0 && (
-          <ul className="divide-y divide-[var(--lumi-separator)]">
+          <ul className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
             {(groupByDate ? groupEntriesByDate(entries) : [{ label: null, items: entries }]).map(
               (group) => (
                 <Fragment key={group.label ?? 'all'}>
@@ -181,35 +205,45 @@ export default function EntryList() {
                         else rowRefs.current.delete(item.entryRef)
                       }}
                     >
-                      <EntryRow item={item} selected={item.entryRef === selectedEntryRef} />
+                      {/* 0011 Gate 3：移动端卡片化（<1024）；桌面行保持 0009
+                          密度（Spec R2：两套展示共存，CSS 分发） */}
+                      <div className="max-lg:px-2 max-lg:py-1">
+                        <div className="max-lg:hidden">
+                          <EntryRow item={item} selected={item.entryRef === selectedEntryRef} />
+                        </div>
+                        <div className="lg:hidden">
+                          <EntryCard item={item} selected={item.entryRef === selectedEntryRef} />
+                        </div>
+                      </div>
                     </li>
                   ))}
+                  {/* 无限滚动哨兵（0011：替换「加载更多」按钮）：滚入视口
+                      自动拉下一页；拉取中显示转圈指示；到底显示终态文案 */}
+                  {!isPending && !isError && entries.length > 0 && (
+                    <li
+                      ref={sentinelRef}
+                      aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
+                      className="flex items-center justify-center py-4 max-md:pb-[84px]"
+                      style={{ paddingBottom: hasNextPage || isFetchingNextPage ? undefined : 'max(1rem, var(--safe-bottom))' }}
+                    >
+                      {isFetchingNextPage ? (
+                        <Loader2
+                          aria-label="加载中"
+                          className="size-4 animate-spin text-[var(--lumi-text-tertiary)]"
+                        />
+                      ) : hasNextPage ? (
+                        <span className="text-xs text-[var(--lumi-text-tertiary)]">下滑加载更多…</span>
+                      ) : (
+                        <span className="text-xs text-[var(--lumi-text-tertiary)]">已经到底了</span>
+                      )}
+                    </li>
+                  )}
                 </Fragment>
               ),
             )}
           </ul>
         )}
       </div>
-
-      {!isPending && !isError && entries.length > 0 && (
-        <footer
-          className="border-t border-[var(--lumi-separator)] p-3"
-          style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
-        >
-          {hasNextPage ? (
-            <Button
-              variant="ghost"
-              disabled={isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-              className="w-full border border-[var(--lumi-accent)] text-[var(--lumi-accent)] hover:bg-[var(--lumi-accent-soft)]"
-            >
-              {isFetchingNextPage ? '加载中…' : '加载更多'}
-            </Button>
-          ) : (
-            <p className="text-center text-xs text-[var(--lumi-text-tertiary)]">已经到底了</p>
-          )}
-        </footer>
-      )}
     </div>
   )
 }

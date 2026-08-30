@@ -219,6 +219,53 @@ describe('Sheet', () => {
     )
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
+
+  // 0011 Gate 2：modal 升级后的新行为
+  it('打开时锁定背景滚动（body overflow hidden），卸载恢复', () => {
+    const { unmount } = render(
+      <Sheet open onClose={vi.fn()} label="导航">
+        <p>抽屉内容</p>
+      </Sheet>,
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+    unmount()
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('初始焦点落在第一个可聚焦元素；panelClassName/id 透传', () => {
+    render(
+      <Sheet
+        open
+        onClose={vi.fn()}
+        label="导航"
+        id="test-sheet"
+        panelClassName="bg-[var(--lumi-sidebar)]"
+      >
+        <button type="button">第一个</button>
+        <button type="button">第二个</button>
+      </Sheet>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('id', 'test-sheet')
+    expect(dialog.className).toContain('bg-[var(--lumi-sidebar)]')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '第一个' }))
+  })
+
+  it('遮罩 pointerDown 关闭（面板内点击不关闭）', () => {
+    const onClose = vi.fn()
+    const { container } = render(
+      <Sheet open onClose={onClose} label="导航">
+        <button type="button">面板内</button>
+      </Sheet>,
+    )
+    // 面板内点击：不关闭
+    fireEvent.pointerDown(screen.getByRole('button', { name: '面板内' }))
+    expect(onClose).not.toHaveBeenCalled()
+    // 遮罩（aria-hidden div）pointerDown：关闭
+    const overlay = container.querySelector('div[aria-hidden="true"]')!
+    fireEvent.pointerDown(overlay)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Switch', () => {

@@ -53,17 +53,24 @@ Before modifying code, compare the relevant sources. Do not silently choose one 
 当前已批准的里程碑：
 
 ```text
-0010 + 0010a — Settings Center & Adaptive Shell（分支 feat/0010-settings-center-adaptive-shell）
+0011 — Mobile UI Navigation & Five-Screen Alignment
+       （分支 feat/0011-mobile-ui-five-screen-alignment，active spec：
+        docs/specs/0011-mobile-ui-five-screen-alignment.md）
 ```
 
-0009（UI Reboot）已合入 main。0010（Gate A–D）+ 0010a 扩展轮
-（Gate E–G）已全部完成，等待最终验收与 commit。全程纯前端
-（localStorage 持久化、BFF 零变化）。
+0009（UI Reboot）与 0010/0010a（Settings Center & Adaptive Shell）
+均已合入 main。0011 对齐移动端首页/订阅/搜索/收藏/侧边栏五个
+界面：AppSection 一级导航 + 四项底部导航岛（首页/订阅/搜索/收藏）、
+设置入口统一到侧边栏品牌区右上角、RSS 源 disclosure 默认收起、
+抽屉升级为完整 modal/focus trap。全程纯前端（BFF 零变化）；
+数据契约零造假（无搜索/分类/未读数契约时诚实降级）。
 
-路线编号（2026-08-30 二次修订，用户批准）：插入 0011 Reader Style
-Deep Customization 后，原 0011–0017 顺延为 0012–0018；AI Summary
-（原 0009）现为 0014。架构决策：不做自造源（JSON 规则/网站解析规则）
-——违反冻结架构，由 RSSHub 承担（0013）。详见 docs/ROADMAP.md 变更记录。
+路线编号（2026-08-30 三次修订，用户批准）：尚未开工的原 0011
+（Reader Style Deep Customization）被替换为 0011（Mobile UI
+Navigation & Five-Screen Alignment），原 0011–0018 顺延为 0012–0019；
+AI Summary（原 0009）现为 0015。搜索能力不做在 0011 内，立候选
+里程碑 0011a Basic Global Search（待用户单独批准 BFF 契约）。
+详见 docs/ROADMAP.md 变更记录。
 
 ---
 

@@ -110,20 +110,21 @@ describe('Test B — Open / Close', () => {
     fireEvent.click(menuButton())
     expect(menuButton()).toHaveAttribute('aria-expanded', 'true')
     expect(drawer()).not.toBeNull()
-    // 抽屉里是同一份 Sidebar 导航
+    // 抽屉里是同一份 Sidebar 导航（0011：工作区去重后的新标签）
     expect(withinDrawer('全部信息流')).toBeInTheDocument()
-    expect(withinDrawer(/ME 时间线 · 未读/)).toBeInTheDocument()
-    expect(withinDrawer(/ME 时间线 · 收藏/)).toBeInTheDocument()
+    expect(withinDrawer('时间线')).toBeInTheDocument()
+    expect(withinDrawer('收藏')).toBeInTheDocument()
     expect(withinDrawer('全部信息流')).toBeInTheDocument()
   })
 
-  it('backdrop 点击 → drawer 关闭', async () => {
+  it('遮罩点击 → drawer 关闭', async () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
     fireEvent.click(menuButton())
-    // backdrop 与 ✕ 是两个不同可访问名的 button（backdrop="关闭导航"，✕="关闭"）
-    fireEvent.click(screen.getByRole('button', { name: '关闭导航' }))
+    // 0011：遮罩是 aria-hidden div（Sheet primitive），关闭走 pointerDown
+    const overlay = drawer()!.parentElement!.querySelector('div[aria-hidden="true"]')!
+    fireEvent.pointerDown(overlay)
     expect(drawer()).toBeNull()
     expect(menuButton()).toHaveAttribute('aria-expanded', 'false')
   })
@@ -142,7 +143,8 @@ describe('Test B — Open / Close', () => {
     renderApp()
 
     fireEvent.click(menuButton())
-    fireEvent.keyDown(window, { key: 'Escape' })
+    // 0011：Sheet 的 Escape 监听挂在 document（Dialog 同款）
+    fireEvent.keyDown(document, { key: 'Escape' })
     expect(drawer()).toBeNull()
   })
 })
@@ -155,7 +157,8 @@ describe('Test C — View selection', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: /文章 e1\.a/ }))
+    // 0011：双渲染（Row+Card）取第一个实例
+    fireEvent.click((await screen.findAllByRole('button', { name: /文章 e1\.a/ }))[0]!)
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((c) => /\/api\/v1\/entries\/e1\./.test(String(c[0])))).toBe(true)
     })
@@ -164,12 +167,13 @@ describe('Test C — View selection', () => {
     expect(useReaderUi.getState().selectedEntryRef).toBeNull()
 
     // 重新选中，验证导航会再次清空 selection
-    fireEvent.click(screen.getByRole('button', { name: /文章 e1\.a/ }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /文章 e1\.a/ }))[0]!)
     expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
     fireEvent.click(screen.getByRole('button', { name: '返回文章列表' }))
 
     fireEvent.click(menuButton())
-    fireEvent.click(withinDrawer(/ME 时间线 · 未读/))
+    // 0011：「未读」为时间线行的过滤子项（drawer 内）
+    fireEvent.click(withinDrawer('未读'))
 
     expect(useReaderUi.getState().view).toBe('unread')
     expect(useReaderUi.getState().selectedEntryRef).toBeNull()
@@ -178,16 +182,24 @@ describe('Test C — View selection', () => {
 })
 
 describe('Test D — Feed selection', () => {
-  it('drawer 中点具体 feed → selectedFeedUrl 正确、drawer 关闭', async () => {
+  it('drawer 中点具体 feed → selectedFeedUrl 正确、section 回首页、drawer 关闭', async () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
-    // 等 feeds 加载完成（drawer 与桌面 sidebar 共享同一 query cache）
-    await screen.findByRole('button', { name: '示例源 B' })
     fireEvent.click(menuButton())
-    fireEvent.click(withinDrawer('示例源 B'))
+    // 0011：RSS 根节点默认收起，先展开 disclosure 再点 feed（AC3/AC4）；
+    // feeds 数据异步到达，等待 drawer 内出现 feed 按钮
+    fireEvent.click(withinDrawer(/RSS 订阅/))
+    const feedButton = await waitFor(() => {
+      const btn = withinDrawer('示例源 B')
+      expect(btn).toBeInTheDocument()
+      return btn
+    })
+    fireEvent.click(feedButton)
 
     expect(useReaderUi.getState().selectedFeedUrl).toBe('https://b.example.com/feed.xml')
+    // feed 导航切回首页（0011 AC4）
+    expect(useReaderUi.getState().section).toBe('home')
     expect(drawer()).toBeNull()
   })
 
@@ -206,7 +218,7 @@ describe('Test D — Feed selection', () => {
 })
 
 describe('Drawer accessibility', () => {
-  it('menu button aria-expanded false→true 切换；drawer 为 aside landmark 且无 aria-modal', async () => {
+  it('menu button aria-expanded false→true 切换；0011：drawer 为完整 modal（role=dialog + aria-modal）', async () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
@@ -215,10 +227,45 @@ describe('Drawer accessibility', () => {
     expect(menuButton()).toHaveAttribute('aria-expanded', 'true')
 
     const panel = drawer()!
-    expect(panel.tagName).toBe('ASIDE')
-    expect(panel).toHaveAttribute('aria-label', '导航')
-    expect(panel.hasAttribute('aria-modal')).toBe(false)
-    expect(panel.getAttribute('role')).toBeNull() // 未声明 modal dialog role
+    // 0011 Gate 2（用户批准）：升级为完整 modal 语义
+    expect(panel).toHaveAttribute('role', 'dialog')
+    expect(panel).toHaveAttribute('aria-modal', 'true')
+    // 初始焦点：第一个可聚焦元素（✕ 关闭钮）
+    expect(document.activeElement?.textContent?.trim()).toBe('✕')
+  })
+
+  it('打开时锁定背景滚动（body overflow hidden），关闭后恢复', () => {
+    vi.stubGlobal('fetch', mockApi())
+    renderApp()
+
+    expect(document.body.style.overflow).not.toBe('hidden')
+    fireEvent.click(menuButton())
+    expect(document.body.style.overflow).toBe('hidden')
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('焦点 trap：Tab 循环在面板内；关闭后焦点恢复触发按钮', () => {
+    vi.stubGlobal('fetch', mockApi())
+    renderApp()
+
+    // 键盘流程：先聚焦菜单钮再打开（fireEvent.click 不自动聚焦）
+    menuButton().focus()
+    fireEvent.click(menuButton())
+    const panel = drawer()!
+    const focusables = Array.from(
+      panel.querySelectorAll('button'),
+    ) as HTMLElement[]
+    expect(focusables.length).toBeGreaterThan(1)
+
+    // Tab 在面板内循环：从最后一个再 Tab 回第一个（Trap 拦截）
+    focusables[focusables.length - 1]!.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(panel.contains(document.activeElement)).toBe(true)
+
+    // 关闭后焦点恢复到触发按钮（菜单）
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(document.activeElement).toBe(menuButton())
   })
 
   it('非导航按钮（订阅重试）点击后 drawer 不关闭', async () => {
@@ -238,9 +285,13 @@ describe('Drawer accessibility', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
-    // 等 feeds error 出现（drawer 与桌面 Sidebar 共享同一 query）
+    // 0011：feeds error/skeleton 在 RSS disclosure 内（默认收起），
+    // 先展开桌面侧栏的 disclosure 再等 error 出现
+    fireEvent.click(screen.getByRole('button', { name: /RSS 订阅/ }))
     await screen.findByText('订阅加载失败')
     fireEvent.click(menuButton())
+    // drawer 是独立 Sidebar 实例，其 disclosure 也需展开
+    fireEvent.click(withinDrawer(/RSS 订阅/))
     // drawer 挂载新 observer 会触发 stale-on-mount 的后台 refetch，
     // 期间 Sidebar 显示 skeleton；等 refetch 再次失败后 drawer 内出现重试
     const retryButton = await waitFor(() => {

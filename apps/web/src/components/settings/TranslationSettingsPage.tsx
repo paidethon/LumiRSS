@@ -3,7 +3,7 @@
  * 目标语言 + 显示方式 + Provider 卡片（radio 默认 + 启用开关 +
  * Endpoint + Region(MS) + API Key 密码框 + 保存状态行）。
  * 交互不变量：至少保留 1 个启用 Provider；禁用默认项时自动迁移默认。
- * 测试连接/DeepL 用量：planned·0015（需 BFF 代理）。 */
+ * 测试连接/DeepL 用量：planned·0016（需 BFF 代理）。 */
 
 import { useState } from 'react'
 import { Eye, EyeOff, Save } from 'lucide-react'
@@ -55,7 +55,7 @@ export function TranslationSettingsSection() {
     <div>
       {/* 状态说明 Banner（诚实原则：当前仅保存配置） */}
       <div className="mb-4 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3.5 py-2.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        翻译执行、测试连接与 DeepL 用量查询将在 <strong>0015 Translation</strong>{' '}
+        翻译执行、测试连接与 DeepL 用量查询将在 <strong>0016 Translation</strong>{' '}
         里程碑上线（需 BFF 代理，浏览器不直连翻译服务）；当前保存的配置届时直接生效。
       </div>
 
@@ -244,7 +244,7 @@ function ProviderCard({
         </p>
       </div>
 
-      {/* 测试连接：planned·0015（disabled + 徽标） */}
+      {/* 测试连接：planned·0016（disabled + 徽标） */}
       <div className="mt-2.5 flex items-center gap-2">
         <Button size="sm" variant="ghost" disabled>
           测试连接
@@ -255,7 +255,7 @@ function ProviderCard({
           </Button>
         )}
         <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-          planned · 0015
+          planned · 0016
         </span>
       </div>
     </div>

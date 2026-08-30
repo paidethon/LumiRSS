@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
@@ -89,10 +89,17 @@ function panes() {
   if (sections === undefined || sections.length < 2) {
     throw new Error('App main sections not found')
   }
-  return { list: sections[0]!, reader: sections[1]! }
+  return {
+    list: sections[0] as HTMLElement,
+    reader: sections[1] as HTMLElement,
+  }
 }
 
 const isHidden = (el: Element) => el.classList.contains('hidden')
+
+// 0011：桌面 EntryRow + 移动 EntryCard 双渲染——点击统一取第一个实例
+const firstEntryButton = async () =>
+  (await screen.findAllByRole('button', { name: /文章 e1\.a/ }))[0]!
 
 beforeEach(() => {
   useReaderUi.setState({
@@ -117,7 +124,7 @@ describe('Test E — Entry → mobile Reader', () => {
     expect(isHidden(list)).toBe(false)
     expect(isHidden(reader)).toBe(true)
 
-    fireEvent.click(await screen.findByRole('button', { name: /文章 e1\.a/ }))
+    fireEvent.click(await firstEntryButton())
     expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
 
     expect(isHidden(list)).toBe(true)
@@ -131,7 +138,7 @@ describe('Test F — Reader back', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: /文章 e1\.a/ }))
+    fireEvent.click(await firstEntryButton())
     // 等 Detail 加载完成（“富文本”在 <strong> 内，不能整句匹配）
     await screen.findByText('富文本')
     const detailCalls = fetchMock.mock.calls.filter((c) =>
@@ -152,7 +159,7 @@ describe('Test F — Reader back', () => {
     // 注：ReaderPlaceholder 重新挂载可能触发 entries 的 stale-on-mount
     // 后台 refetch（0005 既有行为，数据不丢、UI 无 loading）——那不是
     // reload；这里断言的是用户可感知的“不重新加载”。
-    expect(screen.getByRole('button', { name: /文章 e1\.a/ })).toBeInTheDocument()
+    expect((await screen.findAllByRole('button', { name: /文章 e1\.a/ })).length).toBeGreaterThan(0)
     expect(screen.queryByLabelText('文章加载中')).not.toBeInTheDocument()
 
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -169,7 +176,7 @@ describe('Test G — Mobile Reader 业务回归', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
 
-    fireEvent.click(await screen.findByRole('button', { name: /文章 e1\.a/ }))
+    fireEvent.click(await firstEntryButton())
     const { reader } = panes()
     expect(isHidden(reader)).toBe(false)
 
@@ -187,7 +194,8 @@ describe('Test G — Mobile Reader 业务回归', () => {
     await waitFor(() => expect(patchBodies).toContain('{"read":true}'))
 
     // Star：未收藏 → 「收藏」→ PATCH {"starred": true}
-    fireEvent.click(screen.getByRole('button', { name: '收藏' }))
+    //（0011：限定 Reader 内——底部导航岛与侧栏也有同名「收藏」控件）
+    fireEvent.click(within(reader).getByRole('button', { name: '收藏' }))
     await waitFor(() => expect(patchBodies).toContain('{"starred":true}'))
   })
 })
