@@ -1,6 +1,7 @@
-import { Check, ExternalLink, Loader2, Star } from 'lucide-react'
+import { Check, Clock, ExternalLink, Loader2, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useEntryStateMutation } from '../api/queries'
+import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { IconButton } from './ui/IconButton'
 import { Tooltip } from './ui/Tooltip'
@@ -36,6 +37,8 @@ function formatPublishedAt(value: string | null): string {
  *   target=_blank + rel=noopener noreferrer。 */
 export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
   const mutation = useEntryStateMutation()
+  const { isReadLater, toggleReadLater } = useToggleReadLater()
+  const readLaterMarked = isReadLater(detail.entryRef)
 
   // url 与 contentHtml 一样来自外部 RSS，是不可信输入：
   // 只放行绝对 http/https，其余一律不渲染「打开原文」。
@@ -91,6 +94,28 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
             />
           </Tooltip>
         )}
+
+        {/* 稍后读（0011 修正补充 §21–§23）：✓ ◷ ☆ 顺序——阅读处理 →
+            临时保存 → 长期收藏；本地 marker 零网络，即时切换（乐观）；
+            始终可见（不依赖 hover）；active = accent icon + subtle bg，
+            同一 Clock 图标不换形（§23）。 */}
+        <Tooltip content={readLaterMarked ? '从稍后读移除' : '加入稍后读'}>
+          <IconButton
+            icon={
+              <Clock
+                aria-hidden
+                className={cx(
+                  readLaterMarked && 'fill-[var(--lumi-accent-soft)]',
+                )}
+              />
+            }
+            label={readLaterMarked ? '从稍后读移除' : '加入稍后读'}
+            aria-pressed={readLaterMarked}
+            touch
+            className={readLaterMarked ? 'text-[var(--lumi-accent)]' : undefined}
+            onClick={() => toggleReadLater(detail.entryRef)}
+          />
+        </Tooltip>
 
         {pending ? (
           <IconButton

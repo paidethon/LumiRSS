@@ -2,6 +2,7 @@ import {
   Bookmark,
   Bot,
   ChevronDown,
+  Clock,
   FileText,
   Globe,
   Inbox,
@@ -12,28 +13,31 @@ import {
   Tags,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useFeeds } from '../api/queries'
-import { useReaderUi } from '../store/reader-ui'
+import type { Feed } from '../api/types'
+import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
+import type { ContentScope } from '../lib/navigation'
 import { Skeleton } from './ui/Skeleton'
 import SidebarHeader from './SidebarHeader'
 import { cx } from './ui/cx'
 
-/** Sidebar — 信息架构分组导航（0011 Gate 1/2 演进）。
+/** Sidebar — 信息架构分组导航（0011 阻断修复：真实分类树 + 四级 Scope）。
  *
- * 两组结构（0010 Gate C 图 2 映射，0011 修订）：
- *   信息来源：全部信息流（可用）/ RSS 订阅（disclosure，默认收起）
- *            + Phase 2 项（网页剪藏/快照/API 来源/邮件/书签/Obsidian，禁用+徽标）
- *   工作区：  时间线 / 收藏（0011 去重：去掉「ME 时间线 ·」冗余前缀；
- *            未读作为时间线的过滤子项——与 view='unread' 语义一致）
+ * 结构：
+ *   信息来源：全部信息源（scope=all）/ RSS 订阅（scope=rss，tree 含
+ *            FreshRSS 真实分类 + 未分组）+ Phase 2 项（禁用+徽标）
+ *   工作区：  稍后读（view=read-later）/ 收藏（view=starred）
  *
- * 0011 变更：
- * - 品牌区拆出 SidebarHeader（设置按钮移至右上角，底部设置行删除）；
- * - RSS 订阅改为 disclosure（新会话默认收起，aria-expanded/controls +
- *   可见 chevron）——Feed 契约无分类字段，展开后为单一「未分组」组；
- * - 选中 feed 后切回首页（section=home）+ 关闭移动抽屉（onNavigate）。
- *
- * 诚实原则：Phase 2 项可见但 disabled + 徽标——路线图可视化，非假控件。 */
+ * 0011 阻断修复关键语义（§6–§9）：
+ * - RSS 行主区域（icon+label）→ scope=全部 RSS；chevron → 只展开/收起
+ *   tree（stopPropagation，不改 scope）；两者行为完全分离；
+ * - 分类同理：主区域 → scope=该分类（服务端 label stream），chevron →
+ *   只展开该分类下的 feeds；
+ * - 分类来自 FreshRSS 真实数据（feed.category），按 category.id 合并
+ *   （§3），无分类 feed 归入「未分组」（§4），不硬编码；
+ * - Layout 展开状态（rssTree/expandedCategories）为组件本地 state，
+ *   与导航 scope 正交（§17）。 */
 
 /** 可用导航项（真实导航行为） */
 function NavItem({
@@ -121,55 +125,136 @@ function feedColor(feedUrl: string): string {
 
 const icon16 = 'size-4 shrink-0'
 
-/** RSS 订阅 disclosure（0011 Gate 2：默认收起，点击展开）。
+/** 分类树节点：真实分类（按 category.id 合并）或「未分组」。 */
+interface CategoryNode {
+  key: string // category.id 或 'ungrouped'
+  label: string
+  feeds: Feed[]
+}
+
+/** §3/§45 合并：feed.category.id → unique node → feeds[]（不按 name 拼接）。
+ * 防御：category 形状异常（undefined/缺字段）时归入未分组，不崩溃。 */
+export function mergeFeedsByCategory(feeds: Feed[]): CategoryNode[] {
+  const byKey = new Map<string, CategoryNode>()
+  for (const feed of feeds) {
+    const category =
+      feed.category && typeof feed.category.id === 'string' && feed.category.id
+        ? feed.category
+        : null
+    if (category !== null) {
+      const node = byKey.get(category.id)
+      if (node) node.feeds.push(feed)
+      else
+        byKey.set(category.id, {
+          key: category.id,
+          label: category.label || category.id,
+          feeds: [feed],
+        })
+    } else {
+      // §4：无分类 feed 统一进入「未分组」
+      const node = byKey.get('ungrouped')
+      if (node) node.feeds.push(feed)
+      else byKey.set('ungrouped', { key: 'ungrouped', label: '未分组', feeds: [feed] })
+    }
+  }
+  const nodes = [...byKey.values()]
+  // 未分组排最后，其余按 label 稳定排序
+  nodes.sort((a, b) => {
+    if (a.key === 'ungrouped') return 1
+    if (b.key === 'ungrouped') return -1
+    return a.label.localeCompare(b.label, 'zh-CN')
+  })
+  return nodes
+}
+
+/** RSS 订阅树（0011：主区域=scope / chevron=tree，两行为完全分离）。
  *
- * Feed 契约无分类字段——展开后为单一真实「未分组」组，禁止编造
- * 「设计/AI」等生产分类（契约缺口已记录给 0013）。 */
-function RssDisclosure({
-  expanded,
-  onToggle,
-  onNavigate,
-}: {
-  expanded: boolean
-  onToggle: () => void
-  onNavigate?: () => void
-}) {
+ * Layout 状态（tree 展开、分类展开）为本地 state——tree 收起时仍可
+ * 处于 RSS scope（§17 合法）。 */
+function RssTree({ onNavigate }: { onNavigate?: () => void }) {
+  const scope = useReaderUi((s) => s.scope)
   const view = useReaderUi((s) => s.view)
-  const selectedFeedUrl = useReaderUi((s) => s.selectedFeedUrl)
-  const selectView = useReaderUi((s) => s.selectView)
-  const selectFeed = useReaderUi((s) => s.selectFeed)
   const selectSection = useReaderUi((s) => s.selectSection)
+  const selectScope = useReaderUi((s) => s.selectScope)
+  const selectView = useReaderUi((s) => s.selectView)
   const feeds = useFeeds()
 
-  const anyFeedActive = selectedFeedUrl !== null
+  // Layout（本地）：tree 展开 + 各分类展开（新会话默认全收起）
+  const [treeExpanded, setTreeExpanded] = useState(false)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+
+  const categories = useMemo(
+    () => (feeds.data ? mergeFeedsByCategory(feeds.data) : []),
+    [feeds.data],
+  )
+
+  const rssScopeActive = scope.kind === 'rss' && view === 'all'
+
+  const goScope = (next: ContentScope) => {
+    selectSection('home')
+    selectScope(next)
+    selectView('all')
+    onNavigate?.()
+  }
+
+  const toggleCategory = (key: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls="sidebar-rss-feeds"
+      {/* RSS 行：主区域（→ 全部 RSS）+ chevron（→ tree 展开/收起） */}
+      <div
         className={cx(
-          'flex w-full items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 text-left text-sm',
-          'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
-          'transition-colors duration-[var(--lumi-motion-fast)]',
-          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-          anyFeedActive && view === 'all'
-            ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-accent)]'
-            : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+          'flex items-center gap-1 rounded-[var(--lumi-radius-md)]',
+          rssScopeActive
+            ? 'bg-[var(--lumi-surface-selected)]'
+            : 'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
         )}
       >
-        <Rss aria-hidden className={icon16} />
-        <span className="truncate">RSS 订阅</span>
-        <ChevronDown
-          aria-hidden
-          className={cx('ml-auto size-4 shrink-0 transition-transform duration-[var(--lumi-motion-fast)]', expanded && 'rotate-180')}
-        />
-      </button>
+        <button
+          type="button"
+          onClick={() => goScope({ kind: 'rss' })}
+          aria-current={rssScopeActive ? 'true' : undefined}
+          className={cx(
+            'flex min-w-0 flex-1 items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 text-left text-sm',
+            'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            rssScopeActive
+              ? 'font-medium text-[var(--lumi-accent)]'
+              : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+          )}
+        >
+          <Rss aria-hidden className={icon16} />
+          <span className="truncate">RSS 订阅</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTreeExpanded((v) => !v)}
+          aria-expanded={treeExpanded}
+          aria-controls="sidebar-rss-tree"
+          aria-label={treeExpanded ? '收起 RSS 分类' : '展开 RSS 分类'}
+          className={cx(
+            'mr-1 flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)]',
+            'text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)]',
+            'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+          )}
+        >
+          <ChevronDown
+            aria-hidden
+            className={cx('size-4 transition-transform duration-[var(--lumi-motion-fast)]', treeExpanded && 'rotate-180')}
+          />
+        </button>
+      </div>
 
-      {expanded && (
-        <div id="sidebar-rss-feeds" className="flex flex-col gap-0.5 pl-2.5">
+      {treeExpanded && (
+        <div id="sidebar-rss-tree" className="flex flex-col gap-0.5 pl-2.5">
           {feeds.isPending && (
             <div className="flex flex-col gap-1.5 px-2.5 pt-1" aria-label="订阅加载中">
               {[0, 1, 2].map((i) => (
@@ -192,33 +277,106 @@ function RssDisclosure({
           )}
 
           {feeds.data?.length === 0 && (
-            <p className="px-2.5 py-2 text-xs text-[var(--lumi-text-tertiary)]">
-              未分组 · 暂无订阅
-            </p>
+            <p className="px-2.5 py-2 text-xs text-[var(--lumi-text-tertiary)]">暂无订阅</p>
           )}
 
-          {feeds.data?.map((feed) => (
-            <NavItem
-              key={feed.feedUrl}
-              active={selectedFeedUrl === feed.feedUrl}
-              onClick={() => {
-                // 选中 feed：切回首页 + 更新 scope（onNavigate 关移动抽屉）
-                selectSection('home')
-                selectView('all')
-                selectFeed(feed.feedUrl)
-                onNavigate?.()
-              }}
-            >
-              <span
-                aria-hidden="true"
-                className="size-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: feedColor(feed.feedUrl) }}
-              />
-              <span className="truncate" title={feed.title}>
-                {feed.title}
-              </span>
-            </NavItem>
-          ))}
+          {categories.map((category) => {
+            const isUngrouped = category.key === 'ungrouped'
+            // 未分组：无服务端分类契约（FreshRSS 实际上总归默认分类，此节点
+            // 仅在契约异常时出现）→ 主区域不可作为 scope，仅 chevron 展开。
+            const categoryScope: ContentScope = {
+              kind: 'rss-category',
+              categoryId: category.key,
+              categoryLabel: category.label,
+            }
+            const categoryActive =
+              !isUngrouped &&
+              scope.kind === 'rss-category' &&
+              scope.categoryId === category.key
+            const catExpanded = expandedCategories.has(category.key)
+            return (
+              <div key={category.key}>
+                {/* 分类行：主区域（→ 该分类 scope）+ chevron（→ 展开 feeds） */}
+                <div
+                  className={cx(
+                    'flex items-center gap-1 rounded-[var(--lumi-radius-md)]',
+                    categoryActive
+                      ? 'bg-[var(--lumi-surface-selected)]'
+                      : 'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isUngrouped) goScope(categoryScope)
+                    }}
+                    disabled={isUngrouped}
+                    title={isUngrouped ? '未分组的订阅源' : undefined}
+                    aria-current={categoryActive ? 'true' : undefined}
+                    className={cx(
+                      'flex min-w-0 flex-1 items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-left text-sm',
+                      'min-h-8 max-lg:min-h-11 max-lg:items-center',
+                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                      categoryActive
+                        ? 'font-medium text-[var(--lumi-accent)]'
+                        : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cx('size-2 shrink-0 rounded-sm', category.key === 'ungrouped' ? 'border border-[var(--lumi-border)] bg-transparent' : 'rounded-[3px]')}
+                      style={
+                        category.key === 'ungrouped'
+                          ? undefined
+                          : { backgroundColor: feedColor(category.key) }
+                      }
+                    />
+                    <span className="truncate" title={category.label}>
+                      {category.label}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">
+                      {category.feeds.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(category.key)}
+                    aria-expanded={catExpanded}
+                    aria-label={catExpanded ? `收起 ${category.label} 的订阅源` : `展开 ${category.label} 的订阅源`}
+                    className={cx(
+                      'mr-1 flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)]',
+                      'text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)]',
+                      'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    )}
+                  >
+                    <ChevronDown
+                      aria-hidden
+                      className={cx('size-4 transition-transform duration-[var(--lumi-motion-fast)]', catExpanded && 'rotate-180')}
+                    />
+                  </button>
+                </div>
+
+                {catExpanded &&
+                  category.feeds.map((feed) => (
+                    <NavItem
+                      key={feed.feedUrl}
+                      active={scope.kind === 'rss-feed' && scope.feedUrl === feed.feedUrl}
+                      onClick={() => goScope({ kind: 'rss-feed', feedUrl: feed.feedUrl })}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: feedColor(feed.feedUrl) }}
+                      />
+                      <span className="truncate" title={feed.title}>
+                        {feed.title}
+                      </span>
+                    </NavItem>
+                  ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -231,13 +389,9 @@ export default function Sidebar({
   onNavigate?: () => void
 }) {
   const view = useReaderUi((s) => s.view)
-  const selectedFeedUrl = useReaderUi((s) => s.selectedFeedUrl)
   const selectView = useReaderUi((s) => s.selectView)
-  const selectFeed = useReaderUi((s) => s.selectFeed)
+  const selectScope = useReaderUi((s) => s.selectScope)
   const selectSection = useReaderUi((s) => s.selectSection)
-
-  // RSS disclosure：新会话默认收起（0011 Spec §设计规格）
-  const [rssExpanded, setRssExpanded] = useState(false)
 
   return (
     <nav className="flex flex-col gap-1 p-2.5 max-lg:gap-1" aria-label="主导航">
@@ -247,42 +401,7 @@ export default function Sidebar({
       <div className="flex flex-col gap-0.5" role="group" aria-label="信息来源">
         <GroupLabel>信息来源</GroupLabel>
 
-        <NavItem
-          active={view === 'all' && selectedFeedUrl === null}
-          onClick={() => {
-            selectSection('home')
-            selectView('all')
-            selectFeed(null)
-            onNavigate?.()
-          }}
-        >
-          <Inbox aria-hidden className={icon16} />
-          全部信息流
-        </NavItem>
-
-        <RssDisclosure
-          expanded={rssExpanded}
-          onToggle={() => setRssExpanded((v) => !v)}
-          onNavigate={onNavigate}
-        />
-
-        {/* Phase 2 信息来源项（可见禁用） */}
-        <div className="mt-1 flex flex-col gap-0.5">
-          <PlannedItem icon={<Globe aria-hidden className={icon16} />} label="网页剪藏" />
-          <PlannedItem icon={<Link2 aria-hidden className={icon16} />} label="网页快照" />
-          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
-          <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
-          <PlannedItem icon={<Bookmark aria-hidden className={icon16} />} label="书签" />
-          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="Obsidian 库" />
-        </div>
-      </div>
-
-      {/* ===== 工作区（0011 去重：时间线 / 收藏；未读为时间线过滤子项） ===== */}
-      <div className="mt-2 flex flex-col gap-0.5" role="group" aria-label="工作区">
-        <GroupLabel>工作区</GroupLabel>
-
-        {/* 时间线行：主按钮 + 「未读」过滤子项（用户决策 4）并排，
-            避免嵌套 button（无效 HTML） */}
+        {/* 全部信息源 + 「未读」过滤子项：并排不嵌套 button */}
         <div
           className={cx(
             'flex items-center gap-1 rounded-[var(--lumi-radius-md)]',
@@ -295,8 +414,8 @@ export default function Sidebar({
             type="button"
             onClick={() => {
               selectSection('home')
+              selectScope(ALL_SCOPE)
               selectView('all')
-              selectFeed(null)
               onNavigate?.()
             }}
             aria-current={view === 'all' ? 'true' : undefined}
@@ -310,14 +429,13 @@ export default function Sidebar({
             )}
           >
             <Inbox aria-hidden className={icon16} />
-            <span className="truncate">时间线</span>
+            <span className="truncate">全部信息源</span>
           </button>
           <button
             type="button"
             onClick={() => {
               selectSection('home')
               selectView('unread')
-              selectFeed(null)
               onNavigate?.()
             }}
             aria-pressed={view === 'unread'}
@@ -334,12 +452,42 @@ export default function Sidebar({
           </button>
         </div>
 
+        <RssTree onNavigate={onNavigate} />
+
+        {/* Phase 2 信息来源项（可见禁用） */}
+        <div className="mt-1 flex flex-col gap-0.5">
+          <PlannedItem icon={<Globe aria-hidden className={icon16} />} label="网页剪藏" />
+          <PlannedItem icon={<Link2 aria-hidden className={icon16} />} label="网页快照" />
+          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
+          <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
+          <PlannedItem icon={<Bookmark aria-hidden className={icon16} />} label="书签" />
+          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="Obsidian 库" />
+        </div>
+      </div>
+
+      {/* ===== 工作区（稍后读 / 收藏——工作区为全局视图，scope 重置为全部） ===== */}
+      <div className="mt-2 flex flex-col gap-0.5" role="group" aria-label="工作区">
+        <GroupLabel>工作区</GroupLabel>
+
+        <NavItem
+          active={view === 'read-later'}
+          onClick={() => {
+            selectSection('home')
+            selectScope(ALL_SCOPE)
+            selectView('read-later')
+            onNavigate?.()
+          }}
+        >
+          <Clock aria-hidden className={icon16} />
+          稍后读
+        </NavItem>
+
         <NavItem
           active={view === 'starred'}
           onClick={() => {
             selectSection('home')
+            selectScope(ALL_SCOPE)
             selectView('starred')
-            selectFeed(null)
             onNavigate?.()
           }}
         >

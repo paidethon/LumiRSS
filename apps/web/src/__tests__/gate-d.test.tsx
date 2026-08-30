@@ -35,7 +35,7 @@ describe('MobileTabBar — 0011 四入口导航岛', () => {
   })
 
   it('点击订阅 → section=subscriptions（保留 home 的 view 筛选）', () => {
-    useReaderUi.setState({ section: 'home', view: 'unread', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'unread', scope: { kind: 'all' }, selectedEntryRef: null })
     renderTabBar()
     fireEvent.click(screen.getByRole('button', { name: /订阅/ }))
     expect(useReaderUi.getState().section).toBe('subscriptions')
@@ -44,7 +44,7 @@ describe('MobileTabBar — 0011 四入口导航岛', () => {
   })
 
   it('点击搜索 → section=search；再点首页 → section=home', () => {
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     renderTabBar()
     fireEvent.click(screen.getByRole('button', { name: /搜索/ }))
     expect(useReaderUi.getState().section).toBe('search')
@@ -53,21 +53,21 @@ describe('MobileTabBar — 0011 四入口导航岛', () => {
   })
 
   it('点击收藏 → section=favorites（不再直接改 view——收藏页自持 starred 语义）', () => {
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     renderTabBar()
     fireEvent.click(screen.getByRole('button', { name: /收藏/ }))
     expect(useReaderUi.getState().section).toBe('favorites')
   })
 
   it('Reader 打开时导航岛隐藏（全屏阅读）', () => {
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: 'e1.x' })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: 'e1.x' })
     renderTabBar()
     expect(screen.queryByRole('navigation', { name: '底部导航' })).toBeNull()
     useReaderUi.setState({ selectedEntryRef: null })
   })
 
   it('aria-current="page" 反映当前 section', () => {
-    useReaderUi.setState({ section: 'favorites', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'favorites', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     renderTabBar()
     expect(screen.getByRole('button', { name: /收藏/ })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: /首页/ })).not.toHaveAttribute('aria-current')

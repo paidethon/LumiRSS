@@ -20,9 +20,9 @@ function renderWithProviders(ui: React.ReactElement) {
   })
   // 预置缓存：2 条文章（供 j/k 导航与 s 收藏取数）
   queryClient.setQueryData(['feeds'], [
-    { title: '源A', feedUrl: 'https://a.example/feed' },
+    { title: '源A', feedUrl: 'https://a.example/feed', category: null },
   ])
-  queryClient.setQueryData(['entries', { view: 'all', feedUrl: null }], {
+  queryClient.setQueryData(['entries', { view: 'all', scope: 'all' }], {
     pages: [
       {
         items: [
@@ -49,7 +49,7 @@ describe('快捷键速查表页（AC7）', () => {
 
 describe('快捷键行为（j/k/u/s）', () => {
   function resetState() {
-    useReaderUi.setState({ view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     localStorage.clear()
   }
 
@@ -192,10 +192,18 @@ describe('未读圆点开关真实生效（AC5）', () => {
       url: null, publishedAt: null, read: false, starred: false,
     }
     localStorage.clear()
-    const { container, unmount } = render(<EntryRow item={item} selected={false} />)
+    // 0011 修正补充：EntryRow 内嵌 EntryActionButtons（mutation hook）
+    // 需要 QueryClientProvider
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container, unmount } = render(
+      <QueryClientProvider client={qc}><EntryRow item={item} selected={false} /></QueryClientProvider>,
+    )
     expect(container.querySelector('span.rounded-full')).not.toBeNull()
     useAppSettings.getState().update({ timelineUnreadDot: false })
-    const container2 = render(<EntryRow item={item} selected={false} />).container
+    const qc2 = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container2 = render(
+      <QueryClientProvider client={qc2}><EntryRow item={item} selected={false} /></QueryClientProvider>,
+    ).container
     expect(container2.querySelector('span.rounded-full')).toBeNull()
     unmount()
     useAppSettings.getState().reset()

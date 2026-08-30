@@ -53,7 +53,7 @@ function PlannedAction({
 
 export default function SubscriptionsPage() {
   const feeds = useFeeds()
-  const selectFeed = useReaderUi((s) => s.selectFeed)
+  const selectScope = useReaderUi((s) => s.selectScope)
   const selectView = useReaderUi((s) => s.selectView)
   const selectSection = useReaderUi((s) => s.selectSection)
 
@@ -172,7 +172,7 @@ export default function SubscriptionsPage() {
                         // 与侧栏 feed 导航同一语义（AC4）：切回首页 + scope
                         selectSection('home')
                         selectView('all')
-                        selectFeed(feed.feedUrl)
+                        selectScope({ kind: 'rss-feed', feedUrl: feed.feedUrl })
                       }}
                       className={cx(
                         'flex min-h-14 w-full items-center gap-3 px-3.5 py-2.5 text-left',

@@ -6,10 +6,10 @@ import { useReaderUi } from '../store/reader-ui'
  * 也不调用 detail API——那是 0006 Reader 的事）。 */
 export default function ReaderPlaceholder() {
   const view = useReaderUi((s) => s.view)
-  const selectedFeedUrl = useReaderUi((s) => s.selectedFeedUrl)
+  const scope = useReaderUi((s) => s.scope)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
 
-  const { data } = useEntries(view, selectedFeedUrl)
+  const { data } = useEntries(scope, view)
   const entries = data?.pages.flatMap((page) => page.items) ?? []
   const selected = selectedEntryRef === null
     ? undefined

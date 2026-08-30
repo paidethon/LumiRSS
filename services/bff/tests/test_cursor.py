@@ -45,7 +45,42 @@ def test_payload_is_compact_json_with_expected_fields():
     raw = cursor[len("c1."):]
     padded = raw + "=" * (-len(raw) % 4)
     payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-    assert payload == {"c": "12345", "v": "unread", "f": "https://example.com/feed.xml"}
+    # 0011：新增 st/cat scope 字段（None 时显式携带，保证形状稳定）
+    assert payload == {
+        "c": "12345",
+        "v": "unread",
+        "f": "https://example.com/feed.xml",
+        "st": None,
+        "cat": None,
+    }
+
+
+def test_payload_carries_source_type_and_category_scope():
+    """0011: cursor scope 携带 sourceType/categoryId，round-trip 一致。"""
+    cursor = encode_cursor(
+        "99",
+        "all",
+        None,
+        source_type="rss",
+        category_id="user/-/label/技术",
+    )
+    scope = decode_cursor(cursor)
+    assert scope.continuation == "99"
+    assert scope.view == "all"
+    assert scope.feed_url is None
+    assert scope.source_type == "rss"
+    assert scope.category_id == "user/-/label/技术"
+
+
+def test_old_cursor_without_scope_fields_still_decodes():
+    """0011 向后兼容：旧 c1 cursor（无 st/cat）解码为 None scope。"""
+    payload = json.dumps(
+        {"c": "7", "v": "all", "f": None}, separators=(",", ":")
+    )
+    encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+    scope = decode_cursor("c1." + encoded)
+    assert scope.source_type is None
+    assert scope.category_id is None
 
 
 def test_encode_rejects_empty_continuation_and_bad_view():
@@ -104,8 +139,8 @@ def test_bad_json_is_rejected():
 def test_wrong_schema_is_rejected():
     with pytest.raises(InvalidCursor):  # missing 'f'
         decode_cursor(make_cursor({"c": "1", "v": "all"}))
-    with pytest.raises(InvalidCursor):  # extra key
-        decode_cursor(make_cursor({"c": "1", "v": "all", "f": None, "x": 1}))
+    with pytest.raises(InvalidCursor):  # unknown extra key（st/cat 为 0011 合法键）
+        decode_cursor(make_cursor({"c": "1", "v": "all", "f": None, "st": None, "cat": None, "x": 1}))
     with pytest.raises(InvalidCursor):  # not an object
         decode_cursor(make_cursor(["c", "v", "f"]))
 

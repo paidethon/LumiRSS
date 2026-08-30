@@ -4,7 +4,8 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getEntries, getEntry, getFeeds, setEntryState } from './client'
-import type { EntryView } from './types'
+import type { UiView } from '../lib/read-later'
+import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
 
 export function useFeeds() {
   return useQuery({
@@ -13,12 +14,25 @@ export function useFeeds() {
   })
 }
 
-export function useEntries(view: EntryView, feedUrl: string | null) {
+/** entries：NavigationTarget（scope + view）→ query（§18/§19 唯一映射）。
+ * Query key 含 scope：不同 scope 不同 cache，切换不闪旧数据；cursor
+ * 透传由 BFF scope envelope 保证不错乱。 */
+export function useEntries(scope: ContentScope, view: UiView) {
+  const entryQuery = buildEntryQuery(scope, view)
   return useInfiniteQuery({
-    queryKey: ['entries', { view, feedUrl }],
+    queryKey: ['entries', { view, scope: scopeKey(scope) }],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
-      getEntries({ view, feedUrl, cursor: pageParam }, signal),
+      getEntries(
+        {
+          view: entryQuery.view,
+          feedUrl: entryQuery.feedUrl,
+          sourceType: entryQuery.sourceType,
+          categoryId: entryQuery.categoryId,
+          cursor: pageParam,
+        },
+        signal,
+      ),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   })
 }

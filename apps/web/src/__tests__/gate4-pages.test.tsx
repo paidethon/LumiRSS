@@ -20,9 +20,9 @@ import {
 } from '../lib/search-history'
 
 const FEEDS = [
-  { title: '阮一峰的网络日志', feedUrl: 'https://www.ruanyifeng.com/blog/atom.xml' },
-  { title: 'IT之家', feedUrl: 'https://ithome.com/rss' },
-  { title: 'OpenAI Blog', feedUrl: 'https://openai.com/blog/rss.xml' },
+  { title: '阮一峰的网络日志', feedUrl: 'https://www.ruanyifeng.com/blog/atom.xml', category: null },
+  { title: 'IT之家', feedUrl: 'https://ithome.com/rss', category: null },
+  { title: 'OpenAI Blog', feedUrl: 'https://openai.com/blog/rss.xml', category: null },
 ]
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -39,7 +39,7 @@ function withProviders(ui: React.ReactNode) {
 
 beforeEach(() => {
   localStorage.clear()
-  useReaderUi.setState({ section: 'subscriptions', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+  useReaderUi.setState({ section: 'subscriptions', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
 })
 
 afterEach(() => {
@@ -106,7 +106,7 @@ describe('SubscriptionsPage（AC11）', () => {
     fireEvent.click(await screen.findByText('阮一峰的网络日志'))
     const s = useReaderUi.getState()
     expect(s.section).toBe('home')
-    expect(s.selectedFeedUrl).toBe('https://www.ruanyifeng.com/blog/atom.xml')
+    expect(s.scope).toEqual({ kind: 'rss-feed', feedUrl: 'https://www.ruanyifeng.com/blog/atom.xml' })
   })
 
   it('加载失败：错误状态 + 重试', async () => {

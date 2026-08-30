@@ -7,8 +7,8 @@ import type { EntryListResponse } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
 
 const FEEDS = [
-  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml' },
-  { title: '示例源 B', feedUrl: 'https://b.example.com/feed.xml' },
+  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null },
+  { title: '示例源 B', feedUrl: 'https://b.example.com/feed.xml', category: null },
 ]
 
 function entry(ref: string, overrides: Partial<EntryListResponse['items'][number]> = {}) {
@@ -62,7 +62,7 @@ function renderApp() {
 beforeEach(() => {
   useReaderUi.setState({
     view: 'all',
-    selectedFeedUrl: null,
+    scope: { kind: 'all' },
     selectedEntryRef: null,
   })
 })
@@ -76,7 +76,8 @@ afterEach(() => {
 const sidebarNav = () => within(screen.getByRole('navigation', { name: '主导航' }))
 
 function expandRssDisclosure() {
-  fireEvent.click(sidebarNav().getByRole('button', { name: /RSS 订阅/ }))
+  // 0011：RSS 主区域=scope；chevron 才展开 tree（aria-label）
+  fireEvent.click(screen.getByRole('button', { name: '展开 RSS 分类' }))
 }
 
 describe('Test E — Shell loading', () => {
@@ -112,9 +113,9 @@ describe('Test F — Entry list 渲染', () => {
     //（0011：feed 按钮在 disclosure 内，先展开）
     expandRssDisclosure()
     expect(screen.getAllByText('示例源 A').length).toBeGreaterThanOrEqual(2)
-    // 0009 Gate 2：收藏标记改为 lucide 星形图标（aria-label 保留）
-    //（0011：桌面 EntryRow + 移动 EntryCard 双渲染 → 两个星标）
-    expect(screen.getAllByLabelText('已收藏').length).toBe(2)
+    // 0009 Gate 2→0011 修正补充：收藏标记从静态星标（aria-label 已收藏）
+    // 变为可点击动作按钮（aria-label 取消收藏；Row+Card 双实例 = 2 个）
+    expect(screen.getAllByRole('button', { name: '取消收藏' }).length).toBe(2)
     // 未读状态不只靠颜色：标题字重差异（font-medium vs font-normal）。
     // 圆点是纯视觉信号（aria-hidden），语义由字重 + 结构承载（AC10）。
     const unreadTitles = screen.getAllByText('未读文章')
@@ -209,8 +210,9 @@ describe('Test J — Feed 切换', () => {
     // 0011：桌面 Row + 移动 Card 双渲染（双份文本）
     expect((await screen.findAllByText('文章 e1.a')).length).toBeGreaterThan(0)
 
-    // 0011：feed 在 RSS disclosure 内（默认收起），先展开
+    // 0011：feed 在 RSS tree 的分类（未分组）内——展开 tree + 分类
     expandRssDisclosure()
+    fireEvent.click(screen.getByRole('button', { name: /展开 未分组/ }))
     fireEvent.click(sidebarNav().getByRole('button', { name: '示例源 A' }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
@@ -219,7 +221,7 @@ describe('Test J — Feed 切换', () => {
       ).toBeDefined()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /全部信息流/ }))
+    fireEvent.click(screen.getByRole('button', { name: /全部信息源/ }))
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => String(c[0]))
       const allFeedsCalls = calls.filter((u) => u.startsWith('/api/v1/entries') && !u.includes('feedUrl='))

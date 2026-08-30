@@ -18,7 +18,7 @@ import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { Loader2, Star } from 'lucide-react'
 import { useEntries } from '../../api/queries'
 import type { EntryListItem } from '../../api/types'
-import { useReaderUi } from '../../store/reader-ui'
+import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
 import EntryCard from '../EntryCard'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
@@ -57,7 +57,7 @@ function groupFavorites(items: EntryListItem[], now = new Date()): DateGroup[] {
 export default function FavoritesPage() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   // 复用 starred 服务端语义（feedUrl=null 全局收藏），不复制数据
-  const starred = useEntries('starred', null)
+  const starred = useEntries(ALL_SCOPE, 'starred')
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = starred
 
   const entries = useMemo(

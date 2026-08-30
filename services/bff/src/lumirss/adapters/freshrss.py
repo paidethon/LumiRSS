@@ -125,21 +125,41 @@ class EntryNotFound(AdapterError):
 
 
 class Feed:
-    """Minimal LumiRSS feed model (0002 scope: title + feedUrl only)."""
+    """Minimal LumiRSS feed model.
 
-    def __init__(self, title: str, feed_url: str) -> None:
+    0011: FreshRSS 的 greader subscription/list 为每个 feed 附带一个
+    category（{id: "user/-/label/<名>", label}）—— 单分类模型，多分类
+    不存在（报告已说明该上游限制）。id 即分类的稳定 key（含未本地化
+    的真实名），label 是展示名（可能被 FreshRSS 本地化，如默认分类
+    "Uncategorized" → "未分类"）。
+    """
+
+    def __init__(
+        self,
+        title: str,
+        feed_url: str,
+        category_id: str | None = None,
+        category_label: str | None = None,
+    ) -> None:
         self.title = title
         self.feed_url = feed_url
+        self.category_id = category_id
+        self.category_label = category_label
 
     def __eq__(self, other: object) -> bool:
         return (
             isinstance(other, Feed)
             and self.title == other.title
             and self.feed_url == other.feed_url
+            and self.category_id == other.category_id
+            and self.category_label == other.category_label
         )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
-        return f"Feed(title={self.title!r}, feed_url={self.feed_url!r})"
+        return (
+            f"Feed(title={self.title!r}, feed_url={self.feed_url!r}, "
+            f"category_id={self.category_id!r}, category_label={self.category_label!r})"
+        )
 
 
 class FreshRSSAdapter:
@@ -171,23 +191,39 @@ class FreshRSSAdapter:
         *,
         view: EntryView = "all",
         feed_url: str | None = None,
+        category_id: str | None = None,
+        source_type: str | None = None,
         continuation: str | None = None,
     ) -> EntryPage:
         """Return one filtered page of entries, never their bodies.
 
         Filtering happens upstream: ``view`` becomes FreshRSS's ``it``
-        parameter and ``feed_url`` selects the feed's own stream, so the
-        returned page is already filtered (no post-filtering here). The
-        upstream continuation is returned as-is; public cursor semantics
-        belong to the route layer.
+        parameter and ``feed_url``/``category_id`` select the feed's own
+        stream / the category's label stream, so the returned page is
+        already filtered (no post-filtering here). The upstream
+        continuation is returned as-is; public cursor semantics belong to
+        the route layer.
+
+        0011 scope 扩展（feed_url 与 category_id 互斥，由路由层校验）：
+        - ``source_type``：当前唯一合法值 "rss"（全部条目都是 RSS），
+          契约上独立于“全部”——未来新增 Email 等来源后此参数才有
+          实际过滤行为，现仅校验不额外请求。
+        - ``category_id``：greader label stream（user/-/label/<名>）。
+          注意 FreshRSS 上游怪癖：默认分类的 label 是本地化名（如
+          "未分类"），但 stream 按数据库真名匹配——空结果时回退
+          "Uncategorized" 再试一次（仅首页；见 _request_category_stream）。
         """
         token = await self._get_auth_token()
         try:
-            payload = await self._request_stream(token, view, feed_url, continuation)
+            payload = await self._request_stream(
+                token, view, feed_url, category_id, continuation
+            )
         except AuthenticationError:
             self._clear_tokens()
             token = await self._get_auth_token()
-            payload = await self._request_stream(token, view, feed_url, continuation)
+            payload = await self._request_stream(
+                token, view, feed_url, category_id, continuation
+            )
         items: list[EntryListItem] = []
         for item in self._iter_items(payload, "stream/contents"):
             base = self._common_fields(item)
@@ -422,21 +458,75 @@ class FreshRSSAdapter:
         token: str,
         view: EntryView,
         feed_url: str | None,
+        category_id: str | None,
         continuation: str | None,
     ) -> dict:
-        """GET stream/contents (read-only, bounded n=20, filtered upstream)."""
-        if feed_url is None:
-            stream_path = "reading-list"
-        else:
+        """GET stream/contents (read-only, bounded n=20, filtered upstream).
+
+        0011: category_id 走 greader label stream（s=user/-/label/<名>，
+        与 BazQux 兼容形式，已对 FreshRSS 1.29.1 实测）。默认分类的
+        本地化名怪癖由 _request_category_stream 处理。
+        """
+        if feed_url is not None:
             # The feed URL is percent-encoded into the stream path (verified
             # against 1.29.1: the server regex allows '%' and urldecodes).
             stream_path = f"feed/{urllib.parse.quote(feed_url, safe='')}"
+        elif category_id is not None:
+            return await self._request_category_stream(
+                token, view, category_id, continuation
+            )
+        else:
+            stream_path = "reading-list"
         params: dict[str, str] = {"output": "json", "n": str(_ENTRY_LIST_LIMIT)}
         it_filter = _VIEW_FILTERS.get(view)
         if it_filter is not None:
             params["it"] = it_filter
         if continuation is not None:
             params["c"] = continuation
+        return await self._stream_get(token, stream_path, params)
+
+    async def _request_category_stream(
+        self,
+        token: str,
+        view: EntryView,
+        category_id: str,
+        continuation: str | None,
+    ) -> dict:
+        """greader label stream（分类过滤，0011）。
+
+        FreshRSS 1.29.1 实测怪癖：subscription/list 返回的默认分类
+        label 是 UI 本地化名（如 "未分类"），但 stream 按 DB 真名
+        （DEFAULT_CATEGORY_NAME="Uncategorized"）匹配——本地化名查询
+        会返回空。首页（无 continuation）结果为空时回退真名重试一次；
+        后续页沿用同一解析链（若首页命中了原 label，后续页原样查询
+        不会为空，不会触发 fallback）。已知边界：同名自建空分类可能
+        误回退到默认分类内容（FreshRSS UNIQUE(name) 下同名真分类无法
+        与默认分类共存，风险极低）。
+        """
+        label = category_id.removeprefix("user/-/label/")
+        stream_path = f"user/-/label/{urllib.parse.quote(label, safe='')}"
+        params: dict[str, str] = {"output": "json", "n": str(_ENTRY_LIST_LIMIT)}
+        it_filter = _VIEW_FILTERS.get(view)
+        if it_filter is not None:
+            params["it"] = it_filter
+        if continuation is not None:
+            params["c"] = continuation
+        payload = await self._stream_get(token, stream_path, params)
+        if (
+            continuation is None
+            and not payload.get("items")
+            and label != "Uncategorized"
+        ):
+            fallback_path = "user/-/label/Uncategorized"
+            retry = await self._stream_get(token, fallback_path, params)
+            if retry.get("items"):
+                return retry
+        return payload
+
+    async def _stream_get(
+        self, token: str, stream_path: str, params: dict[str, str]
+    ) -> dict:
+        """GET /stream/contents/<path> with shared error handling."""
         try:
             response = await self._client.get(
                 f"{self._base_url}/api/greader.php/reader/api/0/stream/contents/{stream_path}",
@@ -580,5 +670,26 @@ class FreshRSSAdapter:
                 raise UpstreamError(
                     "FreshRSS subscription entry missing 'title' or 'url'."
                 )
-            feeds.append(Feed(title=title, feed_url=url))
+            # 0011: categories[0] = FreshRSS 单分类（greader 模型）。
+            # 形状异常时降级为无分类（前端归入「未分组」），不阻断列表。
+            category_id: str | None = None
+            category_label: str | None = None
+            categories = item.get("categories")
+            if isinstance(categories, list) and categories:
+                first = categories[0]
+                if isinstance(first, dict):
+                    raw_id = first.get("id")
+                    raw_label = first.get("label")
+                    if isinstance(raw_id, str) and raw_id:
+                        category_id = raw_id
+                    if isinstance(raw_label, str) and raw_label:
+                        category_label = raw_label
+            feeds.append(
+                Feed(
+                    title=title,
+                    feed_url=url,
+                    category_id=category_id,
+                    category_label=category_label,
+                )
+            )
         return feeds

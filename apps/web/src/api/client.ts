@@ -1,11 +1,11 @@
 /** LumiRSS API client — 只访问相对 /api/v1/*，所有 BFF HTTP 调用集中在此。
  * 读：getFeeds / getEntries / getEntry；写：setEntryState（set 语义）。 */
 
+import { toApiView, type UiView } from '../lib/read-later'
 import type {
   ApiErrorResponse,
   EntryDetail,
   EntryListResponse,
-  EntryView,
   Feed,
 } from './types'
 
@@ -105,15 +105,30 @@ export async function getFeeds(signal?: AbortSignal): Promise<Feed[]> {
 }
 
 export async function getEntries(
-  params: { view: EntryView; feedUrl: string | null; cursor?: string | null },
+  params: {
+    view: UiView
+    feedUrl: string | null
+    sourceType?: string | null
+    categoryId?: string | null
+    cursor?: string | null
+  },
   signal?: AbortSignal,
 ): Promise<EntryListResponse> {
   const query = new URLSearchParams()
   // view 始终显式携带，与 query key 的 scope 保持一致（与 cursor scope
-  // 构造性一致，规避 invalid_cursor 400）。
-  query.set('view', params.view)
+  // 构造性一致，规避 invalid_cursor 400）。read-later 是前端 workspace
+  // 语义（无 BFF 契约）：翻译为 view=all 全量拉取，列表侧客户端过滤。
+  query.set('view', toApiView(params.view))
   if (params.feedUrl !== null) {
     query.set('feedUrl', params.feedUrl)
+  }
+  // 0011：sourceType/categoryId 服务端过滤（§13）——与 feedUrl 互斥
+  // 由 BFF 校验（前端构造时保证只有一个存在）。
+  if (params.sourceType != null) {
+    query.set('sourceType', params.sourceType)
+  }
+  if (params.categoryId != null) {
+    query.set('categoryId', params.categoryId)
   }
   if (params.cursor != null) {
     // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。

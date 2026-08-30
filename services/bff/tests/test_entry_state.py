@@ -383,7 +383,7 @@ class FakeStateAdapter:
     async def list_feeds(self):
         return []
 
-    async def list_entries(self, *, view="all", feed_url=None, continuation=None):
+    async def list_entries(self, *, view="all", feed_url=None, category_id=None, source_type=None, continuation=None):
         raise AssertionError("not under test")
 
     async def get_entry(self, item_id: str):

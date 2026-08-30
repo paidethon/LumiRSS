@@ -15,6 +15,7 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useReaderUi } from '../store/reader-ui'
+import { scopeKey, type ContentScope } from './navigation'
 import { useEntryStateMutation } from '../api/queries'
 
 function isEditable(target: EventTarget | null): boolean {
@@ -97,10 +98,10 @@ export function useKeyboardShortcuts(): void {
  * 不复制进快捷键模块——与 ReaderPlaceholder 同一取数模式。 */
 function findSiblingEntry(
   queryClient: ReturnType<typeof useQueryClient>,
-  state: { view: string; selectedFeedUrl: string | null; selectedEntryRef: string | null },
+  state: { view: string; scope: unknown; selectedEntryRef: string | null },
   direction: 1 | -1,
 ): string | null {
-  const entries = collectEntries(queryClient, state.view, state.selectedFeedUrl)
+  const entries = collectEntries(queryClient, state.view, scopeKey(state.scope as ContentScope))
   if (entries.length === 0) return null
   if (state.selectedEntryRef === null) {
     return direction === 1 ? entries[0]!.entryRef : entries[entries.length - 1]!.entryRef
@@ -116,16 +117,12 @@ function findEntry(
   queryClient: ReturnType<typeof useQueryClient>,
   entryRef: string,
 ): { entryRef: string; starred: boolean } | null {
-  for (const view of ['all', 'unread', 'starred']) {
-    const entries = collectEntries(queryClient, view, null)
+  // 0011：scope key 形状与 queries.ts 一致（'all'|'rss'|{categoryId}|{feedUrl}）
+  // 扫描全部已缓存 scope（j/k 导航在当前 scope 内找兄弟；findEntry 容错全扫）
+  for (const key of entriesKeysInCache(queryClient)) {
+    const entries = collectEntries(queryClient, key.view, key.scope as ReturnType<typeof scopeKey>)
     const hit = entries.find((e) => e.entryRef === entryRef)
     if (hit) return hit
-    // feed 作用域的缓存
-    for (const feed of feedKeysInCache(queryClient)) {
-      const feedEntries = collectEntries(queryClient, view, feed)
-      const feedHit = feedEntries.find((e) => e.entryRef === entryRef)
-      if (feedHit) return feedHit
-    }
   }
   return null
 }
@@ -135,20 +132,27 @@ type CacheEntry = { entryRef: string; starred: boolean }
 function collectEntries(
   queryClient: ReturnType<typeof useQueryClient>,
   view: string,
-  feedUrl: string | null,
+  scope: ReturnType<typeof scopeKey>,
 ): CacheEntry[] {
-  // key 构造与 queries.ts useEntries 完全一致：{ view, feedUrl }
-  // （feedUrl 为 null 时也显式携带，保证 key 相等）
-  const key = ['entries', { view, feedUrl }]
+  // key 构造与 queries.ts useEntries 完全一致：{ view, scope: scopeKey(scope) }（§19）
+  const key = ['entries', { view, scope }]
   const data = queryClient.getQueryData<{ pages?: { items?: CacheEntry[] }[] }>(key as never)
   const pages = data?.pages ?? []
   return pages.flatMap((p) => p.items ?? [])
 }
 
-function feedKeysInCache(queryClient: ReturnType<typeof useQueryClient>): string[] {
-  // 从 feeds 缓存取全部 feedUrl（keys 结构稳定）
-  const feeds = queryClient.getQueryData<{ feedUrl: string }[]>(['feeds'])
-  return (feeds ?? []).map((f) => f.feedUrl)
+/** 枚举 cache 中全部 entries key 的 (view, scope) 对（findEntry 容错扫描）。 */
+function entriesKeysInCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+): { view: string; scope: unknown }[] {
+  return queryClient
+    .getQueryCache()
+    .getAll()
+    .filter((q) => q.queryKey[0] === 'entries')
+    .map((q) => {
+      const params = (q.queryKey[1] ?? {}) as { view?: string; scope?: unknown }
+      return { view: String(params.view ?? 'all'), scope: params.scope ?? 'all' } as { view: string; scope: ReturnType<typeof scopeKey> }
+    })
 }
 
 function scrollEntryIntoView(entryRef: string): void {
