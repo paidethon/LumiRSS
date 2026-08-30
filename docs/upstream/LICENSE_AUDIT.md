@@ -116,8 +116,8 @@ Use:
 - `LICENSE` at repository root (pending user decision);
 - `THIRD_PARTY_NOTICES.md` (template prepared in the v6 package,
   to be added when dependencies/licenses are finalized);
-- `docs/reference/UPSTREAMS.md` with SHA/license (done);
-- `docs/reference/SOURCE_MAP.md` (done, empty by design);
+- `docs/upstream/UPSTREAMS.md` with SHA/license (done);
+- `docs/upstream/SOURCE_MAP.md` (done, empty by design);
 - per-file headers when required;
 - dependency license review for new UI libraries;
 - final confirmation that restricted assets are absent.

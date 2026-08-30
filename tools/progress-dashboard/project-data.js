@@ -1,17 +1,17 @@
 // LumiRSS Project Board — data source
 // ---------------------------------------------------------------
-// This file is a web-view SUMMARY of docs/PROJECT_STATE.md.
-// If the two ever disagree, PROJECT_STATE.md wins.
+// This file is a web-view SUMMARY of project state.
+// If the two ever disagree, docs/README.md + docs/ROADMAP.md win.
 //
 // How to update (only when a milestone starts or completes):
-//   1. Update docs/PROJECT_STATE.md (the source of truth).
+//   1. Update docs/README.md (the source of truth).
 //   2. Update the milestone entry here:
 //      - starting:  status "planned" -> "in-progress"
 //      - completing: status -> "completed", fill implemented /
 //        acceptance / problems / learned, set devlog link, and
 //        mark the next milestone "next"; update currentPhaseId /
 //        currentMilestoneId / updatedAt.
-//   3. Add docs/devlog/<milestone>.md.
+//   3. Add docs/milestones/<milestone>.md.
 // Do NOT rewrite index.html for progress updates.
 //
 // Milestone status values:
@@ -20,7 +20,7 @@
 
 window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-30",
-  sourceOfTruth: "docs/PROJECT_STATE.md",
+  sourceOfTruth: "docs/README.md",
   currentPhaseId: "phase-6",
   currentMilestoneId: "0010",
 
@@ -129,7 +129,7 @@ window.LUMIRSS_PROJECT = {
         "删除 10 个旧基线文件（旧 specs/audits、issue 与 dependabot 模板、.lingma 规则、.env.example、.aiignore.md）",
         "采用 PRD v5.0 — Reboot Baseline 作为最高产品依据",
         "重写 README / AGENTS / PR 模板 / CI 检查为极简版",
-        "新建 docs/ARCHITECTURE.md 与 docs/PROJECT_STATE.md"
+        "新建 docs/architecture/README.md 与 docs/README.md"
       ],
       acceptance: "全部验收通过：目录结构与目标一致、PRD 为 v5.0、旧文件名零残留、CI 三步本地模拟通过、workflow YAML 有效。提交 29b03ec（17 files，+864/−2240），经 PR #4 合入 main。",
       problems: [
@@ -472,7 +472,7 @@ window.LUMIRSS_PROJECT = {
       name: "Reader Style Deep Customization",
       status: "next",
       shortGoal: "Font import + Chinese typography + theme packs",
-      goal: "阅读样式深度自定义（纯前端）：字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式解决 CJK 体积）、中文排版深度（首行缩进/标点悬挂/简繁转换/CJK 阅读时长）、主题包分享（.lumitheme JSON 完整快照导入导出——Web 阅读器无先例的差异化）、代码高亮主题（shiki 按需加载）、Bionic Reading、分页滚动（候选）。依据：docs/reference/reader-style-survey.md（10+ 阅读器调研）。",
+      goal: "阅读样式深度自定义（纯前端）：字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式解决 CJK 体积）、中文排版深度（首行缩进/标点悬挂/简繁转换/CJK 阅读时长）、主题包分享（.lumitheme JSON 完整快照导入导出——Web 阅读器无先例的差异化）、代码高亮主题（shiki 按需加载）、Bionic Reading、分页滚动（候选）。依据：docs/design/reader-research.md（10+ 阅读器调研）。",
       implemented: [],
       acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
       problems: [],

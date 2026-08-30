@@ -1,8 +1,8 @@
-# Spec 0012 — Reader Style Deep Customization / 阅读样式深度自定义
+# 0012 — Reader Style Deep Customization / 阅读样式深度自定义
 
 > 状态：**Approved（用户指令全文，2026-08-30）**
 > 日期：2026-08-30
-> 依据：用户 0012 里程碑指令（全文）+ docs/reference/reader-style-survey.md
+> 依据：用户 0012 里程碑指令（全文）+ docs/design/reader-research.md
 > 前置：0011（Mobile UI Five-Screen Alignment）已合入 main（PR #18，dd95924）
 > 分支：feat/0012-reader-style-deep-customization（从 main 新建）
 
@@ -281,3 +281,40 @@ arbitrary JS injection。TTF/OTF/ZIP 字体与 CSS font package 本阶段不做�
 - 恶意 HTML regression 面（transforms 后必须重新消毒）→ 专用测试文件；
 - IndexedDB 在隐私模式/旧浏览器不可用 → 功能降级但不影响启动；
 - hanging-punctuation 浏览器支持差异 → @supports 包裹 + UI 标注。
+
+---
+
+## Implementation Results
+
+> Merged from devlog 0012 (2026-08-30).
+
+**Summary**: WOFF2 字体导入 + 字体 URL + 中文排版（缩进/悬挂/简繁）+ CJK 阅读时间 + .lumitheme 主题包 + Aa 面板 + Shiki lazy 高亮 + Bionic（实验性）。BFF 零改动。Presentation pipeline 安全模型建立。
+
+### Key decisions
+
+1. 字体本地 WOFF2：三重校验 → IndexedDB → FontFace；内容 hash 去重；
+2. 字体 URL：远程 FontFace，不落本地；
+3. Presentation pipeline：raw HTML → inert DOM → transforms → DOMPurify 终点；
+4. OpenCC 按方向拆包（dynamic import，未启用零成本）；
+5. Shiki fine-grained lazy（core + JS regex engine + 每语言/每主题 chunk）；
+6. Paged Reading deferred（CSS 多列 5 项不可接受缺陷）。
+
+### Verification
+
+```text
+Web:  399 tests passed (30 files; 313 baseline + 86 new)
+lint: 0 errors (3 React Compiler notes)
+build: success (initial js 451.00KB/gzip 132.66KB, +11.0KB gzip)
+BFF:  134 passed, zero changes
+Live: indent/heading scope; OpenCC s2t/tw real conversion;
+      bionic 12 spans/0 in code; shiki 154 tokens; malicious HTML
+      zero dangerous nodes; 7-viewport zero overflow; Aa panel
+      (popover + mobile sheet 44px); reading time correct
+```
+
+### Follow-ups
+
+- Paged Reading candidate for 0017;
+- cn2t chunk 475KB gzip (简→繁固有成本);
+- URL 字体不做本地缓存;
+- feed-specific reader profiles 未立项。

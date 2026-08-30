@@ -619,9 +619,9 @@
   function renderFooter() {
     document.getElementById("footer").innerHTML =
       "<p>Updated: " + esc(DATA.updatedAt) +
-      " · Data: docs/progress/project-data.js · Source of truth: " + esc(DATA.sourceOfTruth) + "</p>" +
+      " · Data: tools/progress-dashboard/project-data.js · Source of truth: " + esc(DATA.sourceOfTruth) + "</p>" +
       "<p>Maintenance rule: update the board only when a milestone starts or completes " +
-      "(PROJECT_STATE.md → project-data.js → new devlog file). Never per-task updates.</p>";
+      "(docs/README.md → project-data.js → new milestone file). Never per-task updates.</p>";
   }
 
   /* ---------- init ---------- */

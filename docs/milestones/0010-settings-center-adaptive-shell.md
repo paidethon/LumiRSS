@@ -1,11 +1,8 @@
-# Spec 0010 — Settings Center & Adaptive Shell
+# 0010 — Settings Center & Adaptive Shell
 
-> 日期：2026-08-29
-> 对应 PRD 阶段：Phase 6 — Lumi-native Product Shell（v6.0 路线修订后）
-> 状态：**Draft — 等待用户批准，未批准前不开始 Build**
-> 批准前唯一允许写入的文件是本 Spec。
->
-> 前置：0009 UI Reboot & Reference Lab 已完成并经 PR #15 合入 main
+> Status: **Completed** (2026-08-30, Gates A–D + 0010a Gates E/F/G user-approved)
+> Branch: feat/0010-settings-center-adaptive-shell (merged to main)
+> Expansion: [0010a — Settings Expansion & Reader Style](0010a-settings-expansion-and-reader-style.md)
 >（main @ 6686eea）。0010 分支基于该 main 创建。
 
 ## Goal
@@ -52,8 +49,8 @@ apps/web/src/components/App.tsx       ← 分栏拖拽/折叠接线
 apps/web/src/components/Mobile*.tsx   ← 底部 Tab 导航改造
 apps/web/src/__tests__/               ← 新增测试
 services/bff/                         ← 整个目录 0 文件变化
-docs/PRD.md / ROADMAP.md /            ← 路线修订（见本 Spec §修订计划）
-docs/PROJECT_STATE.md / project-data.js / docs/progress/index.html
+docs/product/PRD.md / ROADMAP.md /            ← 路线修订（见本 Spec §修订计划）
+docs/README.md / project-data.js / tools/progress-dashboard/index.html
                                       ← 路线修订 + 看板样式统一
 ```
 
@@ -146,7 +143,7 @@ Grid 的 `240px 400px 1fr` 是静态的；拖拽需要 JS 读 pointer 位移算�
 
 ### 看板样式统一是什么意思
 
-`docs/progress/index.html` 目前是独立的旧配色（--bg:#f7f7f4 等，与主站
+`tools/progress-dashboard/index.html` 目前是独立的旧配色（--bg:#f7f7f4 等，与主站
 Lumi Mist 无关）。统一 = 看板用自己的内联 Lumi Mist 变量副本（看板是
 零依赖单文件，不能 import 主站 CSS——见看板技术约束）复制 token 值，
 视觉上与主站同一家族：同一套 canvas/surface/accent/圆角/字体栈 +
@@ -322,11 +319,11 @@ Escape  关闭浮层（Modal/Drawer）
 
 | 文档 | 修订 |
 |---|---|
-| `docs/PRD.md` v6.0 | §12 开发路线表插入 0010、后续编号顺延；§8.5 统一设置分类对齐 9 分类定稿；版本号升 v6.1 |
+| `docs/product/PRD.md` v6.0 | §12 开发路线表插入 0010、后续编号顺延；§8.5 统一设置分类对齐 9 分类定稿；版本号升 v6.1 |
 | `docs/ROADMAP.md` | 里程碑表 + 依赖图 + §10 路线变更政策记录本次重排（原因：设置中心与自适应外壳是产品骨架，优先于订阅管理） |
-| `docs/PROJECT_STATE.md` | 里程碑账本插入 0010（in-progress）+ 后续行顺延；测试基线更新 |
-| `docs/progress/project-data.js` | phases 重构：Phase 6 = Product Shell（0009+0010）；里程碑插入与顺延；currentMilestoneId=0010 |
-| `docs/progress/index.html` | **样式统一**（见 Gate D 第 15 条）：内联 Lumi Mist 变量副本（canvas/sidebar/surface/accent/分类柔彩/圆角）、字体栈对齐 `--lumi-font-sans`、Dark 模式跟随 `prefers-color-scheme` + `color-scheme`、卡片/徽标/代码字体视觉对齐主站；**零依赖约束不变**（纯内联 CSS 变量副本，不 import 主站文件） |
+| `docs/README.md` | 里程碑账本插入 0010（in-progress）+ 后续行顺延；测试基线更新 |
+| `tools/progress-dashboard/project-data.js` | phases 重构：Phase 6 = Product Shell（0009+0010）；里程碑插入与顺延；currentMilestoneId=0010 |
+| `tools/progress-dashboard/index.html` | **样式统一**（见 Gate D 第 15 条）：内联 Lumi Mist 变量副本（canvas/sidebar/surface/accent/分类柔彩/圆角）、字体栈对齐 `--lumi-font-sans`、Dark 模式跟随 `prefers-color-scheme` + `color-scheme`、卡片/徽标/代码字体视觉对齐主站；**零依赖约束不变**（纯内联 CSS 变量副本，不 import 主站文件） |
 | `AGENTS.md` | Current milestone 更新为 0010；权威顺序补 `docs/ROADMAP.md` 位置说明 |
 | `README.md` | Current status / Roadmap at a glance / Documentation 表更新 |
 | `docs/specs/0009-*.md` | 不改写历史 Spec；仅在 Spec 头部加一行"后续：0010 起编号顺延"注记？——**否，历史 Spec 冻结不动**，编号语义由 ROADMAP 变更记录承载 |
@@ -477,3 +474,46 @@ PROJECT_STATE 测试基线更新为新真实数字。
 | 移动端 Folo 同款 | §设计规格底部 Tab + AC15/V7 |
 | 纯 localStorage 持久化 | §Context 迁移路径 + AC17/V11（服务端 API 归 0015） |
 | 看板内容 + 样式统一 | §进度看板修订详规 + AC19/V10 |
+
+---
+
+## Implementation Results
+
+> Merged from devlog 0010 (2026-08-29 ~ 2026-08-30).
+
+**Summary**: Folo 式设置中心（13 分类）+ 侧栏信息架构 + 三栏拖拽折叠 + 移动端底部 Tab + push 式全屏设置 + 0010a 外观/阅读深度自定义。BFF 零变化。
+
+### Key decisions
+
+1. 声明式设置行（Folo setting-builder 模式，inspired）；
+2. 单 localStorage key + 逐字段归一化 + 旧 key 自动迁移；
+3. 移动端设置 = 分组列表 + push 子页（非 Modal）；
+4. 分隔条手写 pointer events（零依赖原则）；
+5. 0010a：不做自造源（违反冻结架构）；阅读样式 P1 归本轮；
+6. 加密备份 Web Crypto PBKDF2+AES-GCM；无密钥恢复不清空本机凭据。
+
+### Verification
+
+```text
+Web:  244 tests passed (162 baseline + 82 new)
+lint: 0 errors / 2 warnings
+build: success
+BFF:  121 passed, services/bff zero changes
+Live: drag 240→277 + reload restore; collapse/expand; keyboard j/k/u/s;
+      9 Phase-2 badges; mobile 390 zero overflow; accent picker;
+      typography presets; custom CSS; encrypted backup round-trip 16/16
+```
+
+### Real bugs found (jsdom could not catch)
+
+1. Query cache key mismatch (j/k broken in real browser);
+2. PaneSeparator height collapse (hidden wrapper in flex-row);
+3. Mobile settings layout broken (Dialog+chip approach replaced);
+4. CSS prefix parser nested brace matching.
+
+### Follow-ups
+
+- 快捷键为基础集（j/k/u/s）；
+- 侧栏隐藏已读待 feeds unreadCount 契约；
+- localStorage 偏好在统一设置时迁移服务端；
+- 滚动已读实验版 → 正式化。

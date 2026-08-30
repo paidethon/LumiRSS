@@ -1,4 +1,9 @@
-# Devlog 0005 — Web Shell
+# 0005 — Web Shell
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0005-*.md)
+
+---
 
 > 日期：2026-08-28
 > 里程碑：0005 — Web Shell（Phase 3 — Reading Experience 首个里程碑）

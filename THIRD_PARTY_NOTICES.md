@@ -45,7 +45,7 @@ Required notice/source offer: source offer obligations reviewed at
 
 ## Source-derived UI work
 
-Complete from `docs/reference/SOURCE_MAP.md`.
+Complete from `docs/upstream/SOURCE_MAP.md`.
 
 ### Folo
 

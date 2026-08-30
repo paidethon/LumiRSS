@@ -1,4 +1,9 @@
-# Devlog 0008 — RSSHub Source Expansion
+# 0008 — RSSHub Source Expansion
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0008-*.md)
+
+---
 
 ## Status
 

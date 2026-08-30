@@ -28,7 +28,7 @@ When uncertain, choose the more conservative classification.
 
 | Lumi area/file | Upstream project | Upstream SHA | Upstream path/screen | Classification | What was taken | Changes made | License/notice action | Reviewer/status |
 |---|---|---|---|---|---|---|---|---|
-| `docs/reference/UPSTREAMS.md` §7 | Folo (live web app) | `78f6bd1b` | desktop Sidebar/Timeline/Reader, dark+light | inspired | layout dimensions, states, semantic token architecture (measured, not copied) | translated into measurement notes | design attribution only | Gate 0, recorded |
+| `docs/upstream/UPSTREAMS.md` §7 | Folo (live web app) | `78f6bd1b` | desktop Sidebar/Timeline/Reader, dark+light | inspired | layout dimensions, states, semantic token architecture (measured, not copied) | translated into measurement notes | design attribution only | Gate 0, recorded |
 | `apps/web/src/styles/themes.css` | Folo | `78f6bd1b` | `--fo-*` theme variables / `html[data-theme]` mechanism | inspired | theme variable architecture + oklab-translucency selection idea (values are Lumi's own palette) | independent implementation, Lumi Mist colors | design attribution only | Gate 1–4, recorded |
 | `apps/web/src/components/Sidebar.tsx` | Folo | `78f6bd1b` | sidebar nav rows (measured 32px/6px-radius/14px/500) | inspired | row density & three-state patterns | Lumi tokens/icons/category dots | design attribution only | Gate 2, recorded |
 | `apps/web/src/components/EntryRow.tsx` | Folo | `78f6bd1b` | timeline item composition (measured two-level hierarchy) | inspired | source-line + title hierarchy, weight-based read state | Lumi fields/API (no excerpt/favicon/thumbnail — graceful degradation) | design attribution only | Gate 2, recorded |

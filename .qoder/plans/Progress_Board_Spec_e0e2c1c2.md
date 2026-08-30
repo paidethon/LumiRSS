@@ -14,14 +14,14 @@
 
 **功能需求**
 
-- R1 单页看板 `docs/progress/index.html`：标题 + Current Phase + Current Milestone + `2 / 13 milestones completed` + 7 阶段横向流程条（Foundation → RSS → Backend → Reading → RSSHub → AI → Production，状态至少 Completed / Current / Planned / Blocked；不用虚假百分比）
+- R1 单页看板 `tools/progress-dashboard/index.html`：标题 + Current Phase + Current Milestone + `2 / 13 milestones completed` + 7 阶段横向流程条（Foundation → RSS → Backend → Reading → RSSHub → AI → Production，状态至少 Completed / Current / Planned / Blocked；不用虚假百分比）
 - R2 路线区域：全部 7 Phase / 13 Milestone（0000–0012），列含 Phase / Milestone ID / Name / Status / Short Goal
 - R3 点击 Phase 或 Milestone → 同页详情面板（single page + JS state + detail panel，不建独立页面）。Phase 详情：名称/目的/包含的 Milestone/Completed-Planned/存在原因/当前进度；Milestone 详情：Goal / Status / What was implemented / Acceptance result / Problems encountered / What I learned / Devlog link。Desktop 右侧详情栏，Mobile 纵向详情
 - R4 架构区域：README 冻结架构图原样呈现 + 显著 callout 区分「RSSHub 架构位置 = FreshRSS 上游（图中顶部，第一天就存在）」与「RSSHub 开发里程碑 = Phase 4 (0008)」
 - R5 开发日志可达：链接 `../devlog/0000-project-reboot.md` 与 `../devlog/0001-freshrss-development-environment.md`（相对路径，file:// 直接打开即可访问）
 - R6 当前状态忠实于仓库事实：0000 Completed / 0001 Completed / 0002 Next；未完成能力一律不显示为 Completed
 - R7 全部 UI 状态由 `project-data.js` 的 `window.LUMIRSS_PROJECT` 驱动；以后更新优先只改数据，不改 HTML
-- R8 单一真源：`docs/PROJECT_STATE.md` 为准，看板只是展示摘要，页面页脚注明
+- R8 单一真源：`docs/README.md` 为准，看板只是展示摘要，页面页脚注明
 
 **非功能需求**
 
@@ -37,15 +37,15 @@
 
 新建（4 个）：
 
-- `docs/progress/index.html` — 单页，内联 `<style>` + 内联渲染 `<script>`
-- `docs/progress/project-data.js` — 数据对象
+- `tools/progress-dashboard/index.html` — 单页，内联 `<style>` + 内联渲染 `<script>`
+- `tools/progress-dashboard/project-data.js` — 数据对象
 - `docs/devlog/0000-project-reboot.md`
 - `docs/devlog/0001-freshrss-development-environment.md`
 
 修改（仅小幅）：
 
-- `docs/PROJECT_STATE.md` — ① "Current phase" 一行改为 `Phase 2 — BFF (next; Phase 1 milestone 0001 completed)`，与看板"Current Phase: Phase 2"保持一致；② Current status 末尾加一行指向看板（网页展示说明）
-- `README.md` — Documentation 表加一行：`docs/progress/index.html | Project progress board (static web view of project state)`
+- `docs/README.md` — ① "Current phase" 一行改为 `Phase 2 — BFF (next; Phase 1 milestone 0001 completed)`，与看板"Current Phase: Phase 2"保持一致；② Current status 末尾加一行指向看板（网页展示说明）
+- `README.md` — Documentation 表加一行：`tools/progress-dashboard/index.html | Project progress board (static web view of project state)`
 
 ### 2.2 页面结构（自上而下）
 
@@ -63,7 +63,7 @@
 ```javascript
 window.LUMIRSS_PROJECT = {
   updatedAt: "2026-08-26",
-  sourceOfTruth: "docs/PROJECT_STATE.md",
+  sourceOfTruth: "docs/README.md",
   currentPhaseId: "phase-2",
   currentMilestoneId: "0002",
   phases: [
@@ -122,9 +122,9 @@ Phase purpose 示例（均取自 PRD §11）：Phase 2 — Backend Core 的目�
 
 1. 创建 `docs/devlog/0000-project-reboot.md`
 2. 创建 `docs/devlog/0001-freshrss-development-environment.md`
-3. 创建 `docs/progress/project-data.js`（7 phases + 13 milestones + 详情数据）
-4. 创建 `docs/progress/index.html`（结构 + 内联 CSS + 内联 Vanilla JS）
-5. 小幅修改 `docs/PROJECT_STATE.md`（current phase 澄清 + 看板指针行）
+3. 创建 `tools/progress-dashboard/project-data.js`（7 phases + 13 milestones + 详情数据）
+4. 创建 `tools/progress-dashboard/index.html`（结构 + 内联 CSS + 内联 Vanilla JS）
+5. 小幅修改 `docs/README.md`（current phase 澄清 + 看板指针行）
 6. 小幅修改 `README.md`（Documentation 表一行）
 7. 执行 Verification（见下）
 8. Git 终检（任务 §23）+ 完成报告（任务 §24）；停在工作区，不 commit / push
@@ -149,7 +149,7 @@ Phase purpose 示例（均取自 PRD §11）：Phase 2 — Backend Core 的目�
 ## 5. Verification
 
 - **V1 数据一致性**：用系统已有 node 载入 project-data.js，断言 7 phases / 13 milestones / 状态分布（2 completed、1 next、10 planned）/ 计数 2/13 / 已完成 milestone 的 devlog 链接文件真实存在
-- **V2 服务验证**：`python3 -m http.server 8765`（仓库根）→ curl 确认 `/docs/progress/index.html`、`/docs/progress/project-data.js`、`/docs/devlog/0000-*.md`、`/docs/devlog/0001-*.md` 均 200（证明链接目标有效）；另按任务 §19 用 `--directory docs/progress` 验证 index.html 本身可服务，并记录该模式下 `../devlog` 相对链接超出服务根的限制（主验证模式为 file:// 直接打开，链接可达）
+- **V2 服务验证**：`python3 -m http.server 8765`（仓库根）→ curl 确认 `/tools/progress-dashboard/index.html`、`/tools/progress-dashboard/project-data.js`、`/docs/devlog/0000-*.md`、`/docs/devlog/0001-*.md` 均 200（证明链接目标有效）；另按任务 §19 用 `--directory docs/progress` 验证 index.html 本身可服务，并记录该模式下 `../devlog` 相对链接超出服务根的限制（主验证模式为 file:// 直接打开，链接可达）
 - **V3 浏览器实测**（Browser 子代理，本机工具不引入项目依赖）：390px / 768px / Desktop 三档截图；核对无横向滚动、流程条可读、表格不溢出、手机端详情纵向；点击 Phase 1 与 milestone 0001 行验证详情切换正确
 - **V4 Secret 扫描**：对全部新增/修改文件 `grep -riE "Passwd=|auth=|Authorization:|token|password|cookie|secret"`，仅允许 `[REDACTED]` 占位或零命中
 - **V5 CI 本地模拟**：repository-checks.yml 三步（必备文档 / 敏感文件 / 冲突标记）本地跑通

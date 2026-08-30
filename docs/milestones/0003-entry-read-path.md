@@ -1,4 +1,9 @@
-# Devlog 0003 — Entry Read Path
+# 0003 — Entry Read Path
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0003-*.md)
+
+---
 
 > Milestone: 0003 Entry Read Path
 > Phase: Phase 2 — Backend Core

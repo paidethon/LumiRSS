@@ -1,4 +1,9 @@
-# Devlog 0007 — Mobile + PWA
+# 0007 — Mobile & PWA
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0007-*.md)
+
+---
 
 ## Status
 

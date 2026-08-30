@@ -1,4 +1,9 @@
-# Devlog 0006 — Reader
+# 0006 — Reader
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0006-*.md)
+
+---
 
 ## Status
 

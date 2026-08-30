@@ -1,4 +1,9 @@
-# Devlog 0000 — Project Reboot
+# 0000 — Project Reboot
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0000-*.md)
+
+---
 
 > Milestone: 0000 Project Reboot
 > Phase: Phase 0 — Foundation
@@ -36,7 +41,7 @@ Completed。
 
 重写：
 
-- `docs/PRD.md`：v3.3 → v5.0 Reboot Baseline（冻结 MVP 范围与 Phase 0–6 路线）
+- `docs/product/PRD.md`：v3.3 → v5.0 Reboot Baseline（冻结 MVP 范围与 Phase 0–6 路线）
 - `AGENTS.md`：约 300 行企业式规范 → 约 100 行"项目地图"（冻结架构、开发行为、Git 安全）
 - `README.md`：极简版，如实标注"尚无应用代码 / 命令未实现"
 - `.github/PULL_REQUEST_TEMPLATE.md`：精简为 5 节
@@ -44,8 +49,8 @@ Completed。
 
 新建：
 
-- `docs/ARCHITECTURE.md`：面向初学者的架构解释（全景图、组件职责与边界、关键数据流、硬性边界）
-- `docs/PROJECT_STATE.md`：当前阶段、已实现/未实现清单、下一里程碑
+- `docs/architecture/README.md`：面向初学者的架构解释（全景图、组件职责与边界、关键数据流、硬性边界）
+- `docs/README.md`：当前阶段、已实现/未实现清单、下一里程碑
 
 ## Key user ↔ AI dialogue
 
@@ -105,7 +110,7 @@ CI 三步检查（必备文档 / 敏感文件 / 冲突标记）在本地逐条�
 ## Acceptance evidence
 
 - 最终目录结构与目标一致：`README.md`、`AGENTS.md`、`docs/{PRD,ARCHITECTURE,PROJECT_STATE}.md`、`.github/` 基础保护。
-- `docs/PRD.md` 确认为 v5.0 Reboot Baseline。
+- `docs/product/PRD.md` 确认为 v5.0 Reboot Baseline。
 - `git grep` 旧文件名/目录名零残留。
 - `git diff --check` 干净（无空白错误）。
 - CI 三步本地模拟全部通过；workflow YAML 语法有效。

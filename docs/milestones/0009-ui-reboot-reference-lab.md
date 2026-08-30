@@ -1,11 +1,8 @@
-# Spec 0009 — UI Reboot & Reference Lab
+# 0009 — UI Reboot & Reference Lab
 
-> 日期：2026-08-28
-> 对应 PRD 阶段：Phase 5 — UI Reboot & Product Shell（v6.0 路线）
-> 状态：**Draft — 等待用户批准，未批准前不开始 Build**
-> 批准前唯一允许写入的文件是本 Spec 与 v6 文档基线（Gate 0 产物，已批准）。
->
-> 取代旧计划的 `0009 — AI Summary`（AI Summary 重新编号为 0012）。
+> Status: **Completed** (2026-08-29, Gates 0–4 user-approved)
+> Branch: feat/0009-ui-reboot-reference-lab (merged to main)
+> Design reference: [design-system.md](../design/design-system.md)
 
 ## Goal
 
@@ -91,7 +88,7 @@ docs/                                  ← PROJECT_STATE / Board / Devlog 更新
 | OrigRead-Desktop | main | `8b59bcb4ec63c4514e06e3863b1bc527eed861dd` | AGPL-3.0-only | Settings/阅读工具参考 |
 
 位置：`~/projects/LumiRSS-reference/`（仓库外、只读、非 submodule）。
-实机测量数据与源码路径见 `docs/reference/UPSTREAMS.md` §3/§7。
+实机测量数据与源码路径见 `docs/upstream/UPSTREAMS.md` §3/§7。
 
 ### Folo 实测关键数字（本 Spec 的视觉锚点）
 
@@ -212,7 +209,7 @@ Timeline 想要摘要/缩略图/favicon，但当前 API 没有。正确做法：
 
 ## 设计规格（冻结基线，实现时按实测微调并记录）
 
-详细规格见 `docs/ui/UI_REBOOT.md`（已批准）。Spec 级冻结要点：
+详细规格见 `docs/design/design-system.md`（已批准）。Spec 级冻结要点：
 
 ### Token 体系（--lumi-* 前缀）
 
@@ -331,11 +328,11 @@ V11 git ls-files --others --exclude-standard 扫描无 Secret/私人数据
 
 ## Documentation updates（AC 全过后单独做）
 
-- `docs/PROJECT_STATE.md`：0009 → completed，测试/截图证据填入；
-- `docs/progress/project-data.js`：0009 详情 + devlog 链接，0010 → next；
+- `docs/README.md`：0009 → completed，测试/截图证据填入；
+- `tools/progress-dashboard/project-data.js`：0009 详情 + devlog 链接，0010 → next；
 - `docs/devlog/0009-ui-reboot-reference-lab.md`：新建（含 Folo 对照结论、Gate 逐段记录、未验证项诚实清单）；
 - `README.md`：Current status 更新；
-- `docs/reference/SOURCE_MAP.md`：实现中实际发生的借鉴逐条登记；
+- `docs/upstream/SOURCE_MAP.md`：实现中实际发生的借鉴逐条登记；
 - `THIRD_PARTY_NOTICES.md`：若新增依赖则补登记。
 
 ## Risks / Unknowns
@@ -350,5 +347,39 @@ V11 git ls-files --others --exclude-standard 扫描无 Secret/私人数据
 
 本 Spec 依据 QODER_MASTER_INSTRUCTION.md §11（视觉配方）、§12（响应式）、
 §15（Gate 1–4）、§16（绝对不做）、§17（视觉验收）、§18（测试）编写，
-并与已批准的 `docs/ui/UI_REBOOT.md`、`docs/PRD.md` v6.0 对齐；冲突时以
+并与已批准的 `docs/design/design-system.md`、`docs/product/PRD.md` v6.0 对齐；冲突时以
 用户指令与 PRD 为准。
+
+---
+
+## Implementation Results
+
+> Merged from devlog 0009 (2026-08-28 ~ 2026-08-29).
+
+**Summary**: 用 Lumi Mist 设计体系（semantic tokens + 11 primitives + 双主题）替换了临时视觉外壳。BFF 零变化、行为零回归。
+
+### Key decisions
+
+1. 旧 CSS 变量别名过渡（`--bg` 等指向 lumi token）；
+2. 主题机制 Folo 同构（`html[data-theme]` + `oklab`）；
+3. 未读状态双信号（字重 + 圆点），不只靠颜色；
+4. Reader 主题分离最小实现（`--lumi-reader-bg` + `data-reader` 变体）；
+5. Settings 壳诚实原则（只有 Appearance 真实可用）；
+6. lucide-react@1.34.0（ISC，用户批准）。
+
+### Verification
+
+```text
+Web:  162 tests passed (121 baseline + 41 new, zero regression)
+lint: 0 errors / 2 warnings (React Compiler)
+build: success (css 30.18KB/gzip 6.91KB, js 290.54KB/gzip 92.03KB)
+BFF:  121 passed, git diff -- services/bff empty
+Viewport matrix: 12 screenshots, zero overflow, zero console errors
+Smoke: read/star reversible; 0 direct upstream requests
+```
+
+### Follow-ups
+
+- 旧 CSS 变量别名（`--bg` 等）待后续退役；
+- Timeline 缺摘要/favicon/缩略图（API 契约缺口，记录给后续里程碑）；
+- 主题/Reader 背景偏好为 localStorage 临时方案。

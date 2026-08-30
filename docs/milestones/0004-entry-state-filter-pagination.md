@@ -1,4 +1,9 @@
-# Devlog 0004 — Entry State + Filter + Cursor Pagination
+# 0004 — Entry State, Filters & Pagination
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0004-*.md)
+
+---
 
 > Milestone: 0004 Entry State + Filter + Cursor Pagination
 > Phase: Phase 2 — Backend Core（收官）

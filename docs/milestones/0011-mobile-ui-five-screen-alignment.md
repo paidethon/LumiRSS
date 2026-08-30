@@ -1,4 +1,4 @@
-# Spec 0011 — Mobile UI Navigation & Five-Screen Alignment
+# 0011 — Mobile UI Navigation & Five-Screen Alignment
 
 > 状态：**Approved（Gate 0 产出已批准，2026-08-30）**
 > 日期：2026-08-30

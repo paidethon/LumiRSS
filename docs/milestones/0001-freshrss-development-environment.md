@@ -1,4 +1,9 @@
-# Devlog 0001 — FreshRSS Development Environment
+# 0001 — FreshRSS Development Environment
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0001-*.md)
+
+---
 
 > Milestone: 0001 FreshRSS Development Environment
 > Phase: Phase 1 — RSS Foundation
@@ -10,7 +15,7 @@
 Completed。
 
 - Spec：`docs/specs/0001-freshrss-development-environment.md`（先写 spec，再实现，再验收）
-- 结果提交：`0a6a478`（4 个文件：`docker-compose.yml`、spec 0001、`README.md`、`docs/PROJECT_STATE.md`）
+- 结果提交：`0a6a478`（4 个文件：`docker-compose.yml`、spec 0001、`README.md`、`docs/README.md`）
 - 运行环境：FreshRSS 1.29.1 容器（`freshrss`），绑定 127.0.0.1:8080，数据保存在 named volume `freshrss-data`
 
 ## Goal

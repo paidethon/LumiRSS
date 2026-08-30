@@ -1,4 +1,9 @@
-# Devlog 0002 — BFF + FreshRSSAdapter
+# 0002 — BFF & FreshRSS Adapter
+
+> Status: **Completed**
+> Original spec: Git history (docs/specs/0002-*.md)
+
+---
 
 > Milestone: 0002 BFF + FreshRSSAdapter
 > Phase: Phase 2 — Backend Core

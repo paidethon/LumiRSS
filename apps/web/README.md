@@ -14,4 +14,4 @@ pnpm lint       # oxlint
 pnpm build      # 生产构建（tsc -b + vite build → dist/）
 ```
 
-完整说明见仓库根 `README.md` 与 `docs/specs/0005-web-shell.md`。
+完整说明见仓库根 `README.md` 与 `docs/milestones/0005-web-shell.md`。

@@ -49,7 +49,7 @@ LumiRSS 是一个：
 
 > **在继续增加 AI 和来源功能前，先完成 UI Reboot、主题系统和唯一用户界面的产品基础。**
 
-本地事实已由 0009 Gate 0 重新验证（见 `docs/PROJECT_STATE.md`）。
+本地事实已由 0009 Gate 0 重新验证（见 `docs/README.md`）。
 
 ---
 
@@ -580,7 +580,7 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 - Bionic Reading（按词加粗）；
 - 分页滚动（候选）。
 
-依据：docs/reference/reader-style-survey.md（10+ 阅读器调研的差异化层）。
+依据：docs/design/reader-research.md（10+ 阅读器调研的差异化层）。
 
 ### 0012 — Unified Subscription Center
 
