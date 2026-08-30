@@ -1,6 +1,7 @@
 import { Star } from 'lucide-react'
 import type { EntryListItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
+import { useAppSettings } from '../store/app-settings'
 import { cx } from './ui/cx'
 
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -39,16 +40,23 @@ export default function EntryRow({
   selected: boolean
 }) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
+  // 0010 Gate B：未读圆点开关（设置中心真实生效；关闭后未读状态仍由
+  // 字重差异承载——不只靠颜色，可读性不受影响）
+  const showUnreadDot = useAppSettings((s) => s.settings.timelineUnreadDot)
+  // 0010a Gate E：已读变暗（AC6）——整体降低不透明度，字重差异保留
+  const dimRead = useAppSettings((s) => s.settings.dimRead)
 
   return (
     <button
       type="button"
       onClick={() => selectEntry(item.entryRef)}
       aria-pressed={selected}
+      data-entry-ref={item.entryRef}
       className={cx(
         'flex w-full flex-col gap-1 px-4 py-3 text-left',
         'transition-colors duration-[var(--lumi-motion-fast)]',
         'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+        dimRead && item.read && 'opacity-60',
         selected
           ? 'bg-[var(--lumi-surface-selected)]'
           : 'hover:bg-[var(--lumi-surface-hover)]',
@@ -56,14 +64,16 @@ export default function EntryRow({
     >
       {/* 元信息行：来源 · 作者 · 时间 + 收藏星标 */}
       <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
-        {/* 未读圆点：非颜色冗余信号之一（与字重互补） */}
-        <span
-          aria-hidden="true"
-          className={cx(
-            'size-1.5 shrink-0 rounded-full',
-            item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
-          )}
-        />
+        {/* 未读圆点：非颜色冗余信号之一（与字重互补）；设置可关闭 */}
+        {showUnreadDot && (
+          <span
+            aria-hidden="true"
+            className={cx(
+              'size-1.5 shrink-0 rounded-full',
+              item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
+            )}
+          />
+        )}
         <span className="truncate font-medium">{item.feedTitle}</span>
         {item.author !== null && (
           <span className="hidden truncate lg:inline">· {item.author}</span>

@@ -13,24 +13,31 @@ Completed foundation
 0001–0008
     ↓
 UI and product shell
-0009
+0009–0010
+    ↓
+Reader style deep customization
+0011
     ↓
 Lumi-native source control
-0010–0011
-    ↓
-AI reading assistance
 0012–0013
     ↓
+AI reading assistance
+0014–0015
+    ↓
 Reader/settings completion
-0014
+0016
     ↓
 Production and MVP release
-0015–0016
+0017–0018
     ↓
 Knowledge Workbench Phase 2
 ```
 
-The former `0009 — AI Summary` is renumbered to `0012 — AI Foundation & Summary`.
+The former `0009 — AI Summary` is renumbered to `0013 — AI Foundation & Summary`（0010 路线修订二次顺延）。
+
+0010 路线修订（2026-08-29，用户批准）：插入 `0010 — Settings Center & Adaptive Shell`（设置中心 + 自适应外壳，纯前端）；原 0010–0016 顺延为 0011–0017。原因：设置与外壳是所有后续功能的承载面，优先于订阅管理。
+
+0010a 路线修订（2026-08-30，用户批准）：插入 `0011 — Reader Style Deep Customization`（阅读样式深度自定义：字体导入/中文排版/主题包分享，依据 reader-style-survey 调研）；原 0011–0017 顺延为 0012–0018。同时决策：JSON 规则/网站解析规则（自造源）不做——违反冻结架构，同等需求由 RSSHub 承担（0013）；OrigRead 规则页 UI 模式作为 0013 设计蓝本。
 
 ---
 
@@ -187,7 +194,57 @@ Documentation/audit must be approved before code.
 
 ---
 
-## 0010 — Unified Subscription Center
+## 0010 — Settings Center & Adaptive Shell
+
+**Status:** Implemented + 0010a expansion（Gate A–D + E/F/G，2026-08-30）
+
+### Goal
+
+Build the product shell: a Folo-style settings center (declarative setting rows, 9 categories — 5 real today, 4 planned with milestone attribution), sidebar information architecture (信息来源 / 工作区 groups with Phase 2 items visible-but-disabled), draggable/collapsible three panes with persisted widths, and a mobile bottom tab bar — all client-side (localStorage), zero BFF changes.
+
+### Deliverables
+
+- typed app-settings store (single localStorage key + legacy key migration);
+- SettingItem declarative renderer + SettingsModal (13-category left nav);
+- keyboard shortcuts (j / k / u / s) + cheatsheet page;
+- pane separators (pointer drag / arrow keys / double-click reset) with aria semantics;
+- sidebar regrouping (信息来源 / 工作区, Phase 2 badges);
+- mobile bottom tabs + Folo-style push settings (grouped list → subpages);
+- **0010a**: appearance (accent picker / global font size / UI font / reduce motion),
+  reader style P0 (font stacks / background palette + custom hex + WCAG adaptive
+  text / paragraph spacing / justify / image modes), P1 (custom CSS with scoped
+  prefixing, 5 typography presets + derive/import/export), general timeline
+  (dim read / group by date / unread-only start / experimental scroll-mark-read),
+  OrigRead-inspired pages (translation providers, filter rules + display-layer
+  filtering, RSSHub instances, encrypted config backup via Web Crypto);
+- progress board content + visual unification (Lumi Mist, dark mode).
+
+### Acceptance
+
+Every interactive control genuinely works and persists; planned items are disabled with milestone labels; 0009 behavior tests stay green; BFF untouched.
+
+---
+
+## 0011 — Reader Style Deep Customization
+
+**Status:** Planned（spec 待写；调研依据 docs/reference/reader-style-survey.md）
+
+### Goal
+
+Deep reading-style customization: font import (FontFace + IndexedDB, woff2 only
++ font-URL alternative for CJK sizes), Chinese typography (first-line indent /
+punctuation hanging / S2T conversion / CJK reading time), theme pack sharing
+(.lumitheme JSON with presets + custom CSS), code highlight themes (shiki,
+lazy), Bionic Reading, paged scroll (candidate).
+
+### Acceptance
+
+Fonts persist and load offline; theme packs round-trip import/export; Chinese
+typography options verifiable in computed styles; zero BFF changes.
+
+---
+
+## 0012 — Unified Subscription Center
 
 **Status:** Planned
 
@@ -216,7 +273,7 @@ A user can add, categorize and remove a normal RSS feed from Lumi without openin
 
 ---
 
-## 0011 — Source Discovery & RSSHub Integration
+## 0013 — Source Discovery & RSSHub Integration
 
 **Status:** Planned
 
@@ -251,9 +308,9 @@ A supported non-RSS website can be discovered, configured, previewed and subscri
 
 ---
 
-## 0012 — AI Foundation & Summary
+## 0014 — AI Foundation & Summary
 
-**Status:** Planned; renumbered from old 0009
+**Status:** Planned; renumbered from old 0009 (0009→0012→0013→0014)
 
 ### Goal
 
@@ -278,7 +335,7 @@ AI can fail completely and normal reading/state/source workflows still work.
 
 ---
 
-## 0013 — Translation & AI Conversation
+## 0015 — Translation & AI Conversation
 
 **Status:** Planned
 
@@ -306,7 +363,7 @@ Add translation and context-aware article conversation on top of the AI foundati
 
 ---
 
-## 0014 — Reader Power UX & Unified Settings
+## 0016 — Reader Power UX & Unified Settings
 
 **Status:** Planned
 
@@ -334,7 +391,7 @@ A normal user can configure Lumi, Reader, FreshRSS-backed sources, RSSHub and AI
 
 ---
 
-## 0015 — Production & Operations
+## 0017 — Production & Operations
 
 **Status:** Planned
 
@@ -362,7 +419,7 @@ A fresh server can deploy, back up, restore, upgrade and roll back using documen
 
 ---
 
-## 0016 — MVP Stabilization & Release
+## 0018 — MVP Stabilization & Release
 
 **Status:** Planned
 
@@ -486,32 +543,42 @@ Reference patterns may be studied from projects such as Readeck, but implementat
 ## 7. Dependency map
 
 ```text
-0009 UI Reboot
- ├─ no backend dependency
- └─ enables coherent later surfaces
+0010 Settings Center & Adaptive Shell (+0010a)
+ ├─ no backend dependency (localStorage only)
+ └─ enables coherent settings/panes for all later features
 
-0010 Subscription Center
- └─ depends on FreshRSS control capability
+0011 Reader Style Deep Customization
+ ├─ no backend dependency (FontFace/IndexedDB/local presets)
+ └─ builds on 0010a reader-style variable system
 
-0011 Source Discovery
- ├─ depends on 0010 subscribe flow
- └─ introduces RSSHub catalog/control boundary
+0012 Subscription Center
+ └─ depends on FreshRSS control capability; activates BFF-layer
+    filtering (0010a display-layer rules migrate) + OPML backup
 
-0012 AI Summary
+0013 Source Discovery
+ ├─ depends on 0012 subscribe flow
+ └─ introduces RSSHub catalog/control boundary; activates RSSHub
+    instance testing (0010a instance list migrates); OrigRead
+    rule-page UI patterns as design reference
+
+0014 AI Summary
  └─ depends on Reader/design/settings foundations
 
-0013 Translation/Chat
- └─ depends on 0012 provider/cache foundation
+0015 Translation/Chat
+ └─ depends on 0014 provider/cache foundation; activates
+    translation execution + test-connection + DeepL usage
+    (0010a saved provider configs migrate)
 
-0014 Unified Settings
- ├─ consolidates 0009 theme settings
- ├─ consolidates 0010/0011 source settings
- └─ consolidates 0012/0013 AI settings
+0016 Unified Settings
+ ├─ consolidates 0009/0010 theme & client settings
+ ├─ consolidates 0012/0013 source settings
+ ├─ consolidates 0014/0015 AI settings + server-side API
+ └─ formalizes experimental scroll-mark-read
 
-0015 Production
+0017 Production
  └─ depends on stable service and secret boundaries
 
-0016 Stabilization
+0018 Stabilization
  └─ depends on all MVP feature milestones
 ```
 

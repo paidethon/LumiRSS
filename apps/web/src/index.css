@@ -36,17 +36,23 @@ body {
 }
 
 /* 0009 Gate 3 — 文章正文样式（Tailwind + 少量普通 CSS，不引入
- * @tailwindcss/typography）。目标：舒适长文阅读。字号 17px / 行高
- * 1.75（Spec Reader 节奏）；颜色 token 化。 */
+ * @tailwindcss/typography）。目标：舒适长文阅读。
+ * 0010 Gate A：字号/行高/宽度消费 --lumi-reader-* CSS 变量
+ * （app-settings store 挂载，默认值与 token 保持一致）。 */
 .article-content {
-  font-size: 1.0625rem;
-  line-height: 1.75;
-  color: var(--lumi-text-primary);
+  font-size: var(--lumi-reader-font-size, 1.0625rem);
+  line-height: var(--lumi-reader-line-height, 1.75);
+  /* 0010a F6：字体族/对齐（store 挂变量；默认跟随界面） */
+  font-family: var(--lumi-reader-font-family, inherit);
+  text-align: var(--lumi-reader-text-align, start);
+  text-justify: inter-ideograph;
+  color: var(--lumi-reader-text, var(--lumi-text-primary));
   word-break: break-word;
 }
 
 .article-content p {
-  margin: 0 0 1em;
+  /* 0010a F6：段距档位（store 挂 em 值） */
+  margin: 0 0 var(--lumi-reader-paragraph-spacing, 0.85em);
 }
 
 .article-content h1,
@@ -58,6 +64,7 @@ body {
   margin: 1.5em 0 0.6em;
   font-weight: 600;
   line-height: 1.3;
+  color: var(--lumi-reader-heading, var(--lumi-text-primary));
 }
 
 .article-content h1 { font-size: 1.5em; }
@@ -65,7 +72,7 @@ body {
 .article-content h3 { font-size: 1.15em; }
 
 .article-content a {
-  color: var(--lumi-accent);
+  color: var(--lumi-reader-link, var(--lumi-accent));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -73,8 +80,16 @@ body {
 .article-content blockquote {
   margin: 1em 0;
   padding: 0.2em 1em;
-  border-left: 3px solid var(--lumi-border);
-  color: var(--lumi-text-secondary);
+  border-left: 3px solid var(--lumi-reader-border, var(--lumi-border));
+  color: var(--lumi-reader-muted, var(--lumi-text-secondary));
+}
+
+/* 0010a F6：图片三模式（html[data-reader-images]，store 挂载） */
+html[data-reader-images='grayscale'] .article-content img {
+  filter: grayscale(1);
+}
+html[data-reader-images='hidden'] .article-content img {
+  display: none;
 }
 
 .article-content ul,

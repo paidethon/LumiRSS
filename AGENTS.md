@@ -53,12 +53,17 @@ Before modifying code, compare the relevant sources. Do not silently choose one 
 当前已批准的里程碑：
 
 ```text
-0009 — UI Reboot & Reference Lab（分支 feat/0009-ui-reboot-reference-lab）
+0010 + 0010a — Settings Center & Adaptive Shell（分支 feat/0010-settings-center-adaptive-shell）
 ```
 
-它取代了旧计划中把 0009 用于 AI Summary 的安排。AI Summary 移至里程碑 0012。
+0009（UI Reboot）已合入 main。0010（Gate A–D）+ 0010a 扩展轮
+（Gate E–G）已全部完成，等待最终验收与 commit。全程纯前端
+（localStorage 持久化、BFF 零变化）。
 
-0009 当前状态：Gate 0（文档、审计、许可证）已完成并经用户批准；Gate 1（design foundation）尚未获得用户批准——批准前不得开始 UI 代码修改。
+路线编号（2026-08-30 二次修订，用户批准）：插入 0011 Reader Style
+Deep Customization 后，原 0011–0017 顺延为 0012–0018；AI Summary
+（原 0009）现为 0014。架构决策：不做自造源（JSON 规则/网站解析规则）
+——违反冻结架构，由 RSSHub 承担（0013）。详见 docs/ROADMAP.md 变更记录。
 
 ---
 
