@@ -3,9 +3,18 @@
 
 export type EntryView = 'all' | 'unread' | 'starred'
 
+/** FreshRSS 分类（0011：subscription/list 的 categories[0]，单分类模型）。
+ * id 是稳定 key（user/-/label/<名>），label 是展示名。 */
+export interface FeedCategory {
+  id: string
+  label: string
+}
+
 export interface Feed {
   title: string
   feedUrl: string
+  /** FreshRSS 真实分类；无分类 → null（UI 归入未分组） */
+  category: FeedCategory | null
 }
 
 export interface EntryListItem {

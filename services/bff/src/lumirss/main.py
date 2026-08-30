@@ -73,16 +73,30 @@ async def adapter_error_handler(request: Request, exc: Exception) -> JSONRespons
 
 
 @app.get("/api/v1/feeds")
-async def feeds(request: Request) -> list[dict[str, str]]:
+async def feeds(request: Request) -> list[dict[str, object]]:
     """List feeds from FreshRSS through the FreshRSSAdapter.
 
     The adapter is created lazily on the first request (settings are only
     read/validated here, never at startup) and then cached on app.state so
     later requests reuse it and its in-memory auth token.
+
+    0011: 每项附带 FreshRSS 真实分类（categoryId 为稳定 key，label 为
+    展示名）；无分类的 feed category 为 null（前端归入「未分组」）。
     """
     adapter = _get_adapter(request)
     feeds = await adapter.list_feeds()
-    return [{"title": feed.title, "feedUrl": feed.feed_url} for feed in feeds]
+    return [
+        {
+            "title": feed.title,
+            "feedUrl": feed.feed_url,
+            "category": (
+                {"id": feed.category_id, "label": feed.category_label}
+                if feed.category_id is not None and feed.category_label is not None
+                else None
+            ),
+        }
+        for feed in feeds
+    ]
 
 
 class EntryStateUpdate(BaseModel):
@@ -106,15 +120,29 @@ async def entries(
     request: Request,
     view: Literal["all", "unread", "starred"] | None = None,
     feedUrl: str | None = None,
+    sourceType: str | None = None,
+    categoryId: str | None = None,
     cursor: str | None = None,
 ) -> EntryListResponse:
     """One filtered page of entries — list fields only, never bodies.
 
     Filtering happens upstream (FreshRSS). Cursor rules: without a cursor,
-    a missing view means "all"; with a cursor, a missing view/feedUrl
-    adopts the cursor's scope, while an explicit view/feedUrl must match
-    the cursor's scope exactly (else 400, before touching FreshRSS).
+    a missing view means "all"; with a cursor, a missing view/feedUrl/
+    sourceType/categoryId adopts the cursor's scope, while an explicit
+    view/feedUrl/sourceType/categoryId must match the cursor's scope
+    exactly (else 400, before touching FreshRSS).
+
+    0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：
+    - sourceType：当前唯一合法值 "rss"（全部条目都是 RSS；契约上独立
+      于“全部”，未来新增来源后有真实过滤行为）；
+    - categoryId：FreshRSS 分类（greader label stream，适配器含默认
+      分类本地化名 fallback）；
+    - feedUrl 与 categoryId 互斥（两者同时出现 → 400）。
     """
+    if sourceType is not None and sourceType != "rss":
+        raise InvalidEntryReference("sourceType must be 'rss' (only source type today).")
+    if feedUrl is not None and categoryId is not None:
+        raise InvalidEntryReference("feedUrl and categoryId are mutually exclusive.")
     effective_view = view or "all"
     continuation: str | None = None
     if cursor is not None:
@@ -123,17 +151,31 @@ async def entries(
             raise InvalidCursor("cursor scope does not match the requested view.")
         if feedUrl is not None and scope.feed_url != feedUrl:
             raise InvalidCursor("cursor scope does not match the requested feedUrl.")
+        if sourceType is not None and scope.source_type != sourceType:
+            raise InvalidCursor("cursor scope does not match the requested sourceType.")
+        if categoryId is not None and scope.category_id != categoryId:
+            raise InvalidCursor("cursor scope does not match the requested categoryId.")
         effective_view = scope.view
         feedUrl = scope.feed_url
+        sourceType = scope.source_type
+        categoryId = scope.category_id
         continuation = scope.continuation
     adapter = _get_adapter(request)
     page = await adapter.list_entries(
         view=effective_view,
         feed_url=feedUrl,
+        category_id=categoryId,
+        source_type=sourceType,
         continuation=continuation,
     )
     next_cursor = (
-        encode_cursor(page.upstreamContinuation, effective_view, feedUrl)
+        encode_cursor(
+            page.upstreamContinuation,
+            effective_view,
+            feedUrl,
+            source_type=sourceType,
+            category_id=categoryId,
+        )
         if page.upstreamContinuation is not None
         else None
     )

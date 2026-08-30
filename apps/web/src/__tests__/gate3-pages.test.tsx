@@ -15,7 +15,7 @@ import EntryCard from '../components/EntryCard'
 import FavoritesPage from '../components/pages/FavoritesPage'
 
 const FEEDS = [
-  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml' },
+  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null },
 ]
 
 function item(ref: string, overrides: Partial<EntryListItem> = {}): EntryListItem {
@@ -60,7 +60,7 @@ function withProviders(ui: React.ReactNode) {
 }
 
 beforeEach(() => {
-  useReaderUi.setState({ section: 'favorites', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+  useReaderUi.setState({ section: 'favorites', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
 })
 
 afterEach(() => {
@@ -68,21 +68,26 @@ afterEach(() => {
 })
 
 describe('EntryCard（AC10）', () => {
-  it('真实字段层级：feedTitle + 日期 + 标题；未读 medium/已读 normal', () => {
+  it('真实字段层级：feedTitle + 日期 + 标题；未读 medium/已读 normal；动作区存在', () => {
     render(withProviders(<EntryCard item={item('e1.a')} selected={false} />))
-    const card = screen.getByRole('button', { name: /文章 e1\.a/ })
-    expect(card.textContent).toContain('示例源 A')
-    expect(card.textContent).toContain('08/30') // 真实 publishedAt 格式化
+    // 卡根为 div：标题区按钮承载可访问名（含 feedTitle+时间）
+    const cardBtn = screen.getByRole('button', { name: /示例源 A/ })
+    expect(cardBtn.textContent).toContain('示例源 A')
+    expect(cardBtn.textContent).toContain('08/30') // 真实 publishedAt 格式化
     const title = screen.getByText('文章 e1.a')
     expect(title.className).toContain('font-medium') // 未读
+    // 动作区：稍后读 + 收藏按钮（§19）
+    expect(screen.getByRole('button', { name: '加入稍后读' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '收藏' })).toBeInTheDocument()
 
     render(withProviders(<EntryCard item={item('e1.b', { read: true })} selected={false} />))
     expect(screen.getByText('文章 e1.b').className).toContain('font-normal') // 已读
   })
 
-  it('已收藏显示星标；点击卡片 → selectEntry', () => {
+  it('已收藏显示星标动作；点击卡片标题 → selectEntry', () => {
     render(withProviders(<EntryCard item={item('e1.a', { starred: true })} selected={false} />))
-    expect(screen.getByLabelText('已收藏')).toBeInTheDocument()
+    // 0011 修正补充：星标变为可点击动作按钮（aria-label 取消收藏）
+    expect(screen.getByRole('button', { name: '取消收藏' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /文章 e1\.a/ }))
     expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
     useReaderUi.getState().selectEntry(null)

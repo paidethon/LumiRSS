@@ -29,8 +29,18 @@ function mockApi() {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input)
     if (url.startsWith('/api/v1/feeds')) return jsonResponse([])
-    if (url.startsWith('/api/v1/entries'))
+    if (url.startsWith('/api/v1/entries')) {
+      // 详情请求（选中文章后 Reader 拉取）：返回合法最小 detail，避免
+      // 并发下其他文件的 fetch mock 污染导致 ArticleContent 崩溃
+      if (/\/api\/v1\/entries\/[^/]+$/.test(url)) {
+        return jsonResponse({
+          entryRef: 'e1.x', title: '文章', feedTitle: '源', author: null,
+          url: null, publishedAt: null, read: false, starred: false,
+          contentText: '正文', contentHtml: null,
+        })
+      }
       return jsonResponse({ items: [], nextCursor: null } satisfies EntryListResponse)
+    }
     throw new Error(`unexpected fetch: ${url}`)
   })
 }
@@ -44,8 +54,8 @@ function renderApp() {
   )
 }
 
-/** main 内的 Timeline section：含 lg:basis- 栏宽类的那个（订阅/搜索/
- * 收藏页面区无该类；section != home 时页面区排在 Timeline 之前）。 */
+/** main 内的 Timeline section：含 lg:basis- 栏宽类（未折叠）或
+ * lg:!max-w-14（折叠态，0011 修正补充后保留窄栏）的那个。 */
 function timelineSection(): HTMLElement {
   const sections = document.querySelectorAll('main > section')
   const el = Array.from(sections).find((s) =>
@@ -56,7 +66,7 @@ function timelineSection(): HTMLElement {
 }
 
 beforeEach(() => {
-  useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null, mobileSidebarOpen: false })
+  useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null, mobileSidebarOpen: false })
   useAppSettings.getState().reset()
   vi.stubGlobal('fetch', mockApi())
 })
@@ -97,14 +107,16 @@ describe('Timeline 响应式布局（阻断修复回归）', () => {
     expect(style).toContain('--lumi-timeline-width: 432px')
   })
 
-  it('折叠态：不写入宽度变量（既有折叠行为不变）', async () => {
+  it('隐藏态：Timeline 完全退出桌面布局列（§26，无窄栏残留）', async () => {
     renderApp()
     await act(async () => {
       useAppSettings.getState().update({ timelineCollapsed: true })
     })
-    // React 19 移除 style 后 attribute 为空串（不再携带宽度变量）
-    const style = timelineSection().getAttribute('style')
-    expect((style ?? '')).not.toContain('--lumi-timeline-width')
+    // 0011 §25/§26：隐藏 = lg:hidden（桌面不占任何布局空间），
+    // 不再是窄栏（max-w-14 已删除）
+    const cls = timelineSection().className
+    expect(cls).toContain('lg:hidden')
+    expect(cls).not.toContain('max-w-14')
   })
 })
 

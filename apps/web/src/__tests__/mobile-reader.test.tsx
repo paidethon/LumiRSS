@@ -13,7 +13,7 @@ import { useReaderUi } from '../store/reader-ui'
  * hidden），是"语义近似"——真实视觉效果归真实浏览器 smoke（见 Spec）。 */
 
 const FEEDS = [
-  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml' },
+  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null },
 ]
 
 function entry(ref: string): EntryListResponse['items'][number] {
@@ -104,7 +104,7 @@ const firstEntryButton = async () =>
 beforeEach(() => {
   useReaderUi.setState({
     view: 'all',
-    selectedFeedUrl: null,
+    scope: { kind: 'all' },
     selectedEntryRef: null,
     mobileSidebarOpen: false,
   })

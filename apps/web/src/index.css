@@ -163,3 +163,18 @@ html[data-reader-images='hidden'] .article-content img {
   border: 0;
   border-top: 1px solid var(--border);
 }
+
+/* 0011 修正补充 §17/§18：文章行动作 hover 增强。
+ * Tailwind v4 不支持 [@media..]:group-hover 叠加 variant（stacked
+ * variant 限制，同 0007 已知约束）——用原生 CSS 表达：
+ * hover 设备 + 行 hover 时未激活动作全显；触屏设备始终全显；
+ * 已激活动作不受影响（EntryActionButtons 中 active 不带该 idle 类）。 */
+@media (hover: hover) and (pointer: fine) {
+  .entry-action-idle {
+    opacity: 0.4;
+  }
+  .group\/row:hover .entry-action-idle,
+  .group\/row:focus-within .entry-action-idle {
+    opacity: 1;
+  }
+}

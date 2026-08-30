@@ -64,7 +64,7 @@ class FakeAdapter:
     async def list_feeds(self):
         return []  # not under test here; routes only use entry methods
 
-    async def list_entries(self, *, view="all", feed_url=None, continuation=None):
+    async def list_entries(self, *, view="all", feed_url=None, category_id=None, source_type=None, continuation=None):
         self.calls.append((view, feed_url, continuation))
         if self.error is not None:
             raise self.error

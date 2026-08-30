@@ -42,18 +42,23 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.getByRole('group', { name: '工作区' })).toBeInTheDocument()
   })
 
-  it('可用项：全部信息流 / RSS 订阅（disclosure）/ 时间线+未读 / 收藏 / 设置（品牌区）', () => {
+  it('可用项：全部信息源+未读 / RSS 订阅（主区域=scope，chevron=tree）/ 稍后读 / 收藏 / 设置（品牌区）', () => {
     renderSidebar()
-    expect(screen.getByRole('button', { name: /全部信息流/ })).toBeEnabled()
-    // 0011：RSS 订阅为 disclosure（aria-expanded，默认收起）
-    const rssToggle = screen.getByRole('button', { name: /RSS 订阅/ })
-    expect(rssToggle).toBeEnabled()
-    expect(rssToggle).toHaveAttribute('aria-expanded', 'false')
-    expect(rssToggle).toHaveAttribute('aria-controls', 'sidebar-rss-feeds')
-    // 0011：工作区去重——时间线 + 未读过滤子项 + 收藏（去掉 ME 前缀）
-    expect(screen.getByRole('button', { name: /时间线/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /全部信息源/ })).toBeEnabled()
+    // 0011 修正补充：未读过滤子项挂在全部信息流行
     expect(screen.getByRole('button', { name: '未读' })).toBeEnabled()
+    // 0011 阻断修复：RSS 主区域 = scope（无 expanded 语义）；chevron 才是
+    // tree 开关（aria-expanded，默认收起）——两个行为完全分离（§6/§7）
+    expect(screen.getByRole('button', { name: /RSS 订阅/ })).toBeEnabled()
+    const rssChevron = screen.getByRole('button', { name: '展开 RSS 分类' })
+    expect(rssChevron).toBeEnabled()
+    expect(rssChevron).toHaveAttribute('aria-expanded', 'false')
+    expect(rssChevron).toHaveAttribute('aria-controls', 'sidebar-rss-tree')
+    // 0011 修正补充 §11：工作区 = 稍后读（Clock）+ 收藏（原时间线入口
+    // 移除，all 视图由全部信息流承载）
+    expect(screen.getByRole('button', { name: '稍后读' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '收藏' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /时间线/ })).toBeNull()
     // 0011：设置入口在品牌区右上角（SidebarHeader），底部设置行已删除
     expect(screen.getByRole('button', { name: '打开设置' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
@@ -80,7 +85,7 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
   })
 
   it('未读过滤子项点击 → view=unread + selection 清空', () => {
-    useReaderUi.setState({ view: 'all', selectedEntryRef: 'x', selectedFeedUrl: null })
+    useReaderUi.setState({ view: 'all', selectedEntryRef: 'x', scope: { kind: 'all' } })
     renderSidebar()
     fireEvent.click(screen.getByRole('button', { name: '未读' }))
     expect(useReaderUi.getState().view).toBe('unread')
@@ -110,15 +115,18 @@ describe('分栏折叠/展开 + 持久化（AC13/AC17）', () => {
     localStorage.clear()
   })
 
-  it('折叠文章列表 → 展开按钮出现 → 展开恢复 + 持久化', async () => {
+  it('隐藏/显示同一按钮切换（0011 §27）+ 持久化 + 隐藏后无窄栏', async () => {
     setup()
-    const collapseBtn = await screen.findByRole('button', { name: '折叠文章列表' })
-    fireEvent.click(collapseBtn)
-    // 折叠态：展开按钮出现 + store 持久化
-    expect(await screen.findByRole('button', { name: '展开文章列表' })).toBeInTheDocument()
+    // 可见时：列表头内「隐藏文章列表」
+    const toggleBtn = await screen.findByRole('button', { name: '隐藏文章列表' })
+    fireEvent.click(toggleBtn)
+    // 隐藏后：Reader 侧顶出现「显示文章列表」（列表头 toggle 变为同义
+    // aria-label 但其容器已 lg:hidden 退出桌面布局——点击任一恢复）
+    expect((await screen.findAllByRole('button', { name: '显示文章列表' })).length).toBeGreaterThan(0)
     expect(JSON.parse(localStorage.getItem('lumirss-settings')!).timelineCollapsed).toBe(true)
-    // 展开
-    fireEvent.click(screen.getByRole('button', { name: '展开文章列表' }))
+    // 再点 → 恢复显示 + 持久化
+    fireEvent.click(screen.getAllByRole('button', { name: '显示文章列表' })[0]!)
+    expect(await screen.findByRole('button', { name: '隐藏文章列表' })).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('lumirss-settings')!).timelineCollapsed).toBe(false)
     localStorage.clear()
   })

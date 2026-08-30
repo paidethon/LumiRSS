@@ -1,8 +1,10 @@
-import { Inbox, Loader2, PanelLeftClose } from 'lucide-react'
+import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef } from 'react'
-import { useEntries, useEntryStateMutation } from '../api/queries'
-import type { EntryView } from '../api/types'
+import { useEntries, useEntryStateMutation, useFeeds } from '../api/queries'
+import { useReadLater } from '../store/read-later'
+import type { UiView } from '../lib/read-later'
 import { useReaderUi } from '../store/reader-ui'
+import { scopeTitle } from '../lib/navigation'
 import { useAppSettings } from '../store/app-settings'
 import { groupEntriesByDate } from '../lib/entry-groups'
 import { matchesFilterRules } from './settings/FilterRulesPage'
@@ -12,24 +14,26 @@ import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
 import { Skeleton } from './ui/Skeleton'
 
-const VIEW_TITLES: Record<EntryView, string> = {
-  all: 'All',
-  unread: 'Unread',
-  starred: 'Starred',
-}
-
-const EMPTY_TEXTS: Record<EntryView, { title: string; description: string }> = {
+const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
   all: { title: '这里还没有文章', description: '订阅源还没有内容，稍后再来看看。' },
   unread: { title: '没有未读文章', description: '全部读完了，干得漂亮。' },
   starred: { title: '还没有收藏文章', description: '阅读时点击「收藏」，文章会出现在这里。' },
+  // §29：稍后读专属空态（不做大型插画，保持 EmptyState 风格）
+  'read-later': {
+    title: '还没有稍后读的文章',
+    description: '在文章列表或阅读页面点击时钟图标，就可以把文章留到之后阅读。',
+  },
 }
 
 export default function EntryList() {
   const view = useReaderUi((s) => s.view)
-  const selectedFeedUrl = useReaderUi((s) => s.selectedFeedUrl)
+  const scope = useReaderUi((s) => s.scope)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
-  // 0010 Gate C：折叠入口（桌面 lg；移动端隐藏）
+  // 0010 Gate C：折叠入口（桌面 lg；移动端隐藏）。0011 修正补充：
+  // 放大/缩小同一按钮双向切换（图标随状态翻转），折叠后不再在
+  // App 层弹出一个专门的展开按钮。
   const updateSettings = useAppSettings((s) => s.update)
+  const timelineCollapsed = useAppSettings((s) => s.settings.timelineCollapsed)
   // 0010a Gate E（AC7）：按日期分组
   const groupByDate = useAppSettings((s) => s.settings.groupByDate)
   // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
@@ -38,15 +42,27 @@ export default function EntryList() {
   const filterRules = useAppSettings((s) => s.settings.filterRules)
   const filterEnabled = filterRules.some((r) => r.enabled)
 
-  const feedsTitle = useEntries(view, selectedFeedUrl)
+  // read-later marker 订阅（0011 修正补充：客户端过滤 §26）
+  const readLaterItems = useReadLater((s) => s.items)
+  const readLaterRefs = useMemo(() => new Set(readLaterItems.map((it) => it.entryRef)), [readLaterItems])
+
+  // feed scope 的列表头标题：用 feeds 数据补全真实 feed 名（§9）
+  const feeds = useFeeds()
+  const feedsTitle = useEntries(scope, view)
   const { data, isPending, isError, error, refetch } = feedsTitle
   // useMemo：data 引用稳定时 entries 引用也稳定（避免 effect 依赖每渲染变化）
   // 0010a F3：显示层过滤（仅标题匹配全局启用规则，feedId=null）
+  // 0011 修正补充：read-later 视图 = 全量拉取后客户端过滤（API 层已
+  // 翻译为 view=all）——加入不移除（§26）；移除立即从列表消失（store
+  // 订阅驱动重新过滤）。
   const entries = useMemo(() => {
     const all = data?.pages.flatMap((page) => page.items) ?? []
-    if (!filterEnabled) return all
-    return all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
-  }, [data, filterEnabled, filterRules])
+    const byRules = filterEnabled
+      ? all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
+      : all
+    if (view !== 'read-later') return byRules
+    return byRules.filter((item) => readLaterRefs.has(item.entryRef))
+  }, [data, filterEnabled, filterRules, view, readLaterRefs])
   const hasNextPage = feedsTitle.hasNextPage
   const isFetchingNextPage = feedsTitle.isFetchingNextPage
   const fetchNextPage = feedsTitle.fetchNextPage
@@ -129,23 +145,37 @@ export default function EntryList() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-2 border-b border-[var(--lumi-separator)] px-4 py-2.5">
+      {/* 桌面列表头（0011 §22/§24：移动端整行删除——scope 已由 MobileHeader
+          承载，已加载 N 条无产品价值；仅 ≥1024 渲染）。
+          标题 = scope 标题 + 视图后缀（如「RSS 订阅 · 未读」）。 */}
+      <header className="hidden items-center gap-2 border-b border-[var(--lumi-separator)] px-4 py-2.5 lg:flex">
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
-            {VIEW_TITLES[view]}
+            {scope.kind === 'rss-feed'
+              ? (feeds.data?.find((f) => f.feedUrl === scope.feedUrl)?.title ?? '订阅源')
+              : scopeTitle(scope)}
+            {view === 'unread' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 未读</span>}
+            {view === 'read-later' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 稍后读</span>}
           </h2>
           <p className="text-xs text-[var(--lumi-text-tertiary)]">已加载 {entries.length} 条</p>
         </div>
         <button
           type="button"
-          onClick={() => updateSettings({ timelineCollapsed: true })}
-          aria-label="折叠文章列表"
+          onClick={() => updateSettings({ timelineCollapsed: !timelineCollapsed })}
+          aria-label={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
+          aria-pressed={timelineCollapsed}
+          title={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
           className="hidden size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] lg:flex"
         >
-          <PanelLeftClose aria-hidden className="size-4 rotate-180" />
+          {timelineCollapsed ? (
+            <PanelLeft aria-hidden className="size-4 rotate-180" />
+          ) : (
+            <PanelLeftClose aria-hidden className="size-4 rotate-180" />
+          )}
         </button>
       </header>
 
+      {/* 0011 修正补充：折叠态隐藏列表内容（窄栏仅 header） */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* 0011：卡片化后取消行分隔线（卡片自带圆角表面）；仍保留
             列表语义 ul/li（分组小节与滚动标记已读依赖）。 */}
@@ -176,7 +206,7 @@ export default function EntryList() {
 
         {!isPending && !isError && entries.length === 0 && (
           <EmptyState
-            icon={<Inbox />}
+            icon={view === 'read-later' ? <Clock /> : <Inbox />}
             title={EMPTY_TEXTS[view].title}
             description={EMPTY_TEXTS[view].description}
             className="h-full"

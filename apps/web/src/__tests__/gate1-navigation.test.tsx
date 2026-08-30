@@ -47,7 +47,7 @@ describe('SidebarHeader 设置入口（AC2）', () => {
 
 describe('MobileTabBar 不含设置（AC1）', () => {
   it('底栏四 tab 无设置；设置仅在侧边栏品牌区', () => {
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     render(withProviders(<MobileTabBar />))
     const nav = screen.getByRole('navigation', { name: '底部导航' })
     const labels = [...nav.querySelectorAll('button')].map((b) => b.textContent?.trim())
@@ -89,14 +89,15 @@ describe('MobilePageHeader 三列结构（AC8 语义基础）', () => {
 
 describe('MobileHeader 按 section 渲染标题（AC1/AC8）', () => {
   it('home：标题为动态 scope（全部信息流/未读）；Reader 打开变「阅读」+返回', () => {
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     const { rerender } = render(withProviders(<MobileHeader />))
-    expect(screen.getByRole('heading', { name: '全部信息流' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '全部信息源' })).toBeInTheDocument()
 
-    // 未读过滤：标题切换 + 右侧过滤入口反映状态
+    // 未读过滤（§23：Header 显示 Scope，过滤状态由右侧入口承载）
     useReaderUi.getState().selectView('unread')
     rerender(withProviders(<MobileHeader />))
-    expect(screen.getByRole('heading', { name: '未读' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '全部信息源' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '未读' })).toHaveAttribute('aria-pressed', 'true')
 
     // Reader 打开：标题「阅读」、左侧变返回按钮
     useReaderUi.getState().selectEntry('e1.x')
@@ -107,7 +108,7 @@ describe('MobileHeader 按 section 渲染标题（AC1/AC8）', () => {
   })
 
   it('subscriptions/search/favorites：标题对应页面名', () => {
-    useReaderUi.setState({ section: 'subscriptions', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'subscriptions', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
     const { rerender } = render(withProviders(<MobileHeader />))
     expect(screen.getByRole('heading', { name: '订阅' })).toBeInTheDocument()
 
@@ -124,17 +125,17 @@ describe('MobileHeader 按 section 渲染标题（AC1/AC8）', () => {
 
 describe('selectSection 状态语义（Spec §5.1）', () => {
   it('切 section 清空 selection、保留 view/feed 筛选；重复点击无副作用', () => {
-    useReaderUi.setState({ section: 'home', view: 'unread', selectedFeedUrl: 'https://x', selectedEntryRef: 'e1' })
+    useReaderUi.setState({ section: 'home', view: 'unread', scope: { kind: 'rss-feed', feedUrl: 'https://x' }, selectedEntryRef: 'e1' })
     useReaderUi.getState().selectSection('search')
     const s = useReaderUi.getState()
     expect(s.section).toBe('search')
     expect(s.selectedEntryRef).toBeNull()
     expect(s.view).toBe('unread')
-    expect(s.selectedFeedUrl).toBe('https://x')
+    expect(s.scope).toEqual({ kind: 'rss-feed', feedUrl: 'https://x' })
     // 重复点击：状态不变（幂等）
     useReaderUi.getState().selectSection('search')
     expect(useReaderUi.getState().section).toBe('search')
-    useReaderUi.setState({ section: 'home', view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+    useReaderUi.setState({ section: 'home', view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
   })
 })
 
@@ -143,8 +144,8 @@ describe('Sidebar 内嵌设置入口不依赖 Query 数据', () => {
     render(withProviders(<Sidebar />))
     const btn = screen.getByRole('button', { name: '打开设置' })
     expect(btn).toBeEnabled()
-    // RSS disclosure 默认收起：feeds 未加载也不影响品牌区
+    // RSS tree 默认收起（chevron aria-expanded=false），feeds 未加载不影响品牌区
     const nav = within(screen.getByRole('navigation', { name: '主导航' }))
-    expect(nav.getByRole('button', { name: /RSS 订阅/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(nav.getByRole('button', { name: '展开 RSS 分类' })).toHaveAttribute('aria-expanded', 'false')
   })
 })

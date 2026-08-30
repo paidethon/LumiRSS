@@ -71,7 +71,7 @@ function renderReader(queryClient = new QueryClient({
 }
 
 beforeEach(() => {
-  useReaderUi.setState({ view: 'all', selectedFeedUrl: null, selectedEntryRef: null })
+  useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
 })
 
 afterEach(() => {

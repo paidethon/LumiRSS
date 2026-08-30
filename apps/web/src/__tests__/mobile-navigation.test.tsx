@@ -12,8 +12,8 @@ import { useReaderUi } from '../store/reader-ui'
  * semantics；390px 的真实视觉效果归真实浏览器 smoke（见 Spec）。 */
 
 const FEEDS = [
-  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml' },
-  { title: '示例源 B', feedUrl: 'https://b.example.com/feed.xml' },
+  { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null },
+  { title: '示例源 B', feedUrl: 'https://b.example.com/feed.xml', category: null },
 ]
 
 function entry(ref: string): EntryListResponse['items'][number] {
@@ -80,7 +80,7 @@ const drawer = () => document.getElementById('mobile-navigation-drawer')
 beforeEach(() => {
   useReaderUi.setState({
     view: 'all',
-    selectedFeedUrl: null,
+    scope: { kind: 'all' },
     selectedEntryRef: null,
     mobileSidebarOpen: false,
   })
@@ -110,11 +110,11 @@ describe('Test B — Open / Close', () => {
     fireEvent.click(menuButton())
     expect(menuButton()).toHaveAttribute('aria-expanded', 'true')
     expect(drawer()).not.toBeNull()
-    // 抽屉里是同一份 Sidebar 导航（0011：工作区去重后的新标签）
-    expect(withinDrawer('全部信息流')).toBeInTheDocument()
-    expect(withinDrawer('时间线')).toBeInTheDocument()
+    // 抽屉里是同一份 Sidebar 导航（0011 修正补充：工作区 = 稍后读 + 收藏）
+    expect(withinDrawer('全部信息源')).toBeInTheDocument()
+    expect(withinDrawer('稍后读')).toBeInTheDocument()
     expect(withinDrawer('收藏')).toBeInTheDocument()
-    expect(withinDrawer('全部信息流')).toBeInTheDocument()
+    expect(withinDrawer('全部信息源')).toBeInTheDocument()
   })
 
   it('遮罩点击 → drawer 关闭', async () => {
@@ -172,7 +172,7 @@ describe('Test C — View selection', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回文章列表' }))
 
     fireEvent.click(menuButton())
-    // 0011：「未读」为时间线行的过滤子项（drawer 内）
+    // 0011 修正补充：「未读」为全部信息流行的过滤子项（drawer 内）
     fireEvent.click(withinDrawer('未读'))
 
     expect(useReaderUi.getState().view).toBe('unread')
@@ -187,9 +187,11 @@ describe('Test D — Feed selection', () => {
     renderApp()
 
     fireEvent.click(menuButton())
-    // 0011：RSS 根节点默认收起，先展开 disclosure 再点 feed（AC3/AC4）；
-    // feeds 数据异步到达，等待 drawer 内出现 feed 按钮
-    fireEvent.click(withinDrawer(/RSS 订阅/))
+    // 0011：RSS tree 默认收起——展开 tree + 未分组分类后点 feed（AC3/AC4）
+    fireEvent.click(withinDrawer(/展开 RSS 分类/))
+    // feeds 数据异步到达：等分类节点出现后再展开
+    await waitFor(() => withinDrawer(/展开 未分组/))
+    fireEvent.click(withinDrawer(/展开 未分组/))
     const feedButton = await waitFor(() => {
       const btn = withinDrawer('示例源 B')
       expect(btn).toBeInTheDocument()
@@ -197,7 +199,7 @@ describe('Test D — Feed selection', () => {
     })
     fireEvent.click(feedButton)
 
-    expect(useReaderUi.getState().selectedFeedUrl).toBe('https://b.example.com/feed.xml')
+    expect(useReaderUi.getState().scope).toEqual({ kind: 'rss-feed', feedUrl: 'https://b.example.com/feed.xml' })
     // feed 导航切回首页（0011 AC4）
     expect(useReaderUi.getState().section).toBe('home')
     expect(drawer()).toBeNull()
@@ -207,12 +209,12 @@ describe('Test D — Feed selection', () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
-    useReaderUi.setState({ selectedFeedUrl: 'https://a.example.com/feed.xml' })
-    await screen.findByRole('button', { name: /全部信息流/ })
+    useReaderUi.setState({ scope: { kind: 'rss-feed', feedUrl: 'https://a.example.com/feed.xml' } })
+    await screen.findByRole('button', { name: /全部信息源/ })
     fireEvent.click(menuButton())
-    fireEvent.click(withinDrawer('全部信息流'))
+    fireEvent.click(withinDrawer('全部信息源'))
 
-    expect(useReaderUi.getState().selectedFeedUrl).toBeNull()
+    expect(useReaderUi.getState().scope).toEqual({ kind: 'all' })
     expect(drawer()).toBeNull()
   })
 })
@@ -287,11 +289,11 @@ describe('Drawer accessibility', () => {
 
     // 0011：feeds error/skeleton 在 RSS disclosure 内（默认收起），
     // 先展开桌面侧栏的 disclosure 再等 error 出现
-    fireEvent.click(screen.getByRole('button', { name: /RSS 订阅/ }))
+    fireEvent.click(screen.getByRole('button', { name: '展开 RSS 分类' }))
     await screen.findByText('订阅加载失败')
     fireEvent.click(menuButton())
     // drawer 是独立 Sidebar 实例，其 disclosure 也需展开
-    fireEvent.click(withinDrawer(/RSS 订阅/))
+    fireEvent.click(withinDrawer(/展开 RSS 分类/))
     // drawer 挂载新 observer 会触发 stale-on-mount 的后台 refetch，
     // 期间 Sidebar 显示 skeleton；等 refetch 再次失败后 drawer 内出现重试
     const retryButton = await waitFor(() => {
@@ -308,7 +310,9 @@ describe('Drawer accessibility', () => {
     // 重试是数据操作，不是导航：drawer 保持打开
     expect(drawer()).not.toBeNull()
     expect(useReaderUi.getState().mobileSidebarOpen).toBe(true)
-    // 重试后 feeds 数据恢复
+    // 重试后 feeds 数据恢复：分类节点出现，展开后 feed 可见
+    await waitFor(() => withinDrawer(/展开 未分组/))
+    fireEvent.click(withinDrawer(/展开 未分组/))
     await waitFor(() => {
       expect(withinDrawer('示例源 A')).toBeInTheDocument()
     })
@@ -322,7 +326,10 @@ function withinDrawer(name: string | RegExp): HTMLElement {
   const buttons = Array.from(drawer()?.querySelectorAll('button') ?? [])
   const found = buttons.find((b) => {
     const text = b.textContent?.trim() ?? ''
-    return typeof name === 'string' ? text === name : name.test(text)
+    const label = b.getAttribute('aria-label') ?? ''
+    return typeof name === 'string'
+      ? text === name || label === name
+      : name.test(text) || name.test(label)
   })
   if (found === undefined) {
     throw new Error(`button ${name} not found inside drawer`)
