@@ -5,6 +5,7 @@ import {
   type AppSettings,
   DEFAULT_APP_SETTINGS,
   SETTINGS_STORAGE_KEY,
+  isValidFontUrl,
   loadSettings,
   normalizeSettings,
   persistSettings,
@@ -72,6 +73,84 @@ describe('normalizeSettings — 不可信输入逐字段归一化', () => {
   it('未知字段丢弃', () => {
     const result = normalizeSettings({ ...DEFAULT_APP_SETTINGS, evil: '<script>' })
     expect((result as unknown as Record<string, unknown>).evil).toBeUndefined()
+  })
+})
+
+describe('normalizeSettings — 0012 新增 Reader 字段', () => {
+  it('合法 0012 值全部保留', () => {
+    const valid: AppSettings = {
+      ...DEFAULT_APP_SETTINGS,
+      readerCustomFontId: 'font-0123456789abcdef',
+      readerFontUrl: 'https://cdn.example.com/fonts/NotoSerifSC.woff2',
+      readerFontUrlName: '思源宋体',
+      readerTextIndent: '2em',
+      readerHangingPunctuation: true,
+      readerChineseConversion: 'tw',
+      readerShowReadingTime: true,
+      readerCodeHighlight: 'off',
+      readerCodeTheme: 'github-dark',
+      readerBionic: true,
+    }
+    expect(normalizeSettings(valid)).toEqual(valid)
+  })
+
+  it('非法枚举 / 非法字体引用回退默认', () => {
+    const bad = normalizeSettings({
+      readerCustomFontId: "'; DROP TABLE",
+      readerFontUrl: 'javascript:alert(1)',
+      readerTextIndent: '4em',
+      readerChineseConversion: 'pinyin',
+      readerCodeHighlight: 'always',
+      readerCodeTheme: 'evil-theme',
+    })
+    expect(bad.readerCustomFontId).toBeNull()
+    expect(bad.readerFontUrl).toBeNull()
+    expect(bad.readerTextIndent).toBe('off')
+    expect(bad.readerChineseConversion).toBe('off')
+    expect(bad.readerCodeHighlight).toBe('auto')
+    expect(bad.readerCodeTheme).toBe('auto')
+  })
+
+  it('旧 0010a 设置（无 0012 字段）继续加载 → 0012 字段全部默认', () => {
+    // 0010a 时代持久化的 JSON 没有 0012 字段——必须无损加载
+    const legacy = normalizeSettings({ themeMode: 'dark', readerFontSize: 19, readerJustify: true })
+    expect(legacy.themeMode).toBe('dark')
+    expect(legacy.readerFontSize).toBe(19)
+    expect(legacy.readerJustify).toBe(true)
+    expect(legacy.readerCustomFontId).toBeNull()
+    expect(legacy.readerFontUrl).toBeNull()
+    expect(legacy.readerTextIndent).toBe('off')
+    expect(legacy.readerChineseConversion).toBe('off')
+    expect(legacy.readerBionic).toBe(false)
+  })
+
+  it('corrupted 0012 字段不致整体失败', () => {
+    const bad = normalizeSettings({
+      readerCustomFontId: 42,
+      readerFontUrl: { evil: true },
+      readerHangingPunctuation: 'yes',
+    })
+    expect(bad.readerCustomFontId).toBeNull()
+    expect(bad.readerFontUrl).toBeNull()
+    expect(bad.readerHangingPunctuation).toBe(false)
+  })
+})
+
+describe('isValidFontUrl — 字体 URL 白名单（Gate 3）', () => {
+  it('仅接受 http/https 绝对地址', () => {
+    expect(isValidFontUrl('https://fonts.example.com/a.woff2')).toBe(true)
+    expect(isValidFontUrl('http://192.168.1.10:8000/a.woff2')).toBe(true)
+  })
+
+  it('拒绝其它协议 / 相对路径 / 非字符串', () => {
+    expect(isValidFontUrl('javascript:alert(1)')).toBe(false)
+    expect(isValidFontUrl('data:font/woff2;base64,AAA')).toBe(false)
+    expect(isValidFontUrl('file:///etc/passwd')).toBe(false)
+    expect(isValidFontUrl('/fonts/a.woff2')).toBe(false)
+    expect(isValidFontUrl('fonts/a.woff2')).toBe(false)
+    expect(isValidFontUrl('')).toBe(false)
+    expect(isValidFontUrl(null)).toBe(false)
+    expect(isValidFontUrl(123)).toBe(false)
   })
 })
 

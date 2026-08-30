@@ -154,6 +154,16 @@ Owns:
 - accessibility and keyboard interactions;
 - sanitizing untrusted article HTML at the approved rendering boundary.
 
+  Since 0012 the rendering boundary is a presentation pipeline:
+  raw RSS HTML → inert DOM (DOMParser) → controlled presentation
+  transforms (OpenCC S↔T conversion, bionic word-initial emphasis, Shiki
+  code highlight markers — DOM API only) → **DOMPurify as the final
+  trusted boundary** → the single sanctioned
+  `dangerouslySetInnerHTML` in `ArticleContent`. Transforms never execute
+  scripts, keep event handlers, or reintroduce iframes/styles/`javascript:`
+  URLs; raw RSS HTML never reaches React unsanitized. (See
+  `apps/web/src/lib/article-pipeline.ts` and spec 0012 §安全模型.)
+
 Does not own:
 
 - FreshRSS credentials;

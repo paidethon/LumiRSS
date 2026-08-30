@@ -55,6 +55,30 @@ body {
   margin: 0 0 var(--lumi-reader-paragraph-spacing, 0.85em);
 }
 
+/* 0012 Gate 4：中文首行缩进——仅作用于正文顶层段落（> p）。
+ * - 标题不在 .article-content &gt; p 选择器内，天然不缩进；
+ * - blockquote/list 内的 p 非直系子代，不继承；
+ * - code/pre 不受影响；
+ * - 图片后的 p 同为直系子代，行为一致（图片本身无缩进）。 */
+.article-content > p {
+  text-indent: var(--lumi-reader-text-indent, 0);
+}
+
+/* 0012 Gate 4：标点悬挂 —— progressive enhancement。
+ * hanging-punctuation 尚未进入所有主流浏览器 Baseline：
+ * 不支持的浏览器自动忽略整块（普通排版），核心阅读不依赖它。 */
+@supports (hanging-punctuation: first) {
+  html[data-reader-hanging-punctuation='true'] .article-content {
+    hanging-punctuation: first;
+  }
+}
+
+/* 0012 Gate 9：词首强调（实验性视觉模式，默认关闭）。
+ * 不宣称速度/理解收益；仅拉丁词首视觉强调。 */
+.article-content .lumi-bionic {
+  font-weight: 700;
+}
+
 .article-content h1,
 .article-content h2,
 .article-content h3,
@@ -121,6 +145,22 @@ html[data-reader-images='hidden'] .article-content img {
 .article-content pre code {
   background: none;
   padding: 0;
+}
+
+/* 0012 Gate 8：Shiki 高亮 code（颜色 class 由运行时注入的
+   #lumi-shiki-colors 样式表提供，来自 bundled 主题色板）。 */
+.article-content pre code.lumi-shiki-code {
+  display: block;
+  /* token 粘连防御：span 之间空白保留 */
+  white-space: pre;
+}
+
+/* 0012：.lumi-reader 作用域容器允许收缩——高亮 code 块 min-content
+   超宽时交给 pre 的 overflow-x:auto 局部滚动，而不是撑破祖先布局
+   （AC19：无页面级横向 overflow；正式 shell 已用 minmax(0,1fr)，
+   此规则主要防御 Playground/自定义嵌套场景）。 */
+.lumi-reader {
+  min-width: 0;
 }
 
 .article-content img {

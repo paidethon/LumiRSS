@@ -30,6 +30,7 @@ import {
   readerTextPalette,
   prefixCustomCss,
 } from '../lib/reader-style'
+import { fontFamilyName, fontIdFromUrl } from '../lib/reader-fonts'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
@@ -47,6 +48,28 @@ export type ReaderImageMode = 'all' | 'grayscale' | 'hidden'
 /** UI 字体四档（同源 OrigRead 栈） */
 export type UiFontStack = 'default' | 'sans' | 'serif' | 'mono'
 export type UiFontSize = 15 | 16 | 18 | 20
+
+// ---- 0012 Reader Style Deep Customization 新增 ----
+
+/** 中文首行缩进：关闭 / 2 字符（相对单位 em，作用域限正文段落） */
+export type ReaderTextIndent = 'off' | '2em'
+/** 简繁转换（展示层，不改服务器数据）：原文/简→繁/繁→简/台标/港标 */
+export type ReaderChineseConversion = 'off' | 's2t' | 't2s' | 'tw' | 'hk'
+/** 代码高亮：自动（含 code 文章按需加载 Shiki）/ 关闭 */
+export type ReaderCodeHighlight = 'auto' | 'off'
+
+/** 自定义字体条目（IndexedDB 存储，settings 只存引用 id） */
+export interface ReaderCustomFont {
+  id: string
+  name: string
+  source: 'local' | 'url'
+  /** url 模式：http/https 字体地址；local 模式为空 */
+  url: string
+  /** 文件元信息（仅 local，展示用） */
+  fileName: string
+  size: number
+  createdAt: number
+}
 
 /** 翻译 Provider（OrigRead translation.ts 镜像，裁剪 MLKit/Google） */
 export type TranslationProviderType = 'microsoft' | 'deepl' | 'dlx'
@@ -144,6 +167,23 @@ export interface AppSettings {
   readerFontSize: ReaderFontSize
   readerLineHeight: ReaderLineHeight
   readerContentWidth: ReaderContentWidth
+  /** 0012 Reader Style Deep Customization */
+  /** 自定义字体（IndexedDB id 引用；null = 未用自定义字体） */
+  readerCustomFontId: string | null
+  /** 字体 URL 模式（Gate 3）：直接 http/https 指向 woff2，不落 IndexedDB */
+  readerFontUrl: string | null
+  readerFontUrlName: string
+  /** 中文排版 */
+  readerTextIndent: ReaderTextIndent
+  readerHangingPunctuation: boolean
+  readerChineseConversion: ReaderChineseConversion
+  /** 阅读时间估算开关（ReaderHeader 弱化显示） */
+  readerShowReadingTime: boolean
+  /** 代码高亮 + 主题 */
+  readerCodeHighlight: ReaderCodeHighlight
+  readerCodeTheme: string
+  /** 实验性：词首强调（Bionic-style，默认关） */
+  readerBionic: boolean
   /** 布局（<1024 忽略；Gate C 接线） */
   sidebarWidth: number // clamp 220–300
   sidebarCollapsed: boolean
@@ -231,6 +271,16 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFontSize: 17,
   readerLineHeight: 1.85,
   readerContentWidth: 760,
+  readerCustomFontId: null,
+  readerFontUrl: null,
+  readerFontUrlName: '',
+  readerTextIndent: 'off',
+  readerHangingPunctuation: false,
+  readerChineseConversion: 'off',
+  readerShowReadingTime: false,
+  readerCodeHighlight: 'auto',
+  readerCodeTheme: 'auto',
+  readerBionic: false,
   sidebarWidth: 240,
   sidebarCollapsed: false,
   timelineWidth: 400,
@@ -249,8 +299,31 @@ const IMAGE_MODES = ['all', 'grayscale', 'hidden'] as const
 const UI_FONT_STACK_VALUES = ['default', 'sans', 'serif', 'mono'] as const
 const UI_FONT_SIZES = [15, 16, 18, 20] as const
 const TRANSLATION_PROVIDER_TYPES = ['microsoft', 'deepl', 'dlx'] as const
+// 0012 新增枚举表
+const READER_TEXT_INDENTS = ['off', '2em'] as const
+const READER_CHINESE_CONVERSIONS = ['off', 's2t', 't2s', 'tw', 'hk'] as const
+const READER_CODE_HIGHLIGHTS = ['auto', 'off'] as const
+/** Shiki 主题白名单（auto = 随 Reader 明暗切换；其余为单主题锁定） */
+const READER_CODE_THEMES = ['auto', 'github-light', 'github-dark', 'vitesse-light', 'vitesse-dark'] as const
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
+
+/** 字体 URL 白名单校验：仅 http/https 绝对地址（0012 Gate 3）。
+ * 拒绝其它协议（javascript:/data:/file: 等）与相对路径。 */
+export function isValidFontUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const u = new URL(value)
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.length > 0
+  } catch {
+    return false
+  }
+}
+
+/** 字体 id 校验：IndexedDB 稳定 id 格式（font- + hex hash）或 null。 */
+function pickFontId(value: unknown): string | null {
+  return typeof value === 'string' && /^font-[0-9a-f]{8,64}$/.test(value) ? value : null
+}
 
 function pickHexColor(value: unknown, fallback: string): string {
   return typeof value === 'string' && HEX_COLOR_RE.test(value.trim())
@@ -483,6 +556,42 @@ export function normalizeSettings(raw: unknown): AppSettings {
       CONTENT_WIDTHS,
       DEFAULT_APP_SETTINGS.readerContentWidth,
     ),
+    // 0012：逐字段校验，非法值回退默认（corrupted settings 不致启动失败）
+    readerCustomFontId: pickFontId(source.readerCustomFontId),
+    readerFontUrl: isValidFontUrl(source.readerFontUrl) ? source.readerFontUrl : null,
+    readerFontUrlName:
+      typeof source.readerFontUrlName === 'string'
+        ? source.readerFontUrlName.trim().slice(0, 64)
+        : '',
+    readerTextIndent: pickString(
+      source.readerTextIndent,
+      READER_TEXT_INDENTS,
+      DEFAULT_APP_SETTINGS.readerTextIndent,
+    ),
+    readerHangingPunctuation: pickBoolean(
+      source.readerHangingPunctuation,
+      DEFAULT_APP_SETTINGS.readerHangingPunctuation,
+    ),
+    readerChineseConversion: pickString(
+      source.readerChineseConversion,
+      READER_CHINESE_CONVERSIONS,
+      DEFAULT_APP_SETTINGS.readerChineseConversion,
+    ),
+    readerShowReadingTime: pickBoolean(
+      source.readerShowReadingTime,
+      DEFAULT_APP_SETTINGS.readerShowReadingTime,
+    ),
+    readerCodeHighlight: pickString(
+      source.readerCodeHighlight,
+      READER_CODE_HIGHLIGHTS,
+      DEFAULT_APP_SETTINGS.readerCodeHighlight,
+    ),
+    readerCodeTheme: pickString(
+      source.readerCodeTheme,
+      READER_CODE_THEMES,
+      DEFAULT_APP_SETTINGS.readerCodeTheme,
+    ),
+    readerBionic: pickBoolean(source.readerBionic, DEFAULT_APP_SETTINGS.readerBionic),
     sidebarWidth: clamp(
       typeof source.sidebarWidth === 'number' ? source.sidebarWidth : DEFAULT_APP_SETTINGS.sidebarWidth,
       220,
@@ -547,12 +656,30 @@ export function applyReaderTypography(settings: AppSettings): void {
   root.style.setProperty('--lumi-reader-line-height', String(settings.readerLineHeight))
   root.style.setProperty('--lumi-reader-content-width', `${settings.readerContentWidth}px`)
 
-  // 0010a F6：字体族 / 段距 / 对齐
-  root.style.setProperty('--lumi-reader-font-family', READER_FONT_STACKS[settings.readerFontFamily])
+  // 0010a F6：字体族 / 段距 / 对齐；0012：自定义字体优先于档位栈
+  //（字体未注册完成时 CSS 自动回退档位栈，不白屏）
+  let customFamily: string | null = null
+  if (settings.readerCustomFontId !== null) {
+    customFamily = fontFamilyName(settings.readerCustomFontId)
+  } else if (settings.readerFontUrl !== null) {
+    customFamily = fontFamilyName(fontIdFromUrl(settings.readerFontUrl))
+  }
+  const baseStack = READER_FONT_STACKS[settings.readerFontFamily]
+  root.style.setProperty(
+    '--lumi-reader-font-family',
+    customFamily !== null ? `"${customFamily}", ${baseStack}` : baseStack,
+  )
   root.style.setProperty('--lumi-reader-paragraph-spacing', READER_PARAGRAPH_SPACING_EM[settings.readerParagraphSpacing])
   root.style.setProperty('--lumi-reader-text-align', settings.readerJustify ? 'justify' : 'start')
   // 图片模式：灰度/隐藏由 .article-content img 消费
   root.dataset.readerImages = settings.readerImageMode
+
+  // 0012 Gate 4：中文排版（首行缩进相对单位；标点悬挂 progressive
+  // enhancement —— CSS 侧用 @supports 包裹，这里只挂变量/标记）
+  root.style.setProperty('--lumi-reader-text-indent', settings.readerTextIndent === '2em' ? '2em' : '0')
+  root.dataset.readerHangingPunctuation = settings.readerHangingPunctuation ? 'true' : 'false'
+  // 简繁转换标记（展示层 transform 的开关，ArticleContent 消费）
+  root.dataset.readerChineseConversion = settings.readerChineseConversion
 
   // 预设驱动的 custom 背景（AMOLED/高对比等内置预设携带的背景）
   const customBg =

@@ -53,17 +53,19 @@ Before modifying code, compare the relevant sources. Do not silently choose one 
 当前已批准的里程碑：
 
 ```text
-0011 — Mobile UI Navigation & Five-Screen Alignment
-       （分支 feat/0011-mobile-ui-five-screen-alignment，active spec：
-        docs/specs/0011-mobile-ui-five-screen-alignment.md）
+0012 — Reader Style Deep Customization
+       （分支 feat/0012-reader-style-deep-customization，active spec：
+        docs/specs/0012-reader-style-deep-customization.md）
 ```
 
-0009（UI Reboot）与 0010/0010a（Settings Center & Adaptive Shell）
-均已合入 main。0011 对齐移动端首页/订阅/搜索/收藏/侧边栏五个
-界面：AppSection 一级导航 + 四项底部导航岛（首页/订阅/搜索/收藏）、
-设置入口统一到侧边栏品牌区右上角、RSS 源 disclosure 默认收起、
-抽屉升级为完整 modal/focus trap。全程纯前端（BFF 零变化）；
-数据契约零造假（无搜索/分类/未读数契约时诚实降级）。
+0009（UI Reboot）、0010/0010a（Settings Center & Adaptive Shell）与
+0011（Mobile UI Navigation & Five-Screen Alignment，含后续 PR #18
+rss-scope/category-tree 修复）均已合入 main。0012 在 0010a Reader
+Style 基础上建立深度可定制 Reader：WOFF2 字体导入（IndexedDB +
+FontFace）与字体 URL、中文深度排版（首行缩进/标点悬挂/简繁转换）、
+CJK 阅读时间、.lumitheme 主题包、Reader 内 Aa 快速面板、Shiki
+lazy 代码高亮、Bionic 词首强调（实验性）。全程纯前端（BFF 零变化）；
+安全 pipeline 变更为 transforms → DOMPurify 终点（见 Spec 安全模型）。
 
 路线编号（2026-08-30 三次修订，用户批准）：尚未开工的原 0011
 （Reader Style Deep Customization）被替换为 0011（Mobile UI
@@ -385,6 +387,9 @@ When auditing a logged-in Folo account:
 RSS/website content is untrusted.
 
 - Preserve the single audited sanitized HTML-rendering boundary.
+- Reader presentation transforms (0012: OpenCC / Bionic / Shiki) operate
+  on inert DOM **before** DOMPurify, which remains the final trusted
+  boundary; raw RSS HTML never enters React unsanitized.
 - Do not add arbitrary iframe/script/style support.
 - External links must use safe protocols and appropriate `rel` values.
 - Any future full-text extraction output remains untrusted and is sanitized in the client or a clearly documented trusted pipeline.

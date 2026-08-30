@@ -91,6 +91,8 @@ Generate a complete dependency-license report from the locked dependency graph b
 | zustand | 5.0.x | MIT | UI state | no |
 | dompurify | 3.4.x | Apache-2.0 / MPL-2.0 dual | HTML sanitization | review at distribution time |
 | lucide-react | 1.34.x | ISC | icon library (added 0009 Gate 1, user-approved) | no |
+| opencc-js | 1.4.2 | MIT AND Apache-2.0 | 简繁转换词典（0012，dynamic import，含 OpenCC 词典数据） | review at distribution time（词典内容源自 OpenCC 项目） |
+| shiki | 4.4.3 | MIT | 代码语法高亮（0012，fine-grained dynamic import；含 TextMate 语法与主题数据） | review at distribution time（grammar/theme 数据源自各自上游） |
 
 ---
 

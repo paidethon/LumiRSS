@@ -52,6 +52,13 @@ import { TranslationSettingsSection } from './TranslationSettingsPage'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubSettingsSection } from './RssHubSettingsPage'
 import { BackupSettingsSection } from './BackupSettingsPage'
+// 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
+import { ReaderFontManager } from './reader/ReaderFontManager'
+import {
+  ChineseTypographySettings,
+  CodeHighlightSettings,
+  ReaderThemePackSettings,
+} from './reader/ReaderDeepControls'
 
 // ---- 分类定义（13 项；Folo 桌面 14 tab → Lumi 单用户裁剪） ----
 
@@ -160,6 +167,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           onCheckedChange: (v) => update({ reduceMotion: v }),
         },
         { type: 'title', value: '阅读' },
+        // 0012 Gate 2/3：自定义字体（WOFF2 上传 + 字体 URL）
+        { type: 'custom', node: <ReaderFontManager /> },
         // 0010a F7（AC20–AC22）：排版预设一键切换/派生/导入导出
         { type: 'custom', node: <ReaderPresetPicker /> },
         // 0010a F6（AC16/AC17）：阅读背景色板 + 自定义 hex + WCAG 自适应文字
@@ -243,9 +252,15 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           ] satisfies { value: ReaderContentWidth; label: string }[],
           onChange: (v) => update({ readerContentWidth: v as ReaderContentWidth }),
         },
+        // 0012 Gate 4：中文深度排版（首行缩进/标点悬挂/简繁/阅读时间/词首强调）
+        { type: 'custom', node: <ChineseTypographySettings /> },
+        // 0012 Gate 8：代码高亮（Shiki lazy）
+        { type: 'custom', node: <CodeHighlightSettings /> },
         { type: 'title', value: '自定义' },
         // 0010a F7（AC14）：自定义 CSS（仅作用于正文，自动前缀）
         { type: 'custom', node: <CustomCssEditor /> },
+        // 0012 Gate 6：.lumitheme 主题包导出/导入/预览
+        { type: 'custom', node: <ReaderThemePackSettings /> },
       ]
     case 'general':
       return [
