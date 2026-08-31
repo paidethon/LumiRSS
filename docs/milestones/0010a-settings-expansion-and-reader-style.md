@@ -1,8 +1,8 @@
 # Spec 0010a — 设置中心扩展与阅读样式自定义（0010 补丁轮）
 
 > 日期：2026-08-30
-> 状态：待用户批准
-> 分支：沿用 `feat/0010-settings-center-adaptive-shell`（0010 Gate A–D 已完成、未合并）
+> 状态：**Completed**（Gates E/F/G 用户批准，随 0010 经 PR #16 合入 main，`43f8ae8`）
+> 分支：`feat/0010-settings-center-adaptive-shell`（已合并）
 > 前置研究：Folo 源码（设置全功能 + 移动端结构）、OrigRead 双端源码（六页字段级清单）、
 > 10+ 高 star 阅读器样式调研（Reeder/Readwise/Miniflux/NetNewsWire/NewsBlur/Legado 等）
 > 结论基调：**纯前端、BFF 零变化、诚实原则不变**。

@@ -8,17 +8,14 @@
 > Milestone: 0003 Entry Read Path
 > Phase: Phase 2 — Backend Core
 > 日期：2026-08-27
-> 结果：Completed（待人工 Review，未 commit）
+> 结果：Completed（PR #8, `7322115`）
 
 ## Status
 
 Completed。
 
-- Spec：`docs/specs/0003-entry-read-path.md`（只读探索 → 生成 Spec →
-  用户修订 6 点（Detail endpoint 源码已验证、reading-list 语义、
-  EntryNotFound 映射规则、File Plan 数量、pagination 未定义参数措辞、
-  contentText 措辞）→ 批准 → Build）
-- 本里程碑结束时**未 commit**，停在工作区等待人工 Review（按任务指令）
+- Spec 经用户修订 6 点后批准（原始 spec 可通过 `git show HEAD~:docs/specs/0003-entry-read-path.md` 在 Git 历史中查看）
+- PR #8 合入 main（`7322115`）
 
 ## Goal
 
@@ -63,8 +60,7 @@ Completed。
 （摘要，凭据一律 `[REDACTED]`）
 
 1. 用户下发 0003 任务（Spec-driven）。AI 只读探索后发现分支仍在
-   `feat/0002-bff-freshrss-adapter`（0002 尚未合入 main），按指令停止
-   报告。用户走 PR #6 合入 0002 并切出 `feat/0003-entry-read-path`。
+   `feat/0002-bff-freshrss-adapter`（0002 当时尚未合入 main），按指令停止报告。用户走 PR #6 合入 0002 并切出 `feat/0003-entry-read-path`。
 2. AI 生成 Spec 初稿（+626 行）。用户批准方向但要求 Build 前 6 点修订：
    Detail API 从"未知假设"改为"源码已验证 + Live Probe 再确认"
    （POST stream/items/contents + form `i=`）；reading-list 语义修正

@@ -14,7 +14,7 @@
 
 Completed。
 
-- Spec：`docs/specs/0001-freshrss-development-environment.md`（先写 spec，再实现，再验收）
+- Spec 先写，再实现，再验收（原始 spec 可通过 `git show HEAD~:docs/specs/0001-freshrss-development-environment.md` 在 Git 历史中查看）
 - 结果提交：`0a6a478`（4 个文件：`docker-compose.yml`、spec 0001、`README.md`、`docs/README.md`）
 - 运行环境：FreshRSS 1.29.1 容器（`freshrss`），绑定 127.0.0.1:8080，数据保存在 named volume `freshrss-data`
 

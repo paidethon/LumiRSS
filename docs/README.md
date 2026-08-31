@@ -6,10 +6,10 @@
 
 ## Start Here
 
-**Active milestone**: 0012 — Reader Style Deep Customization
-→ [milestones/0012-reader-style-deep-customization.md](milestones/0012-reader-style-deep-customization.md)
+**Active milestone**: None (0012 completed; awaiting next milestone approval)
 
-**Last completed**: 0011 — Mobile UI Navigation & Five-Screen Alignment
+**Last completed**: 0012 — Reader Style Deep Customization
+→ [milestones/0012-reader-style-deep-customization.md](milestones/0012-reader-style-deep-customization.md)
 
 **Next planned**: 0013 — Unified Subscription Center
 
@@ -80,7 +80,7 @@ during normal development.
 | 0009 | UI Reboot & Reference Lab | Completed |
 | 0010 | Settings Center & Adaptive Shell (+0010a) | Completed |
 | 0011 | Mobile UI Five-Screen Alignment | Completed |
-| **0012** | **Reader Style Deep Customization** | **Active** |
+| 0012 | Reader Style Deep Customization | Completed |
 | 0013 | Unified Subscription Center | Planned |
 | 0014 | Source Discovery & RSSHub | Planned |
 | 0015 | AI Foundation & Summary | Planned |

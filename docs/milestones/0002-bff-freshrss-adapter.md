@@ -8,14 +8,14 @@
 > Milestone: 0002 BFF + FreshRSSAdapter
 > Phase: Phase 2 — Backend Core
 > 日期：2026-08-27
-> 结果：Completed（待人工 Review，未 commit）
+> 结果：Completed（PR #6, `008bb81`）
 
 ## Status
 
 Completed。
 
-- Spec：`docs/specs/0002-bff-freshrss-adapter.md`（先写 spec，经两轮修订后用户批准，再实现）
-- 本里程碑结束时**未 commit**，停在工作区等待人工 Review（按任务指令）
+- Spec 经两轮修订后用户批准（原始 spec 可通过 `git show HEAD~:docs/specs/0002-bff-freshrss-adapter.md` 在 Git 历史中查看）
+- PR #6 合入 main（`008bb81`）
 
 ## Goal
 
@@ -50,9 +50,7 @@ Completed。
 （摘要，凭据一律 `[REDACTED]`）
 
 1. 用户下发 0002 任务（Spec-driven，批准前禁止 Build）。AI 只读探索后停止：
-   当前分支是 `chore/project-progress-board` 而非
-   `feat/0002-bff-freshrss-adapter`，且 uv 未安装。用户手动切分支（基于合入
-   看板的最新 main `c8ce5ba`）并安装 uv 0.12.6。
+   当前分支需切到 `feat/0002-bff-freshrss-adapter`
 2. AI 生成 Spec 初稿。用户第一轮修订 8 点（Auth Token 无时间过期语义、
    Adapter 生命周期、async 模式、timeout/trust_env、SecretStr 与空密码无效、
    Test E/F、uv init 模板、架构图歧义）；AI 全部落实并自查出 2 处残留旧表述。

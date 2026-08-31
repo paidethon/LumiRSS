@@ -7,11 +7,10 @@
 
 ## Status
 
-Completed. All acceptance criteria of
-[Spec 0006](../specs/0006-reader.md) (AC1–AC28) met; automated tests,
-lint, production build, real integration smokes and reversible state
-smokes all pass. Work is NOT committed — parked in the worktree for
-human review.
+Completed (PR #12, `1e12175`). All acceptance criteria of
+Spec 0006 (AC1–AC28) met; automated tests, lint, production build,
+real integration smokes and reversible state smokes all pass.
+Original spec available in Git history (`git show HEAD~:docs/specs/0006-reader.md`).
 
 ## Goal
 

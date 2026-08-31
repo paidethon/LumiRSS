@@ -8,17 +8,14 @@
 > Milestone: 0004 Entry State + Filter + Cursor Pagination
 > Phase: Phase 2 — Backend Core（收官）
 > 日期：2026-08-28
-> 结果：Completed（待人工 Review，未 commit）
+> 结果：Completed（PR #10, `5420f63`）
 
 ## Status
 
 Completed。
 
-- Spec：`docs/specs/0004-entry-state-filter-pagination.md`（只读探索 → 生成
-  Spec → 用户修订 6 点（cursor 独立翻页 contract、Action Token 返回值
-  验证、state markers 源码冻结、PATCH body 验证、不存在 Entry 语义、
-  Category deferred 记录）→ 批准 + 4 个实现级检查 → Build）
-- 本里程碑结束时**未 commit**，停在工作区等待人工 Review（按任务指令）
+- Spec 经用户修订 6 点 + 4 个实现级检查后批准（原始 spec 可通过 `git show HEAD~:docs/specs/0004-entry-state-filter-pagination.md` 在 Git 历史中查看）
+- PR #10 合入 main（`5420f63`）
 
 ## Goal
 

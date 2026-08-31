@@ -1,6 +1,6 @@
 # 0012 — Reader Style Deep Customization / 阅读样式深度自定义
 
-> 状态：**Approved（用户指令全文，2026-08-30）**
+> 状态：**Completed**（PR #19, `4c3985c`）
 > 日期：2026-08-30
 > 依据：用户 0012 里程碑指令（全文）+ docs/design/reader-research.md
 > 前置：0011（Mobile UI Five-Screen Alignment）已合入 main（PR #18，dd95924）

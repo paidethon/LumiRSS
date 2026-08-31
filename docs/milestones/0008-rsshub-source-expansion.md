@@ -7,12 +7,11 @@
 
 ## Status
 
-Completed. All acceptance criteria of
-[Spec 0008](../specs/0008-rsshub-source-expansion.md) (AC1–AC26) met.
-Automated regression (BFF 121 / Web 121 + lint + build), real route
-probe, FreshRSS integration, BFF end-to-end, real-browser Web smoke,
-failure isolation and recovery all verified live. Work is NOT committed
-— parked in the worktree for human review.
+Completed (PR #14, `c4b84e9`). All acceptance criteria of
+Spec 0008 (AC1–AC26) met. Automated regression (BFF 121 / Web 121 +
+lint + build), real route probe, FreshRSS integration, BFF end-to-end,
+real-browser Web smoke, failure isolation and recovery all verified live.
+Original spec available in Git history (`git show HEAD~:docs/specs/0008-rsshub-source-expansion.md`).
 
 ## Goal
 

@@ -7,11 +7,11 @@
 
 ## Status
 
-Completed. All acceptance criteria of
-[Spec 0007](../specs/0007-mobile-pwa.md) (AC1–AC28) met or explicitly
-marked; automated tests, lint, production build, backend regression,
-real-browser smokes and a reversible star smoke all pass. Work is NOT
-committed — parked in the worktree for human review.
+Completed (PR #13, `4f163d6`). All acceptance criteria of
+Spec 0007 (AC1–AC28) met or explicitly marked; automated tests, lint,
+production build, backend regression, real-browser smokes and a
+reversible star smoke all pass.
+Original spec available in Git history (`git show HEAD~:docs/specs/0007-mobile-pwa.md`).
 
 ## Goal
 

@@ -7,8 +7,8 @@
 
 > 日期：2026-08-28
 > 里程碑：0005 — Web Shell（Phase 3 — Reading Experience 首个里程碑）
-> 状态：COMPLETED（AC1–AC22 全部达成；未 commit，停在工作区等待人工 Review）
-> Spec：`docs/specs/0005-web-shell.md`（Draft → 用户 5 点修订 → 批准）
+> 状态：COMPLETED（AC1–AC22 全部达成；PR #11, `ba95a0c`）
+> Spec 经用户 5 点修订后批准（原始 spec 可通过 `git show HEAD~:docs/specs/0005-web-shell.md` 在 Git 历史中查看）
 
 ## Goal
 
