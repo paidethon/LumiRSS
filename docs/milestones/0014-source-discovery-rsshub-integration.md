@@ -152,7 +152,124 @@ Final — 全量验收 + 文档收口 + 最终 commit
 
 ## Gate Progress
 
-（逐 Gate 追加）
+### Gate 0
+
+Status: Completed (2026-09-01)
+
+- 基线：main @ `26faaed`（0013 已合并），working tree clean；
+- 创建分支 `feat/0014-source-discovery-rsshub`；
+- 创建本 milestone 文档；docs/README + ROADMAP 激活 0014；
+- Agent Hub 能力：OpenCode 全局配置（备份后）注册 design-review /
+  architecture-visualization skill 目录引用 + Playwright MCP
+  （`npx @playwright/mcp@latest`）；配置需重启生效，本 run 以直接读
+  SKILL.md 方式按需参考。
+
+### Gate 1 + 2
+
+Status: Completed (2026-09-01)
+
+Implemented:
+
+- `feed_preview.py` 安全边界重构为可复用：`safe_fetch`（返回
+  `FetchedDocument{body, final_url, content_type}`）、`read_bounded_body`
+  public、`MAX_FEED_BODY_BYTES` 公共常量；`FeedPreviewService` 行为不变；
+- 新增 `source_discovery.py`：
+  - `POST /api/v1/source-discovery`（非变更；不持有任何 FreshRSS
+    引用——read-only by construction）；
+  - rel=alternate 声明提取（stdlib HTMLParser，不联网）：type 判定、
+    typeless feed-ish href 兜底、相对 URL 按最终跳转地址解析、
+    凭据/malformed href 跳过、fragment 不敏感去重、上限 20；
+  - 直接 feed URL 粘贴 → 单候选直返；
+  - 无声明候选才按序探测 5 个常见端点（/feed /rss /rss.xml /atom.xml
+    /feed.xml），首个解析成功即停（bounded，无爬站）；
+  - 非 HTML content-type 不做链接提取与探测；
+  - 错误：`invalid_source_url`(400) / `no_feed_discovered`(404)，复用
+    unsafe_feed_url / feed_fetch_error / feed_too_large；
+- 测试 `test_source_discovery.py`（28 cases，全部 mock 网络）。
+
+### Gate 3
+
+Status: Completed (2026-09-01)
+
+Implemented:
+
+- `config.py` 新增 `RssHubSettings`：`RSSHUB_BASE_URL`（BFF 预览可达，
+  允许内网/loopback——operator 配置非用户输入）+ 可选
+  `RSSHUB_FRESHRSS_BASE_URL`（FreshRSS 容器视角，默认同 BASE_URL；
+  0008 已实测 127.0.0.1:1200 ≠ http://rsshub:1200）；结构校验
+  （http/https、无凭据/query/fragment、无路径）；`.env.example` 文档化；
+- 新增 `rsshub.py`：
+  - Lumi-owned 静态精选 catalog：14 条路由（全部对本地 pinned
+    RSSHub 实例逐条实测 200 + 可解析，2026-09-01 校准；不 vendor
+    RSSHub、不运行时抓文档）；
+  - `build_path`：required 校验 + regex fullmatch + 逐段 URL 编码 +
+    结构校验（无 `//` / 空段 / `..`）——路径注入不可能；
+  - `RssHubService.preview`：base+path 有界抓取（2 MiB、共享 client
+    超时），重定向逐跳校验必须留在配置 origin 内（scheme+netloc
+    一致），离线解析复用 `parse_feed_document`；
+    feedUrl 用 FreshRSS 视角 base 构造（订阅后由 FreshRSS 抓取）；
+    alreadySubscribed 只读比较（control adapter 只读）；
+  - 错误：rsshub_not_configured(503) / rsshub_route_not_found(404) /
+    rsshub_invalid_parameters(400) / rsshub_fetch_error(502)；非 feed
+    复用 not_a_feed；
+- 路由：`GET /api/v1/rsshub/routes`（`{configured, routes}`）、
+  `POST /api/v1/rsshub/preview`（响应形状与 feed-preview 一致）；
+- 测试 `test_rsshub.py`（34 cases）+ settings 校验用例。
+
+### Gate 4 + 5
+
+Status: Completed (2026-09-01)
+
+Implemented:
+
+- Web API 层：`discoverFeeds` / `getRssHubRoutes` / `previewRssHub` +
+  types + hooks（discovery/preview 为无副作用 mutation，不 invalidate；
+  routes 为 query，enabled 门控）；
+- `management-errors.ts` 扩展 0014 全部稳定错误文案（含 0013 预览
+  错误收敛于此，删除 AddSubscriptionDialog 本地副本）；
+- `AddSourceDialog`（三模式单表面，取代 AddSubscriptionDialog）：
+  - tablist（←/→ 键盘导航、aria-selected）+ tabpanel；
+  - `DirectFeedTab`：0013 逻辑原样迁移（input id/label/文案不变，
+    网页 URL 本地提示指向网站 tab）；
+  - `WebsiteTab`：发现 → 候选 radiogroup（默认选首）→ 预览 →
+    PreviewStage；错误/加载/无结果状态齐全；重新选择；
+  - `RssHubTab`：目录 + 搜索 → 参数表单（required 标记/help/example、
+    本地 pattern 即时反馈，服务端兜底）→ 预览 → PreviewStage；
+    未配置 → 诚实横幅（不渲染假目录）；
+  - `PreviewStage`：三种模式共享的 metadata 卡片 / 已订阅提示 /
+    真实分类 / 确认添加 / 成功状态（复用 useSubscribeMutation →
+    invalidateSubscriptionState，不建第二套订阅逻辑）；
+  - busy 关闭防护：各 tab 通过 registerGuard 注册（提交中 Escape/
+    遮罩不关闭）；
+- `SubscriptionsPage`：入口改「添加来源」；设置中心：来源发现
+  说明入口（去掉 0014 planned 占位）、RSSHub 状态 plannedFor → 0018、
+  RSSHub 设置页文案诚实化（实例清单不参与 0014 构造）；
+- 测试：新增 `source-discovery.test.tsx`（12）、`rsshub-add.test.tsx`
+  （12）；迁移/更新 add-subscription（14）、gate-b、gate4-pages、
+  subscription-management。
+
+### Gate 6
+
+Status: Completed (2026-09-01)
+
+- 重启本地 dev BFF（当前代码 + RSSHUB_BASE_URL=http://127.0.0.1:1200
+  + RSSHUB_FRESHRSS_BASE_URL=http://rsshub:1200）；
+- 真实 RSSHub + 真实 FreshRSS live smoke（12/12 PASS）：
+  - routes catalog configured=true + 14 路由；
+  - preview hackernews / github-starred-repos（DIYgod）→ 200 真实
+    metadata，feedUrl = http://rsshub:1200/...（容器视角）；
+  - 缺参 / 路径注入 / 未知路由 → 稳定 400/404；
+  - 订阅 E2E：subscribe 201 → subscriptions 列表可见 → unsubscribe
+    204 → 基线还原（无残留数据）；
+  - vite 代理路径：`5173/api/v1/rsshub/routes` → configured=true
+    + 14 路由（浏览器可见面验证）；
+- 环境限制：宿主机 DNS 为 TUN fake-IP（198.18.0.0/15），website
+  discovery 对公网站按设计被 SSRF 边界拦截（400 unsafe_feed_url，
+  实测）；成功路径由 28 个离线测试覆盖（与 0013 Gate 5 同一已知
+  环境限制）；
+- 浏览器 UI 实机点击验证：本 run 无可用浏览器工具（Playwright MCP
+  配置已持久化，重启后可用）；UI 由 38 个 DOM 级测试 + 响应式
+  Dialog primitive 覆盖，web app index 200。
 
 ## Completion notes
 
