@@ -47,6 +47,11 @@ from lumirss.opml import (
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.source_discovery import (
+    InvalidSourceUrl,
+    NoFeedDiscovered,
+    SourceDiscoveryService,
+)
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
     decode_subscription_ref,
@@ -65,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.freshrss_adapter = None
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
+    app.state.source_discovery_service = None
     yield
     await app.state.http_client.aclose()
 
@@ -106,6 +112,9 @@ _ERROR_RESPONSES = {
     OpmlInvalid: (400, "opml_invalid"),
     OpmlTooLarge: (413, "opml_too_large"),
     OpmlTooManyFeeds: (400, "opml_too_many_feeds"),
+    # 0014 source discovery
+    InvalidSourceUrl: (400, "invalid_source_url"),
+    NoFeedDiscovered: (404, "no_feed_discovered"),
 }
 
 
@@ -133,6 +142,8 @@ _ERROR_RESPONSES = {
 @app.exception_handler(OpmlInvalid)
 @app.exception_handler(OpmlTooLarge)
 @app.exception_handler(OpmlTooManyFeeds)
+@app.exception_handler(InvalidSourceUrl)
+@app.exception_handler(NoFeedDiscovered)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -436,6 +447,51 @@ async def preview_feed(
         "description": preview.description,
         "format": preview.format,
         "alreadySubscribed": preview.already_subscribed,
+    }
+
+
+class SourceDiscoveryRequest(BaseModel):
+    """POST /api/v1/source-discovery body (0014): a public website URL."""
+
+    url: str = Field(min_length=1)
+
+
+def _get_discovery_service(request: Request) -> SourceDiscoveryService:
+    """SourceDiscoveryService over the shared HTTP client (lazy, cached).
+
+    Holds NO FreshRSS reference by design — discovery is read-only against
+    the discovered website.
+    """
+    service = request.app.state.source_discovery_service
+    if service is None:
+        service = SourceDiscoveryService(request.app.state.http_client)
+        request.app.state.source_discovery_service = service
+    return service
+
+
+@app.post("/api/v1/source-discovery")
+async def source_discovery(
+    body: SourceDiscoveryRequest, request: Request
+) -> dict[str, object]:
+    """Discover RSS/Atom feed candidates for a website — NON-MUTATING.
+
+    Safe-fetches ONE page (never crawls), extracts explicit rel=alternate
+    declarations, and only when there are none probes a bounded set of
+    common feed endpoints. Candidates are not subscribed here — preview is
+    POST /api/v1/feed-preview, subscribing is POST /api/v1/subscriptions.
+    """
+    service = _get_discovery_service(request)
+    candidates = await service.discover(body.url)
+    return {
+        "candidates": [
+            {
+                "feedUrl": candidate.feed_url,
+                "title": candidate.title,
+                "source": candidate.source,
+                "format": candidate.format,
+            }
+            for candidate in candidates
+        ]
     }
 
 
