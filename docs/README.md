@@ -6,12 +6,13 @@
 
 ## Start Here
 
-**Active milestone**: —（0013 已完成；0014 待人工批准后开始）
+**Active milestone**: 0014 — Source Discovery & RSSHub Integration
+→ [milestones/0014-source-discovery-rsshub-integration.md](milestones/0014-source-discovery-rsshub-integration.md)
 
 **Last completed**: 0013 — Unified Subscription Center
 → [milestones/0013-unified-subscription-center.md](milestones/0013-unified-subscription-center.md)
 
-**Next planned**: 0014 — Source Discovery & RSSHub Integration
+**Next planned**: 0015 — AI Foundation & Summary
 
 ---
 
@@ -82,6 +83,6 @@ during normal development.
 | 0011 | Mobile UI Five-Screen Alignment | Completed |
 | 0012 | Reader Style Deep Customization | Completed |
 | 0013 | Unified Subscription Center | Completed |
-| 0014 | Source Discovery & RSSHub | Planned |
+| 0014 | Source Discovery & RSSHub | **In Progress** |
 | 0015 | AI Foundation & Summary | Planned |
 | 0016–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |
