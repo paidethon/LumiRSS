@@ -162,8 +162,15 @@ class Feed:
         )
 
 
-class FreshRSSAdapter:
-    """App-scoped adapter holding the auth token in process memory only."""
+class FreshRSSSession:
+    """Shared credential / token / transport state for FreshRSS adapters.
+
+    Owns the HTTP client reference, the ClientLogin auth token and the write
+    action token (all in process memory only). The read path
+    (FreshRSSAdapter) and the control plane (FreshRSSControlAdapter, 0013)
+    must share ONE session instance so login / action-token state is never
+    duplicated or desynchronized between adapters.
+    """
 
     def __init__(self, client: httpx.AsyncClient, settings: FreshRSSSettings) -> None:
         self._client = client
@@ -172,6 +179,166 @@ class FreshRSSAdapter:
         self._api_password = settings.FRESHRSS_API_PASSWORD
         self._auth_token: str | None = None
         self._action_token: str | None = None
+
+    async def _authorized_get_json(self, path: str, params: dict[str, str]) -> dict:
+        """GET <path> with the auth header; full error mapping; JSON dict."""
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/api/greader.php/{path}",
+                params=params,
+                headers={"Authorization": f"GoogleLogin auth={await self._get_auth_token()}"},
+            )
+        except _NETWORK_ERRORS as exc:
+            raise UpstreamConnectionError(
+                "Could not reach FreshRSS. Is the FreshRSS container running?"
+            ) from exc
+        if response.status_code == 401:
+            raise AuthenticationError("FreshRSS session token rejected.")
+        if response.status_code != 200:
+            raise UpstreamError(f"FreshRSS {path} returned HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise UpstreamError(f"FreshRSS {path} returned invalid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise UpstreamError(f"FreshRSS {path} JSON has unexpected shape.")
+        return payload
+
+    async def _authorized_get_raw(self, path: str) -> httpx.Response:
+        """GET <path> with the auth header; returns the RAW response.
+
+        Like _authorized_get_json but without the JSON contract — for
+        endpoints whose body is not JSON (0013 Gate 4: the OPML export).
+        Only network errors and 401 are mapped here; the caller interprets
+        the status and body.
+        """
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/api/greader.php/{path}",
+                headers={"Authorization": f"GoogleLogin auth={await self._get_auth_token()}"},
+            )
+        except _NETWORK_ERRORS as exc:
+            raise UpstreamConnectionError(
+                "Could not reach FreshRSS. Is the FreshRSS container running?"
+            ) from exc
+        if response.status_code == 401:
+            raise AuthenticationError("FreshRSS session token rejected.")
+        return response
+
+    async def _authorized_post_form(
+        self, path: str, fields: list[tuple[str, str]]
+    ) -> httpx.Response:
+        """POST <path> as urlencoded form fields with the auth header.
+
+        Returns the RAW response: mutation endpoints disagree on success
+        (subscription/edit ignores the action token entirely; rename-tag
+        validates it and answers 401 + Google-Bad-Token on garbage), so the
+        caller interprets status/body. Only network and 401 are mapped here.
+        Repeated form fields need manual urlencoding: httpx 0.28 treats a
+        list-of-tuples `data` as a sync stream (RuntimeError).
+        """
+        try:
+            response = await self._client.post(
+                f"{self._base_url}/api/greader.php/{path}",
+                content=urllib.parse.urlencode(fields),
+                headers={
+                    "Authorization": f"GoogleLogin auth={await self._get_auth_token()}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+        except _NETWORK_ERRORS as exc:
+            raise UpstreamConnectionError(
+                "Could not reach FreshRSS. Is the FreshRSS container running?"
+            ) from exc
+        if response.status_code == 401:
+            raise AuthenticationError("FreshRSS session token rejected.")
+        return response
+
+    async def _get_auth_token(self) -> str:
+        if self._auth_token is not None:
+            return self._auth_token
+        try:
+            response = await self._client.post(
+                f"{self._base_url}/api/greader.php/accounts/ClientLogin",
+                data={
+                    "Email": self._username,
+                    "Passwd": self._api_password.get_secret_value(),
+                },
+            )
+        except _NETWORK_ERRORS as exc:
+            raise UpstreamConnectionError(
+                "Could not reach FreshRSS. Is the FreshRSS container running?"
+            ) from exc
+        if response.status_code == 401:
+            raise AuthenticationError(
+                "FreshRSS rejected the credentials. Check FRESHRSS_API_PASSWORD."
+            )
+        if response.status_code != 200:
+            raise UpstreamError(
+                f"FreshRSS ClientLogin returned HTTP {response.status_code}."
+            )
+        token = self._extract_auth_token(response.text)
+        if token is None:
+            raise UpstreamError("FreshRSS ClientLogin response missing Auth token.")
+        self._auth_token = token
+        # A fresh login invalidates any cached action token with it.
+        self._action_token = None
+        return token
+
+    async def _get_action_token(self, auth_token: str) -> str:
+        """Fetch and cache the write action token (GET /token, memory only)."""
+        if self._action_token is not None:
+            return self._action_token
+        try:
+            response = await self._get_action_token_request(auth_token)
+        except AuthenticationError:
+            # Stale auth token: clear both tokens, re-login once, retry once.
+            self._clear_tokens()
+            auth_token = await self._get_auth_token()
+            response = await self._get_action_token_request(auth_token)
+        self._action_token = self._validate_action_token(response)
+        return self._action_token
+
+    async def _get_action_token_request(self, auth_token: str) -> httpx.Response:
+        try:
+            return await self._client.get(
+                f"{self._base_url}/api/greader.php/reader/api/0/token",
+                headers={"Authorization": f"GoogleLogin auth={auth_token}"},
+            )
+        except _NETWORK_ERRORS as exc:
+            raise UpstreamConnectionError(
+                "Could not reach FreshRSS. Is the FreshRSS container running?"
+            ) from exc
+
+    @staticmethod
+    def _validate_action_token(response: httpx.Response) -> str:
+        """Reject values that FreshRSS only accepts as legacy compatibility."""
+        if response.status_code == 401:
+            raise AuthenticationError("FreshRSS session token rejected.")
+        if response.status_code != 200:
+            raise UpstreamError(
+                f"FreshRSS token endpoint returned HTTP {response.status_code}."
+            )
+        token = response.text.strip()
+        if not token or token == "x":
+            raise UpstreamError("FreshRSS returned an unusable action token.")
+        return token
+
+    def _clear_tokens(self) -> None:
+        """Invalidate both tokens together (they share credential lifetime)."""
+        self._auth_token = None
+        self._action_token = None
+
+    @staticmethod
+    def _extract_auth_token(body: str) -> str | None:
+        for line in body.splitlines():
+            if line.startswith("Auth="):
+                return line[len("Auth="):].strip()
+        return None
+
+
+class FreshRSSAdapter(FreshRSSSession):
+    """Read-path adapter (feeds / entries / entry state)."""
 
     async def list_feeds(self) -> list[Feed]:
         """Return the LumiRSS feed list, logging in first if needed."""
@@ -285,37 +452,6 @@ class FreshRSSAdapter:
             contentHtml=base["content_html"] or None,
         )
 
-    async def _get_auth_token(self) -> str:
-        if self._auth_token is not None:
-            return self._auth_token
-        try:
-            response = await self._client.post(
-                f"{self._base_url}/api/greader.php/accounts/ClientLogin",
-                data={
-                    "Email": self._username,
-                    "Passwd": self._api_password.get_secret_value(),
-                },
-            )
-        except _NETWORK_ERRORS as exc:
-            raise UpstreamConnectionError(
-                "Could not reach FreshRSS. Is the FreshRSS container running?"
-            ) from exc
-        if response.status_code == 401:
-            raise AuthenticationError(
-                "FreshRSS rejected the credentials. Check FRESHRSS_API_PASSWORD."
-            )
-        if response.status_code != 200:
-            raise UpstreamError(
-                f"FreshRSS ClientLogin returned HTTP {response.status_code}."
-            )
-        token = self._extract_auth_token(response.text)
-        if token is None:
-            raise UpstreamError("FreshRSS ClientLogin response missing Auth token.")
-        self._auth_token = token
-        # A fresh login invalidates any cached action token with it.
-        self._action_token = None
-        return token
-
     async def set_entry_state(
         self,
         item_id: str,
@@ -345,45 +481,6 @@ class FreshRSSAdapter:
             response = await self._request_edit_tag(
                 auth_token, action_token, item_id, read=read, starred=starred
             )
-
-    async def _get_action_token(self, auth_token: str) -> str:
-        """Fetch and cache the write action token (GET /token, memory only)."""
-        if self._action_token is not None:
-            return self._action_token
-        try:
-            response = await self._get_action_token_request(auth_token)
-        except AuthenticationError:
-            # Stale auth token: clear both tokens, re-login once, retry once.
-            self._clear_tokens()
-            auth_token = await self._get_auth_token()
-            response = await self._get_action_token_request(auth_token)
-        self._action_token = self._validate_action_token(response)
-        return self._action_token
-
-    async def _get_action_token_request(self, auth_token: str) -> httpx.Response:
-        try:
-            return await self._client.get(
-                f"{self._base_url}/api/greader.php/reader/api/0/token",
-                headers={"Authorization": f"GoogleLogin auth={auth_token}"},
-            )
-        except _NETWORK_ERRORS as exc:
-            raise UpstreamConnectionError(
-                "Could not reach FreshRSS. Is the FreshRSS container running?"
-            ) from exc
-
-    @staticmethod
-    def _validate_action_token(response: httpx.Response) -> str:
-        """Reject values that FreshRSS only accepts as legacy compatibility."""
-        if response.status_code == 401:
-            raise AuthenticationError("FreshRSS session token rejected.")
-        if response.status_code != 200:
-            raise UpstreamError(
-                f"FreshRSS token endpoint returned HTTP {response.status_code}."
-            )
-        token = response.text.strip()
-        if not token or token == "x":
-            raise UpstreamError("FreshRSS returned an unusable action token.")
-        return token
 
     async def _request_edit_tag(
         self,
@@ -577,11 +674,6 @@ class FreshRSSAdapter:
             raise UpstreamError("FreshRSS items/contents JSON has unexpected shape.")
         return payload
 
-    def _clear_tokens(self) -> None:
-        """Invalidate both tokens together (they share credential lifetime)."""
-        self._auth_token = None
-        self._action_token = None
-
     @staticmethod
     def _continuation_of(payload: dict) -> str | None:
         continuation = payload.get("continuation")
@@ -652,13 +744,6 @@ class FreshRSSAdapter:
         if isinstance(summary, dict) and isinstance(summary.get("content"), str):
             return summary["content"]
         return ""
-
-    @staticmethod
-    def _extract_auth_token(body: str) -> str | None:
-        for line in body.splitlines():
-            if line.startswith("Auth="):
-                return line[len("Auth="):].strip()
-        return None
 
     @staticmethod
     def _parse_subscriptions(payload: dict) -> list[Feed]:

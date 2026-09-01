@@ -29,9 +29,9 @@ jobs:
           required_files=(
             "README.md"
             "AGENTS.md"
-            "docs/PRD.md"
-            "docs/ARCHITECTURE.md"
-            "docs/PROJECT_STATE.md"
+            "docs/README.md"
+            "docs/product/PRD.md"
+            "docs/architecture/README.md"
           )
 
           for file in "${required_files[@]}"; do

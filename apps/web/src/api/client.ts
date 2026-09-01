@@ -4,9 +4,15 @@
 import { toApiView, type UiView } from '../lib/read-later'
 import type {
   ApiErrorResponse,
+  Category,
   EntryDetail,
   EntryListResponse,
   Feed,
+  FeedPreviewMetadata,
+  FreshRssUiInfo,
+  OpmlImportPreview,
+  OpmlImportResult,
+  Subscription,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -62,7 +68,12 @@ async function toApiError(response: Response): Promise<ApiError> {
  * 由调用方决定是否解析 JSON（PATCH 204 无响应体，不能 json()）。 */
 async function rawRequest(
   path: string,
-  init?: { method?: string; body?: string; contentType?: string; signal?: AbortSignal },
+  init?: {
+    method?: string
+    body?: BodyInit
+    contentType?: string
+    signal?: AbortSignal
+  },
 ): Promise<Response> {
   if (init?.signal?.aborted) {
     throw new DOMException('The request was aborted.', 'AbortError')
@@ -102,6 +113,27 @@ async function request<T>(
 
 export async function getFeeds(signal?: AbortSignal): Promise<Feed[]> {
   return request<Feed[]>(`${API_BASE}/feeds`, signal)
+}
+
+/** 0013 Gate 1：分类列表（含空分类，与 feeds 的 category 同一契约）。 */
+export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
+  return request<Category[]>(`${API_BASE}/categories`, signal)
+}
+
+/** 0013 Gate 3：管理视角订阅列表（含 opaque subscriptionRef，前端只透传）。 */
+export async function getSubscriptions(signal?: AbortSignal): Promise<Subscription[]> {
+  return request<Subscription[]>(`${API_BASE}/subscriptions`, signal)
+}
+
+/** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——
+ * POST 语义与 Mutation 一致，避免预览中途被取消造成状态不一致）。 */
+export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata> {
+  const response = await rawRequest(`${API_BASE}/feed-preview`, {
+    method: 'POST',
+    body: JSON.stringify({ feedUrl }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as FeedPreviewMetadata
 }
 
 export async function getEntries(
@@ -163,4 +195,93 @@ export async function setEntryState(
     body: JSON.stringify(patch),
     contentType: 'application/json',
   })
+}
+
+/** 0013 Gate 1：订阅一个 feed URL（server-confirmed；成功返回新订阅）。
+ * 与 setEntryState 同理：不接 AbortSignal，mutation 一旦发出就允许完成。 */
+export async function subscribeFeed(
+  feedUrl: string,
+  body: { categoryId?: string | null; title?: string | null } = {},
+): Promise<Subscription> {
+  const response = await rawRequest(`${API_BASE}/subscriptions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      feedUrl,
+      ...(body.categoryId != null ? { categoryId: body.categoryId } : {}),
+      ...(body.title != null ? { title: body.title } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Subscription
+}
+
+/** 0013 Gate 3：把订阅移动到已有分类或新建分类（PATCH 204，无响应体）。
+ * 与 setEntryState 同理：不接 AbortSignal，mutation 一旦发出就允许完成。 */
+export async function moveSubscription(
+  subscriptionRef: string,
+  body: { categoryId: string } | { newCategoryLabel: string },
+): Promise<void> {
+  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+}
+
+/** 0013 Gate 3：取消订阅（破坏性操作，确认流程由 UI 负责；DELETE 204）。 */
+export async function unsubscribeFeed(subscriptionRef: string): Promise<void> {
+  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 0013 Gate 3：重命名分类（PATCH 204；409 冲突/默认分类不可改）。 */
+export async function renameCategory(categoryId: string, label: string): Promise<void> {
+  await rawRequest(`${API_BASE}/categories/${encodeURIComponent(categoryId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ label }),
+    contentType: 'application/json',
+  })
+}
+
+/** 0013 Gate 4：导出 OPML（BFF 代理 FreshRSS subscription/export；
+ * 浏览器不接触 FreshRSS 凭据）。成功即触发下载；失败抛 ApiError。 */
+export async function exportOpml(): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/opml/export`)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `LumiRSS-subscriptions-${new Date().toISOString().slice(0, 10)}.opml`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+/** 0013 Gate 4：OPML 导入预览（无副作用；原始字节上传，BFF 负责
+ * bounded read + defusedxml 安全解析）。不接 AbortSignal——与其它
+ * mutation 语义一致，一旦发出就允许完成。 */
+export async function previewOpmlImport(file: File): Promise<OpmlImportPreview> {
+  const response = await rawRequest(`${API_BASE}/opml/import/preview`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlImportPreview
+}
+
+/** 0013 Gate 4：确认导入（merge 语义；文件重新上传、服务端重新解析
+ * 并重新读取 FreshRSS，预览仅供参考）。成功后由调用方 invalidate。 */
+export async function importOpml(file: File): Promise<OpmlImportResult> {
+  const response = await rawRequest(`${API_BASE}/opml/import`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlImportResult
+}
+
+/** 0013 Gate 4：FreshRSS 高级逃生入口（未配置 → null；BFF 永不暴露
+ * 内部 base URL）。 */
+export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
+  return request<FreshRssUiInfo>(`${API_BASE}/freshrss-ui`, signal)
 }

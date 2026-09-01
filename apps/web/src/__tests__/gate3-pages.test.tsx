@@ -18,6 +18,13 @@ const FEEDS = [
   { title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null },
 ]
 
+// 「今天」动态生成：分组断言（最近收藏 = 今天）依赖当天日期，固定日期会随时间过期
+const NOW = new Date()
+const TODAY_ISO = NOW.toISOString()
+const TODAY_MMDD = `${String(NOW.getMonth() + 1).padStart(2, '0')}/${String(
+  NOW.getDate(),
+).padStart(2, '0')}`
+
 function item(ref: string, overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
     entryRef: ref,
@@ -25,7 +32,7 @@ function item(ref: string, overrides: Partial<EntryListItem> = {}): EntryListIte
     feedTitle: '示例源 A',
     author: null,
     url: null,
-    publishedAt: '2026-08-30T00:00:00Z',
+    publishedAt: TODAY_ISO,
     read: false,
     starred: false,
     ...overrides,
@@ -42,7 +49,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 /** entries + detail 的 fetch mock */
 function mockApi(
   entriesHandler: () => EntryListResponse = () => ({
-    items: [item('e1.a'), item('e1.b', { read: true, starred: true, publishedAt: '2026-08-01T00:00:00Z' })],
+    items: [item('e1.a'), item('e1.b', { read: true, starred: true, publishedAt: '2020-01-01T00:00:00Z' })],
     nextCursor: null,
   }),
 ) {
@@ -73,7 +80,7 @@ describe('EntryCard（AC10）', () => {
     // 卡根为 div：标题区按钮承载可访问名（含 feedTitle+时间）
     const cardBtn = screen.getByRole('button', { name: /示例源 A/ })
     expect(cardBtn.textContent).toContain('示例源 A')
-    expect(cardBtn.textContent).toContain('08/30') // 真实 publishedAt 格式化
+    expect(cardBtn.textContent).toContain(TODAY_MMDD) // 真实 publishedAt 格式化（本地时区）
     const title = screen.getByText('文章 e1.a')
     expect(title.className).toContain('font-medium') // 未读
     // 动作区：稍后读 + 收藏按钮（§19）
@@ -110,7 +117,7 @@ describe('FavoritesPage（AC5）', () => {
     expect(
       fetchMock.mock.calls.some((c) => String(c[0]).includes('view=starred')),
     ).toBe(true)
-    // 分组小节：今天=最近收藏，8月1日=更早
+    // 分组小节：今天=最近收藏，远期日期=更早
     expect(screen.getByText('最近收藏')).toBeInTheDocument()
     expect(screen.getByText('更早')).toBeInTheDocument()
     expect(screen.getByText('文章 e1.b')).toBeInTheDocument()

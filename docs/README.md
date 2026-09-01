@@ -6,12 +6,12 @@
 
 ## Start Here
 
-**Active milestone**: None (0012 completed; awaiting next milestone approval)
+**Active milestone**: —（0013 已完成；0014 待人工批准后开始）
 
-**Last completed**: 0012 — Reader Style Deep Customization
-→ [milestones/0012-reader-style-deep-customization.md](milestones/0012-reader-style-deep-customization.md)
+**Last completed**: 0013 — Unified Subscription Center
+→ [milestones/0013-unified-subscription-center.md](milestones/0013-unified-subscription-center.md)
 
-**Next planned**: 0013 — Unified Subscription Center
+**Next planned**: 0014 — Source Discovery & RSSHub Integration
 
 ---
 
@@ -81,7 +81,7 @@ during normal development.
 | 0010 | Settings Center & Adaptive Shell (+0010a) | Completed |
 | 0011 | Mobile UI Five-Screen Alignment | Completed |
 | 0012 | Reader Style Deep Customization | Completed |
-| 0013 | Unified Subscription Center | Planned |
+| 0013 | Unified Subscription Center | Completed |
 | 0014 | Source Discovery & RSSHub | Planned |
 | 0015 | AI Foundation & Summary | Planned |
 | 0016–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |

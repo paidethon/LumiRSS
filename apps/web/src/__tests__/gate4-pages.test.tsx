@@ -1,7 +1,8 @@
-/** Gate 4 测试 — Subscriptions & Search Surfaces（0011 Spec AC11）。
+/** Gate 4 测试 — Subscriptions & Search Surfaces（0011 Spec AC11；
+ * 0013 Gate 3 后订阅页改为管理视角 /api/v1/subscriptions 契约）。
  *
- * - SubscriptionsPage：真实只读 feeds + 本地过滤 + CRUD 禁用 0013 徽标
- *   + 未分组折叠 + 点 feed 回首页；
+ * - SubscriptionsPage：真实分类分组 + 本地过滤 + OPML 真实入口
+ *   （0013 Gate 4）+ 点 feed 回首页；
  * - SearchPage：提交/取消/历史（上限/去重/单条删/清空）+ 诚实空态
  *   （不冒充全局搜索）；
  * - search-history 纯函数单测。 */
@@ -19,10 +20,30 @@ import {
   removeFromSearchHistory,
 } from '../lib/search-history'
 
-const FEEDS = [
-  { title: '阮一峰的网络日志', feedUrl: 'https://www.ruanyifeng.com/blog/atom.xml', category: null },
-  { title: 'IT之家', feedUrl: 'https://ithome.com/rss', category: null },
-  { title: 'OpenAI Blog', feedUrl: 'https://openai.com/blog/rss.xml', category: null },
+const SUBSCRIPTIONS = [
+  {
+    subscriptionRef: 's1.ZmVlZC8x',
+    title: '阮一峰的网络日志',
+    feedUrl: 'https://www.ruanyifeng.com/blog/atom.xml',
+    category: { id: 'user/-/label/技术', label: '技术' },
+  },
+  {
+    subscriptionRef: 's1.ZmVlZC8y',
+    title: 'IT之家',
+    feedUrl: 'https://ithome.com/rss',
+    category: { id: 'user/-/label/技术', label: '技术' },
+  },
+  {
+    subscriptionRef: 's1.ZmVlZC8z',
+    title: 'OpenAI Blog',
+    feedUrl: 'https://openai.com/blog/rss.xml',
+    category: null,
+  },
+]
+
+const CATEGORIES = [
+  { id: 'user/-/label/技术', label: '技术' },
+  { id: 'user/-/label/未分类', label: '未分类' },
 ]
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -52,56 +73,65 @@ describe('SubscriptionsPage（AC11）', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
-        if (String(input).startsWith('/api/v1/feeds')) return jsonResponse(FEEDS)
-        throw new Error(`unexpected fetch: ${input}`)
+        const url = String(input)
+        if (url === '/api/v1/subscriptions') return jsonResponse(SUBSCRIPTIONS)
+        if (url === '/api/v1/categories') return jsonResponse(CATEGORIES)
+        throw new Error(`unexpected fetch: ${url}`)
       }),
     )
     return render(withProviders(<SubscriptionsPage />))
   }
 
-  it('真实只读 feed 列表：标题 + feedUrl（统一 RSS 图标，无 favicon 抓取）', async () => {
+  it('真实订阅列表：标题 + 域名（统一 RSS 图标，无 favicon 抓取）', async () => {
     renderPage()
     expect(await screen.findByText('阮一峰的网络日志')).toBeInTheDocument()
-    expect(screen.getByText('https://ithome.com/rss')).toBeInTheDocument()
-    expect(screen.getByText('https://openai.com/blog/rss.xml')).toBeInTheDocument()
+    expect(screen.getByText('ithome.com')).toBeInTheDocument()
+    expect(screen.getByText('openai.com')).toBeInTheDocument()
   })
 
-  it('未分组折叠：aria-expanded/controls + 数量；点击折叠隐藏列表', async () => {
+  it('真实分类分组：技术（2）+ 未分组（1）；点击折叠隐藏列表', async () => {
     renderPage()
     await screen.findByText('阮一峰的网络日志')
-    const toggle = screen.getByRole('button', { name: /未分组/ })
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(toggle).toHaveAttribute('aria-controls', 'subscriptions-ungrouped')
-    expect(toggle.textContent).toContain('3')
-    fireEvent.click(toggle)
+    const techToggle = screen.getByRole('button', { name: /^技术/ })
+    expect(techToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(techToggle.textContent).toContain('2')
+    const ungrouped = screen.getByRole('button', { name: /未分组/ })
+    expect(ungrouped.textContent).toContain('1')
+    fireEvent.click(techToggle)
     expect(screen.queryByText('阮一峰的网络日志')).toBeNull()
+    // 未分组不受影响
+    expect(screen.getByText('OpenAI Blog')).toBeInTheDocument()
   })
 
-  it('本地过滤：输入关键词 → 只剩匹配项；计数 x/y 诚实显示', async () => {
+  it('本地过滤：输入关键词 → 只剩匹配项；分组计数同步', async () => {
     renderPage()
     await screen.findByText('阮一峰的网络日志')
     const input = screen.getByRole('searchbox', { name: '搜索订阅源' })
     fireEvent.change(input, { target: { value: 'IT之家' } })
     expect(screen.getByText('IT之家')).toBeInTheDocument()
     expect(screen.queryByText('阮一峰的网络日志')).toBeNull()
-    // 计数：过滤后 / 总数
-    expect(screen.getByText('1 / 3')).toBeInTheDocument()
+    expect(screen.queryByText('OpenAI Blog')).toBeNull()
+    // 技术组只剩 1 个匹配
+    expect(screen.getByRole('button', { name: /^技术/ }).textContent).toContain('1')
   })
 
-  it('CRUD 动作禁用 + 0013 徽标（添加 RSS / OPML / 分组管理）', async () => {
+  it('OPML 导入真实入口（0013 Gate 4）；添加 RSS 已是真实入口（Gate 2）', async () => {
     renderPage()
     await screen.findByText('阮一峰的网络日志')
-    for (const label of ['添加 RSS', 'OPML 导入', '分组管理']) {
-      const el = screen.getByText(label).closest('[aria-disabled="true"]')
-      expect(el).not.toBeNull()
-    }
-    const badges = screen.getAllByText('0013')
-    expect(badges.length).toBe(3)
-    // 无可点击的假按钮
-    expect(screen.queryByRole('button', { name: /添加 RSS/ })).toBeNull()
+    // 添加 RSS + 导入 OPML：均为真实可点击按钮（不再有 disabled 版本）
+    expect(screen.queryByRole('button', { name: /添加 RSS/ })).not.toBeDisabled()
+    expect(screen.queryByRole('button', { name: /导入 OPML/ })).not.toBeDisabled()
   })
 
-  it('点 feed → section 回首页 + selectedFeedUrl 更新（AC4 语义）', async () => {
+  it('添加 RSS：打开预览对话框（0013 Gate 2）', async () => {
+    renderPage()
+    await screen.findByText('阮一峰的网络日志')
+    fireEvent.click(screen.getByRole('button', { name: /添加 RSS/ }))
+    expect(await screen.findByRole('dialog', { name: '添加订阅' })).toBeInTheDocument()
+    expect(screen.getByLabelText('RSS / Atom 地址')).toBeInTheDocument()
+  })
+
+  it('点 feed → section 回首页 + scope 更新（AC4 语义）', async () => {
     renderPage()
     fireEvent.click(await screen.findByText('阮一峰的网络日志'))
     const s = useReaderUi.getState()
@@ -113,11 +143,16 @@ describe('SubscriptionsPage（AC11）', () => {
     let fail = true
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation(() =>
-        fail
-          ? jsonResponse({ error: { type: 'upstream_error', message: '上游不可用' } }, 502)
-          : jsonResponse(FEEDS),
-      ),
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/categories') return jsonResponse(CATEGORIES)
+        if (url === '/api/v1/subscriptions') {
+          return fail
+            ? jsonResponse({ error: { type: 'upstream_error', message: '上游不可用' } }, 502)
+            : jsonResponse(SUBSCRIPTIONS)
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
     )
     render(withProviders(<SubscriptionsPage />))
     expect(await screen.findByText('订阅加载失败')).toBeInTheDocument()
@@ -129,7 +164,12 @@ describe('SubscriptionsPage（AC11）', () => {
   it('无订阅：空态（FreshRSS 语义，不编造示例源）', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation(() => jsonResponse([])),
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/subscriptions') return jsonResponse([])
+        if (url === '/api/v1/categories') return jsonResponse(CATEGORIES)
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
     )
     render(withProviders(<SubscriptionsPage />))
     expect(await screen.findByText('还没有订阅源')).toBeInTheDocument()
