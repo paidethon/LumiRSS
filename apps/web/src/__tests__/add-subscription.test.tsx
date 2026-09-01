@@ -368,4 +368,69 @@ describe('AddSourceDialog — a11y / 交互', () => {
     resolvePreview(jsonResponse(PREVIEW))
     await screen.findByText('Example Feed')
   })
+
+  it('提交中 Escape：busy 防护拒绝关闭且不重置状态', async () => {
+    const onClose = vi.fn()
+    let resolveSubscribe: (value: Response) => void = () => {}
+    const deferred = new Promise<Response>((resolve) => {
+      resolveSubscribe = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/feed-preview') return Promise.resolve(jsonResponse(PREVIEW))
+        if (url === '/api/v1/categories') return Promise.resolve(jsonResponse([CATEGORY]))
+        if (init?.method === 'POST' && url === '/api/v1/subscriptions') {
+          return deferred
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+    )
+    render(withProviders(<AddSourceDialog open onClose={onClose} />))
+    await previewUrl(FEED_URL)
+    const combobox = await screen.findByRole('combobox', { name: '分类' })
+    fireEvent.change(combobox, { target: { value: CATEGORY.id } })
+    fireEvent.click(screen.getByRole('button', { name: '确认添加' }))
+    // 订阅 pending 时按 Escape：不关闭、不重置、不丢预览状态
+    const pending = await screen.findByRole('button', { name: /添加中/ })
+    fireEvent.keyDown(pending, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByText('Example Feed')).toBeInTheDocument()
+    // 完成后可正常关闭
+    resolveSubscribe(jsonResponse(SUBSCRIPTION, 201))
+    await screen.findByText('已添加订阅')
+    fireEvent.click(screen.getByRole('button', { name: '完成' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('关闭后重开：回到默认 RSS/Atom tab', async () => {
+    const fetchState = makeFetchHandler({
+      'GET /api/v1/categories': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetchState.fn)
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button type="button" data-testid="toggle" onClick={() => setOpen((v) => !v)}>
+            toggle
+          </button>
+          <AddSourceDialog open={open} onClose={() => setOpen(false)} />
+        </>
+      )
+    }
+    render(withProviders(<Harness />))
+    fireEvent.click(screen.getByTestId('toggle'))
+    fireEvent.click(screen.getByRole('tab', { name: '网站' }))
+    expect(screen.getByLabelText('网站地址')).toBeInTheDocument()
+    // 取消 → 重开：回到 RSS/Atom tab
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByTestId('toggle'))
+    expect(screen.getByLabelText('RSS / Atom 地址')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'RSS / Atom' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+  })
 })

@@ -37,18 +37,17 @@ export default function AddSourceDialog({
 }) {
   const [tab, setTab] = useState<SourceTab>('rss')
 
-  // 当前 tab 注册的关闭防护（busy 时拒绝关闭）
-  const guardRef = useRef<(() => void) | null>(null)
-  const registerGuard = useCallback((fn: (() => void) | null) => {
+  // 当前 tab 注册的关闭防护：返回 false = busy，拒绝关闭
+  const guardRef = useRef<(() => boolean) | null>(null)
+  const registerGuard = useCallback((fn: (() => boolean) | null) => {
     guardRef.current = fn
   }, [])
 
   const close = useCallback(() => {
-    if (guardRef.current !== null) guardRef.current()
-    else onClose()
-    // 关闭时复位模式与防护（下次打开从 RSS/Atom 开始）
-    setTab('rss')
+    if (guardRef.current !== null && !guardRef.current()) return
     guardRef.current = null
+    setTab('rss') // 关闭后复位模式（下次打开从 RSS/Atom 开始）
+    onClose()
   }, [onClose])
 
   function onTabKeyDown(event: React.KeyboardEvent, current: SourceTab) {
@@ -106,13 +105,13 @@ export default function AddSourceDialog({
         className="flex flex-col"
       >
         {tab === 'rss' && (
-          <DirectFeedTab onClose={onClose} registerGuard={registerGuard} />
+          <DirectFeedTab onClose={close} registerGuard={registerGuard} />
         )}
         {tab === 'website' && (
-          <WebsiteTab onClose={onClose} registerGuard={registerGuard} />
+          <WebsiteTab onClose={close} registerGuard={registerGuard} />
         )}
         {tab === 'rsshub' && (
-          <RssHubTab onClose={onClose} registerGuard={registerGuard} />
+          <RssHubTab onClose={close} registerGuard={registerGuard} />
         )}
       </div>
     </Dialog>

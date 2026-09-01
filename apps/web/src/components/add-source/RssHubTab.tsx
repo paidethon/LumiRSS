@@ -38,13 +38,13 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
 
   const busy =
     previewMutation.isPending || subscribeMutation.isPending || subscribed
+  // 关闭防护只挡 pending（成功后允许 Escape / 完成关闭）
+  const pending = previewMutation.isPending || subscribeMutation.isPending
 
   useEffect(() => {
-    registerGuard(() => {
-      if (!busy) onClose()
-    })
+    registerGuard(() => !pending)
     return () => registerGuard(null)
-  }, [busy, onClose, registerGuard])
+  }, [pending, registerGuard])
 
   const routesData = routesQuery.data
   const routes = useMemo(() => routesData?.routes ?? [], [routesData])

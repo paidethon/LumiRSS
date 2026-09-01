@@ -43,13 +43,16 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
     previewMutation.isPending ||
     subscribeMutation.isPending ||
     subscribed
+  // 关闭防护只挡 pending（成功后允许 Escape / 完成关闭）
+  const pending =
+    discoveryMutation.isPending ||
+    previewMutation.isPending ||
+    subscribeMutation.isPending
 
   useEffect(() => {
-    registerGuard(() => {
-      if (!busy) onClose()
-    })
+    registerGuard(() => !pending)
     return () => registerGuard(null)
-  }, [busy, onClose, registerGuard])
+  }, [pending, registerGuard])
 
   function startDiscovery() {
     const value = url.trim()

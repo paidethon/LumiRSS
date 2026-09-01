@@ -19,9 +19,10 @@ import { cx } from '../ui/cx'
 import { PreviewStage } from './PreviewStage'
 
 export interface AddSourceTabProps {
+  /** 对话框级受防护的关闭（busy 时拒绝，取消/完成/Escape/遮罩共用） */
   onClose: () => void
-  /** 注册「关闭前防护」：busy 时忽略关闭（Escape / 遮罩） */
-  registerGuard: (fn: (() => void) | null) => void
+  /** 注册关闭防护谓词：返回 false = busy 拒绝关闭 */
+  registerGuard: (fn: (() => boolean) | null) => void
 }
 
 export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
@@ -35,13 +36,14 @@ export function DirectFeedTab({ onClose, registerGuard }: AddSourceTabProps) {
 
   const busy =
     previewMutation.isPending || subscribeMutation.isPending || subscribed
+  // 关闭防护只挡 pending（成功后允许 Escape / 完成关闭）
+  const pending =
+    previewMutation.isPending || subscribeMutation.isPending
 
   useEffect(() => {
-    registerGuard(() => {
-      if (!busy) onClose()
-    })
+    registerGuard(() => !pending)
     return () => registerGuard(null)
-  }, [busy, onClose, registerGuard])
+  }, [pending, registerGuard])
 
   function startPreview() {
     const value = url.trim()
