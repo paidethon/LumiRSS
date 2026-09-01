@@ -82,7 +82,7 @@ async function rawRequest(
   try {
     response = await fetch(path, {
       method: init?.method,
-      body: init?.body as string | undefined,
+      body: init?.body,
       headers:
         init?.contentType !== undefined
           ? { 'Content-Type': init.contentType }
