@@ -48,6 +48,7 @@ __all__ = [
     "NotAFeedError",
     "UnsafeFeedUrl",
     "parse_feed_document",
+    "read_bounded_body",
     "safe_fetch",
     "validate_feed_url",
 ]
@@ -275,7 +276,7 @@ async def safe_fetch(
                     f"The feed URL answered HTTP {response.status_code}."
                 )
             return FetchedDocument(
-                body=await _bounded_body(response),
+                body=await read_bounded_body(response),
                 final_url=current,
                 content_type=response.headers.get("content-type"),
             )
@@ -294,7 +295,9 @@ async def _send(client: httpx.AsyncClient, url: str) -> httpx.Response:
         raise FeedFetchError("The feed URL could not be reached.") from exc
 
 
-async def _bounded_body(response: httpx.Response) -> bytes:
+async def read_bounded_body(response: httpx.Response) -> bytes:
+    """Stream a response body with a hard cap (Content-Length fast path +
+    streamed read limit). Shared by feed preview, discovery and RSSHub."""
     if (length := response.headers.get("content-length")) is not None:
         try:
             if int(length) > MAX_FEED_BODY_BYTES:

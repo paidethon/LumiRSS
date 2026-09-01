@@ -47,6 +47,13 @@ from lumirss.opml import (
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.rsshub import (
+    RssHubFetchError,
+    RssHubInvalidParameters,
+    RssHubNotConfigured,
+    RssHubRouteNotFound,
+    RssHubService,
+)
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
@@ -71,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
     app.state.source_discovery_service = None
+    app.state.rsshub_service = None
     yield
     await app.state.http_client.aclose()
 
@@ -115,6 +123,11 @@ _ERROR_RESPONSES = {
     # 0014 source discovery
     InvalidSourceUrl: (400, "invalid_source_url"),
     NoFeedDiscovered: (404, "no_feed_discovered"),
+    # 0014 RSSHub
+    RssHubNotConfigured: (503, "rsshub_not_configured"),
+    RssHubRouteNotFound: (404, "rsshub_route_not_found"),
+    RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
+    RssHubFetchError: (502, "rsshub_fetch_error"),
 }
 
 
@@ -144,6 +157,10 @@ _ERROR_RESPONSES = {
 @app.exception_handler(OpmlTooManyFeeds)
 @app.exception_handler(InvalidSourceUrl)
 @app.exception_handler(NoFeedDiscovered)
+@app.exception_handler(RssHubNotConfigured)
+@app.exception_handler(RssHubRouteNotFound)
+@app.exception_handler(RssHubInvalidParameters)
+@app.exception_handler(RssHubFetchError)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -492,6 +509,92 @@ async def source_discovery(
             }
             for candidate in candidates
         ]
+    }
+
+
+class RssHubPreviewRequest(BaseModel):
+    """POST /api/v1/rsshub/preview body (0014): route + parameter values."""
+
+    routeId: str = Field(min_length=1)
+    params: dict[str, str] = Field(default_factory=dict)
+
+
+def _get_rsshub_service(request: Request) -> RssHubService:
+    """RssHubService over the shared HTTP client + control adapter.
+
+    Built lazily like the other services; the control adapter is only
+    READ (alreadySubscribed) — preview never mutates subscriptions.
+    """
+    service = request.app.state.rsshub_service
+    if service is None:
+        service = RssHubService(
+            request.app.state.http_client, _get_control_adapter(request)
+        )
+        request.app.state.rsshub_service = service
+    return service
+
+
+@app.get("/api/v1/rsshub/routes")
+async def rsshub_routes(request: Request) -> dict[str, object]:
+    """Lumi-owned RSSHub route catalog (static, always available).
+
+    ``configured`` reports whether the server has an RSSHUB_BASE_URL —
+    the catalog itself is independent of the instance. Route descriptors
+    carry enough metadata for the Web to render parameter forms; path
+    construction happens server-side on preview.
+    """
+    service = _get_rsshub_service(request)
+    try:
+        service.load_settings()
+        configured = True
+    except RssHubNotConfigured:
+        configured = False
+    return {
+        "configured": configured,
+        "routes": [
+            {
+                "id": route.id,
+                "title": route.title,
+                "description": route.description,
+                "pathTemplate": route.path_template,
+                "parameters": [
+                    {
+                        "key": parameter.key,
+                        "label": parameter.label,
+                        "required": parameter.required,
+                        "pattern": parameter.pattern,
+                        "example": parameter.example,
+                        "help": parameter.help,
+                    }
+                    for parameter in route.parameters
+                ],
+            }
+            for route in service.list_routes()
+        ],
+    }
+
+
+@app.post("/api/v1/rsshub/preview")
+async def rsshub_preview(
+    body: RssHubPreviewRequest, request: Request
+) -> dict[str, object]:
+    """Preview one configured RSSHub route — NON-MUTATING.
+
+    Constructs the path server-side (validated + encoded parameters),
+    fetches the generated feed from the server-configured RSSHub
+    instance, parses offline and reads the subscription list for
+    alreadySubscribed. The returned feedUrl is the FreshRSS-facing
+    subscription URL; subscribing is POST /api/v1/subscriptions (0013).
+    """
+    service = _get_rsshub_service(request)
+    preview = await service.preview(body.routeId, body.params)
+    return {
+        "title": preview.title,
+        "feedUrl": preview.feed_url,
+        "siteUrl": preview.site_url,
+        "description": preview.description,
+        "format": preview.format,
+        "alreadySubscribed": preview.already_subscribed,
     }
 
 
