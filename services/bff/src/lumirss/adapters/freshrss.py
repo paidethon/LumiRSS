@@ -238,7 +238,7 @@ class FreshRSSSession:
         list-of-tuples `data` as a sync stream (RuntimeError).
         """
         try:
-            return await self._client.post(
+            response = await self._client.post(
                 f"{self._base_url}/api/greader.php/{path}",
                 content=urllib.parse.urlencode(fields),
                 headers={
@@ -250,6 +250,9 @@ class FreshRSSSession:
             raise UpstreamConnectionError(
                 "Could not reach FreshRSS. Is the FreshRSS container running?"
             ) from exc
+        if response.status_code == 401:
+            raise AuthenticationError("FreshRSS session token rejected.")
+        return response
 
     async def _get_auth_token(self) -> str:
         if self._auth_token is not None:
