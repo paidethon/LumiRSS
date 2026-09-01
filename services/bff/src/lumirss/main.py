@@ -17,10 +17,40 @@ from lumirss.adapters.freshrss import (
     UpstreamConnectionError,
     UpstreamError,
 )
+from lumirss.adapters.freshrss_control import (
+    CategoryLabelConflict,
+    CategoryNotFound,
+    DefaultCategoryImmutable,
+    FeedRejectedError,
+    FreshRSSControlAdapter,
+    InvalidCategoryLabel,
+    InvalidCategoryReference,
+    InvalidFeedUrl,
+    SubscriptionConflict,
+    SubscriptionNotFound,
+)
 from lumirss.config import FreshRSSSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+from lumirss.feed_preview import (
+    FeedFetchError,
+    FeedPreviewService,
+    FeedTooLarge,
+    NotAFeedError,
+    UnsafeFeedUrl,
+)
 from lumirss.models import EntryDetail, EntryListResponse
+from lumirss.opml import (
+    MAX_OPML_BYTES,
+    OpmlInvalid,
+    OpmlService,
+    OpmlTooLarge,
+    OpmlTooManyFeeds,
+)
+from lumirss.subscriptionref import (
+    InvalidSubscriptionReference,
+    decode_subscription_ref,
+)
 
 
 @asynccontextmanager
@@ -33,6 +63,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trust_env=False,
     )
     app.state.freshrss_adapter = None
+    app.state.freshrss_control_adapter = None
+    app.state.feed_preview_service = None
     yield
     await app.state.http_client.aclose()
 
@@ -54,6 +86,26 @@ _ERROR_RESPONSES = {
     InvalidEntryReference: (400, "invalid_entry_reference"),
     EntryNotFound: (404, "entry_not_found"),
     InvalidCursor: (400, "invalid_cursor"),
+    # 0013 control plane
+    InvalidSubscriptionReference: (400, "invalid_subscription_reference"),
+    InvalidFeedUrl: (400, "invalid_feed_url"),
+    FeedRejectedError: (400, "feed_rejected"),
+    SubscriptionConflict: (409, "subscription_conflict"),
+    SubscriptionNotFound: (404, "subscription_not_found"),
+    InvalidCategoryReference: (400, "invalid_category_reference"),
+    InvalidCategoryLabel: (400, "invalid_category_label"),
+    CategoryNotFound: (404, "category_not_found"),
+    CategoryLabelConflict: (409, "category_label_conflict"),
+    DefaultCategoryImmutable: (409, "default_category_immutable"),
+    # 0013 Gate 2 preview
+    UnsafeFeedUrl: (400, "unsafe_feed_url"),
+    FeedFetchError: (502, "feed_fetch_error"),
+    FeedTooLarge: (413, "feed_too_large"),
+    NotAFeedError: (400, "not_a_feed"),
+    # 0013 Gate 4 OPML
+    OpmlInvalid: (400, "opml_invalid"),
+    OpmlTooLarge: (413, "opml_too_large"),
+    OpmlTooManyFeeds: (400, "opml_too_many_feeds"),
 }
 
 
@@ -64,6 +116,23 @@ _ERROR_RESPONSES = {
 @app.exception_handler(InvalidEntryReference)
 @app.exception_handler(EntryNotFound)
 @app.exception_handler(InvalidCursor)
+@app.exception_handler(InvalidSubscriptionReference)
+@app.exception_handler(InvalidFeedUrl)
+@app.exception_handler(FeedRejectedError)
+@app.exception_handler(SubscriptionConflict)
+@app.exception_handler(SubscriptionNotFound)
+@app.exception_handler(InvalidCategoryReference)
+@app.exception_handler(InvalidCategoryLabel)
+@app.exception_handler(CategoryNotFound)
+@app.exception_handler(CategoryLabelConflict)
+@app.exception_handler(DefaultCategoryImmutable)
+@app.exception_handler(UnsafeFeedUrl)
+@app.exception_handler(FeedFetchError)
+@app.exception_handler(FeedTooLarge)
+@app.exception_handler(NotAFeedError)
+@app.exception_handler(OpmlInvalid)
+@app.exception_handler(OpmlTooLarge)
+@app.exception_handler(OpmlTooManyFeeds)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -221,3 +290,294 @@ def _get_adapter(request: Request) -> FreshRSSAdapter:
         adapter = FreshRSSAdapter(request.app.state.http_client, settings)
         request.app.state.freshrss_adapter = adapter
     return adapter
+
+
+def _get_control_adapter(request: Request) -> FreshRSSControlAdapter:
+    """Control-plane adapter over the SAME session as the read adapter.
+
+    Login / action-token state stays owned by the single FreshRSSAdapter
+    instance (which is a FreshRSSSession); the control adapter only borrows
+    it, so credentials and tokens are never duplicated.
+    """
+    control = request.app.state.freshrss_control_adapter
+    if control is None:
+        control = FreshRSSControlAdapter(_get_adapter(request))
+        request.app.state.freshrss_control_adapter = control
+    return control
+
+
+class SubscriptionCreate(BaseModel):
+    """POST /api/v1/subscriptions body.
+
+    feedUrl must be an absolute http(s) URL (validated before FreshRSS);
+    categoryId, when given, must exist (404 otherwise); title is optional
+    (a blank title is treated as absent — the feed's own title is used).
+    """
+
+    feedUrl: str = Field(min_length=1)
+    categoryId: str | None = None
+    title: str | None = None
+
+
+class FeedPreviewRequest(BaseModel):
+    """POST /api/v1/feed-preview body (0013 Gate 2)."""
+
+    feedUrl: str = Field(min_length=1)
+
+
+class SubscriptionPatch(BaseModel):
+    """PATCH /api/v1/subscriptions/{ref} body: move to another category.
+
+    Exactly one target: categoryId (an existing category, 404 when unknown)
+    or newCategoryLabel (a new category created by the move itself — the
+    only FreshRSS control path that creates categories; conflict-checked
+    before any write).
+    """
+
+    categoryId: str | None = Field(default=None, min_length=1)
+    newCategoryLabel: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def exactly_one_target(self) -> "SubscriptionPatch":
+        if (self.categoryId is None) == (self.newCategoryLabel is None):
+            raise ValueError(
+                "Provide exactly one of 'categoryId' or 'newCategoryLabel'."
+            )
+        return self
+
+
+class CategoryPatch(BaseModel):
+    """PATCH /api/v1/categories/{categoryId} body: rename the category."""
+
+    label: str = Field(min_length=1)
+
+
+@app.get("/api/v1/subscriptions")
+async def subscriptions(request: Request) -> list[dict[str, object]]:
+    """Management view of all subscriptions (0013).
+
+    Each item carries the Lumi-owned opaque subscriptionRef (built from
+    FreshRSS's feed/<N> stream id — clients never assemble ids themselves)
+    plus title/feedUrl/category. The read path (GET /api/v1/feeds) stays
+    untouched and compatible.
+    """
+    control = _get_control_adapter(request)
+    return [
+        _subscription_json(subscription)
+        for subscription in await control.list_subscriptions()
+    ]
+
+
+@app.get("/api/v1/categories")
+async def categories(request: Request) -> list[dict[str, str]]:
+    """All categories including empty ones (tag/list folders).
+
+    Same id/label contract as the category objects on /api/v1/feeds —
+    there is exactly one category model in Lumi.
+    """
+    control = _get_control_adapter(request)
+    return [
+        {"id": category.id, "label": category.label}
+        for category in await control.list_categories()
+    ]
+
+
+@app.post("/api/v1/subscriptions", status_code=201)
+async def create_subscription(
+    subscription: SubscriptionCreate, request: Request
+) -> dict[str, object]:
+    """Subscribe to a feed URL; returns the server-confirmed subscription.
+
+    409 when already subscribed (checked before any write); 400 feed_rejected
+    when FreshRSS cannot add the feed. The write is attempted exactly once
+    (no retry on timeout — clients re-read and reconcile).
+    """
+    control = _get_control_adapter(request)
+    created = await control.subscribe(
+        subscription.feedUrl,
+        category_id=subscription.categoryId,
+        title=subscription.title,
+    )
+    return _subscription_json(created)
+
+
+def _get_preview_service(request: Request) -> FeedPreviewService:
+    """Preview service over the shared HTTP client + control adapter.
+
+    Built lazily like the adapters (tests may inject a fake onto
+    app.state.feed_preview_service).
+    """
+    service = request.app.state.feed_preview_service
+    if service is None:
+        service = FeedPreviewService(
+            request.app.state.http_client, _get_control_adapter(request)
+        )
+        request.app.state.feed_preview_service = service
+    return service
+
+
+@app.post("/api/v1/feed-preview")
+async def preview_feed(
+    body: FeedPreviewRequest, request: Request
+) -> dict[str, object]:
+    """Preview a direct RSS/Atom URL — strictly NON-MUTATING.
+
+    safe fetch → bounded bytes → offline parse. Reads the FreshRSS
+    subscription list (alreadySubscribed) but never writes anything:
+    subscribing is POST /api/v1/subscriptions. Only reliable metadata is
+    returned — no entries, no scraping, no feed discovery.
+    """
+    service = _get_preview_service(request)
+    preview = await service.preview(body.feedUrl)
+    return {
+        "title": preview.title,
+        "feedUrl": preview.feed_url,
+        "siteUrl": preview.site_url,
+        "description": preview.description,
+        "format": preview.format,
+        "alreadySubscribed": preview.already_subscribed,
+    }
+
+
+@app.patch("/api/v1/subscriptions/{subscription_ref}", status_code=204)
+async def update_subscription(
+    subscription_ref: str,
+    update: SubscriptionPatch,
+    request: Request,
+) -> Response:
+    """Move one subscription to another category (single-category model).
+
+    Invalid refs and invalid bodies are rejected before any FreshRSS call.
+    With newCategoryLabel the move creates the target category (explicit
+    create-category path, 0013 Gate 3); with categoryId the target must
+    already exist (404 otherwise).
+    """
+    stream_id = decode_subscription_ref(subscription_ref)  # raises → 400
+    control = _get_control_adapter(request)
+    if update.newCategoryLabel is not None:
+        await control.move_to_new_category(stream_id, update.newCategoryLabel)
+    else:
+        assert update.categoryId is not None  # exactly-one validator
+        await control.move_category(stream_id, update.categoryId)
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/subscriptions/{subscription_ref}", status_code=204)
+async def delete_subscription(
+    subscription_ref: str, request: Request
+) -> Response:
+    """Unsubscribe (destructive; confirmation belongs to the Web UI)."""
+    stream_id = decode_subscription_ref(subscription_ref)  # raises → 400
+    control = _get_control_adapter(request)
+    await control.unsubscribe(stream_id)
+    return Response(status_code=204)
+
+
+@app.patch("/api/v1/categories/{category_id:path}", status_code=204)
+async def rename_category(
+    category_id: str, update: CategoryPatch, request: Request
+) -> Response:
+    """Rename one category.
+
+    categoryId is a user/-/label/<名> reference (path converter: slashes in
+    the id are fine). 409 category_label_conflict for taken/reserved labels;
+    409 default_category_immutable — the FreshRSS default category cannot be
+    renamed through the greader API (display name is always re-localized).
+    """
+    control = _get_control_adapter(request)
+    await control.rename_category(category_id, update.label)
+    return Response(status_code=204)
+
+
+async def _read_bounded_opml(request: Request) -> bytes:
+    """Read the raw OPML upload with a hard size cap (never buffers more
+    than MAX_OPML_BYTES + one chunk before rejecting)."""
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_OPML_BYTES:
+            raise OpmlTooLarge("OPML file exceeds the 2 MiB limit.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@app.get("/api/v1/opml/export")
+async def opml_export(request: Request) -> Response:
+    """Download the FreshRSS OPML export (subscriptions + categories only).
+
+    Proxied through the BFF so the browser never learns FreshRSS
+    credentials. The document contains no settings dump, no API keys, no
+    read history and no favorites — only the subscription outline tree
+    FreshRSS itself produces.
+    """
+    control = _get_control_adapter(request)
+    xml = await control.export_opml()
+    return Response(
+        content=xml,
+        media_type="text/x-opml; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="LumiRSS-subscriptions.opml"'
+        },
+    )
+
+
+@app.post("/api/v1/opml/import/preview")
+async def opml_import_preview(request: Request) -> dict[str, object]:
+    """Parse an uploaded OPML and report what an import WOULD do.
+
+    Strictly non-mutating: bounded read → defusedxml parse → counts
+    (new / duplicates / invalid / per-category). Duplicates are only the
+    reliably detectable kind: exact feed-URL matches against the current
+    FreshRSS subscriptions (plus repeats inside the file). Importing is
+    POST /api/v1/opml/import.
+    """
+    data = await _read_bounded_opml(request)
+    service = OpmlService(_get_control_adapter(request))
+    return await service.preview(data)
+
+
+@app.post("/api/v1/opml/import")
+async def opml_import(request: Request) -> dict[str, object]:
+    """Merge-import an OPML: subscribe each NEW feed, categorize it, report.
+
+    Merge-only — existing subscriptions are reported as duplicates and
+    never modified, nothing is unsubscribed or overwritten (destructive
+    restore is out of 0013 scope). Per-feed failures (rejected feeds,
+    upstream timeouts) are reported honestly in the result; the file is
+    re-parsed and the subscription list re-read at import time, so the
+    preview is advisory, never a stale contract.
+    """
+    data = await _read_bounded_opml(request)
+    service = OpmlService(_get_control_adapter(request))
+    return await service.import_opml(data)
+
+
+@app.get("/api/v1/freshrss-ui")
+async def freshrss_ui(request: Request) -> dict[str, str | None]:
+    """Browser-safe public URL of the FreshRSS web UI, or null.
+
+    The advanced escape hatch ("在 FreshRSS 中管理") is only offered when
+    the operator explicitly configured FRESHRSS_PUBLIC_URL. The internal
+    FRESHRSS_BASE_URL (possibly a Docker hostname or loopback address) is
+    never exposed to the browser, and no URL ever carries credentials.
+    """
+    try:
+        settings = FreshRSSSettings()
+    except ValidationError:
+        return {"url": None}
+    return {"url": settings.FRESHRSS_PUBLIC_URL or None}
+
+
+def _subscription_json(subscription) -> dict[str, object]:
+    return {
+        "subscriptionRef": subscription.subscription_ref,
+        "title": subscription.title,
+        "feedUrl": subscription.feed_url,
+        "category": (
+            {"id": subscription.category_id, "label": subscription.category_label}
+            if subscription.category_id is not None
+            and subscription.category_label is not None
+            else None
+        ),
+    }

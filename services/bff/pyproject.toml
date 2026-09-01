@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "LumiRSS Backend-for-Frontend (BFF)"
 requires-python = ">=3.12"
 dependencies = [
+    "defusedxml>=0.7.1",
     "fastapi>=0.115",
+    "feedparser>=6.0.14",
     "httpx>=0.27",
     "pydantic-settings>=2.0",
     "uvicorn>=0.30",

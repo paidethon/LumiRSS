@@ -10,6 +10,21 @@ export interface FeedCategory {
   label: string
 }
 
+/** GET /api/v1/categories —— 分类列表（含空分类；0013 Gate 1 契约）。 */
+export interface Category {
+  id: string
+  label: string
+}
+
+/** GET /api/v1/subscriptions 的项（0013 Gate 1）：subscriptionRef 是
+ * Lumi-owned opaque 引用，前端只透传，绝不拼装/解析。 */
+export interface Subscription {
+  subscriptionRef: string
+  title: string
+  feedUrl: string
+  category: FeedCategory | null
+}
+
 export interface Feed {
   title: string
   feedUrl: string
@@ -51,4 +66,46 @@ export interface EntryDetail {
 
 export interface ApiErrorResponse {
   error: { type: string; message: string }
+}
+
+/** POST /api/v1/feed-preview（0013 Gate 2）—— 无副作用的直接 RSS/Atom
+ * 预览：只有可靠元数据，无正文/条目。format 与 BFF 解析结果一致。 */
+export interface FeedPreviewMetadata {
+  title: string
+  feedUrl: string
+  siteUrl: string | null
+  description: string | null
+  format: 'rss' | 'atom'
+  alreadySubscribed: boolean
+}
+
+/** POST /api/v1/opml/import/preview（0013 Gate 4）—— 无副作用的导入预览。
+ * duplicates 只包含可靠可判定项：与现有订阅的 feedUrl 精确匹配 + 文件内
+ * 重复；无任何推测性判断。 */
+export interface OpmlImportPreview {
+  totalFeeds: number
+  newFeeds: number
+  duplicates: number
+  invalidEntries: number
+  categories: { label: string; feedCount: number }[]
+}
+
+/** POST /api/v1/opml/import（merge 语义）的单条导入结果。 */
+export interface OpmlImportAdded {
+  feedUrl: string
+  title: string
+  categoryLabel: string | null
+  categoryApplied: boolean
+}
+
+export interface OpmlImportResult {
+  added: OpmlImportAdded[]
+  duplicates: { feedUrl: string; title: string }[]
+  failed: { feedUrl: string; title: string; error: string }[]
+  categoriesCreated: string[]
+}
+
+/** GET /api/v1/freshrss-ui —— 高级逃生入口（未配置时为 null，UI 不渲染）。 */
+export interface FreshRssUiInfo {
+  url: string | null
 }

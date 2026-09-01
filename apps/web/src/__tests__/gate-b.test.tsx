@@ -14,6 +14,13 @@ function ShortcutHost() {
   return null
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -115,22 +122,32 @@ describe('快捷键行为（j/k/u/s）', () => {
 })
 
 describe('分类页 planned 语义（AC10）', () => {
-  it('订阅与来源页：3 个 planned action（禁用 + 归属标注）', async () => {
+  it('订阅与来源页：OPML 导入/导出真实可用（0013 Gate 4）；RSSHub 路由 planned', async () => {
+    // SourcesSettingsSection 会真实请求 subscriptions / freshrss-ui
+    const routes: Record<string, () => Response> = {
+      'GET /api/v1/subscriptions': () => jsonResponse([]),
+      'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const handler = routes[`GET ${String(input)}`]
+        if (handler === undefined) throw new Error(`unexpected fetch: ${String(input)}`)
+        return handler()
+      }),
+    )
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /订阅与来源/ }))
+    // 0013 Gate 4：OPML 导出为真实可点按钮；导入文件选择器存在（不再 planned 禁用）
     await waitFor(() => {
-      expect(screen.getByText('添加订阅')).toBeInTheDocument()
-      expect(screen.getByText('导入 / 导出 OPML')).toBeInTheDocument()
-      expect(screen.getByText('RSSHub 路由', { selector: 'label' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '导出 OPML' })).toBeEnabled()
     })
-    const plannedBadges = screen.getAllByText(/planned · 001/)
-    expect(plannedBadges.length).toBeGreaterThanOrEqual(3)
-    // planned 按钮全部禁用
-    const buttons = screen
-      .getAllByRole('button')
-      .filter((b) => ['添加', '导入', '打开'].includes(b.textContent ?? ''))
-    expect(buttons.length).toBe(3)
-    for (const b of buttons) expect(b).toBeDisabled()
+    expect(screen.getByLabelText(/选择 OPML 文件/)).toBeInTheDocument()
+    // RSSHub 路由保持 planned（0014 Source Discovery）
+    expect(screen.getByText('RSSHub 路由', { selector: 'label' })).toBeInTheDocument()
+    expect(screen.getByText(/planned · 0014/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开' })).toBeDisabled()
+    vi.unstubAllGlobals()
   })
 
   it('AI 页：3 个 planned（0015/0016）', async () => {

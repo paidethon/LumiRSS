@@ -94,7 +94,9 @@ The read path must remain usable for already-fetched content when RSSHub is unav
 
 ### 4.2 Source/service control plane
 
-Planned beginning in milestones 0010–0011:
+Planned beginning in milestones 0010–0011. Status: **FreshRSSControlAdapter
+implemented in 0013** (subscription/category management + OPML import/export);
+RSSHub adapters remain planned (0014+).
 
 ```mermaid
 flowchart TD
@@ -117,6 +119,10 @@ Responsibilities:
 - OPML import / export;
 - selected health and user configuration;
 - no exposure of raw credentials to the Web.
+
+Implemented in 0013 (greader protocol via a shared `FreshRSSSession` —
+single ClientLogin, no duplicate auth/action-token system; feed title
+rename deferred).
 
 #### RSSHubCatalogAdapter
 

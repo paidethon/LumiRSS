@@ -52,6 +52,8 @@ import { TranslationSettingsSection } from './TranslationSettingsPage'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubSettingsSection } from './RssHubSettingsPage'
 import { BackupSettingsSection } from './BackupSettingsPage'
+// 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/逃生入口）
+import { SourcesSettingsSection } from './SourcesSettingsSection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
 import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
@@ -371,24 +373,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
     case 'sources':
       return [
         { type: 'title', value: '订阅管理' },
-        {
-          type: 'action',
-          label: '添加订阅',
-          description: '直接输入 RSS 地址或从发现页搜索（0013 Unified Subscription Center）。',
-          buttonText: '添加',
-          action: () => {},
-          planned: true,
-          plannedFor: '0013',
-        },
-        {
-          type: 'action',
-          label: '导入 / 导出 OPML',
-          description: '迁移订阅列表（0013 经 FreshRSSControlAdapter）。',
-          buttonText: '导入',
-          action: () => {},
-          planned: true,
-          plannedFor: '0013',
-        },
+        // 0013 Gate 4：OPML 导入/导出 + FreshRSS 状态/高级入口（真实可用）
+        { type: 'custom', node: <SourcesSettingsSection /> },
+        { type: 'title', value: '来源发现' },
         {
           type: 'action',
           label: 'RSSHub 路由',
