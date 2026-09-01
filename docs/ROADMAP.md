@@ -27,7 +27,7 @@
 ## Source Control
 
 - [x] [0013 — Unified Subscription Center](milestones/0013-unified-subscription-center.md)
-- [ ] [0014 — Source Discovery & RSSHub Integration](milestones/0014-source-discovery-rsshub-integration.md) *(active)*
+- [x] [0014 — Source Discovery & RSSHub Integration](milestones/0014-source-discovery-rsshub-integration.md)
 
 ## Intelligence
 

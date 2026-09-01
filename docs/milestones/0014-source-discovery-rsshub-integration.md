@@ -1,7 +1,8 @@
 # 0014 — Source Discovery & RSSHub Integration
 
-> Status: **In Progress** · Branch: `feat/0014-source-discovery-rsshub`
+> Status: **Completed** · Branch: `feat/0014-source-discovery-rsshub`
 > Created by Gate 0 (2026-09-01) from baseline `26faaed` (main, 0013 merged).
+> Completed by Final Gate (2026-09-01).
 
 ## Goal
 
@@ -273,4 +274,70 @@ Status: Completed (2026-09-01)
 
 ## Completion notes
 
-（Final Gate 追加）
+> 收口于 Final Gate（2026-09-01）。
+
+### Scope audit（Acceptance 逐项）
+
+Implemented:
+
+- 网站 → RSS/Atom 发现：safe-fetch 复用（SSRF 边界）、rel=alternate
+  提取、相对 URL 解析、去重、常见端点有界探测（首个成功即停）；
+- RSSHub 目录 + 参数配置：14 条实测校准的 Lumi 静态路由、required/
+  pattern 校验、server-side 构造与预览、FreshRSS 视角 feedUrl；
+- 订阅中心三模式 AddSourceDialog（RSS/Atom + 网站 + RSSHub），
+  预览/订阅复用 0013 管道（无第二套订阅逻辑）；
+- 失败流：invalid URL / no feed / RSSHub 未配置 / 缺参 / 上游错误 /
+  重复订阅均有诚实文案（management-errors 统一映射）；
+- a11y：tablist 键盘导航、busy 关闭防护（Escape/遮罩）、44px 触控、
+  label 关联、radiogroup 候选选择；
+- 桌面 + 移动复用同一 Dialog primitive（fullscreenOnMobile）。
+
+Deferred / known limitations:
+
+- 浏览器实机点击验证：本 run 无浏览器工具（Playwright MCP 配置已
+  持久化，重启 OpenCode 后可用）；UI 行为由 40 个 DOM 级测试覆盖；
+- 宿主机 fake-IP DNS（198.18.0.0/15）下公网站点 discovery 按设计被
+  SSRF 边界拦截（实测 400 unsafe_feed_url）——与 0013 Gate 5 同一
+  已知环境限制，成功路径由 28 个离线测试覆盖；
+- 浏览器侧 0010a RSSHub 实例清单（16 内置）不参与 0014 构造/预览
+  （服务端 RSSHUB_BASE_URL 为唯一事实），设置页文案已诚实化；
+- RSSHub 状态页（实例健康/路由可用性）→ 0018 Production。
+
+### Key decisions（实现中锁定）
+
+1. `RSSHUB_BASE_URL` + `RSSHUB_FRESHRSS_BASE_URL`（0008 双视角），
+   feedUrl 用 FreshRSS 视角构造——订阅后由 FreshRSS 抓取；
+2. RSSHub 预览 fetch：operator 配置固定 origin，重定向逐跳 origin
+   校验，不适用 public-IP SSRF 校验（实例可为内网地址）；用户输入
+   只到 path segment（regex + 编码 + 结构校验，注入不可能）；
+3. discovery 服务不持有 FreshRSS 引用（read-only by construction）；
+4. AddSourceDialog 单表面三模式；PreviewStage 共享订阅阶段；
+5. 声明候选不预取（preview 阶段验证）；探测 bounded 5 端点首中即停。
+
+### Verification（Final Gate，全部通过）
+
+```text
+BFF:    uv run pytest — 367 passed（305 存量 + 28 discovery + 34 rsshub）
+Web:    vitest run — 466 passed / 35 files（440 存量 + 26 新增）
+lint:   oxlint — 3 warnings（存量：Popover/Sidebar/FilterRulesPage）0 errors
+build:  tsc -b 通过 + vite build 通过（chunk-size 提示为存量）
+Live smoke（真实 RSSHub + 真实 FreshRSS 1.29.1，当前代码 BFF）:
+        routes catalog configured=true + 14 路由
+        preview hackernews / github-starred-repos(DIYgod) → 200 真实 metadata
+        缺参/路径注入/未知路由 → 稳定 400/404
+        订阅 E2E：subscribe 201 → 列表可见 → unsubscribe 204 → 基线还原
+        vite 代理路径 /api/v1/rsshub/routes 浏览器可见面 200
+```
+
+### Git
+
+```text
+75efee6 docs: activate milestone 0014 source discovery
+4f57144 feat: add source discovery contract and website feed discovery
+b0927f4 feat: add RSSHub source configuration
+1954e90 feat: connect source discovery to subscriptions and add source discovery UI
+db8be2e docs: record milestone 0014 gate progress
+dcfe8dd fix: harden source discovery integration (busy close guard + tab reset)
+```
+
+未 push、未 merge、未创建 PR；0015 未触碰。
