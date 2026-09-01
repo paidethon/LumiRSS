@@ -1,6 +1,7 @@
-/** Gate 2 测试 — 0013 AddSubscriptionDialog（直接 RSS/Atom 预览 + 添加订阅）。
+/** Gate 2 测试 — 0013 AddSourceDialog → 0014 AddSourceDialog
+ * （直接 RSS/Atom 模式：预览 + 添加订阅，逻辑与 0013 行为一致）。
  *
- * 覆盖：预览成功展示真实 metadata、not_a_feed 诚实提示（不做自动发现）、
+ * 覆盖：预览成功展示真实 metadata、普通网页本地提示（切换网站 tab）、
  * invalid URL 本地提示、已订阅提示、订阅成功 + feeds/categories invalidate、
  * 重复订阅 409、网络错误、双击防重（isPending 禁用）、Escape 关闭、
  * 还焦、direct-feed-url 纯函数。fetch 全部 mock，无真实网络。 */
@@ -9,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import AddSubscriptionDialog from '../components/AddSubscriptionDialog'
+import AddSourceDialog from '../components/AddSourceDialog'
 import SubscriptionsPage from '../components/pages/SubscriptionsPage'
 import { isDirectFeedUrl } from '../lib/direct-feed-url'
 import { useReaderUi } from '../store/reader-ui'
@@ -79,7 +80,7 @@ function renderDialog(
 ) {
   const fetchState = makeFetchHandler(map)
   vi.stubGlobal('fetch', fetchState.fn)
-  render(withProviders(<AddSubscriptionDialog open onClose={() => {}} />))
+  render(withProviders(<AddSourceDialog open onClose={() => {}} />))
   return fetchState
 }
 
@@ -119,7 +120,7 @@ describe('direct-feed-url 纯函数', () => {
   })
 })
 
-describe('AddSubscriptionDialog — 预览', () => {
+describe('AddSourceDialog — 预览', () => {
   it('预览成功：展示真实 metadata（标题 / 格式 / URL / 描述 / 分类下拉）', async () => {
     renderDialog()
     await previewUrl(FEED_URL)
@@ -127,7 +128,9 @@ describe('AddSubscriptionDialog — 预览', () => {
     expect(screen.getByText(/RSS · https:\/\/example\.com\/feed\.xml/)).toBeInTheDocument()
     expect(screen.getByText('A feed about examples')).toBeInTheDocument()
     // 真实分类出现在下拉中
-    expect(screen.getByRole('combobox', { name: '分类' })).toBeInTheDocument()
+    // 真实分类出现在下拉中（PreviewStage 挂载后拉取分类）
+    const combobox = await screen.findByRole('combobox', { name: '分类' })
+    expect(combobox).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Tech' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: '默认分类（不指定）' })).toBeInTheDocument()
   })
@@ -137,12 +140,12 @@ describe('AddSubscriptionDialog — 预览', () => {
       'GET /api/v1/categories': () => jsonResponse([]),
     })
     vi.stubGlobal('fetch', fetchState.fn)
-    render(withProviders(<AddSubscriptionDialog open onClose={() => {}} />))
+    render(withProviders(<AddSourceDialog open onClose={() => {}} />))
     const input = screen.getByLabelText('RSS / Atom 地址')
     fireEvent.change(input, { target: { value: 'example.com' } })
     fireEvent.click(screen.getByRole('button', { name: '预览' }))
     expect(
-      screen.getByText('当前请填写直接 RSS / Atom 地址；网站来源发现属于后续 Source Discovery。'),
+      screen.getByText('请填写直接 RSS / Atom 地址；如果是普通网站，请切换到「网站」标签页。'),
     ).toBeInTheDocument()
     // 无任何预览请求（本地拦截，不发 feed-preview）
     expect(
@@ -150,7 +153,7 @@ describe('AddSubscriptionDialog — 预览', () => {
     ).toEqual([])
   })
 
-  it('not_a_feed：诚实提示不冒充发现能力', async () => {
+  it('not_a_feed：诚实提示并指向网站 tab', async () => {
     renderDialog({
       'POST /api/v1/feed-preview': () =>
         errorResponse('not_a_feed', 'not a feed', 400),
@@ -158,7 +161,7 @@ describe('AddSubscriptionDialog — 预览', () => {
     await previewUrl(FEED_URL)
     expect(await screen.findByText('这不是有效的 RSS / Atom 地址')).toBeInTheDocument()
     expect(
-      screen.getByText('当前请填写直接 RSS / Atom 地址；网站来源发现属于后续 Source Discovery。'),
+      screen.getByText('如果这是普通网站，请切换到「网站」标签页自动发现订阅源。'),
     ).toBeInTheDocument()
   })
 
@@ -187,7 +190,7 @@ describe('AddSubscriptionDialog — 预览', () => {
   })
 })
 
-describe('AddSubscriptionDialog — 订阅', () => {
+describe('AddSourceDialog — 订阅', () => {
   it('成功闭环：确认 → subscribe(带分类) → 成功提示；重复提交被禁用', async () => {
     const fetchState = renderDialog({
       'POST /api/v1/feed-preview': () => jsonResponse(PREVIEW),
@@ -197,7 +200,8 @@ describe('AddSubscriptionDialog — 订阅', () => {
     await previewUrl(FEED_URL)
     await screen.findByText('Example Feed')
     // 选择真实分类
-    fireEvent.change(screen.getByRole('combobox', { name: '分类' }), {
+    const categorySelect = await screen.findByRole('combobox', { name: '分类' })
+    fireEvent.change(categorySelect, {
       target: { value: CATEGORY.id },
     })
     const confirm = screen.getByRole('button', { name: '确认添加' })
@@ -219,8 +223,8 @@ describe('AddSubscriptionDialog — 订阅', () => {
     })
     await previewUrl(FEED_URL)
     expect(await screen.findByText('已经订阅了这个源，无需重复添加。')).toBeInTheDocument()
-    const confirm = screen.getByRole('button', { name: '确认添加' })
-    expect(confirm).toBeDisabled()
+    // 已订阅：不提供「确认添加」入口
+    expect(screen.queryByRole('button', { name: '确认添加' })).toBeNull()
   })
 
   it('订阅 409（重复订阅）：显示冲突错误', async () => {
@@ -275,7 +279,7 @@ describe('AddSubscriptionDialog — 订阅', () => {
       withProviders(
         <>
           <SubscriptionsPage />
-          <AddSubscriptionDialog open onClose={() => {}} />
+          <AddSourceDialog open onClose={() => {}} />
         </>,
       ),
     )
@@ -291,7 +295,7 @@ describe('AddSubscriptionDialog — 订阅', () => {
   })
 })
 
-describe('AddSubscriptionDialog — a11y / 交互', () => {
+describe('AddSourceDialog — a11y / 交互', () => {
   it('Escape 关闭 + 焦点还回 trigger', async () => {
     const onClose = vi.fn()
     const fetchState = makeFetchHandler({
@@ -305,7 +309,7 @@ describe('AddSubscriptionDialog — a11y / 交互', () => {
           <button type="button" data-testid="trigger" onClick={() => setOpen(true)}>
             trigger
           </button>
-          <AddSubscriptionDialog
+          <AddSourceDialog
             open={open}
             onClose={() => {
               onClose()
@@ -320,12 +324,12 @@ describe('AddSubscriptionDialog — a11y / 交互', () => {
     const trigger = screen.getByTestId('trigger')
     trigger.focus()
     fireEvent.click(trigger)
-    // Dialog 初始焦点：第一个可聚焦元素（输入框）
-    const input = await screen.findByLabelText('RSS / Atom 地址')
+    // Dialog 初始焦点：第一个可聚焦元素（来源类型 tab）
+    const firstTab = await screen.findByRole('tab', { name: 'RSS / Atom' })
     await waitFor(() => {
-      expect(document.activeElement).toBe(input)
+      expect(document.activeElement).toBe(firstTab)
     })
-    fireEvent.keyDown(input, { key: 'Escape' })
+    fireEvent.keyDown(firstTab, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
     // dialog 卸载后还焦回打开前焦点（trigger）
     await waitFor(() => {
@@ -353,7 +357,7 @@ describe('AddSubscriptionDialog — a11y / 交互', () => {
         return Promise.resolve(jsonResponse([]))
       }),
     )
-    render(withProviders(<AddSubscriptionDialog open onClose={() => {}} />))
+    render(withProviders(<AddSourceDialog open onClose={() => {}} />))
     fireEvent.change(screen.getByLabelText('RSS / Atom 地址'), {
       target: { value: FEED_URL },
     })

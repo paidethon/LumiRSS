@@ -349,7 +349,7 @@ describe('顶部动作与空态', () => {
     renderPage()
     await screen.findByText('Tech Feed')
     expect(screen.queryByText('分组管理')).toBeNull()
-    expect(screen.getByRole('button', { name: /添加 RSS/ })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /添加来源/ })).not.toBeDisabled()
     const opml = screen.getByRole('button', { name: /导入 OPML/ })
     expect(opml).not.toBeDisabled()
     fireEvent.click(opml)

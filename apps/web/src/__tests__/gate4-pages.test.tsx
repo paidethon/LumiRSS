@@ -115,19 +115,23 @@ describe('SubscriptionsPage（AC11）', () => {
     expect(screen.getByRole('button', { name: /^技术/ }).textContent).toContain('1')
   })
 
-  it('OPML 导入真实入口（0013 Gate 4）；添加 RSS 已是真实入口（Gate 2）', async () => {
+  it('OPML 导入真实入口（0013 Gate 4）；添加来源 已是真实入口（Gate 2）', async () => {
     renderPage()
     await screen.findByText('阮一峰的网络日志')
-    // 添加 RSS + 导入 OPML：均为真实可点击按钮（不再有 disabled 版本）
-    expect(screen.queryByRole('button', { name: /添加 RSS/ })).not.toBeDisabled()
+    // 添加来源 + 导入 OPML：均为真实可点击按钮（不再有 disabled 版本）
+    expect(screen.queryByRole('button', { name: /添加来源/ })).not.toBeDisabled()
     expect(screen.queryByRole('button', { name: /导入 OPML/ })).not.toBeDisabled()
   })
 
-  it('添加 RSS：打开预览对话框（0013 Gate 2）', async () => {
+  it('添加来源：打开三模式对话框（0014）', async () => {
     renderPage()
     await screen.findByText('阮一峰的网络日志')
-    fireEvent.click(screen.getByRole('button', { name: /添加 RSS/ }))
-    expect(await screen.findByRole('dialog', { name: '添加订阅' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /添加来源/ }))
+    expect(await screen.findByRole('dialog', { name: '添加来源' })).toBeInTheDocument()
+    // 三种来源模式均可见；默认落在直接 RSS/Atom
+    expect(screen.getByRole('tab', { name: 'RSS / Atom' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '网站' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'RSSHub' })).toBeInTheDocument()
     expect(screen.getByLabelText('RSS / Atom 地址')).toBeInTheDocument()
   })
 

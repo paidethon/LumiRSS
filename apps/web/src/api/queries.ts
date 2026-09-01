@@ -4,16 +4,19 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  discoverFeeds,
   getCategories,
   getEntries,
   getEntry,
   getFeeds,
   getFreshRssUiUrl,
+  getRssHubRoutes,
   getSubscriptions,
   importOpml,
   moveSubscription,
   previewFeed,
   previewOpmlImport,
+  previewRssHub,
   renameCategory,
   setEntryState,
   subscribeFeed,
@@ -197,5 +200,31 @@ export function useFreshRssUiUrl() {
   return useQuery({
     queryKey: ['freshrss-ui'],
     queryFn: ({ signal }) => getFreshRssUiUrl(signal),
+  })
+}
+
+/** 0014：网站 → 候选发现（无副作用 mutation——复用 pending/error 语义
+ * 与双击防重；不 invalidate 任何 query，结果由调用方存本地 state）。 */
+export function useSourceDiscoveryMutation() {
+  return useMutation({
+    mutationFn: (url: string) => discoverFeeds(url),
+  })
+}
+
+/** 0014：RSSHub 路由目录（static catalog；enabled=false 不发请求）。 */
+export function useRssHubRoutes(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-routes'],
+    queryFn: ({ signal }) => getRssHubRoutes(signal),
+    enabled,
+  })
+}
+
+/** 0014：RSSHub 路由预览（无副作用 mutation；不 invalidate 任何 query，
+ * 结果由调用方存本地 state；订阅仍走 useSubscribeMutation）。 */
+export function useRssHubPreviewMutation() {
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params: Record<string, string> }) =>
+      previewRssHub(vars.routeId, vars.params),
   })
 }

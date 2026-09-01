@@ -19,11 +19,11 @@
  * 点 feed 主区域 → selectScope + section 回首页（与侧栏导航同一语义）。 */
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, Rss, Search, Upload } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
 import { useCategories, useSubscriptions } from '../../api/queries'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
-import AddSubscriptionDialog from '../AddSubscriptionDialog'
+import AddSourceDialog from '../AddSourceDialog'
 import OpmlImportDialog from '../OpmlImportDialog'
 import MoveSubscriptionDialog from '../MoveSubscriptionDialog'
 import RenameCategoryDialog from '../RenameCategoryDialog'
@@ -180,7 +180,7 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <AddSubscriptionDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddSourceDialog open={addOpen} onClose={() => setAddOpen(false)} />
       <OpmlImportDialog open={opmlOpen} onClose={() => setOpmlOpen(false)} />
       <MoveSubscriptionDialog
         open={moveTarget !== null}
@@ -219,7 +219,7 @@ export default function SubscriptionsPage() {
           />
         </div>
 
-        {/* 顶部动作：添加 RSS（Gate 2）/ OPML 导入（Gate 4）真实可用 */}
+        {/* 顶部动作：添加来源（0014：RSS/Atom + 网站发现 + RSSHub）/ OPML 导入（Gate 4） */}
         <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="订阅管理动作">
           <Button
             variant="secondary"
@@ -227,8 +227,8 @@ export default function SubscriptionsPage() {
             aria-haspopup="dialog"
             className="text-xs"
           >
-            <Rss aria-hidden className="size-3.5" />
-            添加 RSS
+            <Plus aria-hidden className="size-3.5" />
+            添加来源
           </Button>
           <Button
             variant="secondary"

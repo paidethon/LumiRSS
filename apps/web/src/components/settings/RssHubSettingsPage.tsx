@@ -74,7 +74,8 @@ export function RssHubSettingsSection() {
         <div>
           <p className="text-sm font-medium text-[var(--lumi-text-primary)]">RSSHub 集成</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-            实例列表将用于 0014 来源发现（路由匹配与预览）；当前为实例管理。
+            来源发现（0014）使用服务端配置的 RSSHub 实例（RSSHUB_BASE_URL），经 BFF 代理，
+            浏览器不直连 RSSHub；此处为实例清单管理。
           </p>
         </div>
         <Switch
@@ -108,7 +109,7 @@ export function RssHubSettingsSection() {
         </div>
         {addError && <p className="mt-1.5 text-xs text-[var(--lumi-danger)]">{addError}</p>}
         <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-          连通性测试将在 0014 提供（经 BFF 代理，浏览器不直连 RSSHub）。
+          添加的实例仅作清单参考；来源发现使用服务端配置的实例（见服务端 RSSHUB_BASE_URL）。
         </p>
       </div>
 
