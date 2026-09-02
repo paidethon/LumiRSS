@@ -377,13 +377,13 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <SourcesSettingsSection /> },
         { type: 'title', value: '来源发现' },
         {
-          type: 'action',
-          label: 'RSSHub 路由',
-          description: '搜索与预览 RSSHub 路由（0014 Source Discovery）。',
-          buttonText: '打开',
-          action: () => {},
-          planned: true,
-          plannedFor: '0014',
+          type: 'custom',
+          node: (
+            <div className="py-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              网站 / RSSHub 来源发现已集成到订阅中心：订阅页 →「添加来源」
+              （0014，经 BFF 代理，浏览器不直连 RSSHub）。
+            </div>
+          ),
         },
       ]
     case 'ai':
@@ -467,11 +467,11 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: 'RSSHub 状态',
-          description: '实例健康与路由可用性（0014）。',
+          description: '实例健康与路由可用性（0018 Production）。',
           buttonText: '查看',
           action: () => {},
           planned: true,
-          plannedFor: '0014',
+          plannedFor: '0018',
         },
       ]
     case 'workspace':

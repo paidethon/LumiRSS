@@ -109,3 +109,45 @@ export interface OpmlImportResult {
 export interface FreshRssUiInfo {
   url: string | null
 }
+
+/** POST /api/v1/source-discovery 的候选（0014）：
+ * declared = rel=alternate 声明（未预取，format 未知）；
+ * probed = 常见端点探测成功（title/format 已解析）。 */
+export interface DiscoveryCandidate {
+  feedUrl: string
+  title: string | null
+  source: 'declared' | 'probed'
+  format: 'rss' | 'atom' | null
+}
+
+/** POST /api/v1/source-discovery 响应（0014）。 */
+export interface SourceDiscoveryResponse {
+  candidates: DiscoveryCandidate[]
+}
+
+/** GET /api/v1/rsshub/routes 的参数描述符（0014，Lumi-owned）。 */
+export interface RssHubParameter {
+  key: string
+  label: string
+  required: boolean
+  pattern: string
+  example: string
+  help: string
+}
+
+/** GET /api/v1/rsshub/routes 的路由描述符（0014，Lumi-owned）。
+ * 前端只用于渲染参数表单；路径构造在服务端完成。 */
+export interface RssHubRoute {
+  id: string
+  title: string
+  description: string
+  pathTemplate: string
+  parameters: RssHubParameter[]
+}
+
+/** GET /api/v1/rsshub/routes 响应（0014）：
+ * configured=false 时服务端未设置 RSSHub 实例（目录仍可用，预览会 503）。 */
+export interface RssHubRoutesResponse {
+  configured: boolean
+  routes: RssHubRoute[]
+}

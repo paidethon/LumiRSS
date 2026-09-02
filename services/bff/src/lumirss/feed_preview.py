@@ -43,10 +43,14 @@ __all__ = [
     "FeedPreview",
     "FeedPreviewService",
     "FeedTooLarge",
+    "FetchedDocument",
     "InvalidFeedUrl",
     "NotAFeedError",
     "UnsafeFeedUrl",
     "parse_feed_document",
+    "read_bounded_body",
+    "safe_fetch",
+    "validate_feed_url",
 ]
 
 
@@ -67,7 +71,7 @@ class NotAFeedError(AdapterError):
 
 
 _MAX_URL_LENGTH = 2048
-_MAX_BODY_BYTES = 2 * 1024 * 1024  # 2 MiB: feeds are XML metadata, not media
+MAX_FEED_BODY_BYTES = 2 * 1024 * 1024  # 2 MiB: feeds are XML metadata, not media
 _MAX_REDIRECTS = 5
 _CHUNK = 64 * 1024
 _MAX_TITLE_LENGTH = 300
@@ -93,6 +97,15 @@ class FeedPreview:
     description: str | None
     format: str  # "rss" | "atom"
     already_subscribed: bool
+
+
+@dataclass(frozen=True)
+class FetchedDocument:
+    """Result of one bounded safe fetch (body + provenance + content type)."""
+
+    body: bytes
+    final_url: str
+    content_type: str | None
 
 
 async def _default_resolver(host: str, port: int) -> list[str]:
@@ -215,8 +228,10 @@ class FeedPreviewService:
 
     async def preview(self, feed_url: str) -> FeedPreview:
         validate_feed_url(feed_url)
-        raw = await self._safe_fetch(feed_url)
-        title, site_url, description, feed_format = parse_feed_document(raw)
+        document = await safe_fetch(self._client, feed_url, resolver=self._resolver)
+        title, site_url, description, feed_format = parse_feed_document(
+            document.body
+        )
         existing = await self._control.list_subscriptions()
         already_subscribed = any(s.feed_url == feed_url for s in existing)
         return FeedPreview(
@@ -228,63 +243,85 @@ class FeedPreviewService:
             already_subscribed=already_subscribed,
         )
 
-    async def _safe_fetch(self, url: str) -> bytes:
-        """Bounded, redirect-aware fetch with per-hop re-validation."""
-        current = url
-        for _hop in range(_MAX_REDIRECTS + 1):
-            await self._require_dialable(validate_feed_url(current))
-            response = await self._send(current)
-            try:
-                if response.status_code in (301, 302, 303, 307, 308):
-                    location = response.headers.get("location")
-                    if not location:
-                        raise FeedFetchError(
-                            "Feed URL redirected without a target location."
-                        )
-                    current = urllib.parse.urljoin(current, location)
-                    continue
-                if response.status_code != 200:
+async def safe_fetch(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    resolver=_default_resolver,
+    max_redirects: int = _MAX_REDIRECTS,
+) -> "FetchedDocument":
+    """Bounded, redirect-aware fetch with per-hop re-validation.
+
+    Shared by feed preview and source discovery: every hop (including
+    redirect targets) passes the same URL/DNS/IP validation as the first
+    URL. The result carries the FINAL URL (so callers can resolve relative
+    links against where the document actually came from) and the final
+    content-type header.
+    """
+    current = url
+    for _hop in range(max_redirects + 1):
+        await _require_dialable(resolver, validate_feed_url(current))
+        response = await _send(client, current)
+        try:
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("location")
+                if not location:
                     raise FeedFetchError(
-                        f"The feed URL answered HTTP {response.status_code}."
+                        "Feed URL redirected without a target location."
                     )
-                return await self._bounded_body(response)
-            finally:
-                await response.aclose()
-        raise FeedFetchError("Feed URL redirected too many times.")
+                current = urllib.parse.urljoin(current, location)
+                continue
+            if response.status_code != 200:
+                raise FeedFetchError(
+                    f"The feed URL answered HTTP {response.status_code}."
+                )
+            return FetchedDocument(
+                body=await read_bounded_body(response),
+                final_url=current,
+                content_type=response.headers.get("content-type"),
+            )
+        finally:
+            await response.aclose()
+    raise FeedFetchError("Feed URL redirected too many times.")
 
-    async def _send(self, url: str) -> httpx.Response:
-        request = self._client.build_request("GET", url, headers=_HEADERS)
+
+async def _send(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    request = client.build_request("GET", url, headers=_HEADERS)
+    try:
+        # follow_redirects stays OFF: redirects are handled manually so
+        # every hop goes through the same validation as the first URL.
+        return await client.send(request, stream=True)
+    except httpx.HTTPError as exc:
+        raise FeedFetchError("The feed URL could not be reached.") from exc
+
+
+async def read_bounded_body(response: httpx.Response) -> bytes:
+    """Stream a response body with a hard cap (Content-Length fast path +
+    streamed read limit). Shared by feed preview, discovery and RSSHub."""
+    if (length := response.headers.get("content-length")) is not None:
         try:
-            # follow_redirects stays OFF: redirects are handled manually so
-            # every hop goes through the same validation as the first URL.
-            return await self._client.send(request, stream=True)
-        except httpx.HTTPError as exc:
-            raise FeedFetchError("The feed URL could not be reached.") from exc
-
-    async def _bounded_body(self, response: httpx.Response) -> bytes:
-        if (length := response.headers.get("content-length")) is not None:
-            try:
-                if int(length) > _MAX_BODY_BYTES:
-                    raise FeedTooLarge("The feed document is too large.")
-            except ValueError:
-                pass  # malformed Content-Length: the streamed cap decides
-        chunks: list[bytes] = []
-        size = 0
-        async for chunk in response.aiter_bytes(_CHUNK):
-            size += len(chunk)
-            if size > _MAX_BODY_BYTES:
+            if int(length) > MAX_FEED_BODY_BYTES:
                 raise FeedTooLarge("The feed document is too large.")
-            chunks.append(chunk)
-        return b"".join(chunks)
+        except ValueError:
+            pass  # malformed Content-Length: the streamed cap decides
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes(_CHUNK):
+        size += len(chunk)
+        if size > MAX_FEED_BODY_BYTES:
+            raise FeedTooLarge("The feed document is too large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
-    async def _require_dialable(self, parts: urllib.parse.SplitResult) -> None:
-        host = parts.hostname
-        if not host:
-            raise InvalidFeedUrl("Feed URL must name a host.")
-        port = parts.port or (443 if parts.scheme == "https" else 80)
-        try:
-            addresses = await self._resolver(host, port)
-        except (socket.gaierror, OSError) as exc:
-            raise FeedFetchError(f"The feed host '{host}' could not be resolved.") from exc
-        for address in addresses:
-            ensure_public_address(address)
+
+async def _require_dialable(resolver, parts: urllib.parse.SplitResult) -> None:
+    host = parts.hostname
+    if not host:
+        raise InvalidFeedUrl("Feed URL must name a host.")
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        addresses = await resolver(host, port)
+    except (socket.gaierror, OSError) as exc:
+        raise FeedFetchError(f"The feed host '{host}' could not be resolved.") from exc
+    for address in addresses:
+        ensure_public_address(address)

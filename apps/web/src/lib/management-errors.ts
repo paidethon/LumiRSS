@@ -1,4 +1,4 @@
-/** 0013 Gate 3/4：订阅管理 + OPML 的稳定错误 type → 诚实文案。
+/** 0013 Gate 3/4 + 0014：订阅管理 / OPML / 来源发现的稳定错误 type → 诚实文案。
  *
  * BFF 的 error.message 是英文技术细节，UI 只显示 type 映射的中文文案；
  * 未知 type 一律安全 fallback，不透传上游文本。只描述有真实依据的
@@ -53,6 +53,58 @@ export function managementErrorText(error: unknown): ManagementErrorText {
       return {
         title: 'FreshRSS 无法添加该订阅源（地址无效或不可达）。',
         detail: null,
+      }
+    // 0013 Gate 2：直接 RSS/Atom 预览
+    case 'invalid_feed_url':
+      return {
+        title: '地址格式无效',
+        detail: '请填写完整的 http(s) RSS / Atom 地址。',
+      }
+    case 'not_a_feed':
+      return {
+        title: '这不是有效的 RSS / Atom 地址',
+        detail: '如果这是普通网站，请切换到「网站」标签页自动发现订阅源。',
+      }
+    case 'unsafe_feed_url':
+      return { title: '该地址不允许访问', detail: null }
+    case 'feed_fetch_error':
+      return {
+        title: '无法获取该地址',
+        detail: '可能是网络超时或目标服务器不可达，请稍后重试。',
+      }
+    case 'feed_too_large':
+      return { title: '该内容过大', detail: null }
+    case 'subscription_conflict':
+      return { title: '已经订阅了这个源，无需重复添加。', detail: null }
+    // 0014：网站来源发现
+    case 'invalid_source_url':
+      return {
+        title: '网址格式无效',
+        detail: '请填写完整的 http(s) 网站地址。',
+      }
+    case 'no_feed_discovered':
+      return {
+        title: '没有在这个网站找到订阅源',
+        detail:
+          '只支持显式声明了 RSS/Atom 链接（rel=alternate）或提供常见端点（如 /feed）的网站。',
+      }
+    // 0014：RSSHub
+    case 'rsshub_not_configured':
+      return {
+        title: 'RSSHub 未配置',
+        detail: '服务端未设置 RSSHub 实例（RSSHUB_BASE_URL），请联系管理员。',
+      }
+    case 'rsshub_route_not_found':
+      return { title: '该 RSSHub 路由不存在，请刷新后重试。', detail: null }
+    case 'rsshub_invalid_parameters':
+      return {
+        title: '参数校验未通过',
+        detail: '请按提示填写正确的参数值。',
+      }
+    case 'rsshub_fetch_error':
+      return {
+        title: 'RSSHub 无法生成该订阅源',
+        detail: '实例可能不可用或该路由暂时失效，请稍后重试。',
       }
     default:
       return { title: '操作失败，请稍后重试。', detail: null }

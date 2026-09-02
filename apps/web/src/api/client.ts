@@ -12,6 +12,8 @@ import type {
   FreshRssUiInfo,
   OpmlImportPreview,
   OpmlImportResult,
+  RssHubRoutesResponse,
+  SourceDiscoveryResponse,
   Subscription,
 } from './types'
 
@@ -284,4 +286,35 @@ export async function importOpml(file: File): Promise<OpmlImportResult> {
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
   return request<FreshRssUiInfo>(`${API_BASE}/freshrss-ui`, signal)
+}
+
+/** 0014：网站 → RSS/Atom 候选发现（无副作用；不接 AbortSignal——与其它
+ * mutation 语义一致，一旦发出就允许完成）。 */
+export async function discoverFeeds(url: string): Promise<SourceDiscoveryResponse> {
+  const response = await rawRequest(`${API_BASE}/source-discovery`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceDiscoveryResponse
+}
+
+/** 0014：RSSHub 路由目录（Lumi-owned 静态 catalog；configured 报告服务端
+ * 是否配置了 RSSHub 实例）。 */
+export async function getRssHubRoutes(signal?: AbortSignal): Promise<RssHubRoutesResponse> {
+  return request<RssHubRoutesResponse>(`${API_BASE}/rsshub/routes`, signal)
+}
+
+/** 0014：RSSHub 路由预览（无副作用 mutation；路径构造与抓取全部在 BFF，
+ * 浏览器不直连 RSSHub）。响应形状与 feed-preview 一致。 */
+export async function previewRssHub(
+  routeId: string,
+  params: Record<string, string>,
+): Promise<FeedPreviewMetadata> {
+  const response = await rawRequest(`${API_BASE}/rsshub/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ routeId, params }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as FeedPreviewMetadata
 }

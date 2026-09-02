@@ -122,7 +122,7 @@ describe('快捷键行为（j/k/u/s）', () => {
 })
 
 describe('分类页 planned 语义（AC10）', () => {
-  it('订阅与来源页：OPML 导入/导出真实可用（0013 Gate 4）；RSSHub 路由 planned', async () => {
+  it('订阅与来源页：OPML 导入/导出真实可用（0013 Gate 4）；来源发现指向订阅中心（0014）', async () => {
     // SourcesSettingsSection 会真实请求 subscriptions / freshrss-ui
     const routes: Record<string, () => Response> = {
       'GET /api/v1/subscriptions': () => jsonResponse([]),
@@ -143,10 +143,9 @@ describe('分类页 planned 语义（AC10）', () => {
       expect(screen.getByRole('button', { name: '导出 OPML' })).toBeEnabled()
     })
     expect(screen.getByLabelText(/选择 OPML 文件/)).toBeInTheDocument()
-    // RSSHub 路由保持 planned（0014 Source Discovery）
-    expect(screen.getByText('RSSHub 路由', { selector: 'label' })).toBeInTheDocument()
-    expect(screen.getByText(/planned · 0014/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '打开' })).toBeDisabled()
+    // 0014：来源发现已集成到订阅中心（设置页诚实说明，不再 planned 占位）
+    expect(screen.getByText('来源发现', { selector: 'h3' })).toBeInTheDocument()
+    expect(screen.getByText(/已集成到订阅中心/)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 

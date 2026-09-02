@@ -51,3 +51,61 @@ class FreshRSSSettings(BaseSettings):
         if parts.username or parts.password or parts.query or parts.fragment:
             raise ValueError("must not carry credentials, a query or a fragment")
         return clean.rstrip("/")
+
+
+def _validate_service_base_url(value: str, name: str) -> str:
+    """Operator-configured service base URL (0014 RSSHub).
+
+    Structural validation only — unlike FRESHRSS_PUBLIC_URL, the host MAY
+    be internal (loopback / Docker network): this is infrastructure the
+    operator deliberately wired, never user input, and it never reaches
+    the browser as a base for fetching.
+    """
+    clean = value.strip()
+    if not clean:
+        return ""
+    parts = urllib.parse.urlsplit(clean)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ValueError(f"{name} must be an absolute http(s) URL")
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ValueError(f"{name} must not carry credentials, a query or a fragment")
+    if parts.path not in ("", "/"):
+        raise ValueError(f"{name} must not carry a path (host root only)")
+    return clean.rstrip("/")
+
+
+class RssHubSettings(BaseSettings):
+    """RSSHub connection settings for the 0014 source discovery flow.
+
+    Read lazily per request like FreshRSSSettings. Both values are
+    operator-configured server-side; the browser never learns them
+    directly (it only ever sees constructed feed URLs the user asked to
+    subscribe to).
+
+    - RSSHUB_BASE_URL: base the BFF itself fetches for preview.
+    - RSSHUB_FRESHRSS_BASE_URL: optional base as reachable from the
+      FreshRSS container (e.g. http://rsshub:1200 vs 127.0.0.1:1200 on
+      the host — 0008 verified the dual view). Defaults to
+      RSSHUB_BASE_URL. This base is what subscription feedUrls are built
+      from, because FreshRSS (not the BFF) fetches feeds after subscribe.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    RSSHUB_BASE_URL: str = ""
+    RSSHUB_FRESHRSS_BASE_URL: str = ""
+
+    @field_validator("RSSHUB_BASE_URL")
+    @classmethod
+    def must_be_valid_base(cls, value: str) -> str:
+        return _validate_service_base_url(value, "RSSHUB_BASE_URL")
+
+    @field_validator("RSSHUB_FRESHRSS_BASE_URL")
+    @classmethod
+    def must_be_valid_freshrss_base(cls, value: str) -> str:
+        return _validate_service_base_url(value, "RSSHUB_FRESHRSS_BASE_URL")
+
+    @property
+    def freshrss_base_url(self) -> str:
+        """The base FreshRSS will actually fetch (fallback to BASE_URL)."""
+        return self.RSSHUB_FRESHRSS_BASE_URL or self.RSSHUB_BASE_URL
