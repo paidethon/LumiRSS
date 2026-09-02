@@ -6,11 +6,10 @@
 
 ## Start Here
 
-**Active milestone**: 0015 — AI Foundation, Summary & Lumi SQLite Foundation
-→ [milestones/0015-ai-summary-sqlite-foundation.md](milestones/0015-ai-summary-sqlite-foundation.md)
+**Active milestone**: —
 
-**Last completed**: 0014a — UI Acceptance & Navigation Consistency
-→ [milestones/0014a-ui-acceptance-navigation.md](milestones/0014a-ui-acceptance-navigation.md)
+**Last completed**: 0015 — AI Foundation, Summary & Lumi SQLite Foundation
+→ [milestones/0015-ai-summary-sqlite-foundation.md](milestones/0015-ai-summary-sqlite-foundation.md)
 
 **Next planned**: 0016 — Translation & AI Conversation
 
@@ -85,5 +84,5 @@ during normal development.
 | 0013 | Unified Subscription Center | Completed |
 | 0014 | Source Discovery & RSSHub | Completed |
 | 0014a | UI Acceptance & Navigation Consistency | Completed |
-| 0015 | AI Foundation, Summary & Lumi SQLite Foundation | **In Progress** |
+| 0015 | AI Foundation, Summary & Lumi SQLite Foundation | Completed |
 | 0016–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |

@@ -1,7 +1,8 @@
 # 0015 — AI Foundation, Summary & Lumi SQLite Foundation
 
-> Status: **In Progress** · Branch: `feat/0015-ai-sqlite-foundation`
+> Status: **Completed** · Branch: `feat/0015-ai-sqlite-foundation`
 > Created by Gate 0 (2026-09-02) from baseline `cb0e8b0` (main, 0014a merged).
+> Completed by Final Gate (2026-09-02).
 > Owner model: DeepSeek V4 Pro (opencode-go/deepseek-v4-pro).
 
 ## Why
@@ -232,6 +233,71 @@ VERIFY    full BFF / Web / lint / build / Playwright desktop + mobile
 - Tests: `ai-summary.test.tsx` — 6 passed（唯一 POST 计数、缓存命中零 POST、未配置/失败/不可用状态）。
 - gate-b.test.tsx 更新为真实 AI 页断言；全量 Web 486 passed；lint 3 warnings（存量）；build 通过。
 
+### Gate 8 — Playwright behavioral acceptance（真实运行服务）
+
+- 重启 BFF（当前工作树，8000）；Vite 5173 为当前树。
+- lumi.sqlite：`services/bff/data/lumi.sqlite` 创建、git-ignored、schema version 1（schema_migrations/lumi_settings/ai_summaries + cache identity index）、无 RSS shadow 表、BFF 重启后设置保留（PUT model → 重启 → GET 命中）。
+- Desktop 1440×900：开文章 → AI 摘要卡 → 点击 → 诚实「AI 未配置」；设置 → AI：Provider 固定、Base URL/Model/摘要语言可见、无任何 key 输入框；保存 `https://api.example.com/v1` + `example-model` → 刷新 → 持久化；Reader 正常；添加来源（RSS/网站/RSSHub 三 tab）正常。
+- Mobile 390×844：全屏 Reader + AI 摘要可达；未配置 alert 呈现；scrollWidth 390 无横向溢出；返回列表正常；订阅 → 添加来源正常；移动设置 AI 页正常（值持久化、无 key 输入）。
+- Console：全程唯一 error 为未配置 POST 的 503 资源日志（预期行为），无应用错误。
+- 无 AI_API_KEY → 无实时生成：Live AI smoke SKIPPED。
+
+### Gate 9 — Vision visual QA
+
+- 3 张截图（Reader desktop / AI Settings desktop / Reader mobile）发送
+  `opencode run -m opencode-go/deepseek-v4-flash-vision-exp`（vision-review
+  agent 未被 `opencode run` 发现——user-level agent 未注册进 CLI；按 runbook
+  fallback 直接调用 Vision 模型）。
+- Verdict: **PASS**（3 条 MINOR：AA 面板观感 = 0012 存量、卡片 vs 分隔线风格 =
+  既有设置页一致模式、保存按钮层级 = 既有 secondary 惯例；均不构成缺陷，未改）。
+
+### Gate 10 — Architecture + security review
+
+- 全清单复核（git diff main...HEAD）：迁移版本化 ✓、temp-DB 测试 ✓、无 shadow
+  表 ✓、GET 零生成 ✓、key 不出 BFF/不进日志/不进响应 ✓、输入 12k 上限 ✓、
+  contentHash 正确 ✓、缓存身份全维度 ✓、超时有界 ✓、provider 错误无原始
+  body ✓、prompt-injection 边界显式 ✓、输出纯文本渲染 ✓、无 Redis/Celery ✓、
+  无 0016/0017/0018 功能 ✓。
+- 加固：`AiSettingsUpdate` 增加 `extra="forbid"`（向设置存储走私 apiKey 之类
+  未知字段 → 422）+ 测试。安全备注：BFF 无认证（既有单用户信任模型），AI
+  base URL 与 FreshRSS 等既有平面同等暴露面；生产加固属 0018/0019 范围。
+- docs/architecture/README.md §5.5/§7 AIProviderAdapter 标注 0015 实装状态。
+
+### Final Gate — verification
+
+```text
+BFF:    uv run pytest — 421 passed（375 存量+0015 新 46：storage 8 / ai_settings 8 /
+        ai_provider 16 / ai_summary 15 / summary_api 7 = 46 新增，含 1 条硬化后新增）
+Web:    pnpm test — 486 passed / 38 files（476 存量 + 10 新增）
+lint:   oxlint — 3 warnings（存量）0 errors
+build:  tsc -b + vite build 通过（chunk-size 提示存量）
+Playwright desktop 1440×900 + mobile 390×844 — 全流程通过（Gate 8）
+Vision: PASS（desktop Reader / AI Settings / mobile Reader）
+```
+
 ## Completion notes
 
-（Final Gate 后填写：DB path、schema version、API、UI、Vision、live smoke 等。）
+- **DB path**: `LUMIRSS_DB_PATH`（默认 `<services/bff>/data/lumi.sqlite`，git-ignored）。
+- **Migration mechanism**: stdlib-only runner（`lumirss/migrations/*.sql` 字典序、
+  每迁移独立事务、`schema_migrations` 记账、失败回滚且不记账、重启幂等）；
+  schema version **1**。
+- **Tables**: `schema_migrations` · `lumi_settings`（allow-list：ai.provider /
+  ai.base_url / ai.model / ai.summary_language）· `ai_summaries`（cache identity
+  UNIQUE）+ 无任何 RSS shadow 表。
+- **API**:
+  - `GET/PUT /api/v1/settings/ai`（configured 仅报告 key 存在与否）
+  - `GET /api/v1/entries/{entryRef}/summary`（只读缓存，绝不花钱）
+  - `POST /api/v1/entries/{entryRef}/summary`（显式生成；精确命中零成本）
+- **AI provider contract**: `AIProvider.summarize(text, language) -> str`；
+  OpenAI-compatible chat/completions 直连（shared httpx，connect 5s / read 60s）；
+  key 仅服务端 env `AI_API_KEY`。
+- **Prompt version**: `summary-v1`（含注入边界声明）；输入 bound 12,000 字符
+  （空白折叠 + 确定性截断）；contentHash = SHA-256(normalized)。
+- **Cache identity**: (entryRef, contentHash, provider, model, promptVersion,
+  language)；单进程 per-key asyncio.Lock + DB UNIQUE 防并发重复生成；失败行
+  持久化 failure_type、显式重试恢复；stale generating → failed(interrupted)。
+- **Summary UI**: Reader 内卡片（8 态全诚实呈现，纯文本渲染，缓存徽标）；
+  AI 设置页（Provider 固定 / Base URL / Model / 摘要语言 / key 状态 banner）。
+- **Live AI smoke**: SKIPPED — 无服务端 AI_API_KEY 配置（未配置 UX 已实测）。
+- **Intentionally deferred**: 0016 翻译/对话、0017 Reader 连续控件与设置迁移、
+  0018 WebDAV/Control Center；无 speculative 表；Provider 多路由/流式/agent 均未做。

@@ -233,14 +233,15 @@ Does not own:
 
 Current/planned responsibilities:
 
-- AI result cache;
-- AI job/error metadata;
-- Lumi settings;
-- theme/reader preference persistence;
-- source discovery drafts and route metadata cache;
-- connector configuration references;
-- future web clip/API/email/Obsidian records;
-- future unified index and processing state.
+- AI result cache — **active (0015)**: `ai_summaries` (entryRef + contentHash + provider/model/promptVersion/language identity; status/summary/failure metadata; never stores FreshRSS article HTML);
+- AI job/error metadata — **active (0015)**: status + `failure_type` on the same row;
+- Lumi settings — **active (0015, scoped)**: allow-listed non-secret server AI settings (`ai.provider`/`ai.base_url`/`ai.model`/`ai.summary_language`); secrets stay in server env, never in the DB;
+- versioned migrations — **active (0015)**: `schema_migrations` + transactional exactly-once `migrations/*.sql`;
+- theme/reader preference persistence — planned (0017);
+- source discovery drafts and route metadata cache — planned;
+- connector configuration references — planned;
+- future web clip/API/email/Obsidian records — planned;
+- future unified index and processing state — planned.
 
 Explicitly not an MVP shadow RSS database.
 
@@ -362,16 +363,24 @@ Expected functions:
 - allow-listed config persistence;
 - controlled reload only through a narrow supervisor boundary if later approved.
 
-### AIProviderAdapter — planned
+### AIProviderAdapter — implemented in 0015 (single provider, no SDK)
 
-Expected functions:
+Actual contract (see `services/bff/src/lumirss/ai_provider.py`):
 
-- OpenAI-compatible request abstraction initially;
-- model/provider configuration;
-- timeout and retry;
-- usage metadata;
-- safe error redaction;
-- future streaming capability without coupling the reader to one provider.
+- narrow `AIProvider.summarize(text, language) -> str` protocol;
+- one direct OpenAI-compatible `chat/completions` implementation over the
+  shared httpx client (base URL + model from lumi.sqlite, API key from
+  server env only);
+- bounded timeout (connect 5s / read 60s), no auto-retry of auth /
+  invalid-request / model-not-found;
+- stable Lumi error mapping (`ai_not_configured` / `ai_auth_error` /
+  `ai_model_error` / `ai_rate_limited` / `ai_timeout` /
+  `ai_invalid_response` / `ai_upstream_error`), upstream bodies never
+  leaked;
+- explicit prompt-injection boundary in `summary-v1` system prompt.
+
+Multi-provider routing, fallback chains, streaming and agent orchestration
+remain out of scope.
 
 ---
 
