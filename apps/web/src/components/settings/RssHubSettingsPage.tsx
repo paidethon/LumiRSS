@@ -1,7 +1,10 @@
-/** RssHubSettingsPage — RSSHub 实例管理（0010a F4，AC25）。
+/** RssHubSettingsPage — RSSHub 实例清单（0010a F4，AC25）。
  * OrigRead rsshub 设置页复刻（inspired）：总开关 Banner + 实例列表
  * （启停/删除 + url·地区·维护者）+ 添加实例 + 恢复默认。
- * 测试连接 planned·0014（BFF 代理）；前端零直连 RSSHub（架构边界）。 */
+ * 0014a Gate 3：实例清单是浏览器侧 UI 参考（不参与 0014 构造/预览）；
+ * 真实性分工：来源发现（路由目录/预览）0014 已实现（订阅中心 →
+ * 添加来源 → RSSHub）；实例级健康/诊断/配置 = 未来 0018 RSSHub
+ * Control Center（schema 驱动 allow-list，非任意环境变量编辑器）。 */
 
 import { useState } from 'react'
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
@@ -31,7 +34,8 @@ export function RssHubSettingsSection() {
     update({ rsshubSettings: { ...r, instances } })
 
   /** 添加实例（OrigRead「测试并添加」语义的纯前端版：URL 校验 + 查重；
-   * 连通测试 0014 BFF 代理后接入）。 */
+   * 连通测试经 BFF（RSSHUB_BASE_URL）在添加来源 → RSSHub 预览时完成，
+   * 此处不清测连通性、不直连 RSSHub（架构边界）。 */
   const addInstance = () => {
     const url = newUrl.trim()
     if (!/^https?:\/\/[\w.-]+/.test(url)) {
@@ -74,8 +78,9 @@ export function RssHubSettingsSection() {
         <div>
           <p className="text-sm font-medium text-[var(--lumi-text-primary)]">RSSHub 集成</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-            来源发现（0014）使用服务端配置的 RSSHub 实例（RSSHUB_BASE_URL），经 BFF 代理，
-            浏览器不直连 RSSHub；此处为实例清单管理。
+            来源发现与路由预览（0014）已可用：订阅中心 →「添加来源」→ RSSHub；经
+            服务端 RSSHUB_BASE_URL + BFF 代理，浏览器不直连。此处为实例清单管理
+            （浏览器侧参考，不参与构造/预览）。
           </p>
         </div>
         <Switch

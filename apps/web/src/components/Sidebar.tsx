@@ -8,6 +8,7 @@ import {
   Inbox,
   Link2,
   Mail,
+  Plus,
   Rss,
   Star,
   Tags,
@@ -19,6 +20,7 @@ import type { Feed } from '../api/types'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import type { ContentScope } from '../lib/navigation'
 import { Skeleton } from './ui/Skeleton'
+import AddSourceDialog from './AddSourceDialog'
 import SidebarHeader from './SidebarHeader'
 import { cx } from './ui/cx'
 
@@ -170,8 +172,17 @@ export function mergeFeedsByCategory(feeds: Feed[]): CategoryNode[] {
 /** RSS 订阅树（0011：主区域=scope / chevron=tree，两行为完全分离）。
  *
  * Layout 状态（tree 展开、分类展开）为本地 state——tree 收起时仍可
- * 处于 RSS scope（§17 合法）。 */
-function RssTree({ onNavigate }: { onNavigate?: () => void }) {
+ * 处于 RSS scope（§17 合法）。
+ *
+ * 0014a Gate 1：桌面上下文（onAddSource 传入）在 RSS 行尾部渲染
+ * 「+ 添加来源」入口（复用 AddSourceDialog，订阅逻辑零复制）。 */
+function RssTree({
+  onNavigate,
+  onAddSource,
+}: {
+  onNavigate?: () => void
+  onAddSource?: () => void
+}) {
   const scope = useReaderUi((s) => s.scope)
   const view = useReaderUi((s) => s.view)
   const selectSection = useReaderUi((s) => s.selectSection)
@@ -251,6 +262,25 @@ function RssTree({ onNavigate }: { onNavigate?: () => void }) {
             className={cx('size-4 transition-transform duration-[var(--lumi-motion-fast)]', treeExpanded && 'rotate-180')}
           />
         </button>
+        {/* 0014a Gate 1：桌面添加来源（RSS 订阅 → +；aria-label/title 承载
+            语义。移动端入口在订阅页「添加来源」按钮——本按钮仅桌面上下文
+            渲染，与订阅管理页共用同一个 AddSourceDialog，零复制逻辑。） */}
+        {onAddSource !== undefined && (
+          <button
+            type="button"
+            onClick={onAddSource}
+            aria-label="添加来源"
+            title="添加来源"
+            className={cx(
+              'mr-1 flex size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)]',
+              'text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)]',
+              'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            )}
+          >
+            <Plus aria-hidden className="size-4" />
+          </button>
+        )}
       </div>
 
       {treeExpanded && (
@@ -392,10 +422,20 @@ export default function Sidebar({
   const selectView = useReaderUi((s) => s.selectView)
   const selectScope = useReaderUi((s) => s.selectScope)
   const selectSection = useReaderUi((s) => s.selectSection)
+  // 0014a Gate 1：桌面上下文（无 onNavigate = 桌面常驻栏；移动抽屉会在
+  // 导航完成后回调关闭）才渲染「添加来源」按钮与共享 AddSourceDialog。
+  const isDesktop = onNavigate === undefined
+  const [addSourceOpen, setAddSourceOpen] = useState(false)
 
   return (
     <nav className="flex flex-col gap-1 p-2.5 max-lg:gap-1" aria-label="主导航">
       <SidebarHeader />
+      {isDesktop && (
+        <AddSourceDialog
+          open={addSourceOpen}
+          onClose={() => setAddSourceOpen(false)}
+        />
+      )}
 
       {/* ===== 信息来源 ===== */}
       <div className="flex flex-col gap-0.5" role="group" aria-label="信息来源">
@@ -452,7 +492,10 @@ export default function Sidebar({
           </button>
         </div>
 
-        <RssTree onNavigate={onNavigate} />
+        <RssTree
+          onNavigate={onNavigate}
+          onAddSource={isDesktop ? () => setAddSourceOpen(true) : undefined}
+        />
 
         {/* Phase 2 信息来源项（可见禁用） */}
         <div className="mt-1 flex flex-col gap-0.5">
