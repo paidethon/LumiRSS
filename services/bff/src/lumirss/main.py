@@ -29,7 +29,7 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
-from lumirss.config import FreshRSSSettings
+from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.feed_preview import (
@@ -59,6 +59,7 @@ from lumirss.source_discovery import (
     NoFeedDiscovered,
     SourceDiscoveryService,
 )
+from lumirss.storage import Database
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
     decode_subscription_ref,
@@ -69,11 +70,14 @@ from lumirss.subscriptionref import (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create the shared HTTP client; the FreshRSSAdapter is created lazily
     on the first /api/v1/feeds request (so /health/live works even when
-    FreshRSS is not configured)."""
+    FreshRSS is not configured). The Lumi SQLite Database handle is created
+    here too — cheap, no file I/O; migrations run lazily on the first
+    storage use (0015)."""
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=5.0),
         trust_env=False,
     )
+    app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
     app.state.freshrss_adapter = None
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
