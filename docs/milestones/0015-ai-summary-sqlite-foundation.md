@@ -221,6 +221,17 @@ VERIFY    full BFF / Web / lint / build / Playwright desktop + mobile
 - [x] `GET /api/v1/entries/{entryRef}/summary` (never generates) + `POST` (explicit generation); stable error mapping added.
 - Tests: `tests/test_summary_api.py` — 7 passed; full BFF suite 420 passed.
 
+### Gate 6 — AI settings UI
+
+- [x] `components/settings/AiSettingsPage.tsx` — Provider 固定展示、Base URL / Model / 摘要语言（PUT 只写非机密字段）、key 状态 banner（服务端环境变量，页面无任何 key 输入框）、保存/错误反馈；categories.tsx 的 AI 分类从 planned 占位改为真实配置 + 0016 planned 项。
+- Tests: `ai-settings-page.test.tsx` — 4 passed（PUT 载荷不含 apiKey；configured banner；保存失败路径）。
+
+### Gate 7 — Reader summary UI
+
+- [x] `components/ReaderSummary.tsx` — not_generated/生成按钮、generating、success（纯文本渲染 + model·时间 + 缓存徽标）、failed（failureType 稳定文案 + 重试）、not_configured、content 不可用、loading 骨架；集成进 Reader（header 与正文之间），移动端复用同一组件。
+- Tests: `ai-summary.test.tsx` — 6 passed（唯一 POST 计数、缓存命中零 POST、未配置/失败/不可用状态）。
+- gate-b.test.tsx 更新为真实 AI 页断言；全量 Web 486 passed；lint 3 warnings（存量）；build 通过。
+
 ## Completion notes
 
 （Final Gate 后填写：DB path、schema version、API、UI、Vision、live smoke 等。）
