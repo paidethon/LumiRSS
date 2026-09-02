@@ -191,8 +191,35 @@ VERIFY    full BFF / Web / lint / build / Playwright desktop + mobile
 
 ### Gate 0 — Spec + activation
 
-- [x] Spec created; README/ROADMAP activated 0015.
+- [x] Spec created; README/ROADMAP/dashboard activated 0015.
 - Commit: `docs: activate milestone 0015`
+
+### Gate 1 — Lumi SQLite foundation
+
+- [x] `lumirss/storage.py` (Database: connection-per-operation, FK/busy_timeout/WAL, to_thread) + `lumirss/migrations.py` (versioned, exactly-once, transactional, schema_migrations) + `migrations/0001_initial.sql` (lumi_settings, ai_summaries + UNIQUE cache identity).
+- [x] `LUMIRSS_DB_PATH` default `<services/bff>/data/lumi.sqlite` (git-ignored); `.env.example` updated.
+- Tests: `tests/test_storage.py` — 8 passed (fresh migration / idempotent restart / version contiguity / cross-connection persistence / reopen / UNIQUE / CHECK / failed-migration rollback).
+
+### Gate 2 — Server AI settings
+
+- [x] `lumirss/ai_settings.py` — allow-listed typed keys (provider/base_url/model/summary_language), defaults in code, DB overrides only; `InvalidAiSettings` → 400.
+- [x] `GET/PUT /api/v1/settings/ai` — `configured` derived from env `AI_API_KEY`, key never in responses.
+- Tests: `tests/test_ai_settings.py` — 7 passed.
+
+### Gate 3 — OpenAI-compatible provider
+
+- [x] `lumirss/ai_provider.py` — narrow `AIProvider.summarize` protocol; direct chat/completions over shared httpx (connect 5s / read 60s); stable errors (ai_not_configured/auth/model/rate_limited/timeout/invalid_response/upstream); no raw body leaks; `summary-v1` system prompt with injection boundary.
+- Tests: `tests/test_ai_provider.py` — 16 passed (zero network via MockTransport).
+
+### Gate 4 — Summary domain + cache
+
+- [x] `lumirss/ai_summary.py` — normalize (collapse + 12k bound), SHA-256 contentHash, cache identity (entryRef, contentHash, provider, model, promptVersion, language), states not_generated/generating/success/failed, stale-generating → interrupted, per-key asyncio.Lock + DB UNIQUE guard, failed rows persist failure_type, retry recovers.
+- Tests: `tests/test_ai_summary.py` — 15 passed (cache-hit counter, hash/identity changes, failure/retry, concurrency == 1 call).
+
+### Gate 5 — Summary API
+
+- [x] `GET /api/v1/entries/{entryRef}/summary` (never generates) + `POST` (explicit generation); stable error mapping added.
+- Tests: `tests/test_summary_api.py` — 7 passed; full BFF suite 420 passed.
 
 ## Completion notes
 
