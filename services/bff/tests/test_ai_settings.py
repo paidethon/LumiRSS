@@ -103,6 +103,17 @@ def test_configured_reports_key_presence_but_never_the_key(tmp_path, monkeypatch
     assert "api_key" not in response.text
 
 
+def test_put_rejects_unknown_fields_like_api_key(tmp_path):
+    with TestClient(app) as client:
+        app.state.db = Database(tmp_path / "lumi.sqlite")
+        response = client.put(
+            "/api/v1/settings/ai",
+            json={"apiKey": "sk-smuggled"},
+        )
+
+    assert response.status_code == 422
+
+
 def test_blank_base_url_clears_value(tmp_path):
     with TestClient(app) as client:
         app.state.db = Database(tmp_path / "lumi.sqlite")

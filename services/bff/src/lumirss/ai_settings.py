@@ -14,7 +14,7 @@ Design constraints:
 import urllib.parse
 from typing import Callable, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from lumirss.storage import Database
 
@@ -97,8 +97,12 @@ class AiSettingsUpdate(BaseModel):
     """PUT /api/v1/settings/ai body — every field optional, validated.
 
     Missing fields keep their current value; blank baseUrl/model clear it.
-    There is no secret field on this model by design.
+    There is no secret field on this model by design, and unknown fields
+    are rejected (extra="forbid") so an attempt to smuggle e.g. an apiKey
+    into the settings store fails loudly instead of being ignored.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     provider: Literal["openai_compatible"] | None = None
     baseUrl: str | None = None
