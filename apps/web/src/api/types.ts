@@ -151,3 +151,35 @@ export interface RssHubRoutesResponse {
   configured: boolean
   routes: RssHubRoute[]
 }
+
+/** GET/PUT /api/v1/settings/ai（0015）——浏览器安全视图：
+ * configured 只报告服务端是否配置了 API key；key 本身永不下发。 */
+export interface AiSettings {
+  provider: 'openai_compatible'
+  baseUrl: string
+  model: string
+  summaryLanguage: 'zh-CN' | 'en'
+  configured: boolean
+}
+
+/** PUT /api/v1/settings/ai body（0015）：只含非机密字段，可部分更新。 */
+export interface AiSettingsUpdate {
+  baseUrl?: string
+  model?: string
+  summaryLanguage?: 'zh-CN' | 'en'
+}
+
+/** GET/POST /api/v1/entries/{entryRef}/summary 状态（0015）。 */
+export type SummaryStatus = 'not_generated' | 'generating' | 'success' | 'failed'
+
+export interface EntrySummary {
+  status: SummaryStatus
+  summary: string | null
+  provider: string | null
+  model: string | null
+  promptVersion: string | null
+  language: string | null
+  generatedAt: string | null
+  failureType: string | null
+  cached: boolean
+}

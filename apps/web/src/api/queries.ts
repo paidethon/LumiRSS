@@ -5,9 +5,12 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   discoverFeeds,
+  generateEntrySummary,
+  getAiSettings,
   getCategories,
   getEntries,
   getEntry,
+  getEntrySummary,
   getFeeds,
   getFreshRssUiUrl,
   getRssHubRoutes,
@@ -21,6 +24,7 @@ import {
   setEntryState,
   subscribeFeed,
   unsubscribeFeed,
+  updateAiSettings,
 } from './client'
 import type { UiView } from '../lib/read-later'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
@@ -226,5 +230,55 @@ export function useRssHubPreviewMutation() {
   return useMutation({
     mutationFn: (vars: { routeId: string; params: Record<string, string> }) =>
       previewRssHub(vars.routeId, vars.params),
+  })
+}
+
+/** 0015：AI 设置（服务端持久化；enabled=false 时不发请求）。 */
+export function useAiSettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['ai-settings'],
+    queryFn: ({ signal }) => getAiSettings(signal),
+    enabled,
+  })
+}
+
+/** 0015：保存非机密 AI 设置。成功后失效 AI 设置与所有摘要状态
+ * （model/language 参与缓存身份，旧缓存不再匹配 → Reader 诚实回到
+ * not_generated，不展示过期摘要）。 */
+export function useUpdateAiSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (update: {
+      baseUrl?: string
+      model?: string
+      summaryLanguage?: 'zh-CN' | 'en'
+    }) => updateAiSettings(update),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+        queryClient.invalidateQueries({ queryKey: ['entry-summary'] }),
+      ])
+    },
+  })
+}
+
+/** 0015：单篇摘要状态（GET 语义：只读缓存，绝不产生 provider 调用）。 */
+export function useEntrySummary(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['entry-summary', entryRef],
+    queryFn: ({ signal }) => getEntrySummary(entryRef!, signal),
+    enabled: entryRef !== null,
+  })
+}
+
+/** 0015：显式生成摘要（POST；成功 = 服务端确认的状态，直接写回对应
+ * entryRef 的 query cache；失败由调用方展示 + 重试）。 */
+export function useGenerateSummaryMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => generateEntrySummary(entryRef),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['entry-summary', entryRef], data)
+    },
   })
 }

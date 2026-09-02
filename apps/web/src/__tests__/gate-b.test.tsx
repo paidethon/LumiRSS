@@ -149,16 +149,42 @@ describe('分类页 planned 语义（AC10）', () => {
     vi.unstubAllGlobals()
   })
 
-  it('AI 页：3 个 planned（0015/0016）', async () => {
+  it('AI 页：0015 设置真实可用 + 0016 planned', async () => {
+    // 0015 AI 设置来自 BFF（GET /api/v1/settings/ai）：stub 一份真实形状响应。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/settings/ai') {
+          return Promise.resolve(
+            jsonResponse({
+              provider: 'openai_compatible',
+              baseUrl: '',
+              model: '',
+              summaryLanguage: 'zh-CN',
+              configured: false,
+            }),
+          )
+        }
+        throw new Error(`unexpected fetch: ${String(input)}`)
+      }),
+    )
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /^AI$/ }))
+    // 0015：AI 摘要配置真实可用（key 状态 banner + Base URL/Model/摘要语言 + 保存）
     await waitFor(() => {
-      expect(screen.getByText('AI 总结', { selector: 'label' })).toBeInTheDocument()
-      expect(screen.getByText('AI 翻译', { selector: 'label' })).toBeInTheDocument()
+      expect(screen.getByText(/API 密钥未配置/)).toBeInTheDocument()
+      expect(screen.getByLabelText('Base URL')).toBeInTheDocument()
+      expect(screen.getByLabelText('Model')).toBeInTheDocument()
+      expect(screen.getByLabelText('摘要语言')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
     })
+    // 0016 翻译 / 对话仍为 planned 占位
+    expect(screen.getByText('AI 翻译', { selector: 'label' })).toBeInTheDocument()
+    expect(screen.getByText('文章 AI 对话', { selector: 'label' })).toBeInTheDocument()
     // planned Switch 禁用
     const switches = screen.getAllByRole('switch')
     for (const sw of switches) expect(sw).toBeDisabled()
+    vi.unstubAllGlobals()
   })
 
   it('数据控制页：清缓存/重置真实可用（无 planned 徽标），备份 planned', async () => {

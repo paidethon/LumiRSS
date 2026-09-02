@@ -52,6 +52,8 @@ import { TranslationSettingsSection } from './TranslationSettingsPage'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubSettingsSection } from './RssHubSettingsPage'
 import { BackupSettingsSection } from './BackupSettingsPage'
+// 0015 Gate 6：AI 设置（OpenAI-compatible 配置 + key 状态，真实可用）
+import { AiSettingsSection } from './AiSettingsPage'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/逃生入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
@@ -387,16 +389,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       ]
     case 'ai':
       return [
-        { type: 'title', value: 'AI 增强' },
-        {
-          type: 'toggle',
-          label: 'AI 总结',
-          description: '阅读时生成单篇摘要（0015 AI Foundation, Summary & Lumi SQLite Foundation）。',
-          checked: false,
-          onCheckedChange: () => {},
-          planned: true,
-          plannedFor: '0015',
-        },
+        { type: 'title', value: 'AI 摘要（0015）' },
+        { type: 'custom', node: <AiSettingsSection /> },
+        { type: 'title', value: '后续能力' },
         {
           type: 'toggle',
           label: 'AI 翻译',
@@ -407,16 +402,13 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           plannedFor: '0016',
         },
         {
-          type: 'select',
-          label: 'Provider',
-          description: 'OpenAI-compatible API 配置（0015）。',
-          value: 'openai' as const,
-          options: [
-            { value: 'openai', label: 'OpenAI compatible' },
-          ],
-          onChange: () => {},
+          type: 'toggle',
+          label: '文章 AI 对话',
+          description: '围绕当前文章上下文的 AI 对话（0016）。',
+          checked: false,
+          onCheckedChange: () => {},
           planned: true,
-          plannedFor: '0015',
+          plannedFor: '0016',
         },
       ]
     case 'data':
