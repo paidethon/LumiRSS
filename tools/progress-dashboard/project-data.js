@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-08-30",
+  updatedAt: "2026-09-02",
   sourceOfTruth: "docs/README.md",
-  currentPhaseId: "phase-6",
-  currentMilestoneId: "0010",
+  currentPhaseId: "phase-8",
+  currentMilestoneId: "0015",
 
   phases: [
     {
@@ -86,7 +86,7 @@ window.LUMIRSS_PROJECT = {
       label: "Phase 7 — Lumi-native Source Control",
       purpose: "让普通用户在 Lumi 内完成订阅增删、分类、OPML、刷新与来源发现（RSSHub 路由搜索/预览/一键订阅）。",
       why: "Lumi 必须成为唯一日常用户界面；FreshRSS/RSSHub 原生页面只保留为高级逃生门。",
-      milestoneIds: ["0012", "0013"]
+      milestoneIds: ["0012", "0013", "0014", "0014a"]
     },
     {
       id: "phase-8",
@@ -95,7 +95,7 @@ window.LUMIRSS_PROJECT = {
       label: "Phase 8 — AI Enhancement",
       purpose: "按需单篇摘要、翻译与文章上下文对话（OpenAI-compatible Provider，SQLite 缓存），AI 关闭或失败不影响阅读。",
       why: "AI 是可选增强：用户主动触发、结果归 LumiRSS 自己（存 SQLite），阅读优先于 AI。",
-      milestoneIds: ["0014", "0015"]
+      milestoneIds: ["0015", "0016"]
     },
     {
       id: "phase-9",
@@ -104,7 +104,7 @@ window.LUMIRSS_PROJECT = {
       label: "Phase 9 — Reader Power UX & Unified Settings",
       purpose: "搜索、键盘、批量操作、阅读偏好（字体/字号/行距/宽度）、主题自定义与 FreshRSS/RSSHub/AI 统一设置中心（服务端设置 API 在此落地）。",
       why: "在进入生产部署前完成日常产品体验的收尾。",
-      milestoneIds: ["0016"]
+      milestoneIds: ["0017"]
     },
     {
       id: "phase-10",
@@ -113,7 +113,7 @@ window.LUMIRSS_PROJECT = {
       label: "Phase 10 — Production & Release",
       purpose: "Caddy + HTTPS + 单用户访问保护 + 阿里云 ECS + 备份恢复演练 + 回归/可访问性/性能收尾，发布正式 MVP。",
       why: "最终形态是单台普通 Linux 服务器上的自托管部署：简单、可备份、可恢复。",
-      milestoneIds: ["0017", "0018"]
+      milestoneIds: ["0018", "0019"]
     }
   ],
 
@@ -433,8 +433,8 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0010",
       phaseId: "phase-6",
-      name: "Settings Center & Adaptive Shell",
-      status: "in-progress",
+      name: "Settings Center & Adaptive Shell (+0010a)",
+      status: "completed",
       shortGoal: "Folo-style settings + adaptive panes + mobile tabs",
       goal: "Folo 式设置中心（声明式设置行 + 9 分类：5 真实可用 + 4 planned）、侧栏信息架构分组（信息来源/工作区，Phase 2 项可见禁用）、三栏拖拽/折叠/持久化、移动端底部 Tab——全部纯前端（localStorage），BFF 零变化。原 0010 Unified Subscription Center 顺延为 0011。",
       implemented: [
@@ -469,12 +469,12 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0011",
       phaseId: "phase-6",
-      name: "Reader Style Deep Customization",
-      status: "next",
-      shortGoal: "Font import + Chinese typography + theme packs",
-      goal: "阅读样式深度自定义（纯前端）：字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式解决 CJK 体积）、中文排版深度（首行缩进/标点悬挂/简繁转换/CJK 阅读时长）、主题包分享（.lumitheme JSON 完整快照导入导出——Web 阅读器无先例的差异化）、代码高亮主题（shiki 按需加载）、Bionic Reading、分页滚动（候选）。依据：docs/design/reader-research.md（10+ 阅读器调研）。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
+      name: "Mobile UI Five-Screen Alignment",
+      status: "completed",
+      shortGoal: "Mobile 一级页面 · 抽屉导航 · 底部导航岛 · list↔Reader 契约",
+      goal: "移动端信息架构一级页面（首页/订阅/搜索/收藏）+ 导航抽屉 + 底部导航岛；列表 ↔ 全屏 Reader 出行契约（0014a 收口补齐收藏 section 让位）。",
+      implemented: ["移动端一级页面与卡片化列表、主导航（0007 drawer 升级 modal）、底部四 tab、移动 Reader 全屏语义（0011 Gate 1–4）"],
+      acceptance: "已完成（见 docs/milestones/0011-mobile-ui-five-screen-alignment.md）",
       problems: [],
       learned: [],
       devlog: null
@@ -482,12 +482,12 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0012",
       phaseId: "phase-7",
-      name: "Unified Subscription Center",
-      status: "planned",
-      shortGoal: "Feed CRUD + categories + OPML inside Lumi",
-      goal: "普通用户在 Lumi 内完成订阅添加/删除/重命名/分类、OPML 导入导出、手动刷新与 FreshRSS 状态展示，不再需要进入 FreshRSS 原生界面（经 FreshRSSControlAdapter 控制平面）。",
-      implemented: [],
-      acceptance: "Not started yet.",
+      name: "Reader Style Deep Customization",
+      status: "completed",
+      shortGoal: "字体导入 + 中文排版 + 主题包 + 代码高亮",
+      goal: "阅读深度自定义：字体导入（FontFace + IndexedDB）、中文排版（首行缩进/标点悬挂/简繁/CJK 阅读时长）、主题包 .lumitheme 导入导出、代码高亮（Shiki）、Aa 快速面板。",
+      implemented: ["Depth customization completed（见 docs/milestones/0012-reader-style-deep-customization.md）"],
+      acceptance: "已完成（见 docs/milestones/0012-reader-style-deep-customization.md）",
       problems: [],
       learned: [],
       devlog: null
@@ -495,25 +495,43 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0013",
       phaseId: "phase-7",
-      name: "Source Discovery & RSSHub Integration",
-      status: "planned",
-      shortGoal: "Paste URL → discover → preview → subscribe",
-      goal: "粘贴普通 URL 即可发现来源：RSS/Atom 检测 → rel=alternate → 常见 endpoint → RSSHub 路由匹配 → 参数表单 → 预览 → 一键订阅进 FreshRSS；含 SSRF/超时/输出限制等安全防护。",
-      implemented: [],
-      acceptance: "Spec not written yet — 开工时按 PRD §10 先写 spec 再实现。",
+      name: "Unified Subscription Center",
+      status: "completed",
+      shortGoal: "Feed CRUD + categories + OPML inside Lumi",
+      goal: "普通用户在 Lumi 内完成订阅增删/分类/重命名、OPML 导入（preview→confirm→merge）与导出、FreshRSS 实时连接状态（经 FreshRSSControlAdapter 控制平面）。",
+      implemented: ["SubscriptionsPage 管理视角、OPML import/export、FreshRSS 状态/逃生入口（可信 URL 才渲染）"],
+      acceptance: "已完成（见 docs/milestones/0013-unified-subscription-center.md）",
       problems: [],
       learned: [],
       devlog: null
     },
     {
       id: "0014",
-      phaseId: "phase-8",
-      name: "AI Foundation & Summary",
-      status: "planned",
-      shortGoal: "On-demand summary + SQLite cache",
-      goal: "用户主动触发的单篇摘要（OpenAI-compatible API），结果与缓存存入 SQLite；AI 关闭或失败不影响阅读。（由原 0009 AI Summary 二次顺延而来）",
-      implemented: [],
-      acceptance: "Not started yet.",
+      phaseId: "phase-7",
+      name: "Source Discovery & RSSHub Integration",
+      status: "completed",
+      shortGoal: "URL → RSS/Atom 发现 · RSSHub 路由 → 预览 → 订阅",
+      goal: "网站 → RSS/Atom 发现（rel=alternate + 常见端点探测）与 RSSHub 目录/参数/预览，AddSourceDialog 三模式单表面，全部经 BFF 代理（server-side RSSHUB_BASE_URL）。",
+      implemented: ["source-discovery + rsshub 服务（396 新增 BFF 用例、catalog 14 条实测校准）、AddSourceDialog（RSS/网站/RSSHub）、preview→subscribe 复用 0013 管道"],
+      acceptance: "已完成（见 docs/milestones/0014-source-discovery-rsshub-integration.md）；浏览器实机验收归 0014a",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0014a",
+      phaseId: "phase-7",
+      name: "UI Acceptance & Navigation Consistency",
+      status: "completed",
+      shortGoal: "桌面 Add Source · 移动 Reader 一致性 · 设置真实性 · Playwright 验收",
+      goal: "关闭 0014 真实产品验收缺口：桌面「添加来源」入口（复用 AddSourceDialog）、移动收藏→全屏 Reader（section 让位 + back 原列表）、FreshRSS/RSSHub 设置事实对齐（无 stale planned·0013）、真实 Playwright 桌面/移动验收；并修订 0015–0019 路线（用户已批准）。",
+      implemented: [
+        "Sidebar 桌面上下文「添加来源」入口（复用 AddSourceDialog，无第二套订阅逻辑）；订阅管理页新增 导出 OPML（共享 useOpmlExportFlow）",
+        "App 移动布局契约：收藏/搜索/订阅 section 在 Reader 打开时 max-lg:hidden 让位——任何文章列表点击均进入全屏 Reader，back 返回原列表（section/view/scope 不变）",
+        "设置事实对齐：清除 stale planned·0013（账户与服务 FreshRSS 状态 / 备份页 OPML / 侧栏隐藏已读归属）；FreshRSS 维护操作 + RSSHub 运营中心 → planned·0018（诚实区分 0014 已实现能力与 0018 运营能力）",
+        "0015–0019 路线修订：lumi.sqlite Lumi-owned 真源、0017 连续式 Reader 控件、0018 RSSHub Control Center + FreshRSS 运营 + WebDAV 备份/恢复（用户批准）"
+      ],
+      acceptance: "通过：Web 476/36 files、BFF 367、lint 0 errors、build ✓；真实 Playwright 桌面 1440×900 + 移动 390×844 全流程验收通过（见 docs/milestones/0014a-ui-acceptance-navigation.md）。",
       problems: [],
       learned: [],
       devlog: null
@@ -521,10 +539,10 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0015",
       phaseId: "phase-8",
-      name: "Translation & AI Conversation",
-      status: "planned",
-      shortGoal: "Translation + article-scoped AI chat",
-      goal: "标题/正文翻译与双语阅读；文章上下文 AI 对话（共享 AiChatCore：桌面浮动窗口/Drawer、移动 Bottom Sheet/全屏）。",
+      name: "AI Foundation, Summary & Lumi SQLite Foundation",
+      status: "next",
+      shortGoal: "On-demand summary + lumi.sqlite foundation",
+      goal: "激活 Lumi-owned 持久层 lumi.sqlite（迁移/模式策略先行）：AI 结果缓存、provider/model 元数据、prompt 版本、内容哈希、生成状态、需持久化的服务端设置、备份元数据；OpenAI-compatible provider + 按需摘要；FreshRSS 仍为 RSS-domain 唯一真源（不影子复制 feeds/entries/read/starred/订阅/分类）。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -533,11 +551,11 @@ window.LUMIRSS_PROJECT = {
     },
     {
       id: "0016",
-      phaseId: "phase-9",
-      name: "Reader Power UX & Unified Settings",
+      phaseId: "phase-8",
+      name: "Translation & AI Conversation",
       status: "planned",
-      shortGoal: "Search, keyboard, reading prefs, settings",
-      goal: "搜索、键盘导航、批量操作、阅读位置恢复、字体/字号/行距/宽度偏好、主题自定义与 FreshRSS/RSSHub/AI 统一设置中心。",
+      shortGoal: "Title/body translation + article-scoped AI chat",
+      goal: "标题/正文翻译与双语阅读、翻译缓存、文章上下文 AI 对话（共享 0015 AI foundation）、桌面浮动/停靠 + 移动 Bottom Sheet/Fullscreen；依赖 0015。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -546,11 +564,11 @@ window.LUMIRSS_PROJECT = {
     },
     {
       id: "0017",
-      phaseId: "phase-10",
-      name: "Production & Operations",
+      phaseId: "phase-9",
+      name: "Reader Power UX & Unified Settings",
       status: "planned",
-      shortGoal: "Caddy + HTTPS + ECS + backup/restore",
-      goal: "生产形态：Caddy（HTTPS + 静态资源 + /api 反代）+ Docker Compose 单机部署到阿里云 ECS，备份/恢复演练、日志脱敏与 CI hardening。",
+      shortGoal: "Continuous reader controls (WYSIWYG) + unified settings",
+      goal: "微信读书式连续阅读定制（bounded 连续值，非离散预设）：字号（滑杆 A-/A+）、行高、段落间距、内容/页宽、左右页边距——即时生效（WYSIWYG）且持久化数值；继承既有 Reader 定制（主题/字体/中文排版/代码/图片/对齐/首行缩进/减动效/重置默认）；统一设置服务端化（0015 lumi.sqlite 持久化，保留本地即时响应）；具体 min/max/default 以视觉测试与排版约束选定。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],
@@ -560,10 +578,23 @@ window.LUMIRSS_PROJECT = {
     {
       id: "0018",
       phaseId: "phase-10",
+      name: "Production, Operations & Backup",
+      status: "planned",
+      shortGoal: "RSSHub Control Center · FreshRSS operations · WebDAV backup/restore",
+      goal: "三大运营面：A) RSSHub Control Center（schema 驱动类型化 allow-list 配置；secrets 只写不读回；restartRequired 展示；无任意环境变量编辑器/任意 shell/无限制 Docker socket）；B) FreshRSS Operations（诊断/健康/备份/高级逃生入口；不重建 FreshRSS UI）；C) WebDAV 备份/恢复（manifest + FreshRSS 导出 + lumi.sqlite + 服务配置 + RSSHub 配置 + checksums；secrets 加密或排除；多步非破坏恢复流程）。另含生产 Compose/Caddy/TLS/持久卷/健康就绪/日志脱敏/升级回滚/资源限制/灾难恢复演练。",
+      implemented: [],
+      acceptance: "Not started yet.",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0019",
+      phaseId: "phase-10",
       name: "MVP Stabilization & Release",
       status: "planned",
-      shortGoal: "Regression + a11y + release tag",
-      goal: "全量回归、可访问性审查、响应式矩阵、性能预算、安全审查、新用户部署演练与正式 MVP tag。",
+      shortGoal: "Regression + responsive matrix + drills + release",
+      goal: "MVP 冻结：全量回归、桌面/移动响应式矩阵、Playwright 流程、可访问性、安全、性能预算、空/加载/错误态、备份恢复演练、升级回滚演练、许可证审查、operator 文档、release notes 与 MVP release；不再新增主要产品功能。",
       implemented: [],
       acceptance: "Not started yet.",
       problems: [],

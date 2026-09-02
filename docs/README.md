@@ -8,10 +8,10 @@
 
 **Active milestone**: —
 
-**Last completed**: 0014 — Source Discovery & RSSHub Integration
-→ [milestones/0014-source-discovery-rsshub-integration.md](milestones/0014-source-discovery-rsshub-integration.md)
+**Last completed**: 0014a — UI Acceptance & Navigation Consistency
+→ [milestones/0014a-ui-acceptance-navigation.md](milestones/0014a-ui-acceptance-navigation.md)
 
-**Next planned**: 0015 — AI Foundation & Summary
+**Next planned**: 0015 — AI Foundation, Summary & Lumi SQLite Foundation
 
 ---
 
@@ -83,5 +83,6 @@ during normal development.
 | 0012 | Reader Style Deep Customization | Completed |
 | 0013 | Unified Subscription Center | Completed |
 | 0014 | Source Discovery & RSSHub | Completed |
-| 0015 | AI Foundation & Summary | Planned |
+| 0014a | UI Acceptance & Navigation Consistency | Completed |
+| 0015 | AI Foundation, Summary & Lumi SQLite Foundation | Planned |
 | 0016–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |

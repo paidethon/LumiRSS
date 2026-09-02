@@ -1,9 +1,11 @@
 # LumiRSS 产品需求文档
 
-> 文档版本：v6.2 — Reader Style Deep Customization 路线修订  
-> 日期：2026-08-30  
-> 状态：Adopted（v6.1 经 0010a 补丁轮路线修订，用户于 2026-08-30 批准插排）  
-> 适用范围：0009–0018 与后续 Phase 2 方向
+> 文档版本：v6.3 — 0014a UI Acceptance 路线修订  
+> 日期：2026-09-02  
+> 状态：Adopted（v6.1 经 0010a 补丁轮路线修订；v6.2 收口 Reader Style；
+> v6.3 经 0014a 路线修订：插入 0014a、0015–0019 按用户批准的
+> SQLite/Reader/运营决策定稿）  
+> 适用范围：0009–0019 与后续 Phase 2 方向
 
 ---
 
@@ -242,9 +244,10 @@ FreshRSS 是 RSS 域唯一真源，不是未来所有信息类型的总数据库
 | RSS starred state | FreshRSS |
 | RSS 更新与保留策略 | FreshRSS |
 | RSSHub 路由定义 | RSSHub 官方元数据 / Lumi 缓存目录 |
-| RSSHub 实例状态 | RSSHub 实例，Lumi 只展示和缓存短期诊断 |
-| Lumi UI 设置 | 浏览器或 Lumi SQLite，按 spec 决定 |
-| Reader 偏好 | 浏览器，后续可服务端同步 |
+| RSSHub 实例 / 配置 | RSSHub 运行时与配置（Lumi 只展示与缓存短期诊断；0018 经 schema 驱动 allow-list 控制面管理） |
+| Lumi UI 设置 | 浏览器（0017 起可经 lumi.sqlite 服务端化） |
+| Reader 偏好 | 浏览器（0017 起连续数值控制；可经 lumi.sqlite 服务端同步） |
+| Lumi-owned 应用状态（lumi.sqlite，0015 起） | lumi.sqlite：AI 结果缓存、provider/model 元数据、prompt 版本、内容哈希、生成状态、需持久化的服务端设置、备份/恢复元数据 |
 | AI 摘要 / 翻译 | Lumi SQLite |
 | AI cache | Lumi SQLite |
 | Connector 配置 | Lumi SQLite / 服务端 secrets，Phase 2 |
@@ -254,13 +257,15 @@ FreshRSS 是 RSS 域唯一真源，不是未来所有信息类型的总数据库
 
 硬规则：
 
-> FreshRSS 是 RSS 数据唯一真源；Lumi SQLite 不能成为第二套 RSS 数据库。
+> FreshRSS 是 RSS 数据唯一真源；Lumi SQLite 不能成为第二套 RSS 数据库
+> （feeds / entries / read / starred / 订阅 / FreshRSS 分类均不得影子复制）。
 
 ---
 
 ## 8. 当前 MVP 功能范围
 
-MVP 由 0001–0016 组成。
+MVP 由 0001–0019 组成（编号经 0010a / 0013 / 0014 / 0014a 插入后顺延；
+实际编号以 docs/ROADMAP.md 为准）。
 
 ### 8.1 阅读
 
@@ -548,104 +553,110 @@ LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目�
 
 ## 12. 开发路线
 
+> 实际编号与最新状态以 docs/ROADMAP.md + docs/README.md 为准；
+> 本节记录 0014a 修订后的 0015–0019 产品路线（用户 2026-09-02 批准）。
+
 ### 0009 — UI Reboot & Reference Lab
 
-- v6 文档；
-- reference baseline；
-- license gate；
-- design tokens；
-- theme foundation；
-- UI primitives；
-- responsive App Shell；
-- Sidebar / Timeline / Reader；
-- Light / Dark；
-- screenshot regression；
+- v6 文档；reference baseline；license gate；design tokens；
+- theme foundation；UI primitives；responsive App Shell；
+- Sidebar / Timeline / Reader；Light / Dark；screenshot regression；
 - 不改 BFF API 和业务行为。
 
 ### 0010 — Settings Center & Adaptive Shell
 
-- Folo 式设置中心（声明式设置行 + 9 分类）；
-- 侧栏信息架构分组（信息来源 / 工作区）；
-- 三栏拖拽 / 折叠 / 持久化；
-- 移动端底部 Tab（时间线 / 收藏 / 设置）；
-- 快捷键基础集（j / k / u / s）；
-- 纯前端（localStorage），BFF 零变化。
+- Folo 式设置中心；侧栏信息架构分组；三栏拖拽 / 折叠 / 持久化；
+- 移动端底部 Tab 演进（0010a/0011 一路修订）；快捷键基础集。
 
-### 0011 — Reader Style Deep Customization
+### 0010a — Settings Expansion & Reader Style
 
-- 字体导入（FontFace API + IndexedDB，仅 woff2 + 字体 URL 双方式）；
-- 中文排版深度（首行缩进 / 标点悬挂 / 简繁转换 / CJK 阅读时长估算）；
-- 主题包分享（.lumitheme JSON：预设 + 自定义 CSS 完整快照，导入导出）；
-- 代码高亮主题（shiki 按需加载，届时评估依赖）；
-- Bionic Reading（按词加粗）；
-- 分页滚动（候选）。
+- 设置分类扩展；阅读样式（主题包 / 背景 / 排版预设）；
+- 配置备份导出 / 导入（JSON 信封，可选加密）。
 
-依据：docs/design/reader-research.md（10+ 阅读器调研的差异化层）。
+### 0011 — Mobile UI Five-Screen Alignment
 
-### 0012 — Unified Subscription Center
+- 移动端一级页面（首页 / 订阅 / 搜索 / 收藏）+ 导航抽屉 + 底部导航岛；
+- 列表 ↔ 全屏 Reader 的移动出行契约（0014a 收口）。
 
-- Feed CRUD；
-- Category；
-- OPML；
-- refresh；
-- FreshRSS status；
-- 所有高频订阅操作进入 Lumi。
+### 0012 — Reader Style Deep Customization
 
-### 0013 — Source Discovery & RSSHub
+- 字体导入、中文排版深度、主题包分享、代码高亮等阅读深度定制。
 
-- URL discovery；
-- route catalog；
-- route matching；
-- dynamic form；
-- preview；
-- one-click subscribe；
-- RSSHub health / config。
+### 0013 — Unified Subscription Center
 
-### 0014 — AI Foundation & Summary
+- Feed / Category CRUD、OPML 导入导出（BFF 控制平面）、FreshRSS
+  订阅管理 + 实时连接状态；所有高频订阅操作进入 Lumi。
 
-- SQLite；
-- provider；
-- on-demand summary；
-- cache；
-- failure states。
+### 0014 — Source Discovery & RSSHub
 
-### 0015 — Translation & AI Conversation
+- 网站 → RSS/Atom 发现、Lumi 静态精选 RSSHub 路由目录 + 参数表单 +
+  预览 + 一键订阅；全链路经 BFF 代理。
 
-- translation；
-- bilingual reader；
-- desktop floating AI；
-- mobile sheet；
-- entry context。
+### 0014a — UI Acceptance & Navigation Consistency
 
-### 0016 — Reader Power UX & Unified Settings
+- 补齐 0014 人工验收缺口：桌面「添加来源」入口、移动端收藏 →
+  全屏 Reader 一致性、设置 stale 标签清理、真实 Playwright 验收。
 
-- search；
-- keyboard；
-- batch actions；
-- reading position；
-- settings；
-- theme customisation；
-- backup / diagnostics UI；
-- 服务端设置 API（localStorage 偏好迁移点）。
+### 0015 — AI Foundation, Summary & Lumi SQLite Foundation
 
-### 0017 — Production & Operations
+- 激活 Lumi-owned 持久层 lumi.sqlite（迁移/模式策略先行，杜绝无版本
+  sqlite 文件）：AI 结果缓存、provider/model 元数据、prompt 版本、
+  内容哈希、生成状态、需持久化的 Lumi 服务端设置、备份元数据；
+- OpenAI-compatible provider 契约；单篇按需摘要；失败重试与真实状态；
+- freshRSS 依然 RSS-domain 唯一真源：lumi.sqlite 不得存
+  feeds/entries/read/starred/subscription/category 影子副本。
 
-- Caddy；
-- HTTPS；
-- access protection；
-- ECS；
-- backup / restore；
-- logging；
-- CI hardening。
+### 0016 — Translation & AI Conversation
 
-### 0018 — MVP Stabilization
+- 标题翻译 + 正文翻译 + 双语阅读；翻译缓存；
+- 当前文章上下文对话（共享 0015 AI foundation）；
+- 桌面浮动/停靠 + 移动 Bottom Sheet / Fullscreen 的 AI 表面；
+- privacy/上下文控制；依赖 0015。
 
-- full regression；
-- accessibility；
-- performance；
-- deployment rehearsal；
-- docs；
-- release tag。
+### 0017 — Reader Power UX & Unified Settings
+
+- 继承既有 Reader 定制（主题/字体/中文排版/代码/图片/对齐/首行缩进/
+  减动效/双栏与滚动模式候选/重置默认）；
+- 微信读书式连续阅读定制（WYSIWYG，即时生效，写入数值而非枚举）：
+  - 字号：连续滑杆（A- / A+）；
+  - 行高：compact ←→ spacious 连续滑杆；
+  - 段距：compact ←→ spacious 连续滑杆；
+  - 内容/页宽：narrow ←→ wide 连续滑杆（移动端按视口自动约束）；
+  - 左右页边距：small ←→ large 连续滑杆（移动/桌面不同安全区间）；
+- 统一设置（服务端侧用 0015 引入的 lumi.sqlite 持久化，保留 UI 即时响应）；
+- 具体 min/max/default 在 0017 以视觉测试与排版约束选定；
+- 不依赖 AI 概念上先行：序号是实现顺序，不是领域归属。
+
+### 0018 — Production, Operations & Backup
+
+三大运营面：
+
+```text
+A. RSSHub Control Center（schema 驱动的类型化 allow-list：
+   Status / Instance / Cache / Network / Access control /
+   Browser-runtime / Route credentials / Advanced 分组；
+   secrets 只写不读回；restartRequired 明确展示；
+   不用任意环境变量编辑器、不暴露任意 shell、不给 BFF 无限制
+   Docker socket 权限）
+B. FreshRSS Operations（服务诊断 / 健康 / 备份 / 高级逃生入口 /
+   安全支持的 operator 设置；不重建 FreshRSS UI、不复制其数据库）
+C. WebDAV Backup / Restore（manifest + FreshRSS 导出数据 +
+   lumi.sqlite + Lumi 服务配置 + RSSHub 配置 + checksums；
+   secrets 加密或按最终安全设计排除；
+   restore 为多步流程：选择 → 下载 → 校验 → 兼容检查 →
+   预览 → 当前态安全备份 → 显式确认 → 恢复 → 健康验证；
+   非单钮破坏性操作）
+
+另保留：production Compose、Caddy/TLS、单用户访问、持久卷、
+健康/就绪、日志脱敏、升级/回滚、资源限制、灾难恢复演练。
+```
+
+### 0019 — MVP Stabilization & Release
+
+- 全量回归；桌面/移动响应式矩阵；Playwright 流程；可访问性；安全；
+  性能预算；空/加载/错误态；备份恢复演练；升级回滚演练；
+  许可证审查；operator 文档；release notes；MVP release；
+- 不再新增主要产品功能。
 
 ### Phase 2 — Knowledge Workbench
 
@@ -713,7 +724,7 @@ Phase 2 不得反向破坏 RSS 域边界。
 
 ## 15. MVP 完成标准
 
-0016 完成时应能演示：
+0019 完成时应能演示：
 
 ```text
 原生 RSS ────────────────┐

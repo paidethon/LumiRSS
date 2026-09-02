@@ -402,6 +402,20 @@ App Shell
 - persistent user preferences: later BFF settings API or a clearly documented temporary local strategy;
 - no duplicated feed/entry entity store unless a real offline feature is approved.
 
+Ownership boundaries (0014a roadmap revision, approved 2026-09-02):
+
+- **FreshRSS** = RSS-domain truth: feeds / entries / read / starred /
+  subscription / category. Never shadow-copied by Lumi SQLite.
+- **lumi.sqlite** (activated in 0015) = Lumi-owned application truth:
+  AI result cache, provider/model metadata, prompt version, content hash,
+  generation status, persistent Lumi server settings, future backup
+  metadata. Migration/schema strategy required before first write
+  (no unversioned SQLite file); no RSS-domain shadow data.
+- **RSSHub config** = RSSHub runtime/configuration truth. The 0018 RSSHub
+  Control Center is a typed schema-driven allow-list (settings with
+  secret/restartRequired metadata), not an arbitrary environment-variable
+  editor and not arbitrary container administration.
+
 ### 8.3 Design-system layers
 
 ```text
