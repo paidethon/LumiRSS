@@ -287,11 +287,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           type: 'toggle',
           label: '侧栏隐藏已读',
           description:
-            '隐藏没有未读条目的订阅（需要 feeds 接口提供未读数，0013 接线）。',
+            '需要 feeds 接口提供未读数契约后才有真实语义；当前未纳入已批准里程碑（不伪造侧栏未读统计）。',
           checked: settings.sidebarHideRead,
           onCheckedChange: (v) => update({ sidebarHideRead: v }),
           planned: true,
-          plannedFor: '0013',
         },
         { type: 'title', value: '时间线' },
         {
@@ -392,7 +391,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'toggle',
           label: 'AI 总结',
-          description: '阅读时生成单篇摘要（0015 AI Foundation & Summary）。',
+          description: '阅读时生成单篇摘要（0015 AI Foundation, Summary & Lumi SQLite Foundation）。',
           checked: false,
           onCheckedChange: () => {},
           planned: true,
@@ -401,7 +400,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'toggle',
           label: 'AI 翻译',
-          description: '标题与正文翻译（0016）。',
+          description: '标题与正文翻译（0016 Translation & AI Conversation）。',
           checked: false,
           onCheckedChange: () => {},
           planned: true,
@@ -445,7 +444,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '数据备份 / 恢复',
-          description: 'FreshRSS 数据与服务设置的备份演练（0018 Production）。',
+          description:
+            '订阅数据由 FreshRSS 托管（不在 Lumi 侧备份）；FreshRSS 数据与 WebDAV 全量备份 / 恢复计划于 0018 Production, Operations & Backup。',
           buttonText: '备份',
           action: () => {},
           planned: true,
@@ -457,17 +457,19 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '服务' },
         {
           type: 'action',
-          label: 'FreshRSS 状态',
-          description: '连接状态与健康检查（0013 接入控制平面后提供）。',
+          label: 'FreshRSS 维护操作',
+          description:
+            '连接状态与订阅管理在「订阅与来源」实时可用（真实请求结果，不伪造指标）；运行级维护（健康检查 / 诊断 / 紧急操作）计划于 0018 Production。',
           buttonText: '查看',
           action: () => {},
           planned: true,
-          plannedFor: '0013',
+          plannedFor: '0018',
         },
         {
           type: 'action',
-          label: 'RSSHub 状态',
-          description: '实例健康与路由可用性（0018 Production）。',
+          label: 'RSSHub 运营中心',
+          description:
+            '来源发现、路由目录与预览已可用（0014：订阅中心 → 添加来源 → RSSHub）；实例健康、诊断与配置管理计划于 0018 Control Center。',
           buttonText: '查看',
           action: () => {},
           planned: true,

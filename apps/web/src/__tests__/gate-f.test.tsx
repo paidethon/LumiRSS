@@ -262,11 +262,12 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
     expect(restored.readerPresetId).toBe(s.readerPresetId)
   })
 
-  it('备份页 UI：导出/恢复/OPML planned 存在', () => {
+  it('备份页 UI：导出/恢复真实可用；OPML 条目已实现（0014a：不再 stale planned·0013）', () => {
     openCategory(/备份与恢复/)
     expect(screen.getByRole('button', { name: /导出备份/ })).toBeEnabled()
     expect(screen.getByRole('button', { name: /选择备份文件/ })).toBeEnabled()
-    expect(screen.getByText('planned · 0013')).toBeInTheDocument()
+    expect(screen.queryByText('planned · 0013')).not.toBeInTheDocument()
+    expect(screen.getByText('已实现 · 0013')).toBeInTheDocument()
   })
 })
 

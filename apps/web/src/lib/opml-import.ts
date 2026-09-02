@@ -7,10 +7,10 @@
  * optimistic updates；结果全部来自 server-confirmed 响应。 */
 
 import { useState } from 'react'
+import { exportOpml } from '../api/client'
 import { useOpmlImportMutation, useOpmlPreviewMutation } from '../api/queries'
 import type { OpmlImportPreview, OpmlImportResult } from '../api/types'
 import { managementErrorText } from './management-errors'
-
 /** 与 BFF MAX_OPML_BYTES 一致（前端第一道，非安全边界）。 */
 export const OPML_MAX_BYTES = 2 * 1024 * 1024
 
@@ -88,4 +88,28 @@ export function useOpmlImportFlow() {
     confirmImport,
     reset,
   }
+}
+
+/** OPML 导出流程 hook（0014a Gate 1：设置「订阅与来源」与订阅管理页
+ * 共用同一导出状态机；复用 BFF 代理下载，浏览器不接触 FreshRSS）。 */
+export function useOpmlExportFlow() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  async function exportOnce() {
+    setError(null)
+    setDone(false)
+    setBusy(true)
+    try {
+      await exportOpml()
+      setDone(true)
+    } catch (e) {
+      setError(managementErrorText(e).title)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return { busy, error, done, exportOnce }
 }

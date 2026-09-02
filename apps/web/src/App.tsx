@@ -99,10 +99,16 @@ export default function App() {
         )}
 
         {/* ===== 移动端一级页面区（0011）：订阅/搜索/收藏，仅 <1024 =====
-            （selectSection 会清空 selectedEntryRef，与 Reader 不共存） */}
+            （selectSection 会清空 selectedEntryRef，与 Reader 不共存）
+            0014a Gate 2：移动端从收藏/搜索等 section 打开文章时，section
+            页面必须让位——Reader 全屏（与首页 Timeline 相同的
+            hidden-layout 契约），back 后返回原列表（section/view/scope
+            不变）。桌面 lg 恒隐藏本区（用时间线三栏）。 */}
         {section !== 'home' && (
           <section
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--lumi-surface)] lg:hidden"
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--lumi-surface)] lg:hidden ${
+              selectedEntryRef !== null ? 'max-lg:hidden' : ''
+            }`}
             aria-label={section === 'subscriptions' ? '订阅' : section === 'search' ? '搜索' : '收藏'}
           >
             {section === 'subscriptions' && <SubscriptionsPage />}

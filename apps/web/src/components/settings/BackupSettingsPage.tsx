@@ -5,7 +5,7 @@
  *   PBKDF2(100k) + AES-256-GCM（密文/盐/IV base64 内嵌信封）；
  * - 导入：inspect 摘要预览 → validate-before-mutate → 合并恢复；
  * - 无密钥备份恢复时不清空本机已存 Key（OrigRead 同语义）。
- * OPML：planned·0013（数据在 FreshRSS 侧）。 */
+ * OPML：已实现（0013，数据在 FreshRSS 侧；导入导出入口在「订阅与来源」）。 */
 
 import { useRef, useState } from 'react'
 import { Download, Upload } from 'lucide-react'
@@ -336,16 +336,18 @@ export function BackupSettingsSection() {
         )}
       </div>
 
-      {/* OPML：planned·0013 */}
+      {/* 订阅列表（OPML）：真实可用，入口在「订阅与来源」（0013；
+           0014a：不再标注 planned —— OPML 导入导出已实现） */}
       <div className="mt-4 flex items-center gap-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
         <div className="min-w-0 flex-1">
           <p className="text-sm text-[var(--lumi-text-primary)]">订阅列表（OPML）</p>
           <p className="mt-0.5 text-xs text-[var(--lumi-text-secondary)]">
-            订阅数据存于 FreshRSS，OPML 导入导出经 BFF 控制平面（0013）。
+            订阅数据存于 FreshRSS（唯一真源）；OPML 导入 / 导出经 BFF 控制平面
+            真实可用（0013），入口在设置 →「订阅与来源」与订阅中心页。
           </p>
         </div>
         <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-          planned · 0013
+          已实现 · 0013
         </span>
       </div>
     </div>

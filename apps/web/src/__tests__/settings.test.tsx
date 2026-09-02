@@ -111,10 +111,11 @@ describe('SettingsModal — planned 诚实原则', () => {
     expect(screen.getByText('planned · i18n')).toBeInTheDocument()
   })
 
-  it('「侧栏隐藏已读」planned（0013，需要 unreadCount 契约）', () => {
+  it('「侧栏隐藏已读」planned（需要未读数契约，无已批准里程碑编号——0014a 清理 stale 0013）', () => {
     renderModal()
     const toggle = screen.getByRole('switch', { name: '侧栏隐藏已读开关' })
     expect(toggle).toBeDisabled()
-    expect(screen.getByText(/planned · 0013/)).toBeInTheDocument()
+    expect(screen.getByText('planned', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText(/planned · 0013/)).toBeNull()
   })
 })

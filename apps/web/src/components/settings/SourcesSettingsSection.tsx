@@ -11,10 +11,8 @@
  * - 服务状态只报告有真实依据的错误（订阅列表请求的 error type），
  *   不编造「健康 98%」之类的伪指标。 */
 
-import { useState } from 'react'
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Upload } from 'lucide-react'
 import { useSubscriptions } from '../../api/queries'
-import { exportOpml } from '../../api/client'
 import type { ApiError } from '../../api/client'
 import {
   OpmlErrorCard,
@@ -22,30 +20,15 @@ import {
   OpmlResultCard,
 } from '../OpmlImportFlow'
 import { useFreshRssUiUrl } from '../../api/queries'
-import { useOpmlImportFlow } from '../../lib/opml-import'
+import { useOpmlExportFlow, useOpmlImportFlow } from '../../lib/opml-import'
 import { managementErrorText } from '../../lib/management-errors'
 import { Button } from '../ui/Button'
 import { Skeleton } from '../ui/Skeleton'
 
-/** OPML 导出：下载经 BFF 代理的 FreshRSS 导出（loading/成功/失败三态）。 */
+/** OPML 导出：下载经 BFF 代理的 FreshRSS 导出（loading/成功/失败三态；
+ * 0014a：状态机收敛到 lib/opml-import 的 useOpmlExportFlow 与订阅管理页共享）。 */
 function OpmlExportBlock() {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
-
-  async function doExport() {
-    setError(null)
-    setDone(false)
-    setBusy(true)
-    try {
-      await exportOpml()
-      setDone(true)
-    } catch (e) {
-      setError(managementErrorText(e).title)
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { busy, error, done, exportOnce } = useOpmlExportFlow()
 
   return (
     <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
@@ -54,7 +37,7 @@ function OpmlExportBlock() {
         从 FreshRSS 导出全部订阅与分类。文件只包含订阅列表，不含设置、密钥、阅读记录或收藏。
       </p>
       <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" onClick={doExport} disabled={busy}>
+        <Button size="sm" onClick={exportOnce} disabled={busy}>
           <Download aria-hidden className="size-3.5" />
           {busy ? '导出中…' : '导出 OPML'}
         </Button>

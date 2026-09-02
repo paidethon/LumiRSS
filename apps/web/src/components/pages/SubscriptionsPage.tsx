@@ -19,10 +19,11 @@
  * 点 feed 主区域 → selectScope + section 回首页（与侧栏导航同一语义）。 */
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
+import { ChevronDown, Download, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
 import { useCategories, useSubscriptions } from '../../api/queries'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
+import { useOpmlExportFlow } from '../../lib/opml-import'
 import AddSourceDialog from '../AddSourceDialog'
 import OpmlImportDialog from '../OpmlImportDialog'
 import MoveSubscriptionDialog from '../MoveSubscriptionDialog'
@@ -106,6 +107,8 @@ export default function SubscriptionsPage() {
   // 0013 Gate 2：添加订阅入口；Gate 4：OPML 导入入口
   const [addOpen, setAddOpen] = useState(false)
   const [opmlOpen, setOpmlOpen] = useState(false)
+  // 0014a Gate 1：订阅管理页导出 OPML（与设置共享 useOpmlExportFlow）
+  const opmlExport = useOpmlExportFlow()
   // 0013 Gate 3：管理对话框目标（null = 关闭）
   const [moveTarget, setMoveTarget] = useState<Subscription | null>(null)
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<Subscription | null>(null)
@@ -219,7 +222,7 @@ export default function SubscriptionsPage() {
           />
         </div>
 
-        {/* 顶部动作：添加来源（0014：RSS/Atom + 网站发现 + RSSHub）/ OPML 导入（Gate 4） */}
+        {/* 顶部动作：添加来源（0014：RSS/Atom + 网站发现 + RSSHub）/ OPML 导入 / OPML 导出 */}
         <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="订阅管理动作">
           <Button
             variant="secondary"
@@ -239,7 +242,26 @@ export default function SubscriptionsPage() {
             <Upload aria-hidden className="size-3.5" />
             导入 OPML
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => opmlExport.exportOnce()}
+            disabled={opmlExport.busy}
+            className="text-xs"
+          >
+            <Download aria-hidden className="size-3.5" />
+            {opmlExport.busy ? '导出中…' : '导出 OPML'}
+          </Button>
         </div>
+        {opmlExport.error !== null && (
+          <p role="alert" className="mb-3 flex items-center gap-1.5 text-xs text-[var(--lumi-danger)]">
+            {opmlExport.error}
+          </p>
+        )}
+        {opmlExport.done && (
+          <p role="status" className="mb-3 text-xs text-[var(--lumi-text-secondary)]">
+            已开始下载 OPML 文件
+          </p>
+        )}
 
         {/* 真实分类分组（全部来自 FreshRSS；无硬编码分类名） */}
         {total === 0 ? (
