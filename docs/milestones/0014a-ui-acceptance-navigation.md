@@ -281,8 +281,8 @@ Playwright desktop (1440×900) + mobile (390×844) — 全流程通过（Gate 4�
 
 ```text
 1b220d3 fix: unify mobile article reader navigation and desktop add-source entry
-<Final>  docs: revise post-0014a milestone status and roadmap-checkpoint commits
-<Final>  feat: complete milestone 0014a UI acceptance（本 commit 合并前若干）
+5c66450 docs: revise post-0014 MVP roadmap and mark 0014a acceptance
+<Final>  feat: complete milestone 0014a UI acceptance（最终 commit，见 Final Gate）
 ```
 
 未 push、未 merge、未创建 PR；0015 未开始（Planned 状态未变）。
