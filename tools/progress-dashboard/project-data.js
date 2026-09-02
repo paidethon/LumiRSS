@@ -540,7 +540,7 @@ window.LUMIRSS_PROJECT = {
       id: "0015",
       phaseId: "phase-8",
       name: "AI Foundation, Summary & Lumi SQLite Foundation",
-      status: "next",
+      status: "in-progress",
       shortGoal: "On-demand summary + lumi.sqlite foundation",
       goal: "激活 Lumi-owned 持久层 lumi.sqlite（迁移/模式策略先行）：AI 结果缓存、provider/model 元数据、prompt 版本、内容哈希、生成状态、需持久化的服务端设置、备份元数据；OpenAI-compatible provider + 按需摘要；FreshRSS 仍为 RSS-domain 唯一真源（不影子复制 feeds/entries/read/starred/订阅/分类）。",
       implemented: [],
