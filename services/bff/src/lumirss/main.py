@@ -29,6 +29,15 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
+from lumirss.ai_settings import (
+    AiSettingsStore,
+    AiSettingsUpdate,
+    InvalidAiSettings,
+    KEY_BASE_URL,
+    KEY_MODEL,
+    KEY_PROVIDER,
+    KEY_SUMMARY_LANGUAGE,
+)
 from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
@@ -78,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trust_env=False,
     )
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
+    app.state.ai_settings_store = None
     app.state.freshrss_adapter = None
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
@@ -132,6 +142,8 @@ _ERROR_RESPONSES = {
     RssHubRouteNotFound: (404, "rsshub_route_not_found"),
     RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
     RssHubFetchError: (502, "rsshub_fetch_error"),
+    # 0015 AI settings
+    InvalidAiSettings: (400, "invalid_ai_settings"),
 }
 
 
@@ -165,6 +177,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RssHubRouteNotFound)
 @app.exception_handler(RssHubInvalidParameters)
 @app.exception_handler(RssHubFetchError)
+@app.exception_handler(InvalidAiSettings)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -744,3 +757,44 @@ def _subscription_json(subscription) -> dict[str, object]:
             else None
         ),
     }
+
+
+def _get_ai_settings_store(request: Request) -> AiSettingsStore:
+    """Persistent AI settings store over the Lumi SQLite database (lazy)."""
+    store = request.app.state.ai_settings_store
+    if store is None:
+        store = AiSettingsStore(request.app.state.db)
+        request.app.state.ai_settings_store = store
+    return store
+
+
+def _ai_settings_json(values: dict[str, str]) -> dict[str, object]:
+    """Browser-safe AI settings view — NEVER contains the API key."""
+    return {
+        "provider": values[KEY_PROVIDER],
+        "baseUrl": values[KEY_BASE_URL],
+        "model": values[KEY_MODEL],
+        "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
+        "configured": LumiSettings().ai_configured,
+    }
+
+
+@app.get("/api/v1/settings/ai")
+async def get_ai_settings(request: Request) -> dict[str, object]:
+    """Current AI settings. ``configured`` only reports whether the server
+    has an API key — the key itself never leaves the BFF."""
+    store = _get_ai_settings_store(request)
+    return _ai_settings_json(await store.load())
+
+
+@app.put("/api/v1/settings/ai")
+async def put_ai_settings(
+    update: AiSettingsUpdate, request: Request
+) -> dict[str, object]:
+    """Persist non-secret AI settings (each provided field validated).
+
+    There is deliberately no API-key field here: the key is server
+    environment only, and this endpoint can never read or write it.
+    """
+    store = _get_ai_settings_store(request)
+    return _ai_settings_json(await store.save(update))
