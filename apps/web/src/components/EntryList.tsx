@@ -88,7 +88,7 @@ export default function EntryList() {
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, entries])
 
-  // ---- 滚动标记已读（AC9）：IntersectionObserver + 保守策略 ----
+  // ---- 滚动标记已读（0017 正式化）：IntersectionObserver + 保守策略 ----
   const { mutate: markReadMutate } = useEntryStateMutation()
   // entryRef → <li> 元素（observer 观察目标）
   const rowRefs = useRef(new Map<string, HTMLLIElement>())
@@ -97,10 +97,90 @@ export default function EntryList() {
   // 曾进入视口的条目（初始加载时视口下方的不算）；已派发标记的条目（防重复）
   const seen = useRef(new Set<string>())
   const dispatched = useRef(new Set<string>())
+  // 0017：手动未读保护——列表数据中出现 read true→false 的条目视为手动
+  // 未读，本轮滚动周期内不再自动标记（重新滚入视口才解除保护）。
+  const manuallyUnread = useRef(new Set<string>())
+  // 当前正在视口中的条目（settle 防抖时复核）
+  const intersecting = useRef(new Set<string>())
+  // exit → 派发的 settle 计时器（快速滚回时取消）
+  const settleTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  // 滚动标记已读的离开确认窗口（保守：短暂停顿确认，非瞬时）
+  const SETTLE_MS = 400
 
   useEffect(() => {
-    readState.current = new Map(entries.map((e) => [e.entryRef, e.read]))
+    const previous = readState.current
+    const next = new Map(entries.map((e) => [e.entryRef, e.read]))
+    // 手动未读检测：read true → false 的条目本轮不再自动标记
+    for (const [ref, wasRead] of previous) {
+      if (wasRead && next.get(ref) === false) {
+        manuallyUnread.current.add(ref)
+      }
+    }
+    readState.current = next
   }, [entries])
+
+  useEffect(() => {
+    const rows = rowRefs.current
+    if (!scrollMarkUnread || rows.size === 0) return
+    const observer = new IntersectionObserver(
+      (records) => {
+        for (const r of records) {
+          const ref = (r.target as HTMLElement).dataset.entryRowRef
+          if (!ref) continue
+          if (r.isIntersecting) {
+            // 重新进入视口：取消 pending 标记并解除手动未读保护
+            const timer = settleTimers.current.get(ref)
+            if (timer !== undefined) {
+              clearTimeout(timer)
+              settleTimers.current.delete(ref)
+            }
+            intersecting.current.add(ref)
+            seen.current.add(ref)
+            manuallyUnread.current.delete(ref)
+          } else {
+            intersecting.current.delete(ref)
+            // 完全滚出上方才算读完（滚到下方的尚未读）
+            if (
+              r.boundingClientRect.bottom < 0 &&
+              seen.current.has(ref) &&
+              !dispatched.current.has(ref) &&
+              !manuallyUnread.current.has(ref) &&
+              readState.current.get(ref) === false
+            ) {
+              // 0017：离开视口后短暂停顿确认，期间滚回则取消（快速
+              // 甩动经过的文章仍会被标记，但留出误触撤回窗口）
+              const timer = settleTimers.current.get(ref)
+              if (timer !== undefined) clearTimeout(timer)
+              // 0017：离开视口后短暂停顿确认，期间滚回则取消（快速
+              // 甩动经过的文章仍会被标记，但留出误触撤回窗口）
+              settleTimers.current.set(
+                ref,
+                setTimeout(() => {
+                  settleTimers.current.delete(ref)
+                  if (
+                    !intersecting.current.has(ref) &&
+                    !dispatched.current.has(ref) &&
+                    !manuallyUnread.current.has(ref) &&
+                    readState.current.get(ref) === false
+                  ) {
+                    dispatched.current.add(ref)
+                    markReadMutate({ entryRef: ref, patch: { read: true } })
+                  }
+                }, SETTLE_MS),
+              )
+            }
+          }
+        }
+      },
+      // 需要知道「离开」时机：默认阈值 0 会在完全离开时回调一次
+    )
+    for (const el of rows.values()) observer.observe(el)
+    return () => {
+      observer.disconnect()
+      for (const timer of settleTimers.current.values()) clearTimeout(timer)
+      settleTimers.current.clear()
+    }
+  }, [scrollMarkUnread, entries, markReadMutate])
 
   // 0010a F3（AC24）：过滤统计——被过滤条目数计入 stats（仅在规则启用时）
   const totalAll = data?.pages.reduce((n, page) => n + page.items.length, 0) ?? 0
@@ -114,34 +194,6 @@ export default function EntryList() {
       filterStats: { totalFiltered: s.totalFiltered + filteredCount, lastFilteredAt: Date.now(), lastMatchedRule: s.lastMatchedRule },
     })
   }, [filteredCount])
-
-  useEffect(() => {
-    const rows = rowRefs.current
-    if (!scrollMarkUnread || rows.size === 0) return
-    const observer = new IntersectionObserver(
-      (records) => {
-        for (const r of records) {
-          const ref = (r.target as HTMLElement).dataset.entryRowRef
-          if (!ref) continue
-          if (r.isIntersecting) {
-            seen.current.add(ref)
-          } else if (
-            // 完全滚出上方才算读完（滚到下方的尚未读）
-            r.boundingClientRect.bottom < 0 &&
-            seen.current.has(ref) &&
-            !dispatched.current.has(ref) &&
-            readState.current.get(ref) === false
-          ) {
-            dispatched.current.add(ref)
-            markReadMutate({ entryRef: ref, patch: { read: true } })
-          }
-        }
-      },
-      // 需要知道「离开」时机：默认阈值 0 会在完全离开时回调一次
-    )
-    for (const el of rows.values()) observer.observe(el)
-    return () => observer.disconnect()
-  }, [scrollMarkUnread, entries, markReadMutate])
 
   return (
     <div className="flex h-full min-h-0 flex-col">

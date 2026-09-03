@@ -76,26 +76,25 @@ describe('app-settings 新字段（AC28 向后兼容）', () => {
 })
 
 describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
-  it('首页 = 分组列表（4 组 13 行，图标+标题+chevron），非 chip 横条', () => {
+  it('首页 = 分组列表（4 组 14 行，图标+标题+chevron），非 chip 横条', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     for (const g of ['主设置', '数据', '订阅与增强', '其他']) {
       expect(screen.getByRole('heading', { name: g })).toBeInTheDocument()
     }
     const rows = screen
       .getAllByRole('button')
-      .filter((b) => b.textContent?.match(/通用|外观|翻译|文章过滤|RSSHub|订阅与来源|AI|数据控制|备份与恢复|账户与服务|工作区|关于|快捷键/))
-    expect(rows.length).toBe(13)
+      .filter((b) => b.textContent?.match(/通用|外观|阅读|翻译|文章过滤|RSSHub|订阅与来源|AI|数据控制|备份与恢复|账户与服务|工作区|关于|快捷键/))
+    expect(rows.length).toBe(14)
   })
 
   it('点击分类行 → push 子页（返回按钮 + 标题）→ 返回', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '通用' }))
     expect(screen.getByRole('button', { name: '返回设置' })).toBeInTheDocument()
-    // 通用页含新 toggle（AC6–AC9 的控件在子页真实可用）
+    // 通用页含时间线 toggle（AC6–AC9 的控件在子页真实可用）
     expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeEnabled()
     expect(screen.getByRole('switch', { name: '按日期分组开关' })).toBeEnabled()
     expect(screen.getByRole('switch', { name: '启动时仅看未读开关' })).toBeEnabled()
-    expect(screen.getByRole('switch', { name: '滚动时标记已读开关' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     expect(screen.queryByRole('button', { name: '返回设置' })).toBeNull()
   })
@@ -108,11 +107,12 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
     useAppSettings.getState().update({ dimRead: false })
   })
 
-  it('实验性徽标（AC9）：滚动已读带「实验性 · 正式版 0017」且控件可用', () => {
+  it('阅读页：滚动标记已读正式化（无实验徽标，保守说明）', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
-    fireEvent.click(screen.getByRole('button', { name: '通用' }))
-    expect(screen.getByText('实验性 · 正式版 0017')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '阅读' }))
     expect(screen.getByRole('switch', { name: '滚动时标记已读开关' })).toBeEnabled()
+    expect(screen.queryByText('实验性')).toBeNull()
+    expect(screen.getByText(/完全滚出列表上方/)).toBeInTheDocument()
   })
 
   it('open=false 不渲染', () => {

@@ -23,6 +23,7 @@
 - [x] [0010 — Settings Center & Adaptive Shell (+0010a)](milestones/0010-settings-center-adaptive-shell.md)
 - [x] [0011 — Mobile UI Five-Screen Alignment](milestones/0011-mobile-ui-five-screen-alignment.md)
 - [x] [0012 — Reader Style Deep Customization](milestones/0012-reader-style-deep-customization.md)
+- [x] [0017 — Reader Power UX & Unified Settings](milestones/0017-reader-power-ux-unified-settings.md)
 
 ## Source Control
 
@@ -40,7 +41,6 @@
 
 ## Completion
 
-- [ ] 0017 — Reader Power UX & Unified Settings
 - [ ] 0018 — Production, Operations & Backup
 - [ ] 0019 — MVP Stabilization & Release
 

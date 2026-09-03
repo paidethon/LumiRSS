@@ -13,7 +13,6 @@ import type {
   ReaderBackground,
   ReaderFontFamily,
   ReaderPreset,
-  ReaderParagraphSpacing,
   UiFontStack,
 } from '../store/app-settings'
 
@@ -112,13 +111,7 @@ export const UI_FONT_STACKS: Record<UiFontStack, string> = {
   mono: READER_FONT_STACKS.mono,
 }
 
-// ---- 段距档位 ----
-
-export const READER_PARAGRAPH_SPACING_EM: Record<ReaderParagraphSpacing, string> = {
-  compact: '0.5em',
-  normal: '0.85em',
-  loose: '1.25em',
-}
+// ---- 段距（0017：连续 em 数值，范围见 app-settings READER_NUMERIC_RANGES） ----
 
 // ---- 内置排版预设（F7；AC20：每套至少差异化 3 项） ----
 
@@ -132,7 +125,7 @@ export const BUILTIN_READER_PRESETS: ReaderPreset[] = [
       readerFontSize: 17,
       readerLineHeight: 1.85,
       readerBackground: 'follow',
-      readerParagraphSpacing: 'normal',
+      readerParagraphSpacing: 0.85,
       readerJustify: false,
     },
   },
@@ -145,7 +138,7 @@ export const BUILTIN_READER_PRESETS: ReaderPreset[] = [
       readerFontSize: 17,
       readerLineHeight: 1.85,
       readerBackground: 'paper',
-      readerParagraphSpacing: 'normal',
+      readerParagraphSpacing: 0.85,
       readerJustify: true,
     },
   },
@@ -158,7 +151,7 @@ export const BUILTIN_READER_PRESETS: ReaderPreset[] = [
       readerFontSize: 19,
       readerLineHeight: 2.05,
       readerBackground: 'sepia',
-      readerParagraphSpacing: 'loose',
+      readerParagraphSpacing: 1.25,
       readerJustify: true,
     },
   },
@@ -171,7 +164,7 @@ export const BUILTIN_READER_PRESETS: ReaderPreset[] = [
       readerFontSize: 17,
       readerLineHeight: 1.85,
       readerBackground: 'custom',
-      readerParagraphSpacing: 'normal',
+      readerParagraphSpacing: 0.85,
       readerJustify: false,
     },
   },
@@ -184,7 +177,7 @@ export const BUILTIN_READER_PRESETS: ReaderPreset[] = [
       readerFontSize: 21,
       readerLineHeight: 1.85,
       readerBackground: 'custom',
-      readerParagraphSpacing: 'normal',
+      readerParagraphSpacing: 0.85,
       readerJustify: false,
     },
   },

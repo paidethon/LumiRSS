@@ -52,16 +52,31 @@ describe('normalizeSettings — 不可信输入逐字段归一化', () => {
       language: 'en-US',
       themeMode: 'blue',
       readerBackground: 'not-a-bg',
-      readerFontSize: 33,
-      readerLineHeight: 9.9,
-      readerContentWidth: 123,
     })
     expect(bad.language).toBe('zh-CN')
     expect(bad.themeMode).toBe('system')
     expect(bad.readerBackground).toBe('follow')
+  })
+
+  it('0017：超范围数值吸附到连续网格并钳制到边界', () => {
+    const bad = normalizeSettings({
+      readerFontSize: 33, // > max → 28
+      readerLineHeight: 9.9, // > max → 2.4
+      readerContentWidth: 123, // < min → 560
+      readerPageMargin: 1, // < min → 12
+      readerParagraphSpacing: 0.44, // snap 到 0.05 网格 → 0.45
+    })
+    expect(bad.readerFontSize).toBe(28)
+    expect(bad.readerLineHeight).toBe(2.4)
+    expect(bad.readerContentWidth).toBe(560)
+    expect(bad.readerPageMargin).toBe(12)
+    expect(bad.readerParagraphSpacing).toBe(0.45)
+  })
+
+  it('0017：NaN / Infinity 回退默认', () => {
+    const bad = normalizeSettings({ readerFontSize: Number.NaN, readerLineHeight: Infinity })
     expect(bad.readerFontSize).toBe(17)
     expect(bad.readerLineHeight).toBe(1.85)
-    expect(bad.readerContentWidth).toBe(760)
   })
 
   it('分栏宽度 clamp 到边界内', () => {
@@ -195,6 +210,37 @@ describe('loadSettings — 新 key 读取与旧 key 迁移（V11）', () => {
   })
 })
 
+describe('0017 连续数值迁移（legacy → numeric）', () => {
+  it('旧离散字号/行高/宽度 → 数值不变（identity 映射）', () => {
+    const s = normalizeSettings({ readerFontSize: 15, readerLineHeight: 1.65, readerContentWidth: 900 })
+    expect(s.readerFontSize).toBe(15)
+    expect(s.readerLineHeight).toBe(1.65)
+    expect(s.readerContentWidth).toBe(900)
+  })
+
+  it('旧段距枚举 → 连续 em 值', () => {
+    expect(normalizeSettings({ readerParagraphSpacing: 'compact' }).readerParagraphSpacing).toBe(0.5)
+    expect(normalizeSettings({ readerParagraphSpacing: 'normal' }).readerParagraphSpacing).toBe(0.85)
+    expect(normalizeSettings({ readerParagraphSpacing: 'loose' }).readerParagraphSpacing).toBe(1.25)
+  })
+
+  it('连续值吸附到 step 网格', () => {
+    expect(normalizeSettings({ readerLineHeight: 1.86 }).readerLineHeight).toBe(1.85)
+    expect(normalizeSettings({ readerContentWidth: 761 }).readerContentWidth).toBe(760)
+  })
+
+  it('旧设置对象含 translationSettings 字段 → 安全丢弃（不迁移浏览器端 Key）', () => {
+    const legacy = {
+      ...DEFAULT_APP_SETTINGS,
+      translationSettings: {
+        providers: [{ type: 'microsoft', apiKey: 'sk-legacy-secret' }],
+      },
+    }
+    const s = normalizeSettings(legacy)
+    expect((s as unknown as Record<string, unknown>).translationSettings).toBeUndefined()
+  })
+})
+
 describe('persistSettings 往返', () => {
   it('写 → 读完全一致', () => {
     const s = fakeStorage()
@@ -211,9 +257,9 @@ describe('store update（集成）', () => {
     useAppSettings.getState().update({ readerFontSize: 19 })
     expect(useAppSettings.getState().settings.readerFontSize).toBe(19)
     expect(JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY)!).readerFontSize).toBe(19)
-    // 非法值经 update 也被归一化
+    // 非法值经 update 也被归一化：超范围 → 钳制到最大
     useAppSettings.getState().update({ readerFontSize: 99 as never })
-    expect(useAppSettings.getState().settings.readerFontSize).toBe(17)
+    expect(useAppSettings.getState().settings.readerFontSize).toBe(28)
     localStorage.clear()
   })
 

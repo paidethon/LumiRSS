@@ -18,6 +18,7 @@ import type {
   OpmlImportPreview,
   OpmlImportResult,
   RssHubRoutesResponse,
+  ServerSettings,
   SourceDiscoveryResponse,
   Subscription,
 } from './types'
@@ -337,6 +338,24 @@ export async function updateAiSettings(update: AiSettingsUpdate): Promise<AiSett
     contentType: 'application/json',
   })
   return (await response.json()) as AiSettings
+}
+
+/** 0017：读取 portable 设置（GET 无副作用；stored=false = 服务端无文档）。 */
+export async function getServerSettings(signal?: AbortSignal): Promise<ServerSettings> {
+  return request<ServerSettings>(`${API_BASE}/settings`, signal)
+}
+
+/** 0017：部分更新 portable 设置（服务端严格校验；失败抛 ApiError）。
+ * 刻意不接 AbortSignal——与其它 mutation 语义一致，发出后允许完成。 */
+export async function patchServerSettings(
+  patch: Record<string, string | number | boolean>,
+): Promise<ServerSettings> {
+  const response = await rawRequest(`${API_BASE}/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ServerSettings
 }
 
 /** 0015：读摘要状态——GET 语义：BFF 绝不调用 AI provider（零成本）。 */

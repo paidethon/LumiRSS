@@ -119,7 +119,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 
   it('阅读背景色板：paper 选择 + custom hex 输入自动切 custom（AC16）', () => {
-    openCategory(/外观/)
+    openCategory(/^阅读$/)
     fireEvent.click(screen.getByRole('radio', { name: '纸白' }))
     expect(useAppSettings.getState().settings.readerBackground).toBe('paper')
     // hex 输入（custom 区域在选择自定义后出现；直接通过 color input 链路在单测模拟 input[type=color] 不可靠——测 store 层语义）
@@ -129,7 +129,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 
   it('排版预设一键切换 → 全套 vars 写入（AC20）', () => {
-    openCategory(/外观/)
+    openCategory(/^阅读$/)
     fireEvent.click(screen.getAllByRole('button', { name: /期刊衬线/ })[0])
     const s = useAppSettings.getState().settings
     expect(s.readerPresetId).toBe('journal-serif')
@@ -142,7 +142,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 
   it('内置预设复制派生 → 出现自定义徽标 + 可删除（AC21）', () => {
-    openCategory(/外观/)
+    openCategory(/^阅读$/)
     fireEvent.click(screen.getByRole('button', { name: /从 默认（Lumi Mist） 复制派生/ }))
     expect(useAppSettings.getState().settings.readerPresets).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: /删除预设 默认（Lumi Mist） 副本/ }))
@@ -150,7 +150,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 
   it('自定义 CSS 保存（合法）→ store；非法 → 错误提示（AC14）', () => {
-    openCategory(/外观/)
+    openCategory(/^阅读$/)
     const ta = screen.getByRole('textbox', { name: '自定义 CSS' })
     fireEvent.change(ta, { target: { value: 'p { margin: 0; }' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
@@ -163,39 +163,16 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 })
 
-describe('翻译页（F2，AC23）', () => {
-  it('三 Provider 卡片 + 默认 radio + 目标语言 + 显示方式', () => {
+describe('翻译页（0017：退役为 AI 翻译说明）', () => {
+  it('旧多 Provider 配置已移除，改为 AI 翻译说明 + 指引', () => {
     openCategory(/^翻译$/)
-    expect(screen.getByText('Microsoft Translator')).toBeInTheDocument()
-    expect(screen.getByText('DeepL（免费版）')).toBeInTheDocument()
-    expect(screen.getByText('DeepLX（自建）')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /默认 Provider：Microsoft/ })).toBeChecked()
-    // 切显示方式
-    fireEvent.click(screen.getByRole('button', { name: '双语对照' }))
-    expect(useAppSettings.getState().settings.translationSettings.displayMode).toBe('bilingual')
-    useAppSettings.getState().update({
-      translationSettings: DEFAULT_APP_SETTINGS.translationSettings,
-    })
-  })
-
-  it('至少 1 个启用不变量：禁用唯一启用项时自动兜底（AC23）', () => {
-    openCategory(/^翻译$/)
-    // 初始只有 microsoft 启用 → 关它 → deepl 应被自动启用（或 microsoft 保持）
-    fireEvent.click(screen.getByRole('switch', { name: '启用 Microsoft Translator' }))
-    const providers = useAppSettings.getState().settings.translationSettings.providers
-    expect(providers.some((p) => p.enabled)).toBe(true)
-    useAppSettings.getState().update({
-      translationSettings: DEFAULT_APP_SETTINGS.translationSettings,
-    })
-  })
-
-  it('API Key 草稿保存状态行 + planned·0016 测试连接（AC23）', () => {
-    openCategory(/^翻译$/)
-    expect(screen.getAllByText('未设置').length).toBeGreaterThanOrEqual(2) // deepl/dlx 未存 key
-    // DeepL 卡片的测试连接 disabled + planned 徽标
-    const deeplCard = screen.getByText('DeepL（免费版）').closest('div.mb-3')!
-    expect(deeplCard.querySelector('button[disabled]')).toBeTruthy()
-    expect(screen.getAllByText('planned · 0016').length).toBeGreaterThanOrEqual(3)
+    // 0017：不再有 Microsoft/DeepL/DeepLX provider 配置与 API Key 输入
+    expect(screen.queryByText('Microsoft Translator')).not.toBeInTheDocument()
+    expect(screen.queryByText('DeepL（免费版）')).not.toBeInTheDocument()
+    expect(screen.getByText('正文翻译')).toBeInTheDocument()
+    expect(screen.getByText(/翻译由统一 AI Provider 驱动/)).toBeInTheDocument()
+    // 翻译目标语言指向 AI 分类
+    expect(screen.getByText(/「AI」分类/)).toBeInTheDocument()
   })
 })
 
@@ -271,11 +248,11 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
   })
 })
 
-describe('移动端四页可达（AC4：13 分类在移动端全部可进）', () => {
+describe('移动端四页可达（AC4：14 分类在移动端全部可进）', () => {
   it('移动设置首页 → 翻译子页（共享组件渲染）', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '翻译' }))
-    expect(screen.getByText('Microsoft Translator')).toBeInTheDocument()
+    expect(screen.getByText('正文翻译')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     fireEvent.click(screen.getByRole('button', { name: 'RSSHub' }))
     expect(screen.getByText('恢复默认（16 个内置实例）')).toBeInTheDocument()

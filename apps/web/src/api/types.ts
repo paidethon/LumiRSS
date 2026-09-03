@@ -173,6 +173,36 @@ export interface AiSettingsUpdate {
   translationLanguage?: 'zh-CN' | 'en'
 }
 
+/** GET/PATCH /api/v1/settings（0017）—— portable 设置的浏览器安全视图。
+ * stored=false 表示服务端尚无持久化文档（客户端本地值可作迁移种子）；
+ * stored=true 表示这些字段是服务端持久值（server-durable）。 */
+export interface ServerSettings {
+  schemaVersion: number
+  stored: boolean
+  themeMode: 'system' | 'light' | 'dark'
+  accentColor: string
+  uiFontStack: 'default' | 'sans' | 'serif' | 'mono'
+  uiFontSize: number
+  reduceMotion: boolean
+  readerFontFamily: 'system' | 'sans' | 'serif' | 'mono'
+  readerFontSize: number
+  readerLineHeight: number
+  readerParagraphSpacing: number
+  readerContentWidth: number
+  readerPageMargin: number
+  readerBackground: 'follow' | 'sepia' | 'warm' | 'paper' | 'mint' | 'custom'
+  readerBackgroundCustom: string
+  readerJustify: boolean
+  readerImageMode: 'all' | 'grayscale' | 'hidden'
+  readerTextIndent: 'off' | '2em'
+  readerHangingPunctuation: boolean
+  readerChineseConversion: 'off' | 's2t' | 't2s' | 'tw' | 'hk'
+  readerShowReadingTime: boolean
+  readerCodeHighlight: 'auto' | 'off'
+  readerCodeTheme: 'auto' | 'github-light' | 'github-dark' | 'vitesse-light' | 'vitesse-dark'
+  scrollMarkUnread: boolean
+}
+
 /** GET/POST /api/v1/entries/{entryRef}/summary 状态（0015）。 */
 export type SummaryStatus = 'not_generated' | 'generating' | 'success' | 'failed'
 
