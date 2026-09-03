@@ -1,30 +1,28 @@
-/** ReaderAaPanel — Reader 内快速阅读样式面板（0012 Gate 7）。
+/** ReaderAaPanel — Reader 内快速阅读样式面板（0012 Gate 7 / 0017 连续化）。
  *
  * Readwise/Instapaper Aa 菜单模式（inspired，独立实现）：
  * - 桌面 → Popover；移动 → 底部 Sheet（focus trap / Escape / safe-area）；
- * - 快速项：字体 / 字号 / 行高 / 宽度 / 背景 / 首行缩进 / 简繁 / 图片模式；
- * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）；
- * - 全部控件直连 useAppSettings —— 与 Settings Center 同一 settings
- *   source（AC12：禁止第二套 ReaderQuickSettingsStore）。 */
+ * - 0017：字号/行高/段距/宽度/边距全部连续 Slider（微信读书式），
+ *   拖动立即生效（WYSIWYG），与 Settings → 阅读 共用同一 settings
+ *   store（AC12：禁止第二套 ReaderQuickSettingsStore）；
+ * - 字体/背景/简繁为快捷 select；深度项在完整设置；
+ * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
 import { useEffect, useState, type Ref } from 'react'
 import { ALargeSmall } from 'lucide-react'
 import { useAppSettings } from '../store/app-settings'
-import type {
-  ReaderBackground,
-  ReaderChineseConversion,
-  ReaderContentWidth,
-  ReaderFontFamily,
-  ReaderFontSize,
-  ReaderImageMode,
-  ReaderLineHeight,
-  ReaderTextIndent,
+import {
+  READER_NUMERIC_RANGES,
+  type ReaderBackground,
+  type ReaderChineseConversion,
+  type ReaderFontFamily,
 } from '../store/app-settings'
 import SettingsModal from './settings/SettingsModal'
 import MobileSettingsScreen from './MobileSettingsScreen'
 import { Popover } from './ui/Popover'
 import { Sheet } from './ui/Sheet'
 import { Select } from './ui/Select'
+import { Slider } from './ui/Slider'
 import { IconButton } from './ui/IconButton'
 
 /** 移动断点检测（<768px → Sheet；面板行为随容器自适应）。 */
@@ -49,136 +47,124 @@ function AaControls({ onOpenSettings }: { onOpenSettings: () => void }) {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
 
+  const fontSize = READER_NUMERIC_RANGES.readerFontSize
+  const lineHeight = READER_NUMERIC_RANGES.readerLineHeight
+  const paragraphSpacing = READER_NUMERIC_RANGES.readerParagraphSpacing
+  const contentWidth = READER_NUMERIC_RANGES.readerContentWidth
+  const pageMargin = READER_NUMERIC_RANGES.readerPageMargin
+
   return (
-    <div className="flex w-full flex-col divide-y divide-[var(--lumi-separator)]" role="group" aria-label="阅读样式">
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">字体</span>
-        <Select
-          aria-label="正文字体"
-          value={settings.readerFontFamily}
-          onChange={(e) =>
-            update({
-              readerFontFamily: e.target.value as ReaderFontFamily,
-              readerCustomFontId: null,
-              readerFontUrl: null,
-            })
-          }
-          options={[
-            { value: 'system', label: '默认' },
-            { value: 'sans', label: '无衬线' },
-            { value: 'serif', label: '衬线' },
-            { value: 'mono', label: '等宽' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">字号</span>
-        <Select
-          aria-label="正文字号"
-          value={settings.readerFontSize}
-          onChange={(e) => update({ readerFontSize: Number(e.target.value) as ReaderFontSize })}
-          options={[
-            { value: '15', label: '小' },
-            { value: '17', label: '标准' },
-            { value: '19', label: '大' },
-            { value: '21', label: '特大' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">行高</span>
-        <Select
-          aria-label="正文行高"
-          value={settings.readerLineHeight}
-          onChange={(e) => update({ readerLineHeight: Number(e.target.value) as ReaderLineHeight })}
-          options={[
-            { value: '1.65', label: '紧凑' },
-            { value: '1.85', label: '标准' },
-            { value: '2.05', label: '宽松' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">宽度</span>
-        <Select
-          aria-label="正文宽度"
-          value={settings.readerContentWidth}
-          onChange={(e) =>
-            update({ readerContentWidth: Number(e.target.value) as ReaderContentWidth })
-          }
-          options={[
-            { value: '680', label: '窄' },
-            { value: '760', label: '标准' },
-            { value: '900', label: '宽' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">背景</span>
-        <Select
-          aria-label="阅读背景"
-          value={settings.readerBackground}
-          onChange={(e) => update({ readerBackground: e.target.value as ReaderBackground })}
-          options={[
-            { value: 'follow', label: '跟随主题' },
-            { value: 'paper', label: '纸白' },
-            { value: 'warm', label: '暖白' },
-            { value: 'sepia', label: '米黄' },
-            { value: 'mint', label: '淡绿' },
-            { value: 'custom', label: '自定义' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">首行缩进</span>
-        <Select
-          aria-label="首行缩进"
-          value={settings.readerTextIndent}
-          onChange={(e) => update({ readerTextIndent: e.target.value as ReaderTextIndent })}
-          options={[
-            { value: 'off', label: '关闭' },
-            { value: '2em', label: '2 字符' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">简繁</span>
-        <Select
-          aria-label="简繁转换"
-          value={settings.readerChineseConversion}
-          onChange={(e) =>
-            update({ readerChineseConversion: e.target.value as ReaderChineseConversion })
-          }
-          options={[
-            { value: 'off', label: '原文' },
-            { value: 's2t', label: '简 → 繁' },
-            { value: 't2s', label: '繁 → 简' },
-            { value: 'tw', label: '繁（台）' },
-            { value: 'hk', label: '繁（港）' },
-          ]}
-        />
-      </div>
-      <div className={ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">图片</span>
-        <Select
-          aria-label="图片显示"
-          value={settings.readerImageMode}
-          onChange={(e) => update({ readerImageMode: e.target.value as ReaderImageMode })}
-          options={[
-            { value: 'all', label: '显示' },
-            { value: 'grayscale', label: '灰度' },
-            { value: 'hidden', label: '隐藏' },
-          ]}
-        />
-      </div>
-      <div className="flex min-h-11 items-center">
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="w-full rounded-[var(--lumi-radius-md)] px-2 py-2 text-left text-sm text-[var(--lumi-accent)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
-        >
-          更多阅读设置…
-        </button>
+    <div className="flex w-full flex-col gap-3" role="group" aria-label="阅读样式">
+      <Slider
+        label="字号"
+        steppers
+        value={settings.readerFontSize}
+        min={fontSize.min}
+        max={fontSize.max}
+        step={fontSize.step}
+        onChange={(v) => update({ readerFontSize: v })}
+        formatValue={(v) => `${v}px`}
+      />
+      <Slider
+        label="行距"
+        value={settings.readerLineHeight}
+        min={lineHeight.min}
+        max={lineHeight.max}
+        step={lineHeight.step}
+        onChange={(v) => update({ readerLineHeight: v })}
+        formatValue={(v) => v.toFixed(2)}
+      />
+      <Slider
+        label="段距"
+        value={settings.readerParagraphSpacing}
+        min={paragraphSpacing.min}
+        max={paragraphSpacing.max}
+        step={paragraphSpacing.step}
+        onChange={(v) => update({ readerParagraphSpacing: v })}
+        formatValue={(v) => `${v.toFixed(2)}em`}
+      />
+      <Slider
+        label="正文宽度"
+        value={settings.readerContentWidth}
+        min={contentWidth.min}
+        max={contentWidth.max}
+        step={contentWidth.step}
+        onChange={(v) => update({ readerContentWidth: v })}
+        formatValue={(v) => `${v}px`}
+      />
+      <Slider
+        label="页面边距"
+        value={settings.readerPageMargin}
+        min={pageMargin.min}
+        max={pageMargin.max}
+        step={pageMargin.step}
+        onChange={(v) => update({ readerPageMargin: v })}
+        formatValue={(v) => `${v}px`}
+      />
+
+      <div className="mt-1 flex w-full flex-col divide-y divide-[var(--lumi-separator)] border-t border-[var(--lumi-separator)]">
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">字体</span>
+          <Select
+            aria-label="正文字体"
+            value={settings.readerFontFamily}
+            onChange={(e) =>
+              update({
+                readerFontFamily: e.target.value as ReaderFontFamily,
+                readerCustomFontId: null,
+                readerFontUrl: null,
+              })
+            }
+            options={[
+              { value: 'system', label: '默认' },
+              { value: 'sans', label: '无衬线' },
+              { value: 'serif', label: '衬线' },
+              { value: 'mono', label: '等宽' },
+            ]}
+          />
+        </div>
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">背景</span>
+          <Select
+            aria-label="阅读背景"
+            value={settings.readerBackground}
+            onChange={(e) => update({ readerBackground: e.target.value as ReaderBackground })}
+            options={[
+              { value: 'follow', label: '跟随主题' },
+              { value: 'paper', label: '纸白' },
+              { value: 'warm', label: '暖白' },
+              { value: 'sepia', label: '米黄' },
+              { value: 'mint', label: '淡绿' },
+              { value: 'custom', label: '自定义' },
+            ]}
+          />
+        </div>
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">简繁</span>
+          <Select
+            aria-label="简繁转换"
+            value={settings.readerChineseConversion}
+            onChange={(e) =>
+              update({ readerChineseConversion: e.target.value as ReaderChineseConversion })
+            }
+            options={[
+              { value: 'off', label: '原文' },
+              { value: 's2t', label: '简 → 繁' },
+              { value: 't2s', label: '繁 → 简' },
+              { value: 'tw', label: '繁（台）' },
+              { value: 'hk', label: '繁（港）' },
+            ]}
+          />
+        </div>
+        <div className="flex min-h-11 items-center">
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="w-full rounded-[var(--lumi-radius-md)] px-2 py-2 text-left text-sm text-[var(--lumi-accent)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+          >
+            更多阅读设置…
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -234,7 +220,7 @@ export default function ReaderAaPanel() {
         </>
       ) : (
         <Popover
-          width={280}
+          width={320}
           trigger={({ triggerProps }) =>
             trigger({
               onClick: triggerProps.onClick,

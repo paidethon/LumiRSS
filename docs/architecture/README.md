@@ -235,9 +235,9 @@ Current/planned responsibilities:
 
 - AI result cache — **active (0015)**: `ai_summaries` (entryRef + contentHash + provider/model/promptVersion/language identity; status/summary/failure metadata; never stores FreshRSS article HTML);
 - AI job/error metadata — **active (0015)**: status + `failure_type` on the same row;
-- Lumi settings — **active (0015, scoped)**: allow-listed non-secret server AI settings (`ai.provider`/`ai.base_url`/`ai.model`/`ai.summary_language`); secrets stay in server env, never in the DB;
+- Lumi settings — **active (0015, scoped)**: allow-listed non-secret server AI settings (`ai.provider`/`ai.base_url`/`ai.model`/`ai.summary_language`/`ai.translation_language`); secrets stay in server env, never in the DB;
+- portable app settings — **active (0017)**: one typed, allow-listed JSON document (`app.settings`, `schemaVersion: 1`) holding cross-device Reader/app preferences (theme, accent, UI font, all continuous Reader typography values, reader background/image/typography prefs, reduced motion, scroll-mark-read); strict pydantic validation (unknown key / wrong type / out-of-range / NaN rejected), corrupted/future documents fall back to defaults; the browser is local-first (immediate Zustand + CSS-variable apply) with a debounced serialized `GET/PATCH/DELETE /api/v1/settings` durability layer — no secrets, no RSS-domain data;
 - versioned migrations — **active (0015)**: `schema_migrations` + transactional exactly-once `migrations/*.sql`;
-- theme/reader preference persistence — planned (0017);
 - source discovery drafts and route metadata cache — planned;
 - connector configuration references — planned;
 - future web clip/API/email/Obsidian records — planned;
@@ -408,7 +408,7 @@ App Shell
 - TanStack Query: server state, caching, invalidation, loading/error status;
 - Zustand: current view/feed/entry and other small UI state;
 - local component state: ephemeral controls;
-- persistent user preferences: later BFF settings API or a clearly documented temporary local strategy;
+- persistent user preferences — **active (0017)**: ONE Zustand settings store (`useAppSettings`) is the client source of truth; local-first (localStorage cache + immediate CSS-variable application) with a debounced, serialized server durability layer (`/api/v1/settings`) — device-local state (layout widths, custom fonts, presets, filter rules) is never synced; secrets are never present client-side;
 - no duplicated feed/entry entity store unless a real offline feature is approved.
 
 Ownership boundaries (0014a roadmap revision, approved 2026-09-02):

@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { initTheme } from './lib/theme.ts'
 import { watchSystemTheme } from './store/theme.ts'
 import { initAppSettings, useAppSettings } from './store/app-settings.ts'
+import { initSettingsSync } from './store/settings-sync.ts'
 import { useReaderUi } from './store/reader-ui.ts'
 import { importUrlFont, restoreLocalFonts } from './lib/reader-fonts.ts'
 
@@ -17,6 +18,10 @@ watchSystemTheme()
 // 0009 Gate 4：恢复持久化的 Reader 背景偏好（sepia/warm，挂
 // data-reader 到 Reader 容器；follow 则不挂）。
 initAppSettings()
+
+// 0017：portable 设置 server 同步（local-first：hydration 与持久化
+// 都是异步耐久层，不阻塞首屏与任何 UI 交互）。
+initSettingsSync()
 
 // 0010a Gate E（AC8）：启动时仅看未读——只影响启动默认，会话内
 // 手动切换 view 不受影响。

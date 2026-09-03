@@ -8,10 +8,10 @@
 
 **Active milestone**: —
 
-**Last completed**: 0016 — Translation & AI Conversation
-→ [milestones/0016-translation-ai-conversation.md](milestones/0016-translation-ai-conversation.md)
+**Last completed**: 0017 — Reader Power UX & Unified Settings
+→ [milestones/0017-reader-power-ux-unified-settings.md](milestones/0017-reader-power-ux-unified-settings.md)
 
-**Next planned**: 0017 — Reader Power UX & Unified Settings
+**Next planned**: 0018 — Production, Operations & Backup
 
 ---
 
@@ -86,4 +86,5 @@ during normal development.
 | 0014a | UI Acceptance & Navigation Consistency | Completed |
 | 0015 | AI Foundation, Summary & Lumi SQLite Foundation | Completed |
 | 0016 | Translation & AI Conversation | Completed |
-| 0017–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |
+| 0017 | Reader Power UX & Unified Settings | Completed |
+| 0018–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |

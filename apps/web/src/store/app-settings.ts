@@ -25,7 +25,6 @@ import {
   PRESET_CUSTOM_BACKGROUNDS,
   READER_FONT_STACKS,
   UI_FONT_STACKS,
-  READER_PARAGRAPH_SPACING_EM,
   resolveReaderBackground,
   readerTextPalette,
   prefixCustomCss,
@@ -34,16 +33,48 @@ import { fontFamilyName, fontIdFromUrl } from '../lib/reader-fonts'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
-// ---- 类型化模型（Spec §设计规格 + 0010a Gate F 扩展） ----
+// ---- 0017：连续数值范围（AD-0017-1，min/default/max/step 唯一来源） ----
 
-export type ReaderFontSize = 15 | 17 | 19 | 21
-export type ReaderLineHeight = 1.65 | 1.85 | 2.05
-export type ReaderContentWidth = 680 | 760 | 900
+export interface NumericRange {
+  min: number
+  max: number
+  step: number
+  default: number
+}
+
+export type ReaderNumericKey =
+  | 'readerFontSize'
+  | 'readerLineHeight'
+  | 'readerParagraphSpacing'
+  | 'readerContentWidth'
+  | 'readerPageMargin'
+
+export const READER_NUMERIC_RANGES: Record<ReaderNumericKey, NumericRange> = {
+  readerFontSize: { min: 12, max: 28, step: 1, default: 17 },
+  readerLineHeight: { min: 1.2, max: 2.4, step: 0.05, default: 1.85 },
+  readerParagraphSpacing: { min: 0, max: 2.0, step: 0.05, default: 0.85 },
+  readerContentWidth: { min: 560, max: 1080, step: 20, default: 760 },
+  readerPageMargin: { min: 12, max: 64, step: 4, default: 32 },
+}
+
+/** 旧段距枚举 → 连续 em 值（迁移映射，AD-0017-1）。 */
+export const LEGACY_PARAGRAPH_SPACING_EM: Record<string, number> = {
+  compact: 0.5,
+  normal: 0.85,
+  loose: 1.25,
+}
+
+// ---- 类型化模型（Spec §设计规格 + 0010a Gate F 扩展 + 0017 连续数值） ----
+
+/** 0017：字号等 Reader 数值全部连续（原 15|17|19|21 等离散档退役）。 */
+export type ReaderFontSize = number
+export type ReaderLineHeight = number
+export type ReaderContentWidth = number
 /** 0010a F6：背景扩展（+paper/mint/custom，OrigRead 双主题色板原值） */
 export type ReaderBackground = 'follow' | 'sepia' | 'warm' | 'paper' | 'mint' | 'custom'
 /** 字体族四档（OrigRead reader-font 栈原值，inspired） */
 export type ReaderFontFamily = 'system' | 'sans' | 'serif' | 'mono'
-export type ReaderParagraphSpacing = 'compact' | 'normal' | 'loose'
+export type ReaderParagraphSpacing = number
 export type ReaderImageMode = 'all' | 'grayscale' | 'hidden'
 /** UI 字体四档（同源 OrigRead 栈） */
 export type UiFontStack = 'default' | 'sans' | 'serif' | 'mono'
@@ -69,22 +100,6 @@ export interface ReaderCustomFont {
   fileName: string
   size: number
   createdAt: number
-}
-
-/** 翻译 Provider（OrigRead translation.ts 镜像，裁剪 MLKit/Google） */
-export type TranslationProviderType = 'microsoft' | 'deepl' | 'dlx'
-export interface TranslationProvider {
-  type: TranslationProviderType
-  enabled: boolean
-  endpoint: string
-  region: string
-  apiKey: string
-}
-export interface TranslationSettings {
-  defaultProvider: TranslationProviderType
-  targetLanguage: string
-  displayMode: 'translated' | 'bilingual'
-  providers: TranslationProvider[]
 }
 
 /** 过滤规则（OrigRead filter-rules.ts 镜像） */
@@ -157,8 +172,7 @@ export interface AppSettings {
   /** 阅读样式 P1（0010a F7） */
   readerPresetId: string // 'default' 或用户预设 id
   readerPresets: ReaderPreset[] // 用户派生预设（内置不存）
-  /** OrigRead 四页（0010a F2–F5） */
-  translationSettings: TranslationSettings
+  /** OrigRead 其余页（0010a；翻译页 0017 退役——翻译由 0016 AI 负责） */
   filterRules: FilterRule[]
   filterStats: FilterStats
   rsshubSettings: RssHubSettings
@@ -167,6 +181,8 @@ export interface AppSettings {
   readerFontSize: ReaderFontSize
   readerLineHeight: ReaderLineHeight
   readerContentWidth: ReaderContentWidth
+  /** 0017：正文页面左右边距（连续；移动端 CSS 安全钳制） */
+  readerPageMargin: number
   /** 0012 Reader Style Deep Customization */
   /** 自定义字体（IndexedDB id 引用；null = 未用自定义字体） */
   readerCustomFontId: string | null
@@ -189,25 +205,6 @@ export interface AppSettings {
   sidebarCollapsed: boolean
   timelineWidth: number // clamp 360–460
   timelineCollapsed: boolean
-}
-
-// ---- 内置翻译 Provider 默认（OrigRead 预设 endpoint 原值） ----
-
-export const TRANSLATION_PROVIDER_DEFAULTS: Record<
-  TranslationProviderType,
-  { endpoint: string; region: string; label: string }
-> = {
-  microsoft: {
-    endpoint: 'https://api.cognitive.microsofttranslator.com',
-    region: '',
-    label: 'Microsoft Translator',
-  },
-  deepl: {
-    endpoint: 'https://api-free.deepl.com/v2/translate',
-    region: '',
-    label: 'DeepL（免费版）',
-  },
-  dlx: { endpoint: '', region: '', label: 'DeepLX（自建）' },
 }
 
 // ---- RSSHub 16 内置实例（OrigRead 两端逐字一致清单） ----
@@ -247,23 +244,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFontFamily: 'system',
   readerBackground: 'follow',
   readerBackgroundCustom: '#eef7ee',
-  readerParagraphSpacing: 'normal',
+  readerParagraphSpacing: 0.85,
   readerJustify: false,
   readerImageMode: 'all',
   readerPresetId: 'default',
   readerPresets: [],
-  translationSettings: {
-    defaultProvider: 'microsoft',
-    targetLanguage: 'zh-CN',
-    displayMode: 'translated',
-    providers: (['microsoft', 'deepl', 'dlx'] as const).map((type) => ({
-      type,
-      enabled: type === 'microsoft',
-      endpoint: TRANSLATION_PROVIDER_DEFAULTS[type].endpoint,
-      region: '',
-      apiKey: '',
-    })),
-  },
   filterRules: [],
   filterStats: { totalFiltered: 0, lastFilteredAt: null, lastMatchedRule: null },
   rsshubSettings: { enabled: true, instances: BUILTIN_RSSHUB_INSTANCES },
@@ -271,6 +256,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFontSize: 17,
   readerLineHeight: 1.85,
   readerContentWidth: 760,
+  readerPageMargin: 32,
   readerCustomFontId: null,
   readerFontUrl: null,
   readerFontUrlName: '',
@@ -290,15 +276,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 // ---- 解析 / 迁移（纯函数，可测试） ----
 
 const READER_BG_VALUES = ['follow', 'sepia', 'warm', 'paper', 'mint', 'custom'] as const
-const FONT_SIZES = [15, 17, 19, 21] as const
-const LINE_HEIGHTS = [1.65, 1.85, 2.05] as const
-const CONTENT_WIDTHS = [680, 760, 900] as const
 const READER_FONT_FAMILIES = ['system', 'sans', 'serif', 'mono'] as const
-const PARAGRAPH_SPACINGS = ['compact', 'normal', 'loose'] as const
 const IMAGE_MODES = ['all', 'grayscale', 'hidden'] as const
 const UI_FONT_STACK_VALUES = ['default', 'sans', 'serif', 'mono'] as const
 const UI_FONT_SIZES = [15, 16, 18, 20] as const
-const TRANSLATION_PROVIDER_TYPES = ['microsoft', 'deepl', 'dlx'] as const
 // 0012 新增枚举表
 const READER_TEXT_INDENTS = ['off', '2em'] as const
 const READER_CHINESE_CONVERSIONS = ['off', 's2t', 't2s', 'tw', 'hk'] as const
@@ -335,6 +316,32 @@ function pickString<T extends string>(value: unknown, allowed: readonly T[], fal
   return allowed.includes(value as T) ? (value as T) : fallback
 }
 
+/** 连续数值吸附：四舍五入到 step 网格并钳制到 [min, max]（0017）。
+ * 相对 min 计算步数，避免浮点步长累计漂移（0.85/0.05 等边界值稳定）。 */
+export function snapReaderNumber(key: ReaderNumericKey, value: number): number {
+  const { min, max, step } = READER_NUMERIC_RANGES[key]
+  const steps = Math.round((value - min) / step)
+  const snapped = min + steps * step
+  return Math.min(max, Math.max(min, Number(snapped.toFixed(3))))
+}
+
+/** Reader 连续数值归一化（0017 迁移）：
+ * - number：吸附到连续网格（旧离散值 15/17/19/21、1.65/1.85/2.05、
+ *   680/760/900 都在新范围内，视觉无变化）；
+ * - 旧段距字符串枚举：compact/normal/loose → 0.5/0.85/1.25；
+ * - 其它非法值：回退默认。 */
+function pickReaderNumber(key: ReaderNumericKey, value: unknown): number {
+  const fallback = READER_NUMERIC_RANGES[key].default
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return snapReaderNumber(key, value)
+  }
+  if (key === 'readerParagraphSpacing' && typeof value === 'string') {
+    const mapped = LEGACY_PARAGRAPH_SPACING_EM[value]
+    if (mapped !== undefined) return mapped
+  }
+  return fallback
+}
+
 /** 过滤规则归一化（F3）：逐条校验 + 去重（feedId,type,keyword 小写语义）。 */
 function normalizeFilterRules(raw: unknown): FilterRule[] {
   if (!Array.isArray(raw)) return []
@@ -366,49 +373,6 @@ function normalizeFilterRules(raw: unknown): FilterRule[] {
     })
   }
   return rules
-}
-
-function normalizeTranslation(raw: unknown): TranslationSettings {
-  const def = DEFAULT_APP_SETTINGS.translationSettings
-  if (typeof raw !== 'object' || raw === null) return structuredClone(def)
-  const t = raw as Record<string, unknown>
-  const providers: TranslationProvider[] = []
-  const seenTypes = new Set<string>()
-  if (Array.isArray(t.providers)) {
-    for (const p of t.providers) {
-      if (typeof p !== 'object' || p === null) continue
-      const pr = p as Record<string, unknown>
-      const type = TRANSLATION_PROVIDER_TYPES.find((x) => x === pr.type)
-      if (!type || seenTypes.has(type)) continue
-      seenTypes.add(type)
-      providers.push({
-        type,
-        enabled: typeof pr.enabled === 'boolean' ? pr.enabled : type === 'microsoft',
-        endpoint: typeof pr.endpoint === 'string' ? pr.endpoint : '',
-        region: typeof pr.region === 'string' ? pr.region : '',
-        apiKey: typeof pr.apiKey === 'string' ? pr.apiKey : '',
-      })
-    }
-  }
-  // 至少保留 1 个启用 Provider（OrigRead 交互不变量）
-  const completed = providers.length > 0 ? providers : structuredClone(def.providers)
-  if (!completed.some((p) => p.enabled)) completed[0].enabled = true
-  const defaultProvider = TRANSLATION_PROVIDER_TYPES.includes(
-    t.defaultProvider as TranslationProviderType,
-  )
-    ? (t.defaultProvider as TranslationProviderType)
-    : def.defaultProvider
-  return {
-    defaultProvider: completed.some((p) => p.type === defaultProvider)
-      ? defaultProvider
-      : completed[0].type,
-    targetLanguage:
-      typeof t.targetLanguage === 'string' && t.targetLanguage.trim()
-        ? t.targetLanguage.trim().slice(0, 16)
-        : def.targetLanguage,
-    displayMode: t.displayMode === 'bilingual' ? 'bilingual' : 'translated',
-    providers: completed,
-  }
 }
 
 function normalizeRssHub(raw: unknown): RssHubSettings {
@@ -453,10 +417,10 @@ function normalizePresets(raw: unknown): ReaderPreset[] {
       builtin: false,
       vars: {
         readerFontFamily: pickString(v.readerFontFamily, READER_FONT_FAMILIES, 'system'),
-        readerFontSize: pickNumber(v.readerFontSize, FONT_SIZES, 17),
-        readerLineHeight: pickNumber(v.readerLineHeight, LINE_HEIGHTS, 1.85),
+        readerFontSize: pickReaderNumber('readerFontSize', v.readerFontSize),
+        readerLineHeight: pickReaderNumber('readerLineHeight', v.readerLineHeight),
         readerBackground: pickString(v.readerBackground, READER_BG_VALUES, 'follow'),
-        readerParagraphSpacing: pickString(v.readerParagraphSpacing, PARAGRAPH_SPACINGS, 'normal'),
+        readerParagraphSpacing: pickReaderNumber('readerParagraphSpacing', v.readerParagraphSpacing),
         readerJustify: v.readerJustify === true,
       },
     })
@@ -510,11 +474,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
       source.readerBackgroundCustom,
       DEFAULT_APP_SETTINGS.readerBackgroundCustom,
     ),
-    readerParagraphSpacing: pickString(
-      source.readerParagraphSpacing,
-      PARAGRAPH_SPACINGS,
-      DEFAULT_APP_SETTINGS.readerParagraphSpacing,
-    ),
+    readerParagraphSpacing: pickReaderNumber('readerParagraphSpacing', source.readerParagraphSpacing),
     readerJustify: pickBoolean(source.readerJustify, DEFAULT_APP_SETTINGS.readerJustify),
     readerImageMode: pickString(source.readerImageMode, IMAGE_MODES, DEFAULT_APP_SETTINGS.readerImageMode),
     readerPresetId:
@@ -525,7 +485,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? source.readerPresetId
         : 'default',
     readerPresets: normalizePresets(source.readerPresets),
-    translationSettings: normalizeTranslation(source.translationSettings),
     filterRules: normalizeFilterRules(source.filterRules),
     filterStats: {
       totalFiltered:
@@ -545,17 +504,10 @@ export function normalizeSettings(raw: unknown): AppSettings {
     themeMode: isThemeMode(source.themeMode)
       ? source.themeMode
       : DEFAULT_APP_SETTINGS.themeMode,
-    readerFontSize: pickNumber(source.readerFontSize, FONT_SIZES, DEFAULT_APP_SETTINGS.readerFontSize),
-    readerLineHeight: pickNumber(
-      source.readerLineHeight,
-      LINE_HEIGHTS,
-      DEFAULT_APP_SETTINGS.readerLineHeight,
-    ),
-    readerContentWidth: pickNumber(
-      source.readerContentWidth,
-      CONTENT_WIDTHS,
-      DEFAULT_APP_SETTINGS.readerContentWidth,
-    ),
+    readerFontSize: pickReaderNumber('readerFontSize', source.readerFontSize),
+    readerLineHeight: pickReaderNumber('readerLineHeight', source.readerLineHeight),
+    readerContentWidth: pickReaderNumber('readerContentWidth', source.readerContentWidth),
+    readerPageMargin: pickReaderNumber('readerPageMargin', source.readerPageMargin),
     // 0012：逐字段校验，非法值回退默认（corrupted settings 不致启动失败）
     readerCustomFontId: pickFontId(source.readerCustomFontId),
     readerFontUrl: isValidFontUrl(source.readerFontUrl) ? source.readerFontUrl : null,
@@ -669,7 +621,9 @@ export function applyReaderTypography(settings: AppSettings): void {
     '--lumi-reader-font-family',
     customFamily !== null ? `"${customFamily}", ${baseStack}` : baseStack,
   )
-  root.style.setProperty('--lumi-reader-paragraph-spacing', READER_PARAGRAPH_SPACING_EM[settings.readerParagraphSpacing])
+  // 0017：段距是连续 em 数值；页面边距是连续 px 数值（移动端 CSS 钳制）
+  root.style.setProperty('--lumi-reader-paragraph-spacing', `${settings.readerParagraphSpacing}em`)
+  root.style.setProperty('--lumi-reader-page-margin', `${settings.readerPageMargin}px`)
   root.style.setProperty('--lumi-reader-text-align', settings.readerJustify ? 'justify' : 'start')
   // 图片模式：灰度/隐藏由 .article-content img 消费
   root.dataset.readerImages = settings.readerImageMode
@@ -759,6 +713,78 @@ export function applyAppearance(settings: AppSettings): void {
 
 // ---- Store ----
 
+/** 0017：server-durable（portable）设置键白名单（AD-0017-3）。
+ * 这些键参与 /api/v1/settings 同步；其余设置是设备本地状态。 */
+export const PORTABLE_KEYS = [
+  'themeMode',
+  'accentColor',
+  'uiFontStack',
+  'uiFontSize',
+  'reduceMotion',
+  'readerFontFamily',
+  'readerFontSize',
+  'readerLineHeight',
+  'readerParagraphSpacing',
+  'readerContentWidth',
+  'readerPageMargin',
+  'readerBackground',
+  'readerBackgroundCustom',
+  'readerJustify',
+  'readerImageMode',
+  'readerTextIndent',
+  'readerHangingPunctuation',
+  'readerChineseConversion',
+  'readerShowReadingTime',
+  'readerCodeHighlight',
+  'readerCodeTheme',
+  'scrollMarkUnread',
+] as const
+
+export type PortableKey = (typeof PORTABLE_KEYS)[number]
+
+export type PortableValues = Record<PortableKey, string | number | boolean>
+
+/** 从完整设置中提取 server 同步子集（数值去浮点噪声，AD-0017-2）。 */
+export function portableSettings(settings: AppSettings): PortableValues {
+  const out = {} as PortableValues
+  for (const key of PORTABLE_KEYS) {
+    const value = settings[key]
+    out[key] = typeof value === 'number' ? Number(value.toFixed(3)) : value
+  }
+  return out
+}
+
+/** 把 server 返回的 portable 值映射为 store patch（未知键丢弃）。 */
+export function portableToPatch(values: Record<string, unknown>): Partial<AppSettings> {
+  const patch: Record<string, unknown> = {}
+  for (const key of PORTABLE_KEYS) {
+    if (key in values) patch[key] = values[key]
+  }
+  return patch as Partial<AppSettings>
+}
+
+/** 「恢复默认阅读设置」只触及的 Reader 键（不动用户预设/自定义字体资产）。 */
+const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
+  'readerFontFamily',
+  'readerFontSize',
+  'readerLineHeight',
+  'readerParagraphSpacing',
+  'readerContentWidth',
+  'readerPageMargin',
+  'readerBackground',
+  'readerBackgroundCustom',
+  'readerJustify',
+  'readerImageMode',
+  'readerTextIndent',
+  'readerHangingPunctuation',
+  'readerChineseConversion',
+  'readerShowReadingTime',
+  'readerCodeHighlight',
+  'readerCodeTheme',
+  'readerBionic',
+  'scrollMarkUnread',
+]
+
 interface AppSettingsState {
   settings: AppSettings
   /** 局部更新（借鉴 OrigRead Patch 模式）：合并 + 归一化 + 持久化 +
@@ -766,6 +792,8 @@ interface AppSettingsState {
   update: (patch: Partial<AppSettings>) => void
   /** 重置为默认（数据控制页「恢复默认设置」用）。 */
   reset: () => void
+  /** 0017：只重置 Reader 相关设置为默认（阅读设置页「恢复默认」）。 */
+  resetReader: () => void
 }
 
 function storage(): Storage | null {
@@ -790,6 +818,16 @@ export const useAppSettings = create<AppSettingsState>((set) => ({
   },
   reset: () => {
     const next = { ...DEFAULT_APP_SETTINGS }
+    persistSettings(storage(), next)
+    applySideEffects(next)
+    set({ settings: next })
+  },
+  resetReader: () => {
+    const patch: Partial<AppSettings> = {}
+    for (const key of RESET_READER_KEYS) {
+      ;(patch as Record<string, unknown>)[key] = DEFAULT_APP_SETTINGS[key]
+    }
+    const next = normalizeSettings({ ...useAppSettings.getState().settings, ...patch })
     persistSettings(storage(), next)
     applySideEffects(next)
     set({ settings: next })

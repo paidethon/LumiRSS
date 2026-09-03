@@ -39,6 +39,11 @@ from lumirss.ai_settings import (
     KEY_SUMMARY_LANGUAGE,
     KEY_TRANSLATION_LANGUAGE,
 )
+from lumirss.app_settings import (
+    AppSettingsStore,
+    InvalidAppSettings,
+    PortableSettingsPatch,
+)
 from lumirss.ai_provider import (
     AiAuthError,
     AiInvalidResponse,
@@ -102,6 +107,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
     app.state.ai_settings_store = None
+    app.state.app_settings_store = None
     app.state.summary_service = None
     app.state.translation_service = None
     app.state.conversation_service = None
@@ -161,6 +167,8 @@ _ERROR_RESPONSES = {
     RssHubFetchError: (502, "rsshub_fetch_error"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
+    # 0017 portable app settings
+    InvalidAppSettings: (400, "invalid_app_settings"),
     # 0015 AI summary
     AiNotConfigured: (503, "ai_not_configured"),
     AiAuthError: (502, "ai_auth_error"),
@@ -203,6 +211,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RssHubRouteNotFound)
 @app.exception_handler(RssHubInvalidParameters)
 @app.exception_handler(RssHubFetchError)
+@app.exception_handler(InvalidAppSettings)
 @app.exception_handler(InvalidAiSettings)
 @app.exception_handler(AiNotConfigured)
 @app.exception_handler(AiAuthError)
@@ -833,6 +842,90 @@ async def put_ai_settings(
     """
     store = _get_ai_settings_store(request)
     return _ai_settings_json(await store.save(update))
+
+
+def _get_app_settings_store(request: Request) -> AppSettingsStore:
+    """Persistent portable settings store over the Lumi SQLite database."""
+    store = request.app.state.app_settings_store
+    if store is None:
+        store = AppSettingsStore(request.app.state.db)
+        request.app.state.app_settings_store = store
+    return store
+
+
+def _reject_nonfinite(value: str) -> float:
+    """Refuse NaN/Infinity/… JSON number tokens before pydantic sees them."""
+    raise InvalidAppSettings(f"non-finite number '{value}' is not allowed")
+
+
+def _parse_settings_patch(raw: bytes) -> PortableSettingsPatch:
+    """Strict body parsing: every invalid payload becomes a stable 400."""
+    import json as _json
+
+    try:
+        parsed = _json.loads(raw, parse_constant=_reject_nonfinite)
+    except (_json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise InvalidAppSettings("request body must be a valid JSON object") from exc
+    if not isinstance(parsed, dict):
+        raise InvalidAppSettings("request body must be a JSON object")
+    try:
+        return PortableSettingsPatch.model_validate(parsed)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        location = ".".join(str(part) for part in first.get("loc", ()))
+        raise InvalidAppSettings(
+            f"Invalid {location}: {first.get('msg', 'value rejected')}"
+        ) from exc
+
+
+def _app_settings_json(document, stored: bool) -> dict[str, object]:
+    """Browser-safe portable settings view — no secrets exist by design."""
+    payload = document.model_dump()
+    return {"schemaVersion": payload["schemaVersion"], "stored": stored, **payload}
+
+
+@app.get("/api/v1/settings")
+async def get_app_settings(request: Request) -> dict[str, object]:
+    """Current portable settings (defaults when nothing was ever stored).
+
+    ``stored`` reports whether the server holds an explicit document — the
+    client seeds it from its local values on first visit (migration) and
+    treats it as authoritative afterwards. GET never mutates anything.
+    """
+    store = _get_app_settings_store(request)
+    document, stored = await store.load()
+    return _app_settings_json(document, stored)
+
+
+@app.patch("/api/v1/settings")
+async def patch_app_settings(request: Request) -> dict[str, object]:
+    """Persist a partial portable settings update (strictly validated).
+
+    The body is parsed manually so that EVERY invalid payload — unknown
+    key, wrong type, out-of-range, NaN/Infinity, malformed JSON — is
+    rejected with the stable 400 invalid_app_settings error (FastAPI's
+    default 422 serialization crashes on non-finite numbers). There is
+    deliberately no field that can carry any secret.
+    """
+    update = _parse_settings_patch(await request.body())
+    store = _get_app_settings_store(request)
+    try:
+        merged = await store.save(update)
+    except ValueError as exc:
+        raise InvalidAppSettings(str(exc)) from exc
+    return _app_settings_json(merged, True)
+
+
+@app.delete("/api/v1/settings", status_code=204)
+async def delete_app_settings(request: Request) -> Response:
+    """Reset portable settings to defaults (removes the stored document).
+
+    The next GET reports stored=false again; the client may re-seed from
+    its local values afterwards.
+    """
+    store = _get_app_settings_store(request)
+    await store.reset()
+    return Response(status_code=204)
 
 
 def _get_summary_service(request: Request) -> SummaryService:

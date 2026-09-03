@@ -18,13 +18,14 @@ function renderModal() {
 }
 
 describe('SettingsModal — AC3（结构）', () => {
-  it('左导航渲染 13 个分类（0010a Gate E：9 → 13）', () => {
+  it('左导航渲染 14 个分类（0010a Gate E：9 → 13；0017：13 → 14）', () => {
     renderModal()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     const items = nav.querySelectorAll('button')
-    expect(items).toHaveLength(13)
+    expect(items).toHaveLength(14)
     expect(screen.getByRole('button', { name: /通用/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /外观/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^阅读$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^翻译$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /文章过滤/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /RSSHub/ })).toBeInTheDocument()
@@ -38,10 +39,16 @@ describe('SettingsModal — AC3（结构）', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 2, name: '外观' })).toBeInTheDocument()
       expect(screen.getByText('主题模式')).toBeInTheDocument()
-      expect(screen.getByText('正文字号')).toBeInTheDocument()
     })
+    // 0017：Reader 排版已移出外观 → 阅读分类
+    expect(screen.queryByText('正文字号')).not.toBeInTheDocument()
     // 默认分类（通用）不再高亮
     expect(screen.getByRole('button', { name: /通用/ })).not.toHaveAttribute('aria-current')
+    // 阅读分类承载排版 Slider
+    fireEvent.click(screen.getByRole('button', { name: /^阅读$/ }))
+    await waitFor(() => {
+      expect(screen.getByRole('slider', { name: '字号' })).toBeInTheDocument()
+    })
   })
 })
 
@@ -83,15 +90,13 @@ describe('SettingsModal — 外观页真实生效（Gate A 迁移验收）', () 
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('Reader 排版选择 → CSS 变量挂载（Gate B 接线点，挂载逻辑先行验证）', async () => {
+  it('Reader 连续字号 Slider → CSS 变量挂载（Gate B 接线点）', async () => {
     localStorage.clear()
     renderModal()
-    fireEvent.click(screen.getByRole('button', { name: /外观/ }))
-    await waitFor(() => screen.getByRole('combobox', { name: '正文字号' }))
+    fireEvent.click(screen.getByRole('button', { name: /^阅读$/ }))
+    const slider = await screen.findByRole('slider', { name: '字号' })
 
-    fireEvent.change(screen.getByRole('combobox', { name: '正文字号' }), {
-      target: { value: '21' },
-    })
+    fireEvent.change(slider, { target: { value: '21' } })
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue('--lumi-reader-font-size')).toBe(
         '21px',

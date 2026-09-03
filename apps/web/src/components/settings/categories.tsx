@@ -11,6 +11,7 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  BookOpenText,
   Bot,
   Database,
   DatabaseBackup,
@@ -30,12 +31,8 @@ import {
 } from 'lucide-react'
 import { useAppSettings } from '../../store/app-settings'
 import type {
-  ReaderContentWidth,
-  ReaderFontSize,
   ReaderFontFamily,
   ReaderImageMode,
-  ReaderParagraphSpacing,
-  ReaderLineHeight,
   UiFontStack,
   UiFontSize,
 } from '../../store/app-settings'
@@ -48,7 +45,6 @@ import {
   ReaderBackgroundPicker,
   ReaderPresetPicker,
 } from './AppearanceControls'
-import { TranslationSettingsSection } from './TranslationSettingsPage'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubSettingsSection } from './RssHubSettingsPage'
 import { BackupSettingsSection } from './BackupSettingsPage'
@@ -63,18 +59,21 @@ import {
   CodeHighlightSettings,
   ReaderThemePackSettings,
 } from './reader/ReaderDeepControls'
+// 0017：连续排版 Slider + 恢复默认（设置 → 阅读）
+import { ReaderTypographyControls } from './reader/ReaderTypographyControls'
 
-// ---- 分类定义（13 项；Folo 桌面 14 tab → Lumi 单用户裁剪） ----
+// ---- 分类定义（14 项；0017 新增「阅读」承载全部 Reader 设置） ----
 
 export type CategoryId =
   | 'general'
   | 'appearance'
+  | 'reading'
   | 'shortcuts'
-  | 'sources'
-  | 'ai'
   | 'translation'
   | 'filters'
   | 'rsshub'
+  | 'sources'
+  | 'ai'
   | 'data'
   | 'backup'
   | 'services'
@@ -84,6 +83,7 @@ export type CategoryId =
 export const CATEGORIES: { id: CategoryId; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: '通用', icon: <Settings2 aria-hidden className="size-4 shrink-0" /> },
   { id: 'appearance', label: '外观', icon: <Palette aria-hidden className="size-4 shrink-0" /> },
+  { id: 'reading', label: '阅读', icon: <BookOpenText aria-hidden className="size-4 shrink-0" /> },
   { id: 'shortcuts', label: '快捷键', icon: <Keyboard aria-hidden className="size-4 shrink-0" /> },
   { id: 'translation', label: '翻译', icon: <Languages aria-hidden className="size-4 shrink-0" /> },
   { id: 'filters', label: '文章过滤', icon: <Filter aria-hidden className="size-4 shrink-0" /> },
@@ -99,7 +99,7 @@ export const CATEGORIES: { id: CategoryId; label: string; icon: React.ReactNode 
 
 /** 移动端设置首页的分组（Folo mobile SettingsList 分组模式，inspired）。 */
 export const CATEGORY_GROUPS: { label: string; ids: CategoryId[] }[] = [
-  { label: '主设置', ids: ['general', 'appearance', 'shortcuts', 'translation', 'filters', 'rsshub'] },
+  { label: '主设置', ids: ['general', 'appearance', 'reading', 'shortcuts', 'translation', 'filters', 'rsshub'] },
   { label: '数据', ids: ['data', 'backup'] },
   { label: '订阅与增强', ids: ['sources', 'ai', 'workspace'] },
   { label: '其他', ids: ['services', 'about'] },
@@ -170,15 +170,14 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           checked: settings.reduceMotion,
           onCheckedChange: (v) => update({ reduceMotion: v }),
         },
-        { type: 'title', value: '阅读' },
-        // 0012 Gate 2/3：自定义字体（WOFF2 上传 + 字体 URL）
-        { type: 'custom', node: <ReaderFontManager /> },
-        // 0010a F7（AC20–AC22）：排版预设一键切换/派生/导入导出
-        { type: 'custom', node: <ReaderPresetPicker /> },
-        // 0010a F6（AC16/AC17）：阅读背景色板 + 自定义 hex + WCAG 自适应文字
-        { type: 'custom', node: <ReaderBackgroundPicker /> },
+      ]
+    case 'reading':
+      // 0017：独立「阅读」分类——全部 Reader 设置收拢于此（AD-0017-5）。
+      // 排版 Slider 与 Reader Aa 面板共用同一 settings store。
+      return [
+        { type: 'title', value: '排版' },
+        { type: 'custom', node: <ReaderTypographyControls /> },
         {
-          // 0010a F6（AC15）：字体族四档
           type: 'select',
           label: '正文字体',
           value: settings.readerFontFamily,
@@ -189,41 +188,6 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             { value: 'mono', label: '等宽' },
           ] satisfies { value: ReaderFontFamily; label: string }[],
           onChange: (v) => update({ readerFontFamily: v as ReaderFontFamily }),
-        },
-        {
-          type: 'select',
-          label: '正文字号',
-          value: settings.readerFontSize,
-          options: [
-            { value: 15, label: '小（15px）' },
-            { value: 17, label: '标准（17px）' },
-            { value: 19, label: '大（19px）' },
-            { value: 21, label: '特大（21px）' },
-          ] satisfies { value: ReaderFontSize; label: string }[],
-          onChange: (v) => update({ readerFontSize: v as ReaderFontSize }),
-        },
-        {
-          type: 'select',
-          label: '正文行高',
-          value: settings.readerLineHeight,
-          options: [
-            { value: 1.65, label: '紧凑（1.65）' },
-            { value: 1.85, label: '标准（1.85）' },
-            { value: 2.05, label: '宽松（2.05）' },
-          ] satisfies { value: ReaderLineHeight; label: string }[],
-          onChange: (v) => update({ readerLineHeight: v as ReaderLineHeight }),
-        },
-        {
-          // 0010a F6（AC18）：段距三档
-          type: 'select',
-          label: '段落间距',
-          value: settings.readerParagraphSpacing,
-          options: [
-            { value: 'compact', label: '紧凑' },
-            { value: 'normal', label: '标准' },
-            { value: 'loose', label: '宽松' },
-          ] satisfies { value: ReaderParagraphSpacing; label: string }[],
-          onChange: (v) => update({ readerParagraphSpacing: v as ReaderParagraphSpacing }),
         },
         {
           // 0010a F6（AC18）：两端对齐（中文 inter-ideograph）
@@ -245,21 +209,28 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           ] satisfies { value: ReaderImageMode; label: string }[],
           onChange: (v) => update({ readerImageMode: v as ReaderImageMode }),
         },
-        {
-          type: 'select',
-          label: '正文宽度',
-          value: settings.readerContentWidth,
-          options: [
-            { value: 680, label: '窄（680px）' },
-            { value: 760, label: '标准（760px）' },
-            { value: 900, label: '宽（900px）' },
-          ] satisfies { value: ReaderContentWidth; label: string }[],
-          onChange: (v) => update({ readerContentWidth: v as ReaderContentWidth }),
-        },
+        { type: 'title', value: '背景与字体' },
+        // 0012 Gate 2/3：自定义字体（WOFF2 上传 + 字体 URL）
+        { type: 'custom', node: <ReaderFontManager /> },
+        // 0010a F7（AC20–AC22）：排版预设一键切换/派生/导入导出
+        { type: 'custom', node: <ReaderPresetPicker /> },
+        // 0010a F6（AC16/AC17）：阅读背景色板 + 自定义 hex + WCAG 自适应文字
+        { type: 'custom', node: <ReaderBackgroundPicker /> },
+        { type: 'title', value: '中文排版' },
         // 0012 Gate 4：中文深度排版（首行缩进/标点悬挂/简繁/阅读时间/词首强调）
         { type: 'custom', node: <ChineseTypographySettings /> },
         // 0012 Gate 8：代码高亮（Shiki lazy）
         { type: 'custom', node: <CodeHighlightSettings /> },
+        { type: 'title', value: '阅读行为' },
+        {
+          // 0017：滚动标记已读正式化（默认关；保守条件 + 手动未读保护）
+          type: 'toggle',
+          label: '滚动时标记已读',
+          description:
+            '文章完全滚出列表上方后才自动标记为已读（离开后短暂停顿确认，手动设为未读的文章不会在同一轮滚动中被再次标记）。',
+          checked: settings.scrollMarkUnread,
+          onCheckedChange: (v) => update({ scrollMarkUnread: v }),
+        },
         { type: 'title', value: '自定义' },
         // 0010a F7（AC14）：自定义 CSS（仅作用于正文，自动前缀）
         { type: 'custom', node: <CustomCssEditor /> },
@@ -323,16 +294,6 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           checked: settings.unreadOnly,
           onCheckedChange: (v) => update({ unreadOnly: v }),
         },
-        {
-          type: 'toggle',
-          label: '滚动时标记已读',
-          description:
-            '文章完全滚出列表可视区后自动标记为已读（保守策略）。实验性：行为可能调整。',
-          checked: settings.scrollMarkUnread,
-          onCheckedChange: (v) => update({ scrollMarkUnread: v }),
-          experimental: true,
-          experimentalFor: '0017',
-        },
       ]
     case 'shortcuts':
       return [
@@ -360,8 +321,28 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
       ]
     case 'translation':
-      // 0010a F2（AC23）：OrigRead 翻译页复刻
-      return [{ type: 'custom', node: <TranslationSettingsSection /> }]
+      // 0017：旧 OrigRead 多 Provider 翻译页退役（0016 已实现 AI 翻译）——
+      // 本页为诚实说明 + AI 设置指引，不再提供任何浏览器端 API Key 配置。
+      return [
+        {
+          type: 'custom',
+          node: (
+            <div className="py-3">
+              <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+                正文翻译
+              </label>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                翻译由统一 AI Provider 驱动（0016），在阅读页「原文/译文」切换使用；
+                译文按文章缓存，不修改原始内容，也不在浏览器保存任何 API Key。
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+                翻译目标语言在「AI」分类配置（摘要与翻译共用）；未配置 AI
+                Provider 时翻译入口会如实提示并引导配置。
+              </p>
+            </div>
+          ),
+        },
+      ]
     case 'filters':
       // 0010a F3（AC24）：OrigRead 过滤页复刻 + 显示层过滤
       return [{ type: 'custom', node: <FilterRulesSection /> }]
@@ -389,26 +370,16 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       ]
     case 'ai':
       return [
-        { type: 'title', value: 'AI 摘要（0015）' },
+        { type: 'title', value: 'AI 摘要与翻译（0015 / 0016）' },
         { type: 'custom', node: <AiSettingsSection /> },
-        { type: 'title', value: '后续能力' },
         {
-          type: 'toggle',
-          label: 'AI 翻译',
-          description: '标题与正文翻译（0016 Translation & AI Conversation）。',
-          checked: false,
-          onCheckedChange: () => {},
-          planned: true,
-          plannedFor: '0016',
-        },
-        {
-          type: 'toggle',
-          label: '文章 AI 对话',
-          description: '围绕当前文章上下文的 AI 对话（0016）。',
-          checked: false,
-          onCheckedChange: () => {},
-          planned: true,
-          plannedFor: '0016',
+          type: 'custom',
+          node: (
+            <div className="py-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              已实现：文章 AI 摘要（0015）、正文翻译与文章 AI 对话（0016）——
+              阅读页内即可使用；API Key 仅保存在服务端环境，浏览器不可见。
+            </div>
+          ),
         },
       ]
     case 'data':
@@ -427,7 +398,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         {
           type: 'action',
           label: '恢复默认设置',
-          description: '把外观、阅读等本地设置重置为默认值。',
+          description: '把外观、阅读等设置重置为默认值（portable 设置会同步重置到服务端，跨设备一致）。',
           buttonText: '重置',
           danger: true,
           action: () => reset(),

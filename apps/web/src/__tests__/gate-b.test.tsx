@@ -178,12 +178,9 @@ describe('分类页 planned 语义（AC10）', () => {
       expect(screen.getByLabelText('摘要语言')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
     })
-    // 0016 翻译 / 对话仍为 planned 占位
-    expect(screen.getByText('AI 翻译', { selector: 'label' })).toBeInTheDocument()
-    expect(screen.getByText('文章 AI 对话', { selector: 'label' })).toBeInTheDocument()
-    // planned Switch 禁用
-    const switches = screen.getAllByRole('switch')
-    for (const sw of switches) expect(sw).toBeDisabled()
+    // 0016 翻译 / 对话已实现（0017 移除 stale planned 占位）
+    expect(screen.getByText(/已实现：文章 AI 摘要/)).toBeInTheDocument()
+    expect(screen.getByText(/API Key 仅保存在服务端环境/)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 
