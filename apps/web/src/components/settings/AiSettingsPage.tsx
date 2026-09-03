@@ -7,7 +7,8 @@
  * - 未配置时直接说明要在服务端设置 AI_API_KEY（环境变量），
  *   不渲染假的「测试连接」按钮（0015 无有界测试通道）；
  * - 编辑字段不会触发任何付费调用；保存只写非机密设置。
- * - 0016 翻译 / AI 对话仍为 planned 占位（不提前实现）。
+ * - 0016：新增「翻译语言」（译文目标语言，参与翻译缓存身份）；
+ *   AI 对话回复语言沿用「摘要语言」。
  */
 
 import { useState } from 'react'
@@ -92,6 +93,7 @@ export function AiSettingsSection() {
     baseUrl: string
     model: string
     summaryLanguage: 'zh-CN' | 'en'
+    translationLanguage: 'zh-CN' | 'en'
   } | null>(null)
 
   if (settings.isError) {
@@ -127,11 +129,13 @@ export function AiSettingsSection() {
     baseUrl: data.baseUrl,
     model: data.model,
     summaryLanguage: data.summaryLanguage,
+    translationLanguage: data.translationLanguage,
   }
   const dirty =
     values.baseUrl !== data.baseUrl ||
     values.model !== data.model ||
-    values.summaryLanguage !== data.summaryLanguage
+    values.summaryLanguage !== data.summaryLanguage ||
+    values.translationLanguage !== data.translationLanguage
 
   const patch = (next: typeof values) => setDraft(next)
 
@@ -200,6 +204,24 @@ export function AiSettingsSection() {
           />
         </FieldShell>
 
+        <FieldShell label="翻译语言" hint="译文的目标语言；语言参与翻译缓存身份。AI 对话回复语言沿用摘要语言。">
+          <Select
+            aria-label="翻译语言"
+            value={values.translationLanguage}
+            disabled={update.isPending}
+            options={[
+              { value: 'zh-CN', label: '简体中文' },
+              { value: 'en', label: 'English' },
+            ]}
+            onChange={(e) =>
+              patch({
+                ...values,
+                translationLanguage: e.target.value as 'zh-CN' | 'en',
+              })
+            }
+          />
+        </FieldShell>
+
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={save} disabled={!dirty || update.isPending}>
             {update.isPending ? (
@@ -225,7 +247,7 @@ export function AiSettingsSection() {
 
         <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
           <ShieldCheck aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-          修改这些字段不会自动调用付费接口；只有阅读器中手动点击「AI 摘要」才会发起一次生成请求。
+          修改这些字段不会自动调用付费接口；只有阅读器中手动点击「AI 摘要」「译文」或发送对话消息才会发起请求。
         </p>
       </div>
     </div>

@@ -8,10 +8,10 @@
 
 **Active milestone**: —
 
-**Last completed**: 0015 — AI Foundation, Summary & Lumi SQLite Foundation
-→ [milestones/0015-ai-summary-sqlite-foundation.md](milestones/0015-ai-summary-sqlite-foundation.md)
+**Last completed**: 0016 — Translation & AI Conversation
+→ [milestones/0016-translation-ai-conversation.md](milestones/0016-translation-ai-conversation.md)
 
-**Next planned**: 0016 — Translation & AI Conversation
+**Next planned**: 0017 — Reader Power UX & Unified Settings
 
 ---
 
@@ -85,4 +85,5 @@ during normal development.
 | 0014 | Source Discovery & RSSHub | Completed |
 | 0014a | UI Acceptance & Navigation Consistency | Completed |
 | 0015 | AI Foundation, Summary & Lumi SQLite Foundation | Completed |
-| 0016–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |
+| 0016 | Translation & AI Conversation | Completed |
+| 0017–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |

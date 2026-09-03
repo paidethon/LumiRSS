@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-09-02",
+  updatedAt: "2026-09-03",
   sourceOfTruth: "docs/README.md",
   currentPhaseId: "phase-8",
-  currentMilestoneId: "0015",
+  currentMilestoneId: "0016",
 
   phases: [
     {
@@ -562,11 +562,19 @@ window.LUMIRSS_PROJECT = {
       id: "0016",
       phaseId: "phase-8",
       name: "Translation & AI Conversation",
-      status: "next",
+      status: "completed",
       shortGoal: "Title/body translation + article-scoped AI chat",
-      goal: "标题/正文翻译与双语阅读、翻译缓存、文章上下文 AI 对话（共享 0015 AI foundation）、桌面浮动/停靠 + 移动 Bottom Sheet/Fullscreen；依赖 0015。",
-      implemented: [],
-      acceptance: "Not started yet.",
+      goal: "标题/正文翻译与双语阅读、翻译缓存、文章上下文 AI 对话（共享 0015 AI foundation）、桌面右侧面板 + 移动全屏 Sheet；依赖 0015。",
+      implemented: [
+        "AIProvider.complete(messages)：通用 chat/completions 入口（summarize 委托），单传输单错误映射",
+        "ai.translation_language 设置（zh-CN/en，默认 zh-CN）+ AI 设置页翻译语言选择",
+        "migration 0002：ai_translations（cache identity 含 targetLanguage）+ ai_conversations/ai_conversation_messages",
+        "TranslationService：标题+正文单次调用翻译，分隔标记解析（缺失时优雅降级），缓存/失败/重试全状态",
+        "API：GET/POST /api/v1/entries/{ref}/translation；GET conversation + POST conversation/messages（question 4k 上限）",
+        "Web：Reader 原文/译文分段切换（译文纯文本视图）+ AI 对话右侧面板（移动全屏 Sheet，历史持久化/重试/Escape）",
+        "桌面/移动浏览器验收 + Vision 视觉 QA PASS（live AI smoke SKIPPED 无 key）"
+      ],
+      acceptance: "462 BFF + 499 Web 全绿；lint 3 存量 warnings；build 通过；桌面 1440×900 + 移动 390×844 行为验收通过；Vision PASS。",
       problems: [],
       learned: [],
       devlog: null
@@ -575,7 +583,7 @@ window.LUMIRSS_PROJECT = {
       id: "0017",
       phaseId: "phase-9",
       name: "Reader Power UX & Unified Settings",
-      status: "planned",
+      status: "next",
       shortGoal: "Continuous reader controls (WYSIWYG) + unified settings",
       goal: "微信读书式连续阅读定制（bounded 连续值，非离散预设）：字号（滑杆 A-/A+）、行高、段落间距、内容/页宽、左右页边距——即时生效（WYSIWYG）且持久化数值；继承既有 Reader 定制（主题/字体/中文排版/代码/图片/对齐/首行缩进/减动效/重置默认）；统一设置服务端化（0015 lumi.sqlite 持久化，保留本地即时响应）；具体 min/max/default 以视觉测试与排版约束选定。",
       implemented: [],

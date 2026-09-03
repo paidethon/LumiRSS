@@ -36,7 +36,7 @@
 ## Intelligence
 
 - [x] [0015 — AI Foundation, Summary & Lumi SQLite Foundation](milestones/0015-ai-summary-sqlite-foundation.md)
-- [ ] 0016 — Translation & AI Conversation *(next planned)*
+- [x] [0016 — Translation & AI Conversation](milestones/0016-translation-ai-conversation.md)
 
 ## Completion
 

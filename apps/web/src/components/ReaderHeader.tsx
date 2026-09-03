@@ -1,4 +1,4 @@
-import { Check, Clock, ExternalLink, Loader2, Star } from 'lucide-react'
+import { Check, Clock, ExternalLink, Loader2, MessageSquare, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
@@ -38,7 +38,14 @@ function formatPublishedAt(value: string | null): string {
  * - set 语义（PATCH 目标状态，非 toggle）；
  * - 打开原文只放行绝对 http/https（safeExternalHttpUrl），
  *   target=_blank + rel=noopener noreferrer。 */
-export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
+export default function ReaderHeader({
+  detail,
+  onOpenAiConversation,
+}: {
+  detail: EntryDetail
+  /** 0016：打开文章限定 AI 对话（由 Reader 持有面板开关状态）。 */
+  onOpenAiConversation?: () => void
+}) {
   const mutation = useEntryStateMutation()
   const { isReadLater, toggleReadLater } = useToggleReadLater()
   const readLaterMarked = isReadLater(detail.entryRef)
@@ -175,6 +182,18 @@ export default function ReaderHeader({ detail }: { detail: EntryDetail }) {
             <ExternalLink aria-hidden className="size-3.5" />
             打开原文
           </a>
+        )}
+
+        {/* 0016：文章限定 AI 对话入口（右侧面板；Reader 持有开关） */}
+        {onOpenAiConversation !== undefined && (
+          <Tooltip content="AI 对话">
+            <IconButton
+              icon={<MessageSquare aria-hidden />}
+              label="AI 对话"
+              touch
+              onClick={onOpenAiConversation}
+            />
+          </Tooltip>
         )}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心

@@ -23,6 +23,7 @@ def test_get_ai_settings_returns_defaults_without_configuration(tmp_path):
         "baseUrl": "",
         "model": "",
         "summaryLanguage": "zh-CN",
+        "translationLanguage": "zh-CN",
         "configured": False,
     }
 

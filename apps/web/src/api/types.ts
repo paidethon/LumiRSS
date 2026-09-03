@@ -152,21 +152,25 @@ export interface RssHubRoutesResponse {
   routes: RssHubRoute[]
 }
 
-/** GET/PUT /api/v1/settings/ai（0015）——浏览器安全视图：
- * configured 只报告服务端是否配置了 API key；key 本身永不下发。 */
+/** GET/PUT /api/v1/settings/ai（0015；0016 增加 translationLanguage）——
+ * 浏览器安全视图：configured 只报告服务端是否配置了 API key；key 本身
+ * 永不下发。 */
 export interface AiSettings {
   provider: 'openai_compatible'
   baseUrl: string
   model: string
   summaryLanguage: 'zh-CN' | 'en'
+  translationLanguage: 'zh-CN' | 'en'
   configured: boolean
 }
 
-/** PUT /api/v1/settings/ai body（0015）：只含非机密字段，可部分更新。 */
+/** PUT /api/v1/settings/ai body（0015；0016 增加 translationLanguage）：
+ * 只含非机密字段，可部分更新。 */
 export interface AiSettingsUpdate {
   baseUrl?: string
   model?: string
   summaryLanguage?: 'zh-CN' | 'en'
+  translationLanguage?: 'zh-CN' | 'en'
 }
 
 /** GET/POST /api/v1/entries/{entryRef}/summary 状态（0015）。 */
@@ -182,4 +186,37 @@ export interface EntrySummary {
   generatedAt: string | null
   failureType: string | null
   cached: boolean
+}
+
+/** GET/POST /api/v1/entries/{entryRef}/translation 状态（0016）。
+ * 译文为纯文本；原文永远不会被替换。 */
+export type TranslationStatus = 'not_generated' | 'generating' | 'success' | 'failed'
+
+export interface EntryTranslation {
+  status: TranslationStatus
+  translatedTitle: string | null
+  translatedText: string | null
+  provider: string | null
+  model: string | null
+  promptVersion: string | null
+  targetLanguage: string | null
+  generatedAt: string | null
+  failureType: string | null
+  cached: boolean
+}
+
+/** GET /api/v1/entries/{entryRef}/conversation（0016）——
+ * 文章限定对话：status empty = 尚无消息。 */
+export type ConversationRole = 'user' | 'assistant'
+
+export interface ConversationMessage {
+  id: number
+  role: ConversationRole
+  content: string
+  createdAt: string
+}
+
+export interface EntryConversation {
+  status: 'empty' | 'active'
+  messages: ConversationMessage[]
 }
