@@ -128,13 +128,14 @@ def test_invalid_status_rejected_by_check_constraint(db):
 def test_failed_migration_is_rolled_back_and_not_recorded(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
     run(db.migrate())
-    assert schema_version(db) == 1
+    expected_version = list_migrations()[-1][0]
+    assert schema_version(db) == expected_version
 
     # Inject a broken migration file, then verify it raises and nothing
     # was marked applied.
     import lumirss.migrations as migrations
 
-    broken = migrations.MIGRATIONS_DIR / "0002_broken.sql"
+    broken = migrations.MIGRATIONS_DIR / "9999_broken.sql"
     broken.write_text("CREATE TABLE definitely_broken (id INTEGER;\n", encoding="utf-8")
     try:
         # A fresh Database instance on the same file re-scans migrations
@@ -142,7 +143,7 @@ def test_failed_migration_is_rolled_back_and_not_recorded(tmp_path):
         reopened = Database(tmp_path / "lumi.sqlite")
         with pytest.raises(DatabaseError):
             run(reopened.migrate())
-        assert schema_version(db) == 1
+        assert schema_version(db) == expected_version
         # The partially parsed statement must not have left a table behind.
         connection = sqlite3.connect(str(db.path))
         try:

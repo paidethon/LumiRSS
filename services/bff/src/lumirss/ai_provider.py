@@ -1,9 +1,14 @@
-"""OpenAI-compatible AI provider (0015 Gate 3).
+"""OpenAI-compatible AI provider (0015 Gate 3; extended 0016).
 
 Exactly ONE provider abstraction and ONE HTTP implementation. There is
 deliberately no multi-provider routing, no fallback chains, no agent
 orchestration and no AI SDK — a direct OpenAI-compatible chat/completions
 call over the shared httpx client is the whole transport.
+
+0016 extension: the protocol gains ONE generic ``complete(messages)``
+entry point shared by translation and article conversation; ``summarize``
+(0015) now delegates to it so all HTTP transport, error mapping and
+secret handling live in exactly one method.
 
 Security rules implemented here:
 
@@ -89,11 +94,25 @@ class ProviderConfig:
 
 
 class AIProvider(Protocol):
-    """Narrow provider contract: the summary service depends on this,
-    never on HTTP details or any SDK."""
+    """Narrow provider contract: AI services depend on this, never on
+    HTTP details or any SDK.
+
+    0015: ``summarize``. 0016: ``complete`` — the generic entry point for
+    translation and article conversation. Callers own all prompt
+    construction; the provider owns transport, errors and secrets.
+    """
 
     async def summarize(self, *, text: str, language: str) -> str:
         """Return a plain-text summary of ``text`` in ``language``."""
+        ...
+
+    async def complete(self, *, messages: list[dict[str, str]]) -> str:
+        """One chat/completions call over the given message list.
+
+        ``messages[0]`` must be the system prompt. Returns the assistant
+        text content (stripped). Raises the stable ``AiProviderError``
+        family on any failure.
+        """
         ...
 
 
@@ -120,25 +139,30 @@ class OpenAICompatibleProvider:
         )
 
     async def summarize(self, *, text: str, language: str) -> str:
-        if not self._config.is_complete():
-            raise AiNotConfigured(
-                "AI is not configured. Set the API key on the server and "
-                "configure a base URL and model in AI settings."
-            )
         language_instruction = (
             "The requested summary language is: zh-CN (Simplified Chinese)."
             if language == "zh-CN"
             else "The requested summary language is: en (English)."
         )
-        payload = {
-            "model": self._config.model,
-            "messages": [
+        return await self.complete(
+            messages=[
                 {"role": "system", "content": _SUMMARY_SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": f"{language_instruction}\n\n{text}",
                 },
             ],
+        )
+
+    async def complete(self, *, messages: list[dict[str, str]]) -> str:
+        if not self._config.is_complete():
+            raise AiNotConfigured(
+                "AI is not configured. Set the API key on the server and "
+                "configure a base URL and model in AI settings."
+            )
+        payload = {
+            "model": self._config.model,
+            "messages": messages,
             "temperature": 0.3,
             "stream": False,
         }

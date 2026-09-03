@@ -7,7 +7,7 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from lumirss.adapters.freshrss import (
     AuthenticationError,
@@ -37,6 +37,7 @@ from lumirss.ai_settings import (
     KEY_MODEL,
     KEY_PROVIDER,
     KEY_SUMMARY_LANGUAGE,
+    KEY_TRANSLATION_LANGUAGE,
 )
 from lumirss.ai_provider import (
     AiAuthError,
@@ -49,6 +50,8 @@ from lumirss.ai_provider import (
     provider_from_settings,
 )
 from lumirss.ai_summary import AiContentUnavailable, SummaryService
+from lumirss.ai_translation import TranslationService
+from lumirss.ai_conversation import ConversationService, MAX_QUESTION_CHARS
 from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
@@ -100,6 +103,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
     app.state.ai_settings_store = None
     app.state.summary_service = None
+    app.state.translation_service = None
+    app.state.conversation_service = None
     app.state.freshrss_adapter = None
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
@@ -804,6 +809,7 @@ def _ai_settings_json(values: dict[str, str]) -> dict[str, object]:
         "baseUrl": values[KEY_BASE_URL],
         "model": values[KEY_MODEL],
         "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
+        "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
         "configured": LumiSettings().ai_configured,
     }
 
@@ -841,14 +847,55 @@ def _get_summary_service(request: Request) -> SummaryService:
             db=request.app.state.db,
             adapter=_get_adapter(request),
             settings_store=_get_ai_settings_store(request),
-            provider_factory=lambda base_url, model: provider_from_settings(
-                request.app.state.http_client,
-                LumiSettings(),
-                base_url=base_url,
-                model=model,
-            ),
+            provider_factory=_provider_factory_for(request),
         )
         request.app.state.summary_service = service
+    return service
+
+
+def _provider_factory_for(request: Request):
+    """Provider factory shared by all AI services (0015 + 0016).
+
+    Injects the env API key at call time — server-side only, never built
+    for read-only cache lookups.
+    """
+
+    def factory(base_url: str, model: str):
+        return provider_from_settings(
+            request.app.state.http_client,
+            LumiSettings(),
+            base_url=base_url,
+            model=model,
+        )
+
+    return factory
+
+
+def _get_translation_service(request: Request) -> TranslationService:
+    """Cached translation service (0016) — same wiring as summaries."""
+    service = request.app.state.translation_service
+    if service is None:
+        service = TranslationService(
+            db=request.app.state.db,
+            adapter=_get_adapter(request),
+            settings_store=_get_ai_settings_store(request),
+            provider_factory=_provider_factory_for(request),
+        )
+        request.app.state.translation_service = service
+    return service
+
+
+def _get_conversation_service(request: Request) -> ConversationService:
+    """Article-scoped conversation service (0016) — same wiring."""
+    service = request.app.state.conversation_service
+    if service is None:
+        service = ConversationService(
+            db=request.app.state.db,
+            adapter=_get_adapter(request),
+            settings_store=_get_ai_settings_store(request),
+            provider_factory=_provider_factory_for(request),
+        )
+        request.app.state.conversation_service = service
     return service
 
 
@@ -885,3 +932,100 @@ async def generate_entry_summary(
     decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
     service = _get_summary_service(request)
     return _summary_json(await service.generate_summary(entry_ref))
+
+
+def _translation_json(state) -> dict[str, object]:
+    """Browser-safe translation view — no secrets, plain text output."""
+    return {
+        "status": state.status,
+        "translatedTitle": state.translated_title,
+        "translatedText": state.translated_text,
+        "provider": state.provider,
+        "model": state.model,
+        "promptVersion": state.prompt_version,
+        "targetLanguage": state.target_language,
+        "generatedAt": state.generated_at,
+        "failureType": state.failure_type,
+        "cached": state.cached,
+    }
+
+
+@app.get("/api/v1/entries/{entry_ref}/translation")
+async def get_entry_translation(
+    entry_ref: str, request: Request
+) -> dict[str, object]:
+    """Read-only translation state. NEVER calls the AI provider (no cost):
+    only FreshRSS read + the Lumi cache are consulted."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_translation_service(request)
+    return _translation_json(await service.get_translation(entry_ref))
+
+
+@app.post("/api/v1/entries/{entry_ref}/translation")
+async def generate_entry_translation(
+    entry_ref: str, request: Request
+) -> dict[str, object]:
+    """Explicit translation generation. An exact cache hit costs nothing;
+    otherwise exactly one bounded provider call is made (synchronously).
+    The original article is never modified or written back to FreshRSS."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_translation_service(request)
+    return _translation_json(await service.generate_translation(entry_ref))
+
+
+class ConversationQuestion(BaseModel):
+    """POST /api/v1/entries/{entryRef}/conversation/messages body (0016).
+
+    Bounded question; blank-after-strip is rejected before any provider
+    work (422 via FastAPI validation).
+    """
+
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
+
+    @field_validator("question")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("question must not be blank")
+        return value
+
+
+def _conversation_json(state) -> dict[str, object]:
+    """Browser-safe conversation view — plain text messages only."""
+    return {
+        "status": state.status,
+        "messages": [
+            {
+                "id": message.id,
+                "role": message.role,
+                "content": message.content,
+                "createdAt": message.created_at,
+            }
+            for message in state.messages
+        ],
+    }
+
+
+@app.get("/api/v1/entries/{entry_ref}/conversation")
+async def get_entry_conversation(
+    entry_ref: str, request: Request
+) -> dict[str, object]:
+    """Read-only conversation state for this article. NEVER calls the
+    provider: only FreshRSS read + the Lumi message store."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_conversation_service(request)
+    return _conversation_json(await service.get_conversation(entry_ref))
+
+
+@app.post("/api/v1/entries/{entry_ref}/conversation/messages")
+async def send_conversation_message(
+    entry_ref: str, body: ConversationQuestion, request: Request
+) -> dict[str, object]:
+    """Ask one article-scoped question. Exactly one bounded provider call
+    (synchronously); on success the question and the reply are persisted
+    and the full conversation is returned."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_conversation_service(request)
+    return _conversation_json(
+        await service.send_message(entry_ref, body.question)
+    )

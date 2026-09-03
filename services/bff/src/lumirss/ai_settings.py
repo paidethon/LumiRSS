@@ -21,11 +21,14 @@ from lumirss.storage import Database
 PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
 
 SUPPORTED_SUMMARY_LANGUAGES = ("zh-CN", "en")
+# 0016: translation target uses the same language set as summaries.
+SUPPORTED_TRANSLATION_LANGUAGES = SUPPORTED_SUMMARY_LANGUAGES
 
 KEY_PROVIDER = "ai.provider"
 KEY_BASE_URL = "ai.base_url"
 KEY_MODEL = "ai.model"
 KEY_SUMMARY_LANGUAGE = "ai.summary_language"
+KEY_TRANSLATION_LANGUAGE = "ai.translation_language"
 
 MAX_MODEL_LENGTH = 200
 
@@ -79,13 +82,22 @@ def _validate_summary_language(value: str) -> str:
     return value
 
 
-# The complete allow-list of 0015 Lumi server settings. Anything not
+def _validate_translation_language(value: str) -> str:
+    if value not in SUPPORTED_TRANSLATION_LANGUAGES:
+        raise ValueError(
+            f"translation language must be one of {', '.join(SUPPORTED_TRANSLATION_LANGUAGES)}"
+        )
+    return value
+
+
+# The complete allow-list of Lumi server settings. Anything not
 # declared here can never be persisted.
 _SETTING_SPECS: dict[str, tuple[str, _ErrorSink]] = {
     KEY_PROVIDER: (PROVIDER_OPENAI_COMPATIBLE, _validate_provider),
     KEY_BASE_URL: ("", _validate_base_url),
     KEY_MODEL: ("", _validate_model),
     KEY_SUMMARY_LANGUAGE: ("zh-CN", _validate_summary_language),
+    KEY_TRANSLATION_LANGUAGE: ("zh-CN", _validate_translation_language),
 }
 
 
@@ -108,6 +120,7 @@ class AiSettingsUpdate(BaseModel):
     baseUrl: str | None = None
     model: str | None = None
     summaryLanguage: Literal["zh-CN", "en"] | None = None
+    translationLanguage: Literal["zh-CN", "en"] | None = None
 
 
 def _utc_now() -> str:
@@ -144,6 +157,7 @@ class AiSettingsStore:
             ("baseUrl", KEY_BASE_URL),
             ("model", KEY_MODEL),
             ("summaryLanguage", KEY_SUMMARY_LANGUAGE),
+            ("translationLanguage", KEY_TRANSLATION_LANGUAGE),
         ):
             value = getattr(update, field)
             if value is None:

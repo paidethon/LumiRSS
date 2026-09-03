@@ -6,11 +6,14 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   discoverFeeds,
   generateEntrySummary,
+  generateEntryTranslation,
   getAiSettings,
   getCategories,
   getEntries,
   getEntry,
+  getEntryConversation,
   getEntrySummary,
+  getEntryTranslation,
   getFeeds,
   getFreshRssUiUrl,
   getRssHubRoutes,
@@ -21,6 +24,7 @@ import {
   previewOpmlImport,
   previewRssHub,
   renameCategory,
+  sendConversationMessage,
   setEntryState,
   subscribeFeed,
   unsubscribeFeed,
@@ -242,9 +246,9 @@ export function useAiSettings(enabled: boolean = true) {
   })
 }
 
-/** 0015：保存非机密 AI 设置。成功后失效 AI 设置与所有摘要状态
+/** 0015：保存非机密 AI 设置。成功后失效 AI 设置与所有摘要/翻译状态
  * （model/language 参与缓存身份，旧缓存不再匹配 → Reader 诚实回到
- * not_generated，不展示过期摘要）。 */
+ * not_generated，不展示过期结果）。 */
 export function useUpdateAiSettingsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -252,11 +256,13 @@ export function useUpdateAiSettingsMutation() {
       baseUrl?: string
       model?: string
       summaryLanguage?: 'zh-CN' | 'en'
+      translationLanguage?: 'zh-CN' | 'en'
     }) => updateAiSettings(update),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
         queryClient.invalidateQueries({ queryKey: ['entry-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['entry-translation'] }),
       ])
     },
   })
@@ -279,6 +285,48 @@ export function useGenerateSummaryMutation(entryRef: string) {
     mutationFn: () => generateEntrySummary(entryRef),
     onSuccess: (data) => {
       queryClient.setQueryData(['entry-summary', entryRef], data)
+    },
+  })
+}
+
+/** 0016：单篇翻译状态（GET 语义：只读缓存，绝不产生 provider 调用）。 */
+export function useEntryTranslation(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['entry-translation', entryRef],
+    queryFn: ({ signal }) => getEntryTranslation(entryRef!, signal),
+    enabled: entryRef !== null,
+  })
+}
+
+/** 0016：显式生成翻译（POST；成功状态写回对应 entryRef 的 query cache）。 */
+export function useGenerateTranslationMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => generateEntryTranslation(entryRef),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['entry-translation', entryRef], data)
+    },
+  })
+}
+
+/** 0016：文章限定对话（GET 语义：只读消息存储，绝不产生 provider 调用）。
+ * enabled=false 时不发请求（对话面板关闭时零流量）。 */
+export function useEntryConversation(entryRef: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['entry-conversation', entryRef],
+    queryFn: ({ signal }) => getEntryConversation(entryRef!, signal),
+    enabled: enabled && entryRef !== null,
+  })
+}
+
+/** 0016：发送一条文章限定问题（POST；成功后把服务端确认的完整对话
+ * 写回对应 entryRef 的 query cache；失败不持久化，输入保留以便重试）。 */
+export function useSendConversationMessageMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (question: string) => sendConversationMessage(entryRef, question),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['entry-conversation', entryRef], data)
     },
   })
 }

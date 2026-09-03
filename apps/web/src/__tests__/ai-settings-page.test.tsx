@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS = {
   baseUrl: '',
   model: '',
   summaryLanguage: 'zh-CN',
+  translationLanguage: 'zh-CN',
   configured: false,
 }
 
@@ -53,6 +54,8 @@ describe('AiSettingsSection', () => {
     expect(screen.getByLabelText('Base URL')).toBeInTheDocument()
     expect(screen.getByLabelText('Model')).toBeInTheDocument()
     expect(screen.getByLabelText('摘要语言')).toBeInTheDocument()
+    // 0016：翻译语言（译文目标语言）与摘要语言同源设置
+    expect(screen.getByLabelText('翻译语言')).toBeInTheDocument()
     // Provider 固定展示（0015 唯一实现），不可编辑
     expect(screen.getByLabelText('Provider')).toBeDisabled()
     // 干净表单：保存禁用
@@ -73,6 +76,7 @@ describe('AiSettingsSection', () => {
               baseUrl: 'https://api.deepseek.com/v1',
               model: 'deepseek-chat',
               summaryLanguage: 'zh-CN',
+              translationLanguage: 'zh-CN',
               configured: false,
             }),
           )
@@ -107,8 +111,43 @@ describe('AiSettingsSection', () => {
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
       summaryLanguage: 'zh-CN',
+      translationLanguage: 'zh-CN',
     })
     expect(JSON.stringify(putBody)).not.toContain('apiKey')
+  })
+
+  it('切换翻译语言 → 保存载荷包含 translationLanguage（0016）', async () => {
+    let putBody: unknown = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+          putBody = JSON.parse(String(init.body))
+          return Promise.resolve(
+            jsonResponse({ ...DEFAULT_SETTINGS, translationLanguage: 'en' }),
+          )
+        }
+        return Promise.resolve(jsonResponse(DEFAULT_SETTINGS))
+      }),
+    )
+
+    renderSection()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('翻译语言')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByLabelText('翻译语言'), { target: { value: 'en' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('已保存')).toBeInTheDocument()
+    })
+    expect(putBody).toEqual({
+      baseUrl: '',
+      model: '',
+      summaryLanguage: 'zh-CN',
+      translationLanguage: 'en',
+    })
   })
 
   it('configured=true：显示密钥已配置，且页面没有任何密钥输入框', async () => {

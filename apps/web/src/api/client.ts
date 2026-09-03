@@ -7,9 +7,11 @@ import type {
   AiSettingsUpdate,
   ApiErrorResponse,
   Category,
+  EntryConversation,
   EntryDetail,
   EntryListResponse,
   EntrySummary,
+  EntryTranslation,
   Feed,
   FeedPreviewMetadata,
   FreshRssUiInfo,
@@ -356,4 +358,54 @@ export async function generateEntrySummary(entryRef: string): Promise<EntrySumma
     { method: 'POST' },
   )
   return (await response.json()) as EntrySummary
+}
+
+/** 0016：读翻译状态——GET 语义：BFF 绝不调用 AI provider（零成本）。 */
+export async function getEntryTranslation(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<EntryTranslation> {
+  return request<EntryTranslation>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation`,
+    signal,
+  )
+}
+
+/** 0016：显式生成翻译（可能产生一次有界 provider 调用；精确缓存命中零
+ * 成本）。不接 AbortSignal，与其它 mutation 语义一致。 */
+export async function generateEntryTranslation(entryRef: string): Promise<EntryTranslation> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as EntryTranslation
+}
+
+/** 0016：读文章限定对话——GET 语义：只读 Lumi 消息存储，绝不调用
+ * provider（零成本）。 */
+export async function getEntryConversation(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<EntryConversation> {
+  return request<EntryConversation>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/conversation`,
+    signal,
+  )
+}
+
+/** 0016：发送一条文章限定问题（一次有界 provider 调用；成功后问题与
+ * 回答持久化并返回完整对话）。不接 AbortSignal，与其它 mutation 一致。 */
+export async function sendConversationMessage(
+  entryRef: string,
+  question: string,
+): Promise<EntryConversation> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/conversation/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as EntryConversation
 }
