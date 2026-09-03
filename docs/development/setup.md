@@ -27,6 +27,16 @@ uv run uvicorn lumirss.main:app --reload
 
 BFF runs locally and connects to FreshRSS via the configured URL.
 
+### Lumi SQLite and AI (0015)
+
+- `LUMIRSS_DB_PATH` — optional; defaults to `<services/bff>/data/lumi.sqlite`
+  (created on first storage use, git-ignored). Tests always use temp DBs.
+- `AI_API_KEY` — optional OpenAI-compatible API key (server-side secret;
+  never stored in Lumi SQLite, never sent to the browser). Blank = AI not
+  configured — the Reader honestly shows the unconfigured state.
+- Non-secret AI settings (Base URL / Model / summary language) are managed
+  in the Web UI under 设置 → AI and persisted in lumi.sqlite.
+
 ## Web (React)
 
 ```bash

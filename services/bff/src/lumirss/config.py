@@ -1,9 +1,13 @@
-"""FreshRSS connection settings for the LumiRSS BFF."""
+"""Connection and storage settings for the LumiRSS BFF."""
 
 import urllib.parse
+from pathlib import Path
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Default Lumi data directory: <services/bff>/data (git-ignored).
+_DEFAULT_LUMI_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
 class FreshRSSSettings(BaseSettings):
@@ -109,3 +113,24 @@ class RssHubSettings(BaseSettings):
     def freshrss_base_url(self) -> str:
         """The base FreshRSS will actually fetch (fallback to BASE_URL)."""
         return self.RSSHUB_FRESHRSS_BASE_URL or self.RSSHUB_BASE_URL
+
+
+class LumiSettings(BaseSettings):
+    """Lumi-owned state + AI settings (0015).
+
+    - LUMIRSS_DB_PATH: the Lumi SQLite file. Defaults to
+      <services/bff>/data/lumi.sqlite (git-ignored); tests override it
+      with a temp path. The file is created on first storage use.
+    - AI_API_KEY: the OpenAI-compatible API key. Server-side secret only:
+      it never leaves the BFF, is never logged, and the browser only ever
+      learns ``configured: true/false``. Blank = AI not configured.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    LUMIRSS_DB_PATH: str = str(_DEFAULT_LUMI_DATA_DIR / "lumi.sqlite")
+    AI_API_KEY: SecretStr = SecretStr("")
+
+    @property
+    def ai_configured(self) -> bool:
+        return bool(self.AI_API_KEY.get_secret_value().strip())

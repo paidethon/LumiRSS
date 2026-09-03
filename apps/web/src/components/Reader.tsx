@@ -6,6 +6,7 @@ import { useReaderUi } from '../store/reader-ui'
 import ArticleContent from './ArticleContent'
 import ReaderHeader from './ReaderHeader'
 import ReaderPlaceholder from './ReaderPlaceholder'
+import ReaderSummary from './ReaderSummary'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
 
@@ -126,6 +127,8 @@ export default function Reader() {
         {/* key=entryRef：切换 Entry = 组件重挂载，旧 mutation 的
             pending / error UI 不泄漏到新 Entry。 */}
         <ReaderHeader key={detail.entryRef} detail={detail} />
+        {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源） */}
+        <ReaderSummary entryRef={detail.entryRef} />
         <div className="pt-6">
           <ArticleContent detail={detail} />
         </div>

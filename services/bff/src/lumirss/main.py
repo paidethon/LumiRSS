@@ -29,7 +29,27 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
-from lumirss.config import FreshRSSSettings
+from lumirss.ai_settings import (
+    AiSettingsStore,
+    AiSettingsUpdate,
+    InvalidAiSettings,
+    KEY_BASE_URL,
+    KEY_MODEL,
+    KEY_PROVIDER,
+    KEY_SUMMARY_LANGUAGE,
+)
+from lumirss.ai_provider import (
+    AiAuthError,
+    AiInvalidResponse,
+    AiModelError,
+    AiNotConfigured,
+    AiRateLimited,
+    AiTimeout,
+    AiUpstreamError,
+    provider_from_settings,
+)
+from lumirss.ai_summary import AiContentUnavailable, SummaryService
+from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.feed_preview import (
@@ -59,6 +79,7 @@ from lumirss.source_discovery import (
     NoFeedDiscovered,
     SourceDiscoveryService,
 )
+from lumirss.storage import Database
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
     decode_subscription_ref,
@@ -69,11 +90,16 @@ from lumirss.subscriptionref import (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create the shared HTTP client; the FreshRSSAdapter is created lazily
     on the first /api/v1/feeds request (so /health/live works even when
-    FreshRSS is not configured)."""
+    FreshRSS is not configured). The Lumi SQLite Database handle is created
+    here too — cheap, no file I/O; migrations run lazily on the first
+    storage use (0015)."""
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=5.0),
         trust_env=False,
     )
+    app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
+    app.state.ai_settings_store = None
+    app.state.summary_service = None
     app.state.freshrss_adapter = None
     app.state.freshrss_control_adapter = None
     app.state.feed_preview_service = None
@@ -128,6 +154,17 @@ _ERROR_RESPONSES = {
     RssHubRouteNotFound: (404, "rsshub_route_not_found"),
     RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
     RssHubFetchError: (502, "rsshub_fetch_error"),
+    # 0015 AI settings
+    InvalidAiSettings: (400, "invalid_ai_settings"),
+    # 0015 AI summary
+    AiNotConfigured: (503, "ai_not_configured"),
+    AiAuthError: (502, "ai_auth_error"),
+    AiModelError: (502, "ai_model_error"),
+    AiRateLimited: (429, "ai_rate_limited"),
+    AiTimeout: (504, "ai_timeout"),
+    AiInvalidResponse: (502, "ai_invalid_response"),
+    AiUpstreamError: (502, "ai_upstream_error"),
+    AiContentUnavailable: (422, "ai_content_unavailable"),
 }
 
 
@@ -161,6 +198,15 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RssHubRouteNotFound)
 @app.exception_handler(RssHubInvalidParameters)
 @app.exception_handler(RssHubFetchError)
+@app.exception_handler(InvalidAiSettings)
+@app.exception_handler(AiNotConfigured)
+@app.exception_handler(AiAuthError)
+@app.exception_handler(AiModelError)
+@app.exception_handler(AiRateLimited)
+@app.exception_handler(AiTimeout)
+@app.exception_handler(AiInvalidResponse)
+@app.exception_handler(AiUpstreamError)
+@app.exception_handler(AiContentUnavailable)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -740,3 +786,102 @@ def _subscription_json(subscription) -> dict[str, object]:
             else None
         ),
     }
+
+
+def _get_ai_settings_store(request: Request) -> AiSettingsStore:
+    """Persistent AI settings store over the Lumi SQLite database (lazy)."""
+    store = request.app.state.ai_settings_store
+    if store is None:
+        store = AiSettingsStore(request.app.state.db)
+        request.app.state.ai_settings_store = store
+    return store
+
+
+def _ai_settings_json(values: dict[str, str]) -> dict[str, object]:
+    """Browser-safe AI settings view — NEVER contains the API key."""
+    return {
+        "provider": values[KEY_PROVIDER],
+        "baseUrl": values[KEY_BASE_URL],
+        "model": values[KEY_MODEL],
+        "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
+        "configured": LumiSettings().ai_configured,
+    }
+
+
+@app.get("/api/v1/settings/ai")
+async def get_ai_settings(request: Request) -> dict[str, object]:
+    """Current AI settings. ``configured`` only reports whether the server
+    has an API key — the key itself never leaves the BFF."""
+    store = _get_ai_settings_store(request)
+    return _ai_settings_json(await store.load())
+
+
+@app.put("/api/v1/settings/ai")
+async def put_ai_settings(
+    update: AiSettingsUpdate, request: Request
+) -> dict[str, object]:
+    """Persist non-secret AI settings (each provided field validated).
+
+    There is deliberately no API-key field here: the key is server
+    environment only, and this endpoint can never read or write it.
+    """
+    store = _get_ai_settings_store(request)
+    return _ai_settings_json(await store.save(update))
+
+
+def _get_summary_service(request: Request) -> SummaryService:
+    """Cached summary service over the shared DB / adapter / settings.
+
+    The provider factory injects the env API key (server-side only) at
+    generation time; reading cache state never builds a provider.
+    """
+    service = request.app.state.summary_service
+    if service is None:
+        service = SummaryService(
+            db=request.app.state.db,
+            adapter=_get_adapter(request),
+            settings_store=_get_ai_settings_store(request),
+            provider_factory=lambda base_url, model: provider_from_settings(
+                request.app.state.http_client,
+                LumiSettings(),
+                base_url=base_url,
+                model=model,
+            ),
+        )
+        request.app.state.summary_service = service
+    return service
+
+
+def _summary_json(state) -> dict[str, object]:
+    """Browser-safe summary view — no secrets, no raw provider output."""
+    return {
+        "status": state.status,
+        "summary": state.summary,
+        "provider": state.provider,
+        "model": state.model,
+        "promptVersion": state.prompt_version,
+        "language": state.language,
+        "generatedAt": state.generated_at,
+        "failureType": state.failure_type,
+        "cached": state.cached,
+    }
+
+
+@app.get("/api/v1/entries/{entry_ref}/summary")
+async def get_entry_summary(entry_ref: str, request: Request) -> dict[str, object]:
+    """Read-only summary state. NEVER calls the AI provider (no cost):
+    only FreshRSS read + the Lumi cache are consulted."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_summary_service(request)
+    return _summary_json(await service.get_summary(entry_ref))
+
+
+@app.post("/api/v1/entries/{entry_ref}/summary")
+async def generate_entry_summary(
+    entry_ref: str, request: Request
+) -> dict[str, object]:
+    """Explicit summary generation. An exact cache hit costs nothing;
+    otherwise exactly one bounded provider call is made (synchronously)."""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    service = _get_summary_service(request)
+    return _summary_json(await service.generate_summary(entry_ref))

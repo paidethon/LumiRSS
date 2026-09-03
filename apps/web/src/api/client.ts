@@ -3,10 +3,13 @@
 
 import { toApiView, type UiView } from '../lib/read-later'
 import type {
+  AiSettings,
+  AiSettingsUpdate,
   ApiErrorResponse,
   Category,
   EntryDetail,
   EntryListResponse,
+  EntrySummary,
   Feed,
   FeedPreviewMetadata,
   FreshRssUiInfo,
@@ -317,4 +320,40 @@ export async function previewRssHub(
     contentType: 'application/json',
   })
   return (await response.json()) as FeedPreviewMetadata
+}
+
+/** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */
+export async function getAiSettings(signal?: AbortSignal): Promise<AiSettings> {
+  return request<AiSettings>(`${API_BASE}/settings/ai`, signal)
+}
+
+/** 0015：保存非机密 AI 设置（服务端校验；key 永远不可经由本接口读写）。 */
+export async function updateAiSettings(update: AiSettingsUpdate): Promise<AiSettings> {
+  const response = await rawRequest(`${API_BASE}/settings/ai`, {
+    method: 'PUT',
+    body: JSON.stringify(update),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AiSettings
+}
+
+/** 0015：读摘要状态——GET 语义：BFF 绝不调用 AI provider（零成本）。 */
+export async function getEntrySummary(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<EntrySummary> {
+  return request<EntrySummary>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/summary`,
+    signal,
+  )
+}
+
+/** 0015：显式生成摘要（可能产生一次有界 provider 调用；精确缓存命中零成本）。
+ * 与其它 mutation 一致：不接 AbortSignal，发出后允许完成。 */
+export async function generateEntrySummary(entryRef: string): Promise<EntrySummary> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/summary`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as EntrySummary
 }
