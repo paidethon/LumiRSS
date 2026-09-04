@@ -32,7 +32,7 @@ function ActiveJobCard({ job }: { job: BackupJob }) {
       aria-label="备份正在进行"
       className="flex items-start gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] px-3.5 py-2.5"
     >
-      <Loader2 aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-[var(--lumi-accent)]" />
+      <Loader2 aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-[var(--lumi-accent-text)]" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-[var(--lumi-text-primary)]">
           {job.type === 'safety' ? '恢复前安全备份' : '完整备份'}进行中
@@ -85,7 +85,7 @@ export function BackupOverview() {
             <dd className="flex items-center gap-1.5 text-[var(--lumi-text-primary)]">
               {status.data?.sqlite.status === 'healthy' ? (
                 <>
-                  <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent)]" />
+                  <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
                   正常
                 </>
               ) : (

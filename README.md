@@ -65,6 +65,21 @@ Detailed development guide: [docs/development/](docs/development/)
 
 ---
 
+## Production deployment
+
+```bash
+cp .env.prod.example .env.prod   # fill in secrets (see $-escaping notes)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Caddy serves the Web build and reverse-proxies `/api` to the BFF;
+FreshRSS / RSSHub stay on the internal network. Single-user Basic Auth,
+automated TLS, health endpoints, backups (local + WebDAV) and staged
+restore are included. Full runbook:
+[docs/development/operations.md](docs/development/operations.md).
+
+---
+
 ## API baseline
 
 ```text

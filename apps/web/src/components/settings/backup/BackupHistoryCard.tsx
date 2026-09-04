@@ -24,8 +24,8 @@ import {
 
 const STATUS_TONE: Record<BackupJob['status'], string> = {
   queued: 'text-[var(--lumi-text-secondary)]',
-  running: 'text-[var(--lumi-accent)]',
-  succeeded: 'text-[var(--lumi-accent)]',
+  running: 'text-[var(--lumi-accent-text)]',
+  succeeded: 'text-[var(--lumi-accent-text)]',
   failed: 'text-[var(--lumi-danger)]',
   interrupted: 'text-[var(--lumi-danger)]',
 }

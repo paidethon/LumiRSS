@@ -263,7 +263,7 @@ export function RssHubControlCenter() {
 
       {data.pendingCount > 0 && (
         <div role="status" className="flex items-start gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] px-3.5 py-2.5">
-          <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+          <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-[var(--lumi-text-primary)]">
               有 {data.pendingCount} 项设置需要重启 RSSHub 后生效

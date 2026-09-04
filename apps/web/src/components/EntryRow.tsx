@@ -47,7 +47,6 @@ export default function EntryRow({
 
   return (
     <div
-      role="row"
       data-entry-ref={item.entryRef}
       className={cx(
         'group/row flex w-full flex-col gap-1 px-4 py-3 text-left',

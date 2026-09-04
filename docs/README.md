@@ -6,12 +6,12 @@
 
 ## Start Here
 
+**Last completed**: 0019 — MVP Stabilization & Release
+→ [milestones/0019-mvp-stabilization-release.md](milestones/0019-mvp-stabilization-release.md)
+
 **Active milestone**: —
 
-**Last completed**: 0018 — Production, Operations & Backup
-→ [milestones/0018-production-operations-backup.md](milestones/0018-production-operations-backup.md)
-
-**Next planned**: 0019 — MVP Stabilization & Release
+**Next planned**: —（Phase 2 待定）
 
 ---
 
@@ -88,4 +88,4 @@ during normal development.
 | 0016 | Translation & AI Conversation | Completed |
 | 0017 | Reader Power UX & Unified Settings | Completed |
 | 0018 | Production, Operations & Backup | Completed |
-| 0019 | MVP Stabilization & Release | Planned |
+| 0019 | MVP Stabilization & Release | Completed |

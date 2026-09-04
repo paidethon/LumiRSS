@@ -178,7 +178,7 @@ export function WebDavCard() {
               测试连接
             </Button>
             {savedNote && (
-              <span role="status" className="text-xs text-[var(--lumi-accent)]">{savedNote}</span>
+              <span role="status" className="text-xs text-[var(--lumi-accent-text)]">{savedNote}</span>
             )}
           </div>
 
@@ -197,7 +197,7 @@ export function WebDavCard() {
               role="status"
               className={cx(
                 'text-xs leading-relaxed',
-                test.data.status === 'ok' ? 'text-[var(--lumi-accent)]' : 'text-[var(--lumi-danger)]',
+                test.data.status === 'ok' ? 'text-[var(--lumi-accent-text)]' : 'text-[var(--lumi-danger)]',
               )}
             >
               {test.data.status === 'ok' ? '连接成功。' : `连接失败：${test.data.message ?? '未知原因'}`}

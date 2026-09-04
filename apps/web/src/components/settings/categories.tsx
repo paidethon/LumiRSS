@@ -476,7 +476,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                       href="https://github.com/paidethon/LumiRSS"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[var(--lumi-accent)] hover:underline"
+                      className="inline-flex items-center gap-1 text-[var(--lumi-accent-text)] hover:underline"
                     >
                       paidethon/LumiRSS
                       <ExternalLink aria-hidden className="size-3" />
@@ -490,7 +490,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                       href="https://github.com/paidethon/LumiRSS/blob/main/THIRD_PARTY_NOTICES.md"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[var(--lumi-accent)] hover:underline"
+                      className="inline-flex items-center gap-1 text-[var(--lumi-accent-text)] hover:underline"
                     >
                       THIRD_PARTY_NOTICES
                       <ExternalLink aria-hidden className="size-3" />

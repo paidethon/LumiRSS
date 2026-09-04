@@ -160,7 +160,7 @@ function AaControls({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button
             type="button"
             onClick={onOpenSettings}
-            className="w-full rounded-[var(--lumi-radius-md)] px-2 py-2 text-left text-sm text-[var(--lumi-accent)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+            className="w-full rounded-[var(--lumi-radius-md)] px-2 py-2 text-left text-sm text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
           >
             更多阅读设置…
           </button>

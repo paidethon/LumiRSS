@@ -73,14 +73,14 @@ describe('EntryRow — 状态语义（AC10；0011 结构适配）', () => {
 
   it('选中：selected surface（行根 div，非浓色边框/填充）', () => {
     const { container } = renderRow(makeItem(), true)
-    const row = container.querySelector('[role="row"]') as HTMLElement
+    const row = container.querySelector('[data-entry-ref]') as HTMLElement
     expect(row.className).toContain('bg-[var(--lumi-surface-selected)]')
     expect(row.className).not.toContain('border-l-2')
   })
 
   it('未选中：hover surface 而非选中 surface', () => {
     const { container } = renderRow(makeItem(), false)
-    expect(container.querySelector('[role="row"]')!.className).toContain(
+    expect(container.querySelector('[data-entry-ref]')!.className).toContain(
       'hover:bg-[var(--lumi-surface-hover)]',
     )
   })

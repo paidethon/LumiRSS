@@ -106,6 +106,14 @@ Generate from `uv.lock` / installed metadata.
 | httpx | >=0.27 | BSD-3-Clause | upstream HTTP client | no |
 | pydantic-settings | >=2.0 | MIT | typed config | no |
 | uvicorn | >=0.30 | BSD-3-Clause | ASGI server | no |
+| defusedxml | >=0.7 | PSF-2.0 | XML 解析（0018 WebDAV PROPFIND，defusedxml） | no |
+
+### Web dev dependencies（不进入运行时/发布物）
+
+| Package | Version | License | Use | Notice required |
+|---|---|---|---|---|
+| @playwright/test | 1.62.x | Apache-2.0 | E2E 测试（0019，dev only） | no |
+| @axe-core/playwright | 4.13.x | MIT | 可访问性扫描（0019，dev only） | no |
 
 ---
 

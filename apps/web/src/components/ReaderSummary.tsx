@@ -77,7 +77,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 function CardTitle({ children }: { children: React.ReactNode }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--lumi-text-primary)]">
-      <Sparkles aria-hidden className="size-3.5 text-[var(--lumi-accent)]" />
+      <Sparkles aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
       {children}
     </p>
   )

@@ -62,7 +62,7 @@ export default function SettingsModal({
                 'min-h-[34px] transition-colors duration-[var(--lumi-motion-fast)]',
                 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
                 category === c.id
-                  ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-accent)]'
+                  ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-accent-text)]'
                   : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
               )}
             >

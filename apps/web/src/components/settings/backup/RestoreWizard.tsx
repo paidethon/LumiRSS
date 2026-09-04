@@ -77,7 +77,7 @@ function SourcePicker({
                       {formatJobTime(job.finishedAt ?? job.createdAt)} · {formatBytes(job.summary?.sizeBytes)}
                     </span>
                   </span>
-                  <span className="shrink-0 text-xs text-[var(--lumi-accent)]">选择</span>
+                  <span className="shrink-0 text-xs text-[var(--lumi-accent-text)]">选择</span>
                 </button>
               </li>
             ))}
@@ -121,7 +121,7 @@ function SourcePicker({
                       {formatBytes(file.sizeBytes)}
                     </span>
                   </span>
-                  <span className="shrink-0 text-xs text-[var(--lumi-accent)]">选择</span>
+                  <span className="shrink-0 text-xs text-[var(--lumi-accent-text)]">选择</span>
                 </button>
               </li>
             ))}
@@ -149,7 +149,7 @@ function PreviewPane({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3.5 py-2.5">
-        <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+        <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
         <div className="min-w-0 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
           <p className="text-sm font-medium text-[var(--lumi-text-primary)]">校验通过</p>
           <p className="mt-0.5">文件 {preview.fileName}：checksum（SHA-256）与 manifest 均已验证。</p>
@@ -260,7 +260,7 @@ function ResultPane({ result }: { result: RestoreResult }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-text-primary)]">
-        <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+        <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
         恢复完成：本地数据已恢复，健康检查通过（{result.health?.sqlite ?? 'sqlite ok'}）。
       </p>
       <dl className="divide-y divide-[var(--lumi-separator)] text-sm">
