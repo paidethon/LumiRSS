@@ -45,12 +45,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # .env.example is allowed: it may be reintroduced when real
-          # configuration design happens.
+          # .env.example / .env.prod.example are allowed: checked-in
+          # templates with empty placeholder values (0018).
           tracked_sensitive="$(
             git ls-files |
               grep -E '(^|/)\.env($|\.)|\.(sqlite|sqlite-[^/]+|db)$|(^|/)(data|logs|backups)/' |
-              grep -v -E '(^|/)\.env\.example$' || true
+              grep -v -E '(^|/)\.env(\.prod)?\.example$' || true
           )"
 
           if [[ -n "$tracked_sensitive" ]]; then
