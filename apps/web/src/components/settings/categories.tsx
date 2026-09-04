@@ -47,6 +47,8 @@ import {
 } from './AppearanceControls'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubSettingsSection } from './RssHubSettingsPage'
+import { RssHubControlCenter } from './RssHubControlCenter'
+import { OperationsSettingsSection } from './OperationsSettingsSection'
 import { BackupSettingsSection } from './BackupSettingsPage'
 // 0015 Gate 6：AI 设置（OpenAI-compatible 配置 + key 状态，真实可用）
 import { AiSettingsSection } from './AiSettingsPage'
@@ -347,8 +349,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       // 0010a F3（AC24）：OrigRead 过滤页复刻 + 显示层过滤
       return [{ type: 'custom', node: <FilterRulesSection /> }]
     case 'rsshub':
-      // 0010a F4（AC25）：OrigRead RSSHub 页复刻（16 内置实例）
-      return [{ type: 'custom', node: <RssHubSettingsSection /> }]
+      // 0018：RSSHub Control Center（真实控制面）+ 参考实例清单（浏览器侧）
+      return [
+        { type: 'custom', node: <RssHubControlCenter /> },
+        { type: 'title', value: '参考实例清单（浏览器侧，非运行时）' },
+        { type: 'custom', node: <RssHubSettingsSection /> },
+      ]
     case 'backup':
       // 0010a F5（AC26/AC27）：配置备份导出/导入 + Web Crypto 加密
       return [{ type: 'custom', node: <BackupSettingsSection /> }]
@@ -405,40 +411,18 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         { type: 'title', value: '备份' },
         {
-          type: 'action',
-          label: '数据备份 / 恢复',
-          description:
-            '订阅数据由 FreshRSS 托管（不在 Lumi 侧备份）；FreshRSS 数据与 WebDAV 全量备份 / 恢复计划于 0018 Production, Operations & Backup。',
-          buttonText: '备份',
-          action: () => {},
-          planned: true,
-          plannedFor: '0018',
+          type: 'custom',
+          node: (
+            <div className="py-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              全量备份（Lumi 数据库 + FreshRSS 数据）、WebDAV 远程备份与分阶段恢复
+              在「备份与恢复」分类中管理。
+            </div>
+          ),
         },
       ]
     case 'services':
-      return [
-        { type: 'title', value: '服务' },
-        {
-          type: 'action',
-          label: 'FreshRSS 维护操作',
-          description:
-            '连接状态与订阅管理在「订阅与来源」实时可用（真实请求结果，不伪造指标）；运行级维护（健康检查 / 诊断 / 紧急操作）计划于 0018 Production。',
-          buttonText: '查看',
-          action: () => {},
-          planned: true,
-          plannedFor: '0018',
-        },
-        {
-          type: 'action',
-          label: 'RSSHub 运营中心',
-          description:
-            '来源发现、路由目录与预览已可用（0014：订阅中心 → 添加来源 → RSSHub）；实例健康、诊断与配置管理计划于 0018 Control Center。',
-          buttonText: '查看',
-          action: () => {},
-          planned: true,
-          plannedFor: '0018',
-        },
-      ]
+      // 0018 Gate 9：账户与服务 —— 真实依赖状态（不再 plannedFor 0018）
+      return [{ type: 'custom', node: <OperationsSettingsSection /> }]
     case 'workspace':
       return [
         {
@@ -492,7 +476,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                       href="https://github.com/paidethon/LumiRSS"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[var(--lumi-accent)] hover:underline"
+                      className="inline-flex items-center gap-1 text-[var(--lumi-accent-text)] hover:underline"
                     >
                       paidethon/LumiRSS
                       <ExternalLink aria-hidden className="size-3" />
@@ -506,7 +490,7 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                       href="https://github.com/paidethon/LumiRSS/blob/main/THIRD_PARTY_NOTICES.md"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[var(--lumi-accent)] hover:underline"
+                      className="inline-flex items-center gap-1 text-[var(--lumi-accent-text)] hover:underline"
                     >
                       THIRD_PARTY_NOTICES
                       <ExternalLink aria-hidden className="size-3" />

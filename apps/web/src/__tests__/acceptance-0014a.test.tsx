@@ -263,20 +263,60 @@ describe('0014a Gate 3 — Service settings truthfulness', () => {
     render(withProviders(<SettingsModal open onClose={vi.fn()} />))
   }
 
-  it('账户与服务：无 stale planned·0013；FreshRSS/RSSHub 运营项 → 0018', () => {
+  const OPERATIONS_STATUS = {
+    lumi: { status: 'healthy', version: '0.1.0' },
+    sqlite: { status: 'healthy' },
+    freshrss: { status: 'unavailable', configured: true, latencyMs: null, lastCheckedAt: null, error: { type: 'http_error' } },
+    rsshub: { status: 'healthy', configured: true, latencyMs: 42, lastCheckedAt: null, error: null, restartRequired: true, pendingConfigCount: 2 },
+    backup: { webdavConfigured: false, lastBackup: null },
+  }
+
+  function stubSettingsFetch() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/operations/status') return jsonResponse(OPERATIONS_STATUS)
+        if (url === '/api/v1/backups') return jsonResponse([])
+        if (url === '/api/v1/backups/webdav') {
+          return jsonResponse({ configured: false, serverUrl: '', username: '', remoteDir: '', tlsVerify: true, passwordConfigured: false })
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+    )
+  }
+
+  it('账户与服务（0018 G9）：渲染真实依赖状态行（非 planned 占位）', async () => {
+    stubSettingsFetch()
     renderSettings()
     fireEvent.click(screen.getByRole('button', { name: /账户与服务/ }))
+    // 真实 Operations UI：Lumi/FreshRSS/RSSHub/备份 四行 + 探测结果
+    expect(await screen.findByText('LumiRSS')).toBeInTheDocument()
+    // 侧栏分类按钮也叫 RSSHub，取行内所有实例断言
+    expect(screen.getAllByText('FreshRSS').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('RSSHub').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('连接失败')).toBeInTheDocument()
+    expect(screen.getByText('延迟 42 ms')).toBeInTheDocument()
+    expect(screen.getByText('2 项待生效')).toBeInTheDocument()
+    // stale 占位彻底移除
+    expect(screen.queryByText('FreshRSS 维护操作')).not.toBeInTheDocument()
+    expect(screen.queryByText('RSSHub 运营中心')).not.toBeInTheDocument()
     expect(screen.queryByText(/planned · 0013/)).toBeNull()
-    expect(screen.getByText('FreshRSS 维护操作')).toBeInTheDocument()
-    expect(screen.getAllByText(/planned · 0018/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('RSSHub 运营中心')).toBeInTheDocument()
+    expect(screen.queryByText(/planned · 0018/)).toBeNull()
+    vi.unstubAllGlobals()
   })
 
-  it('备份与恢复：OPML 条目显示已实现（不再 planned·0013 矛盾）', () => {
+  it('备份与恢复（0018 G8）：真实备份 UI 渲染；stale planned 移除', () => {
+    stubSettingsFetch()
     renderSettings()
     fireEvent.click(screen.getByRole('button', { name: /备份与恢复/ }))
-    expect(screen.queryByText('planned · 0013')).toBeNull()
-    expect(screen.getByText('已实现 · 0013')).toBeInTheDocument()
+    expect(screen.getByText('备份概览')).toBeInTheDocument()
+    expect(screen.getByText('备份历史')).toBeInTheDocument()
+    expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
+    expect(screen.getByText(/配置迁移/)).toBeInTheDocument()
+    expect(screen.queryByText(/planned · 0013/)).toBeNull()
+    expect(screen.queryByText('已实现 · 0013')).not.toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 
   it('通用：侧栏隐藏已读不再声称 0013 接入（未安排里程碑）', () => {

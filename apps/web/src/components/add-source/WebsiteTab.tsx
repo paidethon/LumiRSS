@@ -172,7 +172,7 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
                 />
                 <span
                   aria-hidden
-                  className="flex size-8 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-elevated)] text-[var(--lumi-accent)]"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-elevated)] text-[var(--lumi-accent-text)]"
                 >
                   <Rss className="size-4" />
                 </span>
@@ -192,7 +192,7 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
                   className={cx(
                     'size-4 shrink-0',
                     index === selectedIndex
-                      ? 'text-[var(--lumi-accent)]'
+                      ? 'text-[var(--lumi-accent-text)]'
                       : 'text-[var(--lumi-text-tertiary)]',
                   )}
                 />

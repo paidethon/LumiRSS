@@ -363,7 +363,7 @@ export default function SubscriptionsPage() {
                             {/* 统一 RSS 图标（无 favicon 契约，不抓取外部图片） */}
                             <span
                               aria-hidden
-                              className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent)]"
+                              className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]"
                             >
                               <Rss className="size-4" />
                             </span>

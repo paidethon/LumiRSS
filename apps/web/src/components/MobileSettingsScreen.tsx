@@ -70,7 +70,7 @@ export default function MobileSettingsScreen({
                         >
                           <span
                             aria-hidden
-                            className="flex size-8 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent)]"
+                            className="flex size-8 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]"
                           >
                             {c.icon}
                           </span>

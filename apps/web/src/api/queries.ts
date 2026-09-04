@@ -4,10 +4,15 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  applyRssHubConfig,
+  clearRssHubSecret,
+  createBackup,
   discoverFeeds,
+  executeRestore,
   generateEntrySummary,
   generateEntryTranslation,
   getAiSettings,
+  getBackupJob,
   getCategories,
   getEntries,
   getEntry,
@@ -16,19 +21,29 @@ import {
   getEntryTranslation,
   getFeeds,
   getFreshRssUiUrl,
+  getOperationsStatus,
+  getRssHubConfig,
   getRssHubRoutes,
   getSubscriptions,
+  getWebDavSettings,
   importOpml,
+  listBackups,
+  listRemoteBackups,
   moveSubscription,
+  patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
+  previewRestore,
   previewRssHub,
   renameCategory,
   sendConversationMessage,
   setEntryState,
+  setRssHubSecret,
   subscribeFeed,
+  testWebDav,
   unsubscribeFeed,
   updateAiSettings,
+  updateWebDavSettings,
 } from './client'
 import type { UiView } from '../lib/read-later'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
@@ -327,6 +342,169 @@ export function useSendConversationMessageMutation(entryRef: string) {
     mutationFn: (question: string) => sendConversationMessage(entryRef, question),
     onSuccess: (data) => {
       queryClient.setQueryData(['entry-conversation', entryRef], data)
+    },
+  })
+}
+
+// ---- 0018 Operations / RSSHub Control Center ----
+
+export function useOperationsStatus() {
+  return useQuery({
+    queryKey: ['operations-status'],
+    queryFn: ({ signal }) => getOperationsStatus(signal),
+  })
+}
+
+export function useRssHubConfig(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['rsshub-config'],
+    queryFn: ({ signal }) => getRssHubConfig(signal),
+    enabled,
+  })
+}
+
+export function usePatchRssHubConfigMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (values: Record<string, number | string | boolean>) => patchRssHubConfig(values),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rsshub-config'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
+      ])
+    },
+  })
+}
+
+export function useSetRssHubSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { key: string; value: string }) => setRssHubSecret(vars.key, vars.value),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-config'] })
+    },
+  })
+}
+
+export function useClearRssHubSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (key: string) => clearRssHubSecret(key),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-config'] })
+    },
+  })
+}
+
+export function useApplyRssHubConfigMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => applyRssHubConfig(),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rsshub-config'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
+      ])
+    },
+  })
+}
+
+// ---- 0018 WebDAV / Backup / Restore ----
+
+export function useWebDavSettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['webdav-settings'],
+    queryFn: ({ signal }) => getWebDavSettings(signal),
+    enabled,
+  })
+}
+
+export function useUpdateWebDavSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: {
+      serverUrl?: string
+      username?: string
+      password?: string
+      remoteDir?: string
+      tlsVerify?: boolean
+      clearPassword?: boolean
+    }) => updateWebDavSettings(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['webdav-settings'] })
+      await queryClient.invalidateQueries({ queryKey: ['operations-status'] })
+    },
+  })
+}
+
+export function useTestWebDavMutation() {
+  return useMutation({
+    mutationFn: () => testWebDav(),
+  })
+}
+
+export function useBackups() {
+  return useQuery({
+    queryKey: ['backups'],
+    queryFn: ({ signal }) => listBackups(signal),
+    refetchInterval: (query) => {
+      const jobs = query.state.data ?? []
+      const active = jobs.some((j) => j.status === 'queued' || j.status === 'running')
+      return active ? 2000 : false
+    },
+  })
+}
+
+export function useBackupJob(id: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['backups', id],
+    queryFn: ({ signal }) => getBackupJob(id!, signal),
+    enabled: enabled && id !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'queued' || status === 'running' ? 1000 : false
+    },
+  })
+}
+
+export function useCreateBackupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (target: 'local' | 'webdav') => createBackup(target),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['backups'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
+      ])
+    },
+  })
+}
+
+export function useRemoteBackups(enabled: boolean) {
+  return useQuery({
+    queryKey: ['backups-remote'],
+    queryFn: ({ signal }) => listRemoteBackups(signal),
+    enabled,
+  })
+}
+
+export function useRestorePreviewMutation() {
+  return useMutation({
+    mutationFn: (source: { source: 'local' | 'remote'; jobId?: string; fileName?: string }) =>
+      previewRestore(source),
+  })
+}
+
+export function useRestoreExecuteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { restoreSessionId: string; confirmation: string }) =>
+      executeRestore(vars.restoreSessionId, vars.confirmation),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['backups'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
+      ])
     },
   })
 }

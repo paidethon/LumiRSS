@@ -101,7 +101,7 @@ export default function ReaderHeader({
                   aria-hidden
                   className={cx(
                     detail.read
-                      ? 'text-[var(--lumi-accent)]'
+                      ? 'text-[var(--lumi-accent-text)]'
                       : 'text-current',
                   )}
                 />
@@ -136,7 +136,7 @@ export default function ReaderHeader({
             label={readLaterMarked ? '从稍后读移除' : '加入稍后读'}
             aria-pressed={readLaterMarked}
             touch
-            className={readLaterMarked ? 'text-[var(--lumi-accent)]' : undefined}
+            className={readLaterMarked ? 'text-[var(--lumi-accent-text)]' : undefined}
             onClick={() => toggleReadLater(detail.entryRef)}
           />
         </Tooltip>

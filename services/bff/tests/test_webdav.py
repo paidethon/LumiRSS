@@ -1,0 +1,150 @@
+"""Tests for the server-side WebDAV client (0018).
+
+Uses httpx.MockTransport — never a real network. Covers URL policy, auth,
+bounded operations, redirect policy, unexpected XML and redaction.
+"""
+
+import asyncio
+
+import httpx
+import pytest
+
+from lumirss.webdav import (
+    WebDavClient,
+    WebDavError,
+    WebDavSettings,
+    backup_root_path,
+    normalize_remote_dir,
+    normalize_server_url,
+)
+
+
+def run(coroutine):
+    return asyncio.run(coroutine)
+
+
+def _client(handler):
+    settings = WebDavSettings(
+        server_url="https://dav.example.com",
+        username="alice",
+        remote_dir="",
+        tls_verify=True,
+    )
+    return WebDavClient(settings, "secret-password", transport=httpx.MockTransport(handler))
+
+
+def test_normalize_rejects_credentials_in_url():
+    with pytest.raises(WebDavError):
+        normalize_server_url("https://user:pass@dav.example.com")
+
+
+def test_normalize_rejects_public_http():
+    with pytest.raises(WebDavError):
+        normalize_server_url("http://dav.example.com")
+
+
+def test_normalize_allows_private_http():
+    assert normalize_server_url("http://192.168.1.10") == "http://192.168.1.10"
+
+
+def test_normalize_allows_https():
+    assert normalize_server_url("https://dav.example.com/") == "https://dav.example.com"
+
+
+def test_remote_dir_rejects_traversal():
+    with pytest.raises(WebDavError):
+        normalize_remote_dir("/backups/../../etc")
+
+
+def test_remote_dir_normalizes():
+    assert normalize_remote_dir("/backups/") == "/backups"
+
+
+def test_put_ok():
+    calls = {}
+
+    def handler(request):
+        calls["auth"] = request.headers.get("Authorization")
+        calls["method"] = request.method
+        return httpx.Response(201)
+
+    client = _client(handler)
+    run(client.put("/LumiRSS/backups/2026/09/x.backup", b"data"))
+    assert calls["method"] == "PUT"
+    assert "Basic" in calls["auth"]
+
+
+def test_auth_failure_is_safe_error():
+    def handler(request):
+        return httpx.Response(401)
+
+    client = _client(handler)
+    with pytest.raises(WebDavError) as exc:
+        run(client.list_dir("/LumiRSS/backups"))
+    assert "credential" in str(exc.value).lower()
+
+
+def test_connection_error_is_safe():
+    def handler(request):
+        raise httpx.ConnectError("dial tcp boom")
+
+    client = _client(handler)
+    with pytest.raises(WebDavError) as exc:
+        run(client.get("/x"))
+    assert "boom" not in str(exc.value)
+
+
+def test_redirect_outside_origin_rejected():
+    def handler(request):
+        if request.url.host == "dav.example.com":
+            return httpx.Response(302, headers={"Location": "https://evil.example.com/x"})
+        return httpx.Response(200)
+
+    client = _client(handler)
+    with pytest.raises(WebDavError):
+        run(client.get("/x"))
+
+
+def test_propfind_parses_entries():
+    xml = (
+        '<?xml version="1.0"?>'
+        '<d:multistatus xmlns:d="DAV:">'
+        '<d:response><d:href>/LumiRSS/backups/a.backup</d:href>'
+        '<d:propstat><d:prop><d:getcontentlength>100</d:getcontentlength>'
+        "</d:prop></d:propstat></d:response>"
+        '<d:response><d:href>/LumiRSS/backups/b.backup</d:href>'
+        '<d:propstat><d:prop><d:getcontentlength>200</d:getcontentlength>'
+        "</d:prop></d:propstat></d:response>"
+        "</d:multistatus>"
+    )
+
+    def handler(request):
+        assert request.method == "PROPFIND"
+        return httpx.Response(207, content=xml)
+
+    client = _client(handler)
+    entries = run(client.list_dir("/LumiRSS/backups"))
+    assert {e["name"] for e in entries} == {"a.backup", "b.backup"}
+
+
+def test_unexpected_xml_is_safe():
+    def handler(request):
+        return httpx.Response(207, content="this is not xml <<<")
+
+    client = _client(handler)
+    with pytest.raises(WebDavError):
+        run(client.list_dir("/LumiRSS/backups"))
+
+
+def test_get_bounded_response():
+    def handler(request):
+        return httpx.Response(200, content=b"x" * 1000)
+
+    client = _client(handler)
+    data = run(client.get("/x.backup"))
+    assert len(data) == 1000
+
+
+def test_backup_root_path():
+    assert backup_root_path("") == "/LumiRSS/backups"
+    assert backup_root_path("/dav") == "/dav/LumiRSS/backups"

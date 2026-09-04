@@ -250,3 +250,143 @@ export interface EntryConversation {
   status: 'empty' | 'active'
   messages: ConversationMessage[]
 }
+
+// ---- 0018 Operations ----
+
+export type DependencyStatus =
+  | 'unconfigured'
+  | 'healthy'
+  | 'unauthenticated'
+  | 'unavailable'
+
+export interface OperationsComponentStatus {
+  status: DependencyStatus
+  latencyMs: number | null
+  lastCheckedAt: string | null
+  error: { type: string } | null
+}
+
+export interface OperationsStatus {
+  lumi: { status: string; version: string }
+  sqlite: { status: string; schemaVersion?: number }
+  freshrss: OperationsComponentStatus & { configured: boolean }
+  rsshub: OperationsComponentStatus & {
+    configured: boolean
+    restartRequired: boolean
+    pendingConfigCount: number
+  }
+  backup: {
+    webdavConfigured: boolean
+    lastBackup: BackupJob | null
+  }
+}
+
+// ---- 0018 RSSHub Control Center ----
+
+export type RssHubItemType = 'int' | 'bool' | 'string' | 'enum' | 'secret'
+
+export interface RssHubConfigItem {
+  key: string
+  label: string
+  description: string
+  group: string
+  type: RssHubItemType
+  default: number | string | boolean
+  editable: boolean
+  secret: boolean
+  restartRequired: boolean
+  options: string[] | null
+  value?: number | string | boolean
+  configured?: boolean
+}
+
+export interface RssHubConfigGroup {
+  id: string
+  label: string
+  items: RssHubConfigItem[]
+}
+
+export interface RssHubConfig {
+  schemaVersion: number
+  configured: boolean
+  pendingCount: number
+  pendingSecrets: boolean
+  groups: RssHubConfigGroup[]
+}
+
+// ---- 0018 WebDAV / Backup / Restore ----
+
+export interface WebDavSettings {
+  configured: boolean
+  serverUrl: string
+  username: string
+  remoteDir: string
+  tlsVerify: boolean
+  passwordConfigured: boolean
+}
+
+export interface WebDavTestResult {
+  status: 'ok' | 'failed'
+  message?: string
+}
+
+export type BackupJobStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'interrupted'
+
+export type BackupJobType = 'full' | 'safety' | 'restore'
+
+export interface BackupJob {
+  id: string
+  type: BackupJobType
+  status: BackupJobStatus
+  stage: string | null
+  target: string | null
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  summary: {
+    filename?: string
+    target?: string
+    sizeBytes?: number
+    components?: string[]
+    fileCount?: number
+    remotePath?: string
+    localPath?: string
+  } | null
+  safeError: string | null
+}
+
+export interface RemoteBackup {
+  fileName: string
+  sizeBytes: number
+}
+
+export interface RemoteBackupsResponse {
+  backups: RemoteBackup[]
+}
+
+export interface RestorePreview {
+  restoreSessionId: string
+  fileName?: string
+  createdAt: string | null
+  lumiVersion: string | null
+  lumiDbSchemaVersion: number
+  currentDbSchemaVersion: number
+  compatible: boolean
+  components: string[]
+  files: { path: string; size: number }[]
+  excludedSecrets: string[]
+  secretConfigured: boolean
+}
+
+export interface RestoreResult {
+  lumiRestored: boolean
+  freshrss: 'not_included' | 'offline_restore_required'
+  safetyBackupId: string | null
+  freshrssStagedAt?: string
+  health: { sqlite: string }
+}

@@ -41,8 +41,8 @@
 
 ## Completion
 
-- [ ] 0018 — Production, Operations & Backup
-- [ ] 0019 — MVP Stabilization & Release
+- [x] 0018 — Production, Operations & Backup
+- [x] 0019 — MVP Stabilization & Release
 
 ## Phase 2 — Knowledge Workbench (deferred)
 

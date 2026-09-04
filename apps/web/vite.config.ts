@@ -16,5 +16,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    // e2e/ 归 Playwright（playwright.config.ts），vitest 不收集
+    exclude: ['**/node_modules/**', 'e2e/**', 'dist/**'],
   },
 })

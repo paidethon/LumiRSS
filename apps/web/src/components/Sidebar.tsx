@@ -62,7 +62,7 @@ function NavItem({
         'transition-colors duration-[var(--lumi-motion-fast)]',
         'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         active
-          ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-accent)]'
+          ? 'bg-[var(--lumi-surface-selected)] font-medium text-[var(--lumi-accent-text)]'
           : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
       )}
     >
@@ -237,7 +237,7 @@ function RssTree({
             'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
             'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
             rssScopeActive
-              ? 'font-medium text-[var(--lumi-accent)]'
+              ? 'font-medium text-[var(--lumi-accent-text)]'
               : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
           )}
         >
@@ -348,7 +348,7 @@ function RssTree({
                       'min-h-8 max-lg:min-h-11 max-lg:items-center',
                       'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
                       categoryActive
-                        ? 'font-medium text-[var(--lumi-accent)]'
+                        ? 'font-medium text-[var(--lumi-accent-text)]'
                         : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
                     )}
                   >
@@ -464,7 +464,7 @@ export default function Sidebar({
               'min-h-8 py-1 max-lg:min-h-11 max-lg:items-center',
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
               view === 'all'
-                ? 'font-medium text-[var(--lumi-accent)]'
+                ? 'font-medium text-[var(--lumi-accent-text)]'
                 : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
             )}
           >
@@ -484,7 +484,7 @@ export default function Sidebar({
               'min-h-6 transition-colors duration-[var(--lumi-motion-fast)]',
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
               view === 'unread'
-                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent)]'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
                 : 'text-[var(--lumi-text-tertiary)] hover:bg-[var(--lumi-surface-hover)]',
             )}
           >

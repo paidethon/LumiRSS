@@ -1,11 +1,14 @@
 """LumiRSS BFF application entry point."""
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
@@ -92,6 +95,34 @@ from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
     decode_subscription_ref,
 )
+from lumirss.secrets_store import SecretsStore, SecretsStoreError
+from lumirss.operations import OperationsService
+from lumirss.rsshub_control import (
+    RssHubControlError,
+    RssHubControlStore,
+    RssHubInvalidValue,
+    RssHubUnknownKey,
+    config_view,
+)
+from lumirss.backup import (
+    BackupBusy,
+    BackupChecksumMismatch,
+    BackupEngine,
+    BackupFreshrssUnavailable,
+    BackupInvalid,
+    BackupJobStore,
+    BackupNotFound,
+    BackupUnsupportedVersion,
+    WebDavSettingsStore,
+    _job_json,
+)
+from lumirss.restore import (
+    RestoreConfirmationRequired,
+    RestoreFailed,
+    RestorePreviewRequired,
+    RestoreService,
+)
+from lumirss.webdav import WebDavError, WebDavNotConfigured
 
 
 @asynccontextmanager
@@ -106,6 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trust_env=False,
     )
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
+    app.state.secrets_store = SecretsStore(LumiSettings().secrets_path)
     app.state.ai_settings_store = None
     app.state.app_settings_store = None
     app.state.summary_service = None
@@ -116,6 +148,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.feed_preview_service = None
     app.state.source_discovery_service = None
     app.state.rsshub_service = None
+    app.state.operations_service = None
+    app.state.rsshub_control_store = None
+    app.state.backup_jobs = None
+    app.state.webdav_settings = None
+    app.state.backup_engine = None
+    app.state.restore_service = None
     yield
     await app.state.http_client.aclose()
 
@@ -127,6 +165,19 @@ app = FastAPI(title="LumiRSS BFF", lifespan=lifespan)
 async def health_live() -> dict[str, str]:
     """Liveness: only proves this process is alive, never touches FreshRSS."""
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready(request: Request) -> JSONResponse:
+    """Readiness: core dependency (lumi.sqlite) must be usable.
+
+    FreshRSS / RSSHub are reported but NEVER fail readiness — RSSHub being
+    down must not make already-fetched reading unavailable (0018 failure
+    isolation, AD-0018-3).
+    """
+    service = _get_operations_service(request)
+    ready, payload = await service.ready()
+    return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 
 _ERROR_RESPONSES = {
@@ -178,6 +229,23 @@ _ERROR_RESPONSES = {
     AiInvalidResponse: (502, "ai_invalid_response"),
     AiUpstreamError: (502, "ai_upstream_error"),
     AiContentUnavailable: (422, "ai_content_unavailable"),
+    # 0018 RSSHub control（spec 稳定错误类型：unknown_key / invalid_value）
+    RssHubControlError: (400, "rsshub_invalid_value"),
+    RssHubUnknownKey: (400, "rsshub_unknown_key"),
+    RssHubInvalidValue: (400, "rsshub_invalid_value"),
+    # 0018 backup / WebDAV / restore
+    BackupBusy: (409, "backup_busy"),
+    BackupNotFound: (404, "backup_not_found"),
+    BackupInvalid: (400, "backup_invalid"),
+    BackupChecksumMismatch: (400, "backup_checksum_mismatch"),
+    BackupUnsupportedVersion: (409, "backup_unsupported_version"),
+    BackupFreshrssUnavailable: (503, "backup_freshrss_unavailable"),
+    WebDavNotConfigured: (503, "webdav_not_configured"),
+    WebDavError: (502, "webdav_error"),
+    RestoreConfirmationRequired: (400, "backup_restore_confirmation_required"),
+    RestorePreviewRequired: (400, "backup_restore_preview_required"),
+    RestoreFailed: (500, "restore_failed"),
+    SecretsStoreError: (500, "secret_store_error"),
 }
 
 
@@ -221,11 +289,45 @@ _ERROR_RESPONSES = {
 @app.exception_handler(AiInvalidResponse)
 @app.exception_handler(AiUpstreamError)
 @app.exception_handler(AiContentUnavailable)
+@app.exception_handler(RssHubControlError)
+@app.exception_handler(RssHubUnknownKey)
+@app.exception_handler(RssHubInvalidValue)
+@app.exception_handler(BackupBusy)
+@app.exception_handler(BackupNotFound)
+@app.exception_handler(BackupInvalid)
+@app.exception_handler(BackupChecksumMismatch)
+@app.exception_handler(BackupUnsupportedVersion)
+@app.exception_handler(BackupFreshrssUnavailable)
+@app.exception_handler(WebDavNotConfigured)
+@app.exception_handler(WebDavError)
+@app.exception_handler(RestoreConfirmationRequired)
+@app.exception_handler(RestorePreviewRequired)
+@app.exception_handler(RestoreFailed)
+@app.exception_handler(SecretsStoreError)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
         status_code=status,
         content={"error": {"type": error_type, "message": str(exc)}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Pydantic validation failures join the stable error envelope.
+
+    Keeps the 422 status (existing contract) but never echoes request
+    details back — the message is a static string."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "type": "invalid_request",
+                "message": "The request body failed validation.",
+            }
+        },
     )
 
 
@@ -1122,3 +1224,456 @@ async def send_conversation_message(
     return _conversation_json(
         await service.send_message(entry_ref, body.question)
     )
+
+
+# ---------------------------------------------------------------------------
+# 0018 — Operations, RSSHub Control Center, Backup / WebDAV / Restore
+# ---------------------------------------------------------------------------
+
+def _get_operations_service(request: Request) -> OperationsService:
+    service = request.app.state.operations_service
+    if service is None:
+        service = OperationsService(request.app.state.http_client, request.app.state.db)
+        request.app.state.operations_service = service
+    return service
+
+
+def _get_rsshub_control_store(request: Request) -> RssHubControlStore:
+    store = request.app.state.rsshub_control_store
+    if store is None:
+        store = RssHubControlStore(request.app.state.db, request.app.state.secrets_store)
+        request.app.state.rsshub_control_store = store
+    return store
+
+
+def _get_backup_jobs(request: Request) -> BackupJobStore:
+    jobs = request.app.state.backup_jobs
+    if jobs is None:
+        jobs = BackupJobStore(request.app.state.db)
+        request.app.state.backup_jobs = jobs
+    return jobs
+
+
+def _get_webdav_settings(request: Request) -> WebDavSettingsStore:
+    store = request.app.state.webdav_settings
+    if store is None:
+        store = WebDavSettingsStore(request.app.state.db, request.app.state.secrets_store)
+        request.app.state.webdav_settings = store
+    return store
+
+
+def _get_backup_engine(request: Request) -> BackupEngine:
+    engine = request.app.state.backup_engine
+    if engine is None:
+        jobs = _get_backup_jobs(request)
+        webdav = _get_webdav_settings(request)
+
+        async def webdav_factory():
+            doc = await webdav.load()
+            return await webdav.build_client(doc)
+
+        engine = BackupEngine(request.app.state.db, jobs, webdav, webdav_factory)
+        request.app.state.backup_engine = engine
+    return engine
+
+
+def _get_restore_service(request: Request) -> RestoreService:
+    service = request.app.state.restore_service
+    if service is None:
+        engine = _get_backup_engine(request)
+        service = RestoreService(
+            request.app.state.db,
+            LumiSettings(),
+            engine.create_safety_backup,
+        )
+        request.app.state.restore_service = service
+    return service
+
+
+def _rsshub_runtime_configured() -> bool:
+    from lumirss.config import RssHubSettings
+
+    from pydantic import ValidationError as _ValidationError
+
+    try:
+        return bool(RssHubSettings().RSSHUB_BASE_URL)
+    except _ValidationError:
+        return False
+
+
+@app.get("/api/v1/operations/status")
+async def operations_status(request: Request) -> dict[str, object]:
+    """Redacted, real dependency status for the operations UI (no fake metrics)."""
+    service = _get_operations_service(request)
+    status = await service.full_status()
+    rsshub_store = _get_rsshub_control_store(request)
+    flags = await rsshub_store.restart_required_flags()
+    status["rsshub"]["restartRequired"] = flags["count"] > 0
+    status["rsshub"]["pendingConfigCount"] = flags["count"]
+    webdav = _get_webdav_settings(request)
+    doc = await webdav.load()
+    jobs = _get_backup_jobs(request)
+    last = await jobs.last_succeeded()
+    status["backup"] = {
+        "webdavConfigured": webdav.configured(doc),
+        "lastBackup": _job_json(last) if last else None,
+    }
+    return status
+
+
+class RssHubConfigPatch(BaseModel):
+    """PATCH /api/v1/rsshub/config body: allow-listed non-secret values."""
+
+    values: dict[str, object] = Field(default_factory=dict)
+
+
+async def _rsshub_config_view_async(request: Request) -> dict[str, object]:
+    store = _get_rsshub_control_store(request)
+    desired = await store.desired()
+    flags = await store.restart_required_flags()
+    return {
+        "schemaVersion": 1,
+        "configured": _rsshub_runtime_configured(),
+        "pendingCount": flags["count"],
+        "pendingSecrets": flags["pendingSecrets"],
+        "groups": config_view(store, desired, flags),
+    }
+
+
+@app.get("/api/v1/rsshub/config")
+async def get_rsshub_config(request: Request) -> dict[str, object]:
+    return await _rsshub_config_view_async(request)
+
+
+@app.patch("/api/v1/rsshub/config")
+async def patch_rsshub_config(
+    body: RssHubConfigPatch, request: Request
+) -> dict[str, object]:
+    """Update allow-listed non-secret desired values (validated + typed).
+
+    Secrets are never accepted here — use the secret endpoints. Saving only
+    updates the DESIRED config; the UI reports restartRequired honestly.
+    """
+    store = _get_rsshub_control_store(request)
+    await store.patch_desired({k: v for k, v in body.values.items()})
+    return await _rsshub_config_view_async(request)
+
+
+@app.get("/api/v1/rsshub/config/export")
+async def export_rsshub_config(request: Request) -> Response:
+    """Render the desired config as an env fragment (secrets never echoed)."""
+    from lumirss.rsshub_control import export_env
+
+    store = _get_rsshub_control_store(request)
+    desired = await store.desired()
+    return Response(
+        content=export_env(store, desired),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="rsshub.env"'},
+    )
+
+
+class RssHubSecretPut(BaseModel):
+    value: str = Field(min_length=1)
+
+
+@app.put("/api/v1/rsshub/config/secrets/{key}", status_code=204)
+async def put_rsshub_secret(
+    key: str, body: RssHubSecretPut, request: Request
+) -> Response:
+    """Write one route credential / secret (write-only, never read back)."""
+    store = _get_rsshub_control_store(request)
+    await store.set_secret(key, body.value)
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/rsshub/config/secrets/{key}", status_code=204)
+async def delete_rsshub_secret(key: str, request: Request) -> Response:
+    """Clear one secret (explicit action)."""
+    store = _get_rsshub_control_store(request)
+    await store.delete_secret(key)
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/rsshub/config/apply", status_code=204)
+async def apply_rsshub_config(request: Request) -> Response:
+    """Operator confirms the desired config has been applied after restart."""
+    store = _get_rsshub_control_store(request)
+    await store.mark_applied()
+    return Response(status_code=204)
+
+
+class WebDavSettingsPut(BaseModel):
+    """PUT /api/v1/backups/webdav body.
+
+    password omitted/None = keep existing; non-empty = set; clearPassword
+    is the ONLY way to clear it (empty-string password never clears)."""
+
+    serverUrl: str | None = None
+    username: str | None = None
+    password: str | None = None
+    remoteDir: str | None = None
+    tlsVerify: bool | None = None
+    clearPassword: bool = False
+
+    @model_validator(mode="after")
+    def password_semantics(self) -> "WebDavSettingsPut":
+        if self.password is not None and not self.password and not self.clearPassword:
+            raise ValueError("use clearPassword=true to clear (empty string does not clear)")
+        if self.password is not None and self.clearPassword:
+            raise ValueError("provide either password or clearPassword, not both")
+        return self
+
+
+def _webdav_json(doc: dict, password_configured: bool) -> dict[str, object]:
+    return {
+        "configured": bool(doc.get("serverUrl")) and password_configured,
+        "serverUrl": doc.get("serverUrl", ""),
+        "username": doc.get("username", ""),
+        "remoteDir": doc.get("remoteDir", ""),
+        "tlsVerify": bool(doc.get("tlsVerify", True)),
+        "passwordConfigured": password_configured,
+    }
+
+
+@app.get("/api/v1/backups/webdav")
+async def get_webdav_settings(request: Request) -> dict[str, object]:
+    store = _get_webdav_settings(request)
+    doc = await store.load()
+    return _webdav_json(doc, store.password_configured())
+
+
+@app.put("/api/v1/backups/webdav")
+async def put_webdav_settings(
+    body: WebDavSettingsPut, request: Request
+) -> dict[str, object]:
+    """Update WebDAV settings (password write-only, never read back)."""
+    store = _get_webdav_settings(request)
+    update: dict[str, object] = {}
+    if body.serverUrl is not None:
+        update["serverUrl"] = body.serverUrl
+    if body.username is not None:
+        update["username"] = body.username
+    if body.remoteDir is not None:
+        update["remoteDir"] = body.remoteDir
+    if body.tlsVerify is not None:
+        update["tlsVerify"] = body.tlsVerify
+    doc = await store.save(update)
+    if body.clearPassword:
+        store.clear_password()
+    elif body.password:
+        store.set_password(body.password)
+    return _webdav_json(doc, store.password_configured())
+
+
+@app.post("/api/v1/backups/webdav/test")
+async def test_webdav(request: Request) -> dict[str, object]:
+    """Test the WebDAV connection: create + list the backup root."""
+    from lumirss.webdav import backup_root_path
+
+    store = _get_webdav_settings(request)
+    doc = await store.load()
+    if not doc.get("serverUrl"):
+        raise WebDavNotConfigured("WebDAV is not configured.")
+    client = await store.build_client(doc)
+    try:
+        root = backup_root_path(doc.get("remoteDir", ""))
+        await client.ensure_dir(root)
+        await client.list_dir(root)
+        return {"status": "ok"}
+    except WebDavError as exc:
+        return {"status": "failed", "message": str(exc)}
+    finally:
+        await client.aclose()
+
+
+class BackupCreate(BaseModel):
+    target: Literal["local", "webdav"] = "local"
+
+
+@app.get("/api/v1/backups")
+async def list_backups(request: Request) -> list[dict[str, object]]:
+    jobs = _get_backup_jobs(request)
+    return [_job_json(job) for job in await jobs.list()]
+
+
+@app.post("/api/v1/backups", status_code=202)
+async def create_backup(
+    body: BackupCreate, request: Request
+) -> dict[str, object]:
+    """Create a full backup job (runs in the background; poll the job)."""
+    engine = _get_backup_engine(request)
+    job = await engine.submit_full_backup(body.target)
+    return _job_json(job)
+
+
+@app.get("/api/v1/backups/remote")
+async def list_remote_backups(request: Request) -> dict[str, object]:
+    """List backups stored on WebDAV (flat names + sizes, no secret values)."""
+    from lumirss.webdav import backup_root_path
+
+    store = _get_webdav_settings(request)
+    doc = await store.load()
+    if not doc.get("serverUrl"):
+        raise WebDavNotConfigured("WebDAV is not configured.")
+    client = await store.build_client(doc)
+    try:
+        entries = await client.list_dir(backup_root_path(doc.get("remoteDir", "")))
+    except WebDavError as exc:
+        raise exc
+    finally:
+        await client.aclose()
+    return {
+        "backups": [
+            {"fileName": entry["name"], "sizeBytes": int(entry.get("size") or 0)}
+            for entry in entries
+            if entry["name"].endswith(".backup")
+        ]
+    }
+
+
+@app.get("/api/v1/backups/{job_id}")
+async def get_backup_job(job_id: str, request: Request) -> dict[str, object]:
+    jobs = _get_backup_jobs(request)
+    job = await jobs.get(job_id)
+    if job is None:
+        raise BackupNotFound("Backup job not found.")
+    return _job_json(job)
+
+
+class RestorePreviewBody(BaseModel):
+    source: Literal["local", "remote"]
+    jobId: str | None = None
+    fileName: str | None = None
+
+
+class RestoreExecuteBody(BaseModel):
+    restoreSessionId: str = Field(min_length=1)
+    confirmation: str = Field(min_length=1)
+
+
+async def _locate_backup_package(
+    body: RestorePreviewBody, request: Request
+) -> tuple[Path, str]:
+    """Return (local zip path, display name) for the requested source."""
+    settings = LumiSettings()
+    if body.source == "local":
+        if not body.jobId:
+            raise BackupNotFound("A jobId is required for local restore.")
+        jobs = _get_backup_jobs(request)
+        job = await jobs.get(body.jobId)
+        if job is None:
+            raise BackupNotFound("Backup job not found.")
+        if job["status"] != "succeeded":
+            raise BackupNotFound("Only succeeded backups can be restored.")
+        summary = job.get("summary")
+        local_path = None
+        if isinstance(summary, str) and summary:
+            try:
+                local_path = json.loads(summary).get("localPath")
+            except json.JSONDecodeError:
+                local_path = None
+        if not local_path:
+            raise BackupNotFound("This backup has no local file.")
+        path = Path(local_path)
+        if not path.is_file():
+            raise BackupNotFound("The local backup file is missing.")
+        return path, path.name
+
+    # remote
+    from lumirss.webdav import backup_root_path, quote_path_segment
+
+    if not body.fileName:
+        raise BackupNotFound("A fileName is required for remote restore.")
+    # 恶意 WebDAV 服务器可能构造带路径分隔符的 listing 名：本地落盘名
+    # 只允许纯文件名（与远端同名文件的匹配仍按原始 fileName 精确比较）。
+    if body.fileName != Path(body.fileName).name or body.fileName in ("", ".", ".."):
+        raise BackupInvalid("The remote backup file name is not a plain file name.")
+    store = _get_webdav_settings(request)
+    doc = await store.load()
+    if not doc.get("serverUrl"):
+        raise WebDavNotConfigured("WebDAV is not configured.")
+    client = await store.build_client(doc)
+    try:
+        root = backup_root_path(doc.get("remoteDir", ""))
+        entries = await client.list_dir(root)
+        match = next((e for e in entries if e["name"] == body.fileName), None)
+        if match is None:
+            raise BackupNotFound("Remote backup not found.")
+        # Download into a temp file for verification.
+        stage = settings.restore_staging_dir / "downloads"
+        stage.mkdir(parents=True, exist_ok=True)
+        data = await client.get(f"{root}/{quote_path_segment(body.fileName)}")
+        dest = stage / body.fileName
+        dest.write_bytes(data)
+    finally:
+        await client.aclose()
+    return dest, body.fileName
+
+
+@app.post("/api/v1/restore/preview")
+async def restore_preview(
+    body: RestorePreviewBody, request: Request
+) -> dict[str, object]:
+    """Validate a backup package and return a preview + restoreSessionId."""
+    zip_path, name = await _locate_backup_package(body, request)
+    service = _get_restore_service(request)
+    preview = await service.preview(zip_path)
+    preview["fileName"] = name
+    return preview
+
+
+@app.post("/api/v1/restore")
+async def restore_execute(
+    body: RestoreExecuteBody, request: Request
+) -> dict[str, object]:
+    """Execute a previously previewed restore (explicit confirmation).
+
+    AD-0018-7: the destructive restore is serialized against backups via the
+    engine flag plus a DB-level guard (the guard runs the interrupted sweep
+    first, so rows left by a previous process never wedge new work), and is
+    recorded in ``backup_jobs`` (type=restore) as a persisted audit trail.
+
+    Subtlety: a successful lumi restore REPLACES the database file, so the
+    job row recorded before the swap may vanish with the old file, and the
+    restored snapshot may carry stale active rows. After execute the ledger
+    is reconciled: stale rows are marked interrupted (nothing can legitimately
+    be running once the exclusive restore finished) and the restore record is
+    re-created when the swap erased it."""
+    engine = _get_backup_engine(request)
+    service = _get_restore_service(request)
+    jobs = _get_backup_jobs(request)
+    if engine.running or await jobs.has_running():
+        raise BackupBusy("Another job is already in progress.")
+    job = await jobs.create("restore", "restore")
+    await jobs.start(job["id"])
+    try:
+        result = await engine.run_restore(service, body.restoreSessionId, body.confirmation)
+    except Exception as exc:
+        # run_restore / service.execute 只抛出脱敏后的安全消息（静态文本或
+        # RestoreFailed 包装），截断兜底防止异常长的内容进入 job 历史。
+        safe = (str(exc).strip() or "The restore failed.")[:300]
+        if await jobs.get(job["id"]) is None:
+            # 替换后的数据库里已经没有这一行：补一条终态记录
+            replacement = await jobs.create("restore", "restore")
+            await jobs.start(replacement["id"])
+            await jobs.fail(replacement["id"], safe)
+        else:
+            await jobs.fail(job["id"], safe)
+        raise
+    # 成功：快照残影的 running/queued 行全部标记 interrupted（restore 互斥，
+    # 此刻不可能有真正在跑的 job），然后确保审计记录存在于当前数据库。
+    await jobs.mark_stale_active_interrupted(keep_id=job["id"])
+    summary = {
+        "lumiRestored": result.get("lumiRestored", False),
+        "freshrss": result.get("freshrss", "not_included"),
+        "safetyBackupId": result.get("safetyBackupId"),
+        "filename": body.restoreSessionId,
+    }
+    if await jobs.get(job["id"]) is None:
+        replacement = await jobs.create("restore", "restore")
+        await jobs.start(replacement["id"])
+        await jobs.succeed(replacement["id"], summary)
+    else:
+        await jobs.succeed(job["id"], summary)
+    return result

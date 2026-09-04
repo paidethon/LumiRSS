@@ -59,7 +59,7 @@ export default function MobileTabBar() {
                 'transition-colors duration-[var(--lumi-motion-fast)]',
                 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
                 active
-                  ? 'text-[var(--lumi-accent)] [&_svg]:fill-[var(--lumi-accent-soft)]'
+                  ? 'text-[var(--lumi-accent-text)] [&_svg]:fill-[var(--lumi-accent-soft)]'
                   : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
               )}
             >

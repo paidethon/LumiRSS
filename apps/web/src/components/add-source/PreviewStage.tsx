@@ -81,7 +81,7 @@ export function PreviewStage({
         <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent)]"
+            className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]"
           >
             <Rss className="size-4" />
           </span>
@@ -120,7 +120,7 @@ export function PreviewStage({
           role="status"
           className="flex items-start gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2.5 text-sm text-[var(--lumi-text-secondary)]"
         >
-          <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+          <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
           已经订阅了这个源，无需重复添加。
         </div>
       )}
@@ -206,7 +206,7 @@ export function PreviewStage({
           role="status"
           className="flex items-start gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)]/30 bg-[var(--lumi-accent)]/10 px-3 py-2.5 text-sm text-[var(--lumi-text-primary)]"
         >
-          <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+          <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
           <span className="min-w-0">
             <span className="block font-medium">已添加订阅</span>
             <span className="mt-0.5 block text-xs text-[var(--lumi-text-secondary)]">

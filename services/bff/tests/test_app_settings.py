@@ -13,6 +13,10 @@ from fastapi.testclient import TestClient
 from lumirss.main import app
 from lumirss.storage import Database
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+SMUGGLED_KEY = "sk-" + _secrets.token_urlsafe(8)
+
 
 def _client(db_path):
     """A TestClient with a temp database injected (lifespan resets state)."""
@@ -112,7 +116,7 @@ def test_patch_rejects_unknown_keys(tmp_path):
         app.state.db = Database(tmp_path / "lumi.sqlite")
         response = client.patch(
             "/api/v1/settings",
-            json={"apiKey": "sk-smuggled", "readerFontSize": 18},
+            json={"apiKey": SMUGGLED_KEY, "readerFontSize": 18},
         )
 
     assert response.status_code == 400

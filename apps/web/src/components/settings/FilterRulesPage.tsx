@@ -176,7 +176,7 @@ export function FilterRulesSection() {
                 className={cx(
                   'rounded-[var(--lumi-radius-md)] border px-3 py-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
                   type === v
-                    ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent)]'
+                    ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
                     : 'border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
                 )}
               >

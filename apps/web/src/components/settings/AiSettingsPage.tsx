@@ -65,7 +65,7 @@ function KeyStatusBanner({ configured }: { configured: boolean }) {
       )}
     >
       {configured ? (
-        <KeyRound aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent)]" />
+        <KeyRound aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
       ) : (
         <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-text-tertiary)]" />
       )}
@@ -233,7 +233,7 @@ export function AiSettingsSection() {
           </Button>
           {update.isSuccess && (
             <span role="status" className="flex items-center gap-1 text-xs text-[var(--lumi-text-secondary)]">
-              <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent)]" />
+              <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
               已保存
             </span>
           )}

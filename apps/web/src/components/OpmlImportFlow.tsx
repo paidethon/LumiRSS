@@ -64,7 +64,7 @@ export function OpmlResultCard({ result }: { result: OpmlImportResult }) {
       className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)]/30 bg-[var(--lumi-accent)]/10 p-3.5"
     >
       <p className="flex items-center gap-2 text-sm font-medium text-[var(--lumi-text-primary)]">
-        <CheckCircle2 aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent)]" />
+        <CheckCircle2 aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent-text)]" />
         已导入 {result.added.length} 个订阅源
         {result.duplicates.length > 0 && `，跳过重复 ${result.duplicates.length} 个`}
         {result.failed.length > 0 && `，失败 ${result.failed.length} 个`}

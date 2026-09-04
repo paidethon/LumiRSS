@@ -115,7 +115,7 @@ export default function ArticleConversation({
       <header className="flex items-start justify-between gap-3 border-b border-[var(--lumi-border)] px-4 py-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--lumi-text-primary)]">
-            <MessageSquare aria-hidden className="size-4 text-[var(--lumi-accent)]" />
+            <MessageSquare aria-hidden className="size-4 text-[var(--lumi-accent-text)]" />
             AI 对话
           </p>
           <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]" title={articleTitle}>

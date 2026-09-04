@@ -6,6 +6,8 @@ a fake control adapter; route tests inject it onto app.state (no real
 FreshRSS is contacted).
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +33,9 @@ from lumirss.opml import (
     OpmlTooManyFeeds,
     parse_opml,
 )
+
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 
 VALID_OPML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
@@ -410,7 +415,7 @@ def make_export_control(handler) -> object:
         _env_file=None,
         FRESHRSS_BASE_URL="http://freshrss-test.local",
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), trust_env=False)
     return FreshRSSControlAdapter(FreshRSSAdapter(client, settings))

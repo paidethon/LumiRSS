@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bff-tests:
+    name: BFF tests (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run BFF tests
+        working-directory: services/bff
+        run: uv run pytest -q
+
+  web-tests:
+    name: Web tests / lint / build (pnpm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        working-directory: apps/web
+        run: pnpm test
+
+      - name: Lint
+        working-directory: apps/web
+        run: pnpm lint
+
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+
+  e2e-smoke:
+    name: Playwright Chromium smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [web-tests]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build production bundle
+        working-directory: apps/web
+        run: pnpm build
+
+      - name: Run deterministic smoke (static build + honest API-degraded states)
+        working-directory: apps/web
+        env:
+          LUMIRSS_E2E_BASE_URL: http://127.0.0.1:4173
+          LUMIRSS_CI_STATIC: "1"
+        run: pnpm exec playwright test --project=desktop-1440 e2e/ci-smoke.spec.ts
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          retention-days: 7
+
+  compose-config:
+    name: Production compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate compose config
+        run: |
+          cp .env.prod.example .env.prod
+          docker compose -f docker-compose.prod.yml config > /dev/null \
+            && echo "compose config OK"

@@ -43,7 +43,7 @@ function OpmlExportBlock() {
         </Button>
         {done && (
           <span role="status" className="flex items-center gap-1 text-xs text-[var(--lumi-text-secondary)]">
-            <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent)]" />
+            <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
             已开始下载
           </span>
         )}
@@ -160,7 +160,7 @@ function FreshRssStatusBlock() {
         role="status"
         className="mt-2 flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]"
       >
-        <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent)]" />
+        <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
         连接正常，当前 {subscriptions.data.length} 个订阅源
       </p>
     )
@@ -180,7 +180,7 @@ function FreshRssStatusBlock() {
             href={ui.data.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-[var(--lumi-accent)] hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-[var(--lumi-accent-text)] hover:underline"
           >
             高级：在 FreshRSS 中管理
             <ExternalLink aria-hidden className="size-3" />

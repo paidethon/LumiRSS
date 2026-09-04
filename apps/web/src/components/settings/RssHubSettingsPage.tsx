@@ -76,11 +76,10 @@ export function RssHubSettingsSection() {
       {/* 总开关 Banner */}
       <div className="mb-4 flex items-center justify-between gap-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3.5 py-2.5">
         <div>
-          <p className="text-sm font-medium text-[var(--lumi-text-primary)]">RSSHub 集成</p>
+          <p className="text-sm font-medium text-[var(--lumi-text-primary)]">参考实例清单</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
-            来源发现与路由预览（0014）已可用：订阅中心 →「添加来源」→ RSSHub；经
-            服务端 RSSHUB_BASE_URL + BFF 代理，浏览器不直连。此处为实例清单管理
-            （浏览器侧参考，不参与构造/预览）。
+            浏览器侧参考清单，不参与运行时控制（真正配置在上方 Control Center，
+            来源发现经服务端 RSSHUB_BASE_URL + BFF 代理）。
           </p>
         </div>
         <Switch
