@@ -116,11 +116,17 @@ class RssHubSettings(BaseSettings):
 
 
 class LumiSettings(BaseSettings):
-    """Lumi-owned state + AI settings (0015).
+    """Lumi-owned state + AI settings (0015, extended 0018).
 
     - LUMIRSS_DB_PATH: the Lumi SQLite file. Defaults to
       <services/bff>/data/lumi.sqlite (git-ignored); tests override it
       with a temp path. The file is created on first storage use.
+    - LUMIRSS_DATA_DIR: base directory for Lumi-owned runtime state
+      (secrets.json, local backups, restore staging). Defaults to the
+      LUMIRSS_DB_PATH parent.
+    - FRESHRSS_DATA_DIR: where the FreshRSS data directory is mounted
+      READ-ONLY for consistent online backup (0018). Blank = FreshRSS
+      data backup unavailable (dev mode).
     - AI_API_KEY: the OpenAI-compatible API key. Server-side secret only:
       it never leaves the BFF, is never logged, and the browser only ever
       learns ``configured: true/false``. Blank = AI not configured.
@@ -129,8 +135,34 @@ class LumiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     LUMIRSS_DB_PATH: str = str(_DEFAULT_LUMI_DATA_DIR / "lumi.sqlite")
+    LUMIRSS_DATA_DIR: str = ""
+    FRESHRSS_DATA_DIR: str = ""
+    LUMIRSS_VERSION: str = "0.1.0"
+    LUMIRSS_COMMIT: str = ""
     AI_API_KEY: SecretStr = SecretStr("")
 
     @property
     def ai_configured(self) -> bool:
         return bool(self.AI_API_KEY.get_secret_value().strip())
+
+    @property
+    def data_dir(self) -> Path:
+        """Base directory for Lumi-owned runtime state (0018)."""
+        if self.LUMIRSS_DATA_DIR.strip():
+            return Path(self.LUMIRSS_DATA_DIR).expanduser()
+        return Path(self.LUMIRSS_DB_PATH).expanduser().parent
+
+    @property
+    def secrets_path(self) -> Path:
+        """Server-side secret store file (chmod 600, never in SQLite)."""
+        return self.data_dir / "secrets.json"
+
+    @property
+    def local_backups_dir(self) -> Path:
+        """Where full backups are written for the 'local' target."""
+        return self.data_dir / "backups"
+
+    @property
+    def restore_staging_dir(self) -> Path:
+        """Staging area for validated restore packages (0018)."""
+        return self.data_dir / "restore-staging"

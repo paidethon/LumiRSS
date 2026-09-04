@@ -1,0 +1,23 @@
+# Caddyfile — no authentication (trusted LAN / behind an external reverse
+# proxy). Selected by docker-entrypoint.sh when LUMIRSS_AUTH_* is empty.
+
+{$DOMAIN:localhost} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+	}
+
+	# Same-origin API: browser talks only to the BFF.
+	handle /api/* {
+		reverse_proxy bff:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

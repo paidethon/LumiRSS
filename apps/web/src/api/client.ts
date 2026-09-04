@@ -6,6 +6,7 @@ import type {
   AiSettings,
   AiSettingsUpdate,
   ApiErrorResponse,
+  BackupJob,
   Category,
   EntryConversation,
   EntryDetail,
@@ -17,10 +18,17 @@ import type {
   FreshRssUiInfo,
   OpmlImportPreview,
   OpmlImportResult,
+  OperationsStatus,
+  RemoteBackupsResponse,
+  RestorePreview,
+  RestoreResult,
+  RssHubConfig,
   RssHubRoutesResponse,
   ServerSettings,
   SourceDiscoveryResponse,
   Subscription,
+  WebDavSettings,
+  WebDavTestResult,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -427,4 +435,111 @@ export async function sendConversationMessage(
     },
   )
   return (await response.json()) as EntryConversation
+}
+
+// ---- 0018 Operations / RSSHub Control Center ----
+
+export async function getOperationsStatus(signal?: AbortSignal): Promise<OperationsStatus> {
+  return request<OperationsStatus>(`${API_BASE}/operations/status`, signal)
+}
+
+export async function getRssHubConfig(signal?: AbortSignal): Promise<RssHubConfig> {
+  return request<RssHubConfig>(`${API_BASE}/rsshub/config`, signal)
+}
+
+export async function patchRssHubConfig(values: Record<string, number | string | boolean>): Promise<RssHubConfig> {
+  const response = await rawRequest(`${API_BASE}/rsshub/config`, {
+    method: 'PATCH',
+    body: JSON.stringify({ values }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubConfig
+}
+
+export async function setRssHubSecret(key: string, value: string): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/config/secrets/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+    contentType: 'application/json',
+  })
+}
+
+export async function clearRssHubSecret(key: string): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/config/secrets/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function applyRssHubConfig(): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/config/apply`, { method: 'POST' })
+}
+
+// ---- 0018 WebDAV / Backup / Restore ----
+
+export async function getWebDavSettings(signal?: AbortSignal): Promise<WebDavSettings> {
+  return request<WebDavSettings>(`${API_BASE}/backups/webdav`, signal)
+}
+
+export async function updateWebDavSettings(body: {
+  serverUrl?: string
+  username?: string
+  password?: string
+  remoteDir?: string
+  tlsVerify?: boolean
+  clearPassword?: boolean
+}): Promise<WebDavSettings> {
+  const response = await rawRequest(`${API_BASE}/backups/webdav`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as WebDavSettings
+}
+
+export async function testWebDav(): Promise<WebDavTestResult> {
+  const response = await rawRequest(`${API_BASE}/backups/webdav/test`, { method: 'POST' })
+  return (await response.json()) as WebDavTestResult
+}
+
+export async function listBackups(signal?: AbortSignal): Promise<BackupJob[]> {
+  return request<BackupJob[]>(`${API_BASE}/backups`, signal)
+}
+
+export async function getBackupJob(id: string, signal?: AbortSignal): Promise<BackupJob> {
+  return request<BackupJob>(`${API_BASE}/backups/${encodeURIComponent(id)}`, signal)
+}
+
+export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {
+  const response = await rawRequest(`${API_BASE}/backups`, {
+    method: 'POST',
+    body: JSON.stringify({ target }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupJob
+}
+
+export async function listRemoteBackups(signal?: AbortSignal): Promise<RemoteBackupsResponse> {
+  return request<RemoteBackupsResponse>(`${API_BASE}/backups/remote`, signal)
+}
+
+export async function previewRestore(source: {
+  source: 'local' | 'remote'
+  jobId?: string
+  fileName?: string
+}): Promise<RestorePreview> {
+  const response = await rawRequest(`${API_BASE}/restore/preview`, {
+    method: 'POST',
+    body: JSON.stringify(source),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RestorePreview
+}
+
+export async function executeRestore(restoreSessionId: string, confirmation: string): Promise<RestoreResult> {
+  const response = await rawRequest(`${API_BASE}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ restoreSessionId, confirmation }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RestoreResult
 }

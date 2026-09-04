@@ -40,6 +40,10 @@ class Database:
     def path(self) -> Path:
         return self._path
 
+    def invalidate_migration_cache(self) -> None:
+        """Force migrations to re-run lazily after a live restore (0018)."""
+        self._migrated = False
+
     def _connect(self) -> sqlite3.Connection:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)

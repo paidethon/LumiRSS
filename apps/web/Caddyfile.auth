@@ -1,0 +1,30 @@
+# Caddyfile — single-user Basic Auth. Selected by docker-entrypoint.sh when
+# LUMIRSS_AUTH_USER + LUMIRSS_AUTH_HASH are both set. The __AUTH_USER__ /
+# __AUTH_HASH__ placeholders are substituted at container start (never
+# committed as real values).
+
+{$DOMAIN:localhost} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+	}
+
+	# Single-user access control. The hash must be a bcrypt hash generated
+	# with `docker run --rm caddy:2-alpine caddy hash-password`.
+	basic_auth {
+		__AUTH_USER__ __AUTH_HASH__
+	}
+
+	handle /api/* {
+		reverse_proxy bff:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

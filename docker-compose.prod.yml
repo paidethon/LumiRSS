@@ -1,0 +1,118 @@
+# LumiRSS production stack.
+#
+# Usage:
+#   cp .env.prod.example .env.prod        # fill in secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only the Caddy "web" service is published to the host. FreshRSS and
+# RSSHub stay on the internal network and are never exposed publicly.
+# The BFF has NO Docker socket; FreshRSS data is mounted READ-ONLY for
+# consistent online backup (sqlite backup API, not a raw copy).
+
+name: lumirss-prod
+
+services:
+  web:
+    build:
+      context: ./apps/web
+    container_name: lumirss-web
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      # Caddy site address. Set a real FQDN for automatic Let's Encrypt
+      # TLS; leave "localhost" for an HTTP-only trusted-LAN smoke run.
+      DOMAIN: "${DOMAIN:-localhost}"
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      bff:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 128m
+    cpus: 0.5
+
+  bff:
+    build:
+      context: ./services/bff
+    container_name: lumirss-bff
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      # Structural, tied to the mounts below (not in .env.prod).
+      LUMIRSS_DB_PATH: /data/lumi.sqlite
+      FRESHRSS_DATA_DIR: /freshrss-data
+    volumes:
+      - lumi-data:/data
+      - freshrss-data:/freshrss-data:ro
+    depends_on:
+      freshrss:
+        condition: service_healthy
+      rsshub:
+        condition: service_healthy
+    expose:
+      - "8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
+    cpus: 1.0
+
+  freshrss:
+    image: freshrss/freshrss:1.29.1
+    container_name: lumirss-freshrss
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - freshrss-data:/var/www/FreshRSS/data
+    # Internal only — never published publicly.
+    healthcheck:
+      test: ["CMD", "php", "/var/www/FreshRSS/cli/health.php", "--url", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
+    cpus: 1.0
+
+  rsshub:
+    image: diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc
+    container_name: lumirss-rsshub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+    # Internal only — never published publicly.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:1200/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 1g
+    cpus: 1.0
+
+volumes:
+  lumi-data:
+  freshrss-data:
