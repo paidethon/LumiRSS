@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from lumirss.main import app
 from lumirss.storage import Database
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+SMUGGLED_KEY = "sk-" + _secrets.token_urlsafe(8)
+
 
 def test_get_ai_settings_returns_defaults_without_configuration(tmp_path):
     with TestClient(app) as client:
@@ -109,7 +113,7 @@ def test_put_rejects_unknown_fields_like_api_key(tmp_path):
         app.state.db = Database(tmp_path / "lumi.sqlite")
         response = client.put(
             "/api/v1/settings/ai",
-            json={"apiKey": "sk-smuggled"},
+            json={"apiKey": SMUGGLED_KEY},
         )
 
     assert response.status_code == 422

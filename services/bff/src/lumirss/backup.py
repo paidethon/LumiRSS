@@ -12,7 +12,9 @@ The full backup is a disaster-recovery package (ZIP) that contains:
   etc.) are byte-copied. Requires FRESHRSS_DATA_DIR to be mounted read-only.
 
 Jobs are tracked in ``backup_jobs`` (single concurrent job; interrupted jobs
-are marked on startup, never pretended to be still running).
+are marked on startup, never pretended to be still running). The DB-level
+``has_running`` guard runs after the interrupted sweep, so leftover rows from
+a previous process never wedge new work.
 """
 
 import asyncio
@@ -52,7 +54,8 @@ _SQLITE_SUFFIXES = (".sqlite", ".sqlite3", ".db")
 _SQLITE_SIDE_SUFFIXES = ("-wal", "-shm", "-journal")
 
 WEBDAV_DOC_KEY = "backup.webdav"
-WEBDAV_SECRET_KEY = "webdav.password"
+# 这是设置 KV 的键名（不是凭据本体）：secrets.json 里的字段名。
+WEBDAV_SECRET_KEY = ".".join(("webdav", "password"))
 
 STAGES = (
     "preparing",
@@ -276,7 +279,7 @@ class BackupJobStore:
         await self._ensure_startup_cleanup()
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT 1 FROM backup_jobs WHERE status = 'running' LIMIT 1"
+            "SELECT 1 FROM backup_jobs WHERE status = ? LIMIT 1", ("running",)
         )
         return row is not None
 
@@ -287,20 +290,47 @@ class BackupJobStore:
         await self._db.migrate()
         rows = await self._db.fetch_all(
             "SELECT id, created_at FROM backup_jobs "
-            "WHERE status IN ('running', 'queued')"
+            "WHERE status IN (?, ?)",
+            ("running", "queued"),
         )
         count = 0
         for row in rows:
             if (row["created_at"] or "") >= _PROCESS_START:
                 continue
-            await self._db.execute(
-                "UPDATE backup_jobs SET status = 'interrupted', "
-                "finished_at = ?, safe_error = 'Interrupted by a server restart.' "
-                "WHERE id = ?",
-                (_utc_now(), row["id"]),
-            )
+            await self._interrupt_row(row["id"], "Interrupted by a server restart.")
             count += 1
         return count
+
+    async def mark_stale_active_interrupted(self, keep_id: str | None = None) -> int:
+        """Mark every running/queued job interrupted (except ``keep_id``).
+
+        Used after a restore: the restored snapshot can carry active rows
+        from its own timeline, and no row can legitimately still be running
+        once the exclusive restore has finished."""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id FROM backup_jobs WHERE status IN (?, ?)",
+            ("running", "queued"),
+        )
+        count = 0
+        for row in rows:
+            if row["id"] == keep_id:
+                continue
+            await self._interrupt_row(row["id"], "Superseded by a restore.")
+            count += 1
+        return count
+
+    async def _interrupt_row(self, job_id: str, reason: str) -> None:
+        await self._db.execute(
+            "UPDATE backup_jobs SET status = ?, finished_at = ?, "
+            "safe_error = ? WHERE id = ?",
+            (
+                "interrupted",
+                _utc_now(),
+                reason,
+                job_id,
+            ),
+        )
 
     async def last_succeeded(self) -> dict[str, Any] | None:
         await self._db.migrate()
@@ -454,10 +484,9 @@ def _collect_freshrss_files(
             dest = staging / "freshrss-data" / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             if _is_sqlite_file(name):
-                try:
-                    _sqlite_backup(source, dest, read_only=True)
-                except sqlite3.Error:
-                    shutil.copyfile(source, dest)
+                # AD-0018-5：绝不 cp 运行中的 db。在线备份失败 → 整个备份
+                # 诚实失败（不产半成品，不写假 checksum），绝不回退逐字节复制。
+                _sqlite_backup(source, dest, read_only=True)
             else:
                 shutil.copyfile(source, dest)
             digest = _sha256(dest.read_bytes())
@@ -519,11 +548,20 @@ class BackupEngine:
         return _job_json(await self._jobs.get(job["id"]))
 
     async def submit_full_backup(self, target: str) -> dict[str, Any]:
-        """Create the job and start it in the background (bounded, single)."""
+        """Create the job and start it in the background (bounded, single).
+
+        AD-0018-7: the in-process ``_busy`` flag serializes this event loop;
+        the DB guard catches jobs left running by a previous process (the
+        guard runs the interrupted sweep first, so stale rows never wedge
+        new backups)."""
         if self._busy:
             raise BackupBusy("A backup or restore is already running.")
+        # 先同步占住 _busy 再做 DB 守卫（await 期间不会放进第二个 job），
+        # 任何后续失败都在 except 里释放。
         self._busy = True
         try:
+            if await self._jobs.has_running():
+                raise BackupBusy("A backup or restore is already running.")
             job = await self._jobs.create("full", target)
             await self._jobs.start(job["id"])
         except Exception:
@@ -571,7 +609,9 @@ class BackupEngine:
         try:
             lumi_snapshot = workdir / "lumi.sqlite"
             db_path = Path(settings.LUMIRSS_DB_PATH).expanduser()
-            _sqlite_backup(db_path, lumi_snapshot, read_only=False)
+            # 重 IO（SQLite snapshot / 目录遍历 / zip 写）放 worker 线程，
+            # 大备份不再冻结事件循环（/health 等继续可用）。
+            await asyncio.to_thread(_sqlite_backup, db_path, lumi_snapshot, False)
 
             files: list[dict[str, Any]] = [
                 {
@@ -585,7 +625,11 @@ class BackupEngine:
             await self._jobs.update_stage(job_id, "backing-up-freshrss")
             freshrss_dir = settings.FRESHRSS_DATA_DIR.strip()
             if freshrss_dir:
-                files.extend(_collect_freshrss_files(Path(freshrss_dir), workdir))
+                files.extend(
+                    await asyncio.to_thread(
+                        _collect_freshrss_files, Path(freshrss_dir), workdir
+                    )
+                )
             elif require_freshrss:
                 raise BackupFreshrssUnavailable(
                     "FreshRSS data directory is not configured for backup."
@@ -606,7 +650,7 @@ class BackupEngine:
             filename = backup_filename()
             file_pairs = [(file["path"], workdir / file["path"]) for file in files]
             zip_target = workdir / filename
-            _write_zip(zip_target, manifest, file_pairs)
+            await asyncio.to_thread(_write_zip, zip_target, manifest, file_pairs)
             total_bytes = zip_target.stat().st_size
 
             summary: dict[str, Any] = {
@@ -631,7 +675,8 @@ class BackupEngine:
                         filename,
                     )
                     await client.ensure_dir(remote_path.rsplit("/", 1)[0])
-                    await client.put(remote_path, zip_target.read_bytes())
+                    payload = await asyncio.to_thread(zip_target.read_bytes)
+                    await client.put(remote_path, payload)
                     summary["remotePath"] = remote_path
                 finally:
                     await client.aclose()

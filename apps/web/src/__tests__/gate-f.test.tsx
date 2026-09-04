@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import SettingsModal from '../components/settings/SettingsModal'
 import MobileSettingsScreen from '../components/MobileSettingsScreen'
 import {
@@ -239,12 +239,40 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
     expect(restored.readerPresetId).toBe(s.readerPresetId)
   })
 
-  it('备份页 UI：导出/恢复真实可用；OPML 条目已实现（0014a：不再 stale planned·0013）', () => {
+  it('备份页 UI（0018 升级）：概览/历史/WebDAV/配置迁移真实渲染', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/backups') return Promise.resolve(Response.json([]))
+        if (url === '/api/v1/operations/status') return Promise.resolve(Response.json({
+          lumi: { status: 'healthy', version: '0.1.0' },
+          sqlite: { status: 'healthy' },
+          freshrss: { status: 'unconfigured', configured: false, latencyMs: null, lastCheckedAt: null, error: null },
+          rsshub: { status: 'unconfigured', configured: false, latencyMs: null, lastCheckedAt: null, error: null, restartRequired: false, pendingConfigCount: 0 },
+          backup: { webdavConfigured: false, lastBackup: null },
+        }))
+        if (url === '/api/v1/backups/webdav') return Promise.resolve(Response.json({
+          configured: false, serverUrl: '', username: '', remoteDir: '', tlsVerify: true, passwordConfigured: false,
+        }))
+        return Promise.reject(new Error(`unexpected fetch: ${url}`))
+      }),
+    )
     openCategory(/备份与恢复/)
-    expect(screen.getByRole('button', { name: /导出备份/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /选择备份文件/ })).toBeEnabled()
-    expect(screen.queryByText('planned · 0013')).not.toBeInTheDocument()
-    expect(screen.getByText('已实现 · 0013')).toBeInTheDocument()
+    // 服务器端全量备份（0018）：概览 + 创建 + 历史（query 异步到达）
+    expect(screen.getByText('备份概览')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /创建完整备份（本机）/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /备份并上传 WebDAV/ })).toBeEnabled()
+    expect(screen.getByText('备份历史')).toBeInTheDocument()
+    expect(await screen.findByText('暂无备份')).toBeInTheDocument()
+    // WebDAV（写只读密码）
+    expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '保存' })).toBeDisabled()
+    // 0017 配置迁移能力保留
+    expect(screen.getByText(/配置迁移/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /导出配置/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /导入配置/ })).toBeEnabled()
+    vi.unstubAllGlobals()
   })
 })
 

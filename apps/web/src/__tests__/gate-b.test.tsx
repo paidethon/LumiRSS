@@ -184,7 +184,7 @@ describe('分类页 planned 语义（AC10）', () => {
     vi.unstubAllGlobals()
   })
 
-  it('数据控制页：清缓存/重置真实可用（无 planned 徽标），备份 planned', async () => {
+  it('数据控制页：清缓存/重置真实可用（无 planned 徽标），备份指向真实入口（0018）', async () => {
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /数据控制/ }))
     await waitFor(() => {
@@ -194,8 +194,9 @@ describe('分类页 planned 语义（AC10）', () => {
     // 真实按钮可点
     expect(screen.getByRole('button', { name: '清除' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '重置' })).toBeEnabled()
-    // 备份 planned（0011 路线修订顺延 0017→0018）
-    expect(screen.getByText(/planned · 0018/)).toBeInTheDocument()
+    // 0018：备份已真实实现——不再有 planned 徽标；指向「备份与恢复」分类
+    expect(screen.queryByText(/planned · 0018/)).not.toBeInTheDocument()
+    expect(screen.getByText(/在「备份与恢复」分类中管理/)).toBeInTheDocument()
   })
 
   it('重置真实生效：改设置 → 点重置 → 恢复默认', async () => {

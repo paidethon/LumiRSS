@@ -8,6 +8,7 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
@@ -99,6 +100,8 @@ from lumirss.operations import OperationsService
 from lumirss.rsshub_control import (
     RssHubControlError,
     RssHubControlStore,
+    RssHubInvalidValue,
+    RssHubUnknownKey,
     config_view,
 )
 from lumirss.backup import (
@@ -226,8 +229,10 @@ _ERROR_RESPONSES = {
     AiInvalidResponse: (502, "ai_invalid_response"),
     AiUpstreamError: (502, "ai_upstream_error"),
     AiContentUnavailable: (422, "ai_content_unavailable"),
-    # 0018 RSSHub control
-    RssHubControlError: (400, "rsshub_config_invalid"),
+    # 0018 RSSHub control（spec 稳定错误类型：unknown_key / invalid_value）
+    RssHubControlError: (400, "rsshub_invalid_value"),
+    RssHubUnknownKey: (400, "rsshub_unknown_key"),
+    RssHubInvalidValue: (400, "rsshub_invalid_value"),
     # 0018 backup / WebDAV / restore
     BackupBusy: (409, "backup_busy"),
     BackupNotFound: (404, "backup_not_found"),
@@ -237,8 +242,8 @@ _ERROR_RESPONSES = {
     BackupFreshrssUnavailable: (503, "backup_freshrss_unavailable"),
     WebDavNotConfigured: (503, "webdav_not_configured"),
     WebDavError: (502, "webdav_error"),
-    RestoreConfirmationRequired: (400, "restore_confirmation_required"),
-    RestorePreviewRequired: (400, "restore_preview_required"),
+    RestoreConfirmationRequired: (400, "backup_restore_confirmation_required"),
+    RestorePreviewRequired: (400, "backup_restore_preview_required"),
     RestoreFailed: (500, "restore_failed"),
     SecretsStoreError: (500, "secret_store_error"),
 }
@@ -285,6 +290,8 @@ _ERROR_RESPONSES = {
 @app.exception_handler(AiUpstreamError)
 @app.exception_handler(AiContentUnavailable)
 @app.exception_handler(RssHubControlError)
+@app.exception_handler(RssHubUnknownKey)
+@app.exception_handler(RssHubInvalidValue)
 @app.exception_handler(BackupBusy)
 @app.exception_handler(BackupNotFound)
 @app.exception_handler(BackupInvalid)
@@ -302,6 +309,25 @@ async def adapter_error_handler(request: Request, exc: Exception) -> JSONRespons
     return JSONResponse(
         status_code=status,
         content={"error": {"type": error_type, "message": str(exc)}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Pydantic validation failures join the stable error envelope.
+
+    Keeps the 422 status (existing contract) but never echoes request
+    details back — the message is a static string."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "type": "invalid_request",
+                "message": "The request body failed validation.",
+            }
+        },
     )
 
 
@@ -1301,19 +1327,6 @@ class RssHubConfigPatch(BaseModel):
     values: dict[str, object] = Field(default_factory=dict)
 
 
-def _rsshub_config_view(request: Request) -> dict[str, object]:
-    store = _get_rsshub_control_store(request)
-    desired = store.desired()
-    flags = store.restart_required_flags()
-    return {
-        "schemaVersion": 1,
-        "configured": _rsshub_runtime_configured(),
-        "pendingCount": flags["count"],
-        "pendingSecrets": flags["pendingSecrets"],
-        "groups": config_view(store, desired, flags),
-    }
-
-
 async def _rsshub_config_view_async(request: Request) -> dict[str, object]:
     store = _get_rsshub_control_store(request)
     desired = await store.desired()
@@ -1568,28 +1581,33 @@ async def _locate_backup_package(
         return path, path.name
 
     # remote
-    from lumirss.webdav import backup_root_path
+    from lumirss.webdav import backup_root_path, quote_path_segment
 
     if not body.fileName:
         raise BackupNotFound("A fileName is required for remote restore.")
+    # 恶意 WebDAV 服务器可能构造带路径分隔符的 listing 名：本地落盘名
+    # 只允许纯文件名（与远端同名文件的匹配仍按原始 fileName 精确比较）。
+    if body.fileName != Path(body.fileName).name or body.fileName in ("", ".", ".."):
+        raise BackupInvalid("The remote backup file name is not a plain file name.")
     store = _get_webdav_settings(request)
     doc = await store.load()
     if not doc.get("serverUrl"):
         raise WebDavNotConfigured("WebDAV is not configured.")
     client = await store.build_client(doc)
-    root = backup_root_path(doc.get("remoteDir", ""))
-    entries = await client.list_dir(root)
-    match = next((e for e in entries if e["name"] == body.fileName), None)
-    if match is None:
+    try:
+        root = backup_root_path(doc.get("remoteDir", ""))
+        entries = await client.list_dir(root)
+        match = next((e for e in entries if e["name"] == body.fileName), None)
+        if match is None:
+            raise BackupNotFound("Remote backup not found.")
+        # Download into a temp file for verification.
+        stage = settings.restore_staging_dir / "downloads"
+        stage.mkdir(parents=True, exist_ok=True)
+        data = await client.get(f"{root}/{quote_path_segment(body.fileName)}")
+        dest = stage / body.fileName
+        dest.write_bytes(data)
+    finally:
         await client.aclose()
-        raise BackupNotFound("Remote backup not found.")
-    # Download into a temp file for verification.
-    stage = settings.restore_staging_dir / "downloads"
-    stage.mkdir(parents=True, exist_ok=True)
-    data = await client.get(f"{root}/{body.fileName}")
-    await client.aclose()
-    dest = stage / body.fileName
-    dest.write_bytes(data)
     return dest, body.fileName
 
 
@@ -1609,7 +1627,53 @@ async def restore_preview(
 async def restore_execute(
     body: RestoreExecuteBody, request: Request
 ) -> dict[str, object]:
-    """Execute a previously previewed restore (explicit confirmation)."""
+    """Execute a previously previewed restore (explicit confirmation).
+
+    AD-0018-7: the destructive restore is serialized against backups via the
+    engine flag plus a DB-level guard (the guard runs the interrupted sweep
+    first, so rows left by a previous process never wedge new work), and is
+    recorded in ``backup_jobs`` (type=restore) as a persisted audit trail.
+
+    Subtlety: a successful lumi restore REPLACES the database file, so the
+    job row recorded before the swap may vanish with the old file, and the
+    restored snapshot may carry stale active rows. After execute the ledger
+    is reconciled: stale rows are marked interrupted (nothing can legitimately
+    be running once the exclusive restore finished) and the restore record is
+    re-created when the swap erased it."""
     engine = _get_backup_engine(request)
     service = _get_restore_service(request)
-    return await engine.run_restore(service, body.restoreSessionId, body.confirmation)
+    jobs = _get_backup_jobs(request)
+    if engine.running or await jobs.has_running():
+        raise BackupBusy("Another job is already in progress.")
+    job = await jobs.create("restore", "restore")
+    await jobs.start(job["id"])
+    try:
+        result = await engine.run_restore(service, body.restoreSessionId, body.confirmation)
+    except Exception as exc:
+        # run_restore / service.execute 只抛出脱敏后的安全消息（静态文本或
+        # RestoreFailed 包装），截断兜底防止异常长的内容进入 job 历史。
+        safe = (str(exc).strip() or "The restore failed.")[:300]
+        if await jobs.get(job["id"]) is None:
+            # 替换后的数据库里已经没有这一行：补一条终态记录
+            replacement = await jobs.create("restore", "restore")
+            await jobs.start(replacement["id"])
+            await jobs.fail(replacement["id"], safe)
+        else:
+            await jobs.fail(job["id"], safe)
+        raise
+    # 成功：快照残影的 running/queued 行全部标记 interrupted（restore 互斥，
+    # 此刻不可能有真正在跑的 job），然后确保审计记录存在于当前数据库。
+    await jobs.mark_stale_active_interrupted(keep_id=job["id"])
+    summary = {
+        "lumiRestored": result.get("lumiRestored", False),
+        "freshrss": result.get("freshrss", "not_included"),
+        "safetyBackupId": result.get("safetyBackupId"),
+        "filename": body.restoreSessionId,
+    }
+    if await jobs.get(job["id"]) is None:
+        replacement = await jobs.create("restore", "restore")
+        await jobs.start(replacement["id"])
+        await jobs.succeed(replacement["id"], summary)
+    else:
+        await jobs.succeed(job["id"], summary)
+    return result

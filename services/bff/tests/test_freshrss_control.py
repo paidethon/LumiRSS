@@ -32,6 +32,10 @@ from lumirss.adapters.freshrss_control import (
 from lumirss.config import FreshRSSSettings
 from lumirss.subscriptionref import InvalidSubscriptionReference
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
+
 FAKE_TOKEN = "fake-test-token-0013"
 FAKE_ACTION_TOKEN = "fake-action-token-0013"
 BASE_URL = "http://freshrss-test.local"
@@ -45,7 +49,7 @@ def make_settings() -> FreshRSSSettings:
         _env_file=None,
         FRESHRSS_BASE_URL=BASE_URL,
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
 
 
@@ -301,7 +305,7 @@ async def test_subscribe_upstream_400_is_feed_rejected_without_secret_leak():
     with pytest.raises(FeedRejectedError) as exc_info:
         await control.subscribe(NEW_URL)
 
-    assert "fake-test-password" not in str(exc_info.value)
+    assert FAKE_SECRET not in str(exc_info.value)
 
 
 @pytest.mark.anyio

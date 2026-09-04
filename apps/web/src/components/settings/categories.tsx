@@ -411,14 +411,13 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         { type: 'title', value: '备份' },
         {
-          type: 'action',
-          label: '数据备份 / 恢复',
-          description:
-            '全量备份（Lumi 数据库 + FreshRSS 数据）、WebDAV 与分阶段恢复已实现（0018），入口在「备份与恢复」分类。',
-          buttonText: '备份',
-          action: () => {},
-          planned: true,
-          plannedFor: 'backup',
+          type: 'custom',
+          node: (
+            <div className="py-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              全量备份（Lumi 数据库 + FreshRSS 数据）、WebDAV 远程备份与分阶段恢复
+              在「备份与恢复」分类中管理。
+            </div>
+          ),
         },
       ]
     case 'services':

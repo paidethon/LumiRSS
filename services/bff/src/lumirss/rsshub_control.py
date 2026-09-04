@@ -39,7 +39,15 @@ GROUP_LABELS = {
 
 
 class RssHubControlError(Exception):
-    """A config key/value/secret operation was rejected (browser-safe)."""
+    """Base class for RSSHub control-center errors (stable API error types)."""
+
+
+class RssHubUnknownKey(RssHubControlError):
+    """A config/secret key outside the typed allow-list (rsshub_unknown_key)."""
+
+
+class RssHubInvalidValue(RssHubControlError):
+    """A value failing type/range validation (rsshub_invalid_value)."""
 
 
 @dataclass(frozen=True)
@@ -155,31 +163,31 @@ def defaults() -> dict[str, Any]:
 
 
 def _validate_value(item: ConfigItem, value: Any) -> Any:
-    """Validate + normalize one non-secret value (raises RssHubControlError)."""
+    """Validate + normalize one non-secret value (raises RssHubInvalidValue)."""
     if item.type == "int":
         if isinstance(value, bool) or not isinstance(value, int):
-            raise RssHubControlError(f"{item.key} must be an integer.")
+            raise RssHubInvalidValue(f"{item.key} must be an integer.")
         if item.minimum is not None and value < item.minimum:
-            raise RssHubControlError(f"{item.key} is below the allowed minimum.")
+            raise RssHubInvalidValue(f"{item.key} is below the allowed minimum.")
         if item.maximum is not None and value > item.maximum:
-            raise RssHubControlError(f"{item.key} is above the allowed maximum.")
+            raise RssHubInvalidValue(f"{item.key} is above the allowed maximum.")
         return value
     if item.type == "bool":
         if not isinstance(value, bool):
-            raise RssHubControlError(f"{item.key} must be a boolean.")
+            raise RssHubInvalidValue(f"{item.key} must be a boolean.")
         return value
     if item.type == "enum":
         if not isinstance(value, str) or value not in (item.options or ()):
-            raise RssHubControlError(
+            raise RssHubInvalidValue(
                 f"{item.key} must be one of {', '.join(item.options or ())}."
             )
         return value
     if not isinstance(value, str):
-        raise RssHubControlError(f"{item.key} must be a string.")
+        raise RssHubInvalidValue(f"{item.key} must be a string.")
     if item.max_length is not None and len(value) > item.max_length:
-        raise RssHubControlError(f"{item.key} is too long.")
+        raise RssHubInvalidValue(f"{item.key} is too long.")
     if any(ord(char) < 32 for char in value):
-        raise RssHubControlError(f"{item.key} must not contain control characters.")
+        raise RssHubInvalidValue(f"{item.key} must not contain control characters.")
     return value
 
 
@@ -255,13 +263,13 @@ class RssHubControlStore:
         for key, value in values.items():
             item = ITEMS_BY_KEY.get(key)
             if item is None:
-                raise RssHubControlError(f"unknown RSSHub config key '{key}'")
+                raise RssHubUnknownKey(f"unknown RSSHub config key '{key}'")
             if item.secret:
-                raise RssHubControlError(
+                raise RssHubInvalidValue(
                     f"'{key}' is a secret; use the secret endpoint."
                 )
             if not item.editable:
-                raise RssHubControlError(f"'{key}' is not editable.")
+                raise RssHubInvalidValue(f"'{key}' is not editable.")
             updated[key] = _validate_value(item, value)
         document["values"].update(updated)
         await self._save_doc(DESIRED_KEY, document)
@@ -306,11 +314,11 @@ class RssHubControlStore:
         """Write one secret (write-only; bumps secretsVersion)."""
         item = ITEMS_BY_KEY.get(key)
         if item is None or not item.secret:
-            raise RssHubControlError(f"'{key}' is not a known secret key.")
+            raise RssHubUnknownKey(f"'{key}' is not a known secret key.")
         if not value.strip():
-            raise RssHubControlError("secret value must not be blank.")
+            raise RssHubInvalidValue("secret value must not be blank.")
         if len(value) > MAX_SECRET_LENGTH:
-            raise RssHubControlError("secret value is too long.")
+            raise RssHubInvalidValue("secret value is too long.")
         self._secrets.set(self._secret_store_key(key), value)
         await self._bump_secrets_version()
 
@@ -318,7 +326,7 @@ class RssHubControlStore:
         """Clear one secret (bumps secretsVersion)."""
         item = ITEMS_BY_KEY.get(key)
         if item is None or not item.secret:
-            raise RssHubControlError(f"'{key}' is not a known secret key.")
+            raise RssHubUnknownKey(f"'{key}' is not a known secret key.")
         self._secrets.delete(self._secret_store_key(key))
         await self._bump_secrets_version()
 

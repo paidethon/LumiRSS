@@ -77,7 +77,7 @@ def test_rsshub_config_patch_and_restart_required(tmp_path):
 
         rejected = client.patch("/api/v1/rsshub/config", json={"values": {"FAKE": 1}})
         assert rejected.status_code == 400
-        assert rejected.json()["error"]["type"] == "rsshub_config_invalid"
+        assert rejected.json()["error"]["type"] == "rsshub_unknown_key"
     finally:
         client.__exit__(None, None, None)
 

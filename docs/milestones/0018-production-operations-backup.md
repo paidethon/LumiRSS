@@ -1,6 +1,6 @@
 # 0018 — Production, Operations & Backup
 
-> Status: **In Progress** · Branch: `feat/0018-production-operations-backup`
+> Status: **Completed (2026-09-05)** · Branch: `feat/0018-production-operations-backup`
 
 ## Why
 
@@ -303,17 +303,17 @@ restart 的前提下安全注入 runtime env，故如实标记）。secret 项 A
 
 ## Gate checklist
 
-- [ ] G1 — Spec frozen（本文件）
-- [ ] G2 — Production deployment foundation（compose/Dockerfile/Caddy/env/卷/健康）
-- [ ] G3 — RSSHub Control Center（schema/desired-applied/secret/status）
-- [ ] G4 — FreshRSS Operations（status/readiness/安全诊断）
-- [ ] G5 — Lumi Backup Engine（manifest/online backup/job model）
-- [ ] G6 — WebDAV（server-side client/settings/test）
-- [ ] G7 — Restore state machine（preview/confirm/safety/offline）
-- [ ] G8 — Backup UI（状态/手动/WebDAV/历史/配置迁移）
-- [ ] G9 — Operations UI（账户与服务）
-- [ ] G10 — Production security review（threat model）
-- [ ] G11 — Full regression + Playwright + vision QA + docs
+- [x] G1 — Spec frozen（本文件）
+- [x] G2 — Production deployment foundation（compose/Dockerfile/Caddy/env/卷/健康）
+- [x] G3 — RSSHub Control Center（schema/desired-applied/secret/status）
+- [x] G4 — FreshRSS Operations（status/readiness/安全诊断）
+- [x] G5 — Lumi Backup Engine（manifest/online backup/job model）
+- [x] G6 — WebDAV（server-side client/settings/test）
+- [x] G7 — Restore state machine（preview/confirm/safety/offline）
+- [x] G8 — Backup UI（状态/手动/WebDAV/历史/配置迁移）
+- [x] G9 — Operations UI（账户与服务）
+- [x] G10 — Production security review（threat model 见下）
+- [x] G11 — Full regression + Playwright + production smoke + docs
 
 ## Acceptance criteria
 
@@ -333,3 +333,81 @@ restart 的前提下安全注入 runtime env，故如实标记）。secret 项 A
 ## Notes during execution
 
 （执行过程中按需追加）
+
+### 2026-09-05 收口记录
+
+**审计与修复（G10 安全审查附带 spec 对照审计，修复均带回归测试）：**
+
+- FreshRSS `*.sqlite` 在线备份失败不再静默回退 `shutil.copyfile`（违反
+  AD-0018-5「绝不 cp 运行中的 db」）→ 整个备份诚实失败。`test_archive_safety.py`
+- 备份/恢复重 IO（SQLite snapshot、目录收集、zip、上传读取、恢复解包、
+  lumi 在线恢复、FreshRSS staging）全部移入 `asyncio.to_thread`，大备份不再
+  冻结事件循环。
+- 恢复互斥补充 DB 级守卫（`has_running`，先跑 interrupted sweep），跨重启
+  的残留 running 行不会卡死或漏判。
+- 恢复执行以 `type=restore` job 落账（backup_jobs）；**恢复成功会替换
+  lumi.sqlite 文件，账本随后对账**：快照残影的 running/queued 行标记
+  interrupted、被替换抹掉的 restore 记录重建（`main.py restore_execute`）。
+  该行为有生产栈实测证据（见验收）。
+- 错误类型对齐 spec：`backup_restore_confirmation_required` /
+  `backup_restore_preview_required`；RSSHub 控制错误拆分为
+  `rsshub_unknown_key` / `rsshub_invalid_value`。
+- 归档未在 manifest 声明的成员直接拒绝（`_verify_checksums`，执行点在
+  任何解包之前）。PROPFIND 响应加 8 MiB 上限；远端恢复下载文件名
+  percent-encode；`_locate_backup_package` 的 WebDAV client try/finally。
+- 死代码 `_rsshub_config_view`（缺 await 的同步变体）删除；
+  `operations/status` 的 lumi/sqlite 状态不再硬编码 healthy。
+- Caddy entrypoint：auth 两个变量只设置一个 → FATAL 退出（半配置不再静默
+  关闭访问控制）。
+- **compose env_file $ 插值坑（重要）**：docker compose v2 会对
+  `.env.prod` 值做 `$VAR` 插值，bcrypt hash（`$2b$12$…`）会被静默破坏。
+  `.env.prod.example` 已写明 `$` 必须写成 `$$`，并实测验证。
+- BFF 不再 `depends_on: rsshub: healthy`（AD-0018-3 失败隔离）：RSSHub 非
+  核心依赖，只要求已启动。
+- FreshRSS healthcheck 修正为官方默认 `php cli/health.php`（原
+  `--url http://localhost/` 校验的是 API 页面形状，几乎必然失败 →
+  BFF 永远无法启动）。生产栈实测 healthy。
+- `apps/web/.dockerignore` 误排除整个 `src/`（web 镜像无法构建）→
+  只排除测试目录。生产镜像实测构建通过。
+- Pydantic 422 加入稳定错误信封（type=invalid_request，保持 422 状态码，
+  不回显请求内容）。
+
+**Spec 偏差（有意，如实记录）：**
+
+- `rsshub_secret_not_found` 不产生：DELETE secret 为幂等 204（不存在也
+  返回成功），该错误类型保留在 spec 清单中但当前不可触发。
+- 结构化日志 + 关联 ID + 错误分类日志只部分实现（operations/status 内含
+  延迟与类型化错误；BFF 尚无全局结构化访问日志）→ 归入 0019 评估，
+  见该里程碑。
+- BFF 镜像构建 `pip install .` 依赖未 pin（非可复现构建）；web（Caddy）
+  无 healthcheck。两者记录为已知限制，非本里程碑阻塞项。
+
+**安全模型与测试对照（G10）：**
+
+| 威胁 | 防护 | 测试 |
+|---|---|---|
+| 秘密泄漏/回显 | secrets.json 0600、写只读 API、无 GET 回显、日志无秘密 | test_archive_safety、test_operations_api、test_webdav、e2e webdav（页面无密码值） |
+| 恶意归档 | traversal/绝对路径/盘符/symlink/重复名/ratio/成员数/成员大小/总量/未声明成员拒绝，checksum 先于解包 | test_archive_safety.py（10 项） |
+| 恢复破坏性 | 预览→兼容性→安全备份→显式 RESTORE→互斥→健康验证；失败保留安全备份 | test_restore.py、test_restore_api.py、e2e Flow E、生产栈实测 |
+| SSRF/URL | https 默认+TLS 校验、私网显式、同源有界 redirect、bounded 超时/响应 | test_webdav.py |
+| 任意执行 | 无 Docker socket、无 shell、typed allow-list、apply 仅快照 | test_rsshub_control.py |
+| 前端 XSS | DOMPurify 边界不变（0018 未触碰渲染管线）；article pipeline 测试 | article-pipeline.test.ts |
+
+**验收证据（2026-09-05 本机实测）：**
+
+- BFF：`uv run pytest` → **558 passed**（0017 基线 480 + 0018 后端 + 15 项
+  安全/契约新增）。
+- Web：`pnpm test` → **533 passed**（vitest）；`pnpm lint` → 0 errors；
+  `pnpm build` → 通过。
+- E2E（Playwright，真实 production 栈）：5 视口 × Flow A/B/C/E + WebDAV
+  2 例 + 移动 smoke → **17 passed**（桌面流程在 mobile 项目按设计 skip）。
+- Production smoke（隔离 project `lumirss-0018-smoke`，随机一次性凭据）：
+  compose config ✓；web/bff 镜像构建 ✓；四容器全部 healthy ✓；
+  Caddy Basic Auth（401/200）+ TLS(auto-https) ✓；静态资源与 /api 反代 ✓；
+  `/api/v1/operations/status` 真实探测（freshrss/rsshub/sqlite healthy）✓；
+  完整备份（lumi.sqlite + freshrss-data，39 文件）✓；
+  恢复全链路（preview→RESTORE→执行→健康验证→账本对账）✓；
+  重启后账本持久、无秘密进日志 ✓。
+- Browser Use 视觉验收：本会话无可用浏览器后端（IAB/CDP 均未启用），
+  如实记录不可用；视觉/布局断言由 Playwright DOM+溢出检查与失败截图
+  （gitignored test-results/）承接。

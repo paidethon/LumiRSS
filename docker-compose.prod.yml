@@ -18,10 +18,10 @@ services:
     container_name: lumirss-web
     restart: unless-stopped
     env_file: .env.prod
-    environment:
-      # Caddy site address. Set a real FQDN for automatic Let's Encrypt
-      # TLS; leave "localhost" for an HTTP-only trusted-LAN smoke run.
-      DOMAIN: "${DOMAIN:-localhost}"
+    # DOMAIN 由 .env.prod 经 env_file 直接进入容器 env（Caddyfile 读
+    # {$DOMAIN:localhost}）。不要在这里写 environment.DOMAIN：compose 的
+    # environment 优先级高于 env_file，会把 .env.prod 里的 DOMAIN 覆盖成
+    # shell 插值值，导致真实域名永远不生效（TLS 无法自动签发）。
     ports:
       - "80:80"
       - "443:443"
@@ -52,8 +52,10 @@ services:
     depends_on:
       freshrss:
         condition: service_healthy
+      # RSSHub 不是核心依赖（AD-0018-3）：它宕机只影响来源发现/预览，
+      # 不应阻止 BFF 启动。只要求已启动，不要求健康。
       rsshub:
-        condition: service_healthy
+        condition: service_started
     expose:
       - "8000"
     logging:
@@ -73,12 +75,14 @@ services:
     volumes:
       - freshrss-data:/var/www/FreshRSS/data
     # Internal only — never published publicly.
+    # 官方 health.php 校验的是 FreshRSS API 页面形状；不带 --url 时默认
+    # 检查 http://localhost/api/（镜像 WORKDIR 已是 /var/www/FreshRSS）。
     healthcheck:
-      test: ["CMD", "php", "/var/www/FreshRSS/cli/health.php", "--url", "http://localhost/"]
+      test: ["CMD", "php", "cli/health.php"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 40s
     logging:
       driver: json-file
       options:

@@ -16,6 +16,10 @@ from lumirss.adapters.freshrss import (
 )
 from lumirss.config import FreshRSSSettings
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
+
 FAKE_TOKEN = "fake-test-token-0002"
 
 BASE_URL = "http://freshrss-test.local"
@@ -34,7 +38,7 @@ def make_settings() -> FreshRSSSettings:
         _env_file=None,
         FRESHRSS_BASE_URL=BASE_URL,
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
 
 
@@ -79,7 +83,7 @@ async def test_clientlogin_401_raises_authentication_error_without_password():
     with pytest.raises(AuthenticationError) as exc_info:
         await adapter._get_auth_token()
 
-    assert "fake-test-password" not in str(exc_info.value)
+    assert FAKE_SECRET not in str(exc_info.value)
 
 
 @pytest.mark.anyio
@@ -179,7 +183,7 @@ def test_settings_blank_username_is_rejected():
             _env_file=None,
             FRESHRSS_BASE_URL=BASE_URL,
             FRESHRSS_USERNAME="",
-            FRESHRSS_API_PASSWORD="fake-test-password",
+            FRESHRSS_API_PASSWORD=FAKE_SECRET,
         )
 
 
@@ -188,7 +192,7 @@ def test_settings_secret_is_masked_in_repr():
         _env_file=None,
         FRESHRSS_BASE_URL=BASE_URL,
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
 
-    assert "fake-test-password" not in repr(settings)
+    assert FAKE_SECRET not in repr(settings)

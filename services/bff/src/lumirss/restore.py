@@ -19,11 +19,13 @@ All failures keep the safety backup, keep the original backup, record the
 failure stage and return a safe (stacktrace-free, credential-free) message.
 """
 
+import asyncio
 import json
 import os
 import posixpath
 import shutil
 import sqlite3
+import time
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -91,12 +93,14 @@ def _load_manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
 
 def _verify_checksums(archive: zipfile.ZipFile, manifest: dict[str, Any]) -> None:
     names = set(archive.namelist())
+    declared: set[str] = {"manifest.json"}
     for entry in manifest["files"]:
         path = entry.get("path")
         if not isinstance(path, str):
             raise BackupInvalid("Backup manifest has an invalid file entry.")
         if path not in names:
             raise BackupInvalid("Backup is missing a declared file.")
+        declared.add(path)
         info = archive.getinfo(path)
         expected_sha = entry.get("sha256")
         expected_size = entry.get("size")
@@ -107,6 +111,11 @@ def _verify_checksums(archive: zipfile.ZipFile, manifest: dict[str, Any]) -> Non
         digest = _sha256(archive.read(path))
         if digest != expected_sha:
             raise BackupChecksumMismatch("Backup failed checksum verification.")
+    # 未在 manifest.files 声明的成员没有 checksum 覆盖 = 不可信内容，
+    # 直接拒绝（manifest.json 是归档自身元数据，除外）。
+    undeclared = names - declared
+    if undeclared:
+        raise BackupInvalid("Backup contains files not declared in the manifest.")
 
 
 def _reject_unsafe_member(name: str, info: zipfile.ZipInfo) -> str:
@@ -158,12 +167,13 @@ def safe_extract(
     extracted: dict[str, Path] = {}
     root = dest_dir.resolve()
     for name, info in planned:
-        target = (dest_dir / name).resolve()
-        if not str(target).startswith(str(root) + os.sep) and target != root:
+        # zipfile.extract 会自行清洗成员路径（去除绝对路径前缀、'.',
+        # '..' 段），返回清洗后的实际落盘路径；随后再做一次解析后
+        # 包含检查，确认仍在目标目录内才允许继续。
+        written = Path(archive.extract(info, dest_dir))
+        target = written.resolve()
+        if target != root and not target.is_relative_to(root):
             raise BackupInvalid("Backup contains an unsafe path.")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with archive.open(info) as source, open(target, "wb") as sink:
-            shutil.copyfileobj(source, sink)
         manifest_entry = expected.get(name)
         if manifest_entry is not None:
             digest = _sha256(target.read_bytes())
@@ -192,17 +202,66 @@ class RestoreService:
     def _stage_dir(self, session_id: str) -> Path:
         return self._settings.restore_staging_dir / session_id
 
+    # 单用户场景下的有界保留：最多同时持有 8 个 preview 会话 + 最近 24h
+    # 的远端下载缓存；超出的会话/下载物在下次 preview 时清理。
+    MAX_SESSIONS = 8
+    DOWNLOAD_MAX_AGE_SECONDS = 24 * 3600
+
+    def _prune_staging(self) -> None:
+        staging = self._settings.restore_staging_dir
+        live_ids = set(self._sessions)
+        if staging.is_dir():
+            for entry in staging.iterdir():
+                if not entry.is_dir():
+                    continue
+                if entry.name in ("downloads", "restore-ready"):
+                    continue
+                if entry.name not in live_ids:
+                    shutil.rmtree(entry, ignore_errors=True)
+            downloads = staging / "downloads"
+            if downloads.is_dir():
+                cutoff = time.time() - self.DOWNLOAD_MAX_AGE_SECONDS
+                for file in downloads.iterdir():
+                    try:
+                        if file.is_file() and file.stat().st_mtime < cutoff:
+                            file.unlink()
+                    except OSError:
+                        pass
+        # 会话数上限：最旧的先出
+        overflow = len(self._sessions) - self.MAX_SESSIONS
+        if overflow > 0:
+            for session_id in list(self._sessions)[:overflow]:
+                session = self._sessions.pop(session_id)
+                shutil.rmtree(session["stage"], ignore_errors=True)
+
+    @staticmethod
+    def _verify_package(zip_path: Path) -> dict[str, Any]:
+        """CPU/IO-bound manifest + checksum verification (runs in a thread)."""
+        with zipfile.ZipFile(zip_path) as archive:
+            manifest = _load_manifest(archive)
+            _verify_checksums(archive, manifest)
+        return manifest
+
+    @staticmethod
+    def _extract_package(zip_path: Path, extract_dir: Path) -> dict[str, Any]:
+        """Re-verify then safe-extract (runs in a thread)."""
+        with zipfile.ZipFile(zip_path) as archive:
+            manifest = _load_manifest(archive)
+            _verify_checksums(archive, manifest)
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            safe_extract(archive, extract_dir, manifest)
+        return manifest
+
     async def preview(self, zip_path: Path) -> dict[str, Any]:
         """Validate a backup package and return a preview + session id."""
+        self._prune_staging()
         session_id = uuid.uuid4().hex
         stage = self._stage_dir(session_id)
         stage.mkdir(parents=True, exist_ok=True)
         self._sessions[session_id] = {"zip": zip_path, "stage": stage}
 
         try:
-            with zipfile.ZipFile(zip_path) as archive:
-                manifest = _load_manifest(archive)
-                _verify_checksums(archive, manifest)
+            manifest = await asyncio.to_thread(self._verify_package, zip_path)
         except Exception:
             shutil.rmtree(stage, ignore_errors=True)
             self._sessions.pop(session_id, None)
@@ -255,18 +314,19 @@ class RestoreService:
 
         safety_job = None
         try:
-            # 1. Re-verify (tamper check between preview and execute).
-            with zipfile.ZipFile(zip_path) as archive:
-                manifest = _load_manifest(archive)
-                _verify_checksums(archive, manifest)
+            # 1. Re-verify (tamper check between preview and execute), then
+            # 2/3. safety backup + safe extraction (heavy IO in worker threads).
+            await asyncio.to_thread(self._verify_package, zip_path)
 
             # 2. Safety backup of the CURRENT state.
             safety_job = await self._safety_backup()
 
             # 3. Extract safely.
             extract_dir = stage / "extracted"
-            with zipfile.ZipFile(zip_path) as archive:
-                extracted = safe_extract(archive, extract_dir, manifest)
+            manifest = await asyncio.to_thread(self._extract_package, zip_path, extract_dir)
+            extracted = {
+                entry["path"]: extract_dir / entry["path"] for entry in manifest["files"]
+            }
 
             # 4. Restore lumi.sqlite in place (online backup API).
             result: dict[str, Any] = {
@@ -282,14 +342,9 @@ class RestoreService:
             freshrss_files = [p for p in extracted if p.startswith("freshrss-data/")]
             if freshrss_files:
                 ready_dir = self._settings.restore_staging_dir / "restore-ready" / "freshrss"
-                if ready_dir.exists():
-                    shutil.rmtree(ready_dir)
-                ready_dir.mkdir(parents=True, exist_ok=True)
-                for rel in freshrss_files:
-                    source = extracted[rel]
-                    target = ready_dir / Path(rel).relative_to("freshrss-data")
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, target)
+                await asyncio.to_thread(
+                    self._stage_freshrss_offline, freshrss_files, extracted, ready_dir
+                )
                 result["freshrss"] = "offline_restore_required"
                 result["freshrssStagedAt"] = str(ready_dir)
 
@@ -310,7 +365,23 @@ class RestoreService:
                 "original backup was kept; review the backup history."
             ) from exc
 
-    async def _restore_lumi(self, restored_snapshot: Path) -> None:
+    @staticmethod
+    def _stage_freshrss_offline(
+        freshrss_files: list[str],
+        extracted: dict[str, Path],
+        ready_dir: Path,
+    ) -> None:
+        """Copy staged FreshRSS files to restore-ready (runs in a thread)."""
+        if ready_dir.exists():
+            shutil.rmtree(ready_dir)
+        ready_dir.mkdir(parents=True, exist_ok=True)
+        for rel in freshrss_files:
+            source = extracted[rel]
+            target = ready_dir / Path(rel).relative_to("freshrss-data")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+    def _restore_lumi_sync(self, restored_snapshot: Path) -> None:
         db_path = Path(self._settings.LUMIRSS_DB_PATH).expanduser()
         source = sqlite3.connect(str(restored_snapshot))
         try:
@@ -330,6 +401,9 @@ class RestoreService:
         if result is None or str(result[0]).lower() != "ok":
             raise RestoreFailed("The restored database failed its integrity check.")
         self._db.invalidate_migration_cache()
+
+    async def _restore_lumi(self, restored_snapshot: Path) -> None:
+        await asyncio.to_thread(self._restore_lumi_sync, restored_snapshot)
 
     async def _health_after_restore(self) -> dict[str, Any]:
         try:

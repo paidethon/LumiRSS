@@ -140,6 +140,23 @@ def test_full_backup_requires_freshrss_when_missing(tmp_path, monkeypatch):
     assert "FreshRSS" in result["safe_error"]
 
 
+def test_corrupt_freshrss_sqlite_fails_backup_instead_of_raw_copy(tmp_path, monkeypatch):
+    """AD-0018-5 回归：在线备份失败必须让整个备份诚实失败，
+    绝不静默回退成对可能正在写入的 db 的逐字节复制。"""
+    freshrss = _make_freshrss_fixture(tmp_path)
+    # 一个扩展名是 .sqlite 但内容不是 SQLite 的文件（例如写入中途损坏）
+    (freshrss / "users" / "admin" / "broken.sqlite").write_bytes(b"definitely not a database")
+    monkeypatch.setenv("FRESHRSS_DATA_DIR", str(freshrss))
+    data_dir, db, jobs, engine = _setup(tmp_path, monkeypatch)
+
+    result = run(_submit_and_wait(engine, jobs, "local"))
+    assert result["status"] == "failed"
+    assert result["safe_error"]  # 有安全错误信息
+    # 不产半成品：本地备份目录里没有归档文件
+    backups_dir = data_dir / "backups"
+    assert not backups_dir.exists() or not any(backups_dir.iterdir())
+
+
 def test_concurrent_backup_is_rejected(tmp_path, monkeypatch):
     freshrss = _make_freshrss_fixture(tmp_path)
     monkeypatch.setenv("FRESHRSS_DATA_DIR", str(freshrss))

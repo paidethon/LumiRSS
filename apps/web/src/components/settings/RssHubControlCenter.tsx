@@ -122,6 +122,7 @@ function SecretField({ item }: { item: RssHubConfigItem }) {
         </Button>
         {item.configured && (
           <Button size="sm" variant="ghost" disabled={clear.isPending} onClick={() => clear.mutate(item.key)}>
+            <Trash2 aria-hidden className="size-3.5" />
             清除
           </Button>
         )}
@@ -200,11 +201,6 @@ export function RssHubControlCenter() {
   const apply = useApplyRssHubConfigMutation()
   const [draft, setDraft] = useState<Record<string, number | string | boolean> | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const items = useMemo(() => {
-    if (!config.data) return []
-    return config.data.groups.flatMap((g) => g.items)
-  }, [config.data])
 
   const values = useMemo(() => {
     if (!config.data) return {}
@@ -305,6 +301,15 @@ export function RssHubControlCenter() {
         <Button size="sm" onClick={save} disabled={Object.keys(dirtyEntries).length === 0 || patch.isPending}>
           {patch.isPending ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : <CheckCircle2 aria-hidden className="size-3.5" />}
           保存更改
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => { setError(null); setDraft(null) }}
+          disabled={Object.keys(dirtyEntries).length === 0}
+        >
+          <RotateCcw aria-hidden className="size-3.5" />
+          放弃更改
         </Button>
         <Button size="sm" variant="secondary" onClick={() => apply.mutate()} disabled={data.pendingCount === 0 || apply.isPending}>
           标记为已应用

@@ -26,7 +26,13 @@ from defusedxml import ElementTree
 
 _MAX_REDIRECTS = 5
 _MAX_RESPONSE_BYTES = 256 * 1024 * 1024  # 256 MiB bound for downloaded backups
+_MAX_LIST_BYTES = 8 * 1024 * 1024  # 8 MiB bound for PROPFIND listings
 _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
+
+def quote_path_segment(segment: str) -> str:
+    """Percent-encode one path segment for use in a request URL."""
+    return urllib.parse.quote(segment, safe="")
 
 
 class WebDavNotConfigured(Exception):
@@ -251,8 +257,17 @@ class WebDavClient:
         if response.status_code not in (200, 207):
             await response.aclose()
             raise WebDavError("WebDAV listing failed.")
-        raw = await response.aread()
+        # PROPFIND 响应同样有界（与 GET 的 _MAX_RESPONSE_BYTES 一致）。
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > _MAX_LIST_BYTES:
+                await response.aclose()
+                raise WebDavError("WebDAV listing is too large.")
+            chunks.append(chunk)
         await response.aclose()
+        raw = b"".join(chunks)
         try:
             root = ElementTree.fromstring(raw)
         except Exception:

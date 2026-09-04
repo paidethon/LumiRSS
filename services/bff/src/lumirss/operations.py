@@ -136,8 +136,10 @@ class OperationsService:
         sqlite = await self.sqlite_status()
         freshrss = await self.freshrss_status()
         rsshub = await self.rsshub_status()
+        # lumi 状态如实反映核心存储（无假指标）：sqlite 不可用即 degraded。
+        lumi_status = "healthy" if sqlite.get("status") == "healthy" else "degraded"
         return {
-            "lumi": {"status": "healthy", "version": LumiSettings().LUMIRSS_VERSION},
+            "lumi": {"status": lumi_status, "version": LumiSettings().LUMIRSS_VERSION},
             "sqlite": sqlite,
             "freshrss": {"configured": freshrss["status"] != "unconfigured", **freshrss},
             "rsshub": {"configured": rsshub["status"] != "unconfigured", **rsshub},
@@ -157,7 +159,7 @@ class OperationsService:
         return ready, {
             "status": "ok" if ready else "unavailable",
             "components": {
-                "lumi": {"status": "healthy"},
+                "lumi": {"status": "healthy" if ready else "unavailable"},
                 "sqlite": sqlite,
                 "freshrss": freshrss["status"],
                 "rsshub": rsshub["status"],

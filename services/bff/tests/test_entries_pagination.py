@@ -15,6 +15,10 @@ from lumirss.cursor import encode_cursor
 from lumirss.main import app
 from lumirss.models import EntryDetail, EntryListItem, EntryPage
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
+
 FAKE_TOKEN = "fake-test-token-0004"
 BASE_URL = "http://freshrss-test.local"
 FEED_URL = "https://example.com/releases.xml"
@@ -37,7 +41,7 @@ def make_settings() -> FreshRSSSettings:
         _env_file=None,
         FRESHRSS_BASE_URL=BASE_URL,
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
 
 

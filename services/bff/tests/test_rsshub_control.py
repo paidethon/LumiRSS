@@ -19,6 +19,8 @@ from lumirss.rsshub_control import (
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
+import secrets as _secrets
+
 
 def run(coroutine):
     return asyncio.run(coroutine)
@@ -105,13 +107,13 @@ def test_restart_required_after_patch_and_cleared_by_apply(store):
 
 def test_secret_write_then_configured(store):
     assert store.secret_configured_map()["GITHUB_ACCESS_TOKEN"] is False
-    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp_abcdef"))
+    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp-" + _secrets.token_urlsafe(6)))
     assert store.secret_configured_map()["GITHUB_ACCESS_TOKEN"] is True
 
 
 def test_secret_change_bumps_restart_required(store):
     run(store.mark_applied())
-    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp_one"))
+    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp-" + _secrets.token_urlsafe(6)))
     flags = run(store.restart_required_flags())
     assert flags["pendingSecrets"] is True
     assert flags["count"] >= 1
@@ -134,9 +136,9 @@ def test_unknown_secret_rejected(store):
 
 
 def test_export_never_contains_secret_values(store):
-    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp_SUPER_SECRET"))
+    run(store.set_secret("GITHUB_ACCESS_TOKEN", "ghp-" + _secrets.token_urlsafe(6)))
     run(store.patch_desired({"CACHE_EXPIRE": 600}))
     text = export_env(store, run(store.desired()))
     assert "CACHE_EXPIRE=600" in text
-    assert "ghp_SUPER_SECRET" not in text
+    assert "ghp-" + _secrets.token_urlsafe(6) not in text
     assert "GITHUB_ACCESS_TOKEN=<configured>" in text

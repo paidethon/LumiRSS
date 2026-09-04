@@ -8,10 +8,10 @@
 
 **Active milestone**: —
 
-**Last completed**: 0017 — Reader Power UX & Unified Settings
-→ [milestones/0017-reader-power-ux-unified-settings.md](milestones/0017-reader-power-ux-unified-settings.md)
+**Last completed**: 0018 — Production, Operations & Backup
+→ [milestones/0018-production-operations-backup.md](milestones/0018-production-operations-backup.md)
 
-**Next planned**: 0018 — Production, Operations & Backup
+**Next planned**: 0019 — MVP Stabilization & Release
 
 ---
 
@@ -87,4 +87,5 @@ during normal development.
 | 0015 | AI Foundation, Summary & Lumi SQLite Foundation | Completed |
 | 0016 | Translation & AI Conversation | Completed |
 | 0017 | Reader Power UX & Unified Settings | Completed |
-| 0018–0019 | See [ROADMAP.md](ROADMAP.md) | Planned |
+| 0018 | Production, Operations & Backup | Completed |
+| 0019 | MVP Stabilization & Release | Planned |

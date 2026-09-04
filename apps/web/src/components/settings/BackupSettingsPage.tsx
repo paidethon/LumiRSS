@@ -1,46 +1,51 @@
-/** BackupSettingsPage — 备份与恢复（0010a F5，AC26/AC27；0017 简化）。
- * OrigRead 配置备份语义复刻（inspired）：
- * - 导出：JSON 信封（schemaVersion/appName/createdAt + 全部本地设置）下载；
- * - 导入：inspect 摘要预览 → validate-before-mutate → 合并恢复；
- * - 0017：浏览器端已不存在任何 API Key（翻译/摘要/AI 全部走 BFF，
- *   key 只在服务端环境）——删除原「加密导出 API Key」流程；旧备份文件
- *   中的 translationSettings/encryptedSecrets 字段导入时被安全忽略
- *   （不会迁移进任何地方、不会打印）。
- * OPML：已实现（0013，数据在 FreshRSS 侧；导入导出入口在「订阅与来源」）。 */
+/** BackupSettingsPage — 备份与恢复（0018 G8 升级）。
+ *
+ * 页面职责拆分到 settings/backup/：
+ * - BackupOverview：概览 + 立即创建完整备份 + 活动 job 状态；
+ * - BackupHistoryCard：job 历史 + 分阶段恢复向导入口；
+ * - WebDavCard：服务器端 WebDAV 目标（password 写只读）；
+ * - ConfigMigrationSection：0017 的浏览器本地设置导出/导入（明确归为
+ *   「配置迁移」，与服务器端全量备份是两种不同能力，均真实可用）。
+ *
+ * OPML（0013，订阅数据在 FreshRSS 侧）入口仍在「订阅与来源」。
+ */
 
 import { useRef, useState } from 'react'
-import { Download, Upload } from 'lucide-react'
+import { Download, FileJson, Upload } from 'lucide-react'
 import { normalizeSettings, useAppSettings, type AppSettings } from '../../store/app-settings'
 import { Button } from '../ui/Button'
+import { BackupOverview } from './backup/BackupOverview'
+import { BackupHistoryCard } from './backup/BackupHistoryCard'
+import { WebDavCard } from './backup/WebDavCard'
 
-const BACKUP_SCHEMA_VERSION = 1
+const CONFIG_SCHEMA_VERSION = 1
 
-/** 导出信封（纯设置；无任何 secret 字段）。 */
-interface BackupEnvelope {
+/** 配置迁移导出信封（纯本地设置；无任何 secret 字段）。 */
+interface ConfigEnvelope {
   schemaVersion: number
   appName: 'LumiRSS'
   createdAt: string
   settings: AppSettings
 }
 
-export function BackupSettingsSection() {
+/** 0017 能力保留：浏览器本地设置（外观 / 阅读 / 过滤规则 / 预设）导出导入。
+ * 与服务器端「全量备份」不同：这里只迁移本设备 UI 配置，不涉及服务端数据。 */
+function ConfigMigrationSection() {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
 
   const [busy, setBusy] = useState(false)
-
   // 导入状态机：idle → inspect（摘要预览）→ done/error
-  const [inspect, setInspect] = useState<{ file: File; summary: string; env: BackupEnvelope } | null>(null)
+  const [inspect, setInspect] = useState<{ file: File; summary: string; env: ConfigEnvelope } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // ---- 导出 ----
   const doExport = () => {
     setBusy(true)
     try {
-      const env: BackupEnvelope = {
-        schemaVersion: BACKUP_SCHEMA_VERSION,
+      const env: ConfigEnvelope = {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
         appName: 'LumiRSS',
         createdAt: new Date().toISOString(),
         settings: { ...settings },
@@ -57,14 +62,13 @@ export function BackupSettingsSection() {
     }
   }
 
-  // ---- 导入：inspect（只读摘要，validate 信封） ----
   const inspectFile = async (file: File) => {
     setImportError(null)
     setImportResult(null)
     try {
-      const env = JSON.parse(await file.text()) as BackupEnvelope
+      const env = JSON.parse(await file.text()) as ConfigEnvelope
       // validate-before-mutate：信封校验在任何写入之前
-      if (env.schemaVersion !== BACKUP_SCHEMA_VERSION || env.appName !== 'LumiRSS' || !env.settings) {
+      if (env.schemaVersion !== CONFIG_SCHEMA_VERSION || env.appName !== 'LumiRSS' || !env.settings) {
         throw new Error('envelope')
       }
       const parts = [
@@ -79,7 +83,6 @@ export function BackupSettingsSection() {
     }
   }
 
-  // ---- 导入：确认恢复（先全部校验再写入） ----
   const doRestore = () => {
     if (!inspect) return
     setImportError(null)
@@ -90,7 +93,7 @@ export function BackupSettingsSection() {
       // 旧备份的 translationSettings/encryptedSecrets 不是当前 schema
       // 字段，normalize 直接丢弃（浏览器端翻译 Key 已随 0016/0017 退役）。
       const restored = normalizeSettings({ ...env.settings })
-      // 部分字段保留本机状态：布局宽度/折叠（设备相关，OrigRead 同思路）
+      // 部分字段保留本机状态：布局宽度/折叠（设备相关）
       const merged = normalizeSettings({
         ...restored,
         sidebarWidth: settings.sidebarWidth,
@@ -111,87 +114,73 @@ export function BackupSettingsSection() {
   }
 
   return (
-    <div>
-      {/* 导出 */}
-      <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-        <p className="text-sm font-medium text-[var(--lumi-text-primary)]">导出配置备份</p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-          包含全部本地设置、过滤规则与阅读预设（JSON，可跨设备迁移）。不包含任何
-          API Key（浏览器不保存任何密钥）。
-        </p>
-        <div className="mt-3">
-          <Button size="sm" onClick={doExport} disabled={busy}>
-            <Download aria-hidden className="size-3.5" />
-            导出备份
-          </Button>
-        </div>
+    <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
+      <div className="flex items-center gap-2">
+        <FileJson aria-hidden className="size-4 shrink-0 text-[var(--lumi-text-tertiary)]" />
+        <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">配置迁移（本设备 UI 设置）</h3>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        导出 / 导入浏览器本地设置：外观、阅读排版、过滤规则与阅读预设（JSON 文件，可跨设备迁移）。
+        与上方服务器端全量备份不同——这里不包含订阅、文章状态或服务端数据，也不含任何 API Key。
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" onClick={doExport} disabled={busy}>
+          <Download aria-hidden className="size-3.5" />
+          导出配置
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+          <Upload aria-hidden className="size-3.5" />
+          导入配置
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json"
+          className="sr-only"
+          aria-label="选择配置迁移文件"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void inspectFile(f)
+            e.target.value = ''
+          }}
+        />
       </div>
 
-      {/* 导入 */}
-      <div className="mt-4 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-        <p className="text-sm font-medium text-[var(--lumi-text-primary)]">恢复配置</p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-          选择备份文件 → 预览摘要 → 确认恢复。恢复不删除任何本机数据
-          （合并语义）；旧版备份中的浏览器端翻译配置会被安全忽略。
-        </p>
-        <div className="mt-3">
-          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
-            <Upload aria-hidden className="size-3.5" />
-            选择备份文件
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json"
-            className="sr-only"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) void inspectFile(f)
-              e.target.value = ''
-            }}
-          />
-        </div>
-
-        {/* inspect 摘要预览（写入前） */}
-        {inspect && (
-          <div className="mt-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] p-3">
-            <p className="text-xs leading-relaxed text-[var(--lumi-text-primary)]">
-              {inspect.file.name}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-              {inspect.summary}
-            </p>
-            <div className="mt-2.5 flex gap-2">
-              <Button size="sm" onClick={doRestore} disabled={busy}>
-                确认恢复
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setInspect(null)}>
-                取消
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {importError && <p className="mt-2 text-xs text-[var(--lumi-danger)]">{importError}</p>}
-        {importResult && (
-          <p className="mt-2 text-xs text-[var(--lumi-text-secondary)]">{importResult}</p>
-        )}
-      </div>
-
-      {/* 订阅列表（OPML）：真实可用，入口在「订阅与来源」（0013；
-           0014a：不再标注 planned —— OPML 导入导出已实现） */}
-      <div className="mt-4 flex items-center gap-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-[var(--lumi-text-primary)]">订阅列表（OPML）</p>
-          <p className="mt-0.5 text-xs text-[var(--lumi-text-secondary)]">
-            订阅数据存于 FreshRSS（唯一真源）；OPML 导入 / 导出经 BFF 控制平面
-            真实可用（0013），入口在设置 →「订阅与来源」与订阅中心页。
+      {inspect && (
+        <div className="mt-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] p-3">
+          <p className="text-xs leading-relaxed text-[var(--lumi-text-primary)]">
+            {inspect.file.name}
           </p>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+            {inspect.summary}
+          </p>
+          <div className="mt-2.5 flex gap-2">
+            <Button size="sm" onClick={doRestore} disabled={busy}>
+              确认恢复
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setInspect(null)}>
+              取消
+            </Button>
+          </div>
         </div>
-        <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-          已实现 · 0013
-        </span>
-      </div>
+      )}
+
+      {importError && <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">{importError}</p>}
+      {importResult && (
+        <p role="status" className="mt-2 text-xs text-[var(--lumi-text-secondary)]">{importResult}</p>
+      )}
+    </div>
+  )
+}
+
+export function BackupSettingsSection() {
+  return (
+    <div className="flex flex-col gap-4 py-1">
+      <BackupOverview />
+      <BackupHistoryCard />
+      <WebDavCard />
+      <ConfigMigrationSection />
     </div>
   )
 }

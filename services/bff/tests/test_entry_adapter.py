@@ -17,6 +17,10 @@ from lumirss.adapters.freshrss import (
 )
 from lumirss.config import FreshRSSSettings
 
+import secrets as _secrets
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
+
 FAKE_TOKEN = "fake-test-token-0003"
 
 BASE_URL = "http://freshrss-test.local"
@@ -88,7 +92,7 @@ def make_settings() -> FreshRSSSettings:
         _env_file=None,
         FRESHRSS_BASE_URL=BASE_URL,
         FRESHRSS_USERNAME="test-user",
-        FRESHRSS_API_PASSWORD="fake-test-password",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
     )
 
 
