@@ -9,8 +9,18 @@ import asyncio
 import httpx
 import pytest
 
+from lumirss.config import FreshRSSSettings
 from lumirss.operations import OperationsService
 from lumirss.storage import Database
+
+def _secrets_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(6)
+
+
+# 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
+FAKE_SECRET = "probe-" + _secrets_token()
 
 
 def run(coroutine):
@@ -22,8 +32,16 @@ def _service(handler, tmp_path, monkeypatch):
         RSSHUB_BASE_URL = "http://rsshub.local:1200"
 
     monkeypatch.setattr("lumirss.operations.RssHubSettings", _RssHubSettings)
+    # 显式注入 FreshRSS 配置：测试绝不读取本地 .env / 环境变量
+    # （_env_file=None），保证 CI 与本地行为一致。
+    freshrss = FreshRSSSettings(
+        _env_file=None,
+        FRESHRSS_BASE_URL="http://freshrss.local",
+        FRESHRSS_USERNAME="tester",
+        FRESHRSS_API_PASSWORD=FAKE_SECRET,
+    )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return OperationsService(client, Database(tmp_path / "lumi.sqlite"))
+    return OperationsService(client, Database(tmp_path / "lumi.sqlite"), freshrss)
 
 
 def _freshrss_healthy(request):

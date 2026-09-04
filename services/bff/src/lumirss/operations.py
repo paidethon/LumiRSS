@@ -45,9 +45,16 @@ def _status_entry(status: str, latency_ms: int | None, error: dict | None) -> di
 class OperationsService:
     """Bounded, redacted dependency probing over the shared HTTP client."""
 
-    def __init__(self, client: httpx.AsyncClient, db: Database) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        db: Database,
+        freshrss_settings: FreshRSSSettings | None = None,
+    ) -> None:
         self._client = client
         self._db = db
+        # 可注入（测试）；默认延迟读取 env/.env（与既有行为一致）
+        self._freshrss_settings = freshrss_settings
 
     async def sqlite_status(self) -> dict:
         """Core dependency: migrate() proves the DB opens and is current."""
@@ -72,7 +79,7 @@ class OperationsService:
         and has no side effects.
         """
         try:
-            settings = FreshRSSSettings()
+            settings = self._freshrss_settings or FreshRSSSettings()
         except ValidationError:
             return _status_entry("unconfigured", None, None)
         base = settings.FRESHRSS_BASE_URL.rstrip("/")

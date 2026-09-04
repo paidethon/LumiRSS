@@ -118,7 +118,12 @@ describe('Test J — success（HTML path）', () => {
     // meta 行由多个 span 组成，分别断言各字段（分隔符 · 在 span 内）
     expect(screen.getByText('示例源')).toBeInTheDocument()
     expect(screen.getByText(/作者甲/)).toBeInTheDocument()
-    expect(screen.getByText(/2026\/08\/28 18:00/)).toBeInTheDocument()
+    // 期望值由同一 formatter 规则推导，避免 CI (UTC) 与本地时区差异
+    const expected = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    }).format(new Date('2026-08-28T10:00:00Z'))
+    expect(screen.getByText(new RegExp(expected.replace(/[():]/g, '\\$&')))).toBeInTheDocument()
     const content = document.querySelector('.article-content')
     expect(content?.querySelector('strong')?.textContent).toBe('A')
     expect(content?.querySelector('script')).toBeNull()
