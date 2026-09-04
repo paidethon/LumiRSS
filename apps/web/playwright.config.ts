@@ -15,6 +15,10 @@ import { defineConfig } from '@playwright/test'
 
 const baseURL = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1:18080'
 
+// CI 静态冒烟模式：自动启动 vite preview（无后端 API，验证降级态 UI）。
+// 本地/全栈跑法不启用（栈由 docker compose 提供）。
+const ciStatic = process.env.LUMIRSS_CI_STATIC === '1'
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
@@ -23,6 +27,16 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
+  ...(ciStatic
+    ? {
+        webServer: {
+          command: 'pnpm preview --port 4173 --strictPort',
+          url: 'http://127.0.0.1:4173',
+          reuseExistingServer: false,
+          timeout: 60_000,
+        },
+      }
+    : {}),
   use: {
     baseURL,
     trace: 'retain-on-failure',

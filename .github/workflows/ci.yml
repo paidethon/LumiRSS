@@ -89,12 +89,6 @@ jobs:
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Serve production build
-        working-directory: apps/web
-        run: |
-          pnpm preview --port 4173 &
-          sleep 3
-
       - name: Run deterministic smoke (static build + honest API-degraded states)
         working-directory: apps/web
         env:
