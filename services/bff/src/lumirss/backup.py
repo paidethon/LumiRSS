@@ -321,9 +321,9 @@ class BackupJobStore:
         return count
 
     async def _interrupt_row(self, job_id: str, reason: str) -> None:
+        sql = "UPDATE backup_jobs SET status = ?, finished_at = ?, safe_error = ? WHERE id = ?"
         await self._db.execute(
-            "UPDATE backup_jobs SET status = ?, finished_at = ?, "
-            "safe_error = ? WHERE id = ?",
+            sql,
             (
                 "interrupted",
                 _utc_now(),
