@@ -17,6 +17,15 @@ from lumirss.main import app
 from lumirss.models import EntryDetail
 from lumirss.storage import Database
 
+
+def _async_provider(provider):
+    """The BFF provider factory is async (purpose→profile resolution)."""
+
+    async def factory(base_url: str, model: str):
+        return provider
+
+    return factory
+
 VALID_REF = encode_entry_ref("tag:google.com,2005:reader/item/0000000000000001")
 ARTICLE_TEXT = "This is an English article." + "Body content " * 100
 
@@ -70,7 +79,7 @@ def wire(tmp_path, *, detail=None, adapter_error=None, provider=None):
         db=db,
         adapter=adapter,
         settings_store=AiSettingsStore(db),
-        provider_factory=lambda base_url, model: provider,
+        provider_factory=_async_provider(provider),
     )
     return db, adapter, provider, service
 

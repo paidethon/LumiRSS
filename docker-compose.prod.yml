@@ -15,6 +15,9 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        # 构建溯源（关于页展示）：git rev-parse HEAD 或 CI 的 github.sha。
+        VITE_GIT_COMMIT: ${LUMIRSS_BUILD_COMMIT:-}
     container_name: lumirss-web
     restart: unless-stopped
     env_file: .env.prod
@@ -39,6 +42,9 @@ services:
   bff:
     build:
       context: ./services/bff
+      args:
+        # 构建溯源（GET /api/v1/version）：判断线上 BFF 是否为旧镜像。
+        LUMIRSS_COMMIT: ${LUMIRSS_BUILD_COMMIT:-}
     container_name: lumirss-bff
     restart: unless-stopped
     env_file: .env.prod

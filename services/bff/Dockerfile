@@ -37,9 +37,15 @@ RUN uv sync --frozen --no-dev --no-editable
 # ---- runtime: minimal image carrying only the resolved venv ----
 FROM python:3.12-slim
 
+# Build provenance (GET /api/v1/version): passed as
+# --build-arg LUMIRSS_COMMIT=<git sha> by docker-compose.prod.yml / CI so a
+# stale deployed BFF is diagnosable from the browser. Never a secret.
+ARG LUMIRSS_COMMIT=""
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LUMIRSS_DB_PATH=/data/lumi.sqlite \
+    LUMIRSS_COMMIT=${LUMIRSS_COMMIT} \
     PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app

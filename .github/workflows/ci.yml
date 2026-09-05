@@ -140,10 +140,14 @@ jobs:
       # image-build verification only — images are tagged locally and NEVER
       # pushed. BuildKit is default on ubuntu-latest runners.
       - name: Build BFF production image (uv --frozen lock install)
-        run: docker build -t lumirss-bff:ci services/bff
+        run: >-
+          docker build --build-arg LUMIRSS_COMMIT=${{ github.sha }}
+          -t lumirss-bff:ci services/bff
 
       - name: Build Web production image
-        run: docker build -t lumirss-web:ci apps/web
+        run: >-
+          docker build --build-arg VITE_GIT_COMMIT=${{ github.sha }}
+          -t lumirss-web:ci apps/web
 
       - name: Confirm images were built
         run: |

@@ -279,7 +279,7 @@ class TranslationService:
             "updated_at = excluded.updated_at",
             (*identity.row_params(), STATUS_GENERATING, _utc_now(), _utc_now()),
         )
-        provider = self._provider_factory(
+        provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
         target_language = identity.target_language

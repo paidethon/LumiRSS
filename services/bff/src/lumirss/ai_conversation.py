@@ -243,7 +243,7 @@ class ConversationService:
         for message in history[-MAX_HISTORY_MESSAGES:]:
             messages.append({"role": message.role, "content": message.content})
         messages.append({"role": "user", "content": question})
-        provider = self._provider_factory(
+        provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
         try:

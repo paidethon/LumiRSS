@@ -6,6 +6,10 @@
 
 FROM node:24-slim AS build
 WORKDIR /app
+# Build provenance for the About page (matches the BFF's GET /api/v1/version
+# contract): --build-arg VITE_GIT_COMMIT=<git sha> from compose / CI.
+ARG VITE_GIT_COMMIT=""
+ENV VITE_GIT_COMMIT=${VITE_GIT_COMMIT}
 COPY package.json pnpm-lock.yaml* ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY . .
