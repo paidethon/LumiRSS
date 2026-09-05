@@ -18,6 +18,7 @@ import {
   useRestorePreviewMutation,
 } from '../../../api/queries'
 import type { BackupJob, RestorePreview, RestoreResult } from '../../../api/types'
+import { clearPendingSettingsSync } from '../../../store/settings-sync'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { Skeleton } from '../../ui/Skeleton'
@@ -256,7 +257,7 @@ function ConfirmPane({
   )
 }
 
-function ResultPane({ result }: { result: RestoreResult }) {
+function ResultPane({ result, onReload }: { result: RestoreResult; onReload: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-text-primary)]">
@@ -285,8 +286,16 @@ function ResultPane({ result }: { result: RestoreResult }) {
         </div>
       </dl>
       <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        建议刷新页面确认数据已恢复；秘密（WebDAV / RSSHub 凭据）需重新配置。
+        恢复已替换整个本地数据库；请刷新应用以载入恢复后的数据（避免旧缓存残留）；
+        秘密（WebDAV / RSSHub 凭据）需重新配置。
       </p>
+      {/* AUDIT-012：确定性重载——刷新后从恢复后的服务端重新 hydration，
+          既清空陈旧的服务端缓存，也重置本地设置。 */}
+      <div className="flex justify-end">
+        <Button size="sm" onClick={onReload}>
+          刷新应用
+        </Button>
+      </div>
     </div>
   )
 }
@@ -338,11 +347,20 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
       { restoreSessionId: preview.restoreSessionId, confirmation },
       {
         onSuccess: (data) => {
+          // AUDIT-012：恢复成功后立即丢弃未落库的本地设置变更，
+          // 防止陈旧本地值在重载前 PATCH 覆盖刚恢复的服务端设置。
+          clearPendingSettingsSync()
           setResult(data)
           setStep('result')
         },
       },
     )
+  }
+
+  // AUDIT-012：确定性强制重载（比手工逐个无效化数十个查询更安全）。
+  const reloadApp = () => {
+    clearPendingSettingsSync()
+    window.location.reload()
   }
 
   const previewFailed = previewMutation.isError
@@ -420,7 +438,7 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
         </>
       )}
 
-      {step === 'result' && result && <ResultPane result={result} />}
+      {step === 'result' && result && <ResultPane result={result} onReload={reloadApp} />}
     </Dialog>
   )
 }

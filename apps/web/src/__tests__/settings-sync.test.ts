@@ -216,6 +216,64 @@ describe('portable 边界 — 非同步设置不触发设置 PATCH', () => {
   })
 })
 
+describe('AUDIT-010 — 失败同步不丢失本地设置（持久化 dirty + 重试）', () => {
+  it('PATCH 失败后 dirty 键持久化到 localStorage（跨重载存活）', async () => {
+    const server = makeServer()
+    server.stored = true
+    server.doc = { readerFontSize: 17 }
+    server.failPatch = true
+    stubFetch(server)
+
+    initSettingsSync({ debounceMs: 0 })
+    await vi.waitFor(() => expect(useAppSettings.getState().settings.readerFontSize).toBe(17))
+
+    useAppSettings.getState().update({ readerFontSize: 26 })
+    await flush()
+    // 本地不回滚，且未解决的 dirty 键已持久化
+    expect(useAppSettings.getState().settings.readerFontSize).toBe(26)
+    const persisted = JSON.parse(localStorage.getItem('lumirss-settings-dirty')!) as string[]
+    expect(persisted).toContain('readerFontSize')
+  })
+
+  it('重载后：持久化 dirty 键使 hydration 不用陈旧服务端值覆盖本地，并重试推送', async () => {
+    // 模拟重载前的本地状态：设置=26（本地），dirty 持久化，服务端陈旧=17
+    useAppSettings.getState().update({ readerFontSize: 26 })
+    localStorage.setItem('lumirss-settings-dirty', JSON.stringify(['readerFontSize']))
+    const server = makeServer()
+    server.stored = true
+    server.doc = { readerFontSize: 17 }
+    stubFetch(server)
+
+    initSettingsSync({ debounceMs: 0 })
+    // hydration 跳过 dirty 的 readerFontSize → 本地保持 26，并重试把它推送到服务端
+    await vi.waitFor(() => expect(server.patchCalls.length).toBeGreaterThanOrEqual(1))
+    expect(useAppSettings.getState().settings.readerFontSize).toBe(26)
+    expect(server.doc.readerFontSize).toBe(26)
+    // 成功落库后 dirty 清除
+    expect(localStorage.getItem('lumirss-settings-dirty')).toBeNull()
+  })
+
+  it('离线失败后重新联网（online 事件）重试推送（无轮询）', async () => {
+    const server = makeServer()
+    server.stored = true
+    server.doc = { readerFontSize: 17 }
+    server.failPatch = true
+    stubFetch(server)
+
+    initSettingsSync({ debounceMs: 0 })
+    await vi.waitFor(() => expect(useAppSettings.getState().settings.readerFontSize).toBe(17))
+
+    useAppSettings.getState().update({ readerFontSize: 24 })
+    await flush() // 失败
+    expect(server.doc.readerFontSize).toBe(17) // 尚未落库
+
+    // 恢复网络 → online 事件触发一次重试
+    server.failPatch = false
+    window.dispatchEvent(new Event('online'))
+    await vi.waitFor(() => expect(server.doc.readerFontSize).toBe(24))
+  })
+})
+
 describe('resetReader — 只重置 Reader 子集并同步默认值', () => {
   it('重置后 Reader 数值回默认，非 Reader 设置不动；默认值同步到 server', async () => {
     const server = makeServer()

@@ -501,10 +501,11 @@ export function useRestoreExecuteMutation() {
     mutationFn: (vars: { restoreSessionId: string; confirmation: string }) =>
       executeRestore(vars.restoreSessionId, vars.confirmation),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['backups'] }),
-        queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
-      ])
+      // AUDIT-012：破坏性恢复替换了整个 Lumi 数据库——feeds/entries/
+      // subscriptions/categories/AI/webdav/rsshub/backups 等全部缓存都
+      // 已陈旧。无效化全部查询（而不仅 backups/operations），使各屏
+      // 重拉恢复后的数据。（客户端设置在 RestoreWizard 中经 reload 重置。）
+      await queryClient.invalidateQueries()
     },
   })
 }

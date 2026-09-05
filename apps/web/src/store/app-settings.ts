@@ -839,6 +839,25 @@ export function initAppSettings(): void {
   applySideEffects(useAppSettings.getState().settings)
 }
 
+/** AUDIT-008：规范主题系统监听（取代旧 store/theme.ts 的 watchSystemTheme）。
+ *
+ * OS 偏好变化时，仅当规范 themeMode === 'system' 才重新应用主题；显式
+ * light/dark 绝不被 OS 变化覆盖。只挂一次监听（幂等），jsdom/SSR 安全。 */
+let systemThemeWatcherAttached = false
+export function watchSystemTheme(): void {
+  if (systemThemeWatcherAttached) return
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return
+  }
+  systemThemeWatcherAttached = true
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => {
+      const { settings } = useAppSettings.getState()
+      if (settings.themeMode === 'system') applySideEffects(settings)
+    })
+}
+
 // ---- 便捷 selector（组件用） ----
 
 export function selectSettings(s: AppSettingsState): AppSettings {

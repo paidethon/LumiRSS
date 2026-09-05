@@ -15,7 +15,11 @@
  * （SidebarHeader），移动端开 MobileSettingsScreen、桌面开 SettingsModal。
  * Reader 打开（selectedEntryRef != null）时隐藏（全屏阅读）。
  *
- * 仅 <768px 渲染；768–1023 保持 Drawer + list/detail（用户已确认）。 */
+ * 0020 AUDIT-016：<1024px 渲染（此前仅 <768）。768–1023 的中间/平板
+ * 宽度仍是移动 section 布局（section 页面为 lg:hidden），但 Drawer 里的
+ * Sidebar 只能导航到 home，导致「订阅/搜索」无法进入。把底栏 section
+ * 切换器延伸到整个 <1024 区间即修复该缺口（沿用既有响应式系统，
+ * 不重新设计导航）。 */
 
 import { Home, Rss, Search, Star } from 'lucide-react'
 import { useReaderUi, type AppSection } from '../store/reader-ui'
@@ -39,7 +43,7 @@ export default function MobileTabBar() {
   if (readerOpen) return null
 
   return (
-    <nav aria-label="底部导航" className="px-3 pb-2 md:hidden" style={{ paddingBottom: 'calc(var(--safe-bottom) + 0.5rem)' }}>
+    <nav aria-label="底部导航" className="px-3 pb-2 lg:hidden" style={{ paddingBottom: 'calc(var(--safe-bottom) + 0.5rem)' }}>
       <div
         className={cx(
           'flex rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)]',

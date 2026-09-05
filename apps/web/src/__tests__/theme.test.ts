@@ -7,8 +7,10 @@ import {
   isThemeMode,
   readStoredMode,
   resolveTheme,
+  resolveInitialTheme,
   writeStoredMode,
   THEME_STORAGE_KEY,
+  SETTINGS_STORAGE_KEY,
 } from '../lib/theme'
 
 /** 模拟 Storage（jsdom 的 localStorage 可用，但显式 mock 更可控） */
@@ -90,6 +92,42 @@ describe('applyTheme', () => {
     expect(el.getAttribute('data-theme')).toBe('dark')
     applyTheme(el, 'light')
     expect(el.getAttribute('data-theme')).toBe('light')
+  })
+})
+
+describe('resolveInitialTheme（AUDIT-008 首帧单一真源）', () => {
+  it('规范 key lumirss-settings.themeMode 优先于旧 key lumirss-theme', () => {
+    const s = fakeStorage({
+      [SETTINGS_STORAGE_KEY]: JSON.stringify({ themeMode: 'dark' }),
+      [THEME_STORAGE_KEY]: 'light',
+    })
+    expect(resolveInitialTheme(s, false)).toBe('dark')
+  })
+  it('显式 light/dark 不被 OS 偏好覆盖', () => {
+    const light = fakeStorage({ [SETTINGS_STORAGE_KEY]: JSON.stringify({ themeMode: 'light' }) })
+    expect(resolveInitialTheme(light, true)).toBe('light') // OS dark，显式 light 胜
+    const dark = fakeStorage({ [SETTINGS_STORAGE_KEY]: JSON.stringify({ themeMode: 'dark' }) })
+    expect(resolveInitialTheme(dark, false)).toBe('dark') // OS light，显式 dark 胜
+  })
+  it('system 跟随 OS', () => {
+    const s = fakeStorage({ [SETTINGS_STORAGE_KEY]: JSON.stringify({ themeMode: 'system' }) })
+    expect(resolveInitialTheme(s, true)).toBe('dark')
+    expect(resolveInitialTheme(s, false)).toBe('light')
+  })
+  it('规范 key 缺失时回退旧 key（迁移安全）', () => {
+    const s = fakeStorage({ [THEME_STORAGE_KEY]: 'dark' })
+    expect(resolveInitialTheme(s, false)).toBe('dark')
+  })
+  it('规范 key 为坏 JSON 时回退旧 key', () => {
+    const s = fakeStorage({
+      [SETTINGS_STORAGE_KEY]: '{not json',
+      [THEME_STORAGE_KEY]: 'light',
+    })
+    expect(resolveInitialTheme(s, true)).toBe('light')
+  })
+  it('两者都缺失 → system → 跟随 OS；storage 为 null 安全', () => {
+    expect(resolveInitialTheme(fakeStorage(), true)).toBe('dark')
+    expect(resolveInitialTheme(null, false)).toBe('light')
   })
 })
 

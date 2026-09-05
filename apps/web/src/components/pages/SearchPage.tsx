@@ -39,7 +39,7 @@ export default function SearchPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:pb-[76px]">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
         {/* 主搜索框：提交 / 清空（原生 ×）/ 取消 */}
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">

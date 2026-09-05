@@ -29,6 +29,12 @@ function isEditable(target: EventTarget | null): boolean {
   )
 }
 
+/** AUDIT-014：是否存在打开的真实模态（Dialog/Sheet/Drawer）。
+ * 仓库内所有模态原语都携 aria-modal="true"，因此这是可靠的信号。 */
+function isModalOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null
+}
+
 /** 快捷键速查表数据（设置中心「快捷键」页只读展示同一份）。 */
 export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 'j / ↓', action: '下一篇' },
@@ -48,6 +54,10 @@ export function useKeyboardShortcuts(): void {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       if (isEditable(e.target)) return
+      // AUDIT-014：当真实模态（aria-modal）打开时，j/k/u/s 不得改动其
+      // 下方隐藏的 Reader/timeline。Escape/Tab/焦点陷阱由各 Dialog 原语
+      // 自行处理，本处理器只抑制全局导航/收藏键。
+      if (isModalOpen()) return
 
       const key = e.key.toLowerCase()
       const state = useReaderUi.getState()
@@ -156,10 +166,11 @@ function entriesKeysInCache(
 }
 
 function scrollEntryIntoView(entryRef: string): void {
-  // EntryRow 根 button 带 data-entry-ref（EntryRow.tsx 同步添加）；
-  // rAF 等待 React 提交选中态变化后再滚动。
+  // EntryRow / EntryCard 的根元素（div）带 data-entry-ref；AUDIT-013：
+  // 之前用 button[data-entry-ref] 选择器（不存在该嵌套）导致 j/k
+  // 从不滚动。直接选中携带该属性的真实元素；rAF 等待 React 提交选中态。
   requestAnimationFrame(() => {
-    const el = document.querySelector(`button[data-entry-ref="${CSS.escape(entryRef)}"]`)
+    const el = document.querySelector(`[data-entry-ref="${CSS.escape(entryRef)}"]`)
     el?.scrollIntoView({ block: 'nearest' })
   })
 }

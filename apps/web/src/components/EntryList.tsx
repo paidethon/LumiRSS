@@ -305,7 +305,7 @@ export default function EntryList() {
                     <li
                       ref={sentinelRef}
                       aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
-                      className="flex items-center justify-center py-4 max-md:pb-[84px]"
+                      className="flex items-center justify-center py-4 max-lg:pb-[84px]"
                       style={{ paddingBottom: hasNextPage || isFetchingNextPage ? undefined : 'max(1rem, var(--safe-bottom))' }}
                     >
                       {isFetchingNextPage ? (
