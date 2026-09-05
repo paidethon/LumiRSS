@@ -43,6 +43,16 @@ class WebDavError(Exception):
     """A WebDAV operation failed (safe message only)."""
 
 
+class WebDavInvalidSettings(WebDavError):
+    """Client-supplied WebDAV settings are structurally invalid.
+
+    AUDIT: blank URL / unsupported scheme / credentials in URL / traversal in
+    the remote dir are CLIENT-INPUT errors and must surface as a stable 4xx,
+    not the 502 reserved for real upstream failures. Subclasses WebDavError so
+    existing ``raises(WebDavError)`` expectations still hold while main.py maps
+    this specific type to 400."""
+
+
 @dataclass(frozen=True)
 class WebDavSettings:
     server_url: str
@@ -69,19 +79,19 @@ def normalize_server_url(value: str) -> str:
     """Structural validation of the WebDAV server URL."""
     clean = value.strip()
     if not clean:
-        raise WebDavError("WebDAV server URL must not be blank.")
+        raise WebDavInvalidSettings("WebDAV server URL must not be blank.")
     parts = urllib.parse.urlsplit(clean)
     if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise WebDavError("WebDAV server URL must be an absolute http(s) URL.")
+        raise WebDavInvalidSettings("WebDAV server URL must be an absolute http(s) URL.")
     if parts.username or parts.password:
-        raise WebDavError("WebDAV server URL must not carry credentials.")
+        raise WebDavInvalidSettings("WebDAV server URL must not carry credentials.")
     if parts.query or parts.fragment:
-        raise WebDavError("WebDAV server URL must not carry a query or fragment.")
+        raise WebDavInvalidSettings("WebDAV server URL must not carry a query or fragment.")
     host = (parts.hostname or "").lower()
     if not host:
-        raise WebDavError("WebDAV server URL is missing a host.")
+        raise WebDavInvalidSettings("WebDAV server URL is missing a host.")
     if parts.scheme == "http" and not _is_private_host(host):
-        raise WebDavError(
+        raise WebDavInvalidSettings(
             "http WebDAV is only allowed for loopback/private addresses; use https."
         )
     return clean.rstrip("/")
@@ -94,12 +104,12 @@ def normalize_remote_dir(value: str) -> str:
         return ""
     parts = urllib.parse.urlsplit(clean)
     if parts.scheme or parts.netloc:
-        raise WebDavError("remote directory must be a path, not a URL.")
+        raise WebDavInvalidSettings("remote directory must be a path, not a URL.")
     if clean == "/":
         return ""
     segments = [seg for seg in clean.split("/") if seg not in ("", ".")]
     if any(seg == ".." for seg in segments):
-        raise WebDavError("remote directory must not contain '..'.")
+        raise WebDavInvalidSettings("remote directory must not contain '..'.")
     return "/" + "/".join(segments)
 
 

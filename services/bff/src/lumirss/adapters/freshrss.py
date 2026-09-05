@@ -41,7 +41,12 @@ class UpstreamError(AdapterError):
     """FreshRSS returned an unexpected status or unparseable body."""
 
 
-_NETWORK_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)
+# httpx.TransportError 是所有超时/网络/协议传输错误的共同基类
+# （ConnectError/ReadError/WriteError/CloseError、ConnectTimeout/ReadTimeout/
+# WriteTimeout/PoolTimeout、ProtocolError 等）。AUDIT：此前只列了三个具体
+# 子类，遗漏 PoolTimeout/ReadError/WriteTimeout 等会逃逸成裸 500；改为
+# 捕获超类，全部稳定映射为 UpstreamConnectionError。
+_NETWORK_ERRORS = (httpx.TransportError,)
 
 # reading-list semantics (FreshRSS 1.29.1 source, confirmed by live probe):
 # all entries except hidden ones; STATE_ALL when no it/xt filter (read +
@@ -678,6 +683,12 @@ class FreshRSSAdapter(FreshRSSSession):
     def _continuation_of(payload: dict) -> str | None:
         continuation = payload.get("continuation")
         if isinstance(continuation, str) and continuation:
+            # Lumi 的 opaque cursor 只能封装数字串 continuation（encode_cursor
+            # 的不变量）。FreshRSS 若返回非数字 continuation 属上游协议异常：
+            # 映射为稳定的 UpstreamError（502），而不是让 encode_cursor 抛
+            # 未处理的 ValueError 变成裸 500。
+            if not continuation.isdigit():
+                raise UpstreamError("FreshRSS returned a malformed continuation token.")
             return continuation
         return None
 

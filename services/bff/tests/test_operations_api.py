@@ -146,6 +146,26 @@ def test_webdav_empty_password_does_not_clear(tmp_path):
         client.__exit__(None, None, None)
 
 
+def test_webdav_invalid_settings_are_400_not_5xx(tmp_path):
+    """AUDIT: client-input WebDAV errors are stable 4xx, not the 502 reserved
+    for real upstream failures."""
+    client = _client(tmp_path)
+    try:
+        bad_bodies = [
+            {"serverUrl": "   "},  # blank
+            {"serverUrl": "ftp://dav.example.com"},  # unsupported scheme
+            {"serverUrl": "https://user:pass@dav.example.com"},  # credentials in URL
+            {"serverUrl": "not-a-url"},  # no scheme/netloc
+            {"serverUrl": "https://dav.example.com", "remoteDir": "/a/../../etc"},  # traversal
+        ]
+        for body in bad_bodies:
+            response = client.put("/api/v1/backups/webdav", json=body)
+            assert response.status_code == 400, body
+            assert response.json()["error"]["type"] == "webdav_invalid_settings", body
+    finally:
+        client.__exit__(None, None, None)
+
+
 def test_backups_list_empty(tmp_path):
     client = _client(tmp_path)
     try:

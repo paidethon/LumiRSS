@@ -177,8 +177,9 @@ function PreviewPane({
         <div className="flex items-start justify-between gap-3 py-2">
           <dt className="shrink-0 text-[var(--lumi-text-secondary)]">秘密</dt>
           <dd className="text-right text-xs leading-relaxed text-[var(--lumi-text-primary)]">
-            备份不含任何秘密{preview.excludedSecrets.length > 0 && `（排除 ${preview.excludedSecrets.length} 类）`}
-            ；恢复后需重新配置 WebDAV / RSSHub 凭据。
+            不含 Lumi 秘密值{preview.excludedSecrets.length > 0 && `（排除 ${preview.excludedSecrets.length} 类）`}
+            ；恢复后需重新配置 WebDAV / RSSHub 凭据。归档可能含
+            FreshRSS 敏感数据，请当作敏感文件妥善保管。
           </dd>
         </div>
       </dl>

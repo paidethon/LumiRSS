@@ -12,6 +12,7 @@ import pytest
 from lumirss.webdav import (
     WebDavClient,
     WebDavError,
+    WebDavInvalidSettings,
     WebDavSettings,
     backup_root_path,
     normalize_remote_dir,
@@ -36,6 +37,21 @@ def _client(handler):
 def test_normalize_rejects_credentials_in_url():
     with pytest.raises(WebDavError):
         normalize_server_url("https://user:pass@dav.example.com")
+
+
+def test_invalid_settings_are_specific_client_error_type():
+    """AUDIT: structural client-input failures raise the specific
+    WebDavInvalidSettings (mapped to 400), which is still a WebDavError so
+    existing expectations hold."""
+    assert issubclass(WebDavInvalidSettings, WebDavError)
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("ftp://dav.example.com")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("https://user:pass@dav.example.com")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_remote_dir("/a/../../etc")
 
 
 def test_normalize_rejects_public_http():

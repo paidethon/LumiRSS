@@ -28,6 +28,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Verify uv.lock is in sync with pyproject (reproducible prod image)
+        working-directory: services/bff
+        run: uv lock --check
+
       - name: Run BFF tests
         working-directory: services/bff
         run: uv run pytest -q
@@ -123,3 +127,25 @@ jobs:
           cp .env.prod.example .env.prod
           docker compose -f docker-compose.prod.yml config > /dev/null \
             && echo "compose config OK"
+
+  docker-build:
+    name: Production image build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 0020 AUDIT-019: the production Dockerfiles must actually build. Bounded
+      # image-build verification only — images are tagged locally and NEVER
+      # pushed. BuildKit is default on ubuntu-latest runners.
+      - name: Build BFF production image (uv --frozen lock install)
+        run: docker build -t lumirss-bff:ci services/bff
+
+      - name: Build Web production image
+        run: docker build -t lumirss-web:ci apps/web
+
+      - name: Confirm images were built
+        run: |
+          docker image inspect lumirss-bff:ci > /dev/null && echo "bff image OK"
+          docker image inspect lumirss-web:ci > /dev/null && echo "web image OK"

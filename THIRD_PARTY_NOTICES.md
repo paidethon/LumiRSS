@@ -106,6 +106,7 @@ Generate from `uv.lock` / installed metadata.
 | httpx | >=0.27 | BSD-3-Clause | upstream HTTP client | no |
 | pydantic-settings | >=2.0 | MIT | typed config | no |
 | uvicorn | >=0.30 | BSD-3-Clause | ASGI server | no |
+| feedparser | >=6.0.14 | BSD-2-Clause | RSS/Atom 解析（feed 预览/发现） | no |
 | defusedxml | >=0.7 | PSF-2.0 | XML 解析（0018 WebDAV PROPFIND，defusedxml） | no |
 
 ### Web dev dependencies（不进入运行时/发布物）
