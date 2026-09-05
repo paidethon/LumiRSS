@@ -27,6 +27,7 @@ import {
   UI_FONT_STACKS,
   resolveReaderBackground,
   readerTextPalette,
+  relativeLuminance,
   prefixCustomCss,
 } from '../lib/reader-style'
 import { fontFamilyName, fontIdFromUrl } from '../lib/reader-fonts'
@@ -674,6 +675,14 @@ function mix(hex: string, target: [number, number, number], ratio: number): stri
   return `rgb(${m(r, target[0])}, ${m(g, target[1])}, ${m(b, target[2])})`
 }
 
+/** accent 背景上可读的前景（白 / 近黑）。
+ * 与 reader-style 同一 WCAG 约定：相对亮度 < 0.42 视作深色背景 → 白字；
+ * 否则（亮色/黄色 accent）→ 近黑字。保留默认中深 accent 的白字观感，
+ * 仅修正亮色自定义 accent 上白字不可读的问题。 */
+function readableOnAccent(bgHex: string): string {
+  return relativeLuminance(bgHex) < 0.42 ? '#ffffff' : '#1c1c1e'
+}
+
 export function applyAppearance(settings: AppSettings): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
@@ -685,6 +694,9 @@ export function applyAppearance(settings: AppSettings): void {
   root.style.setProperty('--lumi-accent-pressed', mix(hex, [0, 0, 0], 0.16))
   const isDark = resolveTheme(settings.themeMode, prefersDarkScheme()) === 'dark'
   root.style.setProperty('--lumi-accent-soft', mix(hex, isDark ? [24, 24, 26] : [255, 255, 255], 0.86))
+  // AUDIT（accent 对比）：自定义亮色 accent 上白字不可读。按 WCAG
+  // 相对亮度选对比更高的前景（白 / 近黑），复用现有 relativeLuminance。
+  root.style.setProperty('--lumi-accent-contrast', readableOnAccent(hex))
 
   // 全局字号（root rem 缩放，Folo 同方案）
   root.style.fontSize = `${settings.uiFontSize}px`

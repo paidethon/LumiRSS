@@ -11,10 +11,11 @@
  * 横条」方案在 390px 实测布局损坏（容器缺 max-md:flex-col，内容区被
  * 挤出视口、chips 被 stretch 拉成竖条）——按 Folo 移动端模式重设计。 */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { CATEGORIES, CATEGORY_GROUPS, categoryLabel, useCategoryItems, type CategoryId } from './settings/categories'
 import { SettingItemList } from './settings/SettingItem'
+import { useModalA11y } from '../lib/use-modal-a11y'
 import { cx } from './ui/cx'
 
 export default function MobileSettingsScreen({
@@ -26,11 +27,17 @@ export default function MobileSettingsScreen({
 }) {
   // null = 首页（分组列表）；非 null = 当前 push 的子页分类
   const [page, setPage] = useState<CategoryId | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  // 0020 Gate 3：复用共享模态无障碍行为（Escape 关闭 / 焦点陷阱 /
+  // 还焦 / 背景滚动锁）——此前全屏设置为弱自定义模态，缺少这些。
+  useModalA11y(panelRef, open, onClose)
 
   if (!open) return null
 
   return (
     <div
+      ref={panelRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[var(--lumi-z-dialog)] flex flex-col bg-[var(--lumi-canvas)] md:hidden"
       role="dialog"
       aria-modal="true"

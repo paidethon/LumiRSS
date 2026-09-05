@@ -63,6 +63,18 @@
   }
 }
 
+/* 0020 AUDIT-009：应用内「减少动效」偏好（<html data-motion-reduce="true">，
+ * 由 applyAppearance 挂载）与 OS prefers-reduced-motion 等效。此前只挂了属性
+ * 却无 CSS 消费，导致该偏好对 UI 动效毫无作用。 */
+[data-motion-reduce='true'] *,
+[data-motion-reduce='true'] *::before,
+[data-motion-reduce='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* ---- 统一 scrollbar（0009 Gate 4，Folo 实测模式：6px thumb）----
  * 全局应用（Sidebar / Timeline / Reader 各自滚动的 pane 统一观感）；
  * 颜色 token 化，双主题自动适配；悬停加深。 */

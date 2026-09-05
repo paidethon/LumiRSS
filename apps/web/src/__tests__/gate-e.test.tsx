@@ -121,6 +121,24 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
     )
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
+
+  it('Escape 关闭全屏设置（0020 Gate 3：复用共享模态行为）', () => {
+    let closed = 0
+    render(withProviders(<MobileSettingsScreen open onClose={() => { closed += 1 }} />))
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeInTheDocument()
+    // 共享 hook 在 document 上以 capture 监听 keydown；Escape → onClose
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(closed).toBe(1)
+  })
+
+  it('打开时锁定背景滚动（body overflow hidden）', () => {
+    const { unmount } = render(
+      withProviders(<MobileSettingsScreen open onClose={() => {}} />),
+    )
+    expect(document.body.style.overflow).toBe('hidden')
+    unmount()
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
 })
 
 describe('桌面/移动共享（AC5）', () => {

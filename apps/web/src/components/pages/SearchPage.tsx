@@ -105,7 +105,7 @@ export default function SearchPage() {
                       type="button"
                       onClick={() => setHistory(removeFromSearchHistory(history, q))}
                       aria-label={`删除历史「${q}」`}
-                      className="flex size-6 items-center justify-center rounded-full text-[var(--lumi-text-tertiary)] transition-colors hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                      className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-text-tertiary)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
                     >
                       <X aria-hidden className="size-3" />
                     </button>
