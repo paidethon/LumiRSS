@@ -36,7 +36,9 @@ curl -fsS -o /dev/null http://127.0.0.1/
 - `DOMAIN`：真实域名 → Caddy 自动 Let's Encrypt；`localhost` → 自签
   本地证书并强制 HTTPS；`http://:80` 形式 → 纯 HTTP（仅内网调试）。
 - 秘密（`AI_API_KEY`、`FRESHRSS_API_PASSWORD`）只在服务端 env /
-  secrets.json，永不进 Git、数据库、备份或浏览器。
+  secrets.json，永不进 Git、数据库、备份或浏览器。AI Key 也可以（且推荐）
+  在浏览器「设置 → AI」中直接填写：写入服务端 SecretsStore（0600），
+  env `AI_API_KEY` 保留为默认配置的回退。
 
 ## 3. Caddy auth / noauth
 
@@ -59,7 +61,8 @@ curl -fsS -o /dev/null http://127.0.0.1/
 
 ## 6. Backups / WebDAV / Restore
 
-- UI 入口：设置 →「备份与恢复」。API 见 `docs/milestones/0018-*.md`。
+- UI 入口：设置 →「数据控制」（配置迁移 / 完整备份 / 备份历史 /
+  WebDAV / 恢复同页）。API 见 `docs/milestones/0018-*.md`。
 - 备份内容：lumi.sqlite（在线备份 API）+ FreshRSS 数据目录（只读卷 +
   SQLite online backup，含 config.php 与用户 db.sqlite）。
 - **备份必须当作敏感文件保管**：Lumi 自身的秘密值（AI/WebDAV/RSSHub/
@@ -97,7 +100,7 @@ docker compose -f docker-compose.prod.yml exec bff \
 
 1. 部署全新栈（§1）。
 2. 取回最近备份（本机卷或 WebDAV）。
-3. 「备份与恢复 → 从此备份恢复」→ 预览校验 → 输入 `RESTORE` 执行。
+3. 「数据控制 → 备份历史 → 从此备份恢复」→ 预览校验 → 输入 `RESTORE` 执行。
 4. FreshRSS 数据按 §6 离线恢复；`/health/ready` + 阅读流程验证。
 5. 损坏 checksum / 不兼容版本会被拒绝（有回归测试覆盖）。
 
@@ -105,6 +108,7 @@ docker compose -f docker-compose.prod.yml exec bff \
 
 | 症状 | 处置 |
 |---|---|
+| 界面新功能调用接口返回 404（如备份/RSSHub 配置） | 线上 BFF 是旧镜像：`docker compose -f docker-compose.prod.yml up -d --build`（必须带 `--build`）。核对「关于」页前端构建与服务端 (BFF) commit 是否一致（`GET /api/v1/version`） |
 | 容器反复重启、auth 不生效 | `.env.prod` auth 只设了一个变量（entrypoint FATAL）或 bcrypt `$` 未转义 `$$` |
 | FreshRSS unhealthy → BFF 不启动 | healthcheck = 官方 `php cli/health.php`；确认 FreshRSS 初始化完成（首次安装） |
 | RSSHub 不可用 | 只影响来源发现/预览；阅读不受影响；`docker compose restart rsshub` |
