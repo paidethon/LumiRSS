@@ -27,7 +27,7 @@ Money rules:
 import asyncio
 import hashlib
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -162,7 +162,7 @@ class SummaryService:
         db: Database,
         adapter: FreshRSSAdapter,
         settings_store: AiSettingsStore,
-        provider_factory: Callable[[str, str], AIProvider],
+        provider_factory: Callable[[str, str], Awaitable[AIProvider]],
     ) -> None:
         self._db = db
         self._adapter = adapter
@@ -281,7 +281,7 @@ class SummaryService:
             "summary_text = NULL, updated_at = excluded.updated_at",
             (*identity.row_params(), STATUS_GENERATING, _utc_now(), _utc_now()),
         )
-        provider = self._provider_factory(
+        provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
         try:

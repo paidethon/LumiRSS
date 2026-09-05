@@ -179,6 +179,20 @@ def test_download_to_streams_to_file(tmp_path):
     assert dest.read_bytes() == b"y" * 5000
 
 
+def test_download_to_rejects_traversal_destination(tmp_path):
+    """Defense-in-depth: a `..` destination (e.g. derived from a hostile
+    WebDAV listing name) is rejected before any byte is written."""
+
+    def handler(request):
+        return httpx.Response(200, content=b"y" * 10)
+
+    client = _client(handler)
+    escaped = tmp_path / "sub" / ".." / ".." / "evil.backup"
+    with pytest.raises(WebDavError):
+        run(client.download_to("/x.backup", escaped))
+    assert not (tmp_path / "evil.backup").exists()
+
+
 def test_download_to_connection_error_is_safe(tmp_path):
     def handler(request):
         raise httpx.ConnectError("dial tcp boom")

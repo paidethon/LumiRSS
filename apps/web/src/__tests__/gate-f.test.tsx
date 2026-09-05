@@ -19,7 +19,6 @@ import {
   DEFAULT_APP_SETTINGS,
   normalizeSettings,
   useAppSettings,
-  BUILTIN_RSSHUB_INSTANCES,
 } from '../store/app-settings'
 
 function withProviders(ui: React.ReactNode) {
@@ -170,7 +169,7 @@ describe('翻译页（0017：退役为 AI 翻译说明）', () => {
     expect(screen.queryByText('Microsoft Translator')).not.toBeInTheDocument()
     expect(screen.queryByText('DeepL（免费版）')).not.toBeInTheDocument()
     expect(screen.getByText('正文翻译')).toBeInTheDocument()
-    expect(screen.getByText(/翻译由统一 AI Provider 驱动/)).toBeInTheDocument()
+    expect(screen.getByText(/翻译由 AI Provider 驱动/)).toBeInTheDocument()
     // 翻译目标语言指向 AI 分类
     expect(screen.getByText(/「AI」分类/)).toBeInTheDocument()
   })
@@ -198,32 +197,17 @@ describe('过滤页（F3，AC24）', () => {
   })
 })
 
-describe('RSSHub 页（F4，AC25）', () => {
-  it('16 内置实例预置 + 总开关 + 添加/删除/恢复默认', () => {
-    openCategory(/^RSSHub$/)
-    const s = useAppSettings.getState().settings
-    expect(s.rsshubSettings.instances).toHaveLength(16)
-    expect(s.rsshubSettings.instances.every((i) => i.builtIn)).toBe(true)
-    // 添加自定义实例
-    fireEvent.change(screen.getByRole('textbox', { name: '实例地址' }), {
-      target: { value: 'https://my-rsshub.example.com/' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /^添加$/ }))
-    expect(useAppSettings.getState().settings.rsshubSettings.instances).toHaveLength(17)
-    // 删除自定义实例
-    fireEvent.click(screen.getByRole('button', { name: /删除实例 https:\/\/my-rsshub/ }))
-    expect(useAppSettings.getState().settings.rsshubSettings.instances).toHaveLength(16)
-    // 非法 URL 拒绝
-    fireEvent.change(screen.getByRole('textbox', { name: '实例地址' }), {
-      target: { value: 'not-a-url' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /^添加$/ }))
-    expect(screen.getByText(/请输入合法的实例地址/)).toBeInTheDocument()
-  })
-
-  it('前端零直连：页面无任何对 rsshub.* 的网络请求（架构边界）', () => {
-    // 单测环境无 fetch 调用即证明（组件内无 fetch；此断言保护性存在）
-    expect(BUILTIN_RSSHUB_INSTANCES.every((i) => i.url.startsWith('https://'))).toBe(true)
+describe('RSSHub 页（F4）— 唯一真实控制面', () => {
+  it('浏览器侧参考实例清单/总开关假控制已退役；本地 store 不再有 rsshubSettings', () => {
+    // 旧浏览器侧假控制（总开关 / 实例清单 / 添加实例）已整体删除，
+    // RSSHub 分类只保留真实 Control Center（服务端 RSSHUB_BASE_URL）。
+    const raw = {
+      ...DEFAULT_APP_SETTINGS,
+      rsshubSettings: { enabled: false, instances: [{ id: 'x', url: 'https://x.example', location: 'US', maintainer: '', enabled: true, builtIn: false }] },
+    }
+    const normalized = normalizeSettings(raw)
+    expect('rsshubSettings' in normalized).toBe(false)
+    expect(normalized).toEqual(DEFAULT_APP_SETTINGS)
   })
 })
 
@@ -258,7 +242,7 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
         return Promise.reject(new Error(`unexpected fetch: ${url}`))
       }),
     )
-    openCategory(/备份与恢复/)
+    openCategory(/数据控制/)
     // 服务器端全量备份（0018）：概览 + 创建 + 历史（query 异步到达）
     expect(screen.getByText('备份概览')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /创建完整备份（本机）/ })).toBeEnabled()
@@ -268,21 +252,23 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
     // WebDAV（写只读密码）
     expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '保存' })).toBeDisabled()
-    // 0017 配置迁移能力保留
-    expect(screen.getByText(/配置迁移/)).toBeInTheDocument()
+    // 0017 配置迁移能力保留（区块标题为「配置迁移（本设备 UI 设置）」）
+    expect(screen.getByText('配置迁移（本设备 UI 设置）')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /导出配置/ })).toBeEnabled()
     expect(screen.getByRole('button', { name: /导入配置/ })).toBeEnabled()
     vi.unstubAllGlobals()
   })
 })
 
-describe('移动端四页可达（AC4：14 分类在移动端全部可进）', () => {
-  it('移动设置首页 → 翻译子页（共享组件渲染）', () => {
+describe('移动端分类可达（共享组件渲染）', () => {
+  it('移动设置首页 → 翻译子页 → RSSHub 子页（Control Center 真实控制面）', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '翻译' }))
     expect(screen.getByText('正文翻译')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     fireEvent.click(screen.getByRole('button', { name: 'RSSHub' }))
-    expect(screen.getByText('恢复默认（16 个内置实例）')).toBeInTheDocument()
+    // 假控制（实例清单/总开关）已删除；Control Center 是唯一内容
+    expect(screen.queryByText(/参考实例清单/)).toBeNull()
+    expect(screen.queryByRole('switch', { name: /RSSHub 总开关/ })).toBeNull()
   })
 })

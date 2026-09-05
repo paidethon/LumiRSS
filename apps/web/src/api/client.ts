@@ -3,9 +3,13 @@
 
 import { toApiView, type UiView } from '../lib/read-later'
 import type {
+  AiProfile,
+  AiPurposeKey,
+  AiPurposes,
   AiSettings,
   AiSettingsUpdate,
   ApiErrorResponse,
+  ApiVersion,
   BackupJob,
   Category,
   EntryConversation,
@@ -346,6 +350,106 @@ export async function updateAiSettings(update: AiSettingsUpdate): Promise<AiSett
     contentType: 'application/json',
   })
   return (await response.json()) as AiSettings
+}
+
+/** BFF 构建溯源（关于页版本对照；无 env / 路径 / secret）。 */
+export async function getApiVersion(signal?: AbortSignal): Promise<ApiVersion> {
+  return request<ApiVersion>(`${API_BASE}/version`, signal)
+}
+
+// ---- AI Profiles（浏览器管理的多配置 + 用途分配；key 写只读） ----
+
+/** 所有 AI Profile（元数据 + keyConfigured 布尔，绝不回显 key）。 */
+export async function getAiProfiles(signal?: AbortSignal): Promise<AiProfile[]> {
+  return request<AiProfile[]>(`${API_BASE}/settings/ai/profiles`, signal)
+}
+
+export interface AiProfileInput {
+  label: string
+  baseUrl?: string
+  model?: string
+  enabled?: boolean
+}
+
+export async function createAiProfile(input: AiProfileInput): Promise<AiProfile> {
+  const response = await rawRequest(`${API_BASE}/settings/ai/profiles`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AiProfile
+}
+
+export async function updateAiProfile(
+  profileId: string,
+  patch: Partial<AiProfileInput>,
+): Promise<AiProfile> {
+  const response = await rawRequest(
+    `${API_BASE}/settings/ai/profiles/${encodeURIComponent(profileId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as AiProfile
+}
+
+export async function deleteAiProfile(profileId: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/settings/ai/profiles/${encodeURIComponent(profileId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 设置/替换一个 Profile 的 API Key（write-only：204 无响应体，绝不回读）。 */
+export async function setAiProfileSecret(
+  profileId: string,
+  value: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/settings/ai/profiles/${encodeURIComponent(profileId)}/secret`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+      contentType: 'application/json',
+    },
+  )
+}
+
+export async function clearAiProfileSecret(profileId: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/settings/ai/profiles/${encodeURIComponent(profileId)}/secret`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 默认（legacy）Key：浏览器可写 SecretsStore；env AI_API_KEY 保持回退。 */
+export async function setDefaultAiSecret(value: string): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/ai/key`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+    contentType: 'application/json',
+  })
+}
+
+export async function clearDefaultAiSecret(): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/ai/key`, { method: 'DELETE' })
+}
+
+export async function getAiPurposes(signal?: AbortSignal): Promise<AiPurposes> {
+  return request<AiPurposes>(`${API_BASE}/settings/ai/purposes`, signal)
+}
+
+export async function updateAiPurposes(
+  patch: Partial<Record<AiPurposeKey, string>>,
+): Promise<AiPurposes> {
+  const response = await rawRequest(`${API_BASE}/settings/ai/purposes`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AiPurposes
 }
 
 /** 0017：读取 portable 设置（GET 无副作用；stored=false = 服务端无文档）。 */

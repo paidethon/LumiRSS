@@ -18,8 +18,10 @@ message.
 """
 
 import ipaddress
+import os
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from defusedxml import ElementTree
@@ -255,9 +257,21 @@ class WebDavClient:
         the ones Lumi itself can create. ``get`` holds everything in memory
         under a small bound; this streams to disk bounded by the SAME
         ``MAX_TOTAL_BYTES`` used when building a backup, keeping the creation
-        and restore-acceptance limits internally consistent."""
+        and restore-acceptance limits internally consistent.
+
+        Path-traversal hardening: the caller derives ``dest`` from remote
+        listing names (attacker = hostile WebDAV server). ``..`` segments are
+        rejected, the parent is canonicalized via ``resolve()``, and the file
+        is opened via ``dir_fd`` on that opened parent directory — so the
+        kernel itself confines the write to the staging directory even if a
+        name carries separators. Downloads land flat with 0600 (sensitive).
+        """
         from lumirss.backup import MAX_TOTAL_BYTES
 
+        dest_path = Path(dest)
+        if ".." in dest_path.parts:
+            raise WebDavError("Invalid download destination.")
+        parent = dest_path.parent.resolve()
         response = await self._request("GET", path)
         status = response.status_code
         if status != 200:
@@ -265,7 +279,17 @@ class WebDavClient:
             raise WebDavError("Could not download the backup from WebDAV.")
         total = 0
         try:
-            with open(dest, "wb") as handle:
+            parent_fd = os.open(str(parent), os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                fd = os.open(
+                    dest_path.name,
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                    dir_fd=parent_fd,
+                )
+            finally:
+                os.close(parent_fd)
+            with os.fdopen(fd, "wb") as handle:
                 async for chunk in response.aiter_bytes():
                     total += len(chunk)
                     if total > MAX_TOTAL_BYTES:

@@ -152,9 +152,8 @@ export interface RssHubRoutesResponse {
   routes: RssHubRoute[]
 }
 
-/** GET/PUT /api/v1/settings/ai（0015；0016 增加 translationLanguage）——
- * 浏览器安全视图：configured 只报告服务端是否配置了 API key；key 本身
- * 永不下发。 */
+/** GET/PUT /api/v1/settings/ai —— 浏览器安全视图：所有 key 相关字段只报
+ * 布尔状态；key 本身永不下发。扩展字段支持浏览器管理的 Profile 层。 */
 export interface AiSettings {
   provider: 'openai_compatible'
   baseUrl: string
@@ -162,15 +161,58 @@ export interface AiSettings {
   summaryLanguage: 'zh-CN' | 'en'
   translationLanguage: 'zh-CN' | 'en'
   configured: boolean
+  /** 环境变量 AI_API_KEY 是否存在（legacy 回退，只报存在性）。 */
+  envKeyConfigured: boolean
+  /** 浏览器设置的默认 Key（SecretsStore）或 env 回退是否可用。 */
+  defaultKeyConfigured: boolean
+  /** 用途 → profile id（'default' = 全局设置 + 默认 Key）。 */
+  purposes: AiPurposes
+  /** 各用途的有效解析（secret-free，用于 UI 展示真实状态）。 */
+  purposeStatus: Record<AiPurposeKey, AiPurposeStatus>
 }
 
-/** PUT /api/v1/settings/ai body（0015；0016 增加 translationLanguage）：
- * 只含非机密字段，可部分更新。 */
+export type AiPurposeKey = 'summary' | 'translation' | 'chat'
+
+export type AiPurposes = Record<AiPurposeKey, string>
+
+/** purposeStatus 条目：绝不包含任何 key 值。 */
+export interface AiPurposeStatus {
+  profileId: string
+  source: 'default' | 'profile'
+  profileLabel: string | null
+  baseUrl: string
+  model: string
+  keyConfigured: boolean
+  keySource: 'profile_secret' | 'default_secret' | 'env' | 'missing'
+  configured: boolean
+}
+
+/** AI Profile（浏览器可管理；key 只见 keyConfigured 布尔）。 */
+export interface AiProfile {
+  id: string
+  label: string
+  provider: 'openai_compatible'
+  baseUrl: string
+  model: string
+  enabled: boolean
+  keyConfigured: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** PUT /api/v1/settings/ai body：只含非机密字段，可部分更新。 */
 export interface AiSettingsUpdate {
   baseUrl?: string
   model?: string
   summaryLanguage?: 'zh-CN' | 'en'
   translationLanguage?: 'zh-CN' | 'en'
+}
+
+/** GET /api/v1/version —— BFF 构建溯源（版本错配诊断；无 env/路径/secret）。 */
+export interface ApiVersion {
+  version: string
+  commit: string
+  apiVersion: number
 }
 
 /** GET/PATCH /api/v1/settings（0017）—— portable 设置的浏览器安全视图。

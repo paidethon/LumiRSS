@@ -5,13 +5,17 @@
  * 同一语义位置（Spec AC2）。 */
 
 import { Settings } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import SettingsModal from './settings/SettingsModal'
 import MobileSettingsScreen from './MobileSettingsScreen'
+import { onCloseSettingsRequest } from './settings/settings-bridge'
 import { cx } from './ui/cx'
 
 export default function SettingsButton({ collapsed }: { collapsed?: boolean }) {
   const [open, setOpen] = useState(false)
+
+  // 设置页内容可请求关闭设置壳（跳转订阅中心等主界面动作）
+  useEffect(() => onCloseSettingsRequest(() => setOpen(false)), [])
 
   return (
     <>

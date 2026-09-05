@@ -76,15 +76,15 @@ describe('app-settings 新字段（AC28 向后兼容）', () => {
 })
 
 describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
-  it('首页 = 分组列表（4 组 14 行，图标+标题+chevron），非 chip 横条', () => {
+  it('首页 = 分组列表（4 组 13 行，图标+标题+chevron），非 chip 横条', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     for (const g of ['主设置', '数据', '订阅与增强', '其他']) {
       expect(screen.getByRole('heading', { name: g })).toBeInTheDocument()
     }
     const rows = screen
       .getAllByRole('button')
-      .filter((b) => b.textContent?.match(/通用|外观|阅读|翻译|文章过滤|RSSHub|订阅与来源|AI|数据控制|备份与恢复|账户与服务|工作区|关于|快捷键/))
-    expect(rows.length).toBe(14)
+      .filter((b) => b.textContent?.match(/通用|外观|阅读|翻译|文章过滤|RSSHub|订阅与来源|AI|数据控制|账户与服务|工作区|关于|快捷键/))
+    expect(rows.length).toBe(13)
   })
 
   it('点击分类行 → push 子页（返回按钮 + 标题）→ 返回', () => {

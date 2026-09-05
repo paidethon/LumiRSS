@@ -21,6 +21,15 @@ from lumirss.entryref import encode_entry_ref
 from lumirss.models import EntryDetail
 from lumirss.storage import Database
 
+
+def _async_provider(provider):
+    """The BFF provider factory is async (purpose→profile resolution)."""
+
+    async def factory(base_url: str, model: str):
+        return provider
+
+    return factory
+
 ITEM_ID = "tag:google.com,2005:reader/item/0000000000000001"
 VALID_REF = encode_entry_ref(ITEM_ID)
 
@@ -76,7 +85,7 @@ def make_service(db, provider=None, detail=None):
             db=db,
             adapter=FakeAdapter(detail),
             settings_store=AiSettingsStore(db),
-            provider_factory=lambda base_url, model: provider,
+            provider_factory=_async_provider(provider),
         ),
         provider,
     )

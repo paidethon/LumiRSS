@@ -26,7 +26,6 @@ export default function EntryCard({
   selected: boolean
 }) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
-  const showUnreadDot = useAppSettings((s) => s.settings.timelineUnreadDot)
   const dimRead = useAppSettings((s) => s.settings.dimRead)
 
   return (
@@ -49,15 +48,14 @@ export default function EntryCard({
           aria-pressed={selected}
           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[var(--lumi-radius-md)] text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
         >
-          {showUnreadDot && (
-            <span
-              aria-hidden="true"
-              className={cx(
-                'size-1.5 shrink-0 rounded-full',
-                item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
-              )}
-            />
-          )}
+          {/* 未读标记圆点是产品固定视觉语义（状态不只靠颜色） */}
+          <span
+            aria-hidden="true"
+            className={cx(
+              'size-1.5 shrink-0 rounded-full',
+              item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
+            )}
+          />
           <span className="truncate font-medium">{item.feedTitle}</span>
           <span className="ml-auto shrink-0">{formatPublishedAt(item.publishedAt)}</span>
         </button>

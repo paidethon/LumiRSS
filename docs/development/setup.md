@@ -33,9 +33,13 @@ BFF runs locally and connects to FreshRSS via the configured URL.
   (created on first storage use, git-ignored). Tests always use temp DBs.
 - `AI_API_KEY` — optional OpenAI-compatible API key (server-side secret;
   never stored in Lumi SQLite, never sent to the browser). Blank = AI not
-  configured — the Reader honestly shows the unconfigured state.
-- Non-secret AI settings (Base URL / Model / summary language) are managed
-  in the Web UI under 设置 → AI and persisted in lumi.sqlite.
+  configured — the Reader honestly shows the unconfigured state. The key
+  can also be set from the browser (设置 → AI, stored in the server-side
+  SecretsStore); the env var remains the fallback for the default config.
+- Non-secret AI settings (Base URL / Model / summary language) and named
+  AI profiles with purpose mapping (摘要 / 翻译 / AI 对话) are managed in
+  the Web UI under 设置 → AI and persisted in lumi.sqlite (keys in
+  SecretsStore only).
 
 ## Web (React)
 

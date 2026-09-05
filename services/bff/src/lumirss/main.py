@@ -42,6 +42,13 @@ from lumirss.ai_settings import (
     KEY_SUMMARY_LANGUAGE,
     KEY_TRANSLATION_LANGUAGE,
 )
+from lumirss.ai_profiles import (
+    AiProfileNotFound,
+    AiProfileStore,
+    PURPOSES,
+    PurposeAiSettings,
+    default_secret_key,
+)
 from lumirss.app_settings import (
     AppSettingsStore,
     InvalidAppSettings,
@@ -55,7 +62,6 @@ from lumirss.ai_provider import (
     AiRateLimited,
     AiTimeout,
     AiUpstreamError,
-    provider_from_settings,
 )
 from lumirss.ai_summary import AiContentUnavailable, SummaryService
 from lumirss.ai_translation import TranslationService
@@ -139,6 +145,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
     app.state.secrets_store = SecretsStore(LumiSettings().secrets_path)
     app.state.ai_settings_store = None
+    app.state.ai_profile_store = None
     app.state.app_settings_store = None
     app.state.summary_service = None
     app.state.translation_service = None
@@ -218,6 +225,7 @@ _ERROR_RESPONSES = {
     RssHubFetchError: (502, "rsshub_fetch_error"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
+    AiProfileNotFound: (404, "ai_profile_not_found"),
     # 0017 portable app settings
     InvalidAppSettings: (400, "invalid_app_settings"),
     # 0015 AI summary
@@ -282,6 +290,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RssHubFetchError)
 @app.exception_handler(InvalidAppSettings)
 @app.exception_handler(InvalidAiSettings)
+@app.exception_handler(AiProfileNotFound)
 @app.exception_handler(AiNotConfigured)
 @app.exception_handler(AiAuthError)
 @app.exception_handler(AiModelError)
@@ -906,6 +915,22 @@ def _subscription_json(subscription) -> dict[str, object]:
     }
 
 
+@app.get("/api/v1/version")
+async def version() -> dict[str, object]:
+    """Build provenance for Web/BFF skew diagnosis.
+
+    Deliberately minimal: no env dump, no paths, no secrets — just the
+    running BFF's version/commit so a stale deployment is diagnosable
+    from the browser (see also the web build commit on the About page).
+    """
+    settings = LumiSettings()
+    return {
+        "version": settings.LUMIRSS_VERSION,
+        "commit": settings.LUMIRSS_COMMIT,
+        "apiVersion": 1,
+    }
+
+
 def _get_ai_settings_store(request: Request) -> AiSettingsStore:
     """Persistent AI settings store over the Lumi SQLite database (lazy)."""
     store = request.app.state.ai_settings_store
@@ -915,37 +940,228 @@ def _get_ai_settings_store(request: Request) -> AiSettingsStore:
     return store
 
 
-def _ai_settings_json(values: dict[str, str]) -> dict[str, object]:
-    """Browser-safe AI settings view — NEVER contains the API key."""
-    return {
+def _get_ai_profile_store(request: Request) -> AiProfileStore:
+    """AI profiles + purpose mapping (lazy)."""
+    store = request.app.state.ai_profile_store
+    if store is None:
+        store = AiProfileStore(
+            request.app.state.db, request.app.state.secrets_store
+        )
+        request.app.state.ai_profile_store = store
+    return store
+
+
+async def _ai_settings_json(
+    values: dict[str, str],
+    profiles: AiProfileStore | None = None,
+) -> dict[str, object]:
+    """Browser-safe AI settings view — NEVER contains an API key.
+
+    Extends the 0015 shape with the browser-managed profile layer:
+    ``purposes`` (purpose → profile id or "default") and
+    ``purposeStatus`` (effective, secret-free resolution per purpose).
+    """
+    settings = LumiSettings()
+    env_key = settings.AI_API_KEY.get_secret_value()
+    payload: dict[str, object] = {
         "provider": values[KEY_PROVIDER],
         "baseUrl": values[KEY_BASE_URL],
         "model": values[KEY_MODEL],
         "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
-        "configured": LumiSettings().ai_configured,
+        "configured": settings.ai_configured,
+        "envKeyConfigured": bool(env_key.strip()),
+        "defaultKeyConfigured": settings.ai_configured
+        or (profiles is not None and profiles.default_key_configured()),
     }
+    if profiles is not None:
+        payload["purposes"] = await profiles.load_purposes()
+        status: dict[str, object] = {}
+        for purpose in PURPOSES:
+            effective = await profiles.effective_config(purpose, values, env_key)
+            status[purpose] = {
+                "profileId": effective.profile_id or "default",
+                "source": effective.source,
+                "profileLabel": effective.profile_label,
+                "baseUrl": effective.base_url,
+                "model": effective.model,
+                "keyConfigured": effective.api_key is not None,
+                "keySource": effective.key_source,
+                "configured": effective.configured,
+            }
+        payload["purposeStatus"] = status
+    return payload
+
 
 
 @app.get("/api/v1/settings/ai")
 async def get_ai_settings(request: Request) -> dict[str, object]:
-    """Current AI settings. ``configured`` only reports whether the server
-    has an API key — the key itself never leaves the BFF."""
+    """Current AI settings + purpose resolution.
+
+    No response field ever contains an API key: ``configured`` /
+    ``envKeyConfigured`` / ``defaultKeyConfigured`` /
+    ``purposeStatus.*.keyConfigured`` are booleans only.
+    """
     store = _get_ai_settings_store(request)
-    return _ai_settings_json(await store.load())
+    profiles = _get_ai_profile_store(request)
+    return await _ai_settings_json(await store.load(), profiles)
 
 
 @app.put("/api/v1/settings/ai")
 async def put_ai_settings(
     update: AiSettingsUpdate, request: Request
 ) -> dict[str, object]:
-    """Persist non-secret AI settings (each provided field validated).
+    """Persist non-secret GLOBAL (default) AI settings.
 
-    There is deliberately no API-key field here: the key is server
-    environment only, and this endpoint can never read or write it.
+    There is deliberately no API-key field here: keys live in the
+    SecretsStore via the dedicated write-only key endpoints.
     """
     store = _get_ai_settings_store(request)
-    return _ai_settings_json(await store.save(update))
+    profiles = _get_ai_profile_store(request)
+    return await _ai_settings_json(await store.save(update), profiles)
+
+
+class AiSecretPut(BaseModel):
+    """Write-only key body (same shape as the RSSHub secret API)."""
+
+    value: str = Field(min_length=1)
+
+
+class AiProfileCreate(BaseModel):
+    """POST /api/v1/settings/ai/profiles body (metadata only, no key)."""
+
+    label: str = Field(min_length=1)
+    baseUrl: str = ""
+    model: str = ""
+    enabled: bool = True
+
+
+class AiProfileUpdate(BaseModel):
+    """PATCH /api/v1/settings/ai/profiles/{id} body (all optional)."""
+
+    label: str | None = None
+    baseUrl: str | None = None
+    model: str | None = None
+    enabled: bool | None = None
+
+
+class AiPurposesUpdate(BaseModel):
+    """PUT /api/v1/settings/ai/purposes body (each purpose optional).
+
+    Every target is either the built-in ``default`` resolution or an
+    existing profile id.
+    """
+
+    summary: str | None = None
+    translation: str | None = None
+    chat: str | None = None
+
+
+@app.put("/api/v1/settings/ai/key", status_code=204)
+async def put_default_ai_key(secret: AiSecretPut, request: Request) -> Response:
+    """Store the default (legacy) AI API key from the browser.
+
+    Write-only: the value is persisted server-side in the SecretsStore
+    and can never be read back over the API. The env ``AI_API_KEY``
+    remains as fallback when no browser key is set.
+    """
+    _get_ai_profile_store(request).set_default_key(secret.value.strip())
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/settings/ai/key", status_code=204)
+async def delete_default_ai_key(request: Request) -> Response:
+    """Remove the browser-set default key (env fallback resumes)."""
+    _get_ai_profile_store(request).clear_default_key()
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/settings/ai/profiles")
+async def get_ai_profiles(request: Request) -> list[dict[str, object]]:
+    """All AI profiles (metadata + ``keyConfigured`` flag, never keys)."""
+    return await _get_ai_profile_store(request).list_profiles()
+
+
+@app.post("/api/v1/settings/ai/profiles", status_code=201)
+async def create_ai_profile(
+    body: AiProfileCreate, request: Request
+) -> dict[str, object]:
+    """Create a profile. The API key is set separately (write-only)."""
+    return await _get_ai_profile_store(request).create_profile(
+        label=body.label,
+        base_url=body.baseUrl,
+        model=body.model,
+        enabled=body.enabled,
+    )
+
+
+@app.patch("/api/v1/settings/ai/profiles/{profile_id}")
+async def patch_ai_profile(
+    profile_id: str, body: AiProfileUpdate, request: Request
+) -> dict[str, object]:
+    """Update profile metadata (label / baseUrl / model / enabled)."""
+    return await _get_ai_profile_store(request).update_profile(
+        profile_id,
+        label=body.label,
+        base_url=body.baseUrl,
+        model=body.model,
+        enabled=body.enabled,
+    )
+
+
+@app.delete("/api/v1/settings/ai/profiles/{profile_id}", status_code=204)
+async def delete_ai_profile(
+    profile_id: str, request: Request
+) -> Response:
+    """Delete a profile, its secret, and any purpose mapping to it."""
+    await _get_ai_profile_store(request).delete_profile(profile_id)
+    return Response(status_code=204)
+
+
+@app.put("/api/v1/settings/ai/profiles/{profile_id}/secret", status_code=204)
+async def put_ai_profile_secret(
+    profile_id: str, secret: AiSecretPut, request: Request
+) -> Response:
+    """Set/replace one profile's API key (write-only, never echoed)."""
+    profiles = _get_ai_profile_store(request)
+    await profiles.get_profile(profile_id)  # 404 when unknown
+    profiles.set_profile_key(profile_id, secret.value.strip())
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/settings/ai/profiles/{profile_id}/secret", status_code=204)
+async def delete_ai_profile_secret(
+    profile_id: str, request: Request
+) -> Response:
+    """Revoke one profile's API key."""
+    profiles = _get_ai_profile_store(request)
+    await profiles.get_profile(profile_id)  # 404 when unknown
+    profiles.clear_profile_key(profile_id)
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/settings/ai/purposes")
+async def get_ai_purposes(request: Request) -> dict[str, str]:
+    """Purpose → profile id (or ``default``) mapping."""
+    return await _get_ai_profile_store(request).load_purposes()
+
+
+@app.put("/api/v1/settings/ai/purposes")
+async def put_ai_purposes(
+    body: AiPurposesUpdate, request: Request
+) -> dict[str, str]:
+    """Assign profiles to purposes. ``default`` selects the global
+    settings + default key resolution."""
+    provided = {
+        purpose: value
+        for purpose, value in (
+            ("summary", body.summary),
+            ("translation", body.translation),
+            ("chat", body.chat),
+        )
+        if value is not None
+    }
+    return await _get_ai_profile_store(request).save_purposes(provided)
 
 
 def _get_app_settings_store(request: Request) -> AppSettingsStore:
@@ -1035,34 +1251,51 @@ async def delete_app_settings(request: Request) -> Response:
 def _get_summary_service(request: Request) -> SummaryService:
     """Cached summary service over the shared DB / adapter / settings.
 
-    The provider factory injects the env API key (server-side only) at
-    generation time; reading cache state never builds a provider.
+    The purpose-aware settings view + async provider factory resolve the
+    mapped profile at generation time (server-side only); reading cache
+    state never builds a provider.
     """
     service = request.app.state.summary_service
     if service is None:
         service = SummaryService(
             db=request.app.state.db,
             adapter=_get_adapter(request),
-            settings_store=_get_ai_settings_store(request),
-            provider_factory=_provider_factory_for(request),
+            settings_store=_purpose_settings(request, "summary"),
+            provider_factory=_provider_factory_for(request, "summary"),
         )
         request.app.state.summary_service = service
     return service
 
 
-def _provider_factory_for(request: Request):
-    """Provider factory shared by all AI services (0015 + 0016).
+def _purpose_settings(request: Request, purpose: str) -> PurposeAiSettings:
+    """Purpose-aware view over the global AI settings (profile mapping)."""
+    return PurposeAiSettings(
+        _get_ai_settings_store(request), _get_ai_profile_store(request), purpose
+    )
 
-    Injects the env API key at call time — server-side only, never built
+
+def _provider_factory_for(request: Request, purpose: str):
+    """Async provider factory shared by all AI services (0015 + 0016).
+
+    Resolves the purpose → profile mapping at call time and injects the
+    matching API key from the SecretsStore (env ``AI_API_KEY`` stays the
+    fallback for the default resolution) — server-side only, never built
     for read-only cache lookups.
     """
 
-    def factory(base_url: str, model: str):
-        return provider_from_settings(
+    async def factory(base_url: str, model: str):
+        effective = await _get_ai_profile_store(request).effective_config(
+            purpose,
+            await _get_ai_settings_store(request).load(),
+            LumiSettings().AI_API_KEY.get_secret_value(),
+        )
+        from lumirss.ai_provider import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider(
             request.app.state.http_client,
-            LumiSettings(),
-            base_url=base_url,
-            model=model,
+            base_url=effective.base_url or base_url,
+            model=effective.model or model,
+            api_key=effective.api_key or "",
         )
 
     return factory
@@ -1075,8 +1308,8 @@ def _get_translation_service(request: Request) -> TranslationService:
         service = TranslationService(
             db=request.app.state.db,
             adapter=_get_adapter(request),
-            settings_store=_get_ai_settings_store(request),
-            provider_factory=_provider_factory_for(request),
+            settings_store=_purpose_settings(request, "translation"),
+            provider_factory=_provider_factory_for(request, "translation"),
         )
         request.app.state.translation_service = service
     return service
@@ -1089,8 +1322,8 @@ def _get_conversation_service(request: Request) -> ConversationService:
         service = ConversationService(
             db=request.app.state.db,
             adapter=_get_adapter(request),
-            settings_store=_get_ai_settings_store(request),
-            provider_factory=_provider_factory_for(request),
+            settings_store=_purpose_settings(request, "chat"),
+            provider_factory=_provider_factory_for(request, "chat"),
         )
         request.app.state.conversation_service = service
     return service

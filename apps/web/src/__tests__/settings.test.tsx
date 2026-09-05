@@ -18,18 +18,19 @@ function renderModal() {
 }
 
 describe('SettingsModal — AC3（结构）', () => {
-  it('左导航渲染 14 个分类（0010a Gate E：9 → 13；0017：13 → 14）', () => {
+  it('左导航渲染 13 个分类（备份与恢复已并入数据控制）', () => {
     renderModal()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     const items = nav.querySelectorAll('button')
-    expect(items).toHaveLength(14)
+    expect(items).toHaveLength(13)
     expect(screen.getByRole('button', { name: /通用/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /外观/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^阅读$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^翻译$/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /文章过滤/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /RSSHub/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /备份与恢复/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /数据控制/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /备份与恢复/ })).toBeNull()
     expect(screen.getByRole('button', { name: /关于/ })).toBeInTheDocument()
   })
 
@@ -107,20 +108,20 @@ describe('SettingsModal — 外观页真实生效（Gate A 迁移验收）', () 
   })
 })
 
-describe('SettingsModal — planned 诚实原则', () => {
-  it('planned 行（界面语言）控件禁用 + planned 徽标', async () => {
+describe('SettingsModal — 通用页清洁原则', () => {
+  it('不向用户暴露未实现选项：无 English/planned/i18n、无侧栏隐藏已读、无未读圆点开关', () => {
     renderModal()
-    // 通用页默认选中，界面语言行存在
-    const select = screen.getByRole('combobox', { name: '界面语言' })
-    expect(select).toBeDisabled()
-    expect(screen.getByText('planned · i18n')).toBeInTheDocument()
-  })
-
-  it('「侧栏隐藏已读」planned（需要未读数契约，无已批准里程碑编号——0014a 清理 stale 0013）', () => {
-    renderModal()
-    const toggle = screen.getByRole('switch', { name: '侧栏隐藏已读开关' })
-    expect(toggle).toBeDisabled()
-    expect(screen.getByText('planned', { exact: true })).toBeInTheDocument()
-    expect(screen.queryByText(/planned · 0013/)).toBeNull()
+    // 界面语言是静态展示（只有简体中文），不是不可用的下拉
+    expect(screen.queryByRole('combobox', { name: '界面语言' })).toBeNull()
+    expect(screen.getByText('简体中文', { selector: 'span' })).toBeInTheDocument()
+    expect(screen.queryByText(/planned/)).toBeNull()
+    expect(screen.queryByText(/English 将随/)).toBeNull()
+    // 未实现的侧栏隐藏已读与误导性未读圆点开关已整体移除
+    expect(screen.queryByText('侧栏隐藏已读')).toBeNull()
+    expect(screen.queryByText('显示未读圆点')).toBeNull()
+    // 真实可用的开关保留
+    expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '按日期分组开关' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '启动时仅看未读开关' })).toBeEnabled()
   })
 })

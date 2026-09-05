@@ -219,9 +219,17 @@ describe('OpmlImportDialog（订阅页外壳）', () => {
 })
 
 describe('SourcesSettingsSection（设置外壳）', () => {
+  const OPERATIONS_OK = {
+    lumi: { status: 'healthy', version: '0.1.0' },
+    sqlite: { status: 'healthy' },
+    freshrss: { status: 'healthy', configured: true, latencyMs: 5, lastCheckedAt: null, error: null },
+    rsshub: { status: 'unconfigured', configured: false, latencyMs: null, lastCheckedAt: null, error: null, restartRequired: false, pendingConfigCount: 0 },
+    backup: { webdavConfigured: false, lastBackup: null },
+  }
   const baseRoutes = {
     'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
     'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+    'GET /api/v1/operations/status': () => jsonResponse(OPERATIONS_OK),
   }
 
   it('OPML 导出：请求 /api/v1/opml/export 并触发下载', async () => {
@@ -270,10 +278,10 @@ describe('SourcesSettingsSection（设置外壳）', () => {
     const fetchState = makeFetch({ ...baseRoutes })
     vi.stubGlobal('fetch', fetchState.fn)
     render(withProviders(<SourcesSettingsSection />))
-    expect(await screen.findByText('连接正常，当前 1 个订阅源')).toBeInTheDocument()
-    // 未配置 public URL → 不渲染链接，只给诚实说明
+    expect(await screen.findByText('服务正常，当前 1 个订阅源')).toBeInTheDocument()
+    // 未配置 public URL → 不渲染外链；Lumi 内管理入口（订阅中心）始终可用
     expect(screen.queryByText('高级：在 FreshRSS 中管理')).toBeNull()
-    expect(screen.getByText(/FRESHRSS_PUBLIC_URL/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开订阅中心' })).toBeInTheDocument()
   })
 
   it('FreshRSS 连接错误：只报告真实错误（authentication_error 文案）', async () => {

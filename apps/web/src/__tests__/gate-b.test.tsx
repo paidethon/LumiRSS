@@ -21,6 +21,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+const OPERATIONS_STATUS_OK = {
+  lumi: { status: 'healthy', version: '0.1.0' },
+  sqlite: { status: 'healthy' },
+  freshrss: { status: 'unconfigured', configured: false, latencyMs: null, lastCheckedAt: null, error: null },
+  rsshub: { status: 'unconfigured', configured: false, latencyMs: null, lastCheckedAt: null, error: null, restartRequired: false, pendingConfigCount: 0 },
+  backup: { webdavConfigured: false, lastBackup: null },
+}
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -127,6 +135,7 @@ describe('分类页 planned 语义（AC10）', () => {
     const routes: Record<string, () => Response> = {
       'GET /api/v1/subscriptions': () => jsonResponse([]),
       'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+      'GET /api/v1/operations/status': () => jsonResponse(OPERATIONS_STATUS_OK),
     }
     vi.stubGlobal(
       'fetch',
@@ -143,48 +152,69 @@ describe('分类页 planned 语义（AC10）', () => {
       expect(screen.getByRole('button', { name: '导出 OPML' })).toBeEnabled()
     })
     expect(screen.getByLabelText(/选择 OPML 文件/)).toBeInTheDocument()
-    // 0014：来源发现已集成到订阅中心（设置页诚实说明，不再 planned 占位）
-    expect(screen.getByText('来源发现', { selector: 'h3' })).toBeInTheDocument()
-    expect(screen.getByText(/已集成到订阅中心/)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 
-  it('AI 页：0015 设置真实可用 + 0016 planned', async () => {
-    // 0015 AI 设置来自 BFF（GET /api/v1/settings/ai）：stub 一份真实形状响应。
+  it('AI 页：用途分配 / Profile / 默认配置真实可用（浏览器可管理 Key）', async () => {
+    const AI_SETTINGS = {
+      provider: 'openai_compatible',
+      baseUrl: '',
+      model: '',
+      summaryLanguage: 'zh-CN',
+      translationLanguage: 'zh-CN',
+      configured: false,
+      envKeyConfigured: false,
+      defaultKeyConfigured: false,
+      purposes: { summary: 'default', translation: 'default', chat: 'default' },
+      purposeStatus: {
+        summary: { profileId: 'default', source: 'default', profileLabel: null, baseUrl: '', model: '', keyConfigured: false, keySource: 'missing', configured: false },
+        translation: { profileId: 'default', source: 'default', profileLabel: null, baseUrl: '', model: '', keyConfigured: false, keySource: 'missing', configured: false },
+        chat: { profileId: 'default', source: 'default', profileLabel: null, baseUrl: '', model: '', keyConfigured: false, keySource: 'missing', configured: false },
+      },
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
         if (String(input) === '/api/v1/settings/ai') {
-          return Promise.resolve(
-            jsonResponse({
-              provider: 'openai_compatible',
-              baseUrl: '',
-              model: '',
-              summaryLanguage: 'zh-CN',
-              configured: false,
-            }),
-          )
+          return Promise.resolve(jsonResponse(AI_SETTINGS))
+        }
+        if (String(input) === '/api/v1/settings/ai/profiles') {
+          return Promise.resolve(jsonResponse([]))
         }
         throw new Error(`unexpected fetch: ${String(input)}`)
       }),
     )
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /^AI$/ }))
-    // 0015：AI 摘要配置真实可用（key 状态 banner + Base URL/Model/摘要语言 + 保存）
     await waitFor(() => {
-      expect(screen.getByText(/API 密钥未配置/)).toBeInTheDocument()
-      expect(screen.getByLabelText('Base URL')).toBeInTheDocument()
-      expect(screen.getByLabelText('Model')).toBeInTheDocument()
+      expect(screen.getByText('用途分配')).toBeInTheDocument()
+      expect(screen.getByLabelText('摘要使用的配置')).toBeInTheDocument()
+      expect(screen.getByLabelText('翻译使用的配置')).toBeInTheDocument()
+      expect(screen.getByLabelText('AI 对话使用的配置')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /新建 Profile/ })).toBeInTheDocument()
+      expect(screen.getByText('默认 API Key')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '设置 Key' })).toBeInTheDocument()
+      expect(screen.getByLabelText('默认 Base URL')).toBeInTheDocument()
+      expect(screen.getByLabelText('默认 Model')).toBeInTheDocument()
       expect(screen.getByLabelText('摘要语言')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
+      expect(screen.getByLabelText('翻译语言')).toBeInTheDocument()
     })
-    // 0016 翻译 / 对话已实现（0017 移除 stale planned 占位）
-    expect(screen.getByText(/已实现：文章 AI 摘要/)).toBeInTheDocument()
-    expect(screen.getByText(/API Key 仅保存在服务端环境/)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 
-  it('数据控制页：清缓存/重置真实可用（无 planned 徽标），备份指向真实入口（0018）', async () => {
+  it('数据控制页：缓存/设置/配置迁移/完整备份同页管理；独立「备份与恢复」分类已并入', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/backups') return Promise.resolve(jsonResponse([]))
+        if (url === '/api/v1/operations/status') return Promise.resolve(jsonResponse(OPERATIONS_STATUS_OK))
+        if (url === '/api/v1/backups/webdav') {
+          return Promise.resolve(jsonResponse({ configured: false, serverUrl: '', username: '', remoteDir: '', tlsVerify: true, passwordConfigured: false }))
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+    )
     render(renderWithProviders(<SettingsModal open onClose={vi.fn()} />))
     fireEvent.click(screen.getByRole('button', { name: /数据控制/ }))
     await waitFor(() => {
@@ -194,9 +224,15 @@ describe('分类页 planned 语义（AC10）', () => {
     // 真实按钮可点
     expect(screen.getByRole('button', { name: '清除' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '重置' })).toBeEnabled()
-    // 0018：备份已真实实现——不再有 planned 徽标；指向「备份与恢复」分类
-    expect(screen.queryByText(/planned · 0018/)).not.toBeInTheDocument()
-    expect(screen.getByText(/在「备份与恢复」分类中管理/)).toBeInTheDocument()
+    // 配置迁移 + 完整备份 + WebDAV 同页可访问
+    expect(screen.getByText(/配置迁移（本设备 UI 设置）/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/创建完整备份（本机）/)).toBeInTheDocument()
+      expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
+    })
+    // 左侧导航不再有独立「备份与恢复」分类
+    expect(screen.queryByRole('button', { name: /备份与恢复/ })).toBeNull()
+    vi.unstubAllGlobals()
   })
 
   it('重置真实生效：改设置 → 点重置 → 恢复默认', async () => {
@@ -311,32 +347,31 @@ describe('0020 AUDIT-014 — 模态打开时全局快捷键不改动隐藏的 Re
   })
 })
 
-describe('未读圆点开关真实生效（AC5）', () => {
-  it('关闭后 EntryRow 不再渲染圆点', async () => {
-    const { useEntries } = await import('../api/queries')
-    void useEntries
+describe('未读圆点固定视觉语义（AC5）', () => {
+  it('未读行渲染 accent 圆点；已读行为透明占位（对齐保留，状态不只靠颜色）', async () => {
     // 直接驱动 store + 渲染 EntryRow
     const { default: EntryRow } = await import('../components/EntryRow')
-    const item = {
+    const unread = {
       entryRef: 'e1.x', title: '标题', feedTitle: '源', author: null,
       url: null, publishedAt: null, read: false, starred: false,
     }
+    const read = { ...unread, read: true }
     localStorage.clear()
-    // 0011 修正补充：EntryRow 内嵌 EntryActionButtons（mutation hook）
-    // 需要 QueryClientProvider
+    // EntryRow 内嵌 EntryActionButtons（mutation hook），需要 QueryClientProvider
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { container, unmount } = render(
-      <QueryClientProvider client={qc}><EntryRow item={item} selected={false} /></QueryClientProvider>,
+      <QueryClientProvider client={qc}>
+        <>
+          <EntryRow item={unread} selected={false} />
+          <EntryRow item={read} selected={false} />
+        </>
+      </QueryClientProvider>,
     )
-    expect(container.querySelector('span.rounded-full')).not.toBeNull()
-    useAppSettings.getState().update({ timelineUnreadDot: false })
-    const qc2 = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const container2 = render(
-      <QueryClientProvider client={qc2}><EntryRow item={item} selected={false} /></QueryClientProvider>,
-    ).container
-    expect(container2.querySelector('span.rounded-full')).toBeNull()
+    const dots = container.querySelectorAll('span.rounded-full')
+    expect(dots.length).toBe(2)
+    expect(dots[0].className).toContain('bg-[var(--lumi-accent)]')
+    expect(dots[1].className).toContain('bg-transparent')
     unmount()
-    useAppSettings.getState().reset()
     localStorage.clear()
   })
 })

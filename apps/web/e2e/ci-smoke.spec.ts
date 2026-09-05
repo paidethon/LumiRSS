@@ -14,7 +14,7 @@ test('静态 shell 加载 + 打开设置', async ({ page }) => {
   await expect(page.getByRole('button', { name: '打开设置' }).or(page.getByRole('button', { name: '打开导航' })).first()).toBeVisible()
 })
 
-test('备份页在 API 降级下仍渲染诚实状态（不伪造成功）', async ({ page }) => {
+test('数据控制在 API 降级下仍渲染诚实状态（不伪造成功）', async ({ page }) => {
   await page.goto('/')
   // 移动路径在 desktop 视口不可用 → 直接走桌面入口；反之用抽屉。
   const openBtn = page.getByRole('button', { name: '打开设置' })
@@ -25,9 +25,9 @@ test('备份页在 API 降级下仍渲染诚实状态（不伪造成功）', asy
     await page.getByRole('button', { name: '打开设置' }).click()
   }
   const dialog = page.getByRole('dialog').filter({ visible: true }).first()
-  await dialog.getByRole('button', { name: '备份与恢复' }).click()
+  // 「备份与恢复」已并入「数据控制」——同页承载备份能力
+  await dialog.getByRole('button', { name: '数据控制' }).click()
   await expect(dialog.getByText('备份概览')).toBeVisible()
   // API 不可用 → 诚实错误态，绝不出现"已成功"的伪造状态
-  await expect(dialog.getByText(/备份概览/)).toBeVisible()
   await expect(dialog.getByText('已成功')).toHaveCount(0)
 })

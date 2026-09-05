@@ -2,12 +2,14 @@
 
 All tests use a temp database injected onto app.state.db — no real Lumi
 SQLite file is ever touched, and no secret is ever asserted beyond its
-absence.
+absence. The browser-managed profile layer lives in
+test_ai_profiles_api.py; these tests pin the GLOBAL settings contract.
 """
 
 from fastapi.testclient import TestClient
 
 from lumirss.main import app
+from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
 import secrets as _secrets
@@ -15,26 +17,59 @@ import secrets as _secrets
 SMUGGLED_KEY = "sk-" + _secrets.token_urlsafe(8)
 
 
-def test_get_ai_settings_returns_defaults_without_configuration(tmp_path):
-    with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
-        response = client.get("/api/v1/settings/ai")
+def _use_temp_state(tmp_path):
+    app.state.db = Database(tmp_path / "lumi.sqlite")
+    app.state.secrets_store = SecretsStore(tmp_path / "secrets.json")
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body == {
+
+_PURPOSE_DEFAULTS = {
+    "profileId": "default",
+    "source": "default",
+    "profileLabel": None,
+    "baseUrl": "",
+    "model": "",
+    "keyConfigured": False,
+    "keySource": "missing",
+    "configured": False,
+}
+
+
+def _expected_default_body():
+    return {
         "provider": "openai_compatible",
         "baseUrl": "",
         "model": "",
         "summaryLanguage": "zh-CN",
         "translationLanguage": "zh-CN",
         "configured": False,
+        "envKeyConfigured": False,
+        "defaultKeyConfigured": False,
+        "purposes": {
+            "summary": "default",
+            "translation": "default",
+            "chat": "default",
+        },
+        "purposeStatus": {
+            "summary": dict(_PURPOSE_DEFAULTS),
+            "translation": dict(_PURPOSE_DEFAULTS),
+            "chat": dict(_PURPOSE_DEFAULTS),
+        },
     }
+
+
+def test_get_ai_settings_returns_defaults_without_configuration(tmp_path):
+    with TestClient(app) as client:
+        _use_temp_state(tmp_path)
+        response = client.get("/api/v1/settings/ai")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == _expected_default_body()
 
 
 def test_put_ai_settings_persists_and_round_trips(tmp_path):
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         response = client.put(
             "/api/v1/settings/ai",
             json={
@@ -57,6 +92,7 @@ def test_put_ai_settings_persists_and_round_trips(tmp_path):
 def test_settings_survive_app_restart(tmp_path):
     path = tmp_path / "lumi.sqlite"
     with TestClient(app) as client:
+        _use_temp_state(tmp_path)
         app.state.db = Database(path)
         client.put(
             "/api/v1/settings/ai",
@@ -64,6 +100,7 @@ def test_settings_survive_app_restart(tmp_path):
         )
 
     with TestClient(app) as client:
+        _use_temp_state(tmp_path)
         app.state.db = Database(path)
         response = client.get("/api/v1/settings/ai")
 
@@ -73,7 +110,7 @@ def test_settings_survive_app_restart(tmp_path):
 
 def test_put_rejects_invalid_base_url(tmp_path):
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         response = client.put(
             "/api/v1/settings/ai",
             json={"baseUrl": "javascript:alert(1)"},
@@ -85,7 +122,7 @@ def test_put_rejects_invalid_base_url(tmp_path):
 
 def test_put_rejects_unsupported_summary_language(tmp_path):
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         response = client.put(
             "/api/v1/settings/ai",
             json={"summaryLanguage": "fr"},
@@ -97,12 +134,13 @@ def test_put_rejects_unsupported_summary_language(tmp_path):
 def test_configured_reports_key_presence_but_never_the_key(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_API_KEY", "sk-super-secret-value")
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         response = client.get("/api/v1/settings/ai")
 
     assert response.status_code == 200
     body = response.json()
     assert body["configured"] is True
+    assert body["envKeyConfigured"] is True
     assert "sk-super-secret-value" not in response.text
     assert "apiKey" not in response.text
     assert "api_key" not in response.text
@@ -110,7 +148,7 @@ def test_configured_reports_key_presence_but_never_the_key(tmp_path, monkeypatch
 
 def test_put_rejects_unknown_fields_like_api_key(tmp_path):
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         response = client.put(
             "/api/v1/settings/ai",
             json={"apiKey": SMUGGLED_KEY},
@@ -121,7 +159,7 @@ def test_put_rejects_unknown_fields_like_api_key(tmp_path):
 
 def test_blank_base_url_clears_value(tmp_path):
     with TestClient(app) as client:
-        app.state.db = Database(tmp_path / "lumi.sqlite")
+        _use_temp_state(tmp_path)
         client.put("/api/v1/settings/ai", json={"baseUrl": "https://api.example.com/v1"})
         cleared = client.put("/api/v1/settings/ai", json={"baseUrl": ""})
 

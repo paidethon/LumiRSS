@@ -1,13 +1,14 @@
-/** BackupSettingsPage — 备份与恢复（0018 G8 升级）。
+/** DataControlPage — 数据控制页的「配置迁移与备份」区块。
  *
- * 页面职责拆分到 settings/backup/：
+ * 原「备份与恢复」独立分类并入数据控制后的承载组件。能力全部复用既有
+ * 实现（不重写）：
+ * - ConfigMigrationSection：浏览器本地设置导出/导入（「配置迁移」，
+ *   与服务器端全量备份是两种不同能力，均真实可用）；
  * - BackupOverview：概览 + 立即创建完整备份 + 活动 job 状态；
  * - BackupHistoryCard：job 历史 + 分阶段恢复向导入口；
- * - WebDavCard：服务器端 WebDAV 目标（password 写只读）；
- * - ConfigMigrationSection：0017 的浏览器本地设置导出/导入（明确归为
- *   「配置迁移」，与服务器端全量备份是两种不同能力，均真实可用）。
+ * - WebDavCard：服务器端 WebDAV 目标（password 写只读）。
  *
- * OPML（0013，订阅数据在 FreshRSS 侧）入口仍在「订阅与来源」。
+ * OPML（订阅数据在 FreshRSS 侧）入口仍在「订阅与来源」。
  */
 
 import { useRef, useState } from 'react'
@@ -28,7 +29,7 @@ interface ConfigEnvelope {
   settings: AppSettings
 }
 
-/** 0017 能力保留：浏览器本地设置（外观 / 阅读 / 过滤规则 / 预设）导出导入。
+/** 浏览器本地设置（外观 / 阅读 / 过滤规则 / 预设）导出导入。
  * 与服务器端「全量备份」不同：这里只迁移本设备 UI 配置，不涉及服务端数据。 */
 function ConfigMigrationSection() {
   const settings = useAppSettings((s) => s.settings)
@@ -90,8 +91,8 @@ function ConfigMigrationSection() {
     try {
       const env = inspect.env
       // normalize 全量校验（非法值回退默认——validate 通过才写入）。
-      // 旧备份的 translationSettings/encryptedSecrets 不是当前 schema
-      // 字段，normalize 直接丢弃（浏览器端翻译 Key 已随 0016/0017 退役）。
+      // 旧备份里已退役的字段（如早期浏览器端翻译配置）不是当前 schema
+      // 字段，normalize 直接丢弃。
       const restored = normalizeSettings({ ...env.settings })
       // 部分字段保留本机状态：布局宽度/折叠（设备相关）
       const merged = normalizeSettings({
@@ -121,7 +122,7 @@ function ConfigMigrationSection() {
       </div>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
         导出 / 导入浏览器本地设置：外观、阅读排版、过滤规则与阅读预设（JSON 文件，可跨设备迁移）。
-        与上方服务器端全量备份不同——这里不包含订阅、文章状态或服务端数据，也不含任何 API Key。
+        与下方服务器端全量备份不同——这里不包含订阅、文章状态或服务端数据，也不含任何 API Key。
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -174,13 +175,14 @@ function ConfigMigrationSection() {
   )
 }
 
-export function BackupSettingsSection() {
+/** 数据控制页底部区块：配置迁移 → 完整备份 → 备份历史/恢复 → WebDAV。 */
+export function DataBackupSection() {
   return (
     <div className="flex flex-col gap-4 py-1">
+      <ConfigMigrationSection />
       <BackupOverview />
       <BackupHistoryCard />
       <WebDavCard />
-      <ConfigMigrationSection />
     </div>
   )
 }

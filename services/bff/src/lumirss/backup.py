@@ -441,6 +441,7 @@ def build_manifest(
         "secretPolicy": {
             "excludedSecrets": [
                 "ai.api_key",
+                "ai.profile.*",
                 "freshrss.api_password",
                 "rsshub.route_credentials",
                 "rsshub.access_key",

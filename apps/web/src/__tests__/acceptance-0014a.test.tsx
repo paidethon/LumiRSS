@@ -306,23 +306,24 @@ describe('0014a Gate 3 — Service settings truthfulness', () => {
     vi.unstubAllGlobals()
   })
 
-  it('备份与恢复（0018 G8）：真实备份 UI 渲染；stale planned 移除', () => {
+  it('数据控制包含真实备份 UI；独立「备份与恢复」分类已并入', () => {
     stubSettingsFetch()
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /备份与恢复/ }))
+    fireEvent.click(screen.getByRole('button', { name: /数据控制/ }))
     expect(screen.getByText('备份概览')).toBeInTheDocument()
     expect(screen.getByText('备份历史')).toBeInTheDocument()
     expect(screen.getByText('WebDAV 远程备份')).toBeInTheDocument()
-    expect(screen.getByText(/配置迁移/)).toBeInTheDocument()
+    expect(screen.getByText('配置迁移（本设备 UI 设置）')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /备份与恢复/ })).toBeNull()
     expect(screen.queryByText(/planned · 0013/)).toBeNull()
     expect(screen.queryByText('已实现 · 0013')).not.toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 
-  it('通用：侧栏隐藏已读不再声称 0013 接入（未安排里程碑）', () => {
+  it('通用：未实现的侧栏隐藏已读已整体移除（不向用户暴露 planned）', () => {
     renderSettings()
-    expect(screen.getByText('侧栏隐藏已读')).toBeInTheDocument()
+    expect(screen.queryByText('侧栏隐藏已读')).toBeNull()
     expect(screen.queryByText(/planned · 0013/)).toBeNull()
-    expect(screen.getByText('planned', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText('planned', { exact: true })).toBeNull()
   })
 })

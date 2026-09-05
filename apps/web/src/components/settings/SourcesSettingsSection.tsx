@@ -11,8 +11,16 @@
  * - 服务状态只报告有真实依据的错误（订阅列表请求的 error type），
  *   不编造「健康 98%」之类的伪指标。 */
 
+/** FreshRSS 状态卡：真实服务状态 + 订阅源数量 + Lumi 内管理入口。
+ *
+ * 高级管理分两层：
+ * - Lumi 内（订阅中心）：添加/取消订阅、移动订阅、分类重命名、OPML
+ *   导入导出——全部经 BFF 控制平面真实可用，一键直达；
+ * - FreshRSS 原生（可选逃生入口）：仅当服务端显式配置了浏览器可达的
+ *   FRESHRSS_PUBLIC_URL 才渲染链接；未配置不渲染假链接。 */
+
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Upload } from 'lucide-react'
-import { useSubscriptions } from '../../api/queries'
+import { useOperationsStatus, useSubscriptions } from '../../api/queries'
 import type { ApiError } from '../../api/client'
 import {
   OpmlErrorCard,
@@ -22,6 +30,8 @@ import {
 import { useFreshRssUiUrl } from '../../api/queries'
 import { useOpmlExportFlow, useOpmlImportFlow } from '../../lib/opml-import'
 import { managementErrorText } from '../../lib/management-errors'
+import { useReaderUi } from '../../store/reader-ui'
+import { requestCloseSettings } from './settings-bridge'
 import { Button } from '../ui/Button'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -137,10 +147,29 @@ function OpmlImportBlock() {
   )
 }
 
-/** FreshRSS 状态 + 高级逃生入口：只报告有真实依据的状态。 */
+/** FreshRSS 服务状态文案（operations/status 的真实探测结果）。 */
+function useFreshRssServiceStatus(): { loading: boolean; label: string; healthy: boolean } {
+  const operations = useOperationsStatus()
+  const freshrss = operations.data?.freshrss
+  if (operations.isPending || freshrss === undefined) {
+    return { loading: true, label: '', healthy: false }
+  }
+  switch (freshrss.status) {
+    case 'healthy':
+      return { loading: false, label: '正常', healthy: true }
+    case 'unauthenticated':
+      return { loading: false, label: '可达（凭据待配置）', healthy: true }
+    default:
+      return { loading: false, label: '状态异常', healthy: false }
+  }
+}
+
+/** FreshRSS 状态 + Lumi 内管理入口 + 可选逃生链接。 */
 function FreshRssStatusBlock() {
   const subscriptions = useSubscriptions()
   const ui = useFreshRssUiUrl()
+  const service = useFreshRssServiceStatus()
+  const selectSection = useReaderUi((s) => s.selectSection)
 
   // 只在有真实请求结果时报告；加载中不显示任何「状态」。
   let statusNode: React.ReactNode = null
@@ -156,13 +185,23 @@ function FreshRssStatusBlock() {
     )
   } else if (subscriptions.isSuccess && subscriptions.data !== undefined) {
     statusNode = (
-      <p
-        role="status"
-        className="mt-2 flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]"
-      >
-        <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-accent-text)]" />
-        连接正常，当前 {subscriptions.data.length} 个订阅源
-      </p>
+      <div className="mt-2 flex flex-col gap-1">
+        <p
+          role="status"
+          className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]"
+        >
+          <CheckCircle2 aria-hidden className="size-3.5 shrink-0 text-[var(--lumi-accent-text)]" />
+          {service.loading
+            ? `当前 ${subscriptions.data.length} 个订阅源`
+            : `服务${service.label}，当前 ${subscriptions.data.length} 个订阅源`}
+        </p>
+        {!service.loading && !service.healthy && (
+          <p role="alert" className="flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
+            <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            FreshRSS 服务状态异常，请检查服务端部署（docker compose ps）。
+          </p>
+        )}
+      </div>
     )
   }
 
@@ -173,7 +212,23 @@ function FreshRssStatusBlock() {
         订阅数据由 FreshRSS 托管，Lumi 通过 BFF 控制平面读写（凭据不出服务端）。
       </p>
       {statusNode}
-      {/* 高级逃生入口：只有显式配置的浏览器可达 public URL 才渲染链接 */}
+      {/* Lumi 内高级管理：订阅中心真实可用的一站式入口 */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            selectSection('subscriptions')
+            requestCloseSettings()
+          }}
+        >
+          打开订阅中心
+        </Button>
+        <span className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+          添加 / 取消订阅、移动分类、重命名分类与 OPML 导入导出都在订阅中心完成。
+        </span>
+      </div>
+      {/* FreshRSS 原生逃生入口：只有显式配置的浏览器可达 public URL 才渲染 */}
       {ui.data?.url != null && (
         <p className="mt-2.5">
           <a
@@ -185,12 +240,6 @@ function FreshRssStatusBlock() {
             高级：在 FreshRSS 中管理
             <ExternalLink aria-hidden className="size-3" />
           </a>
-        </p>
-      )}
-      {ui.data !== undefined && ui.data.url === null && (
-        <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]">
-          高级操作（如 FreshRSS 网页端专属功能）需要在服务端配置
-          FRESHRSS_PUBLIC_URL 后才会提供入口。
         </p>
       )}
     </div>
