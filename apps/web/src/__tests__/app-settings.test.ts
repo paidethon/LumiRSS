@@ -34,8 +34,6 @@ describe('normalizeSettings — 不可信输入逐字段归一化', () => {
   it('合法值全部保留', () => {
     const valid: AppSettings = {
       ...DEFAULT_APP_SETTINGS,
-      sidebarHideRead: true,
-      timelineUnreadDot: false,
       themeMode: 'dark',
       readerBackground: 'sepia',
       readerFontSize: 21,
@@ -266,7 +264,7 @@ describe('store update（集成）', () => {
   it('reset 恢复全部默认', async () => {
     const { useAppSettings } = await import('../store/app-settings')
     localStorage.clear()
-    useAppSettings.getState().update({ themeMode: 'dark', sidebarHideRead: true })
+    useAppSettings.getState().update({ themeMode: 'dark', dimRead: true })
     useAppSettings.getState().reset()
     expect(useAppSettings.getState().settings).toEqual(DEFAULT_APP_SETTINGS)
     localStorage.clear()

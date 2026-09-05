@@ -117,20 +117,6 @@ export interface FilterStats {
   lastMatchedRule: string | null
 }
 
-/** RSSHub 实例（OrigRead rsshub.ts 镜像，16 内置清单） */
-export interface RssHubInstance {
-  id: string
-  url: string
-  location: string
-  maintainer: string
-  enabled: boolean
-  builtIn: boolean
-}
-export interface RssHubSettings {
-  enabled: boolean
-  instances: RssHubInstance[]
-}
-
 /** 排版预设主题（F7：主题 = 一组阅读样式变量快照） */
 export interface ReaderPreset {
   id: string
@@ -148,9 +134,7 @@ export interface ReaderPreset {
 
 export interface AppSettings {
   /** 通用 */
-  language: 'zh-CN' // 'en' planned（枚举占位，值只有 zh-CN）
-  sidebarHideRead: boolean
-  timelineUnreadDot: boolean
+  language: 'zh-CN' // 唯一支持语言（UI 只展示简体中文；i18n 未纳入范围）
   /** 时间线行为（0010a Gate E，Folo general timeline 组 inspired） */
   dimRead: boolean
   groupByDate: boolean
@@ -176,7 +160,6 @@ export interface AppSettings {
   /** OrigRead 其余页（0010a；翻译页 0017 退役——翻译由 0016 AI 负责） */
   filterRules: FilterRule[]
   filterStats: FilterStats
-  rsshubSettings: RssHubSettings
   /** 原有阅读/布局 */
   themeMode: ThemeMode
   readerFontSize: ReaderFontSize
@@ -208,31 +191,8 @@ export interface AppSettings {
   timelineCollapsed: boolean
 }
 
-// ---- RSSHub 16 内置实例（OrigRead 两端逐字一致清单） ----
-
-export const BUILTIN_RSSHUB_INSTANCES: RssHubInstance[] = [
-  { id: 'official', url: 'https://rsshub.app', location: 'US', maintainer: 'DIYgod', enabled: true, builtIn: true },
-  { id: 'rssforever', url: 'https://rsshub.rssforever.com', location: 'CN', maintainer: 'rssforever', enabled: true, builtIn: true },
-  { id: 'slarker', url: 'https://rsshub.slarker.me', location: 'US', maintainer: 'slarker', enabled: true, builtIn: true },
-  { id: 'pseudoyu', url: 'https://rsshub.pseudoyu.com', location: 'GLOBAL', maintainer: 'pseudoyu', enabled: true, builtIn: true },
-  { id: 'rsstips', url: 'https://rsshub.rsstips.com', location: 'HK', maintainer: 'rsstips', enabled: true, builtIn: true },
-  { id: 'ktachibana', url: 'https://rsshub.ktachibana.party', location: 'GB', maintainer: 'ktachibana', enabled: true, builtIn: true },
-  { id: 'owonz', url: 'https://rsshub.owonz.com', location: 'CN', maintainer: 'owonz', enabled: true, builtIn: true },
-  { id: 'wudifeixue', url: 'https://rsshub.wudifeixue.com', location: 'CN', maintainer: 'wudifeixue', enabled: true, builtIn: true },
-  { id: 'henry', url: 'https://rsshub.henry.wang', location: 'AE', maintainer: 'HenryQW', enabled: true, builtIn: true },
-  { id: 'umzzz', url: 'https://rsshub.umzzz.com', location: 'CN', maintainer: 'umzzz', enabled: true, builtIn: true },
-  { id: 'isrss', url: 'https://rsshub.isrss.com', location: 'GLOBAL', maintainer: 'isrss', enabled: true, builtIn: true },
-  { id: 'emailonce', url: 'https://rsshub.emailonce.com', location: 'GLOBAL', maintainer: 'emailonce', enabled: true, builtIn: true },
-  { id: 'datuan', url: 'https://rsshub.datuan.dev', location: 'US', maintainer: 'datuan', enabled: true, builtIn: true },
-  { id: 'cups', url: 'https://rsshub.cups.work', location: 'GLOBAL', maintainer: 'cups', enabled: true, builtIn: true },
-  { id: 'spriple', url: 'https://rsshub.spriple.xyz', location: 'GLOBAL', maintainer: 'spriple', enabled: true, builtIn: true },
-  { id: 'virworks', url: 'https://rsshub.virworks.com', location: 'GLOBAL', maintainer: 'virworks', enabled: true, builtIn: true },
-]
-
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   language: 'zh-CN',
-  sidebarHideRead: false,
-  timelineUnreadDot: true,
   dimRead: false,
   groupByDate: false,
   unreadOnly: false,
@@ -252,7 +212,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerPresets: [],
   filterRules: [],
   filterStats: { totalFiltered: 0, lastFilteredAt: null, lastMatchedRule: null },
-  rsshubSettings: { enabled: true, instances: BUILTIN_RSSHUB_INSTANCES },
   themeMode: 'system',
   readerFontSize: 17,
   readerLineHeight: 1.85,
@@ -376,30 +335,6 @@ function normalizeFilterRules(raw: unknown): FilterRule[] {
   return rules
 }
 
-function normalizeRssHub(raw: unknown): RssHubSettings {
-  const def = DEFAULT_APP_SETTINGS.rsshubSettings
-  if (typeof raw !== 'object' || raw === null)
-    return { enabled: def.enabled, instances: structuredClone(def.instances) }
-  const r = raw as Record<string, unknown>
-  const instances: RssHubInstance[] = Array.isArray(r.instances)
-    ? r.instances
-        .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
-        .map((i, idx) => ({
-          id: typeof i.id === 'string' && i.id ? i.id : `custom-${idx}`,
-          url: typeof i.url === 'string' ? i.url.trim() : '',
-          location: typeof i.location === 'string' ? i.location : 'GLOBAL',
-          maintainer: typeof i.maintainer === 'string' ? i.maintainer : '',
-          enabled: typeof i.enabled === 'boolean' ? i.enabled : true,
-          builtIn: i.builtIn === true,
-        }))
-        .filter((i) => i.url.length > 0)
-    : structuredClone(def.instances)
-  return {
-    enabled: typeof r.enabled === 'boolean' ? r.enabled : def.enabled,
-    instances: instances.length > 0 ? instances : structuredClone(def.instances),
-  }
-}
-
 function normalizePresets(raw: unknown): ReaderPreset[] {
   if (!Array.isArray(raw)) return []
   const out: ReaderPreset[] = []
@@ -443,14 +378,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const source = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   return {
     language: source.language === 'zh-CN' ? 'zh-CN' : DEFAULT_APP_SETTINGS.language,
-    sidebarHideRead:
-      typeof source.sidebarHideRead === 'boolean'
-        ? source.sidebarHideRead
-        : DEFAULT_APP_SETTINGS.sidebarHideRead,
-    timelineUnreadDot:
-      typeof source.timelineUnreadDot === 'boolean'
-        ? source.timelineUnreadDot
-        : DEFAULT_APP_SETTINGS.timelineUnreadDot,
     dimRead: pickBoolean(source.dimRead, DEFAULT_APP_SETTINGS.dimRead),
     groupByDate: pickBoolean(source.groupByDate, DEFAULT_APP_SETTINGS.groupByDate),
     unreadOnly: pickBoolean(source.unreadOnly, DEFAULT_APP_SETTINGS.unreadOnly),
@@ -501,7 +428,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
           ? (source.filterStats as Record<string, unknown>).lastMatchedRule as string
           : null,
     },
-    rsshubSettings: normalizeRssHub(source.rsshubSettings),
+    // 旧 rsshubSettings（浏览器侧参考清单）已退役：白名单外键自然丢弃
     themeMode: isThemeMode(source.themeMode)
       ? source.themeMode
       : DEFAULT_APP_SETTINGS.themeMode,

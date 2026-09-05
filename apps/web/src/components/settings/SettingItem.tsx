@@ -11,7 +11,7 @@
  *
  * 行布局按 Folo 实测（UPSTREAMS.md §Settings modal measurements）：
  * flex justify-between、label 14px/500 居左 + 控件居右、行 mt-16px。
- * 禁用行（planned）保持渲染但控件 disabled。 */
+ * （旧 planned 徽标机制已退役：不向用户暴露未实现的设置行。 */
 
 import type { ReactNode } from 'react'
 import { Select, type SelectOption } from '../ui/Select'
@@ -24,14 +24,6 @@ import { cx } from '../ui/cx'
 export type SettingRowBase = {
   label: string
   description?: string
-  /** planned 行：控件禁用 + planned 徽标（诚实原则） */
-  planned?: boolean
-  /** 归属里程碑（planned 行展示，如 "0011"） */
-  plannedFor?: string
-  /** 实验性行（0010a）：控件真实可用 + 实验徽标 + 正式版归属 */
-  experimental?: boolean
-  /** 正式版归属里程碑（实验性行展示，如 "0017"） */
-  experimentalFor?: string
 }
 
 export type TitleRow = {
@@ -73,29 +65,9 @@ export type SettingItemDef =
 
 // ---- 渲染 ----
 
-function PlannedBadge({ for_ }: { for_?: string }) {
-  return (
-    <span className="ml-auto shrink-0 self-center rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-      {for_ ? `planned · ${for_}` : 'planned'}
-    </span>
-  )
-}
-
-function ExperimentalBadge({ for_ }: { for_?: string }) {
-  return (
-    <span className="ml-auto shrink-0 self-center rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-      {for_ ? `实验性 · 正式版 ${for_}` : '实验性'}
-    </span>
-  )
-}
-
 function RowShell({
   label,
   description,
-  planned,
-  plannedFor,
-  experimental,
-  experimentalFor,
   children,
 }: SettingRowBase & { children: ReactNode }) {
   return (
@@ -110,11 +82,7 @@ function RowShell({
           </p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2.5">
-        {children}
-        {planned && <PlannedBadge for_={plannedFor} />}
-        {!planned && experimental && <ExperimentalBadge for_={experimentalFor} />}
-      </div>
+      <div className="flex shrink-0 items-center gap-2.5">{children}</div>
     </div>
   )
 }
@@ -139,7 +107,6 @@ export function SettingItem({ def }: { def: SettingItemDef }) {
             checked={def.checked}
             onCheckedChange={def.onCheckedChange}
             label={`${def.label}开关`}
-            disabled={def.planned}
           />
         </RowShell>
       )
@@ -151,7 +118,6 @@ export function SettingItem({ def }: { def: SettingItemDef }) {
             <Select
               aria-label={def.label}
               value={String(def.value)}
-              disabled={def.planned}
               options={options}
               onChange={(e) => {
                 const raw = e.target.value
@@ -170,7 +136,6 @@ export function SettingItem({ def }: { def: SettingItemDef }) {
           <Button
             variant={def.danger === true ? 'danger' : 'secondary'}
             size="sm"
-            disabled={def.planned}
             onClick={def.action}
           >
             {def.buttonText}

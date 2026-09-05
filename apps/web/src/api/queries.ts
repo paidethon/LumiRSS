@@ -5,12 +5,17 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   applyRssHubConfig,
+  clearAiProfileSecret,
+  clearDefaultAiSecret,
   clearRssHubSecret,
+  createAiProfile,
   createBackup,
+  deleteAiProfile,
   discoverFeeds,
   executeRestore,
   generateEntrySummary,
   generateEntryTranslation,
+  getAiProfiles,
   getAiSettings,
   getBackupJob,
   getCategories,
@@ -37,14 +42,20 @@ import {
   previewRssHub,
   renameCategory,
   sendConversationMessage,
+  setAiProfileSecret,
+  setDefaultAiSecret,
   setEntryState,
   setRssHubSecret,
   subscribeFeed,
   testWebDav,
   unsubscribeFeed,
+  updateAiProfile,
+  updateAiPurposes,
   updateAiSettings,
   updateWebDavSettings,
 } from './client'
+import type { AiProfileInput } from './client'
+import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
 
@@ -279,6 +290,107 @@ export function useUpdateAiSettingsMutation() {
         queryClient.invalidateQueries({ queryKey: ['entry-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['entry-translation'] }),
       ])
+    },
+  })
+}
+
+/** AI Profile 列表（元数据 + keyConfigured 布尔；绝不回显 key）。 */
+export function useAiProfiles(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['ai-profiles'],
+    queryFn: ({ signal }) => getAiProfiles(signal),
+    enabled,
+  })
+}
+
+/** Profile 增删改后统一失效：profile 列表 + AI 设置（purposeStatus 内嵌
+ * 有效解析）+ 摘要/翻译/对话缓存身份（model 可能随 Profile 改变）。 */
+async function invalidateAiProfileGraph(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['ai-profiles'] }),
+    queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+    queryClient.invalidateQueries({ queryKey: ['entry-summary'] }),
+    queryClient.invalidateQueries({ queryKey: ['entry-translation'] }),
+  ])
+}
+
+export function useCreateAiProfileMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AiProfileInput) => createAiProfile(input),
+    onSuccess: () => invalidateAiProfileGraph(queryClient),
+  })
+}
+
+export function useUpdateAiProfileMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { profileId: string; patch: Partial<AiProfileInput> }) =>
+      updateAiProfile(vars.profileId, vars.patch),
+    onSuccess: () => invalidateAiProfileGraph(queryClient),
+  })
+}
+
+export function useDeleteAiProfileMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (profileId: string) => deleteAiProfile(profileId),
+    onSuccess: () => invalidateAiProfileGraph(queryClient),
+  })
+}
+
+/** Profile 密钥写入（write-only）。成功后只需刷新 key 状态视图。 */
+export function useSetAiProfileSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { profileId: string; value: string }) =>
+      setAiProfileSecret(vars.profileId, vars.value),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai-profiles'] }),
+        queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+      ])
+    },
+  })
+}
+
+export function useClearAiProfileSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (profileId: string) => clearAiProfileSecret(profileId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai-profiles'] }),
+        queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+      ])
+    },
+  })
+}
+
+export function useSetDefaultAiSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (value: string) => setDefaultAiSecret(value),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+  })
+}
+
+export function useClearDefaultAiSecretMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => clearDefaultAiSecret(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
+  })
+}
+
+/** 用途分配（purpose → profileId）。成功后失效 AI 设置（purposeStatus）。 */
+export function useUpdateAiPurposesMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: Partial<Record<AiPurposeKey, string>>) =>
+      updateAiPurposes(patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
     },
   })
 }
