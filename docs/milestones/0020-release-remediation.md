@@ -210,7 +210,9 @@ efae51b  fix(backup): harden backup and restore integrity
 4688f2d  fix(web): resolve reader and settings regressions
 acf24a8  fix(a11y): close responsive and accessibility gaps
 fa47151  fix(release): align CI deployment and operator contracts
-<docs>   docs: align project documentation with implemented MVP（含本文件）
+d9f30a0  docs: align project documentation with implemented MVP
+a2f800a  refactor: remove verified release cleanup debt
+<final>  docs: finalize 0020 verification record（本行所在提交）
 ```
 
 ## Known remaining limitations
