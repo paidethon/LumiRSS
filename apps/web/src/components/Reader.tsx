@@ -120,9 +120,12 @@ export default function Reader() {
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，
-          移动端 CSS 钳制安全范围）；底部计入 safe area */}
+          移动端 CSS 钳制安全范围）；底部计入 safe area。
+          AUDIT-002：同时提供稳定的 .lumi-reader 作用域根，使设置/主题包
+          的自定义 CSS（prefixCustomCss 默认前缀 .lumi-reader）在正式 Reader
+          中生效（此前正式 Reader 只有 .lumi-reader-article，自定义 CSS 从不命中）。 */}
       <article
-        className="lumi-reader-article mx-auto py-6"
+        className="lumi-reader lumi-reader-article mx-auto py-6"
         style={{
           maxWidth: 'var(--lumi-reader-content-width, 46rem)',
           paddingBottom: 'max(1.5rem, var(--safe-bottom))',
@@ -136,8 +139,10 @@ export default function Reader() {
           detail={detail}
           onOpenAiConversation={() => setAiConversationOpen(true)}
         />
-        {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源） */}
-        <ReaderSummary entryRef={detail.entryRef} />
+        {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
+            AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
+            pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
+        <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
         {/* 0016：原文/译文切换 + 文章正文（译文为纯文本派生视图，
             原文渲染路径不变） */}
         <ReaderTranslation

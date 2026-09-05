@@ -6,14 +6,16 @@
  * - production smoke：对 docker-compose.prod 栈验证关键路径与健康。
  *
  * 运行前必须有一个可用栈：`pnpm test:e2e` 读取 LUMIRSS_E2E_BASE_URL
- * （默认 http://127.0.0.1:18080，对应 docker-compose.prod 的 smoke 入口）。
+ * （默认 http://127.0.0.1，对应 docker-compose.prod 的 web/Caddy 发布入口
+ * 80/443；若你的部署用 HTTPS 或其它端口，用 LUMIRSS_E2E_BASE_URL 覆盖。
+ * CI 静态冒烟用 http://127.0.0.1:4173 的 vite preview，见下方 ciStatic）。
  * 报告 / trace / 截图全部落在 gitignored 的 test-results/ 与
  * playwright-report/ 目录。
  */
 
 import { defineConfig } from '@playwright/test'
 
-const baseURL = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1:18080'
+const baseURL = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1'
 
 // CI 静态冒烟模式：自动启动 vite preview（无后端 API，验证降级态 UI）。
 // 本地/全栈跑法不启用（栈由 docker compose 提供）。

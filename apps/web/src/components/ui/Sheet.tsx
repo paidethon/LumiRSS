@@ -13,8 +13,9 @@
  *
  * 0016：新增 side="right"（0016 AI 对话面板；移动端全宽 = 全屏对话）。 */
 
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useId, useRef } from 'react'
 import { cx } from './cx'
+import { useModalA11y } from '../../lib/use-modal-a11y'
 
 export interface SheetProps {
   open: boolean
@@ -31,55 +32,12 @@ export interface SheetProps {
   id?: string
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
-
 export function Sheet({ open, onClose, label, children, side = 'left', panelClassName, id }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const labelId = useId()
-  const lastActiveRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    lastActiveRef.current = document.activeElement as HTMLElement
-    const panel = panelRef.current
-    // 初始焦点：第一个可聚焦元素（如 ✕ 关闭钮）；没有则面板自身
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE)
-    ;(first ?? panel)?.focus()
-
-    // 背景滚动锁定（关闭时恢复原值）
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-        return
-      }
-      if (e.key !== 'Tab') return
-      // 焦点 trap：Tab 在面板内循环（Dialog 同款机制）
-      const nodes = [
-        ...(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []),
-      ].filter((n) => n.offsetParent !== null)
-      if (nodes.length === 0) return
-      const firstNode = nodes[0]
-      const lastNode = nodes[nodes.length - 1]
-      if (e.shiftKey && document.activeElement === firstNode) {
-        e.preventDefault()
-        lastNode.focus()
-      } else if (!e.shiftKey && document.activeElement === lastNode) {
-        e.preventDefault()
-        firstNode.focus()
-      }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.body.style.overflow = prevOverflow
-      lastActiveRef.current?.focus()
-    }
-  }, [open, onClose])
+  // 0020 Gate 3：模态键盘/焦点/滚动行为复用共享 hook（与 Dialog/
+  // MobileSettingsScreen 同源）。遮罩点击关闭仍由下方 onPointerDown 处理。
+  useModalA11y(panelRef, open, onClose)
 
   if (!open) return null
 

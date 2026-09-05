@@ -200,7 +200,7 @@ export default function SubscriptionsPage() {
         onClose={() => setRenameTarget(null)}
         category={renameTarget}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:pb-[76px]">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
         {/* 搜索订阅源（本地过滤，文案诚实） */}
         <div className="relative mb-3">
           <Search

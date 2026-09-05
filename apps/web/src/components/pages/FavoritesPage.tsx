@@ -139,7 +139,7 @@ export default function FavoritesPage() {
           <li
             ref={sentinelRef}
             aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
-            className="flex items-center justify-center py-4 max-md:pb-[84px]"
+            className="flex items-center justify-center py-4 max-lg:pb-[84px]"
           >
             {isFetchingNextPage ? (
               <Loader2 aria-label="加载中" className="size-4 animate-spin text-[var(--lumi-text-tertiary)]" />

@@ -67,3 +67,36 @@ export function initTheme(): void {
   const mode = readStoredMode(typeof localStorage === 'undefined' ? null : localStorage)
   applyTheme(document.documentElement, resolveTheme(mode, prefersDarkScheme()))
 }
+
+/** 规范设置 key（app-settings.ts 的 SETTINGS_STORAGE_KEY；index.html 内联
+ * 脚本与此处都硬编码同一字面量，避免 lib/theme ↔ store/app-settings 循环依赖）。 */
+export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
+
+/** AUDIT-008：首帧主题解析（index.html 内联防闪烁脚本镜像同一逻辑）。
+ *
+ * 单一真源是规范 key ``lumirss-settings`` 的 ``themeMode``；仅当它缺失/无效时
+ * 才回退到旧 key ``lumirss-theme``（迁移安全）。显式 light/dark 直接采用，
+ * system/缺失按 OS 偏好解析。这样首帧一定使用「当前设置」，不会因旧 key
+ * 与规范 key 分叉而闪错误主题。 */
+export function resolveInitialTheme(
+  storage: Storage | null,
+  prefersDark: boolean,
+): Theme {
+  let mode: ThemeMode | null = null
+  if (storage !== null) {
+    try {
+      const rawSettings = storage.getItem(SETTINGS_STORAGE_KEY)
+      if (rawSettings !== null) {
+        const parsed = JSON.parse(rawSettings) as { themeMode?: unknown }
+        if (isThemeMode(parsed?.themeMode)) mode = parsed.themeMode
+      }
+    } catch {
+      mode = null
+    }
+    if (mode === null) {
+      const legacy = storage.getItem(THEME_STORAGE_KEY)
+      if (isThemeMode(legacy)) mode = legacy
+    }
+  }
+  return resolveTheme(mode ?? 'system', prefersDark)
+}

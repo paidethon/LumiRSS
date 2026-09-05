@@ -6,12 +6,14 @@
 
 ## Start Here
 
-**Last completed**: 0019 — MVP Stabilization & Release
-→ [milestones/0019-mvp-stabilization-release.md](milestones/0019-mvp-stabilization-release.md)
+**Last completed**: 0020 — MVP Release Remediation
+→ [milestones/0020-release-remediation.md](milestones/0020-release-remediation.md)
 
 **Active milestone**: —
 
-**Next planned**: —（Phase 2 待定）
+**Next planned**: 0021 — Security & Operations Hardening（候选；收纳 0020 延后的
+BFF 内部鉴权 / DNS-rebinding 硬化 / CSP·HSTS·rate-limit / 通用请求体限制 /
+AI lock-map / 多设备设置冲突语义）
 
 ---
 
@@ -89,3 +91,4 @@ during normal development.
 | 0017 | Reader Power UX & Unified Settings | Completed |
 | 0018 | Production, Operations & Backup | Completed |
 | 0019 | MVP Stabilization & Release | Completed |
+| 0020 | MVP Release Remediation | Completed |

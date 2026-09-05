@@ -75,7 +75,9 @@ export function Slider({
             disabled={disabled || value <= min}
             onClick={() => stepBy(-1)}
             className={cx(
-              'flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]',
+              'relative flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]',
+              // 0020 Gate 3（触摸目标）：视觉 36px，透明伪元素撑到 ≥44×44
+              'after:absolute after:-inset-1 after:content-[""]',
               'text-sm font-medium text-[var(--lumi-text-secondary)]',
               'transition-colors duration-[var(--lumi-motion-fast)]',
               'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
@@ -108,7 +110,9 @@ export function Slider({
             disabled={disabled || value >= max}
             onClick={() => stepBy(1)}
             className={cx(
-              'flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]',
+              'relative flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]',
+              // 0020 Gate 3（触摸目标）：视觉 36px，透明伪元素撑到 ≥44×44
+              'after:absolute after:-inset-1 after:content-[""]',
               'text-base font-medium text-[var(--lumi-text-secondary)]',
               'transition-colors duration-[var(--lumi-motion-fast)]',
               'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',

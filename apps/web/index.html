@@ -13,16 +13,39 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- 0009 Gate 1：主题防首帧闪烁（FOUC）。在 React 加载前读同一
-         个 localStorage key（lumirss-theme）并挂 data-theme；逻辑与
-         src/lib/theme.ts 保持一致。 -->
+    <!-- 0009 Gate 1 / 0020 AUDIT-008：主题防首帧闪烁（FOUC）。单一真源
+         是规范 key lumirss-settings 的 themeMode；仅当缺失/无效时回退旧 key
+         lumirss-theme（迁移安全）。逻辑与 src/lib/theme.ts 的
+         resolveInitialTheme 保持一致：显式 light/dark 直接采用，system 跟随 OS。 -->
     <script>
       ;(function () {
         try {
-          var raw = localStorage.getItem('lumirss-theme')
+          var mode = null
+          var rawSettings = localStorage.getItem('lumirss-settings')
+          if (rawSettings) {
+            try {
+              var parsed = JSON.parse(rawSettings)
+              if (
+                parsed &&
+                (parsed.themeMode === 'light' ||
+                  parsed.themeMode === 'dark' ||
+                  parsed.themeMode === 'system')
+              ) {
+                mode = parsed.themeMode
+              }
+            } catch (e) {
+              mode = null
+            }
+          }
+          if (mode === null) {
+            var legacy = localStorage.getItem('lumirss-theme')
+            if (legacy === 'light' || legacy === 'dark' || legacy === 'system') {
+              mode = legacy
+            }
+          }
           var theme =
-            raw === 'light' || raw === 'dark'
-              ? raw
+            mode === 'light' || mode === 'dark'
+              ? mode
               : window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
                 : 'light'

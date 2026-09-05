@@ -272,3 +272,34 @@ describe('store update（集成）', () => {
     localStorage.clear()
   })
 })
+
+describe('0020 Gate 3 — appearance DOM 副作用（accent 对比 + reduce motion）', () => {
+  it('亮色自定义 accent → 近黑前景；中/深色 accent → 白前景（可读对比）', async () => {
+    const { useAppSettings } = await import('../store/app-settings')
+    localStorage.clear()
+    const root = document.documentElement
+    // 亮黄 accent：白字不可读 → 近黑前景
+    useAppSettings.getState().update({ accentColor: '#ffeb3b' })
+    expect(root.style.getPropertyValue('--lumi-accent-contrast').trim()).toBe('#1c1c1e')
+    // 默认 accent（Lumi Mist #6d78e8，中深）→ 白前景（不回归默认观感）
+    useAppSettings.getState().update({ accentColor: '#6d78e8' })
+    expect(root.style.getPropertyValue('--lumi-accent-contrast').trim()).toBe('#ffffff')
+    // 深色 accent → 白前景
+    useAppSettings.getState().update({ accentColor: '#1a1a2e' })
+    expect(root.style.getPropertyValue('--lumi-accent-contrast').trim()).toBe('#ffffff')
+    useAppSettings.getState().reset()
+    localStorage.clear()
+  })
+
+  it('reduceMotion 把 data-motion-reduce 挂到 <html>（tokens.css 消费）', async () => {
+    const { useAppSettings } = await import('../store/app-settings')
+    localStorage.clear()
+    const root = document.documentElement
+    useAppSettings.getState().update({ reduceMotion: true })
+    expect(root.dataset.motionReduce).toBe('true')
+    useAppSettings.getState().update({ reduceMotion: false })
+    expect(root.dataset.motionReduce).toBeUndefined()
+    useAppSettings.getState().reset()
+    localStorage.clear()
+  })
+})

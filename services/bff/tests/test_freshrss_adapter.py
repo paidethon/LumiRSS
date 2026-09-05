@@ -164,6 +164,31 @@ async def test_list_feeds_connection_error_maps_to_upstream_connection_error():
         await adapter.list_feeds()
 
 
+@pytest.mark.anyio
+async def test_pool_timeout_maps_to_upstream_connection_error():
+    """AUDIT: httpx.TransportError subclasses beyond the original three
+    (here PoolTimeout) must still map to a stable UpstreamConnectionError
+    instead of escaping as a raw 500."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.PoolTimeout("pool exhausted")
+
+    adapter = make_adapter(handler)
+
+    with pytest.raises(UpstreamConnectionError):
+        await adapter.list_feeds()
+
+
+def test_malformed_upstream_continuation_raises_upstream_error():
+    """AUDIT: a non-digit FreshRSS continuation would make encode_cursor raise
+    a raw ValueError (500). The adapter now rejects it as a stable
+    UpstreamError before it can reach cursor encoding."""
+    assert FreshRSSAdapter._continuation_of({"continuation": "123"}) == "123"
+    assert FreshRSSAdapter._continuation_of({"continuation": ""}) is None
+    assert FreshRSSAdapter._continuation_of({}) is None
+    with pytest.raises(UpstreamError):
+        FreshRSSAdapter._continuation_of({"continuation": "not-a-digit-token"})
+
+
 # --- Test D — secret / config behavior ---------------------------------
 
 

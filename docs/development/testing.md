@@ -30,8 +30,10 @@ uv run pytest
 
 ## E2E (Playwright, 0018+)
 
-E2E journeys run against a running stack (default `http://127.0.0.1:18080`,
-the production compose smoke entry; override with `LUMIRSS_E2E_BASE_URL`):
+E2E journeys run against a running stack (default `http://127.0.0.1`, the
+production compose `web`/Caddy published entry on 80/443; override with
+`LUMIRSS_E2E_BASE_URL` — e.g. `http://127.0.0.1:4173` for the CI static
+preview, or your HTTPS domain):
 
 ```bash
 cd apps/web

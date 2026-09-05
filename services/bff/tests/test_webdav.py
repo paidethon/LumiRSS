@@ -12,6 +12,7 @@ import pytest
 from lumirss.webdav import (
     WebDavClient,
     WebDavError,
+    WebDavInvalidSettings,
     WebDavSettings,
     backup_root_path,
     normalize_remote_dir,
@@ -36,6 +37,21 @@ def _client(handler):
 def test_normalize_rejects_credentials_in_url():
     with pytest.raises(WebDavError):
         normalize_server_url("https://user:pass@dav.example.com")
+
+
+def test_invalid_settings_are_specific_client_error_type():
+    """AUDIT: structural client-input failures raise the specific
+    WebDavInvalidSettings (mapped to 400), which is still a WebDavError so
+    existing expectations hold."""
+    assert issubclass(WebDavInvalidSettings, WebDavError)
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("ftp://dav.example.com")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_server_url("https://user:pass@dav.example.com")
+    with pytest.raises(WebDavInvalidSettings):
+        normalize_remote_dir("/a/../../etc")
 
 
 def test_normalize_rejects_public_http():
@@ -148,3 +164,26 @@ def test_get_bounded_response():
 def test_backup_root_path():
     assert backup_root_path("") == "/LumiRSS/backups"
     assert backup_root_path("/dav") == "/dav/LumiRSS/backups"
+
+
+def test_download_to_streams_to_file(tmp_path):
+    """AUDIT-037: remote restore streams to disk (not into a small in-RAM cap)."""
+
+    def handler(request):
+        return httpx.Response(200, content=b"y" * 5000)
+
+    client = _client(handler)
+    dest = tmp_path / "out.backup"
+    total = run(client.download_to("/x.backup", dest))
+    assert total == 5000
+    assert dest.read_bytes() == b"y" * 5000
+
+
+def test_download_to_connection_error_is_safe(tmp_path):
+    def handler(request):
+        raise httpx.ConnectError("dial tcp boom")
+
+    client = _client(handler)
+    with pytest.raises(WebDavError) as exc:
+        run(client.download_to("/x.backup", tmp_path / "out.backup"))
+    assert "boom" not in str(exc.value)

@@ -39,7 +39,7 @@ export default function SearchPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-md:pb-[76px]">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
         {/* 主搜索框：提交 / 清空（原生 ×）/ 取消 */}
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">
@@ -105,7 +105,7 @@ export default function SearchPage() {
                       type="button"
                       onClick={() => setHistory(removeFromSearchHistory(history, q))}
                       aria-label={`删除历史「${q}」`}
-                      className="flex size-6 items-center justify-center rounded-full text-[var(--lumi-text-tertiary)] transition-colors hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                      className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-text-tertiary)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
                     >
                       <X aria-hidden className="size-3" />
                     </button>

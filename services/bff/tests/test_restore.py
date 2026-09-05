@@ -22,6 +22,7 @@ from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
     RestoreService,
+    _sqlite_snapshot_is_valid,
 )
 from lumirss.config import LumiSettings
 from lumirss.storage import Database
@@ -181,6 +182,44 @@ def test_restore_creates_safety_backup_and_restores(tmp_path, monkeypatch):
     value = check.execute("SELECT id FROM t").fetchone()
     check.close()
     assert value == (777,)
+
+
+def test_sqlite_snapshot_validity_helper(tmp_path):
+    valid = tmp_path / "valid.sqlite"
+    run(Database(valid).migrate())
+    assert _sqlite_snapshot_is_valid(valid) is True
+    corrupt = tmp_path / "corrupt.sqlite"
+    corrupt.write_bytes(b"definitely not a sqlite database")
+    assert _sqlite_snapshot_is_valid(corrupt) is False
+
+
+def test_corrupt_snapshot_rejected_before_swap(tmp_path, monkeypatch):
+    """AUDIT-004: the extracted snapshot is integrity-checked BEFORE the live
+    database is touched. A snapshot that cannot pass PRAGMA integrity_check is
+    rejected as RestoreFailed and the live database stays byte-for-byte intact.
+
+    Pre-fix this raised a raw sqlite3.DatabaseError during ``source.backup()``;
+    post-fix it raises RestoreFailed from the pre-swap guard."""
+    live_db = tmp_path / "live" / "lumi.sqlite"
+    live_db.parent.mkdir(parents=True, exist_ok=True)
+    run(Database(live_db).migrate())
+    conn = sqlite3.connect(str(live_db))
+    conn.execute(
+        "INSERT INTO lumi_settings VALUES "
+        "('keep', 'original', '2026-09-04T00:00:00+00:00')"
+    )
+    conn.commit()
+    conn.close()
+    before = live_db.read_bytes()
+
+    corrupt = tmp_path / "corrupt-snapshot.sqlite"
+    corrupt.write_bytes(b"definitely not a sqlite database")
+
+    service = _service(tmp_path, monkeypatch, live_db)
+    with pytest.raises(RestoreFailed):
+        service._restore_lumi_sync(corrupt)
+    # The live database was never swapped with the known-bad snapshot.
+    assert live_db.read_bytes() == before
 
 
 def test_failed_safety_backup_reports_recovery(tmp_path, monkeypatch):

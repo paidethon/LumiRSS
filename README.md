@@ -9,6 +9,12 @@ Its current foundation:
 - a project-owned **FastAPI BFF**;
 - a responsive **React Web / PWA** client.
 
+On top of that foundation the MVP already ships: article reading with explicit
+read/star state, subscriptions & categories with OPML import/export, RSSHub
+source discovery & preview, AI summary / translation / article conversation,
+a unified settings center, and local + WebDAV backup with staged restore.
+Web clipping, Obsidian and other Phase-2 connectors are not implemented.
+
 > LumiRSS is under active MVP development.
 > Documentation and project status: [docs/README.md](docs/README.md)
 

@@ -122,7 +122,7 @@ from lumirss.restore import (
     RestorePreviewRequired,
     RestoreService,
 )
-from lumirss.webdav import WebDavError, WebDavNotConfigured
+from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 
 
 @asynccontextmanager
@@ -241,6 +241,7 @@ _ERROR_RESPONSES = {
     BackupUnsupportedVersion: (409, "backup_unsupported_version"),
     BackupFreshrssUnavailable: (503, "backup_freshrss_unavailable"),
     WebDavNotConfigured: (503, "webdav_not_configured"),
+    WebDavInvalidSettings: (400, "webdav_invalid_settings"),
     WebDavError: (502, "webdav_error"),
     RestoreConfirmationRequired: (400, "backup_restore_confirmation_required"),
     RestorePreviewRequired: (400, "backup_restore_preview_required"),
@@ -299,6 +300,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(BackupUnsupportedVersion)
 @app.exception_handler(BackupFreshrssUnavailable)
 @app.exception_handler(WebDavNotConfigured)
+@app.exception_handler(WebDavInvalidSettings)
 @app.exception_handler(WebDavError)
 @app.exception_handler(RestoreConfirmationRequired)
 @app.exception_handler(RestorePreviewRequired)
@@ -1603,9 +1605,10 @@ async def _locate_backup_package(
         # Download into a temp file for verification.
         stage = settings.restore_staging_dir / "downloads"
         stage.mkdir(parents=True, exist_ok=True)
-        data = await client.get(f"{root}/{quote_path_segment(body.fileName)}")
         dest = stage / body.fileName
-        dest.write_bytes(data)
+        # AUDIT-037: stream to disk (bounded by MAX_TOTAL_BYTES) instead of
+        # holding the whole archive in memory under the smaller in-RAM cap.
+        await client.download_to(f"{root}/{quote_path_segment(body.fileName)}", dest)
     finally:
         await client.aclose()
     return dest, body.fileName

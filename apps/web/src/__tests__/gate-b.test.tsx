@@ -221,6 +221,96 @@ describe('分类页 planned 语义（AC10）', () => {
   })
 })
 
+describe('0020 AUDIT-013 — j/k 滚动定位到真实 data-entry-ref 元素', () => {
+  it('j 选中项对应的 div[data-entry-ref] 被 scrollIntoView（而非不存在的 button 嵌套选择器）', async () => {
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
+    localStorage.clear()
+    let scrolledRef: string | null = null
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolledRef = this.getAttribute('data-entry-ref')
+    } as never
+    // rAF 同步执行，便于确定性断言
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0)
+      return 0
+    })
+    render(
+      renderWithProviders(
+        <>
+          <ShortcutHost />
+          <div data-entry-ref="e1.a">A</div>
+          <div data-entry-ref="e1.b">B</div>
+        </>,
+      ),
+    )
+    fireEvent.keyDown(window, { key: 'j' })
+    expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
+    await waitFor(() => expect(scrolledRef).toBe('e1.a'))
+    Element.prototype.scrollIntoView = original
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('0020 AUDIT-014 — 模态打开时全局快捷键不改动隐藏的 Reader/timeline', () => {
+  it('dialog + j：不改变选中项', () => {
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
+    localStorage.clear()
+    render(
+      renderWithProviders(
+        <>
+          <ShortcutHost />
+          <div role="dialog" aria-modal="true">modal</div>
+        </>,
+      ),
+    )
+    fireEvent.keyDown(window, { key: 'j' })
+    expect(useReaderUi.getState().selectedEntryRef).toBeNull()
+  })
+
+  it('dialog + s：不发起收藏 mutation', async () => {
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: 'e1.a' })
+    localStorage.clear()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      renderWithProviders(
+        <>
+          <ShortcutHost />
+          <div role="dialog" aria-modal="true">modal</div>
+        </>,
+      ),
+    )
+    fireEvent.keyDown(window, { key: 's' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('dialog + u：不切换未读视图', () => {
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
+    localStorage.clear()
+    render(
+      renderWithProviders(
+        <>
+          <ShortcutHost />
+          <div role="dialog" aria-modal="true">modal</div>
+        </>,
+      ),
+    )
+    fireEvent.keyDown(window, { key: 'u' })
+    expect(useReaderUi.getState().view).toBe('all')
+  })
+
+  it('无模态时 j 照常工作（守卫不误伤）', () => {
+    useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
+    localStorage.clear()
+    render(renderWithProviders(<ShortcutHost />))
+    fireEvent.keyDown(window, { key: 'j' })
+    expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
+  })
+})
+
 describe('未读圆点开关真实生效（AC5）', () => {
   it('关闭后 EntryRow 不再渲染圆点', async () => {
     const { useEntries } = await import('../api/queries')

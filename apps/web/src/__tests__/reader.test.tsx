@@ -427,3 +427,66 @@ describe('Selection race（query）', () => {
     expect(screen.queryByText('文章 A')).not.toBeInTheDocument()
   })
 })
+
+describe('0020 AUDIT-002 — 正式 Reader 提供稳定 .lumi-reader 作用域', () => {
+  it('article 根同时带 .lumi-reader（自定义 CSS 前缀作用域）与 .lumi-reader-article', async () => {
+    useReaderUi.setState({ selectedEntryRef: 'e1.a' })
+    vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
+    const { container } = renderReader()
+    expect(await screen.findByText('文章 A')).toBeInTheDocument()
+    // 修复前正式 Reader 只有 .lumi-reader-article，prefixCustomCss 的
+    // .lumi-reader 作用域从不命中；现在两者共存。
+    expect(container.querySelector('article.lumi-reader')).not.toBeNull()
+    expect(container.querySelector('article.lumi-reader-article')).not.toBeNull()
+  })
+})
+
+describe('0020 AUDIT-011 — ReaderSummary 跨文章不泄漏生成态', () => {
+  const notGenerated = {
+    status: 'not_generated',
+    summary: null,
+    provider: 'openai_compatible',
+    model: 'model-a',
+    promptVersion: 'summary-v1',
+    language: 'zh-CN',
+    generatedAt: null,
+    failureType: null,
+    cached: false,
+  }
+
+  it('A 生成中切到（已缓存的）B：B 不残留 A 的生成 pending 态', async () => {
+    // 预置 A/B 的 detail 缓存：切换时不走 loading skeleton，Reader 子树
+    // 保持挂载——这正是缺少 key 时 ReaderSummary 实例被复用、生成态
+    // 泄漏的场景。
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    qc.setQueryData(['entry', 'e1.a'], detail())
+    qc.setQueryData(['entry', 'e1.b'], detail({ entryRef: 'e1.b', title: '文章 B' }))
+    useReaderUi.setState({ selectedEntryRef: 'e1.a' })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      // 生成 POST 永不返回 → A 的 mutation 保持 pending（“正在生成…”）
+      if (method === 'POST' && url.endsWith('/summary')) return new Promise<Response>(() => {})
+      if (url.endsWith('/summary')) return jsonResponse(notGenerated)
+      // detail 重拉（staleTime 0）必须成功，否则 Reader 会回到错误态
+      if (url === '/api/v1/entries/e1.b') return jsonResponse(detail({ entryRef: 'e1.b', title: '文章 B' }))
+      if (url === '/api/v1/entries/e1.a') return jsonResponse(detail())
+      // translation / conversation 返回错误态（组件已优雅处理），不影响摘要断言
+      return jsonResponse({ error: { type: 'upstream_error', message: 'x' } }, 502)
+    }))
+    renderReader(qc)
+
+    // A：点击生成 → POST 永不返回 → 按钮变“正在生成…”（isPending）
+    fireEvent.click(await screen.findByRole('button', { name: /AI 摘要/ }))
+    expect(await screen.findByText('正在生成…')).toBeInTheDocument()
+
+    // 切到 B（detail 已缓存 → 子树不重挂载）
+    useReaderUi.setState({ selectedEntryRef: 'e1.b' })
+    expect(await screen.findByText('文章 B')).toBeInTheDocument()
+    // key=entryRef 重挂载 ReaderSummary：B 的生成态全新（不残留 A 的 pending）
+    expect(await screen.findByRole('button', { name: /AI 摘要/ })).toBeInTheDocument()
+    expect(screen.queryByText('正在生成…')).not.toBeInTheDocument()
+  })
+})

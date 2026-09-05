@@ -38,6 +38,9 @@ export function Switch({
         className={cx(
           'relative inline-flex h-6 w-11 shrink-0 items-center rounded-[var(--lumi-radius-full)]',
           'transition-colors duration-[var(--lumi-motion-fast)]',
+          // 0020 Gate 3（触摸目标）：视觉轨道保持 24×44，但用透明伪元素
+          // 把可点区域向上下各撑 10px → ≥44×44 的触达目标（不改布局/观感）。
+          'after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-[""]',
           checked
             ? 'bg-[var(--lumi-accent)]'
             : 'bg-[var(--lumi-surface-pressed)]',

@@ -3,6 +3,7 @@ import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { EntryActionButtons } from './EntryActionButtons'
 import { cx } from './ui/cx'
+import { listDateTimeFormatter as cardDateFormatter } from '../lib/date-format'
 
 /** EntryCard — 移动端共享卡片（0011 Gate 3；修正补充重构）。
  *
@@ -81,13 +82,6 @@ export default function EntryCard({
     </div>
   )
 }
-
-const cardDateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-})
 
 function formatPublishedAt(value: string | null): string {
   if (value === null) return '—'

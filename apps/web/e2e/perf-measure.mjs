@@ -10,7 +10,7 @@
 
 import { chromium } from '@playwright/test'
 
-const BASE = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1:18080'
+const BASE = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1'
 
 async function measure(browser, viewport, label) {
   const context = await browser.newContext({ viewport, locale: 'zh-CN' })

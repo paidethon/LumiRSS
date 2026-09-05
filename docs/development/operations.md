@@ -8,10 +8,20 @@
 ```bash
 cp .env.prod.example .env.prod   # 填写真实值（见 §2）
 docker compose -f docker-compose.prod.yml up -d --build
-curl -fsS http://127.0.0.1:18080/api/health/ready   # 经反代或容器内检查
+
+# 就绪检查：/health/* 只在 BFF 容器内暴露（Caddy 仅反代 /api/*，不代理
+# /health/*），因此从容器内检查（与镜像 HEALTHCHECK 同一手法）：
+docker compose -f docker-compose.prod.yml exec bff \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status)"
+
+# 公网入口（Caddy 发布的 80/443）自检：SPA 首页可返回；若 DOMAIN 强制
+# HTTPS 则用 https://<DOMAIN>/（自签本地证书需 -k）。
+curl -fsS -o /dev/null http://127.0.0.1/
 ```
 
 - 唯一公网入口是 `web`（Caddy，80/443）；FreshRSS / RSSHub 只在内部网络。
+- BFF **不发布任何宿主端口**：`/health/live`、`/health/ready` 只能容器内
+  访问；外部监控走经反代的 `/api/v1/operations/status`（见 §4）。
 - FreshRSS / RSSHub 镜像按 digest/版本 pin（不随系统升级漂移）。
 - 最低资源：2 vCPU / 2 GB RAM / 10 GB 磁盘（RSSHub 峰值内存最高）。
 
@@ -36,11 +46,11 @@ curl -fsS http://127.0.0.1:18080/api/health/ready   # 经反代或容器内检�
 
 ## 4. Health / readiness
 
-- `GET /health/live` — 进程存活。
+- `GET /health/live` — 进程存活（**仅容器内**：Caddy 只反代 `/api/*`）。
 - `GET /health/ready` — 核心（lumi.sqlite）不可用才 503；FreshRSS/RSSHub
-  故障不影响 readiness（AD-0018-3 失败隔离）。
+  故障不影响 readiness（AD-0018-3 失败隔离）。同样**仅容器内**可达。
 - `GET /api/v1/operations/status` — 各依赖真实探测（延迟/类型化错误），
-  UI 在「设置 → 账户与服务」展示。
+  经 Caddy `/api/*` 反代对外可达；UI 在「设置 → 账户与服务」展示。
 
 ## 5. Logs
 
@@ -50,8 +60,16 @@ curl -fsS http://127.0.0.1:18080/api/health/ready   # 经反代或容器内检�
 ## 6. Backups / WebDAV / Restore
 
 - UI 入口：设置 →「备份与恢复」。API 见 `docs/milestones/0018-*.md`。
-- 备份内容：lumi.sqlite（在线备份 API）+ FreshRSS 数据（只读卷 +
-  SQLite online backup）；**秘密不进备份**，恢复后需重新配置。
+- 备份内容：lumi.sqlite（在线备份 API）+ FreshRSS 数据目录（只读卷 +
+  SQLite online backup，含 config.php 与用户 db.sqlite）。
+- **备份必须当作敏感文件保管**：Lumi 自身的秘密值（AI/WebDAV/RSSHub/
+  FreshRSS API 密码、auth 哈希——见 manifest.secretPolicy.excludedSecrets）
+  **不进备份**，恢复后需重新配置；但 **FreshRSS 数据目录本身可能含凭据
+  敏感材料**（如 FreshRSS 用户口令哈希、其自身配置），因此归档不是
+  “无敏感内容”。
+- 存储保护：本机 `data/backups/` 应限制文件系统权限；WebDAV 传输走
+  TLS（http 仅允许私网/回环），远端目录需相应的访问控制。切勿把
+  备份归档提交到 Git 或上传到不受信的位置。
 - 单并发 job；阶段真实上报；恢复前自动创建当前状态安全备份；
   恢复需显式输入 `RESTORE`。
 - FreshRSS 数据恢复为**离线恢复**：文件就绪于
@@ -67,7 +85,8 @@ docker compose -f docker-compose.prod.yml exec bff true   # 确认健康
 # 在 UI 创建完整备份（或 API POST /api/v1/backups）
 git pull && git checkout <release-tag>
 docker compose -f docker-compose.prod.yml up -d --build
-curl -fsS .../health/ready
+docker compose -f docker-compose.prod.yml exec bff \
+  python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status)"
 ```
 
 - 回滚 = `git checkout <上一 tag>` 重建镜像 + **恢复升级前安全备份**
