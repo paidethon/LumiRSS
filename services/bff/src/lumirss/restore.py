@@ -41,7 +41,8 @@ from lumirss.backup import (
     BackupInvalid,
     BackupNotFound,
     BackupUnsupportedVersion,
-    _sha256,
+    _sha256_file,
+    _sha256_stream,
 )
 from lumirss.config import LumiSettings
 from lumirss.storage import Database
@@ -63,6 +64,22 @@ def _current_db_schema(db: Database) -> int:
     from lumirss.migrations import schema_version
 
     return schema_version(db)
+
+
+def _sqlite_snapshot_is_valid(path: Path) -> bool:
+    """True only when ``PRAGMA integrity_check`` reports ``ok`` for the file.
+
+    A non-SQLite / corrupt snapshot raises ``sqlite3.Error`` and is treated as
+    invalid, so the caller never swaps it into the live database."""
+    try:
+        connection = sqlite3.connect(str(path))
+        try:
+            row = connection.execute("PRAGMA integrity_check").fetchone()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return False
+    return row is not None and str(row[0]).lower() == "ok"
 
 
 def _load_manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
@@ -94,6 +111,7 @@ def _load_manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
 def _verify_checksums(archive: zipfile.ZipFile, manifest: dict[str, Any]) -> None:
     names = set(archive.namelist())
     declared: set[str] = {"manifest.json"}
+    total = 0
     for entry in manifest["files"]:
         path = entry.get("path")
         if not isinstance(path, str):
@@ -106,9 +124,20 @@ def _verify_checksums(archive: zipfile.ZipFile, manifest: dict[str, Any]) -> Non
         expected_size = entry.get("size")
         if not isinstance(expected_sha, str) or not isinstance(expected_size, int):
             raise BackupInvalid("Backup manifest has an invalid file entry.")
+        # AUDIT-005：在对成员做昂贵读取之前先强制边界。声明大小、
+        # 实际大小、压缩比与总量均在流式哈希前校验，避免将任意大
+        # 成员一次性读入内存。
+        if expected_size > MAX_MEMBER_BYTES or info.file_size > MAX_MEMBER_BYTES:
+            raise BackupInvalid("Backup contains an oversized file.")
+        if info.compress_size > 0 and info.file_size / info.compress_size > 200:
+            raise BackupInvalid("Backup contains a suspicious compression ratio.")
+        total += info.file_size
+        if total > MAX_TOTAL_BYTES:
+            raise BackupInvalid("Backup exceeds the maximum total size.")
         if info.file_size != expected_size:
             raise BackupChecksumMismatch("Backup file size does not match the manifest.")
-        digest = _sha256(archive.read(path))
+        with archive.open(path) as member:
+            digest = _sha256_stream(member)
         if digest != expected_sha:
             raise BackupChecksumMismatch("Backup failed checksum verification.")
     # 未在 manifest.files 声明的成员没有 checksum 覆盖 = 不可信内容，
@@ -176,7 +205,7 @@ def safe_extract(
             raise BackupInvalid("Backup contains an unsafe path.")
         manifest_entry = expected.get(name)
         if manifest_entry is not None:
-            digest = _sha256(target.read_bytes())
+            digest = _sha256_file(target)
             if digest != manifest_entry["sha256"]:
                 raise BackupChecksumMismatch(
                     "Backup failed checksum verification."
@@ -237,19 +266,27 @@ class RestoreService:
     @staticmethod
     def _verify_package(zip_path: Path) -> dict[str, Any]:
         """CPU/IO-bound manifest + checksum verification (runs in a thread)."""
-        with zipfile.ZipFile(zip_path) as archive:
-            manifest = _load_manifest(archive)
-            _verify_checksums(archive, manifest)
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                manifest = _load_manifest(archive)
+                _verify_checksums(archive, manifest)
+        except (zipfile.BadZipFile, EOFError, RuntimeError, OSError) as exc:
+            # AUDIT：损坏/截断/非 ZIP 的用户输入必须返回稳定的 Lumi
+            # 错误（400 backup_invalid），而不是泄漏一个通用 500。
+            raise BackupInvalid("Backup is not a valid archive.") from exc
         return manifest
 
     @staticmethod
     def _extract_package(zip_path: Path, extract_dir: Path) -> dict[str, Any]:
         """Re-verify then safe-extract (runs in a thread)."""
-        with zipfile.ZipFile(zip_path) as archive:
-            manifest = _load_manifest(archive)
-            _verify_checksums(archive, manifest)
-            extract_dir.mkdir(parents=True, exist_ok=True)
-            safe_extract(archive, extract_dir, manifest)
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                manifest = _load_manifest(archive)
+                _verify_checksums(archive, manifest)
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                safe_extract(archive, extract_dir, manifest)
+        except (zipfile.BadZipFile, EOFError, RuntimeError) as exc:
+            raise BackupInvalid("Backup is not a valid archive.") from exc
         return manifest
 
     async def preview(self, zip_path: Path) -> dict[str, Any]:
@@ -383,6 +420,13 @@ class RestoreService:
 
     def _restore_lumi_sync(self, restored_snapshot: Path) -> None:
         db_path = Path(self._settings.LUMIRSS_DB_PATH).expanduser()
+        # AUDIT-004：先用 PRAGMA integrity_check 验证待恢复快照，绝不把
+        # 已知会失败的快照写回活动数据库。预检查失败 → 活动库原封不动。
+        if not _sqlite_snapshot_is_valid(restored_snapshot):
+            raise RestoreFailed(
+                "The backup database failed its integrity check; the live "
+                "database was left untouched."
+            )
         source = sqlite3.connect(str(restored_snapshot))
         try:
             destination = sqlite3.connect(str(db_path), timeout=10.0)
@@ -392,7 +436,7 @@ class RestoreService:
                 destination.close()
         finally:
             source.close()
-        # Integrity check on the restored live database.
+        # 防御性：交换后再次验证已恢复的活动数据库（defense-in-depth）。
         check = sqlite3.connect(str(db_path), timeout=10.0)
         try:
             result = check.execute("PRAGMA integrity_check").fetchone()

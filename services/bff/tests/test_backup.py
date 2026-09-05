@@ -204,6 +204,43 @@ def test_interrupted_jobs_marked_on_startup(tmp_path):
     }
 
 
+def test_startup_cleanup_retries_after_transient_failure(tmp_path):
+    """AUDIT-006/038: a single failed startup sweep must NOT permanently mark
+    cleanup done and wedge Backup/Restore behind 409 Busy until a restart."""
+    db = Database(tmp_path / "lumi.sqlite")
+    jobs = BackupJobStore(db)
+    run(db.migrate())
+    run(
+        db.execute(
+            "INSERT INTO backup_jobs (id, type, status, stage, target, created_at) "
+            "VALUES ('old', 'full', 'running', 'preparing', 'local', '2020-01-01T00:00:00+00:00')"
+        )
+    )
+    original = jobs.mark_interrupted
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient db lock")
+        return await original()
+
+    jobs.mark_interrupted = flaky
+
+    # First read triggers cleanup, which fails; the error surfaces and the
+    # completion flag stays False so the next read retries.
+    with pytest.raises(RuntimeError):
+        run(jobs.has_running())
+    assert jobs._cleaned is False
+
+    # Second attempt succeeds: the stale row is cleared, no wedge.
+    assert run(jobs.has_running()) is False
+    assert calls["n"] == 2
+    assert jobs._cleaned is True
+    listing = run(jobs.list())
+    assert listing[0]["status"] == "interrupted"
+
+
 def test_current_process_jobs_not_interrupted(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
     jobs = BackupJobStore(db)

@@ -238,6 +238,33 @@ class WebDavClient:
         await response.aclose()
         return b"".join(chunks)
 
+    async def download_to(self, path: str, dest) -> int:
+        """Stream a remote object straight to a local file, returning its size.
+
+        AUDIT-037: remote restore must be able to accept archives as large as
+        the ones Lumi itself can create. ``get`` holds everything in memory
+        under a small bound; this streams to disk bounded by the SAME
+        ``MAX_TOTAL_BYTES`` used when building a backup, keeping the creation
+        and restore-acceptance limits internally consistent."""
+        from lumirss.backup import MAX_TOTAL_BYTES
+
+        response = await self._request("GET", path)
+        status = response.status_code
+        if status != 200:
+            await response.aclose()
+            raise WebDavError("Could not download the backup from WebDAV.")
+        total = 0
+        try:
+            with open(dest, "wb") as handle:
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_TOTAL_BYTES:
+                        raise WebDavError("Remote backup is too large.")
+                    handle.write(chunk)
+        finally:
+            await response.aclose()
+        return total
+
     async def list_dir(self, path: str) -> list[dict[str, str]]:
         """PROPFIND depth 1; returns [{name, size}] for direct children."""
         body = (

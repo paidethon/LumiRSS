@@ -1603,9 +1603,10 @@ async def _locate_backup_package(
         # Download into a temp file for verification.
         stage = settings.restore_staging_dir / "downloads"
         stage.mkdir(parents=True, exist_ok=True)
-        data = await client.get(f"{root}/{quote_path_segment(body.fileName)}")
         dest = stage / body.fileName
-        dest.write_bytes(data)
+        # AUDIT-037: stream to disk (bounded by MAX_TOTAL_BYTES) instead of
+        # holding the whole archive in memory under the smaller in-RAM cap.
+        await client.download_to(f"{root}/{quote_path_segment(body.fileName)}", dest)
     finally:
         await client.aclose()
     return dest, body.fileName

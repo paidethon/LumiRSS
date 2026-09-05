@@ -148,3 +148,26 @@ def test_get_bounded_response():
 def test_backup_root_path():
     assert backup_root_path("") == "/LumiRSS/backups"
     assert backup_root_path("/dav") == "/dav/LumiRSS/backups"
+
+
+def test_download_to_streams_to_file(tmp_path):
+    """AUDIT-037: remote restore streams to disk (not into a small in-RAM cap)."""
+
+    def handler(request):
+        return httpx.Response(200, content=b"y" * 5000)
+
+    client = _client(handler)
+    dest = tmp_path / "out.backup"
+    total = run(client.download_to("/x.backup", dest))
+    assert total == 5000
+    assert dest.read_bytes() == b"y" * 5000
+
+
+def test_download_to_connection_error_is_safe(tmp_path):
+    def handler(request):
+        raise httpx.ConnectError("dial tcp boom")
+
+    client = _client(handler)
+    with pytest.raises(WebDavError) as exc:
+        run(client.download_to("/x.backup", tmp_path / "out.backup"))
+    assert "boom" not in str(exc.value)

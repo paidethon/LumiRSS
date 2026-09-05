@@ -108,9 +108,37 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _sha256_stream(stream: Any, chunk: int = 1024 * 1024) -> str:
+    """Hash a file-like object in bounded chunks (never loads it all into RAM)."""
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(chunk), b""):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
+    """Stream-hash a file on disk without materializing it in memory."""
+    with open(path, "rb") as handle:
+        return _sha256_stream(handle, chunk)
+
+
 def backup_filename(created_at: datetime | None = None) -> str:
     stamp = created_at or datetime.now(timezone.utc)
     return f"lumirss-{stamp.strftime('%Y%m%dT%H%M%SZ')}.backup"
+
+
+def _unique_path(candidate: Path) -> Path:
+    """Return ``candidate`` if free, else append ``-1``, ``-2``… before the
+    suffix so a same-second backup never overwrites an existing archive."""
+    if not candidate.exists():
+        return candidate
+    stem, suffix = candidate.stem, candidate.suffix
+    counter = 1
+    while True:
+        alternative = candidate.with_name(f"{stem}-{counter}{suffix}")
+        if not alternative.exists():
+            return alternative
+        counter += 1
 
 
 # ---------------------------------------------------------------------------
@@ -217,11 +245,16 @@ class BackupJobStore:
         """Once per process: leftover running/queued jobs become interrupted.
 
         Runs lazily on the first job read so startup stays migration-free
-        (preserving the existing lazy-migration design)."""
+        (preserving the existing lazy-migration design).
+
+        AUDIT-006/038: the completion flag is set only AFTER the sweep
+        succeeds. If it were set first, a single transient failure (e.g. a
+        locked DB during migration) would permanently mark cleanup done and
+        wedge Backup/Restore behind 409 Busy responses until a restart."""
         if self._cleaned:
             return
-        self._cleaned = True
         await self.mark_interrupted()
+        self._cleaned = True
 
     async def create(self, job_type: str, target: str) -> dict[str, Any]:
         await self._db.migrate()
@@ -489,11 +522,18 @@ def _collect_freshrss_files(
                 _sqlite_backup(source, dest, read_only=True)
             else:
                 shutil.copyfile(source, dest)
-            digest = _sha256(dest.read_bytes())
+            # AUDIT-001：manifest 必须描述被归档的那个成员。对 SQLite 而言
+            # 归档的是在线备份产生的快照（dest），其大小可能与活动源文件
+            # （WAL 未 checkpoint）不同。size 与 sha256 都以快照为准，否则
+            # 恢复端的 info.file_size != expected_size 校验会拒绝自己的备份。
+            digest = _sha256_file(dest)
+            archived_size = dest.stat().st_size
+            if archived_size > MAX_MEMBER_BYTES:
+                raise BackupInvalid("Backup contains an oversized file.")
             files.append(
                 {
                     "path": f"freshrss-data/{rel}",
-                    "size": size,
+                    "size": archived_size,
                     "sha256": digest,
                     "component": "freshrss-data",
                 }
@@ -617,7 +657,7 @@ class BackupEngine:
                 {
                     "path": "lumi.sqlite",
                     "size": lumi_snapshot.stat().st_size,
-                    "sha256": _sha256(lumi_snapshot.read_bytes()),
+                    "sha256": _sha256_file(lumi_snapshot),
                     "component": "lumi.sqlite",
                 }
             ]
@@ -678,13 +718,28 @@ class BackupEngine:
                     payload = await asyncio.to_thread(zip_target.read_bytes)
                     await client.put(remote_path, payload)
                     summary["remotePath"] = remote_path
+                except Exception:
+                    # AUDIT-036：上传失败不应丢弃一个已经有效构建的本地
+                    # 归档。在报错前把它抢救到本地备份目录（尽力而为）。
+                    try:
+                        salvage_dir = settings.local_backups_dir
+                        salvage_dir.mkdir(parents=True, exist_ok=True)
+                        salvaged = _unique_path(salvage_dir / filename)
+                        shutil.copy2(str(zip_target), str(salvaged))
+                    except OSError:
+                        pass
+                    raise
                 finally:
                     await client.aclose()
             else:
                 final_dir = settings.local_backups_dir
                 final_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(zip_target), str(final_dir / filename))
-                summary["localPath"] = str(final_dir / filename)
+                # AUDIT-034：同秒内连续两次备份会产生同名归档，避免静默覆盖
+                # 既有备份：目标存在时附加递增后缀。
+                destination = _unique_path(final_dir / filename)
+                shutil.move(str(zip_target), str(destination))
+                summary["filename"] = destination.name
+                summary["localPath"] = str(destination)
 
             await self._jobs.succeed(job_id, summary)
             return summary
