@@ -4,19 +4,12 @@ import { useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { formatReadingTime, textFromHtml } from '../lib/reading-time'
+import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
 import { useAppSettings } from '../store/app-settings'
 import ReaderAaPanel from './ReaderAaPanel'
 import { IconButton } from './ui/IconButton'
 import { Tooltip } from './ui/Tooltip'
 import { cx } from './ui/cx'
-
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-})
 
 function formatPublishedAt(value: string | null): string {
   if (value === null) {

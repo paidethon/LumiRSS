@@ -124,6 +124,19 @@ Gate 6  选择性 P3 清理（仅 confirmed/local/small/low-risk/clear-benefit�
 - **README.md**：补充已发布 MVP 能力，并诚实标注 Phase-2 未实现。
 - **docs/README.md / ROADMAP.md**：登记 0020。
 
+### Gate 6 — 选择性 P3 清理（AUDIT-051）
+
+- **AUDIT-051**：ReaderHeader / EntryRow / ReaderSummary / ReaderTranslation
+  各自 `new Intl.DateTimeFormat('zh-CN', {年/月/日 时:分})` 出**完全相同**的
+  格式器（EntryCard 为无年份变体）。提取到共享 `lib/date-format.ts`
+  （`dateTimeFormatter` / `listDateTimeFormatter`），5 个组件改为引用；输出
+  逐字不变，全部既有测试绿。
+- 其余 P3 候选（042 freshrss_control 重复代码、046 preview 外链守卫、
+  047 OpenCC 转换失败缓存、049 lastMatchedRule、055 legacy storage 清理）
+  经评估：或不满足「小且低风险」、或需更大范围核实，不在本里程碑强修。
+  **AUDIT-058（时区敏感测试）在 0019（commit bc6e11e “remove environment
+  dependencies found by CI (TZ, .env leak)”）已于当前 HEAD 解决**。
+
 ## Regression tests added
 
 | Test | Bug prevented |
