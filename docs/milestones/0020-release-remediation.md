@@ -193,12 +193,15 @@ HEAD 已不可复现，或不在本里程碑「小而proved」的修复边界内
 | Web vitest | PASS — 557（基线 533） |
 | Web lint (oxlint) | PASS — 0 errors（7 存量 warnings，未新增） |
 | Web build (tsc + vite) | PASS（仅 chunk-size 提示） |
-| `uv lock --check` | PASS（锁与 pyproject 一致） |
-| `docker compose -f docker-compose.prod.yml config` | PASS |
-| BFF 生产镜像 `uv sync --frozen` | 命令与自包含 venv 本地验证通过 |
-| Docker 镜像构建（BFF/Web） | NOT RUN 本地——docker daemon 代理无法访问 ghcr/PyPI；已加入 CI `docker-build` job |
-| Playwright smoke / a11y / 视觉矩阵 | NOT RUN 本地——需浏览器/运行时栈；CI `e2e-smoke` 覆盖静态冒烟 |
-| Remote GitHub CI | 见推送后检查 |
+| `uv lock --check` | PASS（锁与 pyproject 一致；本地 + CI） |
+| `docker compose -f docker-compose.prod.yml config` | PASS（本地 + CI） |
+| Docker BFF 生产镜像构建 | **PASS — CI `docker-build` job**（uv --frozen 多阶段） |
+| Docker Web 生产镜像构建 | **PASS — CI `docker-build` job** |
+| Playwright smoke | **PASS — CI `e2e-smoke`**（静态构建确定性冒烟） |
+| A11y / 响应式视觉矩阵 | NOT RUN — 需完整运行时栈/真实浏览器（非 CI 静态冒烟覆盖）；相关确定性行为已由单测锁定 |
+| git diff --check | PASS |
+| Secret / runtime 文件审查 | PASS（无 .env.prod/secrets.json/*.sqlite/*.db/*.pem/*.key 被跟踪） |
+| Remote GitHub CI | **PASS** — run 33966058129（workflow_dispatch on branch），5/5 jobs 绿 |
 
 Web 全量测试在本机 20 核并行下会出现 5s 超时假失败；使用
 `pnpm test --no-file-parallelism` 得到稳定 557 全绿（并行 flakiness 非产品缺陷）。
