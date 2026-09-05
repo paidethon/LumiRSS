@@ -25,15 +25,21 @@ Use mature engines behind a Lumi-owned product boundary.
 
 ## 2. Current implemented baseline
 
-本地代码已经 0009 Gate 0 核验（2026-08-28）：
+本地代码已经 0009 Gate 0 核验（2026-08-28）；0020 复核当前实现状态：
 
 - FreshRSS 已作为 RSS 数据引擎；
 - RSSHub 已以最小容器方式加入开发 Compose；
 - FastAPI BFF 已代理 feeds、entry list、entry detail 和 state writes；
 - React Web 已有桌面三栏、移动列表/阅读流程和 PWA Manifest；
 - RSSHub 路由已通过 FreshRSS 进入 Lumi 阅读链路；
-- AI 尚未实现；
-- Lumi 内部的订阅控制、RSSHub route catalog、统一设置和未来多来源 connector 尚未实现。
+- **AI 已实现**（0015–0017：文章摘要 / 翻译 / 文章对话 + AI 设置；
+  密钥只在服务端 env，结果缓存在 Lumi SQLite，绝不存 FreshRSS 正文）；
+- **订阅控制已实现**（0013 FreshRSSControlAdapter：订阅/分类管理 + OPML）；
+- **RSSHub 来源发现与控制已实现**（0014：route 发现/预览 + 实例控制）；
+- **统一设置中心已实现**（0010/0017）；**备份 / 恢复 / 运维已实现**
+  （0018）；**Caddy 生产部署已实现**（0018–0019）；
+- 仍未实现（不要描述为已存在）：web clipping、Obsidian 集成、未来多来源
+  connector 编排等显式延后的 Phase-2 特性。
 
 最终以本地代码审计结果为准。
 
@@ -48,8 +54,8 @@ flowchart LR
 
     BFF --> FR[FreshRSS]
     BFF --> DB[(Lumi SQLite)]
-    BFF -. planned .-> AI[AI Provider]
-    BFF -. planned control .-> RH[RSSHub]
+    BFF --> AI[AI Provider]
+    BFF --> RH[RSSHub]
 
     RH --> FR
     FR --> Internet[RSS / Atom Sources]
@@ -94,9 +100,9 @@ The read path must remain usable for already-fetched content when RSSHub is unav
 
 ### 4.2 Source/service control plane
 
-Planned beginning in milestones 0010–0011. Status: **FreshRSSControlAdapter
-implemented in 0013** (subscription/category management + OPML import/export);
-RSSHub adapters remain planned (0014+).
+0010–0011 起规划，现已落地。Status: **FreshRSSControlAdapter implemented in
+0013**（订阅/分类管理 + OPML 导入/导出）；**RSSHub 来源发现 / 预览 / 实例
+控制 implemented in 0014**（route 发现 + 预览 + 控制面）。
 
 ```mermaid
 flowchart TD
@@ -247,61 +253,61 @@ Explicitly not an MVP shadow RSS database.
 
 ### 5.6 Caddy / deployment edge
 
-Planned production responsibilities:
+Production responsibilities（**已实现 0018–0019**；见 `apps/web/Caddyfile.*`、
+`apps/web/docker-entrypoint.sh`、`docker-compose.prod.yml`）：
 
-- same-origin routing;
-- TLS;
-- security headers;
-- access control chosen for single-user remote deployment;
-- request-size/time limits where needed;
-- no public exposure of internal FreshRSS/RSSHub ports unless intentionally configured for diagnostics.
+- same-origin routing（Caddy 反代 `/api/*` → `bff:8000`，其余走 SPA）;
+- TLS（`DOMAIN` 驱动 Let's Encrypt / 自签本地 / 纯 HTTP 内网三态）;
+- security headers（X-Content-Type-Options / X-Frame-Options DENY / Referrer-Policy）;
+- access control（可选 basic_auth，单用户远程部署；auth 变量必须成对设置）;
+- no public exposure of internal FreshRSS/RSSHub ports（仅 `web` 发布 80/443）.
+
+仍待完善（延后至 0021 安全/运维硬化）：通用请求体大小/速率限制等策略。
 
 ---
 
 ## 6. Current API surface
 
-已由本地代码核验：
+已由本地代码核验（0020）。核心读 / 状态写路径（0009 起）：
 
 ```text
-GET   /health/live
-GET   /api/v1/feeds
-GET   /api/v1/entries
-GET   /api/v1/entries/{entryRef}
-PATCH /api/v1/entries/{entryRef}/state
+GET   /health/live             GET   /health/ready
+GET   /api/v1/feeds            GET   /api/v1/entries
+GET   /api/v1/entries/{ref}    PATCH /api/v1/entries/{ref}/state
 ```
 
-已知契约原则（本地核验）：
-
-- `entryRef` is opaque;
-- pagination cursor is opaque;
-- entry list bodies are not required;
-- detail may contain plain text and untrusted HTML;
-- state writes use set semantics;
-- list filters are mapped upstream rather than filtering stale client copies.
-
-### Planned endpoint families
-
-Exact routes require specs and must not be invented during 0009.
+自 0009 起已实现的 endpoint 家族（确切路由以源码为准）：
 
 ```text
-/api/v1/subscriptions/*
-/api/v1/opml/*
-/api/v1/source-discovery/*
-/api/v1/rsshub/catalog/*
-/api/v1/rsshub/preview/*
-/api/v1/settings/*
-/api/v1/integrations/*
-/api/v1/ai/*
+订阅 / 分类 / OPML（0013）
+  /api/v1/subscriptions[/{ref}]   /api/v1/categories[/{id}]
+  /api/v1/opml/export · /import · /import/preview   /api/v1/freshrss-ui
+来源发现 / RSSHub（0014 / 0018）
+  /api/v1/source-discovery   /api/v1/feed-preview
+  /api/v1/rsshub/routes · /preview · /config[/apply|/export|/secrets/{key}]
+设置（0015 / 0017）
+  /api/v1/settings   /api/v1/settings/ai
+AI（0015–0017）
+  /api/v1/entries/{ref}/summary · /translation · /conversation[/messages]
+备份 / 恢复 / 运维（0018）
+  /api/v1/backups[/{id}|/remote|/webdav[/test]]
+  /api/v1/restore[/preview]   /api/v1/operations/status
 ```
 
-Every planned family needs:
+契约原则（本地核验）：
 
-- typed request/response models;
-- validation;
-- permission/secret boundary;
-- timeout and error semantics;
-- tests;
-- migration/compatibility notes.
+- `entryRef` 与 pagination cursor 均为 opaque；
+- entry list bodies are not required；detail 可含纯文本与不可信 HTML；
+- state writes use set semantics（非 toggle）；
+- list filters 映射到上游，而非过滤陈旧的客户端副本；
+- 每个家族都有 typed 请求/响应模型、校验、权限/秘密边界、超时与
+  稳定错误语义、测试。
+
+### 仍为未来的家族（未实现）
+
+```text
+/api/v1/integrations/*   （web clipping / Obsidian / 邮件等显式延后的 Phase-2）
+```
 
 ---
 
@@ -329,7 +335,7 @@ Expected functions:
 - set read/star state;
 - translate upstream failures into Lumi errors.
 
-### FreshRSSControlAdapter — planned
+### FreshRSSControlAdapter — implemented (0013)
 
 Expected functions:
 
@@ -341,7 +347,7 @@ Expected functions:
 
 Keep it separate from the normal read adapter so elevated/control behavior can be audited independently.
 
-### RSSHubCatalogAdapter — planned
+### RSSHubCatalogAdapter — implemented (0014)
 
 Expected functions:
 
@@ -353,7 +359,7 @@ Expected functions:
 
 Do not execute arbitrary code from downloaded metadata.
 
-### RSSHubControlAdapter — planned
+### RSSHubControlAdapter — implemented (0018)
 
 Expected functions:
 
@@ -554,7 +560,7 @@ Initial custom-color UI should expose only safe inputs such as accent and reader
 
 ---
 
-## 11. Source discovery architecture — planned
+## 11. Source discovery architecture — implemented (0014)
 
 ```mermaid
 flowchart TD
@@ -583,7 +589,7 @@ Security requirements:
 
 ---
 
-## 12. Unified settings architecture — planned
+## 12. Unified settings architecture — implemented (0010/0017)
 
 Lumi should expose product-relevant settings through one UI:
 
@@ -775,8 +781,8 @@ Documents that currently say “the BFF never talks directly to RSSHub” need a
 
 ```text
 The normal article read path never bypasses FreshRSS to read RSSHub output.
-A separate, planned RSSHub catalog/control adapter may contact RSSHub for
-route discovery, preview, health and allow-listed instance settings.
+A separate RSSHub catalog/control adapter (implemented 0014/0018) contacts
+RSSHub for route discovery, preview, health and allow-listed instance settings.
 ```
 
 Documents that say “FreshRSS is the sole source of truth” should become:

@@ -19,10 +19,10 @@
 // ---------------------------------------------------------------
 
 window.LUMIRSS_PROJECT = {
-  updatedAt: "2026-09-03",
+  updatedAt: "2026-09-05",
   sourceOfTruth: "docs/README.md",
-  currentPhaseId: "phase-8",
-  currentMilestoneId: "0016",
+  currentPhaseId: "phase-10",
+  currentMilestoneId: "0020",
 
   phases: [
     {
@@ -113,7 +113,7 @@ window.LUMIRSS_PROJECT = {
       label: "Phase 10 — Production & Release",
       purpose: "Caddy + HTTPS + 单用户访问保护 + 阿里云 ECS + 备份恢复演练 + 回归/可访问性/性能收尾，发布正式 MVP。",
       why: "最终形态是单台普通 Linux 服务器上的自托管部署：简单、可备份、可恢复。",
-      milestoneIds: ["0018", "0019"]
+      milestoneIds: ["0018", "0019", "0020"]
     }
   ],
 
@@ -583,11 +583,11 @@ window.LUMIRSS_PROJECT = {
       id: "0017",
       phaseId: "phase-9",
       name: "Reader Power UX & Unified Settings",
-      status: "next",
+      status: "completed",
       shortGoal: "Continuous reader controls (WYSIWYG) + unified settings",
       goal: "微信读书式连续阅读定制（bounded 连续值，非离散预设）：字号（滑杆 A-/A+）、行高、段落间距、内容/页宽、左右页边距——即时生效（WYSIWYG）且持久化数值；继承既有 Reader 定制（主题/字体/中文排版/代码/图片/对齐/首行缩进/减动效/重置默认）；统一设置服务端化（0015 lumi.sqlite 持久化，保留本地即时响应）；具体 min/max/default 以视觉测试与排版约束选定。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Completed — 详见 docs/milestones/0017-reader-power-ux-unified-settings.md（本看板非真源）。",
       problems: [],
       learned: [],
       devlog: null
@@ -596,11 +596,11 @@ window.LUMIRSS_PROJECT = {
       id: "0018",
       phaseId: "phase-10",
       name: "Production, Operations & Backup",
-      status: "planned",
+      status: "completed",
       shortGoal: "RSSHub Control Center · FreshRSS operations · WebDAV backup/restore",
       goal: "三大运营面：A) RSSHub Control Center（schema 驱动类型化 allow-list 配置；secrets 只写不读回；restartRequired 展示；无任意环境变量编辑器/任意 shell/无限制 Docker socket）；B) FreshRSS Operations（诊断/健康/备份/高级逃生入口；不重建 FreshRSS UI）；C) WebDAV 备份/恢复（manifest + FreshRSS 导出 + lumi.sqlite + 服务配置 + RSSHub 配置 + checksums；secrets 加密或排除；多步非破坏恢复流程）。另含生产 Compose/Caddy/TLS/持久卷/健康就绪/日志脱敏/升级回滚/资源限制/灾难恢复演练。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Completed — 详见 docs/milestones/0018-production-operations-backup.md（本看板非真源）。",
       problems: [],
       learned: [],
       devlog: null
@@ -609,11 +609,30 @@ window.LUMIRSS_PROJECT = {
       id: "0019",
       phaseId: "phase-10",
       name: "MVP Stabilization & Release",
-      status: "planned",
+      status: "completed",
       shortGoal: "Regression + responsive matrix + drills + release",
       goal: "MVP 冻结：全量回归、桌面/移动响应式矩阵、Playwright 流程、可访问性、安全、性能预算、空/加载/错误态、备份恢复演练、升级回滚演练、许可证审查、operator 文档、release notes 与 MVP release；不再新增主要产品功能。",
       implemented: [],
-      acceptance: "Not started yet.",
+      acceptance: "Completed — 详见 docs/milestones/0019-mvp-stabilization-release.md（本看板非真源）。",
+      problems: [],
+      learned: [],
+      devlog: null
+    },
+    {
+      id: "0020",
+      phaseId: "phase-10",
+      name: "MVP Release Remediation",
+      status: "completed",
+      shortGoal: "Regression-tested fixes for confirmed release defects",
+      goal: "基于全仓只读审计（P1:2 / P2:27 / P3:29），用小的、带回归测试的改动修复已确认的发布相关缺陷，完整保留架构不变量；不是架构重写，不追求审计零发现。六个 Gate：备份/恢复完整性、前端功能回归、可访问性/响应式、发布/CI/运维、文档真实性、选择性 P3 清理。",
+      implemented: [
+        "Gate1 备份/恢复：manifest size/sha256 描述归档快照（WAL FreshRSS 往返）· 交换前 integrity_check · 流式/有界校验 · 启动清扫可重试 · 损坏归档稳定 400",
+        "Gate2 前端：.lumi-reader 作用域 · 主题单一真源+首帧 · 失败设置同步不丢失 · ReaderSummary key · 恢复全量无效化 · j/k 滚动 · 模态下快捷键抑制 · 768–1023 导航",
+        "Gate3 a11y：data-motion-reduce 生效 · accent 对比前景 · 共享 useModalA11y · 触摸目标",
+        "Gate4 发布/CI/运维：uv --frozen 生产镜像 · CI 构建两镜像 · WebDAV 4xx · httpx 传输映射 · operator 文档真实拓扑",
+        "Gate5 文档真实性：AGENTS/architecture/README planned→implemented · 本 0020 记录"
+      ],
+      acceptance: "BFF 574 + Web 557 全绿；lint 0 errors；build 通过；uv lock --check 通过；compose config 通过。详见 docs/milestones/0020-release-remediation.md。",
       problems: [],
       learned: [],
       devlog: null

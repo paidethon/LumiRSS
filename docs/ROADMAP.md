@@ -43,6 +43,7 @@
 
 - [x] 0018 — Production, Operations & Backup
 - [x] 0019 — MVP Stabilization & Release
+- [x] [0020 — MVP Release Remediation](milestones/0020-release-remediation.md)
 
 ## Phase 2 — Knowledge Workbench (deferred)
 
