@@ -17,6 +17,7 @@ operator confirms "applied" after restarting RSSHub with the exported config).
 
 import json
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 from lumirss.secrets_store import SecretsStore
@@ -152,9 +153,9 @@ MAX_SECRET_LENGTH = 10000
 
 
 def _utc_now() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def defaults() -> dict[str, Any]:
@@ -383,10 +384,7 @@ def export_env(store: RssHubControlStore, desired: dict[str, Any]) -> str:
     ]
     for item in NON_SECRET_ITEMS:
         value = effective[item.key]
-        if item.type == "bool":
-            rendered = "true" if value else "false"
-        else:
-            rendered = str(value)
+        rendered = ("true" if value else "false") if item.type == "bool" else str(value)
         lines.append(f"{item.key}={rendered}")
     lines.append("")
     lines.append("# Secrets (configured in Lumi; set manually, never echoed):")

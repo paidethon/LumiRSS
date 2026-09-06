@@ -8,7 +8,7 @@ extraction for contentText. Routes never see any of it.
 """
 
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from typing import Literal
 
@@ -65,8 +65,7 @@ _VIEW_FILTERS = {"unread": _UNREAD_FILTER, "starred": _STARRED_FILTER}
 
 # Block-level tags that produce a line break in contentText.
 _BLOCK_TAGS = frozenset(
-    "p div br li ul ol h1 h2 h3 h4 h5 h6 blockquote pre tr table section "
-    "article aside header footer nav figure hr dl dt dd form fieldset".split()
+    ["p", "div", "br", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "tr", "table", "section", "article", "aside", "header", "footer", "nav", "figure", "hr", "dl", "dt", "dd", "form", "fieldset"]
 )
 
 
@@ -474,7 +473,7 @@ class FreshRSSAdapter(FreshRSSSession):
         auth_token = await self._get_auth_token()
         try:
             action_token = await self._get_action_token(auth_token)
-            response = await self._request_edit_tag(
+            await self._request_edit_tag(
                 auth_token, action_token, item_id, read=read, starred=starred
             )
         except AuthenticationError:
@@ -483,7 +482,7 @@ class FreshRSSAdapter(FreshRSSSession):
             self._clear_tokens()
             auth_token = await self._get_auth_token()
             action_token = await self._get_action_token(auth_token)
-            response = await self._request_edit_tag(
+            await self._request_edit_tag(
                 auth_token, action_token, item_id, read=read, starred=starred
             )
 
@@ -732,7 +731,7 @@ class FreshRSSAdapter(FreshRSSSession):
         published_at = None
         if isinstance(published, int) and not isinstance(published, bool) and published >= 0:
             published_at = (
-                datetime.fromtimestamp(published, tz=timezone.utc)
+                datetime.fromtimestamp(published, tz=UTC)
                 .strftime("%Y-%m-%dT%H:%M:%SZ")
             )
         categories = item.get("categories")

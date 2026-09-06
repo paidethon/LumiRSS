@@ -67,17 +67,14 @@ from lumirss.subscriptionref import (
 )
 
 _CATEGORY_PREFIX = "user/-/label/"
-# Bound on the proxied OPML export body (defensive; FreshRSS instances are
-# single-user and far below this).
+# Bound on the proxied OPML export body (defensive; single-user
+# FreshRSS instances are far below this).
 _MAX_OPML_EXPORT_BYTES = 10 * 1024 * 1024
 # Default category's DB name (FreshRSS_CategoryDAO::DEFAULT_CATEGORY_NAME);
 # reserving it as a rename destination avoids the silent-no-op / duplicate
 # label traps above. This is a fixed upstream constant, not a UI-localized
 # string.
 _RESERVED_CATEGORY_LABEL = "Uncategorized"
-# Bound on the proxied OPML export body (defensive; single-user
-# FreshRSS instances are far below this).
-_MAX_OPML_EXPORT_BYTES = 10 * 1024 * 1024
 _MAX_LABEL_LENGTH = 128
 _MAX_FEED_URL_LENGTH = 2048
 
@@ -357,34 +354,6 @@ class FreshRSSControlAdapter:
                     )
                 return
         raise SubscriptionNotFound("FreshRSS has no subscription with this id.")
-
-    async def export_opml(self) -> bytes:
-        """FreshRSS's own OPML export (subscriptions + categories only).
-
-        Proxies GET reader/api/0/subscription/export (verified against
-        FreshRSS 1.29.1: 200 + OPML 2.0, categories as nested outlines).
-        The body is size-checked and shape-checked (must start with an
-        <opml> document) so a broken upstream can never stream garbage to
-        the browser. Contains no credentials and no entry content.
-        """
-        response = await self._with_auth_retry(
-            lambda: self._session._authorized_get_raw(
-                "reader/api/0/subscription/export"
-            )
-        )
-        if response.status_code != 200:
-            raise UpstreamError(
-                "FreshRSS subscription/export returned HTTP "
-                f"{response.status_code}."
-            )
-        content = response.content
-        if len(content) > _MAX_OPML_EXPORT_BYTES:
-            raise UpstreamError("FreshRSS OPML export is unexpectedly large.")
-        if b"<opml" not in content[:2048]:
-            raise UpstreamError(
-                "FreshRSS OPML export has an unexpected shape (no <opml>)."
-            )
-        return content
 
     async def export_opml(self) -> bytes:
         """FreshRSS's own OPML export (subscriptions + categories only).

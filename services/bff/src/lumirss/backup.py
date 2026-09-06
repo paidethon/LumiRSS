@@ -18,6 +18,7 @@ a previous process never wedge new work.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -26,11 +27,10 @@ import sqlite3
 import tempfile
 import uuid
 import zipfile
-from collections.abc import Awaitable
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from lumirss.config import LumiSettings
 from lumirss.secrets_store import SecretsStore
@@ -92,7 +92,7 @@ class BackupFreshrssUnavailable(Exception):
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # Captured once per process: jobs created AFTER this instant belong to THIS
@@ -101,7 +101,7 @@ _PROCESS_START = _utc_now()
 
 
 def _utc_compact() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _sha256(data: bytes) -> str:
@@ -123,7 +123,7 @@ def _sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
 
 
 def backup_filename(created_at: datetime | None = None) -> str:
-    stamp = created_at or datetime.now(timezone.utc)
+    stamp = created_at or datetime.now(UTC)
     return f"lumirss-{stamp.strftime('%Y%m%dT%H%M%SZ')}.backup"
 
 
@@ -481,10 +481,8 @@ def _write_zip(
                 archive.write(path, arcname=arcname)
         os.replace(tmp_name, zip_path)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
 
 
@@ -708,7 +706,7 @@ class BackupEngine:
                 if client is None:
                     raise BackupInvalid("WebDAV is not configured.")
                 try:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     remote_path = backup_remote_path(
                         client._settings.remote_dir,
                         now.strftime("%Y"),

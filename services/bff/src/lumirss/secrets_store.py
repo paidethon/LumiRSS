@@ -16,6 +16,7 @@ Design constraints:
   SecretsStoreError (surfaced honestly, never silently dropped).
 """
 
+import contextlib
 import json
 import os
 import tempfile
@@ -69,15 +70,11 @@ class SecretsStore:
                 handle.write("\n")
             os.replace(tmp_name, self._path)
         except OSError as exc:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
-            except OSError:
-                pass
             raise SecretsStoreError("Could not write the secret store.") from exc
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(self._path, 0o600)
-        except OSError:
-            pass
 
     def get(self, key: str) -> str | None:
         """Read one secret value (BFF-internal use only, never echoed)."""
