@@ -87,7 +87,36 @@ from lumirss.feed_preview import (
     NotAFeedError,
     UnsafeFeedUrl,
 )
-from lumirss.models import EntryDetail, EntryListResponse
+from lumirss.models import (
+    AiProfile,
+    AiSettingsView,
+    ApiVersionInfo,
+    AppSettingsView,
+    BackupJob,
+    Category,
+    EntryConversation,
+    EntryDetail,
+    EntryListResponse,
+    EntrySummary,
+    EntryTranslation,
+    Feed,
+    FeedPreviewResult,
+    FreshRssUiInfo,
+    HealthStatus,
+    OperationsStatus,
+    OpmlImportPreview,
+    OpmlImportResult,
+    ReadinessResponse,
+    RemoteBackupsResponse,
+    RestorePreview,
+    RestoreResult,
+    RssHubCatalog,
+    RssHubConfigView,
+    SourceDiscoveryResponse,
+    Subscription,
+    WebDavSettingsView,
+    WebDavTestResult,
+)
 from lumirss.operations import OperationsService
 from lumirss.opml import (
     MAX_OPML_BYTES,
@@ -164,16 +193,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.http_client.aclose()
 
 
-app = FastAPI(title="LumiRSS BFF", lifespan=lifespan)
+# response_model_exclude_none keeps model-validated responses byte-compatible
+# with the historical dict payloads for the routes that omit empty keys; the
+# routes whose wire format carries explicit nulls override it per-route.
+app = FastAPI(
+    title="LumiRSS BFF",
+    lifespan=lifespan,
+    response_model_exclude_none=True,
+)
 
 
-@app.get("/health/live")
+@app.get("/health/live", response_model=HealthStatus)
 async def health_live() -> dict[str, str]:
     """Liveness: only proves this process is alive, never touches FreshRSS."""
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
+@app.get("/health/ready", response_model=ReadinessResponse)
 async def health_ready(request: Request) -> JSONResponse:
     """Readiness: core dependency (lumi.sqlite) must be usable.
 
@@ -341,7 +377,11 @@ async def request_validation_handler(
     )
 
 
-@app.get("/api/v1/feeds")
+@app.get(
+    "/api/v1/feeds",
+    response_model=list[Feed],
+    response_model_exclude_none=False,  # uncategorized feed → "category": null
+)
 async def feeds(request: Request) -> list[dict[str, object]]:
     """List feeds from FreshRSS through the FreshRSSAdapter.
 
@@ -384,7 +424,11 @@ class EntryStateUpdate(BaseModel):
         return self
 
 
-@app.get("/api/v1/entries", response_model=EntryListResponse)
+@app.get(
+    "/api/v1/entries",
+    response_model=EntryListResponse,
+    response_model_exclude_none=False,
+)
 async def entries(
     request: Request,
     view: Literal["all", "unread", "starred"] | None = None,
@@ -451,7 +495,11 @@ async def entries(
     return EntryListResponse(items=page.items, nextCursor=next_cursor)
 
 
-@app.get("/api/v1/entries/{entry_ref}", response_model=EntryDetail)
+@app.get(
+    "/api/v1/entries/{entry_ref}",
+    response_model=EntryDetail,
+    response_model_exclude_none=False,
+)
 async def entry_detail(entry_ref: str, request: Request) -> EntryDetail:
     """One entry as plain text. Invalid refs are rejected before FreshRSS;
     reading a detail never marks anything as read (read-only milestone)."""
@@ -567,7 +615,11 @@ class CategoryPatch(BaseModel):
     label: str = Field(min_length=1)
 
 
-@app.get("/api/v1/subscriptions")
+@app.get(
+    "/api/v1/subscriptions",
+    response_model=list[Subscription],
+    response_model_exclude_none=False,  # uncategorized subscription → null
+)
 async def subscriptions(request: Request) -> list[dict[str, object]]:
     """Management view of all subscriptions (0013).
 
@@ -583,7 +635,7 @@ async def subscriptions(request: Request) -> list[dict[str, object]]:
     ]
 
 
-@app.get("/api/v1/categories")
+@app.get("/api/v1/categories", response_model=list[Category])
 async def categories(request: Request) -> list[dict[str, str]]:
     """All categories including empty ones (tag/list folders).
 
@@ -597,7 +649,12 @@ async def categories(request: Request) -> list[dict[str, str]]:
     ]
 
 
-@app.post("/api/v1/subscriptions", status_code=201)
+@app.post(
+    "/api/v1/subscriptions",
+    status_code=201,
+    response_model=Subscription,
+    response_model_exclude_none=False,
+)
 async def create_subscription(
     subscription: SubscriptionCreate, request: Request
 ) -> dict[str, object]:
@@ -631,7 +688,11 @@ def _get_preview_service(request: Request) -> FeedPreviewService:
     )
 
 
-@app.post("/api/v1/feed-preview")
+@app.post(
+    "/api/v1/feed-preview",
+    response_model=FeedPreviewResult,
+    response_model_exclude_none=False,  # siteUrl/description may be null
+)
 async def preview_feed(
     body: FeedPreviewRequest, request: Request
 ) -> dict[str, object]:
@@ -678,7 +739,11 @@ def _get_discovery_service(request: Request) -> SourceDiscoveryService:
     )
 
 
-@app.post("/api/v1/source-discovery")
+@app.post(
+    "/api/v1/source-discovery",
+    response_model=SourceDiscoveryResponse,
+    response_model_exclude_none=False,  # declared candidates: title/format null
+)
 async def source_discovery(
     body: SourceDiscoveryRequest, request: Request
 ) -> dict[str, object]:
@@ -726,7 +791,7 @@ def _get_rsshub_service(request: Request) -> RssHubService:
     )
 
 
-@app.get("/api/v1/rsshub/routes")
+@app.get("/api/v1/rsshub/routes", response_model=RssHubCatalog)
 async def rsshub_routes(request: Request) -> dict[str, object]:
     """Lumi-owned RSSHub route catalog (static, always available).
 
@@ -766,7 +831,11 @@ async def rsshub_routes(request: Request) -> dict[str, object]:
     }
 
 
-@app.post("/api/v1/rsshub/preview")
+@app.post(
+    "/api/v1/rsshub/preview",
+    response_model=FeedPreviewResult,
+    response_model_exclude_none=False,
+)
 async def rsshub_preview(
     body: RssHubPreviewRequest, request: Request
 ) -> dict[str, object]:
@@ -866,7 +935,7 @@ async def opml_export(request: Request) -> Response:
     )
 
 
-@app.post("/api/v1/opml/import/preview")
+@app.post("/api/v1/opml/import/preview", response_model=OpmlImportPreview)
 async def opml_import_preview(request: Request) -> dict[str, object]:
     """Parse an uploaded OPML and report what an import WOULD do.
 
@@ -881,7 +950,11 @@ async def opml_import_preview(request: Request) -> dict[str, object]:
     return await service.preview(data)
 
 
-@app.post("/api/v1/opml/import")
+@app.post(
+    "/api/v1/opml/import",
+    response_model=OpmlImportResult,
+    response_model_exclude_none=False,  # uncategorized added feed → null label
+)
 async def opml_import(request: Request) -> dict[str, object]:
     """Merge-import an OPML: subscribe each NEW feed, categorize it, report.
 
@@ -897,7 +970,11 @@ async def opml_import(request: Request) -> dict[str, object]:
     return await service.import_opml(data)
 
 
-@app.get("/api/v1/freshrss-ui")
+@app.get(
+    "/api/v1/freshrss-ui",
+    response_model=FreshRssUiInfo,
+    response_model_exclude_none=False,  # unconfigured → {"url": null}
+)
 async def freshrss_ui(request: Request) -> dict[str, str | None]:
     """Browser-safe public URL of the FreshRSS web UI, or null.
 
@@ -927,7 +1004,7 @@ def _subscription_json(subscription) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/version")
+@app.get("/api/v1/version", response_model=ApiVersionInfo)
 async def version() -> dict[str, object]:
     """Build provenance for Web/BFF skew diagnosis.
 
@@ -1006,7 +1083,11 @@ async def _ai_settings_json(
 
 
 
-@app.get("/api/v1/settings/ai")
+@app.get(
+    "/api/v1/settings/ai",
+    response_model=AiSettingsView,
+    response_model_exclude_none=False,  # unmapped purpose → profileLabel null
+)
 async def get_ai_settings(request: Request) -> dict[str, object]:
     """Current AI settings + purpose resolution.
 
@@ -1019,7 +1100,11 @@ async def get_ai_settings(request: Request) -> dict[str, object]:
     return await _ai_settings_json(await store.load(), profiles)
 
 
-@app.put("/api/v1/settings/ai")
+@app.put(
+    "/api/v1/settings/ai",
+    response_model=AiSettingsView,
+    response_model_exclude_none=False,
+)
 async def put_ai_settings(
     update: AiSettingsUpdate, request: Request
 ) -> dict[str, object]:
@@ -1088,13 +1173,17 @@ async def delete_default_ai_key(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/v1/settings/ai/profiles")
+@app.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])
 async def get_ai_profiles(request: Request) -> list[dict[str, object]]:
     """All AI profiles (metadata + ``keyConfigured`` flag, never keys)."""
     return await _get_ai_profile_store(request).list_profiles()
 
 
-@app.post("/api/v1/settings/ai/profiles", status_code=201)
+@app.post(
+    "/api/v1/settings/ai/profiles",
+    status_code=201,
+    response_model=AiProfile,
+)
 async def create_ai_profile(
     body: AiProfileCreate, request: Request
 ) -> dict[str, object]:
@@ -1107,7 +1196,10 @@ async def create_ai_profile(
     )
 
 
-@app.patch("/api/v1/settings/ai/profiles/{profile_id}")
+@app.patch(
+    "/api/v1/settings/ai/profiles/{profile_id}",
+    response_model=AiProfile,
+)
 async def patch_ai_profile(
     profile_id: str, body: AiProfileUpdate, request: Request
 ) -> dict[str, object]:
@@ -1152,13 +1244,13 @@ async def delete_ai_profile_secret(
     return Response(status_code=204)
 
 
-@app.get("/api/v1/settings/ai/purposes")
+@app.get("/api/v1/settings/ai/purposes", response_model=dict[str, str])
 async def get_ai_purposes(request: Request) -> dict[str, str]:
     """Purpose → profile id (or ``default``) mapping."""
     return await _get_ai_profile_store(request).load_purposes()
 
 
-@app.put("/api/v1/settings/ai/purposes")
+@app.put("/api/v1/settings/ai/purposes", response_model=dict[str, str])
 async def put_ai_purposes(
     body: AiPurposesUpdate, request: Request
 ) -> dict[str, str]:
@@ -1216,7 +1308,7 @@ def _app_settings_json(document, stored: bool) -> dict[str, object]:
     return {"schemaVersion": payload["schemaVersion"], "stored": stored, **payload}
 
 
-@app.get("/api/v1/settings")
+@app.get("/api/v1/settings", response_model=AppSettingsView)
 async def get_app_settings(request: Request) -> dict[str, object]:
     """Current portable settings (defaults when nothing was ever stored).
 
@@ -1229,7 +1321,7 @@ async def get_app_settings(request: Request) -> dict[str, object]:
     return _app_settings_json(document, stored)
 
 
-@app.patch("/api/v1/settings")
+@app.patch("/api/v1/settings", response_model=AppSettingsView)
 async def patch_app_settings(request: Request) -> dict[str, object]:
     """Persist a partial portable settings update (strictly validated).
 
@@ -1347,7 +1439,11 @@ def _summary_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/summary")
+@app.get(
+    "/api/v1/entries/{entry_ref}/summary",
+    response_model=EntrySummary,
+    response_model_exclude_none=False,  # "not_generated" → summary: null
+)
 async def get_entry_summary(entry_ref: str, request: Request) -> dict[str, object]:
     """Read-only summary state. NEVER calls the AI provider (no cost):
     only FreshRSS read + the Lumi cache are consulted."""
@@ -1356,7 +1452,11 @@ async def get_entry_summary(entry_ref: str, request: Request) -> dict[str, objec
     return _summary_json(await service.get_summary(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/summary")
+@app.post(
+    "/api/v1/entries/{entry_ref}/summary",
+    response_model=EntrySummary,
+    response_model_exclude_none=False,
+)
 async def generate_entry_summary(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1383,7 +1483,11 @@ def _translation_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/translation")
+@app.get(
+    "/api/v1/entries/{entry_ref}/translation",
+    response_model=EntryTranslation,
+    response_model_exclude_none=False,  # "not_generated" → translated*: null
+)
 async def get_entry_translation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1394,7 +1498,11 @@ async def get_entry_translation(
     return _translation_json(await service.get_translation(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/translation")
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation",
+    response_model=EntryTranslation,
+    response_model_exclude_none=False,
+)
 async def generate_entry_translation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1439,7 +1547,10 @@ def _conversation_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/conversation")
+@app.get(
+    "/api/v1/entries/{entry_ref}/conversation",
+    response_model=EntryConversation,
+)
 async def get_entry_conversation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1450,7 +1561,10 @@ async def get_entry_conversation(
     return _conversation_json(await service.get_conversation(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/conversation/messages")
+@app.post(
+    "/api/v1/entries/{entry_ref}/conversation/messages",
+    response_model=EntryConversation,
+)
 async def send_conversation_message(
     entry_ref: str, body: ConversationQuestion, request: Request
 ) -> dict[str, object]:
@@ -1537,7 +1651,11 @@ def _rsshub_runtime_configured() -> bool:
         return False
 
 
-@app.get("/api/v1/operations/status")
+@app.get(
+    "/api/v1/operations/status",
+    response_model=OperationsStatus,
+    response_model_exclude_none=False,  # latencyMs/error/lastBackup may be null
+)
 async def operations_status(request: Request) -> dict[str, object]:
     """Redacted, real dependency status for the operations UI (no fake metrics)."""
     service = _get_operations_service(request)
@@ -1576,12 +1694,25 @@ async def _rsshub_config_view_async(request: Request) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/rsshub/config")
+@app.get(
+    "/api/v1/rsshub/config",
+    response_model=RssHubConfigView,
+    # Historical wire format: secret items carry "configured" (no "value"),
+    # non-secret items carry "value" (no "configured"), "options" is always
+    # present (null for non-enum items) — exclude_unset reproduces exactly that.
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def get_rsshub_config(request: Request) -> dict[str, object]:
     return await _rsshub_config_view_async(request)
 
 
-@app.patch("/api/v1/rsshub/config")
+@app.patch(
+    "/api/v1/rsshub/config",
+    response_model=RssHubConfigView,
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def patch_rsshub_config(
     body: RssHubConfigPatch, request: Request
 ) -> dict[str, object]:
@@ -1668,14 +1799,14 @@ def _webdav_json(doc: dict, password_configured: bool) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/backups/webdav")
+@app.get("/api/v1/backups/webdav", response_model=WebDavSettingsView)
 async def get_webdav_settings(request: Request) -> dict[str, object]:
     store = _get_webdav_settings(request)
     doc = await store.load()
     return _webdav_json(doc, store.password_configured())
 
 
-@app.put("/api/v1/backups/webdav")
+@app.put("/api/v1/backups/webdav", response_model=WebDavSettingsView)
 async def put_webdav_settings(
     body: WebDavSettingsPut, request: Request
 ) -> dict[str, object]:
@@ -1698,7 +1829,10 @@ async def put_webdav_settings(
     return _webdav_json(doc, store.password_configured())
 
 
-@app.post("/api/v1/backups/webdav/test")
+@app.post(
+    "/api/v1/backups/webdav/test",
+    response_model=WebDavTestResult,  # exclude_none omits "message" on success
+)
 async def test_webdav(request: Request) -> dict[str, object]:
     """Test the WebDAV connection: create + list the backup root."""
     from lumirss.webdav import backup_root_path
@@ -1723,13 +1857,22 @@ class BackupCreate(BaseModel):
     target: Literal["local", "webdav"] = "local"
 
 
-@app.get("/api/v1/backups")
+@app.get(
+    "/api/v1/backups",
+    response_model=list[BackupJob],
+    response_model_exclude_none=False,  # queued jobs: stage/startedAt/… null
+)
 async def list_backups(request: Request) -> list[dict[str, object]]:
     jobs = _get_backup_jobs(request)
     return [_job_json(job) for job in await jobs.list()]
 
 
-@app.post("/api/v1/backups", status_code=202)
+@app.post(
+    "/api/v1/backups",
+    status_code=202,
+    response_model=BackupJob,
+    response_model_exclude_none=False,
+)
 async def create_backup(
     body: BackupCreate, request: Request
 ) -> dict[str, object]:
@@ -1739,7 +1882,7 @@ async def create_backup(
     return _job_json(job)
 
 
-@app.get("/api/v1/backups/remote")
+@app.get("/api/v1/backups/remote", response_model=RemoteBackupsResponse)
 async def list_remote_backups(request: Request) -> dict[str, object]:
     """List backups stored on WebDAV (flat names + sizes, no secret values)."""
     from lumirss.webdav import backup_root_path
@@ -1764,7 +1907,11 @@ async def list_remote_backups(request: Request) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/backups/{job_id}")
+@app.get(
+    "/api/v1/backups/{job_id}",
+    response_model=BackupJob,
+    response_model_exclude_none=False,
+)
 async def get_backup_job(job_id: str, request: Request) -> dict[str, object]:
     jobs = _get_backup_jobs(request)
     job = await jobs.get(job_id)
@@ -1844,7 +1991,11 @@ async def _locate_backup_package(
     return dest, body.fileName
 
 
-@app.post("/api/v1/restore/preview")
+@app.post(
+    "/api/v1/restore/preview",
+    response_model=RestorePreview,
+    response_model_exclude_none=False,  # createdAt/lumiVersion may be null
+)
 async def restore_preview(
     body: RestorePreviewBody, request: Request
 ) -> dict[str, object]:
@@ -1856,7 +2007,14 @@ async def restore_preview(
     return preview
 
 
-@app.post("/api/v1/restore")
+@app.post(
+    "/api/v1/restore",
+    response_model=RestoreResult,
+    # Historical wire format: freshrssStagedAt appears only when FreshRSS
+    # data was staged; safetyBackupId is always present (null when absent).
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def restore_execute(
     body: RestoreExecuteBody, request: Request
 ) -> dict[str, object]:
