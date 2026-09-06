@@ -13,11 +13,12 @@ test.describe('移动端 smoke（0018）', () => {
     await page.getByRole('button', { name: '打开设置' }).click()
     const screen = page.getByRole('dialog', { name: '设置' })
     await expect(screen).toBeVisible()
-    await screen.getByRole('button', { name: '备份与恢复' }).click()
+    // 「备份与恢复」已并入「数据控制」（0018 控制面整理，categories.tsx）
+    await screen.getByRole('button', { name: '数据控制' }).click()
     await expect(screen.getByText('备份概览')).toBeVisible()
     await expect(screen.getByText('备份历史')).toBeVisible()
     await expect(screen.getByText('WebDAV 远程备份')).toBeVisible()
-    await expect(screen.getByText(/配置迁移/)).toBeVisible()
+    await expect(screen.getByText(/配置迁移/).first()).toBeVisible()
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
