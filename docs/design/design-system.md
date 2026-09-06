@@ -1,14 +1,16 @@
-# LumiRSS UI Reboot v1
+# LumiRSS Design System
 
-> Approved design and implementation specification for milestone 0009 (user-approved 2026-08-28, after Gate 0 verification). Implementation gates proceed one at a time, each requiring user approval.
->
-> This document changes presentation architecture, not the completed RSS data model or API behavior.
+> 长期视觉与交互规则（源于 0009 UI Reboot 规格，2026-08-28 用户批准；
+> 现为设计权威文档）。历史过程见
+> [milestones/0009-ui-reboot-reference-lab.md](../milestones/0009-ui-reboot-reference-lab.md)；
+> 阅读器定制研究依据见 [reader-research.md](reader-research.md)。
+> 本文描述视觉/交互规则与目标状态；实现细节以源码为准。
 
 ---
 
 ## 1. Design objective
 
-The current LumiRSS interface is functional but visually temporary. The reboot must produce a product that feels:
+LumiRSS 的界面必须让人感觉：
 
 ```text
 quiet
@@ -20,7 +22,7 @@ dense but not crowded
 recognizably Lumi
 ```
 
-Target formula:
+目标公式：
 
 ```text
 Folo structure and interaction
@@ -29,7 +31,7 @@ Folo structure and interaction
 + Lumi pale blue-indigo identity
 ```
 
-Not the target:
+不是目标：
 
 - a Folo clone;
 - a generic AI dashboard;
@@ -43,31 +45,15 @@ Not the target:
 
 ### Primary — Folo
 
-Study:
-
-- desktop three-pane shell;
-- compact Sidebar;
-- continuous Timeline;
-- feed/source metadata hierarchy;
-- selected/hover/read/unread states;
-- Reader title/body hierarchy;
-- toolbar icon treatment;
-- light/dark surface layering;
-- popover/menu/tooltip details;
-- AI Summary and floating AI panel;
-- restrained motion.
+Study: desktop three-pane shell; compact Sidebar; continuous Timeline;
+feed/source metadata hierarchy; selected/hover/read/unread states; Reader
+title/body hierarchy; toolbar icon treatment; light/dark surface layering;
+popover/menu/tooltip details; restrained motion.
 
 ### Secondary — OrigRead Desktop
 
-Study:
-
-- Settings navigation and grouped rows;
-- source discovery UX;
-- RSSHub-related controls;
-- reader appearance controls;
-- resizable panes;
-- AI summary dock/tool patterns;
-- dialogs and source switchers.
+Study: Settings navigation and grouped rows; source discovery UX; reader
+appearance controls; resizable panes; dialogs and source switchers.
 
 ### Supporting references
 
@@ -76,16 +62,13 @@ Study:
 - Read You: Material You mobile list/detail adaptation;
 - Fluent Reader: desktop settings/grouping/dark-mode patterns;
 - NewsFlash: adaptive GNOME reader behavior;
-- Readeck: later read-later/web-clipping concepts only.
+- Readeck: read-later/web-clipping concepts only.
 
 ### User palette reference
 
-The supplied Obsidian image is a **color reference only**:
-
-- warm gray/rose-neutral canvas;
-- muted blue, green, orange, purple, cyan, rose and red;
-- translucent low-saturation selected rows;
-- no layout copying.
+用户提供的参考图是**配色参考**：warm gray/rose-neutral canvas；muted
+blue/green/orange/purple/cyan/rose/red；translucent low-saturation
+selected rows；不复制布局。
 
 ---
 
@@ -93,9 +76,11 @@ The supplied Obsidian image is a **color reference only**:
 
 1. Reading content has the highest visual priority.
 2. Sidebar and Timeline are continuous surfaces, not stacks of cards.
-3. A card is used only when information has real semantic containment, such as AI Summary or a Settings group.
+3. A card is used only when information has real semantic containment,
+   such as AI Summary or a Settings group.
 4. Accent color is scarce and meaningful.
-5. Selected state normally uses a subtle neutral or tinted surface, not a saturated button.
+5. Selected state normally uses a subtle neutral or tinted surface,
+   not a saturated button.
 6. Borders are separators, not decoration.
 7. Shadows communicate elevation only: popover, dialog, floating panel.
 8. AI is available but never visually dominates normal reading.
@@ -105,8 +90,6 @@ The supplied Obsidian image is a **color reference only**:
 ---
 
 ## 4. Default theme — Lumi Mist / 雾光
-
-These values are starting candidates, not final measured values. Qoder must validate contrast and compare visual output.
 
 ### 4.1 Light palette
 
@@ -183,73 +166,55 @@ These values are starting candidates, not final measured values. Qoder must vali
 --lumi-category-red: #b8656b;
 ```
 
-Usage:
-
-- small icons/dots;
-- category labels;
-- 6–12% tinted selected/hover surfaces;
-- never a full rainbow dashboard.
+Usage: small icons/dots; category labels; 6–12% tinted selected/hover
+surfaces; never a full rainbow dashboard.
 
 ---
 
 ## 5. Theme model
 
-### 5.1 App appearance
+### 5.1 App appearance（已实现）
 
 ```text
-Mode
-- Follow system
-- Light
-- Dark
-
-Palette
-- Lumi Mist (default)
-- Neutral White (later)
-- Warm Paper (later)
-- custom preset import/export (future)
-
-Accent
-- Lumi Indigo
-- blue / purple / green / orange presets
-- custom color
+Mode      system / light / dark（themeMode）
+Palette   Lumi Mist（默认）
+Accent    Lumi Indigo 默认；AccentColorPicker 自定义取色，
+          hover/pressed/soft/focus 派生色自动生成并做对比度校验
+字号      uiFontSize 15/16/18/20
+界面字体  uiFontStack
+动效      reduceMotion 尊重系统偏好
 ```
 
-### 5.2 Reader appearance
-
-Independent from app appearance:
+### 5.2 Reader appearance（已实现，独立于 App 外观）
 
 ```text
-Reader background
-- Follow app
-- Paper white
-- Warm white
-- Sepia
-- Soft green
-- Custom
-
-Font
-Font size
-Line height
-Maximum content width
+排版       五个连续滑杆：字号 / 行距 / 段距 / 内容宽度 / 页边距（即时生效）
+预设       内置排版预设（默认 Lumi Mist、纸感 Reeder、期刊衬线、
+           AMOLED 真黑、高对比）+ 派生自定义预设
+背景       Reader 独立背景（跟随/纸白/暖白/sepia/柔绿/自定义）
+主题包     .lumitheme 导入导出分享（schema v1，白名单字段）
+字体       自定义字体（WOFF2 导入 IndexedDB 或 URL 模式）
+中文排版   首行缩进 / 标点悬挂（实验） / OpenCC 简繁转换（仅展示层）
+内容元素   图片三模式（含灰度）、代码高亮（Shiki，主题白名单）、
+           阅读时长、bionic 强调（实验）
+自定义 CSS 自动加 .lumi-reader 前缀，仅作用正文
 ```
 
-### 5.3 Custom accent behavior
+### 5.3 Persistence
 
-The user chooses one base accent. The system derives hover, pressed, soft, focus and contrast variants and rejects unreadable combinations. Do not expose ten independent color inputs in the first version.
-
-### 5.4 Persistence
-
-0009 must inspect the current settings architecture.
-
-Preferred final persistence is server-side Lumi settings. If that API does not yet exist, 0009 may use a clearly documented temporary local preference store only for non-sensitive appearance values, with a migration note for 0014. Do not invent a backend API during a UI-only milestone.
+- 客户端唯一真源是 `useAppSettings`（localStorage 本地优先，改动即时
+  生效）；
+- 便携键经 debounce 同步到服务端 `/api/v1/settings`（`app.settings`
+  JSON 文档，跨设备）；布局宽度、自定义字体、过滤规则等设备本地键
+  永不上传；
+- secrets 永不进入设置存储。架构细节见
+  [architecture/README.md](../architecture/README.md) §9。
 
 ---
 
 ## 6. Typography
 
 Start from a reliable system sans stack. Do not bundle proprietary fonts.
-
-Suggested scale:
 
 | Token | Size | Line height | Use |
 |---|---:|---:|---|
@@ -263,8 +228,7 @@ Suggested scale:
 
 Rules:
 
-- avoid excessive bold weights;
-- titles can use 600–700;
+- avoid excessive bold weights; titles can use 600–700;
 - metadata should be visually quiet without becoming unreadable;
 - article body line-height target around 1.7–1.8;
 - long Chinese and English titles must wrap gracefully.
@@ -274,8 +238,6 @@ Rules:
 ## 7. Spacing, radii and elevation
 
 ### 7.1 Spacing scale
-
-Prefer a small systematic scale:
 
 ```text
 2 / 4 / 6 / 8 / 10 / 12 / 16 / 20 / 24 / 32 / 40 / 48
@@ -290,7 +252,7 @@ Prefer a small systematic scale:
 10px  input/select/menu/popover item group
 12px  settings group/dialog body
 14px  AI summary/large content card
-16px  floating AI panel/major overlay
+16px  floating panel/major overlay
 999px true pill/switch only
 ```
 
@@ -302,7 +264,7 @@ Do not use one radius everywhere.
 flat surfaces       no shadow
 popover/menu        soft small shadow
 modal/dialog        medium diffuse shadow
-AI floating panel   medium large diffuse shadow
+floating panel      medium large diffuse shadow
 ```
 
 Selected Timeline/Sidebar rows should not float.
@@ -310,8 +272,6 @@ Selected Timeline/Sidebar rows should not float.
 ---
 
 ## 8. Motion
-
-Suggested durations:
 
 ```text
 hover/focus feedback       100–120ms
@@ -321,22 +281,14 @@ sidebar/pane transition    180–220ms
 bottom sheet               200–260ms
 ```
 
-Use CSS transitions for simple micro-interactions. Use a motion library only where it materially improves overlays/sheets and after dependency review.
+Use CSS transitions for simple micro-interactions; motion libraries only
+after dependency review.
 
-Allowed:
+Allowed: opacity; 1–3px translate; subtle scale 0.98→1 for overlays;
+width/pane transitions without content jitter.
 
-- opacity;
-- 1–3px translate;
-- subtle scale around 0.98→1 for overlays;
-- width/pane transitions where they do not cause content jitter.
-
-Avoid:
-
-- list row lift/scale;
-- bounce;
-- glow;
-- decorative continuous animation;
-- motion that ignores `prefers-reduced-motion`.
+Avoid: list row lift/scale; bounce; glow; decorative continuous
+animation; motion that ignores `prefers-reduced-motion`.
 
 ---
 
@@ -344,21 +296,15 @@ Avoid:
 
 ### 9.1 Layout
 
-Current public baseline:
-
 ```text
-240px | 400px | 1fr
+Sidebar: 220–260px（可折叠/可调宽）
+Timeline: 360–440px（可调宽/可折叠）
+Reader:  minmax(0, 1fr)
 ```
 
-0009 may refine sizes while preserving behavior:
-
-```text
-Sidebar: 220–260px
-Timeline: 360–440px
-Reader: minmax(0, 1fr)
-```
-
-Use CSS Grid or an equivalent resilient layout. The Reader must use `min-width: 0` to prevent overflow.
+Use CSS Grid or an equivalent resilient layout; the Reader must keep
+`min-width: 0` to prevent overflow. Pane widths/collapse state persist
+as device-local settings.
 
 ### 9.2 Pane hierarchy
 
@@ -366,14 +312,10 @@ Use CSS Grid or an equivalent resilient layout. The Reader must use `min-width: 
 Sidebar background
   < Timeline surface
   < Reader surface/content
-  < Popover/dialog/floating AI elevation
+  < Popover/dialog elevation
 ```
 
 Separate panes with subtle 1px separators, not boxed cards.
-
-### 9.3 Resize/collapse
-
-0009 should prepare consistent divider/collapse behavior. Persistent arbitrary pane sizes may wait until 0014 if not already supported.
 
 ---
 
@@ -384,9 +326,7 @@ Separate panes with subtle 1px separators, not boxed cards.
 ```text
 Brand / compact actions
 Primary views
-  All
-  Unread
-  Starred
+  All / Unread / Starred
 Subscriptions
   folders/categories
   feeds
@@ -395,48 +335,42 @@ Bottom utility
   Settings
 ```
 
-Do not copy Folo-specific content-type/community navigation unless it maps to an approved Lumi feature.
+Do not copy Folo-specific content-type/community navigation unless it
+maps to an approved Lumi feature.
 
-### 10.2 Dimensions
-
-Suggested:
+### 10.2 Dimensions and states
 
 ```text
 item height       34–36px desktop
 icon              17–18px
-horizontal pad    8px
-row gap           8px
-radius            8px
+row radius        8px
 section label     11–12px
 ```
 
-### 10.3 States
-
-- default: transparent;
-- hover: subtle neutral surface;
-- selected: subtle neutral/tinted surface;
-- focus: visible ring/inset outline;
+- default: transparent; hover: subtle neutral surface;
+- selected: subtle neutral/tinted surface; focus: visible ring;
 - unread counts: tertiary text or small badge;
 - category color: icon/dot and soft tint only;
-- expanded folder: clear chevron state and accessible disclosure semantics.
+- expanded folder: clear chevron + accessible disclosure semantics;
+- 已读条目变暗（`dimRead`）可配置；未读圆点是固定视觉语义
+  （状态不只靠颜色），无开关。
 
-### 10.4 Mobile
+### 10.3 Mobile
 
-The same navigation content appears in a Drawer, not a second duplicate implementation. Focus must be trapped and restored; swipe behavior is optional, not required.
+The same navigation content appears in a Drawer, not a second duplicate
+implementation. Focus must be trapped and restored; swipe behavior is
+optional, not required.
 
 ---
 
 ## 11. Timeline
 
-The Timeline is the highest-priority visual component after the shell.
-
 ### 11.1 Continuous list
 
-Do not render each entry as a floating card. Use one continuous pane with selected/hover surfaces and optional separators.
+Do not render each entry as a floating card. Use one continuous pane
+with selected/hover surfaces and optional separators.
 
 ### 11.2 Information hierarchy
-
-Ideal row model:
 
 ```text
 [favicon] Source · time                       [optional thumbnail]
@@ -444,35 +378,19 @@ Ideal row model:
           Short excerpt / metadata
 ```
 
-Available-data fallback:
+Fallbacks: no favicon → generated neutral mark; no excerpt → omit
+cleanly; no thumbnail → text layout expands; no author → no empty
+separators; long source/title → clamp/wrap per viewport.
 
-- no favicon: generated neutral source mark;
-- no excerpt: omit cleanly;
-- no thumbnail: text layout expands;
-- no author: do not leave empty separators;
-- long source/title: clamp/wrap according to viewport and accessibility needs.
+### 11.3 Density and states
 
-### 11.3 Density
-
-Target row height is content-dependent, approximately 82–112px in comfortable desktop mode. Do not enforce a single fixed height that clips multilingual titles.
-
-### 11.4 Read/unread/starred
-
-Unread can use:
-
-- title weight;
-- a small dot;
-- restrained accent.
-
-Do not rely only on color. Star is a secondary action/status and should not overwhelm the title.
-
-### 11.5 Selected state
-
-Use a quiet neutral/tinted surface similar in visual weight to Folo. No thick borders or strong brand fill.
-
-### 11.6 Actions
-
-Hover-revealed actions must also be keyboard reachable and available through a more menu/context menu. Mobile must not depend on hover.
+- Target row height ≈ 82–112px comfortable desktop; never a single
+  fixed height that clips multilingual titles;
+- 未读标记：title weight + 固定小圆点（不只靠颜色）；星标为次要状态，
+  不压过标题；`groupByDate` 按日期分组、`unreadOnly` 启动仅未读可配；
+- Selected state: quiet neutral/tinted surface, no thick borders;
+- Hover-revealed actions must also be keyboard reachable and available
+  through a more menu; mobile must not depend on hover.
 
 ---
 
@@ -484,231 +402,127 @@ Hover-revealed actions must also be keyboard reachable and available through a m
 Reader toolbar
 article metadata
 article title
-optional summary/action region
-article content
+optional AI summary
+article content（原文/译文切换）
 ```
 
 ### 12.2 Width and rhythm
 
-Recommended initial limits:
-
 ```text
-normal content width: about 720–780px
-wide option: about 840–900px
-body font: around 17px
-body line height: around 1.75
+normal content width: 560–1080px 连续可调（默认 760px）
+body font: 12–28px 连续可调（默认 17px）
+body line height: 1.2–2.4 连续可调（默认 1.85）
 ```
 
-The Reader may center content inside a fluid pane. It should not look like a giant card.
+The Reader centers content inside a fluid pane; it should not look like
+a giant card. Reader theme is independent from the app theme.
 
 ### 12.3 Toolbar
 
-- compact icon buttons;
-- 30–34px visual control size on desktop;
+- compact icon buttons; 30–34px visual control size on desktop;
 - accessible name/tooltip;
-- safe actions: mark read, star, open original, reader settings, future AI;
+- safe actions: mark read, star, open original, reader settings, AI;
 - destructive actions separated and confirmed where applicable.
 
 ### 12.4 HTML boundary
 
-Preserve the existing DOMPurify-based sanctioned HTML boundary. The UI reboot must not relax sanitization for prettier embeds.
+Preserve the DOMPurify-based sanctioned HTML boundary. Visual work must
+never relax sanitization for prettier embeds. Pipeline detail:
+[architecture/README.md](../architecture/README.md) §8.
 
-### 12.5 AI Summary — later
+### 12.5 AI surfaces（已实现：内嵌于 Reader）
 
-Inline AI Summary belongs after title/metadata and before body. Style:
+- **摘要**：`ReaderSummary` — 标题/元数据之后的轻语义卡片（14px
+  radius、subtle border、small accent icon），provider/model/时间/缓存
+  状态安静呈现，失败可重试；
+- **翻译**：`ReaderTranslation` — 原文/译文分段切换；译文为纯文本
+  渲染（绝不进 HTML 路径），带「缓存」徽标区分缓存命中与新生成；
+- **对话**：`ArticleConversation` — 当前文章上下文对话，共享同一
+  chat purpose 配置。
 
-- light semantic card;
-- 14px radius;
-- subtle border;
-- small accent icon/title;
-- provider/model/time/status metadata available but quiet;
-- collapsible/retry controls later.
-
-Do not implement AI requests in 0009.
+AI 未配置时各能力诚实呈现引导，而不是假装可用。
 
 ---
 
 ## 13. Settings shell
 
-The visual shell may be prepared in 0009; service-backed settings arrive later.
-
-### 13.1 Desktop structure
+### 13.1 Structure
 
 ```text
-Settings modal/page
-├── left navigation
+Settings modal（桌面）/ 全屏页（移动）
+├── left navigation（桌面）/ 分类列表（移动）
 └── content
     ├── page title/description
     └── grouped settings sections
 ```
 
-Suggested categories:
+当前分类（与实现一致的 13 个）：
 
 ```text
-General
-Appearance
-Reading
-Sources
-AI
-Data & Backup
-Advanced
-About
+通用 · 外观 · 阅读 · 快捷键 · 翻译 · 文章过滤 · RSSHub
+订阅与来源 · AI · 数据控制（含备份/恢复/WebDAV） · 账户与服务
+工作区（占位，诚实标注） · 关于（含版本溯源）
 ```
 
 ### 13.2 Setting group
 
-- one 12px-radius group;
-- subtle border;
-- no ordinary shadow;
-- internal separators;
-- row 56–68px depending on description;
-- label + explanatory text left;
-- control right;
-- mobile stacks when needed.
+- one 12px-radius group; subtle border; no ordinary shadow;
+- internal separators; row 56–68px depending on description;
+- label + explanatory text left; control right; mobile stacks when needed.
 
-### 13.3 Planned source settings
+### 13.3 Honesty rules
 
-Clearly label placeholders/planned controls rather than creating fake functionality:
-
-- FreshRSS status and normal subscription management later;
-- RSSHub status/catalog/config later;
-- advanced links to upstream UI as escape hatches.
+- 未实现的能力标注占位（如工作区），不做假控件；
+- secret 输入只写不回显；需要重启生效的配置明确展示
+  （如 RSSHub「重启后生效」）；
+- 上游 UI（FreshRSS/RSSHub）入口保留为高级逃生通道。
 
 ---
 
-## 14. AI conversation presentation — future-ready shell
+## 14. Menus, popovers and micro-details
 
-### 14.1 Large desktop
-
-Default future mode:
-
-```text
-right-side floating panel
-width 400–460px
-min 360px
-max around 520px
-height around 78–86vh
-right/top inset 16–24px / 72–88px
-radius 16px
-```
-
-It overlays the Reader rather than becoming a permanent fourth data column.
-
-### 14.2 Smaller desktop/tablet
-
-Use a right Drawer or docked panel. The Reader should remain usable and focus behavior correct.
-
-### 14.3 Mobile
-
-Use a Bottom Sheet:
-
-- initial 55–70% height;
-- expandable to fullscreen;
-- dismiss by explicit control and supported gesture;
-- title/context and input remain reachable above safe areas.
-
-Long conversations may navigate to a fullscreen route.
-
-### 14.4 Shared core
-
-Do not build separate chat logic for each presentation. Later architecture:
-
-```text
-AiChatCore
-+ DesktopFloatingContainer
-+ DrawerContainer
-+ BottomSheetContainer
-+ FullscreenRouteContainer
-```
-
-0009 only creates the overlay layer and component boundary if needed.
-
----
-
-## 15. Menus, popovers and micro-details
-
-Use the supplied model-selector screenshot as a micro-interaction reference:
-
-- 6–8px outer padding;
-- row height around 36–40px;
-- 7–8px row radius;
+- 6–8px outer padding; row height around 36–40px; 7–8px row radius;
 - selected state neutral rather than saturated;
 - secondary values aligned right and lower contrast;
 - separators only between semantic groups;
 - one shadow on the popover, no row shadows;
 - footer action separated cleanly.
 
-Every menu/select/feed chooser/model chooser should share the same primitive.
+Every menu/select/feed chooser shares the same primitive.
 
 ---
 
-## 16. Responsive design
+## 15. Responsive design
 
-### 16.1 ≥1440px
+| Viewport | Navigation | Timeline/Reader |
+|---|---|---|
+| ≥1440 | fixed sidebar | 三栏，Reader 宽裕 |
+| 1200–1439 | compact sidebar | 三栏（紧凑） |
+| 1024–1199 | collapsible sidebar | Timeline + Reader 为主 |
+| 768–1023 | drawer | list/detail |
+| <768 | mobile navigation | 单栏列表 ↔ 全屏 Reader |
 
-- full Sidebar/Timeline/Reader;
-- comfortable Reader margins;
-- future floating AI panel;
-- no horizontal page scroll.
-
-### 16.2 1200–1439px
-
-- slightly compact panes;
-- still three-pane where content remains usable;
-- future AI overlay/drawer.
-
-### 16.3 1024–1199px
-
-- preserve current desktop threshold behavior unless testing supports a better transition;
-- Sidebar may collapse/drawer;
-- Timeline + Reader remain primary.
-
-### 16.4 768–1023px
-
-- navigation drawer;
-- list/detail flow or carefully tested two-pane tablet layout;
-- no tiny fixed three-pane columns;
-- future AI drawer/sheet.
-
-### 16.5 <768px
-
-- single-column Timeline page;
-- article opens Reader page/state;
-- top app bar with back/actions;
-- bottom navigation only if it improves approved primary tasks;
-- AI future Bottom Sheet/fullscreen;
-- source/settings forms stack vertically;
-- safe-area insets honored.
-
-### 16.6 Mobile timeline
-
-- compact but readable source/time row;
-- title wraps to 2–3 lines;
-- excerpt optional;
-- thumbnail on right when available;
-- swipe actions are optional and must have button alternatives.
-
-### 16.7 Mobile reader
-
-- title 26–30px;
-- body 16–18px according to setting;
-- controls reachable and not crowded;
-- sticky toolbar only if it does not obscure content;
-- AI and appearance actions accessible from a concise menu.
+- Breakpoints are behavioral guides, not permission for hard-coded
+  device assumptions; container queries may be considered where useful;
+- Mobile timeline: compact source/time row; title wraps 2–3 lines;
+  thumbnail on right when available; swipe actions optional and must
+  have button alternatives;
+- Mobile reader: title 26–30px; controls reachable; sticky toolbar only
+  if it does not obscure content; safe-area insets honored;
+- 无异常横向滚动；图片、表格、代码、长链接不撑破页面。
 
 ---
 
-## 17. Accessibility
+## 16. Accessibility
 
 Mandatory:
 
 - all icon buttons have labels;
 - keyboard selection can move through navigation/list safely;
 - focus ring is visible in every theme;
-- dialogs/drawers/sheets trap focus;
-- focus returns to the trigger on close;
-- `Escape` closes appropriate overlays;
-- selected state has non-color cues;
+- dialogs/drawers/sheets trap focus; focus returns to the trigger on close;
+- `Escape` closes overlays;
+- selected/unread state has non-color cues;
 - minimum contrast is checked;
 - reduced motion is honored;
 - primary mobile targets are around 44px;
@@ -717,203 +531,36 @@ Mandatory:
 
 ---
 
-## 18. Implementation sequence
+## 17. Standing prohibitions
 
-### Gate A — Reference and audit
-
-- pin repositories;
-- browser read-only audit;
-- measure components;
-- source/license maps;
-- current UI inventory;
-- no code changes.
-
-### Gate B — Foundations
-
-- tokens;
-- theme switching infrastructure;
-- typography/spacing/radius/shadow/motion;
-- icon decision;
-- primitives;
-- visual playground/story route if lightweight.
-
-User review required before core pages.
-
-### Gate C — App Shell and Sidebar
-
-- pane surfaces/separators;
-- navigation hierarchy;
-- selected/hover/focus states;
-- desktop/mobile drawer;
-- preserve current view/feed selection behavior.
-
-### Gate D — Timeline
-
-- source metadata hierarchy;
-- responsive row composition;
-- read/star states;
-- optional thumbnail/fallback;
-- loading/empty/error;
-- pagination behavior unchanged.
-
-User review required before Reader.
-
-### Gate E — Reader
-
-- toolbar;
-- headline/metadata/content rhythm;
-- reader theme hooks;
-- safe article HTML unchanged;
-- desktop/mobile behavior.
-
-### Gate F — Settings shell and overlay layer
-
-- settings navigation/groups;
-- appearance controls supported by current persistence;
-- future AI panel slot;
-- menus/dialogs/popovers unified.
-
-### Gate G — Regression and polish
-
-- light/dark/system;
-- viewport matrix;
-- keyboard/accessibility;
-- tests/lint/build;
-- visual comparison;
-- docs/source/license update.
+- 不重设计 FastAPI 契约来做视觉改动；
+- 不给 BFF 增加 Docker socket 或任意容器控制；
+- 不复制 Folo `icons/mgc`；不整段粘贴上游 CSS/组件树；
+- 不引入未批准的重型 UI 框架；
+- 不把未实现的设置控件标为可用；
+- 不提交含私密订阅/凭据的截图；
+- 不在没有测量证据时声称像素级对齐。
 
 ---
 
-## 19. Required screenshots
+## 18. Visual verification
 
-Capture at least:
+UI 改动至少覆盖以下视口（明暗两主题）：
 
 ```text
-1920 × 1080 desktop light
-1920 × 1080 desktop dark
-1440 × 900 desktop light
-1024 × 768 compact/tablet landscape
-820 × 1180 tablet portrait
-390 × 844 mobile list
-390 × 844 mobile reader
+1920 × 1080   1440 × 900   1024 × 768
+820 × 1180 (tablet portrait)   390 × 844 (mobile)
 ```
 
-States:
+必须检查的状态：loading / empty / error / selected / unread-read /
+starred / 长标题 / 无图 / 键盘导航 / 移动 drawer 与 list→reader 返回流。
 
-- all entries;
-- unread;
-- feed selected;
-- entry selected;
-- long title/source;
-- no image;
-- empty;
-- loading;
-- API error;
-- settings;
-- menu/popover;
-- drawer.
+命令与 CI 视角见 [development/testing.md](../development/testing.md)。
 
-Private logged-in Folo screenshots remain local and gitignored. Lumi screenshots may be committed only when they contain safe test data.
+### Behavior regression guard
 
----
-
-## 20. Visual acceptance checklist
-
-### Shell
-
-- [ ] Pane backgrounds have deliberate hierarchy.
-- [ ] No card boxes around entire panes.
-- [ ] Dividers are subtle and consistent.
-- [ ] Reader remains the visual destination.
-
-### Sidebar
-
-- [ ] Compact but readable.
-- [ ] Selected/hover/focus are distinct.
-- [ ] Folder hierarchy is clear.
-- [ ] Category colors are muted and restrained.
-- [ ] Mobile Drawer reuses the same source of truth.
-
-### Timeline
-
-- [ ] Continuous list, not card stack.
-- [ ] Source/time/title/excerpt hierarchy is clear.
-- [ ] Selected row resembles the intended Folo level of emphasis.
-- [ ] Read/unread does not rely on color alone.
-- [ ] Optional images do not cause layout jumps.
-
-### Reader
-
-- [ ] Title/body widths and rhythm support long reading.
-- [ ] Toolbar is compact and accessible.
-- [ ] Article HTML remains sanitized.
-- [ ] App and Reader backgrounds can differ.
-
-### Components
-
-- [ ] One Button/IconButton system.
-- [ ] One Menu/Popover/Select system.
-- [ ] One focus-ring system.
-- [ ] Radius/shadow rules are followed.
-- [ ] Hard-coded migrated brand colors are removed.
-
-### Responsive
-
-- [ ] Existing list↔reader flow remains functional.
-- [ ] No horizontal overflow at target widths.
-- [ ] Primary mobile targets are usable.
-- [ ] Overlay/drawer focus is correct.
-
----
-
-## 21. Behavior regression checklist
-
-- [ ] Feeds still load through BFF.
-- [ ] Entry filters still work.
-- [ ] Cursor pagination still works.
-- [ ] Detail loads only when selected.
-- [ ] Opening does not mark read.
-- [ ] Explicit read/unread works.
-- [ ] Star/unstar works.
-- [ ] Query invalidation reflects FreshRSS state.
-- [ ] Original link validation remains safe.
-- [ ] HTML sanitization tests remain green.
-- [ ] Mobile back returns to list without unnecessary reload.
-- [ ] PWA Manifest remains valid.
-
----
-
-## 22. Explicit prohibitions during 0009
-
-Do not:
-
-- redesign FastAPI contracts;
-- add AI provider calls;
-- implement source discovery;
-- add subscription mutations;
-- add Docker socket access;
-- copy Folo `icons/mgc`;
-- paste entire upstream CSS/component trees;
-- add a heavyweight UI framework without approval;
-- rewrite state management for style reasons;
-- mark planned Settings controls as functional;
-- commit private reference screenshots;
-- claim pixel parity without measurement/evidence.
-
----
-
-## 23. Definition of done
-
-UI Reboot v1 is done when:
-
-- the user approves Sidebar + Timeline + Reader screenshots;
-- one semantic theme/token system drives migrated UI;
-- the default Lumi Mist theme and dark mode are coherent;
-- app/reader theme separation is represented correctly;
-- responsive behavior works at the required matrix;
-- keyboard/focus basics work;
-- all existing behavior tests and builds pass, or failures are accurately isolated;
-- source/license traceability is complete;
-- documentation describes implemented vs planned states accurately;
-- no commit/push occurs before approval.
-
+- Feeds/filters/pagination 经 BFF 正常工作；
+- 打开文章不标已读；显式 read/star 正常；
+- 查询失效反映 FreshRSS 状态；原文链接校验保持安全；
+- HTML sanitization 测试保持绿色；
+- PWA manifest 保持有效。
