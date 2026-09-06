@@ -17,6 +17,8 @@ import { Select } from '../components/ui/Select'
 import { Sheet } from '../components/ui/Sheet'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Switch } from '../components/ui/Switch'
+import { Tabs } from '../components/ui/Tabs'
+import { RadioGroup, RadioOption } from '../components/ui/RadioGroup'
 import { Tooltip } from '../components/ui/Tooltip'
 import { Check } from 'lucide-react'
 
@@ -360,6 +362,87 @@ describe('Switch', () => {
     expect(sw).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(sw)
     expect(sw).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('键盘 Space 切换（Base UI 隐藏 input 提供键盘行为）', () => {
+    function Demo() {
+      const [on, setOn] = useState(false)
+      return (
+        <Switch checked={on} onCheckedChange={setOn} label="减少动效" />
+      )
+    }
+    render(<Demo />)
+    const sw = screen.getByRole('switch', { name: '减少动效' })
+    fireEvent.keyDown(sw, { key: ' ' })
+    fireEvent.click(sw)
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
+describe('Tabs', () => {
+  function TabsDemo() {
+    const [tab, setTab] = useState<'a' | 'b'>('a')
+    return (
+      <Tabs
+        aria-label="模式"
+        value={tab}
+        onValueChange={setTab}
+        options={[
+          { value: 'a', label: '模式 A' },
+          { value: 'b', label: '模式 B' },
+        ]}
+        panels={{ a: <p>内容 A</p>, b: <p>内容 B</p> }}
+      />
+    )
+  }
+
+  it('tablist/tab/tabpanel 语义 + 仅渲染激活面板', () => {
+    render(<TabsDemo />)
+    const tablist = screen.getByRole('tablist', { name: '模式' })
+    expect(tablist).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '模式 A' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '模式 B' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByText('内容 A')).toBeInTheDocument()
+    expect(screen.queryByText('内容 B')).toBeNull()
+  })
+
+  it('点击切换 + ←/→ 键盘导航（Base UI roving focus）', () => {
+    render(<TabsDemo />)
+    const tabA = screen.getByRole('tab', { name: '模式 A' })
+    const tabB = screen.getByRole('tab', { name: '模式 B' })
+    fireEvent.click(tabB)
+    expect(screen.getByText('内容 B')).toBeInTheDocument()
+    fireEvent.keyDown(tabA, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: '模式 B' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
+describe('RadioGroup', () => {
+  function RadioDemo() {
+    const [value, setValue] = useState<'x' | 'y'>('x')
+    return (
+      <RadioGroup
+        aria-label="选择"
+        value={value}
+        onValueChange={setValue}
+      >
+        <RadioOption value="x">选项 X</RadioOption>
+        <RadioOption value="y">选项 Y</RadioOption>
+      </RadioGroup>
+    )
+  }
+
+  it('radiogroup/radio 语义 + aria-checked 跟随受控值', () => {
+    render(<RadioDemo />)
+    const group = screen.getByRole('radiogroup', { name: '选择' })
+    expect(group).toBeInTheDocument()
+    const x = screen.getByRole('radio', { name: '选项 X' })
+    const y = screen.getByRole('radio', { name: '选项 Y' })
+    expect(x).toHaveAttribute('aria-checked', 'true')
+    expect(y).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(y)
+    expect(y).toHaveAttribute('aria-checked', 'true')
+    expect(x).toHaveAttribute('aria-checked', 'false')
   })
 })
 

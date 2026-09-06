@@ -15,17 +15,17 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { Dialog } from './ui/Dialog'
-import { cx } from './ui/cx'
+import { Tabs } from './ui/Tabs'
 import { DirectFeedTab } from './add-source/DirectFeedTab'
 import { WebsiteTab } from './add-source/WebsiteTab'
 import { RssHubTab } from './add-source/RssHubTab'
 
 type SourceTab = 'rss' | 'website' | 'rsshub'
 
-const TABS: { id: SourceTab; label: string }[] = [
-  { id: 'rss', label: 'RSS / Atom' },
-  { id: 'website', label: '网站' },
-  { id: 'rsshub', label: 'RSSHub' },
+const TABS: { value: SourceTab; label: string }[] = [
+  { value: 'rss', label: 'RSS / Atom' },
+  { value: 'website', label: '网站' },
+  { value: 'rsshub', label: 'RSSHub' },
 ]
 
 export default function AddSourceDialog({
@@ -50,18 +50,6 @@ export default function AddSourceDialog({
     onClose()
   }, [onClose])
 
-  function onTabKeyDown(event: React.KeyboardEvent, current: SourceTab) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-    event.preventDefault()
-    const index = TABS.findIndex((t) => t.id === current)
-    const next =
-      event.key === 'ArrowRight'
-        ? (index + 1) % TABS.length
-        : (index - 1 + TABS.length) % TABS.length
-    setTab(TABS[next].id)
-    document.getElementById(`add-source-tab-${TABS[next].id}`)?.focus()
-  }
-
   return (
     <Dialog
       open={open}
@@ -70,50 +58,18 @@ export default function AddSourceDialog({
       fullscreenOnMobile
       panelClassName="max-w-lg"
     >
-      {/* 模式切换（tablist：←/→ 键盘导航 + aria-selected） */}
-      <div
-        role="tablist"
+      {/* 模式切换（Base UI Tabs：tablist 语义 + ←/→ 键盘导航） */}
+      <Tabs<SourceTab>
         aria-label="来源类型"
-        className="mb-4 flex gap-1 rounded-[var(--lumi-radius-lg)] bg-[var(--lumi-surface)] p-1"
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            id={`add-source-tab-${t.id}`}
-            role="tab"
-            type="button"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            onKeyDown={(e) => onTabKeyDown(e, t.id)}
-            className={cx(
-              'min-h-11 flex-1 rounded-[var(--lumi-radius-md)] px-2 py-2 text-xs font-medium',
-              'transition-colors duration-[var(--lumi-motion-fast)]',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-              tab === t.id
-                ? 'bg-[var(--lumi-surface-elevated)] text-[var(--lumi-text-primary)] shadow-[var(--lumi-shadow-sm)]'
-                : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div
-        role="tabpanel"
-        aria-labelledby={`add-source-tab-${tab}`}
-        className="flex flex-col"
-      >
-        {tab === 'rss' && (
-          <DirectFeedTab onClose={close} registerGuard={registerGuard} />
-        )}
-        {tab === 'website' && (
-          <WebsiteTab onClose={close} registerGuard={registerGuard} />
-        )}
-        {tab === 'rsshub' && (
-          <RssHubTab onClose={close} registerGuard={registerGuard} />
-        )}
-      </div>
+        value={tab}
+        onValueChange={setTab}
+        options={TABS}
+        panels={{
+          rss: <DirectFeedTab onClose={close} registerGuard={registerGuard} />,
+          website: <WebsiteTab onClose={close} registerGuard={registerGuard} />,
+          rsshub: <RssHubTab onClose={close} registerGuard={registerGuard} />,
+        }}
+      />
     </Dialog>
   )
 }
