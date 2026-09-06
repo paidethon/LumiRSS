@@ -194,7 +194,7 @@ Accent    Lumi Indigo 默认；AccentColorPicker 自定义取色，
 背景       Reader 独立背景（跟随/纸白/暖白/sepia/柔绿/自定义）
 主题包     .lumitheme 导入导出分享（schema v1，白名单字段）
 字体       自定义字体（WOFF2 导入 IndexedDB 或 URL 模式）
-中文排版   首行缩进 / 标点悬挂（实验） / OpenCC 简繁转换（仅展示层）
+中文排版   首行缩进 / 标点悬挂（实验） / 本地简繁转换（OpenCC，仅展示层字形转换）
 内容元素   图片三模式（含灰度）、代码高亮（Shiki，主题白名单）、
            阅读时长、bionic 强调（实验）
 自定义 CSS 自动加 .lumi-reader 前缀，仅作用正文

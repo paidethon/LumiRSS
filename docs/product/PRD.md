@@ -165,9 +165,11 @@ MVP 不要求：自定义编写 RSSHub route、fork RSSHub、通用 Docker 管�
 - 多 Profile 管理（Base URL / Model / 启停），purpose 映射
   （摘要 / 翻译 / 对话 → 默认配置或任一 Profile）；
 - API Key 在浏览器表单填写、经 write-only 接口提交、仅保存于服务端
-  SecretsStore（不可回读，不在前端持久化）；环境变量保留为默认配置
-  的回退；
+  SecretsStore（不可回读，不在前端持久化）；环境变量仅作为默认配置
+  路径的回退；
 - 用户主动触发；AI 不阻塞普通阅读；OpenAI-compatible 为 provider 契约；
+- 翻译仅由 AI Provider 驱动；**本地简繁转换（OpenCC）是展示层字形转换，
+  不属于翻译**，不依赖任何 Provider；
 - 缓存 key 至少考虑内容、provider、model、prompt 版本、语言；
   缓存命中与新生成在 UI 上明确区分；
 - 失败、重试、模型与时间状态诚实呈现；清晰标注 AI 生成内容；

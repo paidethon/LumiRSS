@@ -16,10 +16,8 @@ version provenance.
 
 **Active milestone**: —
 
-**Next planned (candidate)**: 0021 — Security & Operations Hardening
-（收纳 0020 延后的 BFF 内部鉴权 / DNS-rebinding 硬化 / CSP·HSTS·
-rate-limit / 通用请求体限制 / AI lock-map / 多设备设置冲突语义；
-编号尚未占用，启动前需正式 spec）
+**Next candidate**: 0021 — Security & Operations Hardening（编号尚未占用）
+→ scope and priority: [ROADMAP.md](ROADMAP.md)
 
 ---
 
@@ -90,8 +88,8 @@ rate-limit / 通用请求体限制 / AI lock-map / 多设备设置冲突语义�
 
 Completed milestones are archived in [milestones/](milestones/); release
 history in [milestones/RELEASE-NOTES-MVP.md](milestones/RELEASE-NOTES-MVP.md).
-Only the active milestone is linked from the top of this page. Historical
-milestones should not be read during normal development.
+The table below is the complete historical index for quick lookup — do not
+preload these files during normal development.
 
 | Milestone | Title | Status |
 |---|---|---|

@@ -15,7 +15,7 @@ source discovery & preview, AI summary / translation / article conversation,
 a unified settings center, and local + WebDAV backup with staged restore.
 Web clipping, Obsidian and other Phase-2 connectors are not implemented.
 
-> LumiRSS is under active MVP development.
+> The MVP baseline is complete and LumiRSS remains under active development.
 > Documentation and project status: [docs/README.md](docs/README.md)
 
 ---

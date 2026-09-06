@@ -3,6 +3,11 @@
 > Record every material upstream influence before merge. Visual
 > inspiration and source-derived code are not the same category.
 >
+> This is a historical source/attribution snapshot: paths and components
+> describe the repository state when each mapping was recorded; current
+> implementation paths may differ (e.g. components later removed or
+> renamed). License/attribution facts are unchanged by later refactors.
+>
 > Status: after 0009 implementation — all realized upstream influences are
 > **inspired-level** (measurements/architecture study; zero lines of Folo or
 > OrigRead source copied or adapted). Every entry below is traceable to the

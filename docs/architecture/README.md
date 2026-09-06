@@ -209,10 +209,23 @@ Alembic。不是 RSS 影子数据库。
   无 fallback 链、无 streaming）。profile 的本质是“不同
   base_url + model + key 组合”，`provider` 字段固定
   `openai_compatible`——不是多供应商路由。
-- **Key 解析顺序**（purpose → 生效配置）：映射的已启用 profile 的
-  key → 默认配置的 key（浏览器设置）→ 环境变量 `AI_API_KEY` →
-  missing（功能诚实呈现未配置）。**profile 没有自己的 key 时绝不回退
-  env key**。
+- **Key 解析 decision tree**（`AiProfileStore.effective_config`，
+  以 `services/bff/tests/test_ai_profiles_api.py` 为准）：
+
+  ```text
+  purpose → 映射目标
+  ├─ 映射到具体 profile 且存在、已启用
+  │    ├─ 有自有 secret → 生效（profile 的 base_url/model，
+  │    │                  key_source="profile_secret"）
+  │    └─ 无自有 secret → key_source="missing" → ai_not_configured
+  │         （不回退 default key，也绝不回退 env AI_API_KEY）
+  └─ 映射到 default（或映射的 profile 已删除/停用 → 落回 default，
+         UI 依据 source 字段如实显示）
+       ├─ 浏览器设置的 default key → key_source="default_secret"
+       ├─ 否则 env AI_API_KEY     → key_source="env"
+       └─ 否则                    → key_source="missing"
+  ```
+
 - **SecretsStore**：`data/secrets.json`（0600、原子写、明文 JSON），
   刻意置于 DB 与备份之外——备份天然不含机密；恢复后需重新配置。
 - **结果缓存于 Lumi SQLite**：缓存身份 =
@@ -237,6 +250,13 @@ Alembic。不是 RSS 影子数据库。
 见 [milestones/0015](../milestones/0015-ai-summary-sqlite-foundation.md)
 与 git 历史）。
 
+翻译考古（避免未来误判）：0010a 曾引入 microsoft/deepl/dlx 翻译
+Provider 的**纯配置**设置页，其页内声明“翻译执行需 BFF 代理、届时
+生效”——执行引擎与 BFF 代理从未实现（`git log -S deepl -- services/`
+为空），该设置页已于 0017 随统一设置下线。翻译能力自 0016 起即为
+AI-only。产品中唯一的“本地”语言处理是展示层的本地简繁转换（OpenCC，
+见 §8），它是字形转换，**不是**翻译，不依赖任何 Provider。
+
 ---
 
 ## 8. Reader / content pipeline
@@ -244,7 +264,7 @@ Alembic。不是 RSS 影子数据库。
 ```text
 raw RSS HTML
   → inert DOM (DOMParser)
-  → controlled transforms   OpenCC 简繁（仅展示层）· bionic 强调 · Shiki 代码高亮
+  → controlled transforms   本地简繁转换（OpenCC，仅展示层）· bionic 强调 · Shiki 代码高亮
   → DOMPurify.sanitize      最终安全边界（html profile；禁 style 属性与
                             form/iframe/object/embed/style/template 等标签）
   → ArticleContent          全应用唯一 dangerouslySetInnerHTML 注入点
@@ -258,7 +278,8 @@ raw RSS HTML
   页边距）、内置预设、`.lumitheme` 主题包（schema v1，白名单字段）、
   自定义 CSS（自动加 `.lumi-reader` 前缀，仅作用正文，上限 64,000
   字符）、自定义字体（WOFF2 → IndexedDB 或 URL）、中文排版（首行缩进 /
-  标点悬挂（实验） / OpenCC 简繁）、阅读时长、代码高亮主题白名单、
+  标点悬挂（实验） / 本地简繁转换（OpenCC，字形转换，≠ AI 翻译））、
+  阅读时长、代码高亮主题白名单、
   滚动标记已读（可选，默认关）。
 - 便携设置经 `PORTABLE_KEYS` 同步到 `/api/v1/settings`；服务端严格
   校验（未知键 / 越界 / NaN 一律拒绝），损坏或未来版本文档回退默认。
