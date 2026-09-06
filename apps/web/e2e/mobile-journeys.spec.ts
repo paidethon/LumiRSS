@@ -6,37 +6,15 @@
  */
 
 import { expect, test, type Page } from '@playwright/test'
-import { expectNoHorizontalOverflow } from './helpers'
+import {
+  closeMobileSettings,
+  expectNoHorizontalOverflow,
+  openMobileSettings,
+} from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'mobile-only journeys')
-
-/** 打开导航抽屉 → 进入设置页。 */
-async function openMobileSettings(page: Page, category?: string) {
-  await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('button', { name: '打开设置' }).click()
-  const screen = page.getByRole('dialog', { name: '设置' })
-  await expect(screen).toBeVisible()
-  if (category) {
-    await screen.getByRole('button', { name: category }).click()
-  }
-  return screen
-}
-
-/** 关闭移动设置。设置 Sheet 打开时导航抽屉仍在其下（分层模态），
- * Escape 一次只关最顶层；快速连按可能撞上退出动画，所以循环关到
- * 主页干净态（☰ 触发器 expanded=false）为止。用 CSS 定位——抽屉
- * 打开时触发器被遮罩 aria-hidden，role 定位会空等超时。 */
-async function closeMobileSettings(page: Page) {
-  const nav = page.locator('button[aria-label="打开导航"]')
-  for (let i = 0; i < 6; i++) {
-    if ((await nav.getAttribute('aria-expanded')) === 'false') break
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(150)
-  }
-  await expect(nav).toHaveAttribute('aria-expanded', 'false')
-}
 
 async function openFirstEntry(page: Page) {
   const entryTitle = page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()

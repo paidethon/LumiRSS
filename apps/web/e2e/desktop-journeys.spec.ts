@@ -94,8 +94,33 @@ test('J3b — 订阅与分类：OPML 导入真实条目 / 导出可用 / 分类�
 })
 
 test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏', async ({ page }) => {
+  // 自建前置（幂等）：把 E2E feed 条目显式置为未读、未收藏（set 语义
+  // PATCH）。不依赖 FreshRSS 当前数据状态——上轮运行遗留的已读/收藏
+  // 不会影响本轮。
+  const all = await (await page.request.get('/api/v1/entries?view=all')).json()
+  const targets = all.items.filter((i: { title: string }) =>
+    /^文章 (alpha|beta|gamma)/.test(i.title),
+  )
+  expect(
+    targets.length,
+    'E2E feed 条目不存在（需先运行 J3b 导入 E2E 源）',
+  ).toBeGreaterThan(0)
+  for (const target of targets) {
+    const resp = await page.request.patch(
+      `/api/v1/entries/${encodeURIComponent(target.entryRef)}/state`,
+      { data: { read: false, starred: false } },
+    )
+    expect(resp.status()).toBe(204)
+  }
+  const unreadSetup = await (await page.request.get('/api/v1/entries?view=unread')).json()
+  for (const target of targets) {
+    expect(
+      unreadSetup.items.some((i: { title: string }) => i.title === target.title),
+    ).toBe(true)
+  }
+
   await page.goto('/')
-  // 打开第一篇未读条目
+  // 打开第一篇 E2E 条目
   const entryTitle = page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
   const openedTitle = (await entryTitle.innerText()).trim()
