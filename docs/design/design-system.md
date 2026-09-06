@@ -564,3 +564,73 @@ starred / 长标题 / 无图 / 键盘导航 / 移动 drawer 与 list→reader �
 - 查询失效反映 FreshRSS 状态；原文链接校验保持安全；
 - HTML sanitization 测试保持绿色；
 - PWA manifest 保持有效。
+
+---
+
+## 19. Component architecture (Base UI foundation)
+
+> 2026-09-06 起生效（所有者批准的 Base UI 迁移）。依赖方向与分层是
+> 长期规则；具体组件清单以 `apps/web/src/components/ui/` 为准。
+
+### 依赖方向
+
+```text
+Pages
+  ↓
+Feature Components
+  ↓
+Lumi UI (components/ui/*)
+  ↓
+Base UI (@base-ui/react) 或 原生控件
+  ↓
+DOM
+```
+
+- Feature 组件只消费 Lumi UI；**禁止直接 import `@base-ui/react`**；
+- `@base-ui/react` 只允许出现在 `components/ui/` 内部；
+- 不引入第二个 headless 库（不使用 shadcn / Radix / Headless UI /
+  Ariakit / React Aria）；
+- Lumi UI 保持简单公开 API（`open/onClose`、`checked/onCheckedChange`、
+  `value/onValueChange`、`className`）；Base UI 的 compound parts 被
+  Lumi wrapper 吸收，不暴露给业务层。
+
+### 两类 Lumi primitive
+
+**Base UI-backed**（行为引擎 = Base UI，视觉 = Lumi token）：
+
+```text
+Dialog     → @base-ui/react/dialog
+Sheet      → @base-ui/react/drawer（left/right/bottom 三方向 + swipe dismiss）
+Tooltip    → @base-ui/react/tooltip
+Popover    → @base-ui/react/popover
+Menu       → @base-ui/react/menu
+Switch     → @base-ui/react/switch
+Tabs       → @base-ui/react/tabs
+RadioGroup → @base-ui/react/radio-group (+ radio)
+```
+
+**Native-backed**（原生控件已足够，不加抽象层）：
+
+```text
+Button / IconButton → <button>
+Select              → <select>
+Slider              → <input type="range">
+Skeleton / EmptyState / PaneSeparator / cx → 纯 Lumi
+```
+
+### 行为所有权
+
+Base UI 拥有：focus trap、初始/还原焦点、Escape、外点关闭、body
+滚动锁、portal、视口碰撞定位、ARIA 语义、键盘状态机、swipe 手势。
+Lumi 拥有：颜色/圆角/间距/阴影/字号/动效（`--lumi-*` token）、布局、
+responsive、业务 API。**任何新 modal/menu/popover/tooltip 行为不得
+手写重复实现**；CSS 前置（`#root { isolation: isolate }` 与
+`body { position: relative }`）见 `index.css`，勿删。
+
+### 已知豁免（按语义判断保留原状）
+
+- `EntryActionButtons`：pressed/强调色的特殊功能控件；
+- `ReaderFontManager`：选择行内嵌删除操作（radio 内嵌交互按钮是反
+  模式，待列表行重构时一并解决，见 final report follow-ups）；
+- `SearchPage` 历史 chip 删除：rounded-full 微型按钮；
+- 原生 `<input type="radio">`（RssHub/Website 候选表单）：native-backed。

@@ -12,10 +12,13 @@ import { EmptyState } from './components/ui/EmptyState'
 import { IconButton } from './components/ui/IconButton'
 import { Menu } from './components/ui/Menu'
 import { Popover } from './components/ui/Popover'
+import { RadioGroup, RadioOption } from './components/ui/RadioGroup'
 import { Select } from './components/ui/Select'
 import { Sheet } from './components/ui/Sheet'
 import { Skeleton } from './components/ui/Skeleton'
+import { Slider } from './components/ui/Slider'
 import { Switch } from './components/ui/Switch'
+import { Tabs } from './components/ui/Tabs'
 import { Tooltip } from './components/ui/Tooltip'
 import { useTheme } from './store/theme'
 import type { ThemeMode } from './lib/theme'
@@ -47,6 +50,9 @@ export default function Playground() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [select, setSelect] = useState('system')
   const [menuPick, setMenuPick] = useState('(未选择)')
+  const [tab, setTab] = useState<'a' | 'b'>('a')
+  const [radio, setRadio] = useState<'mist' | 'moss' | 'clay'>('mist')
+  const [slider, setSlider] = useState(17)
 
   return (
     <div className="min-h-dvh bg-[var(--lumi-canvas)] p-6">
@@ -94,7 +100,7 @@ export default function Playground() {
           <IconButton icon={<Star aria-hidden />} label="收藏（触摸 44px）" touch />
         </Section>
 
-        <Section title="Switch / Select">
+        <Section title="Switch / Select / Slider">
           <Switch checked={switchOn} onCheckedChange={setSwitchOn} label="深色模式" />
           <Select
             aria-label="演示下拉"
@@ -105,9 +111,50 @@ export default function Playground() {
               { value: 'b', label: '选项 B' },
             ]}
           />
+          <Slider
+            label="字号"
+            value={slider}
+            min={12}
+            max={24}
+            step={1}
+            onChange={setSlider}
+            formatValue={(v) => `${v}px`}
+          />
           <span className="text-xs text-[var(--lumi-text-secondary)]">
             当前值：{select}
           </span>
+        </Section>
+
+        <Section title="Tabs / RadioGroup">
+          <Tabs
+            aria-label="演示标签"
+            value={tab}
+            onValueChange={setTab}
+            options={[
+              { value: 'a', label: '标签 A' },
+              { value: 'b', label: '标签 B' },
+            ]}
+            panels={{
+              a: <p className="p-2 text-sm text-[var(--lumi-text-primary)]">面板 A 内容</p>,
+              b: <p className="p-2 text-sm text-[var(--lumi-text-primary)]">面板 B 内容</p>,
+            }}
+          />
+          <RadioGroup
+            aria-label="强调色"
+            value={radio}
+            onValueChange={setRadio}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <RadioOption value="mist" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3 py-1.5 text-xs text-[var(--lumi-text-primary)] data-checked:border-[var(--lumi-accent)] data-checked:bg-[var(--lumi-accent-soft)]">
+              蓝紫
+            </RadioOption>
+            <RadioOption value="moss" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3 py-1.5 text-xs text-[var(--lumi-text-primary)] data-checked:border-[var(--lumi-accent)] data-checked:bg-[var(--lumi-accent-soft)]">
+              苔绿
+            </RadioOption>
+            <RadioOption value="clay" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3 py-1.5 text-xs text-[var(--lumi-text-primary)] data-checked:border-[var(--lumi-accent)] data-checked:bg-[var(--lumi-accent-soft)]">
+              陶土
+            </RadioOption>
+          </RadioGroup>
         </Section>
 
         <Section title="Menu / Popover">
