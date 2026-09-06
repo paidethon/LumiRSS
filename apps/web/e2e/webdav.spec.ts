@@ -35,7 +35,7 @@ test.afterAll(async () => {
 
 async function openBackupSettings(page: Page) {
   await page.goto('/')
-  await openSettingsCategory(page, '备份与恢复')
+  await openSettingsCategory(page, '数据控制')
   const dialog = visibleDialog(page)
   await expect(dialog.getByText('WebDAV 远程备份')).toBeVisible()
   return dialog

@@ -24,6 +24,20 @@ async function openMobileSettings(page: Page, category?: string) {
   return screen
 }
 
+/** 关闭移动设置。设置 Sheet 打开时导航抽屉仍在其下（分层模态），
+ * Escape 一次只关最顶层；快速连按可能撞上退出动画，所以循环关到
+ * 主页干净态（☰ 触发器 expanded=false）为止。用 CSS 定位——抽屉
+ * 打开时触发器被遮罩 aria-hidden，role 定位会空等超时。 */
+async function closeMobileSettings(page: Page) {
+  const nav = page.locator('button[aria-label="打开导航"]')
+  for (let i = 0; i < 6; i++) {
+    if ((await nav.getAttribute('aria-expanded')) === 'false') break
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(150)
+  }
+  await expect(nav).toHaveAttribute('aria-expanded', 'false')
+}
+
 async function openFirstEntry(page: Page) {
   const entryTitle = page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
@@ -49,9 +63,9 @@ test('M1 — 底部导航与抽屉：一级入口 / 搜索诚实 / 设置触达'
   expect(bodyText).not.toMatch(/共 \d+ 条结果|条相关结果/)
 
   // 抽屉 → 设置
-  const screen = await openMobileSettings(page, '备份与恢复')
+  const screen = await openMobileSettings(page, '数据控制')
   await expect(screen.getByText('备份概览')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await closeMobileSettings(page)
 })
 
 test('M2 — 时间线与全屏 Reader：打开 / 全屏 / 返回 / 已读收藏', async ({ page }) => {
@@ -99,20 +113,24 @@ test('M3 — AI 摘要（mock provider）：Reader 内生成或读取缓存', as
 
 test('M4 — 设置触达：AI / 运维 / 备份 / WebDAV 表单可达', async ({ page }) => {
   await page.goto('/')
+  // 设置屏的分类选择是屏内状态（Sheet 关闭仍保留），所以开一次设置、
+  // 用「返回设置」在各分类间往返——与真人操作一致，避免重开竞态。
+  const screen = await openMobileSettings(page)
+
   // 运维状态
-  const services = await openMobileSettings(page, '账户与服务')
-  await expect(services.getByText('本地数据（lumi.sqlite）')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await screen.getByRole('button', { name: '账户与服务' }).click()
+  await expect(screen.getByText('本地数据（lumi.sqlite）')).toBeVisible()
+  await screen.getByRole('button', { name: '返回设置' }).click()
 
   // WebDAV 表单可达（密码写只读：input type=password 且为空）
-  const backup = await openMobileSettings(page, '备份与恢复')
-  await expect(backup.getByText('WebDAV 远程备份')).toBeVisible()
-  const passwordInput = backup.locator('input[type=password]').first()
+  await screen.getByRole('button', { name: '数据控制' }).click()
+  await expect(screen.getByText('WebDAV 远程备份')).toBeVisible()
+  const passwordInput = screen.locator('input[type=password]').first()
   await expect(passwordInput).toHaveValue('')
-  await page.keyboard.press('Escape')
+  await screen.getByRole('button', { name: '返回设置' }).click()
 
   // AI 设置页可达（configured 状态真实展示）
-  const ai = await openMobileSettings(page, 'AI')
-  await expect(ai.getByText(/AI 摘要|OpenAI|Provider|已配置|未配置/i).first()).toBeVisible()
-  await page.keyboard.press('Escape')
+  await screen.getByRole('button', { name: 'AI' }).click()
+  await expect(screen.getByText(/AI 摘要|OpenAI|Provider|已配置|未配置/i).first()).toBeVisible()
+  await closeMobileSettings(page)
 })

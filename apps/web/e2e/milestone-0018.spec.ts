@@ -68,7 +68,7 @@ test('Flow B — RSSHub 控制中心：字段编辑 / secret 写只读 / restart
 
 test('Flow C — 本地备份：创建 → job 完成 → 历史可见 → 刷新后一致', async ({ page }) => {
   await page.goto('/')
-  await openSettingsCategory(page, '备份与恢复')
+  await openSettingsCategory(page, '数据控制')
   const dialog = visibleDialog(page)
 
   await expect(dialog.getByText('备份概览')).toBeVisible()
@@ -81,7 +81,7 @@ test('Flow C — 本地备份：创建 → job 完成 → 历史可见 → 刷�
 
   // 刷新页面后状态一致（服务端持久化，不是纯前端状态）
   await page.reload()
-  await openSettingsCategory(page, '备份与恢复')
+  await openSettingsCategory(page, '数据控制')
   await expect(
     visibleDialog(page).locator('li', { hasText: /lumirss-\d{8}T\d{6}Z\.backup/ }).first(),
   ).toBeVisible()
@@ -89,7 +89,7 @@ test('Flow C — 本地备份：创建 → job 完成 → 历史可见 → 刷�
 
 test('Flow E — 分阶段恢复向导：预览 → RESTORE 确认 → 执行 → 健康验证', async ({ page }) => {
   await page.goto('/')
-  await openSettingsCategory(page, '备份与恢复')
+  await openSettingsCategory(page, '数据控制')
   const dialog = visibleDialog(page)
 
   // 从历史第一个成功备份发起恢复
@@ -129,7 +129,7 @@ test('移动视口 — 备份页无横向溢出且触达良好', async ({ page }
   await page.getByRole('button', { name: '打开设置' }).click()
   const screen = page.getByRole('dialog', { name: '设置' })
   await expect(screen).toBeVisible()
-  await screen.getByRole('button', { name: '备份与恢复' }).click()
+  await screen.getByRole('button', { name: '数据控制' }).click()
   await expect(screen.getByText('备份概览')).toBeVisible()
 
   const overflow = await page.evaluate(
