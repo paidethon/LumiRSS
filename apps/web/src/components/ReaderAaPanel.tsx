@@ -182,7 +182,13 @@ export default function ReaderAaPanel() {
     setSettingsOpen(true)
   }
 
-  const trigger = (extra: { onClick?: () => void; 'aria-expanded'?: boolean; ref?: Ref<HTMLButtonElement> } = {}) => (
+  const trigger = (
+    extra: {
+      onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+      'aria-expanded'?: boolean
+      ref?: Ref<HTMLButtonElement>
+    } = {},
+  ) => (
     <IconButton
       icon={<ALargeSmall aria-hidden className="size-4" />}
       label="阅读样式"

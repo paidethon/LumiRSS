@@ -1,10 +1,14 @@
-/** Popover primitive — 0009 Gate 1。
+/** Popover primitive — Base UI 行为底座（原 0009 Gate 1 自研实现迁移）。
  *
- * 通用浮层容器（trigger + absolute 面板，右对齐）。与 Menu 的区别：
- * 内容自由（表单/设置面板），键盘要求宽松（Escape 关闭 + 还焦；
- * 内容内自身可聚焦）。未来 AI 浮窗 / 阅读设置的基座。 */
+ * 通用浮层容器（trigger + 定位面板，内容自由如表单/设置面板）。行为由
+ * Base UI Popover 提供：外点关闭、Escape 关闭并还焦、portal + Floating
+ * UI 定位与视口碰撞翻转（取代旧实现 absolute right-0/top-full，修复
+ * 屏幕边缘溢出）；与 Menu 的区别：键盘要求宽松，内容可含可聚焦控件。
+ * 视觉保持 Lumi 原样：--lumi-* token 面板、右对齐、6px 间距、minWidth。 */
 
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useState } from 'react'
+import type { ComponentProps } from 'react'
+import { Popover as BasePopover } from '@base-ui/react/popover'
 import { cx } from './cx'
 
 export interface PopoverProps {
@@ -12,8 +16,8 @@ export interface PopoverProps {
     open: boolean
     triggerProps: {
       'aria-expanded': boolean
-      ref: RefObject<HTMLButtonElement | null>
-      onClick: () => void
+      ref: ComponentProps<'button'>['ref']
+      onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
     }
   }) => ReactNode
   /** 面板内容；close() 供内容主动关闭并还焦 */
@@ -24,59 +28,47 @@ export interface PopoverProps {
 
 export function Popover({ trigger, children, width = 260 }: PopoverProps) {
   const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDocClick = (e: MouseEvent) => {
-      if (
-        !panelRef.current?.contains(e.target as Node) &&
-        !triggerRef.current?.contains(e.target as Node)
-      ) {
-        setOpen(false)
-      }
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('mousedown', onDocClick)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocClick)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
 
   return (
     <span className="relative inline-flex">
-      {trigger({
-        open,
-        triggerProps: {
-          'aria-expanded': open,
-          ref: triggerRef,
-          onClick: () => setOpen((v) => !v),
-        },
-      })}
-      {open && (
-        <div
-          ref={panelRef}
-          className={cx(
-            'absolute right-0 top-full z-[var(--lumi-z-popover)] mt-1.5 p-3',
-            'rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)]',
-            'shadow-[var(--lumi-shadow-popover)]',
+      <BasePopover.Root open={open} onOpenChange={setOpen}>
+        <BasePopover.Trigger
+          render={(triggerProps: ComponentProps<'button'>) => (
+            <>
+              {trigger({
+                open,
+                triggerProps: {
+                  ref: triggerProps.ref,
+                  onClick: triggerProps.onClick,
+                  'aria-expanded':
+                    triggerProps['aria-expanded'] === true ||
+                    triggerProps['aria-expanded'] === 'true',
+                },
+              })}
+            </>
           )}
-          style={{ minWidth: `${width}px` }}
-        >
-          {children(() => {
-            setOpen(false)
-            triggerRef.current?.focus()
-          })}
-        </div>
-      )}
+        />
+        <BasePopover.Portal>
+          <BasePopover.Positioner
+            side="bottom"
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            className="z-[var(--lumi-z-popover)]"
+          >
+            <BasePopover.Popup
+              className={cx(
+                'p-3',
+                'rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)]',
+                'shadow-[var(--lumi-shadow-popover)]',
+              )}
+              style={{ minWidth: `${width}px` }}
+            >
+              {children(() => setOpen(false))}
+            </BasePopover.Popup>
+          </BasePopover.Positioner>
+        </BasePopover.Portal>
+      </BasePopover.Root>
     </span>
   )
 }
