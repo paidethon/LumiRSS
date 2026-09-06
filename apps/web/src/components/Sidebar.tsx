@@ -364,7 +364,15 @@ function RssTree({
                     <span className="truncate" title={category.label}>
                       {category.label}
                     </span>
-                    <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">
+                    <span
+                      className={cx(
+                        'shrink-0 text-[11px]',
+                        // 分类选中时落在选中表面上，tertiary 不满足 WCAG AA
+                        categoryActive
+                          ? 'text-[var(--lumi-text-secondary)]'
+                          : 'text-[var(--lumi-text-tertiary)]',
+                      )}
+                    >
                       {category.feeds.length}
                     </span>
                   </button>
@@ -488,7 +496,9 @@ function Sidebar({
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
               view === 'unread'
                 ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
-                : 'text-[var(--lumi-text-tertiary)] hover:bg-[var(--lumi-surface-hover)]',
+                // 未激活 chip 可能落在选中分组表面上；tertiary 在该表面上
+                // 对比度 4.43:1 不满足 WCAG AA → 用 secondary
+                : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
             )}
           >
             未读

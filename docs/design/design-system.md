@@ -107,8 +107,8 @@ selected rows；不复制布局。
   --lumi-surface-pressed: #dfdde2;
 
   --lumi-text-primary: #29282c;
-  --lumi-text-secondary: #77747b;
-  --lumi-text-tertiary: #9b979f;
+  --lumi-text-secondary: #64616a;
+  --lumi-text-tertiary: #6a6770;
   --lumi-text-disabled: #bbb7be;
 
   --lumi-border: rgba(52, 47, 57, 0.10);
@@ -139,7 +139,7 @@ selected rows；不复制布局。
 
   --lumi-text-primary: #ececef;
   --lumi-text-secondary: #aaa8b0;
-  --lumi-text-tertiary: #77757d;
+  --lumi-text-tertiary: #9b99a2;
   --lumi-text-disabled: #5f5d64;
 
   --lumi-border: rgba(255, 255, 255, 0.10);

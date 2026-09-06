@@ -44,8 +44,16 @@ function EntryCard({
           : 'hover:bg-[var(--lumi-surface-hover)] active:bg-[var(--lumi-surface-pressed)]',
       )}
     >
-      {/* 元信息行：来源 + 时间 + 动作区（稍后读/收藏，触屏常显） */}
-      <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+      {/* 元信息行：来源 + 时间 + 动作区（稍后读/收藏，触屏常显）。
+          选中表面上 tertiary 对比度 4.43:1 不满足 WCAG AA → 用 secondary */}
+      <div
+        className={cx(
+          'flex min-w-0 items-center gap-1.5 text-xs',
+          selected
+            ? 'text-[var(--lumi-text-secondary)]'
+            : 'text-[var(--lumi-text-tertiary)]',
+        )}
+      >
         <button
           type="button"
           onClick={() => selectEntry(item.entryRef)}

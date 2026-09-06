@@ -43,8 +43,13 @@
   --lumi-accent-contrast: #ffffff;
 
   /* ---- 状态（最小集：danger 供 Button danger 变体） ---- */
-  --lumi-danger: #b8656b;
-  --lumi-danger-hover: #a75a60;
+  /* 深度按「danger 前景 ≥ 4.5:1（WCAG AA）」校准：Light 白字 on
+     #aa5c62 = 4.76:1；Dark 保持浅玫瑰底，前景用深墨（与 accent-contrast
+     同构）on #d08087 = 6.17:1——调深底色反而会破坏 danger 作为深底
+     文字色的对比（当前 5.37:1）。hover 再深一档保持可见反馈。 */
+  --lumi-danger: #aa5c62;
+  --lumi-danger-hover: #9d555b;
+  --lumi-danger-contrast: #ffffff;
 
   /* ---- 分类柔彩（低饱和，仅小图标/圆点/低透明 tint） ---- */
   --lumi-category-blue: #79a9d6;
@@ -96,6 +101,7 @@
   /* ---- 状态 ---- */
   --lumi-danger: #d08087;
   --lumi-danger-hover: #da9298;
+  --lumi-danger-contrast: #15151a;
 
   /* ---- 阴影（深色下加深） ---- */
   --lumi-shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.32);
