@@ -1,7 +1,7 @@
 /** 0019 C7 — 可访问性门（axe-core）。
  *
  * 主要页面的自动扫描：0 critical / 0 serious 为硬门。
- * 页面：首页（时间线）、Reader、订阅中心、搜索、设置（外观 / 备份与恢复 /
+ * 页面：首页（时间线）、Reader、订阅中心、搜索、设置（外观 / 数据控制 /
  * 账户与服务）。桌面 1440 与移动 390 两个代表视口。
  */
 
@@ -56,10 +56,10 @@ test('a11y — Reader（打开文章）', async ({ page }) => {
   await expectNoCriticalViolations(page)
 })
 
-test('a11y — 设置：外观 / 备份与恢复 / 账户与服务', async ({ page }) => {
+test('a11y — 设置：外观 / 数据控制 / 账户与服务', async ({ page }) => {
   await page.goto('/')
   const isMobile = (page.viewportSize()?.width ?? 0) < 1024
-  for (const category of ['外观', '备份与恢复', '账户与服务']) {
+  for (const category of ['外观', '数据控制', '账户与服务']) {
     if (isMobile) {
       await page.getByRole('button', { name: '打开导航' }).click()
       await page.getByRole('button', { name: '打开设置' }).click()
