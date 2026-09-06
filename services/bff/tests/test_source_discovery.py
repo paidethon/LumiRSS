@@ -11,7 +11,11 @@ import socket
 import httpx
 import pytest
 
-from lumirss.feed_preview import FeedFetchError, FeedTooLarge, NotAFeedError, UnsafeFeedUrl
+from lumirss.feed_preview import (
+    FeedFetchError,
+    FeedTooLarge,
+    UnsafeFeedUrl,
+)
 from lumirss.source_discovery import (
     COMMON_FEED_PATHS,
     DiscoveryCandidate,

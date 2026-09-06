@@ -15,8 +15,7 @@ from pathlib import Path
 import pytest
 
 from lumirss.backup import BackupInvalid
-from lumirss.restore import BackupChecksumMismatch, safe_extract
-from lumirss.restore import _verify_checksums
+from lumirss.restore import BackupChecksumMismatch, _verify_checksums, safe_extract
 from lumirss.secrets_store import SecretsStore
 
 

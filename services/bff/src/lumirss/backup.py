@@ -35,6 +35,7 @@ from typing import Any
 from lumirss.config import LumiSettings
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 from lumirss.webdav import (
     WebDavClient,
     WebDavSettings,
@@ -91,8 +92,6 @@ class BackupFreshrssUnavailable(Exception):
     """FRESHRSS_DATA_DIR is not available; full backup cannot proceed."""
 
 
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # Captured once per process: jobs created AFTER this instant belong to THIS

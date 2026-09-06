@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from lumirss.config import RssHubSettings
 from lumirss.feed_preview import FeedPreview
+from lumirss.main import app
 from lumirss.rsshub import (
     CATALOG,
     RssHubFetchError,
@@ -23,7 +24,6 @@ from lumirss.rsshub import (
     _quote_segment,
     build_path,
 )
-from lumirss.main import app
 
 RSS_DOC = b"""<?xml version="1.0"?>
 <rss version="2.0"><channel>

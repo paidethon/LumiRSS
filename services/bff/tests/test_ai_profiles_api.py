@@ -11,14 +11,13 @@ Contract pinned here:
 """
 
 import asyncio
+import secrets as _secrets
 
 from fastapi.testclient import TestClient
 
 from lumirss.main import app
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
-
-import secrets as _secrets
 
 FAKE_KEY = "sk-" + _secrets.token_urlsafe(12)
 FAKE_KEY_2 = "sk-" + _secrets.token_urlsafe(12)

@@ -5,11 +5,12 @@ endpoints (never edit-tag / token / subscription/edit). Every fake value is
 clearly test data; no real credentials are used.
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 
 from lumirss.adapters.freshrss import (
-    AuthenticationError,
     EntryNotFound,
     FreshRSSAdapter,
     UpstreamConnectionError,
@@ -17,7 +18,6 @@ from lumirss.adapters.freshrss import (
 )
 from lumirss.config import FreshRSSSettings
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 
@@ -164,7 +164,7 @@ async def test_list_entries_requests_bounded_n_and_read_only_endpoints():
         "/api/greader.php/accounts/ClientLogin",
         "/api/greader.php/reader/api/0/stream/contents/reading-list",
     ]
-    assert all(not fragment in path for path in paths for fragment in WRITE_ENDPOINTS)
+    assert all(fragment not in path for path in paths for fragment in WRITE_ENDPOINTS)
 
 
 # --- Test B — list must not expose bodies -------------------------------
@@ -317,7 +317,7 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     )
     # Read-only: only ClientLogin + items/contents were hit.
     paths = [r.url.path for r in requested]
-    assert all(not fragment in path for path in paths for fragment in WRITE_ENDPOINTS)
+    assert all(fragment not in path for path in paths for fragment in WRITE_ENDPOINTS)
 
 
 @pytest.mark.anyio

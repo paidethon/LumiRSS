@@ -56,25 +56,24 @@ import urllib.parse
 import httpx
 
 from lumirss.adapters.freshrss import (
+    CATEGORY_PREFIX,
+    RESERVED_CATEGORY_LABEL,
     AdapterError,
     AuthenticationError,
     FreshRSSSession,
     UpstreamError,
+    category_of_first,
+    iter_stream_objects,
 )
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
     encode_subscription_ref,
+    is_well_formed_feed_stream_id,
 )
 
-_CATEGORY_PREFIX = "user/-/label/"
 # Bound on the proxied OPML export body (defensive; single-user
 # FreshRSS instances are far below this).
 _MAX_OPML_EXPORT_BYTES = 10 * 1024 * 1024
-# Default category's DB name (FreshRSS_CategoryDAO::DEFAULT_CATEGORY_NAME);
-# reserving it as a rename destination avoids the silent-no-op / duplicate
-# label traps above. This is a fixed upstream constant, not a UI-localized
-# string.
-_RESERVED_CATEGORY_LABEL = "Uncategorized"
 _MAX_LABEL_LENGTH = 128
 _MAX_FEED_URL_LENGTH = 2048
 
@@ -227,11 +226,11 @@ class FreshRSSControlAdapter:
                 continue  # user tags and state pseudo-tags are not categories
             category_id = item.get("id")
             if not isinstance(category_id, str) or not category_id.startswith(
-                _CATEGORY_PREFIX
+                CATEGORY_PREFIX
             ):
                 raise UpstreamError("FreshRSS tag/list folder has an unexpected id.")
             categories.append(
-                Category(category_id=category_id, label=category_id[len(_CATEGORY_PREFIX):])
+                Category(category_id=category_id, label=category_id[len(CATEGORY_PREFIX):])
             )
         return categories
 
@@ -328,13 +327,13 @@ class FreshRSSControlAdapter:
         clean = self._validated_label(label)
 
         categories = await self.list_categories()
-        if clean == _RESERVED_CATEGORY_LABEL or any(
+        if clean == RESERVED_CATEGORY_LABEL or any(
             category.label == clean for category in categories
         ):
             raise CategoryLabelConflict("Another category already uses this label.")
 
         await self._require_subscription(stream_id)
-        target = f"{_CATEGORY_PREFIX}{clean}"
+        target = f"{CATEGORY_PREFIX}{clean}"
         response = await self._with_auth_retry(
             lambda: self._post_subscription_edit(
                 [("ac", "edit"), ("s", stream_id), ("a", target)]
@@ -397,7 +396,7 @@ class FreshRSSControlAdapter:
         categories = await self.list_categories()
         if not any(category.id == category_id for category in categories):
             raise CategoryNotFound("FreshRSS has no category with this id.")
-        if label == _RESERVED_CATEGORY_LABEL or any(
+        if label == RESERVED_CATEGORY_LABEL or any(
             category.label == label for category in categories
         ):
             raise CategoryLabelConflict("Another category already uses this label.")
@@ -417,7 +416,7 @@ class FreshRSSControlAdapter:
         ))
 
         response = await self._with_auth_retry(
-            lambda: self._post_rename_tag(category_id, f"{_CATEGORY_PREFIX}{label}")
+            lambda: self._post_rename_tag(category_id, f"{CATEGORY_PREFIX}{label}")
         )
         self._require_ok(response, on_bad_request=UpstreamError(
             "FreshRSS refused the category rename."
@@ -426,7 +425,7 @@ class FreshRSSControlAdapter:
         # Post-check: rename-tag can answer "OK" while applying nothing
         # (UNIQUE(name) or a same-named tag blocks the SQL UPDATE).
         after = await self.list_categories()
-        if not any(category.id == f"{_CATEGORY_PREFIX}{label}" for category in after):
+        if not any(category.id == f"{CATEGORY_PREFIX}{label}" for category in after):
             raise UpstreamError(
                 "FreshRSS reported success but the rename was not applied."
             )
@@ -489,28 +488,11 @@ class FreshRSSControlAdapter:
 
     @staticmethod
     def _iter_list(payload: dict, source: str, key: str):
-        items = payload.get(key)
-        if not isinstance(items, list):
-            raise UpstreamError(f"FreshRSS {source} '{key}' is not a list.")
-        for item in items:
-            if not isinstance(item, dict):
-                raise UpstreamError(f"FreshRSS {source} item is not an object.")
-            yield item
+        return iter_stream_objects(payload, source, key)
 
     @staticmethod
     def _category_of(item: dict) -> tuple[str | None, str | None]:
-        """categories[0] = FreshRSS 单分类（greader 模型）；形状异常 → 无分类。"""
-        categories = item.get("categories")
-        if not isinstance(categories, list) or not categories:
-            return None, None
-        first = categories[0]
-        if not isinstance(first, dict):
-            return None, None
-        raw_id = first.get("id")
-        raw_label = first.get("label")
-        category_id = raw_id if isinstance(raw_id, str) and raw_id else None
-        category_label = raw_label if isinstance(raw_label, str) and raw_label else None
-        return category_id, category_label
+        return category_of_first(item)
 
     @staticmethod
     def _validate_feed_url(feed_url: str) -> None:
@@ -533,21 +515,15 @@ class FreshRSSControlAdapter:
     @staticmethod
     def _validate_stream_id(stream_id: str) -> None:
         """Only stream ids we could have produced (feed/<positive int>)."""
-        body = stream_id.removeprefix("feed/")
-        if (
-            not stream_id.startswith("feed/")
-            or not body.isdigit()
-            or body.startswith("0")
-            or len(body) > 10
-        ):
+        if not is_well_formed_feed_stream_id(stream_id):
             raise InvalidSubscriptionReference(
                 "Stream id is not a well-formed feed id."
             )
 
     @staticmethod
     def _validate_category_id(category_id: str) -> None:
-        label = category_id.removeprefix(_CATEGORY_PREFIX)
-        if not category_id.startswith(_CATEGORY_PREFIX) or not label:
+        label = category_id.removeprefix(CATEGORY_PREFIX)
+        if not category_id.startswith(CATEGORY_PREFIX) or not label:
             raise InvalidCategoryReference(
                 "categoryId must be a user/-/label/<名> reference."
             )

@@ -8,10 +8,10 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
+from lumirss.adapters.freshrss import EntryNotFound
 from lumirss.ai_provider import AiRateLimited
 from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
 from lumirss.ai_translation import TranslationService
-from lumirss.adapters.freshrss import EntryNotFound
 from lumirss.entryref import encode_entry_ref
 from lumirss.main import app
 from lumirss.models import EntryDetail

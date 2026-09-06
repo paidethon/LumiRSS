@@ -17,11 +17,11 @@ operator confirms "applied" after restarting RSSHub with the exported config).
 
 import json
 from dataclasses import dataclass
-from datetime import UTC
 from typing import Any
 
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 
 RSSHUB_CONFIG_SCHEMA_VERSION = 1
 
@@ -152,10 +152,6 @@ SECRET_ITEMS = tuple(item for item in SCHEMA if item.secret)
 MAX_SECRET_LENGTH = 10000
 
 
-def _utc_now() -> str:
-    from datetime import datetime
-
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def defaults() -> dict[str, Any]:

@@ -60,8 +60,55 @@ _STARRED_MARKER = "user/-/state/com.google/starred"
 _UNREAD_FILTER = "user/-/state/com.google/unread"
 _STARRED_FILTER = "user/-/state/com.google/starred"
 
+# FreshRSS greader category stream prefix and the default category's DB
+# name (FreshRSS_CategoryDAO::DEFAULT_CATEGORY_NAME). Single definition
+# shared with the control adapter (freshrss_control) and the OPML
+# preview/import; the default-category DB name is a fixed upstream
+# constant, not a UI-localized string.
+CATEGORY_PREFIX = "user/-/label/"
+RESERVED_CATEGORY_LABEL = "Uncategorized"
+
 # view → upstream `it` filter (all = no filter).
 _VIEW_FILTERS = {"unread": _UNREAD_FILTER, "starred": _STARRED_FILTER}
+
+
+def iter_stream_objects(
+    payload: dict, source: str, key: str, *, default: list | None = None
+):
+    """Yield dict items of a greader list response, mapping shape
+    anomalies to a stable UpstreamError.
+
+    ``default=None`` keeps strict behavior (a missing key is a protocol
+    anomaly, e.g. subscription/list); pass ``default=[]`` where the
+    upstream tolerates an absent list (stream/items).
+    """
+    items = payload.get(key) if default is None else payload.get(key, default)
+    if not isinstance(items, list):
+        raise UpstreamError(f"FreshRSS {source} '{key}' is not a list.")
+    for item in items:
+        if not isinstance(item, dict):
+            raise UpstreamError(f"FreshRSS {source} item is not an object.")
+        yield item
+
+
+def category_of_first(item: dict) -> tuple[str | None, str | None]:
+    """categories[0] = FreshRSS 单分类（greader 模型）；形状异常 → 无分类.
+
+    Shared by the entry adapter's subscription parsing and the control
+    adapter's subscription listing — same upstream shape, same lenient
+    degradation to "no category".
+    """
+    categories = item.get("categories")
+    if not isinstance(categories, list) or not categories:
+        return None, None
+    first = categories[0]
+    if not isinstance(first, dict):
+        return None, None
+    raw_id = first.get("id")
+    raw_label = first.get("label")
+    category_id = raw_id if isinstance(raw_id, str) and raw_id else None
+    category_label = raw_label if isinstance(raw_label, str) and raw_label else None
+    return category_id, category_label
 
 # Block-level tags that produce a line break in contentText.
 _BLOCK_TAGS = frozenset(
@@ -604,8 +651,8 @@ class FreshRSSAdapter(FreshRSSSession):
         误回退到默认分类内容（FreshRSS UNIQUE(name) 下同名真分类无法
         与默认分类共存，风险极低）。
         """
-        label = category_id.removeprefix("user/-/label/")
-        stream_path = f"user/-/label/{urllib.parse.quote(label, safe='')}"
+        label = category_id.removeprefix(CATEGORY_PREFIX)
+        stream_path = f"{CATEGORY_PREFIX}{urllib.parse.quote(label, safe='')}"
         params: dict[str, str] = {"output": "json", "n": str(_ENTRY_LIST_LIMIT)}
         it_filter = _VIEW_FILTERS.get(view)
         if it_filter is not None:
@@ -616,9 +663,9 @@ class FreshRSSAdapter(FreshRSSSession):
         if (
             continuation is None
             and not payload.get("items")
-            and label != "Uncategorized"
+            and label != RESERVED_CATEGORY_LABEL
         ):
-            fallback_path = "user/-/label/Uncategorized"
+            fallback_path = CATEGORY_PREFIX + RESERVED_CATEGORY_LABEL
             retry = await self._stream_get(token, fallback_path, params)
             if retry.get("items"):
                 return retry
@@ -693,13 +740,7 @@ class FreshRSSAdapter(FreshRSSSession):
 
     @staticmethod
     def _iter_items(payload: dict, source: str):
-        items = payload.get("items", [])
-        if not isinstance(items, list):
-            raise UpstreamError(f"FreshRSS {source} 'items' is not a list.")
-        for item in items:
-            if not isinstance(item, dict):
-                raise UpstreamError(f"FreshRSS {source} item is not an object.")
-            yield item
+        return iter_stream_objects(payload, source, "items", default=[])
 
     @staticmethod
     def _common_fields(item: dict) -> dict | None:
@@ -767,18 +808,7 @@ class FreshRSSAdapter(FreshRSSSession):
                 )
             # 0011: categories[0] = FreshRSS 单分类（greader 模型）。
             # 形状异常时降级为无分类（前端归入「未分组」），不阻断列表。
-            category_id: str | None = None
-            category_label: str | None = None
-            categories = item.get("categories")
-            if isinstance(categories, list) and categories:
-                first = categories[0]
-                if isinstance(first, dict):
-                    raw_id = first.get("id")
-                    raw_label = first.get("label")
-                    if isinstance(raw_id, str) and raw_id:
-                        category_id = raw_id
-                    if isinstance(raw_label, str) and raw_label:
-                        category_label = raw_label
+            category_id, category_label = category_of_first(item)
             feeds.append(
                 Feed(
                     title=title,

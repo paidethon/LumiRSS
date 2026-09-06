@@ -17,14 +17,11 @@ import pytest
 from lumirss.backup import (
     BackupBusy,
     BackupEngine,
-    BackupFreshrssUnavailable,
-    BackupInvalid,
     BackupJobStore,
     WebDavSettingsStore,
     _sha256,
     _sqlite_backup,
     build_manifest,
-    _collect_freshrss_files,
 )
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database

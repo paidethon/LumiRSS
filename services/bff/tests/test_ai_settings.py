@@ -6,13 +6,14 @@ absence. The browser-managed profile layer lives in
 test_ai_profiles_api.py; these tests pin the GLOBAL settings contract.
 """
 
+import secrets as _secrets
+
 from fastapi.testclient import TestClient
 
 from lumirss.main import app
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 SMUGGLED_KEY = "sk-" + _secrets.token_urlsafe(8)
 

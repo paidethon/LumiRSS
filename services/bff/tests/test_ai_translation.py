@@ -9,11 +9,11 @@ import asyncio
 
 import pytest
 
+from lumirss.adapters.freshrss import EntryNotFound
 from lumirss.ai_provider import AiNotConfigured, AiRateLimited
 from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
 from lumirss.ai_summary import AiContentUnavailable
 from lumirss.ai_translation import TranslationService, parse_translation_output
-from lumirss.adapters.freshrss import EntryNotFound
 from lumirss.entryref import encode_entry_ref
 from lumirss.models import EntryDetail
 from lumirss.storage import Database

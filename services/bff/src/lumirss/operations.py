@@ -13,7 +13,7 @@ All returned messages are static, browser-safe strings — never raw
 exceptions, never URLs carrying credentials.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 from pydantic import ValidationError
@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from lumirss.config import FreshRSSSettings, LumiSettings, RssHubSettings
 from lumirss.migrations import schema_version
 from lumirss.storage import Database, DatabaseError
+from lumirss.util import utc_now as _utc_now
 
 _PROBE_TIMEOUT = httpx.Timeout(5.0, connect=3.0)
 
@@ -29,8 +30,6 @@ RSSHUB_STATUSES = ("unconfigured", "healthy", "unavailable")
 SQLITE_STATUSES = ("healthy", "unavailable")
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _status_entry(status: str, latency_ms: int | None, error: dict | None) -> dict:
@@ -84,7 +83,7 @@ class OperationsService:
             return _status_entry("unconfigured", None, None)
         base = settings.FRESHRSS_BASE_URL.rstrip("/")
         url = f"{base}/api/greader.php/accounts/ClientLogin"
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         try:
             response = await self._client.post(
                 url,
@@ -97,7 +96,7 @@ class OperationsService:
         except httpx.HTTPError:
             return _status_entry("unavailable", None, {"type": "connection_error"})
         latency_ms = int(
-            (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            (datetime.now(UTC) - started).total_seconds() * 1000
         )
         if response.status_code == 200:
             return _status_entry("healthy", latency_ms, None)
@@ -122,13 +121,13 @@ class OperationsService:
         if not settings.RSSHUB_BASE_URL:
             return _status_entry("unconfigured", None, None)
         url = f"{settings.RSSHUB_BASE_URL.rstrip('/')}/healthz"
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         try:
             response = await self._client.get(url, timeout=_PROBE_TIMEOUT)
         except httpx.HTTPError:
             return _status_entry("unavailable", None, {"type": "connection_error"})
         latency_ms = int(
-            (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            (datetime.now(UTC) - started).total_seconds() * 1000
         )
         if response.status_code == 200:
             return _status_entry("healthy", latency_ms, None)

@@ -23,21 +23,25 @@ per question (reuses the ONE provider abstraction).
 import asyncio
 from dataclasses import dataclass
 
-from lumirss.ai_provider import AIProvider, AiNotConfigured, AiProviderError
+from lumirss.adapters.freshrss import FreshRSSAdapter
+from lumirss.ai_artifacts import (
+    AiContentUnavailable,
+    GenerationLockPool,
+    content_hash,
+    require_ai_configured,
+)
+from lumirss.ai_artifacts import (
+    normalize_ai_content as normalize_content,
+)
+from lumirss.ai_provider import AiProviderError
 from lumirss.ai_settings import (
-    AiSettingsStore,
     KEY_BASE_URL,
     KEY_MODEL,
     KEY_SUMMARY_LANGUAGE,
+    AiSettingsStore,
 )
-from lumirss.ai_summary import (
-    AiContentUnavailable,
-    _utc_now,
-    content_hash,
-    normalize_content,
-)
-from lumirss.adapters.freshrss import FreshRSSAdapter
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 
 CHAT_PROMPT_VERSION = "chat-v1"
 
@@ -97,7 +101,7 @@ class ConversationService:
         self._adapter = adapter
         self._settings = settings_store
         self._provider_factory = provider_factory
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks = GenerationLockPool()
 
     async def _resolve_article(self, entry_ref: str):
         """FreshRSS detail → (title, feed_title, content, content_hash)."""
@@ -171,11 +175,7 @@ class ConversationService:
 
             history = await self._load_messages(conversation_id)
             settings = await self._settings.load()
-            if not settings[KEY_BASE_URL] or not settings[KEY_MODEL]:
-                raise AiNotConfigured(
-                    "AI is not configured. Set the API key on the server and "
-                    "configure a base URL and model in AI settings."
-                )
+            require_ai_configured(settings)
             reply = await self._ask_provider(
                 settings=settings,
                 title=title,
@@ -265,10 +265,4 @@ class ConversationService:
         return row["summary_text"][:MAX_SUMMARY_CONTEXT_CHARS]
 
     def _lock_for(self, entry_ref: str) -> asyncio.Lock:
-        lock = self._locks.get(entry_ref)
-        if lock is None:
-            if len(self._locks) >= self._MAX_LOCKS:
-                self._locks.clear()
-            lock = asyncio.Lock()
-            self._locks[entry_ref] = lock
-        return lock
+        return self._locks.lock_for(entry_ref)

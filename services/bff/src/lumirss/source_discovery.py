@@ -21,9 +21,9 @@ common-endpoint list. The service never touches FreshRSS at all — it holds
 no control adapter reference, so discovery is read-only by construction.
 """
 
+import urllib.parse
 from dataclasses import dataclass
 from html.parser import HTMLParser
-import urllib.parse
 
 import httpx
 
