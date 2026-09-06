@@ -182,7 +182,7 @@ export function WebsiteTab({ onClose, registerGuard }: AddSourceTabProps) {
                   </span>
                   <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">
                     {SOURCE_LABEL[candidate.source]}
-                    {candidate.format !== null ? ` · ${candidate.format.toUpperCase()}` : ''}
+                    {candidate.format ? ` · ${candidate.format.toUpperCase()}` : ''}
                     {' · '}
                     {candidate.feedUrl}
                   </span>

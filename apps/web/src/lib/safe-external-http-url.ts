@@ -9,8 +9,8 @@
  */
 
 /** 只允许绝对 http/https URL；malformed / 其它协议 / 相对 URL → null。 */
-export function safeExternalHttpUrl(value: string | null): string | null {
-  if (value === null) {
+export function safeExternalHttpUrl(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
     return null
   }
   try {

@@ -34,8 +34,8 @@ import {
   type AiFailureWording,
 } from '../lib/ai-failure-text'
 
-function formatGeneratedAt(value: string | null): string {
-  if (value === null) {
+function formatGeneratedAt(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
     return ''
   }
   const date = new Date(value)

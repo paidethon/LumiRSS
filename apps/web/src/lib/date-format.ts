@@ -22,12 +22,13 @@ export const listDateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   minute: '2-digit',
 })
 
-/** ISO 时间戳 → 列表显示文案；缺失/无效时返回 '—'（列表行与卡片共用）。 */
+/** ISO 时间戳 → 列表显示文案；缺失/无效时返回 '—'（列表行与卡片共用）。
+ * （生成的 API 类型中可选字段带 undefined，一并视为缺失。） */
 export function formatPublishedAt(
-  value: string | null,
+  value: string | null | undefined,
   formatter: Intl.DateTimeFormat = dateTimeFormatter,
 ): string {
-  if (value === null) {
+  if (value === null || value === undefined) {
     return '—'
   }
   const date = new Date(value)

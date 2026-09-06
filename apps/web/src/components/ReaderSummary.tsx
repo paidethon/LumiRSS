@@ -33,8 +33,8 @@ const WORDING: AiFailureWording = {
   contentUnavailable: '这篇文章没有可摘要的正文内容。',
 }
 
-function formatGeneratedAt(value: string | null): string {
-  if (value === null) {
+function formatGeneratedAt(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
     return ''
   }
   const date = new Date(value)

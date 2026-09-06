@@ -126,7 +126,7 @@ export default function MoveSubscriptionDialog({
                 {subscription.title}
               </span>
               <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">
-                {subscription.category !== null ? `当前分类：${subscription.category.label}` : '当前未分组'}
+                {subscription.category ? `当前分类：${subscription.category.label}` : '当前未分组'}
               </span>
             </span>
           </div>

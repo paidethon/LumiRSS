@@ -28,8 +28,8 @@ export const STAGE_LABELS: Record<string, string> = {
   completed: '已完成',
 }
 
-export function formatBytes(bytes: number | undefined): string {
-  if (bytes === undefined || bytes === null) return '—'
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return '—'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`

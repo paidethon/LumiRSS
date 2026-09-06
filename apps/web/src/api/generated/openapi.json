@@ -1,0 +1,4831 @@
+{
+ "components": {
+  "schemas": {
+   "AiProfile": {
+    "description": "One AI profile (keys surface only as ``keyConfigured``).",
+    "properties": {
+     "baseUrl": {
+      "title": "Baseurl",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "keyConfigured": {
+      "title": "Keyconfigured",
+      "type": "boolean"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "provider": {
+      "const": "openai_compatible",
+      "title": "Provider",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "provider",
+     "baseUrl",
+     "model",
+     "enabled",
+     "keyConfigured",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "AiProfile",
+    "type": "object"
+   },
+   "AiProfileCreate": {
+    "description": "POST /api/v1/settings/ai/profiles body (metadata only, no key).",
+    "properties": {
+     "baseUrl": {
+      "default": "",
+      "title": "Baseurl",
+      "type": "string"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "label": {
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     },
+     "model": {
+      "default": "",
+      "title": "Model",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "AiProfileCreate",
+    "type": "object"
+   },
+   "AiProfileUpdate": {
+    "description": "PATCH /api/v1/settings/ai/profiles/{id} body (all optional).",
+    "properties": {
+     "baseUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseurl"
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     }
+    },
+    "title": "AiProfileUpdate",
+    "type": "object"
+   },
+   "AiPurposeStatus": {
+    "description": "Effective, secret-free resolution of one AI purpose.",
+    "properties": {
+     "baseUrl": {
+      "title": "Baseurl",
+      "type": "string"
+     },
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "keyConfigured": {
+      "title": "Keyconfigured",
+      "type": "boolean"
+     },
+     "keySource": {
+      "enum": [
+       "profile_secret",
+       "default_secret",
+       "env",
+       "missing"
+      ],
+      "title": "Keysource",
+      "type": "string"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "profileId": {
+      "title": "Profileid",
+      "type": "string"
+     },
+     "profileLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Profilelabel"
+     },
+     "source": {
+      "enum": [
+       "default",
+       "profile"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "profileId",
+     "source",
+     "baseUrl",
+     "model",
+     "keyConfigured",
+     "keySource",
+     "configured"
+    ],
+    "title": "AiPurposeStatus",
+    "type": "object"
+   },
+   "AiPurposesUpdate": {
+    "description": "PUT /api/v1/settings/ai/purposes body (each purpose optional).\n\nEvery target is either the built-in ``default`` resolution or an\nexisting profile id.",
+    "properties": {
+     "chat": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chat"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "translation": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translation"
+     }
+    },
+    "title": "AiPurposesUpdate",
+    "type": "object"
+   },
+   "AiSettingsUpdate": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/settings/ai body — every field optional, validated.\n\nMissing fields keep their current value; blank baseUrl/model clear it.\nThere is no secret field on this model by design, and unknown fields\nare rejected (extra=\"forbid\") so an attempt to smuggle e.g. an apiKey\ninto the settings store fails loudly instead of being ignored.",
+    "properties": {
+     "baseUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseurl"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "provider": {
+      "anyOf": [
+       {
+        "const": "openai_compatible",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider"
+     },
+     "summaryLanguage": {
+      "anyOf": [
+       {
+        "enum": [
+         "zh-CN",
+         "en"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summarylanguage"
+     },
+     "translationLanguage": {
+      "anyOf": [
+       {
+        "enum": [
+         "zh-CN",
+         "en"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationlanguage"
+     }
+    },
+    "title": "AiSettingsUpdate",
+    "type": "object"
+   },
+   "AiSettingsView": {
+    "description": "GET/PUT /api/v1/settings/ai (key presence is booleans only).",
+    "properties": {
+     "baseUrl": {
+      "title": "Baseurl",
+      "type": "string"
+     },
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "defaultKeyConfigured": {
+      "title": "Defaultkeyconfigured",
+      "type": "boolean"
+     },
+     "envKeyConfigured": {
+      "title": "Envkeyconfigured",
+      "type": "boolean"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "provider": {
+      "const": "openai_compatible",
+      "title": "Provider",
+      "type": "string"
+     },
+     "purposeStatus": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/AiPurposeStatus"
+      },
+      "title": "Purposestatus",
+      "type": "object"
+     },
+     "purposes": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Purposes",
+      "type": "object"
+     },
+     "summaryLanguage": {
+      "enum": [
+       "zh-CN",
+       "en"
+      ],
+      "title": "Summarylanguage",
+      "type": "string"
+     },
+     "translationLanguage": {
+      "enum": [
+       "zh-CN",
+       "en"
+      ],
+      "title": "Translationlanguage",
+      "type": "string"
+     }
+    },
+    "required": [
+     "provider",
+     "baseUrl",
+     "model",
+     "summaryLanguage",
+     "translationLanguage",
+     "configured",
+     "envKeyConfigured",
+     "defaultKeyConfigured",
+     "purposes",
+     "purposeStatus"
+    ],
+    "title": "AiSettingsView",
+    "type": "object"
+   },
+   "ApiVersionInfo": {
+    "description": "GET /api/v1/version (build provenance for Web/BFF skew diagnosis).",
+    "properties": {
+     "apiVersion": {
+      "title": "Apiversion",
+      "type": "integer"
+     },
+     "commit": {
+      "title": "Commit",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "version",
+     "commit",
+     "apiVersion"
+    ],
+    "title": "ApiVersionInfo",
+    "type": "object"
+   },
+   "AppSettingsView": {
+    "additionalProperties": false,
+    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values.",
+    "properties": {
+     "accentColor": {
+      "default": "#6d78e8",
+      "title": "Accentcolor",
+      "type": "string"
+     },
+     "readerBackground": {
+      "default": "follow",
+      "enum": [
+       "follow",
+       "sepia",
+       "warm",
+       "paper",
+       "mint",
+       "custom"
+      ],
+      "title": "Readerbackground",
+      "type": "string"
+     },
+     "readerBackgroundCustom": {
+      "default": "#eef7ee",
+      "title": "Readerbackgroundcustom",
+      "type": "string"
+     },
+     "readerChineseConversion": {
+      "default": "off",
+      "enum": [
+       "off",
+       "s2t",
+       "t2s",
+       "tw",
+       "hk"
+      ],
+      "title": "Readerchineseconversion",
+      "type": "string"
+     },
+     "readerCodeHighlight": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "off"
+      ],
+      "title": "Readercodehighlight",
+      "type": "string"
+     },
+     "readerCodeTheme": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "github-light",
+       "github-dark",
+       "vitesse-light",
+       "vitesse-dark"
+      ],
+      "title": "Readercodetheme",
+      "type": "string"
+     },
+     "readerContentWidth": {
+      "default": 760.0,
+      "title": "Readercontentwidth",
+      "type": "number"
+     },
+     "readerFontFamily": {
+      "default": "system",
+      "enum": [
+       "system",
+       "sans",
+       "serif",
+       "mono"
+      ],
+      "title": "Readerfontfamily",
+      "type": "string"
+     },
+     "readerFontSize": {
+      "default": 17.0,
+      "title": "Readerfontsize",
+      "type": "number"
+     },
+     "readerHangingPunctuation": {
+      "default": false,
+      "title": "Readerhangingpunctuation",
+      "type": "boolean"
+     },
+     "readerImageMode": {
+      "default": "all",
+      "enum": [
+       "all",
+       "grayscale",
+       "hidden"
+      ],
+      "title": "Readerimagemode",
+      "type": "string"
+     },
+     "readerJustify": {
+      "default": false,
+      "title": "Readerjustify",
+      "type": "boolean"
+     },
+     "readerLineHeight": {
+      "default": 1.85,
+      "title": "Readerlineheight",
+      "type": "number"
+     },
+     "readerPageMargin": {
+      "default": 32.0,
+      "title": "Readerpagemargin",
+      "type": "number"
+     },
+     "readerParagraphSpacing": {
+      "default": 0.85,
+      "title": "Readerparagraphspacing",
+      "type": "number"
+     },
+     "readerShowReadingTime": {
+      "default": false,
+      "title": "Readershowreadingtime",
+      "type": "boolean"
+     },
+     "readerTextIndent": {
+      "default": "off",
+      "enum": [
+       "off",
+       "2em"
+      ],
+      "title": "Readertextindent",
+      "type": "string"
+     },
+     "reduceMotion": {
+      "default": false,
+      "title": "Reducemotion",
+      "type": "boolean"
+     },
+     "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+     },
+     "scrollMarkUnread": {
+      "default": false,
+      "title": "Scrollmarkunread",
+      "type": "boolean"
+     },
+     "stored": {
+      "title": "Stored",
+      "type": "boolean"
+     },
+     "themeMode": {
+      "default": "system",
+      "enum": [
+       "system",
+       "light",
+       "dark"
+      ],
+      "title": "Thememode",
+      "type": "string"
+     },
+     "uiFontSize": {
+      "default": 16,
+      "enum": [
+       15,
+       16,
+       18,
+       20
+      ],
+      "title": "Uifontsize",
+      "type": "integer"
+     },
+     "uiFontStack": {
+      "default": "default",
+      "enum": [
+       "default",
+       "sans",
+       "serif",
+       "mono"
+      ],
+      "title": "Uifontstack",
+      "type": "string"
+     }
+    },
+    "required": [
+     "stored"
+    ],
+    "title": "AppSettingsView",
+    "type": "object"
+   },
+   "BackupCreate": {
+    "properties": {
+     "target": {
+      "default": "local",
+      "enum": [
+       "local",
+       "webdav"
+      ],
+      "title": "Target",
+      "type": "string"
+     }
+    },
+    "title": "BackupCreate",
+    "type": "object"
+   },
+   "BackupJob": {
+    "description": "One backup/restore job (GET/POST /api/v1/backups, GET …/{job_id}).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "finishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finishedat"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "safeError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Safeerror"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "startedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Startedat"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "running",
+       "succeeded",
+       "failed",
+       "interrupted"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BackupJobSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "type": {
+      "enum": [
+       "full",
+       "safety",
+       "restore"
+      ],
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "status",
+     "createdAt"
+    ],
+    "title": "BackupJob",
+    "type": "object"
+   },
+   "BackupJobSummary": {
+    "additionalProperties": true,
+    "description": "Backup job summary payload.\n\nDeclares the keys a full/safety backup writes; ``extra=\"allow\"``\nhonestly passes through what restore jobs record\n(lumiRestored / freshrss / safetyBackupId) without inventing keys.",
+    "properties": {
+     "components": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Components"
+     },
+     "fileCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filecount"
+     },
+     "filename": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filename"
+     },
+     "localPath": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Localpath"
+     },
+     "remotePath": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remotepath"
+     },
+     "sizeBytes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sizebytes"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     }
+    },
+    "title": "BackupJobSummary",
+    "type": "object"
+   },
+   "Category": {
+    "description": "One item of GET /api/v1/categories (includes empty categories).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "Category",
+    "type": "object"
+   },
+   "CategoryPatch": {
+    "description": "PATCH /api/v1/categories/{categoryId} body: rename the category.",
+    "properties": {
+     "label": {
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "CategoryPatch",
+    "type": "object"
+   },
+   "ComponentError": {
+    "description": "Redacted component error detail (only ``type`` ever leaves the BFF).",
+    "properties": {
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "ComponentError",
+    "type": "object"
+   },
+   "ConversationMessage": {
+    "description": "One article-scoped conversation message (plain text only).",
+    "properties": {
+     "content": {
+      "title": "Content",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "role": {
+      "enum": [
+       "user",
+       "assistant"
+      ],
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "role",
+     "content",
+     "createdAt"
+    ],
+    "title": "ConversationMessage",
+    "type": "object"
+   },
+   "ConversationQuestion": {
+    "description": "POST /api/v1/entries/{entryRef}/conversation/messages body (0016).\n\nBounded question; blank-after-strip is rejected before any provider\nwork (422 via FastAPI validation).",
+    "properties": {
+     "question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+     }
+    },
+    "required": [
+     "question"
+    ],
+    "title": "ConversationQuestion",
+    "type": "object"
+   },
+   "DiscoveryCandidate": {
+    "description": "One discovered feed candidate (declared = not prefetched).",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "format": {
+      "anyOf": [
+       {
+        "enum": [
+         "rss",
+         "atom"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Format"
+     },
+     "source": {
+      "enum": [
+       "declared",
+       "probed"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "source"
+    ],
+    "title": "DiscoveryCandidate",
+    "type": "object"
+   },
+   "EntryConversation": {
+    "description": "GET/POST /api/v1/entries/{entryRef}/conversation(+ /messages).",
+    "properties": {
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/ConversationMessage"
+      },
+      "title": "Messages",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "empty",
+       "active"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "messages"
+    ],
+    "title": "EntryConversation",
+    "type": "object"
+   },
+   "EntryDetail": {
+    "description": "One article with its body.\n\ncontentText is the safe plain-text rendering (always present);\ncontentHtml is the raw upstream HTML from FreshRSS. contentHtml is\nUNTRUSTED upstream HTML (it comes from external RSS feeds) — the BFF\nonly transports it; sanitizing before rendering is the web client's\nresponsibility. Missing/empty upstream HTML is normalized to None.",
+    "properties": {
+     "author": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author"
+     },
+     "contentHtml": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
+     },
+     "contentText": {
+      "title": "Contenttext",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "publishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedat"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "read",
+     "starred",
+     "contentText"
+    ],
+    "title": "EntryDetail",
+    "type": "object"
+   },
+   "EntryListItem": {
+    "description": "One article in the entry list — never contains the body.",
+    "properties": {
+     "author": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "publishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedat"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "read",
+     "starred"
+    ],
+    "title": "EntryListItem",
+    "type": "object"
+   },
+   "EntryListResponse": {
+    "description": "Envelope for GET /api/v1/entries.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/EntryListItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor"
+    ],
+    "title": "EntryListResponse",
+    "type": "object"
+   },
+   "EntryStateUpdate": {
+    "description": "PATCH body: set (never toggle) read/starred; one bool is required.\n\nStrict bools: Pydantic does not coerce 1/0/\"true\" into bool.",
+    "properties": {
+     "read": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Read"
+     },
+     "starred": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Starred"
+     }
+    },
+    "title": "EntryStateUpdate",
+    "type": "object"
+   },
+   "EntrySummary": {
+    "description": "GET/POST /api/v1/entries/{entryRef}/summary (browser-safe view).",
+    "properties": {
+     "cached": {
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "failureType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failuretype"
+     },
+     "generatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Generatedat"
+     },
+     "language": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Language"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "promptVersion": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Promptversion"
+     },
+     "provider": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider"
+     },
+     "status": {
+      "enum": [
+       "not_generated",
+       "generating",
+       "success",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     }
+    },
+    "required": [
+     "status",
+     "cached"
+    ],
+    "title": "EntrySummary",
+    "type": "object"
+   },
+   "EntryTranslation": {
+    "description": "GET/POST /api/v1/entries/{entryRef}/translation (plain-text output).",
+    "properties": {
+     "cached": {
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "failureType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failuretype"
+     },
+     "generatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Generatedat"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "promptVersion": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Promptversion"
+     },
+     "provider": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider"
+     },
+     "status": {
+      "enum": [
+       "not_generated",
+       "generating",
+       "success",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "targetLanguage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetlanguage"
+     },
+     "translatedText": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translatedtext"
+     },
+     "translatedTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translatedtitle"
+     }
+    },
+    "required": [
+     "status",
+     "cached"
+    ],
+    "title": "EntryTranslation",
+    "type": "object"
+   },
+   "Feed": {
+    "description": "One item of GET /api/v1/feeds (read path; uncategorized → null).",
+    "properties": {
+     "category": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedCategory"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "feedUrl"
+    ],
+    "title": "Feed",
+    "type": "object"
+   },
+   "FeedCategory": {
+    "description": "FreshRSS category (stable id + display label, single-category model).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "FeedCategory",
+    "type": "object"
+   },
+   "FeedPreviewRequest": {
+    "description": "POST /api/v1/feed-preview body (0013 Gate 2).",
+    "properties": {
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "FeedPreviewRequest",
+    "type": "object"
+   },
+   "FeedPreviewResult": {
+    "description": "POST /api/v1/feed-preview and POST /api/v1/rsshub/preview.\n\nOnly reliable metadata — no entries, no scraping.",
+    "properties": {
+     "alreadySubscribed": {
+      "title": "Alreadysubscribed",
+      "type": "boolean"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "format": {
+      "enum": [
+       "rss",
+       "atom"
+      ],
+      "title": "Format",
+      "type": "string"
+     },
+     "siteUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Siteurl"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "feedUrl",
+     "format",
+     "alreadySubscribed"
+    ],
+    "title": "FeedPreviewResult",
+    "type": "object"
+   },
+   "FreshRssUiInfo": {
+    "description": "GET /api/v1/freshrss-ui (null url = not configured, UI hides it).",
+    "properties": {
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "title": "FreshRssUiInfo",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HealthStatus": {
+    "description": "GET /health/live — liveness only.",
+    "properties": {
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "HealthStatus",
+    "type": "object"
+   },
+   "OperationsBackupStatus": {
+    "description": "Backup capability summary for the operations view.",
+    "properties": {
+     "lastBackup": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BackupJob"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "webdavConfigured": {
+      "title": "Webdavconfigured",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "webdavConfigured"
+    ],
+    "title": "OperationsBackupStatus",
+    "type": "object"
+   },
+   "OperationsComponentStatus": {
+    "description": "One probed upstream (FreshRSS / RSSHub) plus its configured flag.",
+    "properties": {
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ComponentError"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastCheckedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastcheckedat"
+     },
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "configured"
+    ],
+    "title": "OperationsComponentStatus",
+    "type": "object"
+   },
+   "OperationsLumiStatus": {
+    "description": "Core storage status (degraded when sqlite is unavailable).",
+    "properties": {
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "version"
+    ],
+    "title": "OperationsLumiStatus",
+    "type": "object"
+   },
+   "OperationsRssHubStatus": {
+    "description": "RSSHub entry plus the pending config-change counters.",
+    "properties": {
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ComponentError"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastCheckedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastcheckedat"
+     },
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "pendingConfigCount": {
+      "title": "Pendingconfigcount",
+      "type": "integer"
+     },
+     "restartRequired": {
+      "title": "Restartrequired",
+      "type": "boolean"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "configured",
+     "restartRequired",
+     "pendingConfigCount"
+    ],
+    "title": "OperationsRssHubStatus",
+    "type": "object"
+   },
+   "OperationsSqliteStatus": {
+    "description": "SQLite entry: compact healthy shape or full status entry (superset).",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ComponentError"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastCheckedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastcheckedat"
+     },
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "schemaVersion": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schemaversion"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "OperationsSqliteStatus",
+    "type": "object"
+   },
+   "OperationsStatus": {
+    "description": "GET /api/v1/operations/status (redacted, real probes, no metrics).",
+    "properties": {
+     "backup": {
+      "$ref": "#/components/schemas/OperationsBackupStatus"
+     },
+     "freshrss": {
+      "$ref": "#/components/schemas/OperationsComponentStatus"
+     },
+     "lumi": {
+      "$ref": "#/components/schemas/OperationsLumiStatus"
+     },
+     "rsshub": {
+      "$ref": "#/components/schemas/OperationsRssHubStatus"
+     },
+     "sqlite": {
+      "$ref": "#/components/schemas/OperationsSqliteStatus"
+     }
+    },
+    "required": [
+     "lumi",
+     "sqlite",
+     "freshrss",
+     "rsshub",
+     "backup"
+    ],
+    "title": "OperationsStatus",
+    "type": "object"
+   },
+   "OpmlImportAdded": {
+    "description": "One successfully subscribed OPML feed.",
+    "properties": {
+     "categoryApplied": {
+      "title": "Categoryapplied",
+      "type": "boolean"
+     },
+     "categoryLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categorylabel"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title",
+     "categoryApplied"
+    ],
+    "title": "OpmlImportAdded",
+    "type": "object"
+   },
+   "OpmlImportDuplicate": {
+    "description": "One feed reported as an existing or in-file repeated subscription.",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title"
+    ],
+    "title": "OpmlImportDuplicate",
+    "type": "object"
+   },
+   "OpmlImportFailed": {
+    "description": "One feed whose subscription failed (stable error code in ``error``).",
+    "properties": {
+     "error": {
+      "title": "Error",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title",
+     "error"
+    ],
+    "title": "OpmlImportFailed",
+    "type": "object"
+   },
+   "OpmlImportPreview": {
+    "description": "POST /api/v1/opml/import/preview (strictly non-mutating).",
+    "properties": {
+     "categories": {
+      "items": {
+       "$ref": "#/components/schemas/OpmlImportPreviewCategory"
+      },
+      "title": "Categories",
+      "type": "array"
+     },
+     "duplicates": {
+      "title": "Duplicates",
+      "type": "integer"
+     },
+     "invalidEntries": {
+      "title": "Invalidentries",
+      "type": "integer"
+     },
+     "newFeeds": {
+      "title": "Newfeeds",
+      "type": "integer"
+     },
+     "totalFeeds": {
+      "title": "Totalfeeds",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "totalFeeds",
+     "newFeeds",
+     "duplicates",
+     "invalidEntries",
+     "categories"
+    ],
+    "title": "OpmlImportPreview",
+    "type": "object"
+   },
+   "OpmlImportPreviewCategory": {
+    "description": "Per-category feed count in the import preview.",
+    "properties": {
+     "feedCount": {
+      "title": "Feedcount",
+      "type": "integer"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "feedCount"
+    ],
+    "title": "OpmlImportPreviewCategory",
+    "type": "object"
+   },
+   "OpmlImportResult": {
+    "description": "POST /api/v1/opml/import (merge-only: duplicates are never touched).",
+    "properties": {
+     "added": {
+      "items": {
+       "$ref": "#/components/schemas/OpmlImportAdded"
+      },
+      "title": "Added",
+      "type": "array"
+     },
+     "categoriesCreated": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Categoriescreated",
+      "type": "array"
+     },
+     "duplicates": {
+      "items": {
+       "$ref": "#/components/schemas/OpmlImportDuplicate"
+      },
+      "title": "Duplicates",
+      "type": "array"
+     },
+     "failed": {
+      "items": {
+       "$ref": "#/components/schemas/OpmlImportFailed"
+      },
+      "title": "Failed",
+      "type": "array"
+     }
+    },
+    "required": [
+     "added",
+     "duplicates",
+     "failed",
+     "categoriesCreated"
+    ],
+    "title": "OpmlImportResult",
+    "type": "object"
+   },
+   "ReadinessComponentDetail": {
+    "description": "One probed component in the readiness payload.\n\nSuperset of the two real shapes (the full status entry with\nlatency/error, or the compact healthy SQLite entry with\nschemaVersion) — every optional key stays optional so both shapes\nvalidate.",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ComponentError"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastCheckedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastcheckedat"
+     },
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "schemaVersion": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schemaversion"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "ReadinessComponentDetail",
+    "type": "object"
+   },
+   "ReadinessComponents": {
+    "description": "Per-dependency readiness (failure isolation: only sqlite is core).",
+    "properties": {
+     "freshrss": {
+      "title": "Freshrss",
+      "type": "string"
+     },
+     "lumi": {
+      "$ref": "#/components/schemas/ReadinessLumi"
+     },
+     "rsshub": {
+      "title": "Rsshub",
+      "type": "string"
+     },
+     "sqlite": {
+      "$ref": "#/components/schemas/ReadinessComponentDetail"
+     }
+    },
+    "required": [
+     "lumi",
+     "sqlite",
+     "freshrss",
+     "rsshub"
+    ],
+    "title": "ReadinessComponents",
+    "type": "object"
+   },
+   "ReadinessLumi": {
+    "description": "The lumi component entry (core storage health only).",
+    "properties": {
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "ReadinessLumi",
+    "type": "object"
+   },
+   "ReadinessResponse": {
+    "description": "GET /health/ready (503 with the same shape when sqlite is unusable).",
+    "properties": {
+     "components": {
+      "$ref": "#/components/schemas/ReadinessComponents"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "unavailable"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "components"
+    ],
+    "title": "ReadinessResponse",
+    "type": "object"
+   },
+   "RemoteBackup": {
+    "description": "One backup archive on WebDAV (flat name + size, no secret values).",
+    "properties": {
+     "fileName": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "sizeBytes": {
+      "title": "Sizebytes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "fileName",
+     "sizeBytes"
+    ],
+    "title": "RemoteBackup",
+    "type": "object"
+   },
+   "RemoteBackupsResponse": {
+    "description": "GET /api/v1/backups/remote.",
+    "properties": {
+     "backups": {
+      "items": {
+       "$ref": "#/components/schemas/RemoteBackup"
+      },
+      "title": "Backups",
+      "type": "array"
+     }
+    },
+    "required": [
+     "backups"
+    ],
+    "title": "RemoteBackupsResponse",
+    "type": "object"
+   },
+   "RestoreExecuteBody": {
+    "properties": {
+     "confirmation": {
+      "minLength": 1,
+      "title": "Confirmation",
+      "type": "string"
+     },
+     "restoreSessionId": {
+      "minLength": 1,
+      "title": "Restoresessionid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "restoreSessionId",
+     "confirmation"
+    ],
+    "title": "RestoreExecuteBody",
+    "type": "object"
+   },
+   "RestoreHealth": {
+    "description": "Post-restore storage health.",
+    "properties": {
+     "sqlite": {
+      "enum": [
+       "healthy",
+       "unavailable"
+      ],
+      "title": "Sqlite",
+      "type": "string"
+     }
+    },
+    "required": [
+     "sqlite"
+    ],
+    "title": "RestoreHealth",
+    "type": "object"
+   },
+   "RestorePreview": {
+    "description": "POST /api/v1/restore/preview (validate + session id, no writes).",
+    "properties": {
+     "compatible": {
+      "title": "Compatible",
+      "type": "boolean"
+     },
+     "components": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Components",
+      "type": "array"
+     },
+     "createdAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Createdat"
+     },
+     "currentDbSchemaVersion": {
+      "title": "Currentdbschemaversion",
+      "type": "integer"
+     },
+     "excludedSecrets": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Excludedsecrets",
+      "type": "array"
+     },
+     "fileName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filename"
+     },
+     "files": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RestorePreviewFile"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "lumiDbSchemaVersion": {
+      "title": "Lumidbschemaversion",
+      "type": "integer"
+     },
+     "lumiVersion": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lumiversion"
+     },
+     "restoreSessionId": {
+      "title": "Restoresessionid",
+      "type": "string"
+     },
+     "secretConfigured": {
+      "title": "Secretconfigured",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "restoreSessionId",
+     "lumiDbSchemaVersion",
+     "currentDbSchemaVersion",
+     "compatible",
+     "secretConfigured"
+    ],
+    "title": "RestorePreview",
+    "type": "object"
+   },
+   "RestorePreviewBody": {
+    "properties": {
+     "fileName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filename"
+     },
+     "jobId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jobid"
+     },
+     "source": {
+      "enum": [
+       "local",
+       "remote"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "source"
+    ],
+    "title": "RestorePreviewBody",
+    "type": "object"
+   },
+   "RestorePreviewFile": {
+    "additionalProperties": true,
+    "description": "One declared archive member (checksum declared by the manifest).",
+    "properties": {
+     "path": {
+      "title": "Path",
+      "type": "string"
+     },
+     "sha256": {
+      "title": "Sha256",
+      "type": "string"
+     },
+     "size": {
+      "title": "Size",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "path",
+     "size",
+     "sha256"
+    ],
+    "title": "RestorePreviewFile",
+    "type": "object"
+   },
+   "RestoreResult": {
+    "description": "POST /api/v1/restore (destructive, explicitly confirmed).",
+    "properties": {
+     "freshrss": {
+      "enum": [
+       "not_included",
+       "offline_restore_required"
+      ],
+      "title": "Freshrss",
+      "type": "string"
+     },
+     "freshrssStagedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Freshrssstagedat"
+     },
+     "health": {
+      "$ref": "#/components/schemas/RestoreHealth"
+     },
+     "lumiRestored": {
+      "title": "Lumirestored",
+      "type": "boolean"
+     },
+     "safetyBackupId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Safetybackupid"
+     }
+    },
+    "required": [
+     "lumiRestored",
+     "freshrss",
+     "health"
+    ],
+    "title": "RestoreResult",
+    "type": "object"
+   },
+   "RssHubCatalog": {
+    "description": "GET /api/v1/rsshub/routes (static catalog; configured = instance set).",
+    "properties": {
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "routes": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubRoute"
+      },
+      "title": "Routes",
+      "type": "array"
+     }
+    },
+    "required": [
+     "configured",
+     "routes"
+    ],
+    "title": "RssHubCatalog",
+    "type": "object"
+   },
+   "RssHubConfigGroup": {
+    "description": "Grouped config items for the Control Center UI.",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubConfigItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "items"
+    ],
+    "title": "RssHubConfigGroup",
+    "type": "object"
+   },
+   "RssHubConfigItem": {
+    "description": "One allow-listed RSSHub setting (secrets surface only ``configured``).\n\n``value`` is present only for non-secret items and ``configured`` only\nfor secret items (the route serializes with exclude_unset to match the\nhistorical wire format); ``options`` is null for non-enum items.",
+    "properties": {
+     "configured": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configured"
+     },
+     "default": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "string"
+       },
+       {
+        "type": "boolean"
+       }
+      ],
+      "title": "Default"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "editable": {
+      "title": "Editable",
+      "type": "boolean"
+     },
+     "group": {
+      "title": "Group",
+      "type": "string"
+     },
+     "key": {
+      "title": "Key",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "options": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Options"
+     },
+     "restartRequired": {
+      "title": "Restartrequired",
+      "type": "boolean"
+     },
+     "secret": {
+      "title": "Secret",
+      "type": "boolean"
+     },
+     "type": {
+      "enum": [
+       "int",
+       "bool",
+       "string",
+       "enum",
+       "secret"
+      ],
+      "title": "Type",
+      "type": "string"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "string"
+       },
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "required": [
+     "key",
+     "label",
+     "description",
+     "group",
+     "type",
+     "default",
+     "editable",
+     "secret",
+     "restartRequired"
+    ],
+    "title": "RssHubConfigItem",
+    "type": "object"
+   },
+   "RssHubConfigPatch": {
+    "description": "PATCH /api/v1/rsshub/config body: allow-listed non-secret values.",
+    "properties": {
+     "values": {
+      "additionalProperties": true,
+      "title": "Values",
+      "type": "object"
+     }
+    },
+    "title": "RssHubConfigPatch",
+    "type": "object"
+   },
+   "RssHubConfigView": {
+    "description": "GET/PATCH /api/v1/rsshub/config (secrets never echoed).",
+    "properties": {
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubConfigGroup"
+      },
+      "title": "Groups",
+      "type": "array"
+     },
+     "pendingCount": {
+      "title": "Pendingcount",
+      "type": "integer"
+     },
+     "pendingSecrets": {
+      "title": "Pendingsecrets",
+      "type": "boolean"
+     },
+     "schemaVersion": {
+      "title": "Schemaversion",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "schemaVersion",
+     "configured",
+     "pendingCount",
+     "pendingSecrets",
+     "groups"
+    ],
+    "title": "RssHubConfigView",
+    "type": "object"
+   },
+   "RssHubParameter": {
+    "description": "One RSSHub route parameter descriptor (form-renderable).",
+    "properties": {
+     "example": {
+      "title": "Example",
+      "type": "string"
+     },
+     "help": {
+      "title": "Help",
+      "type": "string"
+     },
+     "key": {
+      "title": "Key",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "pattern": {
+      "title": "Pattern",
+      "type": "string"
+     },
+     "required": {
+      "title": "Required",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "key",
+     "label",
+     "required",
+     "pattern",
+     "example",
+     "help"
+    ],
+    "title": "RssHubParameter",
+    "type": "object"
+   },
+   "RssHubPreviewRequest": {
+    "description": "POST /api/v1/rsshub/preview body (0014): route + parameter values.",
+    "properties": {
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeId": {
+      "minLength": 1,
+      "title": "Routeid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeId"
+    ],
+    "title": "RssHubPreviewRequest",
+    "type": "object"
+   },
+   "RssHubRoute": {
+    "description": "One Lumi-owned RSSHub route descriptor (path built server-side).",
+    "properties": {
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "parameters": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubParameter"
+      },
+      "title": "Parameters",
+      "type": "array"
+     },
+     "pathTemplate": {
+      "title": "Pathtemplate",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "description",
+     "pathTemplate",
+     "parameters"
+    ],
+    "title": "RssHubRoute",
+    "type": "object"
+   },
+   "SecretValuePut": {
+    "description": "Write-only secret body (shared by AI keys and RSSHub secrets).",
+    "properties": {
+     "value": {
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "value"
+    ],
+    "title": "SecretValuePut",
+    "type": "object"
+   },
+   "SourceDiscoveryRequest": {
+    "description": "POST /api/v1/source-discovery body (0014): a public website URL.",
+    "properties": {
+     "url": {
+      "minLength": 1,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "SourceDiscoveryRequest",
+    "type": "object"
+   },
+   "SourceDiscoveryResponse": {
+    "description": "POST /api/v1/source-discovery (strictly non-mutating).",
+    "properties": {
+     "candidates": {
+      "items": {
+       "$ref": "#/components/schemas/DiscoveryCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidates"
+    ],
+    "title": "SourceDiscoveryResponse",
+    "type": "object"
+   },
+   "Subscription": {
+    "description": "GET/POST /api/v1/subscriptions item (0013 management view).\n\nsubscriptionRef is Lumi-owned and opaque; clients never assemble ids.",
+    "properties": {
+     "category": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FeedCategory"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "subscriptionRef": {
+      "title": "Subscriptionref",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subscriptionRef",
+     "title",
+     "feedUrl"
+    ],
+    "title": "Subscription",
+    "type": "object"
+   },
+   "SubscriptionCreate": {
+    "description": "POST /api/v1/subscriptions body.\n\nfeedUrl must be an absolute http(s) URL (validated before FreshRSS);\ncategoryId, when given, must exist (404 otherwise); title is optional\n(a blank title is treated as absent — the feed's own title is used).",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "SubscriptionCreate",
+    "type": "object"
+   },
+   "SubscriptionPatch": {
+    "description": "PATCH /api/v1/subscriptions/{ref} body: move to another category.\n\nExactly one target: categoryId (an existing category, 404 when unknown)\nor newCategoryLabel (a new category created by the move itself — the\nonly FreshRSS control path that creates categories; conflict-checked\nbefore any write).",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "newCategoryLabel": {
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Newcategorylabel"
+     }
+    },
+    "title": "SubscriptionPatch",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   },
+   "WebDavSettingsPut": {
+    "description": "PUT /api/v1/backups/webdav body.\n\npassword omitted/None = keep existing; non-empty = set; clearPassword\nis the ONLY way to clear it (empty-string password never clears).",
+    "properties": {
+     "clearPassword": {
+      "default": false,
+      "title": "Clearpassword",
+      "type": "boolean"
+     },
+     "password": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     },
+     "remoteDir": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remotedir"
+     },
+     "serverUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Serverurl"
+     },
+     "tlsVerify": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tlsverify"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     }
+    },
+    "title": "WebDavSettingsPut",
+    "type": "object"
+   },
+   "WebDavSettingsView": {
+    "description": "GET/PUT /api/v1/backups/webdav (password is write-only, never read).",
+    "properties": {
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "passwordConfigured": {
+      "title": "Passwordconfigured",
+      "type": "boolean"
+     },
+     "remoteDir": {
+      "title": "Remotedir",
+      "type": "string"
+     },
+     "serverUrl": {
+      "title": "Serverurl",
+      "type": "string"
+     },
+     "tlsVerify": {
+      "title": "Tlsverify",
+      "type": "boolean"
+     },
+     "username": {
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "configured",
+     "serverUrl",
+     "username",
+     "remoteDir",
+     "tlsVerify",
+     "passwordConfigured"
+    ],
+    "title": "WebDavSettingsView",
+    "type": "object"
+   },
+   "WebDavTestResult": {
+    "description": "POST /api/v1/backups/webdav/test (``message`` only when failed).",
+    "properties": {
+     "message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "WebDavTestResult",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "LumiRSS BFF",
+  "version": "0.1.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/v1/backups": {
+   "get": {
+    "operationId": "list_backups_api_v1_backups_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/BackupJob"
+         },
+         "title": "Response List Backups Api V1 Backups Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Backups"
+   },
+   "post": {
+    "description": "Create a full backup job (runs in the background; poll the job).",
+    "operationId": "create_backup_api_v1_backups_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BackupCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupJob"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Backup"
+   }
+  },
+  "/api/v1/backups/remote": {
+   "get": {
+    "description": "List backups stored on WebDAV (flat names + sizes, no secret values).",
+    "operationId": "list_remote_backups_api_v1_backups_remote_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RemoteBackupsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Remote Backups"
+   }
+  },
+  "/api/v1/backups/webdav": {
+   "get": {
+    "operationId": "get_webdav_settings_api_v1_backups_webdav_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WebDavSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Webdav Settings"
+   },
+   "put": {
+    "description": "Update WebDAV settings (password write-only, never read back).",
+    "operationId": "put_webdav_settings_api_v1_backups_webdav_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WebDavSettingsPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WebDavSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Webdav Settings"
+   }
+  },
+  "/api/v1/backups/webdav/test": {
+   "post": {
+    "description": "Test the WebDAV connection: create + list the backup root.",
+    "operationId": "test_webdav_api_v1_backups_webdav_test_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WebDavTestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Test Webdav"
+   }
+  },
+  "/api/v1/backups/{job_id}": {
+   "get": {
+    "operationId": "get_backup_job_api_v1_backups__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupJob"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Backup Job"
+   }
+  },
+  "/api/v1/categories": {
+   "get": {
+    "description": "All categories including empty ones (tag/list folders).\n\nSame id/label contract as the category objects on /api/v1/feeds —\nthere is exactly one category model in Lumi.",
+    "operationId": "categories_api_v1_categories_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Category"
+         },
+         "title": "Response Categories Api V1 Categories Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Categories"
+   }
+  },
+  "/api/v1/categories/{category_id}": {
+   "patch": {
+    "description": "Rename one category.\n\ncategoryId is a user/-/label/<名> reference (path converter: slashes in\nthe id are fine). 409 category_label_conflict for taken/reserved labels;\n409 default_category_immutable — the FreshRSS default category cannot be\nrenamed through the greader API (display name is always re-localized).",
+    "operationId": "rename_category_api_v1_categories__category_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "category_id",
+      "required": true,
+      "schema": {
+       "title": "Category Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CategoryPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Category"
+   }
+  },
+  "/api/v1/entries": {
+   "get": {
+    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。",
+    "operationId": "entries_api_v1_entries_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "view",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "all",
+          "unread",
+          "starred"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "View"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sourceType",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sourcetype"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Categoryid"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entries"
+   }
+  },
+  "/api/v1/entries/{entry_ref}": {
+   "get": {
+    "description": "One entry as plain text. Invalid refs are rejected before FreshRSS;\nreading a detail never marks anything as read (read-only milestone).",
+    "operationId": "entry_detail_api_v1_entries__entry_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Detail"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/conversation": {
+   "get": {
+    "description": "Read-only conversation state for this article. NEVER calls the\nprovider: only FreshRSS read + the Lumi message store.",
+    "operationId": "get_entry_conversation_api_v1_entries__entry_ref__conversation_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryConversation"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Entry Conversation"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/conversation/messages": {
+   "post": {
+    "description": "Ask one article-scoped question. Exactly one bounded provider call\n(synchronously); on success the question and the reply are persisted\nand the full conversation is returned.",
+    "operationId": "send_conversation_message_api_v1_entries__entry_ref__conversation_messages_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConversationQuestion"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryConversation"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Send Conversation Message"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/state": {
+   "patch": {
+    "description": "Set the read/starred state of one entry (set semantics, not toggle).\n\n204 means FreshRSS accepted the write; it does not re-confirm that the\nentry exists. Invalid refs and invalid bodies are rejected before any\nFreshRSS call.",
+    "operationId": "entry_state_api_v1_entries__entry_ref__state_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EntryStateUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry State"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/summary": {
+   "get": {
+    "description": "Read-only summary state. NEVER calls the AI provider (no cost):\nonly FreshRSS read + the Lumi cache are consulted.",
+    "operationId": "get_entry_summary_api_v1_entries__entry_ref__summary_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntrySummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Entry Summary"
+   },
+   "post": {
+    "description": "Explicit summary generation. An exact cache hit costs nothing;\notherwise exactly one bounded provider call is made (synchronously).",
+    "operationId": "generate_entry_summary_api_v1_entries__entry_ref__summary_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntrySummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Entry Summary"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/translation": {
+   "get": {
+    "description": "Read-only translation state. NEVER calls the AI provider (no cost):\nonly FreshRSS read + the Lumi cache are consulted.",
+    "operationId": "get_entry_translation_api_v1_entries__entry_ref__translation_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryTranslation"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Entry Translation"
+   },
+   "post": {
+    "description": "Explicit translation generation. An exact cache hit costs nothing;\notherwise exactly one bounded provider call is made (synchronously).\nThe original article is never modified or written back to FreshRSS.",
+    "operationId": "generate_entry_translation_api_v1_entries__entry_ref__translation_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryTranslation"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Entry Translation"
+   }
+  },
+  "/api/v1/feed-preview": {
+   "post": {
+    "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
+    "operationId": "preview_feed_api_v1_feed_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedPreviewResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Feed"
+   }
+  },
+  "/api/v1/feeds": {
+   "get": {
+    "description": "List feeds from FreshRSS through the FreshRSSAdapter.\n\nThe adapter is created lazily on the first request (settings are only\nread/validated here, never at startup) and then cached on app.state so\nlater requests reuse it and its in-memory auth token.\n\n0011: 每项附带 FreshRSS 真实分类（categoryId 为稳定 key，label 为\n展示名）；无分类的 feed category 为 null（前端归入「未分组」）。",
+    "operationId": "feeds_api_v1_feeds_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Feed"
+         },
+         "title": "Response Feeds Api V1 Feeds Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Feeds"
+   }
+  },
+  "/api/v1/freshrss-ui": {
+   "get": {
+    "description": "Browser-safe public URL of the FreshRSS web UI, or null.\n\nThe advanced escape hatch (\"在 FreshRSS 中管理\") is only offered when\nthe operator explicitly configured FRESHRSS_PUBLIC_URL. The internal\nFRESHRSS_BASE_URL (possibly a Docker hostname or loopback address) is\nnever exposed to the browser, and no URL ever carries credentials.",
+    "operationId": "freshrss_ui_api_v1_freshrss_ui_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FreshRssUiInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Freshrss Ui"
+   }
+  },
+  "/api/v1/operations/status": {
+   "get": {
+    "description": "Redacted, real dependency status for the operations UI (no fake metrics).",
+    "operationId": "operations_status_api_v1_operations_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OperationsStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Operations Status"
+   }
+  },
+  "/api/v1/opml/export": {
+   "get": {
+    "description": "Download the FreshRSS OPML export (subscriptions + categories only).\n\nProxied through the BFF so the browser never learns FreshRSS\ncredentials. The document contains no settings dump, no API keys, no\nread history and no favorites — only the subscription outline tree\nFreshRSS itself produces.",
+    "operationId": "opml_export_api_v1_opml_export_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Opml Export"
+   }
+  },
+  "/api/v1/opml/import": {
+   "post": {
+    "description": "Merge-import an OPML: subscribe each NEW feed, categorize it, report.\n\nMerge-only — existing subscriptions are reported as duplicates and\nnever modified, nothing is unsubscribed or overwritten (destructive\nrestore is out of 0013 scope). Per-feed failures (rejected feeds,\nupstream timeouts) are reported honestly in the result; the file is\nre-parsed and the subscription list re-read at import time, so the\npreview is advisory, never a stale contract.",
+    "operationId": "opml_import_api_v1_opml_import_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpmlImportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Opml Import"
+   }
+  },
+  "/api/v1/opml/import/preview": {
+   "post": {
+    "description": "Parse an uploaded OPML and report what an import WOULD do.\n\nStrictly non-mutating: bounded read → defusedxml parse → counts\n(new / duplicates / invalid / per-category). Duplicates are only the\nreliably detectable kind: exact feed-URL matches against the current\nFreshRSS subscriptions (plus repeats inside the file). Importing is\nPOST /api/v1/opml/import.",
+    "operationId": "opml_import_preview_api_v1_opml_import_preview_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OpmlImportPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Opml Import Preview"
+   }
+  },
+  "/api/v1/restore": {
+   "post": {
+    "description": "Execute a previously previewed restore (explicit confirmation).\n\nAD-0018-7: the destructive restore is serialized against backups via the\nengine flag plus a DB-level guard (the guard runs the interrupted sweep\nfirst, so rows left by a previous process never wedge new work), and is\nrecorded in ``backup_jobs`` (type=restore) as a persisted audit trail.\n\nSubtlety: a successful lumi restore REPLACES the database file, so the\njob row recorded before the swap may vanish with the old file, and the\nrestored snapshot may carry stale active rows. After execute the ledger\nis reconciled: stale rows are marked interrupted (nothing can legitimately\nbe running once the exclusive restore finished) and the restore record is\nre-created when the swap erased it.",
+    "operationId": "restore_execute_api_v1_restore_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestoreExecuteBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RestoreResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Execute"
+   }
+  },
+  "/api/v1/restore/preview": {
+   "post": {
+    "description": "Validate a backup package and return a preview + restoreSessionId.",
+    "operationId": "restore_preview_api_v1_restore_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestorePreviewBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RestorePreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Preview"
+   }
+  },
+  "/api/v1/rsshub/config": {
+   "get": {
+    "operationId": "get_rsshub_config_api_v1_rsshub_config_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubConfigView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Rsshub Config"
+   },
+   "patch": {
+    "description": "Update allow-listed non-secret desired values (validated + typed).\n\nSecrets are never accepted here — use the secret endpoints. Saving only\nupdates the DESIRED config; the UI reports restartRequired honestly.",
+    "operationId": "patch_rsshub_config_api_v1_rsshub_config_patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubConfigPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubConfigView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Rsshub Config"
+   }
+  },
+  "/api/v1/rsshub/config/apply": {
+   "post": {
+    "description": "Operator confirms the desired config has been applied after restart.",
+    "operationId": "apply_rsshub_config_api_v1_rsshub_config_apply_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Apply Rsshub Config"
+   }
+  },
+  "/api/v1/rsshub/config/export": {
+   "get": {
+    "description": "Render the desired config as an env fragment (secrets never echoed).",
+    "operationId": "export_rsshub_config_api_v1_rsshub_config_export_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Rsshub Config"
+   }
+  },
+  "/api/v1/rsshub/config/secrets/{key}": {
+   "delete": {
+    "description": "Clear one secret (explicit action).",
+    "operationId": "delete_rsshub_secret_api_v1_rsshub_config_secrets__key__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "key",
+      "required": true,
+      "schema": {
+       "title": "Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Secret"
+   },
+   "put": {
+    "description": "Write one route credential / secret (write-only, never read back).",
+    "operationId": "put_rsshub_secret_api_v1_rsshub_config_secrets__key__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "key",
+      "required": true,
+      "schema": {
+       "title": "Key",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SecretValuePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Rsshub Secret"
+   }
+  },
+  "/api/v1/rsshub/preview": {
+   "post": {
+    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).",
+    "operationId": "rsshub_preview_api_v1_rsshub_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedPreviewResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Preview"
+   }
+  },
+  "/api/v1/rsshub/routes": {
+   "get": {
+    "description": "Lumi-owned RSSHub route catalog (static, always available).\n\n``configured`` reports whether the server has an RSSHUB_BASE_URL —\nthe catalog itself is independent of the instance. Route descriptors\ncarry enough metadata for the Web to render parameter forms; path\nconstruction happens server-side on preview.",
+    "operationId": "rsshub_routes_api_v1_rsshub_routes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubCatalog"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rsshub Routes"
+   }
+  },
+  "/api/v1/settings": {
+   "delete": {
+    "description": "Reset portable settings to defaults (removes the stored document).\n\nThe next GET reports stored=false again; the client may re-seed from\nits local values afterwards.",
+    "operationId": "delete_app_settings_api_v1_settings_delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Delete App Settings"
+   },
+   "get": {
+    "description": "Current portable settings (defaults when nothing was ever stored).\n\n``stored`` reports whether the server holds an explicit document — the\nclient seeds it from its local values on first visit (migration) and\ntreats it as authoritative afterwards. GET never mutates anything.",
+    "operationId": "get_app_settings_api_v1_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get App Settings"
+   },
+   "patch": {
+    "description": "Persist a partial portable settings update (strictly validated).\n\nThe body is parsed manually so that EVERY invalid payload — unknown\nkey, wrong type, out-of-range, NaN/Infinity, malformed JSON — is\nrejected with the stable 400 invalid_app_settings error (FastAPI's\ndefault 422 serialization crashes on non-finite numbers). There is\ndeliberately no field that can carry any secret.",
+    "operationId": "patch_app_settings_api_v1_settings_patch",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Patch App Settings"
+   }
+  },
+  "/api/v1/settings/ai": {
+   "get": {
+    "description": "Current AI settings + purpose resolution.\n\nNo response field ever contains an API key: ``configured`` /\n``envKeyConfigured`` / ``defaultKeyConfigured`` /\n``purposeStatus.*.keyConfigured`` are booleans only.",
+    "operationId": "get_ai_settings_api_v1_settings_ai_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AiSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Ai Settings"
+   },
+   "put": {
+    "description": "Persist non-secret GLOBAL (default) AI settings.\n\nThere is deliberately no API-key field here: keys live in the\nSecretsStore via the dedicated write-only key endpoints.",
+    "operationId": "put_ai_settings_api_v1_settings_ai_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AiSettingsUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AiSettingsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Ai Settings"
+   }
+  },
+  "/api/v1/settings/ai/key": {
+   "delete": {
+    "description": "Remove the browser-set default key (env fallback resumes).",
+    "operationId": "delete_default_ai_key_api_v1_settings_ai_key_delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Delete Default Ai Key"
+   },
+   "put": {
+    "description": "Store the default (legacy) AI API key from the browser.\n\nWrite-only: the value is persisted server-side in the SecretsStore\nand can never be read back over the API. The env ``AI_API_KEY``\nremains as fallback when no browser key is set.",
+    "operationId": "put_default_ai_key_api_v1_settings_ai_key_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SecretValuePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Default Ai Key"
+   }
+  },
+  "/api/v1/settings/ai/profiles": {
+   "get": {
+    "description": "All AI profiles (metadata + ``keyConfigured`` flag, never keys).",
+    "operationId": "get_ai_profiles_api_v1_settings_ai_profiles_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AiProfile"
+         },
+         "title": "Response Get Ai Profiles Api V1 Settings Ai Profiles Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Ai Profiles"
+   },
+   "post": {
+    "description": "Create a profile. The API key is set separately (write-only).",
+    "operationId": "create_ai_profile_api_v1_settings_ai_profiles_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AiProfileCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AiProfile"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Ai Profile"
+   }
+  },
+  "/api/v1/settings/ai/profiles/{profile_id}": {
+   "delete": {
+    "description": "Delete a profile, its secret, and any purpose mapping to it.",
+    "operationId": "delete_ai_profile_api_v1_settings_ai_profiles__profile_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "profile_id",
+      "required": true,
+      "schema": {
+       "title": "Profile Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Ai Profile"
+   },
+   "patch": {
+    "description": "Update profile metadata (label / baseUrl / model / enabled).",
+    "operationId": "patch_ai_profile_api_v1_settings_ai_profiles__profile_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "profile_id",
+      "required": true,
+      "schema": {
+       "title": "Profile Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AiProfileUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AiProfile"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Ai Profile"
+   }
+  },
+  "/api/v1/settings/ai/profiles/{profile_id}/secret": {
+   "delete": {
+    "description": "Revoke one profile's API key.",
+    "operationId": "delete_ai_profile_secret_api_v1_settings_ai_profiles__profile_id__secret_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "profile_id",
+      "required": true,
+      "schema": {
+       "title": "Profile Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Ai Profile Secret"
+   },
+   "put": {
+    "description": "Set/replace one profile's API key (write-only, never echoed).",
+    "operationId": "put_ai_profile_secret_api_v1_settings_ai_profiles__profile_id__secret_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "profile_id",
+      "required": true,
+      "schema": {
+       "title": "Profile Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SecretValuePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Ai Profile Secret"
+   }
+  },
+  "/api/v1/settings/ai/purposes": {
+   "get": {
+    "description": "Purpose → profile id (or ``default``) mapping.",
+    "operationId": "get_ai_purposes_api_v1_settings_ai_purposes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Get Ai Purposes Api V1 Settings Ai Purposes Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Ai Purposes"
+   },
+   "put": {
+    "description": "Assign profiles to purposes. ``default`` selects the global\nsettings + default key resolution.",
+    "operationId": "put_ai_purposes_api_v1_settings_ai_purposes_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AiPurposesUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Put Ai Purposes Api V1 Settings Ai Purposes Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Ai Purposes"
+   }
+  },
+  "/api/v1/source-discovery": {
+   "post": {
+    "description": "Discover RSS/Atom feed candidates for a website — NON-MUTATING.\n\nSafe-fetches ONE page (never crawls), extracts explicit rel=alternate\ndeclarations, and only when there are none probes a bounded set of\ncommon feed endpoints. Candidates are not subscribed here — preview is\nPOST /api/v1/feed-preview, subscribing is POST /api/v1/subscriptions.",
+    "operationId": "source_discovery_api_v1_source_discovery_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceDiscoveryRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceDiscoveryResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Source Discovery"
+   }
+  },
+  "/api/v1/subscriptions": {
+   "get": {
+    "description": "Management view of all subscriptions (0013).\n\nEach item carries the Lumi-owned opaque subscriptionRef (built from\nFreshRSS's feed/<N> stream id — clients never assemble ids themselves)\nplus title/feedUrl/category. The read path (GET /api/v1/feeds) stays\nuntouched and compatible.",
+    "operationId": "subscriptions_api_v1_subscriptions_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Subscription"
+         },
+         "title": "Response Subscriptions Api V1 Subscriptions Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Subscriptions"
+   },
+   "post": {
+    "description": "Subscribe to a feed URL; returns the server-confirmed subscription.\n\n409 when already subscribed (checked before any write); 400 feed_rejected\nwhen FreshRSS cannot add the feed. The write is attempted exactly once\n(no retry on timeout — clients re-read and reconcile).",
+    "operationId": "create_subscription_api_v1_subscriptions_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SubscriptionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Subscription"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Subscription"
+   }
+  },
+  "/api/v1/subscriptions/{subscription_ref}": {
+   "delete": {
+    "description": "Unsubscribe (destructive; confirmation belongs to the Web UI).",
+    "operationId": "delete_subscription_api_v1_subscriptions__subscription_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subscription_ref",
+      "required": true,
+      "schema": {
+       "title": "Subscription Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Subscription"
+   },
+   "patch": {
+    "description": "Move one subscription to another category (single-category model).\n\nInvalid refs and invalid bodies are rejected before any FreshRSS call.\nWith newCategoryLabel the move creates the target category (explicit\ncreate-category path, 0013 Gate 3); with categoryId the target must\nalready exist (404 otherwise).",
+    "operationId": "update_subscription_api_v1_subscriptions__subscription_ref__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subscription_ref",
+      "required": true,
+      "schema": {
+       "title": "Subscription Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SubscriptionPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Subscription"
+   }
+  },
+  "/api/v1/version": {
+   "get": {
+    "description": "Build provenance for Web/BFF skew diagnosis.\n\nDeliberately minimal: no env dump, no paths, no secrets — just the\nrunning BFF's version/commit so a stale deployment is diagnosable\nfrom the browser (see also the web build commit on the About page).",
+    "operationId": "version_api_v1_version_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiVersionInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Version"
+   }
+  },
+  "/health/live": {
+   "get": {
+    "description": "Liveness: only proves this process is alive, never touches FreshRSS.",
+    "operationId": "health_live_health_live_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health Live"
+   }
+  },
+  "/health/ready": {
+   "get": {
+    "description": "Readiness: core dependency (lumi.sqlite) must be usable.\n\nFreshRSS / RSSHub are reported but NEVER fail readiness — RSSHub being\ndown must not make already-fetched reading unavailable (0018 failure\nisolation, AD-0018-3).",
+    "operationId": "health_ready_health_ready_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadinessResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health Ready"
+   }
+  }
+ }
+}
