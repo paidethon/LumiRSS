@@ -74,7 +74,9 @@ function renderApp() {
   )
 }
 
-const menuButton = () => screen.getByRole('button', { name: '打开导航' })
+// 打开抽屉后按钮被 Base UI 模态隔离 inert + aria-hidden，role 查询不可见；
+// DOM 查询在两种状态下都稳定。
+const menuButton = () => document.querySelector<HTMLButtonElement>('[aria-label="打开导航"]')!
 const drawer = () => document.getElementById('mobile-navigation-drawer')
 
 beforeEach(() => {
@@ -122,10 +124,13 @@ describe('Test B — Open / Close', () => {
     renderApp()
 
     fireEvent.click(menuButton())
-    // 0011：遮罩是 aria-hidden div（Sheet primitive），关闭走 pointerDown
-    const overlay = drawer()!.parentElement!.querySelector('div[aria-hidden="true"]')!
-    fireEvent.pointerDown(overlay)
-    expect(drawer()).toBeNull()
+    // 遮罩在 portal 内；外点关闭走完整点击手势（Base UI 增强点击）
+    fireEvent.pointerDown(document.body)
+    fireEvent.pointerUp(document.body)
+    fireEvent.click(document.body)
+    await waitFor(() => {
+      expect(drawer()).toBeNull()
+    })
     expect(menuButton()).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -232,22 +237,33 @@ describe('Drawer accessibility', () => {
     // 0011 Gate 2（用户批准）：升级为完整 modal 语义
     expect(panel).toHaveAttribute('role', 'dialog')
     expect(panel).toHaveAttribute('aria-modal', 'true')
-    // 初始焦点：第一个可聚焦元素（✕ 关闭钮）
-    expect(document.activeElement?.textContent?.trim()).toBe('✕')
+    // 初始焦点：第一个可聚焦元素（✕ 关闭钮）；Base UI 经 rAF 异步落焦
+    await waitFor(() => {
+      expect(document.activeElement?.textContent?.trim()).toBe('✕')
+    })
   })
 
-  it('打开时锁定背景滚动（body overflow hidden），关闭后恢复', () => {
+  it('打开时锁定背景滚动（body overflow hidden），关闭后恢复', async () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
-    expect(document.body.style.overflow).not.toBe('hidden')
+    // 等待任何前一用例遗留的滚动锁恢复（Base UI 恢复异步完成）
+    await waitFor(() => {
+      expect(document.body.style.overflowY).not.toBe('hidden')
+    })
     fireEvent.click(menuButton())
-    expect(document.body.style.overflow).toBe('hidden')
+    // 滚动锁经 effect 异步生效
+    await waitFor(() => {
+      expect(document.body.style.overflowY).toBe('hidden')
+    })
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-    expect(document.body.style.overflow).not.toBe('hidden')
+    // Base UI 滚动锁恢复异步完成
+    await waitFor(() => {
+      expect(document.body.style.overflowY).not.toBe('hidden')
+    })
   })
 
-  it('焦点 trap：Tab 循环在面板内；关闭后焦点恢复触发按钮', () => {
+  it('焦点 trap：Tab 循环在面板内；关闭后焦点恢复触发按钮', async () => {
     vi.stubGlobal('fetch', mockApi())
     renderApp()
 
@@ -265,9 +281,11 @@ describe('Drawer accessibility', () => {
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(panel.contains(document.activeElement)).toBe(true)
 
-    // 关闭后焦点恢复到触发按钮（菜单）
+    // 关闭后焦点恢复到触发按钮（菜单）；还焦异步完成
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-    expect(document.activeElement).toBe(menuButton())
+    await waitFor(() => {
+      expect(document.activeElement).toBe(menuButton())
+    })
   })
 
   it('非导航按钮（订阅重试）点击后 drawer 不关闭', async () => {
