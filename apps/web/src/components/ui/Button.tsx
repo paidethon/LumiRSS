@@ -27,7 +27,7 @@ const variantClasses: Record<Variant, string> = {
     'bg-transparent text-[var(--lumi-text-primary)] border border-transparent hover:bg-[var(--lumi-surface-hover)] active:bg-[var(--lumi-surface-pressed)]',
   // 破坏性操作（Spec：分隔 + 需确认的场景使用）
   danger:
-    'bg-[var(--lumi-danger)] text-white border border-transparent hover:bg-[var(--lumi-danger-hover)]',
+    'bg-[var(--lumi-danger)] text-[var(--lumi-danger-contrast)] border border-transparent hover:bg-[var(--lumi-danger-hover)]',
 }
 
 const sizeClasses: Record<Size, string> = {

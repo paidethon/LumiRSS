@@ -55,8 +55,16 @@ function EntryRow({
           : 'hover:bg-[var(--lumi-surface-hover)]',
       )}
     >
-      {/* 元信息行：来源 · 作者 · 时间 + 动作区（稍后读/收藏） */}
-      <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+      {/* 元信息行：来源 · 作者 · 时间 + 动作区（稍后读/收藏）。
+          选中表面上 tertiary 对比度 4.43:1 不满足 WCAG AA → 用 secondary */}
+      <div
+        className={cx(
+          'flex min-w-0 items-center gap-1.5 text-xs',
+          selected
+            ? 'text-[var(--lumi-text-secondary)]'
+            : 'text-[var(--lumi-text-tertiary)]',
+        )}
+      >
         {/* 标题点击区（flex-1）：打开 Reader；与右侧动作区平级不嵌套 */}
         <button
           type="button"

@@ -7,7 +7,12 @@
 
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { openSettingsCategory, visibleDialog } from './helpers'
+import {
+  closeMobileSettings,
+  openMobileSettings,
+  openSettingsCategory,
+  visibleDialog,
+} from './helpers'
 
 async function expectNoCriticalViolations(
   page: import('@playwright/test').Page,
@@ -59,16 +64,20 @@ test('a11y — Reader（打开文章）', async ({ page }) => {
 test('a11y — 设置：外观 / 数据控制 / 账户与服务', async ({ page }) => {
   await page.goto('/')
   const isMobile = (page.viewportSize()?.width ?? 0) < 1024
-  for (const category of ['外观', '数据控制', '账户与服务']) {
-    if (isMobile) {
-      await page.getByRole('button', { name: '打开导航' }).click()
-      await page.getByRole('button', { name: '打开设置' }).click()
-      const screen = page.getByRole('dialog', { name: '设置' })
-      await expect(screen).toBeVisible()
+  const categories = ['外观', '数据控制', '账户与服务']
+  if (isMobile) {
+    // 移动设置只能经抽屉触达；Sheet 打开时导航抽屉仍在下层，扫描覆盖
+    // 两个 dialog（同为 [role="dialog"]）。分类选择是设置屏内状态
+    // （Sheet 关闭仍保留）——与 M4 一致：开一次设置，「返回设置」往返。
+    const screen = await openMobileSettings(page)
+    for (const category of categories) {
       await screen.getByRole('button', { name: category }).click()
       await expectNoCriticalViolations(page, '[role="dialog"]')
-      await page.keyboard.press('Escape')
-    } else {
+      await screen.getByRole('button', { name: '返回设置' }).click()
+    }
+    await closeMobileSettings(page)
+  } else {
+    for (const category of categories) {
       await openSettingsCategory(page, category)
       const dialog = visibleDialog(page)
       await expect(dialog.getByText(/./).first()).toBeVisible()
