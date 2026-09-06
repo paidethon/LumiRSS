@@ -169,6 +169,23 @@ Do not run full test suites for ordinary CSS or small UI changes.
 - Escape closes overlays; focus traps in dialogs/sheets;
 - Reduced-motion preference respected.
 
+### Build vs Reuse (long-term)
+
+- Prefer upstream/framework capability before implementing infrastructure;
+  boundaries and KEEP-justifications live in
+  [docs/architecture/reuse-policy.md](docs/architecture/reuse-policy.md);
+- Server API contracts must not be manually duplicated in Web — types are
+  generated from OpenAPI (`pnpm api:generate` / `api:check`);
+- Portable settings defaults/enums/bounds come from the generated
+  settings metadata (`pnpm settings:generate` / `settings:check`), never
+  hand-copied;
+- Generated files must have deterministic generators and CI drift checks
+  (`AUTO-GENERATED — DO NOT EDIT`);
+- Base UI owns overlay/accessibility mechanics;
+- BFF: ruff must stay clean (`uv run ruff check src tests scripts`);
+  SQL stays an inline literal at each execute site;
+- A new infrastructure dependency must reduce net maintenance complexity.
+
 ---
 
 ## 10. Efficient agent workflow
