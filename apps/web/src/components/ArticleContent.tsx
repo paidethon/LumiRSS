@@ -29,7 +29,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const codeTheme = useAppSettings((s) => s.settings.readerCodeTheme)
   const themeMode = useAppSettings((s) => s.settings.themeMode)
 
-  const rawHtml = detail.contentHtml
+  const rawHtml = detail.contentHtml ?? null
   const hasHtml = rawHtml !== null && rawHtml.trim() !== ''
   // 同步初值：管线关闭时直接 sanitize（零额外开销）；开启时先渲染
   // sanitize 基线、transform 完成后替换——加载期间正文可见不空白。

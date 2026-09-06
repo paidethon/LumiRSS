@@ -15,7 +15,28 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.8",
 ]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# F: pyflakes (catches duplicate definitions, unused imports/variables)
+# E/W: pycodestyle errors + warnings
+# I: import sorting
+# UP: pyupgrade (modernize away stale Python idioms)
+# B: bugbear (real-bug patterns)
+# SIM: flake8-simplify
+# E501 is ignored: the historical codebase has no line-length convention and
+# reflowing it is churn, not bug prevention.
+select = ["F", "E", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use assert-based narrowing and fixtures ruff misreads.
+"tests/*" = ["B011", "B017", "SIM117"]
 
 [build-system]
 requires = ["hatchling"]

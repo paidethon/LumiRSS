@@ -17,11 +17,12 @@ Design constraints:
 """
 
 import json
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 
 SETTINGS_SCHEMA_VERSION = 1
 STORAGE_KEY = "app.settings"
@@ -200,10 +201,6 @@ def defaults() -> PortableSettings:
     return PortableSettings()
 
 
-def _utc_now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class AppSettingsStore:

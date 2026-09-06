@@ -11,16 +11,14 @@ continuation so clients never depend on FreshRSS shapes. Clients must
 treat it as an opaque string.
 """
 
-import base64
 import json
+
+from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 
 VIEWS = ("all", "unread", "starred")
 
 _CURSOR_PREFIX = "c1."
 _MAX_CURSOR_LENGTH = 2048
-_BASE64URL_ALPHABET = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-)
 
 
 class InvalidCursor(ValueError):
@@ -85,24 +83,21 @@ def encode_cursor(
         separators=(",", ":"),
         ensure_ascii=False,
     )
-    encoded = base64.urlsafe_b64encode(payload.encode("utf-8"))
-    return _CURSOR_PREFIX + encoded.decode("ascii").rstrip("=")
+    return encode_opaque_ref(_CURSOR_PREFIX, payload)
 
 
 def decode_cursor(cursor: str) -> CursorScope:
     """Reverse of encode_cursor; raises InvalidCursor on bad input."""
-    if len(cursor) > _MAX_CURSOR_LENGTH:
-        raise InvalidCursor("cursor is too long.")
-    if not cursor.startswith(_CURSOR_PREFIX):
-        raise InvalidCursor("cursor must start with 'c1.'.")
-    raw = cursor[len(_CURSOR_PREFIX):]
-    if not raw or not _BASE64URL_ALPHABET.issuperset(raw):
-        raise InvalidCursor("cursor payload is not valid base64url.")
-    padded = raw + "=" * (-len(raw) % 4)
+    text = decode_opaque_ref(
+        cursor,
+        prefix=_CURSOR_PREFIX,
+        max_length=_MAX_CURSOR_LENGTH,
+        error_type=InvalidCursor,
+        description="cursor",
+    )
     try:
-        text = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
         payload = json.loads(text)
-    except (ValueError, UnicodeDecodeError) as exc:
+    except ValueError as exc:
         raise InvalidCursor("cursor payload is not valid JSON/UTF-8.") from exc
     if not isinstance(payload, dict) or not {"c", "v", "f"} <= set(payload.keys()):
         raise InvalidCursor("cursor payload has the wrong schema.")

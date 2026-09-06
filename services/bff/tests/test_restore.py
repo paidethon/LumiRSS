@@ -18,13 +18,13 @@ from lumirss.backup import (
     BackupChecksumMismatch,
     BackupUnsupportedVersion,
 )
+from lumirss.config import LumiSettings
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
     RestoreService,
     _sqlite_snapshot_is_valid,
 )
-from lumirss.config import LumiSettings
 from lumirss.storage import Database
 
 
@@ -39,10 +39,7 @@ def _sha(data: bytes) -> str:
 def _make_package(zip_path: Path, *, schema_version: int = 3, tamper: bool = False):
     """Build a valid backup ZIP with one lumi.sqlite member."""
     db_bytes = b"sqlite-placeholder"
-    if tamper:
-        entry_sha = "0" * 64
-    else:
-        entry_sha = _sha(db_bytes)
+    entry_sha = "0" * 64 if tamper else _sha(db_bytes)
     manifest = {
         "backupSchemaVersion": 1,
         "appName": "LumiRSS",

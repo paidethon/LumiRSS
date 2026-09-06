@@ -8,7 +8,7 @@
  * - 字体/背景/简繁为快捷 select；深度项在完整设置；
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
-import { useEffect, useState, type Ref } from 'react'
+import { useState, type Ref } from 'react'
 import { ALargeSmall, X } from 'lucide-react'
 import { useAppSettings } from '../store/app-settings'
 import {
@@ -17,6 +17,7 @@ import {
   type ReaderChineseConversion,
   type ReaderFontFamily,
 } from '../store/app-settings'
+import { useIsMobile } from '../lib/use-is-mobile'
 import SettingsModal from './settings/SettingsModal'
 import MobileSettingsScreen from './MobileSettingsScreen'
 import { Popover } from './ui/Popover'
@@ -24,21 +25,6 @@ import { Sheet } from './ui/Sheet'
 import { Select } from './ui/Select'
 import { Slider } from './ui/Slider'
 import { IconButton } from './ui/IconButton'
-
-/** 移动断点检测（<768px → Sheet；面板行为随容器自适应）。 */
-function useIsMobile(): boolean {
-  const [mobile, setMobile] = useState(
-    () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches,
-  )
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia('(max-width: 767px)')
-    const onChange = (e: MediaQueryListEvent) => setMobile(e.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return mobile
-}
 
 const ROW = 'flex min-h-11 items-center justify-between gap-3'
 

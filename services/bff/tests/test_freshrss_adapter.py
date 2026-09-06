@@ -3,6 +3,8 @@
 Every fake value here is clearly test data; no real credentials are used.
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -16,7 +18,6 @@ from lumirss.adapters.freshrss import (
 )
 from lumirss.config import FreshRSSSettings
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

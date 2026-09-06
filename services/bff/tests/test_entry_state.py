@@ -5,6 +5,7 @@ repeated a=/r= fields). Every fake value is clearly test data; the action
 token is an obvious fake, never a real secret.
 """
 
+import secrets as _secrets
 import urllib.parse
 
 import httpx
@@ -20,7 +21,6 @@ from lumirss.config import FreshRSSSettings
 from lumirss.entryref import encode_entry_ref
 from lumirss.main import app
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

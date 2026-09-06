@@ -1,0 +1,1502 @@
+{
+ "_meta": {
+  "rsshubImage": "diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc",
+  "schemaVersion": 1,
+  "source": "/app/assets/build/routes.json (generated inside the pinned image)"
+ },
+ "namespaces": {
+  "36kr": {
+   "/:category/:subCategory?/:keyword?": {
+    "example": "/36kr/newsflashes",
+    "name": "资讯, 快讯, 用户文章, 主题文章, 专题文章, 搜索文章, 搜索快讯",
+    "parameters": {
+     "category": "分类，必填项",
+     "keyword": "关键词，选填项，仅搜索文章/快讯时有效",
+     "subCategory": "子分类，选填项，目的是为了兼容老逻辑"
+    },
+    "path": "/:category/:subCategory?/:keyword?"
+   },
+   "/hot-list/:category?": {
+    "example": "/36kr/hot-list",
+    "name": "资讯热榜",
+    "parameters": {
+     "category": "分类，默认为24小时热榜"
+    },
+    "path": "/hot-list/:category?"
+   }
+  },
+  "cnbeta": {
+   "/": {
+    "example": "/cnbeta",
+    "name": "头条资讯",
+    "parameters": {},
+    "path": "/"
+   },
+   "/category/:id": {
+    "example": "/cnbeta/category/movie",
+    "name": "分类",
+    "parameters": {
+     "id": "分类 id，可在对应分类页的 URL 中找到"
+    },
+    "path": "/category/:id"
+   },
+   "/topics/:id": {
+    "example": "/cnbeta/topics/453",
+    "name": "主题",
+    "parameters": {
+     "id": "主题 id，可在对应主题页的 URL 中找到"
+    },
+    "path": "/topics/:id"
+   }
+  },
+  "coolapk": {
+   "/dyh/:dyhId": {
+    "example": "/coolapk/dyh/1524",
+    "name": "看看号",
+    "parameters": {
+     "dyhId": "看看号ID"
+    },
+    "path": "/dyh/:dyhId"
+   },
+   "/hot/:type?/:period?": {
+    "example": "/coolapk/hot",
+    "name": "热榜",
+    "parameters": {
+     "period": "默认为`daily`",
+     "type": "默认为`jrrm`"
+    },
+    "path": "/hot/:type?/:period?"
+   },
+   "/huati/:tag": {
+    "example": "/coolapk/huati/iPhone",
+    "name": "话题",
+    "parameters": {
+     "tag": "话题名称"
+    },
+    "path": "/huati/:tag"
+   },
+   "/toutiao/:type?": {
+    "example": "/coolapk/toutiao",
+    "name": "头条",
+    "parameters": {
+     "type": "默认为history"
+    },
+    "path": "/toutiao/:type?"
+   },
+   "/tuwen/:type?": {
+    "example": "/coolapk/tuwen",
+    "name": "图文",
+    "parameters": {
+     "type": "默认为hot"
+    },
+    "path": "/tuwen/:type?"
+   },
+   "/user/:uid/dynamic": {
+    "example": "/coolapk/user/3177668/dynamic",
+    "name": "用户",
+    "parameters": {
+     "uid": "在个人界面右上分享-复制链接获取"
+    },
+    "path": "/user/:uid/dynamic"
+   }
+  },
+  "douban": {
+   "/:id/discussion": {
+    "example": "/douban/36328704/discussion",
+    "name": "豆瓣读书论坛",
+    "parameters": {
+     "id": "书本id;默认论坛文章使用\"按回应时间排序\",仅第一页文章"
+    },
+    "path": "/:id/discussion"
+   },
+   "/book/latest/:type?": {
+    "example": "/douban/book/latest/fiction",
+    "name": "新书速递",
+    "parameters": {
+     "type": "专题分类，可选，默认为 `all`"
+    },
+    "path": "/book/latest/:type?"
+   },
+   "/book/rank/:type?": {
+    "example": "/douban/book/rank/fiction",
+    "name": "热门图书排行",
+    "parameters": {
+     "type": "图书类型，默认合并列表"
+    },
+    "path": "/book/rank/:type?"
+   },
+   "/bookstore": {
+    "example": "/douban/bookstore",
+    "name": "豆瓣书店",
+    "parameters": {},
+    "path": "/bookstore"
+   },
+   "/celebrity/:id/:sort?": {
+    "example": "/douban/celebrity/1274261",
+    "name": "豆瓣电影人",
+    "parameters": {
+     "id": "电影人 id",
+     "sort": "排序方式，缺省为 `time`（时间排序），可为 `vote` （评价排序）"
+    },
+    "path": "/celebrity/:id/:sort?"
+   },
+   "/channel/:id/:nav?": {
+    "example": "/douban/channel/30168934/hot",
+    "name": "频道专题",
+    "parameters": {
+     "id": "频道id",
+     "nav": "专题分类，可选，默认为 default"
+    },
+    "path": "/channel/:id/:nav?"
+   },
+   "/channel/:id/subject/:nav": {
+    "example": "/douban/channel/30168934/subject/0",
+    "name": "频道书影音",
+    "parameters": {
+     "id": "频道id",
+     "nav": "书影音分类"
+    },
+    "path": "/channel/:id/subject/:nav"
+   },
+   "/commercialpress/latest": {
+    "example": "/douban/commercialpress/latest",
+    "name": "商务印书馆新书速递",
+    "parameters": {},
+    "path": "/commercialpress/latest"
+   },
+   "/doulist/:id": {
+    "example": "/douban/doulist/37716774",
+    "name": "豆瓣豆列",
+    "parameters": {
+     "id": "豆列id"
+    },
+    "path": "/doulist/:id"
+   },
+   "/event/hot/:locationId": {
+    "example": "/douban/event/hot/118172",
+    "name": "热门同城活动",
+    "parameters": {
+     "locationId": "位置 id, [同城首页](https://www.douban.com/location)打开控制台执行 `window.__loc_id__` 获取"
+    },
+    "path": "/event/hot/:locationId"
+   },
+   "/explore": {
+    "example": "/douban/explore",
+    "name": "浏览发现",
+    "parameters": {},
+    "path": "/explore"
+   },
+   "/explore/column/:id": {
+    "example": "/douban/explore/column/2",
+    "name": "浏览发现分栏目",
+    "parameters": {
+     "id": "分栏目id"
+    },
+    "path": "/explore/column/:id"
+   },
+   "/group/:groupid/:type?": {
+    "example": "/douban/group/648102",
+    "name": "豆瓣小组",
+    "parameters": {
+     "groupid": "豆瓣小组的 id",
+     "type": {
+      "default": "latest",
+      "description": "类型",
+      "options": [
+       {
+        "label": "最新",
+        "value": "latest"
+       },
+       {
+        "label": "最热",
+        "value": "essence"
+       },
+       {
+        "label": "精华",
+        "value": "elite"
+       }
+      ]
+     }
+    },
+    "path": "/group/:groupid/:type?"
+   },
+   "/jobs/:type": {
+    "example": "/douban/jobs/campus",
+    "name": "豆瓣招聘",
+    "parameters": {
+     "type": "招聘类型，见下表"
+    },
+    "path": "/jobs/:type"
+   },
+   "/list/:type?/:routeParams?": {
+    "example": "/douban/list/subject_real_time_hotest",
+    "name": "豆瓣榜单与集合",
+    "parameters": {
+     "routeParams": "额外参数；请参阅以下说明和表格",
+     "type": "榜单类型，见下表。默认为实时热门书影音"
+    },
+    "path": "/list/:type?/:routeParams?"
+   },
+   "/movie/classification/:sort?/:score?/:tags?": {
+    "example": "/douban/movie/classification/R/7.5/Netflix,2020",
+    "name": "豆瓣电影分类",
+    "parameters": {
+     "score": "最低评分，默认不限制",
+     "sort": "排序方式，默认为U",
+     "tags": "分类标签，多个标签之间用英文逗号分隔，常见的标签到豆瓣电影的分类页面查看，支持自定义标签"
+    },
+    "path": "/movie/classification/:sort?/:score?/:tags?"
+   },
+   "/movie/coming": {
+    "example": "/douban/movie/coming",
+    "name": "电影即将上映",
+    "parameters": {},
+    "path": "/movie/coming"
+   },
+   "/movie/later": {
+    "example": "/douban/movie/later",
+    "name": "即将上映的电影",
+    "parameters": {},
+    "path": "/movie/later"
+   },
+   "/movie/playing": {
+    "example": "/douban/movie/playing",
+    "name": "正在上映的电影",
+    "parameters": {},
+    "path": [
+     "/movie/playing",
+     "/movie/playing/:score"
+    ]
+   },
+   "/movie/playing/:score": {
+    "example": "/douban/movie/playing",
+    "name": "正在上映的电影",
+    "parameters": {},
+    "path": [
+     "/movie/playing",
+     "/movie/playing/:score"
+    ]
+   },
+   "/movie/ustop": {
+    "example": "/douban/movie/ustop",
+    "name": "北美票房榜",
+    "parameters": {},
+    "path": "/movie/ustop"
+   },
+   "/movie/weekly/:type?": {
+    "example": "/douban/movie/weekly",
+    "name": "一周口碑榜",
+    "parameters": {
+     "type": "分类，可在榜单页 URL 中找到，默认为一周口碑电影榜"
+    },
+    "path": "/movie/weekly/:type?"
+   },
+   "/music/latest/:area?": {
+    "example": "/douban/music/latest/chinese",
+    "name": "最新增加的音乐",
+    "parameters": {
+     "area": "区域类型，默认全部"
+    },
+    "path": "/music/latest/:area?"
+   },
+   "/people/:userid/status/:routeParams?": {
+    "example": "/douban/people/75118396/status",
+    "name": "用户广播",
+    "parameters": {
+     "routeParams": "额外参数；见下",
+     "userid": "整数型用户 id"
+    },
+    "path": "/people/:userid/status/:routeParams?"
+   },
+   "/people/:userid/wish": {
+    "example": "/douban/people/exherb/wish",
+    "name": "用户想看",
+    "parameters": {
+     "userid": "用户id"
+    },
+    "path": "/people/:userid/wish"
+   },
+   "/recommended/:type?/:routeParams?": {
+    "example": "/douban/recommended/tv",
+    "name": "豆瓣每月推荐片单",
+    "parameters": {
+     "routeParams": "额外参数；请参阅以下说明和表格",
+     "type": "片单类型剧集/电影，tv或movie，默认为tv"
+    },
+    "path": "/recommended/:type?/:routeParams?"
+   },
+   "/replied/:uid": {
+    "example": "/douban/replied/xiaoyaxiaoya",
+    "name": "最新回应过的日记",
+    "parameters": {
+     "uid": "用户id，可在用户日记页 URL 中找到"
+    },
+    "path": "/replied/:uid"
+   },
+   "/replies/:uid": {
+    "example": "/douban/replies/xiaoyaxiaoya",
+    "name": "日记最新回应",
+    "parameters": {
+     "uid": "用户id，可在用户日记页 URL 中找到"
+    },
+    "path": "/replies/:uid"
+   },
+   "/topic/:id/:sort?": {
+    "example": "/douban/topic/48823",
+    "name": "话题",
+    "parameters": {
+     "id": "话题id",
+     "sort": "排序方式，hot或new，默认为new"
+    },
+    "path": "/topic/:id/:sort?"
+   },
+   "/tv/coming/:sortBy?/:count?": {
+    "example": "/douban/tv/coming",
+    "name": "即将播出的剧集",
+    "parameters": {
+     "count": "请求上游返回数量，可选，正整数，默认 `10`",
+     "sortBy": "排序方式，可选，支持 `hot` 或 `time`，默认 `hot`"
+    },
+    "path": "/tv/coming/:sortBy?/:count?"
+   }
+  },
+  "github": {
+   "/activity/:user": {
+    "example": "/github/activity/DIYgod",
+    "name": "User Activities",
+    "parameters": {
+     "user": "GitHub username"
+    },
+    "path": "/activity/:user"
+   },
+   "/advisor/data/:type?/:category?": {
+    "example": "/github/advisor/data/reviewed/composer",
+    "name": "Github Advisory Database RSS",
+    "parameters": {},
+    "path": "/advisor/data/:type?/:category?"
+   },
+   "/branches/:user/:repo": {
+    "example": "/github/branches/DIYgod/RSSHub",
+    "name": "Repo Branches",
+    "parameters": {
+     "repo": "Repo name",
+     "user": "User name"
+    },
+    "path": "/branches/:user/:repo"
+   },
+   "/comments/:user/:repo/:number?": {
+    "example": "/github/comments/DIYgod/RSSHub/8116",
+    "name": "Issue / Pull Request comments",
+    "parameters": {
+     "number": "Issue or pull number (if omitted: all)",
+     "repo": "Repo name",
+     "user": "User / Org name"
+    },
+    "path": "/comments/:user/:repo/:number?"
+   },
+   "/contributors/:user/:repo/:order?/:anon?": {
+    "example": "/github/contributors/DIYgod/RSSHub",
+    "name": "Repo Contributors",
+    "parameters": {
+     "anon": "Show anonymous users. Defaults to no, use any values for yes.",
+     "order": "Sort order by commit numbers, desc and asc (descending by default)",
+     "repo": "Repo name",
+     "user": "User name"
+    },
+    "path": "/contributors/:user/:repo/:order?/:anon?"
+   },
+   "/discussion/:user/:repo/:state?/:category?": {
+    "example": "/github/discussion/DIYgod/RSSHub",
+    "name": "Repo Discussions",
+    "parameters": {
+     "category": "Category Name (case-sensitive). Default: `null`.",
+     "repo": "Repo name",
+     "state": {
+      "default": "open",
+      "description": "The state of discussions",
+      "options": [
+       {
+        "label": "Open",
+        "value": "open"
+       },
+       {
+        "label": "Closed",
+        "value": "closed"
+       },
+       {
+        "label": "Answered",
+        "value": "answered"
+       },
+       {
+        "label": "Unanswered",
+        "value": "unanswered"
+       },
+       {
+        "label": "Locked",
+        "value": "locked"
+       },
+       {
+        "label": "Unlocked",
+        "value": "unlocked"
+       },
+       {
+        "label": "All",
+        "value": "all"
+       }
+      ]
+     },
+     "user": "User name"
+    },
+    "path": "/discussion/:user/:repo/:state?/:category?"
+   },
+   "/feed/:user/:types?": {
+    "example": "/github/feed/yihong0618/star,release,pr",
+    "name": "User's Feed",
+    "parameters": {
+     "types": {
+      "default": "all",
+      "description": "Event types to include, comma separated",
+      "options": [
+       {
+        "label": "All events",
+        "value": "all"
+       },
+       {
+        "label": "Create events",
+        "value": "create"
+       },
+       {
+        "label": "Delete events",
+        "value": "delete"
+       },
+       {
+        "label": "Fork events",
+        "value": "fork"
+       },
+       {
+        "label": "Issue comment events",
+        "value": "issuecomm"
+       },
+       {
+        "label": "Member events",
+        "value": "member"
+       },
+       {
+        "label": "Pull request events",
+        "value": "pr"
+       },
+       {
+        "label": "Pull request review comment events",
+        "value": "prcomm"
+       },
+       {
+        "label": "Public events",
+        "value": "public"
+       },
+       {
+        "label": "Push events",
+        "value": "push"
+       },
+       {
+        "label": "Release events",
+        "value": "release"
+       },
+       {
+        "label": "Watch events (stars)",
+        "value": "star"
+       }
+      ]
+     },
+     "user": "GitHub username"
+    },
+    "path": "/feed/:user/:types?"
+   },
+   "/file/:user/:repo/:branch/:filepath{.+}": {
+    "example": "/github/file/DIYgod/RSSHub/master/README.md",
+    "name": "File Commits",
+    "parameters": {
+     "branch": "branch name",
+     "filepath": "path of target file",
+     "repo": "repository name",
+     "user": "GitHub user or org name"
+    },
+    "path": "/file/:user/:repo/:branch/:filepath{.+}"
+   },
+   "/gist/:gistId": {
+    "example": "/github/gist/d2c152bb7179d07015f336b1a0582679",
+    "name": "Gist Commits",
+    "parameters": {
+     "gistId": "Gist ID"
+    },
+    "path": "/gist/:gistId"
+   },
+   "/issue/:user/:repo/:state?/:labels?": {
+    "example": "/github/issue/DIYgod/RSSHub/open",
+    "name": "Repo Issues",
+    "parameters": {
+     "labels": "a list of comma separated label names",
+     "repo": "GitHub repo name",
+     "state": {
+      "default": "open",
+      "description": "the state of the issues.",
+      "options": [
+       {
+        "label": "Open",
+        "value": "open"
+       },
+       {
+        "label": "Closed",
+        "value": "closed"
+       },
+       {
+        "label": "All",
+        "value": "all"
+       }
+      ]
+     },
+     "user": "GitHub username"
+    },
+    "path": "/issue/:user/:repo/:state?/:labels?"
+   },
+   "/notifications": {
+    "example": "/github/notifications",
+    "name": "Notifications",
+    "parameters": {},
+    "path": "/notifications"
+   },
+   "/org_event/:org/:types?": {
+    "example": "/github/org_event/RSSNext",
+    "name": "Organization Event",
+    "parameters": {
+     "org": "Organization name",
+     "types": {
+      "default": "all",
+      "description": "Event types to include, comma separated",
+      "options": [
+       {
+        "label": "All events",
+        "value": "all"
+       },
+       {
+        "label": "Create events",
+        "value": "create"
+       },
+       {
+        "label": "Delete events",
+        "value": "delete"
+       },
+       {
+        "label": "Fork events",
+        "value": "fork"
+       },
+       {
+        "label": "Issue create events",
+        "value": "issue"
+       },
+       {
+        "label": "Issue comment events",
+        "value": "issuecomm"
+       },
+       {
+        "label": "Member events",
+        "value": "member"
+       },
+       {
+        "label": "Pull request events",
+        "value": "pr"
+       },
+       {
+        "label": "Pull request review comment events",
+        "value": "prcomm"
+       },
+       {
+        "label": "Pull request review events",
+        "value": "prrev"
+       },
+       {
+        "label": "Public events",
+        "value": "public"
+       },
+       {
+        "label": "Push events",
+        "value": "push"
+       },
+       {
+        "label": "Release events",
+        "value": "release"
+       },
+       {
+        "label": "Watch events (stars)",
+        "value": "star"
+       },
+       {
+        "label": "Wiki item create or update events",
+        "value": "wiki"
+       },
+       {
+        "label": "Commit comment events",
+        "value": "cmcomm"
+       },
+       {
+        "label": "Discussion events",
+        "value": "discussion"
+       }
+      ]
+     }
+    },
+    "path": "/org_event/:org/:types?"
+   },
+   "/pull/:user/:repo/:state?/:labels?": {
+    "example": "/github/pull/DIYgod/RSSHub",
+    "name": "Repo Pull Requests",
+    "parameters": {
+     "labels": "a list of comma separated label names",
+     "repo": "GitHub repo name",
+     "state": {
+      "default": "open",
+      "description": "the state of pull requests.",
+      "options": [
+       {
+        "label": "Open",
+        "value": "open"
+       },
+       {
+        "label": "Closed",
+        "value": "closed"
+       },
+       {
+        "label": "All",
+        "value": "all"
+       }
+      ]
+     },
+     "user": "GitHub username"
+    },
+    "path": "/pull/:user/:repo/:state?/:labels?"
+   },
+   "/pulse/:user/:repo/:period?": {
+    "example": "/github/pulse/DIYgod/RSSHub",
+    "name": "Repo Pulse",
+    "parameters": {
+     "period": "Time frame, selected from a repository's Pulse/Insights page. Possible values are: `daily`, `halfweekly`, `weekly`, or `monthly`. Default: `weekly`. If your RSS client supports it, consider aligning the polling frequency of the feed to the period.",
+     "repo": "Repo name",
+     "user": "User name"
+    },
+    "path": "/pulse/:user/:repo/:period?"
+   },
+   "/repo_event/:owner/:repo/:types?": {
+    "example": "/github/repo_event/DIYgod/RSSHub",
+    "name": "Repository Event",
+    "parameters": {
+     "owner": "Username or organization name",
+     "repo": "Repository name",
+     "types": {
+      "default": "all",
+      "description": "Event types to include, comma separated",
+      "options": [
+       {
+        "label": "All events",
+        "value": "all"
+       },
+       {
+        "label": "Create events",
+        "value": "create"
+       },
+       {
+        "label": "Delete events",
+        "value": "delete"
+       },
+       {
+        "label": "Fork events",
+        "value": "fork"
+       },
+       {
+        "label": "Issue create events",
+        "value": "issue"
+       },
+       {
+        "label": "Issue comment events",
+        "value": "issuecomm"
+       },
+       {
+        "label": "Member events",
+        "value": "member"
+       },
+       {
+        "label": "Pull request events",
+        "value": "pr"
+       },
+       {
+        "label": "Pull request review comment events",
+        "value": "prcomm"
+       },
+       {
+        "label": "Pull request review events",
+        "value": "prrev"
+       },
+       {
+        "label": "Public events",
+        "value": "public"
+       },
+       {
+        "label": "Push events",
+        "value": "push"
+       },
+       {
+        "label": "Release events",
+        "value": "release"
+       },
+       {
+        "label": "Watch events (stars)",
+        "value": "star"
+       },
+       {
+        "label": "Wiki item create or update events",
+        "value": "wiki"
+       },
+       {
+        "label": "Commit comment events",
+        "value": "cmcomm"
+       },
+       {
+        "label": "Discussion events",
+        "value": "discussion"
+       }
+      ]
+     }
+    },
+    "path": "/repo_event/:owner/:repo/:types?"
+   },
+   "/repos/:user/:type?/:sort?": {
+    "example": "/github/repos/DIYgod",
+    "name": "User Repo",
+    "parameters": {
+     "sort": "Sort by `created`, `updated`, `pushed`, `full_name`",
+     "type": "Type of repository, can be `all`, `owner`, `member`, `public`, `private`, `forks`, `sources`",
+     "user": "GitHub username"
+    },
+    "path": "/repos/:user/:type?/:sort?"
+   },
+   "/search/:query/:sort?/:order?": {
+    "example": "/github/search/RSSHub/bestmatch/desc",
+    "name": "Search Result",
+    "parameters": {
+     "order": "Sort order, desc and asc (desc descending by default)",
+     "query": "search keyword",
+     "sort": "Sort options (default to bestmatch)"
+    },
+    "path": "/search/:query/:sort?/:order?"
+   },
+   "/starred_repos/:user": {
+    "example": "/github/starred_repos/DIYgod",
+    "name": "User Starred Repositories",
+    "parameters": {
+     "user": "User name"
+    },
+    "path": "/starred_repos/:user"
+   },
+   "/stars/:user/:repo": {
+    "example": "/github/stars/DIYgod/RSSHub",
+    "name": "Repo Stars",
+    "parameters": {
+     "repo": "GitHub repo name",
+     "user": "GitHub username"
+    },
+    "path": "/stars/:user/:repo"
+   },
+   "/topics/:name/:qs?": {
+    "example": "/github/topics/framework",
+    "name": "Topics",
+    "parameters": {
+     "name": "Topic name, which can be found in the URL of the corresponding [Topics Page](https://github.com/topics/framework)",
+     "qs": "Query string, like `l=php&o=desc&s=stars`. Details listed as follows:"
+    },
+    "path": "/topics/:name/:qs?"
+   },
+   "/trending/:since/:language/:spoken_language?": {
+    "example": "/github/trending/daily/javascript/en",
+    "name": "Trending",
+    "parameters": {
+     "language": {
+      "default": "any",
+      "description": "the feed language, available in [Trending page](https://github.com/trending/javascript?since=monthly) 's URL, don't filter option is `any`"
+     },
+     "since": {
+      "description": "time range",
+      "options": [
+       {
+        "label": "Today",
+        "value": "daily"
+       },
+       {
+        "label": "This week",
+        "value": "weekly"
+       },
+       {
+        "label": "This month",
+        "value": "monthly"
+       }
+      ]
+     },
+     "spoken_language": {
+      "description": "natural language, available in [Trending page](https://github.com/trending/javascript?since=monthly) 's URL"
+     }
+    },
+    "path": "/trending/:since/:language/:spoken_language?"
+   },
+   "/user/followers/:user": {
+    "example": "/github/user/followers/HenryQW",
+    "name": "User Followers",
+    "parameters": {
+     "user": "GitHub username"
+    },
+    "path": "/user/followers/:user"
+   },
+   "/user_event/:username/:types?": {
+    "example": "/github/user_event/mslxl",
+    "name": "User Event",
+    "parameters": {
+     "types": {
+      "default": "all",
+      "description": "Event types to include, comma separated",
+      "options": [
+       {
+        "label": "All events",
+        "value": "all"
+       },
+       {
+        "label": "Create events",
+        "value": "create"
+       },
+       {
+        "label": "Delete events",
+        "value": "delete"
+       },
+       {
+        "label": "Fork events",
+        "value": "fork"
+       },
+       {
+        "label": "Issue create events",
+        "value": "issue"
+       },
+       {
+        "label": "Issue comment events",
+        "value": "issuecomm"
+       },
+       {
+        "label": "Member events",
+        "value": "member"
+       },
+       {
+        "label": "Pull request events",
+        "value": "pr"
+       },
+       {
+        "label": "Pull request review comment events",
+        "value": "prcomm"
+       },
+       {
+        "label": "Pull request review events",
+        "value": "prrev"
+       },
+       {
+        "label": "Public events",
+        "value": "public"
+       },
+       {
+        "label": "Push events",
+        "value": "push"
+       },
+       {
+        "label": "Release events",
+        "value": "release"
+       },
+       {
+        "label": "Watch events (stars)",
+        "value": "star"
+       },
+       {
+        "label": "Wiki item create or update events",
+        "value": "wiki"
+       },
+       {
+        "label": "Commit comment events",
+        "value": "cmcomm"
+       },
+       {
+        "label": "Discussion events",
+        "value": "discussion"
+       }
+      ]
+     },
+     "username": "Username"
+    },
+    "path": "/user_event/:username/:types?"
+   },
+   "/wiki/:user/:repo/:page?": {
+    "example": "/github/wiki/flutter/flutter/Roadmap",
+    "name": "Wiki History",
+    "parameters": {
+     "page": "Page slug, can be found in URL, empty means Home",
+     "repo": "Repo name",
+     "user": "User / Org name"
+    },
+    "path": "/wiki/:user/:repo/:page?"
+   }
+  },
+  "hackernews": {
+   "/:section?/:type?/:value?": {
+    "example": "/hackernews/threads/comments_list/dang",
+    "name": "Stories",
+    "parameters": {
+     "section": {
+      "description": "Content section, default to `index`. Common sections: `index`, `newest`, `ask`, `show`, `jobs`, `over`, `threads`, `submitted`. Any valid HN section (e.g. `best`, `front`, `active`) is also accepted"
+     },
+     "type": {
+      "description": "Content format, default to `sources`. `sources` links to original articles, `comments` fetches full comment threads, `comments_list` shows parent story with single comment"
+     },
+     "value": {
+      "description": "For `threads`/`submitted` sections, set user ID. For `over` section, set minimum points threshold (default 100). For other sections, appended as `?id=<value>` (e.g. `value=dang` → `?id=dang`)"
+     }
+    },
+    "path": "/:section?/:type?/:value?"
+   }
+  },
+  "huxiu": {
+   "/article": {
+    "example": "/huxiu/article",
+    "name": "资讯",
+    "parameters": {},
+    "path": [
+     "/article",
+     "/channel/:id?"
+    ]
+   },
+   "/author/:id/:type?": {
+    "example": "/huxiu/member/2313050",
+    "name": "用户",
+    "parameters": {
+     "id": "用户 id，可在对应用户页 URL 中找到"
+    },
+    "path": [
+     "/author/:id/:type?",
+     "/member/:id/:type?"
+    ]
+   },
+   "/channel/:id?": {
+    "example": "/huxiu/article",
+    "name": "资讯",
+    "parameters": {},
+    "path": [
+     "/article",
+     "/channel/:id?"
+    ]
+   },
+   "/club/:id": {
+    "example": "/huxiu/club/1161",
+    "name": "源流",
+    "parameters": {
+     "id": "源流 id，可在对应源流页 URL 中找到"
+    },
+    "path": "/club/:id"
+   },
+   "/collection/:id": {
+    "example": "/huxiu/collection/212",
+    "name": "文集",
+    "parameters": {
+     "id": "文集 id，可在对应文集页 URL 中找到"
+    },
+    "path": "/collection/:id"
+   },
+   "/member/:id/:type?": {
+    "example": "/huxiu/member/2313050",
+    "name": "用户",
+    "parameters": {
+     "id": "用户 id，可在对应用户页 URL 中找到"
+    },
+    "path": [
+     "/author/:id/:type?",
+     "/member/:id/:type?"
+    ]
+   },
+   "/moment": {
+    "example": "/huxiu/moment",
+    "name": "24 小时",
+    "parameters": {},
+    "path": "/moment"
+   },
+   "/search/:keyword": {
+    "example": "/huxiu/search/生活",
+    "name": "搜索",
+    "parameters": {
+     "keyword": "关键字"
+    },
+    "path": "/search/:keyword"
+   },
+   "/tag/:id": {
+    "example": "/huxiu/tag/291",
+    "name": "标签",
+    "parameters": {
+     "id": "标签 id，可在对应标签页 URL 中找到"
+    },
+    "path": "/tag/:id"
+   }
+  },
+  "ithome": {
+   "/:caty": {
+    "example": "/ithome/it",
+    "name": "分类资讯",
+    "parameters": {
+     "caty": "类别"
+    },
+    "path": "/:caty"
+   },
+   "/ranking/:type": {
+    "example": "/ithome/ranking/24h",
+    "name": "热榜",
+    "parameters": {
+     "type": "类别"
+    },
+    "path": "/ranking/:type"
+   },
+   "/tag/:name": {
+    "example": "/ithome/tag/win11",
+    "name": "标签",
+    "parameters": {
+     "name": "标签名称，可从网址链接中获取"
+    },
+    "path": "/tag/:name"
+   },
+   "/tw/feeds/:category": {
+    "example": "/ithome/tw/feeds/news",
+    "name": "Feeds",
+    "parameters": {
+     "category": "類別"
+    },
+    "path": "/tw/feeds/:category"
+   },
+   "/zt/:id?": {
+    "example": "/ithome/zt/xijiayi",
+    "name": "专题",
+    "parameters": {
+     "category": "专题 id，默认为 xijiayi，即 [喜加一](https://www.ithome.com/zt/xijiayi)，可在对应专题页 URL 中找到"
+    },
+    "path": "/zt/:id?"
+   }
+  },
+  "readhub": {
+   "/:category?": {
+    "example": "/readhub",
+    "name": "分类",
+    "parameters": {
+     "category": "分类，见下表，默认为热门话题"
+    },
+    "path": "/:category?"
+   },
+   "/daily": {
+    "example": "/readhub/daily",
+    "name": "每日早报",
+    "parameters": {},
+    "path": "/daily"
+   }
+  },
+  "sspai": {
+   "/activity/:slug": {
+    "example": "/sspai/activity/urfp0d9i",
+    "name": "作者动态",
+    "parameters": {
+     "slug": "作者 slug，可在作者主页URL中找到"
+    },
+    "path": "/activity/:slug"
+   },
+   "/author/:id": {
+    "example": "/sspai/author/796518",
+    "name": "作者",
+    "parameters": {
+     "id": "作者 slug 或 id，slug 可在作者主页URL中找到，id 不易查找，仅作兼容"
+    },
+    "path": "/author/:id"
+   },
+   "/bookmarks/:slug": {
+    "example": "/sspai/bookmarks/urfp0d9i",
+    "name": "用户收藏",
+    "parameters": {
+     "slug": "用户 slug，可在个人主页URL中找到"
+    },
+    "path": "/bookmarks/:slug"
+   },
+   "/column/:id": {
+    "example": "/sspai/column/262",
+    "name": "专栏",
+    "parameters": {
+     "id": "专栏 id"
+    },
+    "path": "/column/:id"
+   },
+   "/index": {
+    "example": "/sspai/index",
+    "name": "首页",
+    "parameters": {},
+    "path": "/index"
+   },
+   "/matrix": {
+    "example": "/sspai/matrix",
+    "name": "Matrix",
+    "parameters": {},
+    "path": "/matrix"
+   },
+   "/prime/community": {
+    "example": "/sspai/prime/community",
+    "name": "会员社区",
+    "parameters": {},
+    "path": "/prime/community"
+   },
+   "/series": {
+    "example": "/sspai/series",
+    "name": "最新上架付费专栏",
+    "parameters": {},
+    "path": "/series"
+   },
+   "/series/:id": {
+    "example": "/sspai/series/77",
+    "name": "付费专栏文章更新",
+    "parameters": {
+     "id": "专栏 id"
+    },
+    "path": "/series/:id"
+   },
+   "/shortcuts": {
+    "example": "/sspai/shortcuts",
+    "name": "Shortcuts Gallery",
+    "parameters": {},
+    "path": "/shortcuts"
+   },
+   "/tag/:keyword": {
+    "example": "/sspai/tag/apple",
+    "name": "标签订阅",
+    "parameters": {
+     "keyword": "关键词"
+    },
+    "path": "/tag/:keyword"
+   },
+   "/topic/:id": {
+    "example": "/sspai/topic/250",
+    "name": "专题内文章更新",
+    "parameters": {
+     "id": "专题 id，可在专题主页URL中找到"
+    },
+    "path": "/topic/:id"
+   },
+   "/topics": {
+    "example": "/sspai/topics",
+    "name": "专题",
+    "parameters": {},
+    "path": "/topics"
+   }
+  },
+  "v2ex": {
+   "/post/:postid": {
+    "example": "/v2ex/post/584403",
+    "name": "帖子",
+    "parameters": {
+     "postid": "帖子ID，在 URL 可以找到"
+    },
+    "path": "/post/:postid"
+   },
+   "/tab/:tabid": {
+    "example": "/v2ex/tab/hot",
+    "name": "标签",
+    "parameters": {
+     "tabid": "tab标签ID,在 URL 可以找到"
+    },
+    "path": "/tab/:tabid"
+   },
+   "/topics/:type": {
+    "example": "/v2ex/topics/latest",
+    "name": "最热 / 最新主题",
+    "parameters": {
+     "type": {
+      "default": "hot",
+      "description": "主题类型",
+      "options": [
+       {
+        "label": "最热主题",
+        "value": "hot"
+       },
+       {
+        "label": "最新主题",
+        "value": "latest"
+       }
+      ]
+     }
+    },
+    "path": "/topics/:type"
+   },
+   "/xna": {
+    "example": "/v2ex/xna",
+    "name": "XNA",
+    "parameters": {},
+    "path": "/xna"
+   }
+  },
+  "youtube": {
+   "/c/:username/:embed?": {
+    "example": "/youtube/c/YouTubeCreators",
+    "name": "Custom URL",
+    "parameters": {
+     "embed": "Default to embed the video, set to any value to disable embedding",
+     "username": "YouTube custom URL"
+    },
+    "path": "/c/:username/:embed?"
+   },
+   "/channel/:id/:routeParams?": {
+    "example": "/youtube/channel/UCDwDMPOZfxVV0x_dz0eQ8KQ",
+    "name": "Channel with id",
+    "parameters": {
+     "id": "YouTube channel id",
+     "routeParams": "Extra parameters, see the table below"
+    },
+    "path": "/channel/:id/:routeParams?"
+   },
+   "/charts/:category?/:country?/:embed?": {
+    "example": "/youtube/charts",
+    "name": "Music Charts",
+    "parameters": {
+     "category": "Chart, see table below, default to `TopVideos`",
+     "country": "Country Code, see table below, default to global",
+     "embed": "Default to embed the video, set to any value to disable embedding"
+    },
+    "path": "/charts/:category?/:country?/:embed?"
+   },
+   "/community/:handle": {
+    "example": "/youtube/community/@JFlaMusic",
+    "name": "Community Posts",
+    "parameters": {
+     "handle": "YouTube handles or channel id"
+    },
+    "path": "/community/:handle"
+   },
+   "/live/:username/:embed?": {
+    "example": "/youtube/live/@GawrGura",
+    "name": "Live",
+    "parameters": {
+     "embed": "Default to embed the video, set to any value to disable embedding",
+     "username": "YouTuber id"
+    },
+    "path": "/live/:username/:embed?"
+   },
+   "/playlist/:id/:embed?": {
+    "example": "/youtube/playlist/PLqQ1RwlxOgeLTJ1f3fNMSwhjVgaWKo_9Z",
+    "name": "Playlist",
+    "parameters": {
+     "embed": "Default to embed the video, set to any value to disable embedding",
+     "id": "YouTube playlist id"
+    },
+    "path": "/playlist/:id/:embed?"
+   },
+   "/subscriptions/:embed?": {
+    "example": "/youtube/subscriptions",
+    "name": "Subscriptions",
+    "parameters": {
+     "embed": "Default to embed the video, set to any value to disable embedding"
+    },
+    "path": "/subscriptions/:embed?"
+   },
+   "/user/:username/:routeParams?": {
+    "example": "/youtube/user/@JFlaMusic",
+    "name": "Channel with user handle",
+    "parameters": {
+     "routeParams": "Extra parameters, see the table below",
+     "username": "YouTuber handle with @"
+    },
+    "path": "/user/:username/:routeParams?"
+   }
+  },
+  "zhihu": {
+   "/bookstore/newest": {
+    "example": "/zhihu/bookstore/newest",
+    "name": "知乎书店 - 新书",
+    "parameters": {},
+    "path": "/bookstore/newest"
+   },
+   "/collection/:id/:getAll?": {
+    "example": "/zhihu/collection/26444956",
+    "name": "收藏夹",
+    "parameters": {
+     "getAll": "获取全部收藏内容，任意值为打开",
+     "id": "收藏夹 id，可在收藏夹页面 URL 中找到"
+    },
+    "path": "/collection/:id/:getAll?"
+   },
+   "/daily": {
+    "example": "/zhihu/daily",
+    "name": "知乎日报",
+    "parameters": {},
+    "path": "/daily"
+   },
+   "/daily/section/:sectionId": {
+    "example": "/zhihu/daily/section/2",
+    "name": "知乎日报 - 合集",
+    "parameters": {
+     "sectionId": "合集 id，可在 https://news-at.zhihu.com/api/7/sections 找到"
+    },
+    "path": "/daily/section/:sectionId"
+   },
+   "/hot/:category?": {
+    "example": "/zhihu/hot",
+    "name": "知乎热榜",
+    "parameters": {},
+    "path": "/hot/:category?"
+   },
+   "/people/activities/:id": {
+    "example": "/zhihu/people/activities/diygod",
+    "name": "用户动态",
+    "parameters": {
+     "id": "作者 id，可在用户主页 URL 中找到"
+    },
+    "path": "/people/activities/:id"
+   },
+   "/people/allCollections/:id": {
+    "example": "/zhihu/people/allCollections/87-44-49-67",
+    "name": "用户全部收藏内容",
+    "parameters": {
+     "id": "作者 id，可在用户主页 URL 中找到"
+    },
+    "path": "/people/allCollections/:id"
+   },
+   "/people/answers/:id": {
+    "example": "/zhihu/people/answers/diygod",
+    "name": "用户回答",
+    "parameters": {
+     "id": "作者 id，可在用户主页 URL 中找到"
+    },
+    "path": "/people/answers/:id"
+   },
+   "/people/pins/:id": {
+    "example": "/zhihu/people/pins/kan-dan-45",
+    "name": "用户想法",
+    "parameters": {
+     "id": "作者 id，可在用户主页 URL 中找到"
+    },
+    "path": "/people/pins/:id"
+   },
+   "/pin/daily": {
+    "example": "/zhihu/pin/daily",
+    "name": "知乎想法 - 24 小时新闻汇总",
+    "parameters": {},
+    "path": "/pin/daily"
+   },
+   "/pin/hotlist": {
+    "example": "/zhihu/pin/hotlist",
+    "name": "知乎想法热榜",
+    "parameters": {},
+    "path": "/pin/hotlist"
+   },
+   "/posts/:usertype/:id": {
+    "example": "/zhihu/posts/people/frederchen",
+    "name": "用户文章",
+    "parameters": {
+     "id": "用户类型usertype，参考用户主页的URL。目前有两种，见下表",
+     "usertype": "作者 id，可在用户主页 URL 中找到"
+    },
+    "path": "/posts/:usertype/:id"
+   },
+   "/question/:questionId/:sortBy?": {
+    "example": "/zhihu/question/59895982",
+    "name": "问题",
+    "parameters": {
+     "questionId": "问题 id",
+     "sortBy": "排序方式：`default`, `created`, `updated`。默认为 `default`"
+    },
+    "path": "/question/:questionId/:sortBy?"
+   },
+   "/timeline": {
+    "example": "/zhihu/timeline",
+    "name": "用户关注时间线",
+    "parameters": {},
+    "path": "/timeline"
+   },
+   "/topic/:topicId/:isTop?": {
+    "example": "/zhihu/topic/19828946",
+    "name": "话题",
+    "parameters": {
+     "isTop": "仅精华，默认为否，其他值为是",
+     "topicId": "话题 id"
+    },
+    "path": "/topic/:topicId/:isTop?"
+   },
+   "/weekly": {
+    "example": "/zhihu/weekly",
+    "name": "知乎书店 - 知乎周刊",
+    "parameters": {},
+    "path": "/weekly"
+   },
+   "/xhu/collection/:id": {
+    "example": "/zhihu/xhu/collection/26444956",
+    "name": "xhu - 收藏夹",
+    "parameters": {
+     "id": "收藏夹 id, 可在收藏夹页面 URL 中找到"
+    },
+    "path": "/xhu/collection/:id"
+   },
+   "/xhu/people/activities/:hexId": {
+    "example": "/zhihu/xhu/people/activities/246e6cf44e94cefbf4b959cb5042bc91",
+    "name": "xhu - 用户动态",
+    "parameters": {
+     "hexId": "用户的 16 进制 id，获取方式见下方说明"
+    },
+    "path": "/xhu/people/activities/:hexId"
+   },
+   "/xhu/people/answers/:hexId": {
+    "example": "/zhihu/xhu/people/answers/246e6cf44e94cefbf4b959cb5042bc91",
+    "name": "xhu - 用户回答",
+    "parameters": {
+     "hexId": "用户的 16 进制 id，获取方式同 [xhu - 用户动态](#zhi-hu-xhu-yong-hu-dong-tai)"
+    },
+    "path": "/xhu/people/answers/:hexId"
+   },
+   "/xhu/people/posts/:hexId": {
+    "example": "/zhihu/xhu/people/posts/246e6cf44e94cefbf4b959cb5042bc91",
+    "name": "xhu - 用户文章",
+    "parameters": {
+     "hexId": "用户的 16 进制 id，获取方式同 [xhu - 用户动态](#zhi-hu-xhu-yong-hu-dong-tai)"
+    },
+    "path": "/xhu/people/posts/:hexId"
+   },
+   "/xhu/question/:questionId/:sortBy?": {
+    "example": "/zhihu/xhu/question/264051433",
+    "name": "xhu - 问题",
+    "parameters": {
+     "questionId": "问题 id",
+     "sortBy": "排序方式：`default`, `created`, `updated`。默认为 `default`"
+    },
+    "path": "/xhu/question/:questionId/:sortBy?"
+   },
+   "/xhu/topic/:topicId": {
+    "example": "/zhihu/xhu/topic/19566035",
+    "name": "xhu - 话题",
+    "parameters": {
+     "topicId": "话题ID"
+    },
+    "path": "/xhu/topic/:topicId"
+   },
+   "/xhu/zhuanlan/:id": {
+    "example": "/zhihu/xhu/zhuanlan/githubdaily",
+    "name": "xhu- 专栏",
+    "parameters": {
+     "id": "专栏 id, 可在专栏主页 URL 中找到"
+    },
+    "path": "/xhu/zhuanlan/:id"
+   },
+   "/zhuanlan/:id": {
+    "example": "/zhihu/zhuanlan/googledevelopers",
+    "name": "专栏",
+    "parameters": {
+     "id": "专栏 id，可在专栏主页 URL 中找到"
+    },
+    "path": "/zhuanlan/:id"
+   }
+  }
+ }
+}

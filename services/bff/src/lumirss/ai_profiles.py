@@ -25,16 +25,17 @@ from dataclasses import dataclass
 from typing import Literal
 
 from lumirss.ai_settings import (
-    AiSettingsStore,
-    InvalidAiSettings,
     KEY_BASE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
+    AiSettingsStore,
+    InvalidAiSettings,
     _validate_base_url,
     _validate_model,
 )
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 
 PURPOSES = ("summary", "translation", "chat")
 Purpose = Literal["summary", "translation", "chat"]
@@ -61,10 +62,6 @@ class AiProfileNotFound(Exception):
     """No profile with the given id (message is browser-safe)."""
 
 
-def _utc_now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _validate_label(value: str) -> str:

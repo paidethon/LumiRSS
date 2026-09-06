@@ -29,9 +29,9 @@ the host view (127.0.0.1:1200) differs from the container view
 (http://rsshub:1200).
 """
 
-from dataclasses import dataclass
 import re
 import urllib.parse
+from dataclasses import dataclass
 
 import httpx
 from pydantic import ValidationError

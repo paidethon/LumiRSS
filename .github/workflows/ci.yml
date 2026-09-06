@@ -32,9 +32,45 @@ jobs:
         working-directory: services/bff
         run: uv lock --check
 
+      - name: Ruff static checks (duplicate definitions, real-bug patterns)
+        working-directory: services/bff
+        run: uv run ruff check src tests scripts
+
       - name: Run BFF tests
         working-directory: services/bff
         run: uv run pytest -q
+
+  generated-contracts:
+    name: Generated contracts drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate API schema + settings metadata and fail on drift
+        working-directory: apps/web
+        run: |
+          pnpm api:generate
+          pnpm settings:generate
+          git diff --exit-code -- src/api/generated
 
   web-tests:
     name: Web tests / lint / build (pnpm)

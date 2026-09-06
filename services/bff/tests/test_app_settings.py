@@ -6,6 +6,7 @@ design; assertions focus on allow-list behavior, strict validation,
 durability and the FreshRSS ownership boundary.
 """
 
+import secrets as _secrets
 import sqlite3
 
 from fastapi.testclient import TestClient
@@ -13,7 +14,6 @@ from fastapi.testclient import TestClient
 from lumirss.main import app
 from lumirss.storage import Database
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 SMUGGLED_KEY = "sk-" + _secrets.token_urlsafe(8)
 

@@ -16,18 +16,16 @@ Lumi; this runner is ~100 lines and has no new dependencies.
 
 import re
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from lumirss.storage import Database, DatabaseError
+from lumirss.util import utc_now as _utc_now
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 _MIGRATION_NAME = re.compile(r"^(?P<version>\d{4})_(?P<name>[A-Za-z0-9_-]+)\.sql$")
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def list_migrations() -> list[tuple[int, Path]]:

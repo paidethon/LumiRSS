@@ -32,27 +32,12 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
-from lumirss.ai_settings import (
-    AiSettingsStore,
-    AiSettingsUpdate,
-    InvalidAiSettings,
-    KEY_BASE_URL,
-    KEY_MODEL,
-    KEY_PROVIDER,
-    KEY_SUMMARY_LANGUAGE,
-    KEY_TRANSLATION_LANGUAGE,
-)
+from lumirss.ai_conversation import MAX_QUESTION_CHARS, ConversationService
 from lumirss.ai_profiles import (
+    PURPOSES,
     AiProfileNotFound,
     AiProfileStore,
-    PURPOSES,
     PurposeAiSettings,
-    default_secret_key,
-)
-from lumirss.app_settings import (
-    AppSettingsStore,
-    InvalidAppSettings,
-    PortableSettingsPatch,
 )
 from lumirss.ai_provider import (
     AiAuthError,
@@ -63,52 +48,22 @@ from lumirss.ai_provider import (
     AiTimeout,
     AiUpstreamError,
 )
+from lumirss.ai_settings import (
+    KEY_BASE_URL,
+    KEY_MODEL,
+    KEY_PROVIDER,
+    KEY_SUMMARY_LANGUAGE,
+    KEY_TRANSLATION_LANGUAGE,
+    AiSettingsStore,
+    AiSettingsUpdate,
+    InvalidAiSettings,
+)
 from lumirss.ai_summary import AiContentUnavailable, SummaryService
 from lumirss.ai_translation import TranslationService
-from lumirss.ai_conversation import ConversationService, MAX_QUESTION_CHARS
-from lumirss.config import FreshRSSSettings, LumiSettings
-from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
-from lumirss.entryref import InvalidEntryReference, decode_entry_ref
-from lumirss.feed_preview import (
-    FeedFetchError,
-    FeedPreviewService,
-    FeedTooLarge,
-    NotAFeedError,
-    UnsafeFeedUrl,
-)
-from lumirss.models import EntryDetail, EntryListResponse
-from lumirss.opml import (
-    MAX_OPML_BYTES,
-    OpmlInvalid,
-    OpmlService,
-    OpmlTooLarge,
-    OpmlTooManyFeeds,
-)
-from lumirss.rsshub import (
-    RssHubFetchError,
-    RssHubInvalidParameters,
-    RssHubNotConfigured,
-    RssHubRouteNotFound,
-    RssHubService,
-)
-from lumirss.source_discovery import (
-    InvalidSourceUrl,
-    NoFeedDiscovered,
-    SourceDiscoveryService,
-)
-from lumirss.storage import Database
-from lumirss.subscriptionref import (
-    InvalidSubscriptionReference,
-    decode_subscription_ref,
-)
-from lumirss.secrets_store import SecretsStore, SecretsStoreError
-from lumirss.operations import OperationsService
-from lumirss.rsshub_control import (
-    RssHubControlError,
-    RssHubControlStore,
-    RssHubInvalidValue,
-    RssHubUnknownKey,
-    config_view,
+from lumirss.app_settings import (
+    AppSettingsStore,
+    InvalidAppSettings,
+    PortableSettingsPatch,
 )
 from lumirss.backup import (
     BackupBusy,
@@ -122,11 +77,84 @@ from lumirss.backup import (
     WebDavSettingsStore,
     _job_json,
 )
+from lumirss.config import FreshRSSSettings, LumiSettings
+from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
+from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+from lumirss.feed_preview import (
+    FeedFetchError,
+    FeedPreviewService,
+    FeedTooLarge,
+    NotAFeedError,
+    UnsafeFeedUrl,
+)
+from lumirss.models import (
+    AiProfile,
+    AiSettingsView,
+    ApiVersionInfo,
+    AppSettingsView,
+    BackupJob,
+    Category,
+    EntryConversation,
+    EntryDetail,
+    EntryListResponse,
+    EntrySummary,
+    EntryTranslation,
+    Feed,
+    FeedPreviewResult,
+    FreshRssUiInfo,
+    HealthStatus,
+    OperationsStatus,
+    OpmlImportPreview,
+    OpmlImportResult,
+    ReadinessResponse,
+    RemoteBackupsResponse,
+    RestorePreview,
+    RestoreResult,
+    RssHubCatalog,
+    RssHubConfigView,
+    SourceDiscoveryResponse,
+    Subscription,
+    WebDavSettingsView,
+    WebDavTestResult,
+)
+from lumirss.operations import OperationsService
+from lumirss.opml import (
+    MAX_OPML_BYTES,
+    OpmlInvalid,
+    OpmlService,
+    OpmlTooLarge,
+    OpmlTooManyFeeds,
+)
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
     RestorePreviewRequired,
     RestoreService,
+)
+from lumirss.rsshub import (
+    RssHubFetchError,
+    RssHubInvalidParameters,
+    RssHubNotConfigured,
+    RssHubRouteNotFound,
+    RssHubService,
+)
+from lumirss.rsshub_control import (
+    RssHubControlError,
+    RssHubControlStore,
+    RssHubInvalidValue,
+    RssHubUnknownKey,
+    config_view,
+)
+from lumirss.secrets_store import SecretsStore, SecretsStoreError
+from lumirss.source_discovery import (
+    InvalidSourceUrl,
+    NoFeedDiscovered,
+    SourceDiscoveryService,
+)
+from lumirss.storage import Database
+from lumirss.subscriptionref import (
+    InvalidSubscriptionReference,
+    decode_subscription_ref,
 )
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 
@@ -165,16 +193,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.http_client.aclose()
 
 
-app = FastAPI(title="LumiRSS BFF", lifespan=lifespan)
+# response_model_exclude_none keeps model-validated responses byte-compatible
+# with the historical dict payloads for the routes that omit empty keys; the
+# routes whose wire format carries explicit nulls override it per-route.
+app = FastAPI(
+    title="LumiRSS BFF",
+    lifespan=lifespan,
+    response_model_exclude_none=True,
+)
 
 
-@app.get("/health/live")
+@app.get("/health/live", response_model=HealthStatus)
 async def health_live() -> dict[str, str]:
     """Liveness: only proves this process is alive, never touches FreshRSS."""
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
+@app.get("/health/ready", response_model=ReadinessResponse)
 async def health_ready(request: Request) -> JSONResponse:
     """Readiness: core dependency (lumi.sqlite) must be usable.
 
@@ -342,7 +377,11 @@ async def request_validation_handler(
     )
 
 
-@app.get("/api/v1/feeds")
+@app.get(
+    "/api/v1/feeds",
+    response_model=list[Feed],
+    response_model_exclude_none=False,  # uncategorized feed → "category": null
+)
 async def feeds(request: Request) -> list[dict[str, object]]:
     """List feeds from FreshRSS through the FreshRSSAdapter.
 
@@ -385,7 +424,11 @@ class EntryStateUpdate(BaseModel):
         return self
 
 
-@app.get("/api/v1/entries", response_model=EntryListResponse)
+@app.get(
+    "/api/v1/entries",
+    response_model=EntryListResponse,
+    response_model_exclude_none=False,
+)
 async def entries(
     request: Request,
     view: Literal["all", "unread", "starred"] | None = None,
@@ -452,7 +495,11 @@ async def entries(
     return EntryListResponse(items=page.items, nextCursor=next_cursor)
 
 
-@app.get("/api/v1/entries/{entry_ref}", response_model=EntryDetail)
+@app.get(
+    "/api/v1/entries/{entry_ref}",
+    response_model=EntryDetail,
+    response_model_exclude_none=False,
+)
 async def entry_detail(entry_ref: str, request: Request) -> EntryDetail:
     """One entry as plain text. Invalid refs are rejected before FreshRSS;
     reading a detail never marks anything as read (read-only milestone)."""
@@ -475,6 +522,21 @@ async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request
         item_id, read=update.read, starred=update.starred
     )
     return Response(status_code=204)
+
+
+def _cached_on_app_state(request: Request, attr: str, build):
+    """Lazily create and cache one service on app.state (single process).
+
+    The app.state attribute starts as None (lifespan); the first request
+    builds the service via ``build`` and every later request reuses the
+    same instance for the process lifetime. Individual ``_get_*`` accessors
+    keep the service wiring visible at their definition site.
+    """
+    value = getattr(request.app.state, attr)
+    if value is None:
+        value = build()
+        setattr(request.app.state, attr, value)
+    return value
 
 
 def _get_adapter(request: Request) -> FreshRSSAdapter:
@@ -500,11 +562,11 @@ def _get_control_adapter(request: Request) -> FreshRSSControlAdapter:
     instance (which is a FreshRSSSession); the control adapter only borrows
     it, so credentials and tokens are never duplicated.
     """
-    control = request.app.state.freshrss_control_adapter
-    if control is None:
-        control = FreshRSSControlAdapter(_get_adapter(request))
-        request.app.state.freshrss_control_adapter = control
-    return control
+    return _cached_on_app_state(
+        request,
+        "freshrss_control_adapter",
+        lambda: FreshRSSControlAdapter(_get_adapter(request)),
+    )
 
 
 class SubscriptionCreate(BaseModel):
@@ -553,7 +615,11 @@ class CategoryPatch(BaseModel):
     label: str = Field(min_length=1)
 
 
-@app.get("/api/v1/subscriptions")
+@app.get(
+    "/api/v1/subscriptions",
+    response_model=list[Subscription],
+    response_model_exclude_none=False,  # uncategorized subscription → null
+)
 async def subscriptions(request: Request) -> list[dict[str, object]]:
     """Management view of all subscriptions (0013).
 
@@ -569,7 +635,7 @@ async def subscriptions(request: Request) -> list[dict[str, object]]:
     ]
 
 
-@app.get("/api/v1/categories")
+@app.get("/api/v1/categories", response_model=list[Category])
 async def categories(request: Request) -> list[dict[str, str]]:
     """All categories including empty ones (tag/list folders).
 
@@ -583,7 +649,12 @@ async def categories(request: Request) -> list[dict[str, str]]:
     ]
 
 
-@app.post("/api/v1/subscriptions", status_code=201)
+@app.post(
+    "/api/v1/subscriptions",
+    status_code=201,
+    response_model=Subscription,
+    response_model_exclude_none=False,
+)
 async def create_subscription(
     subscription: SubscriptionCreate, request: Request
 ) -> dict[str, object]:
@@ -608,16 +679,20 @@ def _get_preview_service(request: Request) -> FeedPreviewService:
     Built lazily like the adapters (tests may inject a fake onto
     app.state.feed_preview_service).
     """
-    service = request.app.state.feed_preview_service
-    if service is None:
-        service = FeedPreviewService(
+    return _cached_on_app_state(
+        request,
+        "feed_preview_service",
+        lambda: FeedPreviewService(
             request.app.state.http_client, _get_control_adapter(request)
-        )
-        request.app.state.feed_preview_service = service
-    return service
+        ),
+    )
 
 
-@app.post("/api/v1/feed-preview")
+@app.post(
+    "/api/v1/feed-preview",
+    response_model=FeedPreviewResult,
+    response_model_exclude_none=False,  # siteUrl/description may be null
+)
 async def preview_feed(
     body: FeedPreviewRequest, request: Request
 ) -> dict[str, object]:
@@ -630,6 +705,11 @@ async def preview_feed(
     """
     service = _get_preview_service(request)
     preview = await service.preview(body.feedUrl)
+    return _preview_json(preview)
+
+
+def _preview_json(preview) -> dict[str, object]:
+    """One shared preview shape for feed-preview and rsshub/preview."""
     return {
         "title": preview.title,
         "feedUrl": preview.feed_url,
@@ -652,14 +732,18 @@ def _get_discovery_service(request: Request) -> SourceDiscoveryService:
     Holds NO FreshRSS reference by design — discovery is read-only against
     the discovered website.
     """
-    service = request.app.state.source_discovery_service
-    if service is None:
-        service = SourceDiscoveryService(request.app.state.http_client)
-        request.app.state.source_discovery_service = service
-    return service
+    return _cached_on_app_state(
+        request,
+        "source_discovery_service",
+        lambda: SourceDiscoveryService(request.app.state.http_client),
+    )
 
 
-@app.post("/api/v1/source-discovery")
+@app.post(
+    "/api/v1/source-discovery",
+    response_model=SourceDiscoveryResponse,
+    response_model_exclude_none=False,  # declared candidates: title/format null
+)
 async def source_discovery(
     body: SourceDiscoveryRequest, request: Request
 ) -> dict[str, object]:
@@ -698,16 +782,16 @@ def _get_rsshub_service(request: Request) -> RssHubService:
     Built lazily like the other services; the control adapter is only
     READ (alreadySubscribed) — preview never mutates subscriptions.
     """
-    service = request.app.state.rsshub_service
-    if service is None:
-        service = RssHubService(
+    return _cached_on_app_state(
+        request,
+        "rsshub_service",
+        lambda: RssHubService(
             request.app.state.http_client, _get_control_adapter(request)
-        )
-        request.app.state.rsshub_service = service
-    return service
+        ),
+    )
 
 
-@app.get("/api/v1/rsshub/routes")
+@app.get("/api/v1/rsshub/routes", response_model=RssHubCatalog)
 async def rsshub_routes(request: Request) -> dict[str, object]:
     """Lumi-owned RSSHub route catalog (static, always available).
 
@@ -747,7 +831,11 @@ async def rsshub_routes(request: Request) -> dict[str, object]:
     }
 
 
-@app.post("/api/v1/rsshub/preview")
+@app.post(
+    "/api/v1/rsshub/preview",
+    response_model=FeedPreviewResult,
+    response_model_exclude_none=False,
+)
 async def rsshub_preview(
     body: RssHubPreviewRequest, request: Request
 ) -> dict[str, object]:
@@ -761,14 +849,7 @@ async def rsshub_preview(
     """
     service = _get_rsshub_service(request)
     preview = await service.preview(body.routeId, body.params)
-    return {
-        "title": preview.title,
-        "feedUrl": preview.feed_url,
-        "siteUrl": preview.site_url,
-        "description": preview.description,
-        "format": preview.format,
-        "alreadySubscribed": preview.already_subscribed,
-    }
+    return _preview_json(preview)
 
 
 @app.patch("/api/v1/subscriptions/{subscription_ref}", status_code=204)
@@ -854,7 +935,7 @@ async def opml_export(request: Request) -> Response:
     )
 
 
-@app.post("/api/v1/opml/import/preview")
+@app.post("/api/v1/opml/import/preview", response_model=OpmlImportPreview)
 async def opml_import_preview(request: Request) -> dict[str, object]:
     """Parse an uploaded OPML and report what an import WOULD do.
 
@@ -869,7 +950,11 @@ async def opml_import_preview(request: Request) -> dict[str, object]:
     return await service.preview(data)
 
 
-@app.post("/api/v1/opml/import")
+@app.post(
+    "/api/v1/opml/import",
+    response_model=OpmlImportResult,
+    response_model_exclude_none=False,  # uncategorized added feed → null label
+)
 async def opml_import(request: Request) -> dict[str, object]:
     """Merge-import an OPML: subscribe each NEW feed, categorize it, report.
 
@@ -885,7 +970,11 @@ async def opml_import(request: Request) -> dict[str, object]:
     return await service.import_opml(data)
 
 
-@app.get("/api/v1/freshrss-ui")
+@app.get(
+    "/api/v1/freshrss-ui",
+    response_model=FreshRssUiInfo,
+    response_model_exclude_none=False,  # unconfigured → {"url": null}
+)
 async def freshrss_ui(request: Request) -> dict[str, str | None]:
     """Browser-safe public URL of the FreshRSS web UI, or null.
 
@@ -915,7 +1004,7 @@ def _subscription_json(subscription) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/version")
+@app.get("/api/v1/version", response_model=ApiVersionInfo)
 async def version() -> dict[str, object]:
     """Build provenance for Web/BFF skew diagnosis.
 
@@ -933,22 +1022,22 @@ async def version() -> dict[str, object]:
 
 def _get_ai_settings_store(request: Request) -> AiSettingsStore:
     """Persistent AI settings store over the Lumi SQLite database (lazy)."""
-    store = request.app.state.ai_settings_store
-    if store is None:
-        store = AiSettingsStore(request.app.state.db)
-        request.app.state.ai_settings_store = store
-    return store
+    return _cached_on_app_state(
+        request,
+        "ai_settings_store",
+        lambda: AiSettingsStore(request.app.state.db),
+    )
 
 
 def _get_ai_profile_store(request: Request) -> AiProfileStore:
     """AI profiles + purpose mapping (lazy)."""
-    store = request.app.state.ai_profile_store
-    if store is None:
-        store = AiProfileStore(
+    return _cached_on_app_state(
+        request,
+        "ai_profile_store",
+        lambda: AiProfileStore(
             request.app.state.db, request.app.state.secrets_store
-        )
-        request.app.state.ai_profile_store = store
-    return store
+        ),
+    )
 
 
 async def _ai_settings_json(
@@ -994,7 +1083,11 @@ async def _ai_settings_json(
 
 
 
-@app.get("/api/v1/settings/ai")
+@app.get(
+    "/api/v1/settings/ai",
+    response_model=AiSettingsView,
+    response_model_exclude_none=False,  # unmapped purpose → profileLabel null
+)
 async def get_ai_settings(request: Request) -> dict[str, object]:
     """Current AI settings + purpose resolution.
 
@@ -1007,7 +1100,11 @@ async def get_ai_settings(request: Request) -> dict[str, object]:
     return await _ai_settings_json(await store.load(), profiles)
 
 
-@app.put("/api/v1/settings/ai")
+@app.put(
+    "/api/v1/settings/ai",
+    response_model=AiSettingsView,
+    response_model_exclude_none=False,
+)
 async def put_ai_settings(
     update: AiSettingsUpdate, request: Request
 ) -> dict[str, object]:
@@ -1021,8 +1118,8 @@ async def put_ai_settings(
     return await _ai_settings_json(await store.save(update), profiles)
 
 
-class AiSecretPut(BaseModel):
-    """Write-only key body (same shape as the RSSHub secret API)."""
+class SecretValuePut(BaseModel):
+    """Write-only secret body (shared by AI keys and RSSHub secrets)."""
 
     value: str = Field(min_length=1)
 
@@ -1058,7 +1155,7 @@ class AiPurposesUpdate(BaseModel):
 
 
 @app.put("/api/v1/settings/ai/key", status_code=204)
-async def put_default_ai_key(secret: AiSecretPut, request: Request) -> Response:
+async def put_default_ai_key(secret: SecretValuePut, request: Request) -> Response:
     """Store the default (legacy) AI API key from the browser.
 
     Write-only: the value is persisted server-side in the SecretsStore
@@ -1076,13 +1173,17 @@ async def delete_default_ai_key(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/v1/settings/ai/profiles")
+@app.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])
 async def get_ai_profiles(request: Request) -> list[dict[str, object]]:
     """All AI profiles (metadata + ``keyConfigured`` flag, never keys)."""
     return await _get_ai_profile_store(request).list_profiles()
 
 
-@app.post("/api/v1/settings/ai/profiles", status_code=201)
+@app.post(
+    "/api/v1/settings/ai/profiles",
+    status_code=201,
+    response_model=AiProfile,
+)
 async def create_ai_profile(
     body: AiProfileCreate, request: Request
 ) -> dict[str, object]:
@@ -1095,7 +1196,10 @@ async def create_ai_profile(
     )
 
 
-@app.patch("/api/v1/settings/ai/profiles/{profile_id}")
+@app.patch(
+    "/api/v1/settings/ai/profiles/{profile_id}",
+    response_model=AiProfile,
+)
 async def patch_ai_profile(
     profile_id: str, body: AiProfileUpdate, request: Request
 ) -> dict[str, object]:
@@ -1120,7 +1224,7 @@ async def delete_ai_profile(
 
 @app.put("/api/v1/settings/ai/profiles/{profile_id}/secret", status_code=204)
 async def put_ai_profile_secret(
-    profile_id: str, secret: AiSecretPut, request: Request
+    profile_id: str, secret: SecretValuePut, request: Request
 ) -> Response:
     """Set/replace one profile's API key (write-only, never echoed)."""
     profiles = _get_ai_profile_store(request)
@@ -1140,13 +1244,13 @@ async def delete_ai_profile_secret(
     return Response(status_code=204)
 
 
-@app.get("/api/v1/settings/ai/purposes")
+@app.get("/api/v1/settings/ai/purposes", response_model=dict[str, str])
 async def get_ai_purposes(request: Request) -> dict[str, str]:
     """Purpose → profile id (or ``default``) mapping."""
     return await _get_ai_profile_store(request).load_purposes()
 
 
-@app.put("/api/v1/settings/ai/purposes")
+@app.put("/api/v1/settings/ai/purposes", response_model=dict[str, str])
 async def put_ai_purposes(
     body: AiPurposesUpdate, request: Request
 ) -> dict[str, str]:
@@ -1166,11 +1270,11 @@ async def put_ai_purposes(
 
 def _get_app_settings_store(request: Request) -> AppSettingsStore:
     """Persistent portable settings store over the Lumi SQLite database."""
-    store = request.app.state.app_settings_store
-    if store is None:
-        store = AppSettingsStore(request.app.state.db)
-        request.app.state.app_settings_store = store
-    return store
+    return _cached_on_app_state(
+        request,
+        "app_settings_store",
+        lambda: AppSettingsStore(request.app.state.db),
+    )
 
 
 def _reject_nonfinite(value: str) -> float:
@@ -1204,7 +1308,7 @@ def _app_settings_json(document, stored: bool) -> dict[str, object]:
     return {"schemaVersion": payload["schemaVersion"], "stored": stored, **payload}
 
 
-@app.get("/api/v1/settings")
+@app.get("/api/v1/settings", response_model=AppSettingsView)
 async def get_app_settings(request: Request) -> dict[str, object]:
     """Current portable settings (defaults when nothing was ever stored).
 
@@ -1217,7 +1321,7 @@ async def get_app_settings(request: Request) -> dict[str, object]:
     return _app_settings_json(document, stored)
 
 
-@app.patch("/api/v1/settings")
+@app.patch("/api/v1/settings", response_model=AppSettingsView)
 async def patch_app_settings(request: Request) -> dict[str, object]:
     """Persist a partial portable settings update (strictly validated).
 
@@ -1248,6 +1352,20 @@ async def delete_app_settings(request: Request) -> Response:
     return Response(status_code=204)
 
 
+def _ai_service(request: Request, service_cls, attr: str, purpose: str):
+    """Shared wiring for the three AI cached-artifact services."""
+    return _cached_on_app_state(
+        request,
+        attr,
+        lambda: service_cls(
+            db=request.app.state.db,
+            adapter=_get_adapter(request),
+            settings_store=_purpose_settings(request, purpose),
+            provider_factory=_provider_factory_for(request, purpose),
+        ),
+    )
+
+
 def _get_summary_service(request: Request) -> SummaryService:
     """Cached summary service over the shared DB / adapter / settings.
 
@@ -1255,16 +1373,7 @@ def _get_summary_service(request: Request) -> SummaryService:
     mapped profile at generation time (server-side only); reading cache
     state never builds a provider.
     """
-    service = request.app.state.summary_service
-    if service is None:
-        service = SummaryService(
-            db=request.app.state.db,
-            adapter=_get_adapter(request),
-            settings_store=_purpose_settings(request, "summary"),
-            provider_factory=_provider_factory_for(request, "summary"),
-        )
-        request.app.state.summary_service = service
-    return service
+    return _ai_service(request, SummaryService, "summary_service", "summary")
 
 
 def _purpose_settings(request: Request, purpose: str) -> PurposeAiSettings:
@@ -1303,30 +1412,16 @@ def _provider_factory_for(request: Request, purpose: str):
 
 def _get_translation_service(request: Request) -> TranslationService:
     """Cached translation service (0016) — same wiring as summaries."""
-    service = request.app.state.translation_service
-    if service is None:
-        service = TranslationService(
-            db=request.app.state.db,
-            adapter=_get_adapter(request),
-            settings_store=_purpose_settings(request, "translation"),
-            provider_factory=_provider_factory_for(request, "translation"),
-        )
-        request.app.state.translation_service = service
-    return service
+    return _ai_service(
+        request, TranslationService, "translation_service", "translation"
+    )
 
 
 def _get_conversation_service(request: Request) -> ConversationService:
     """Article-scoped conversation service (0016) — same wiring."""
-    service = request.app.state.conversation_service
-    if service is None:
-        service = ConversationService(
-            db=request.app.state.db,
-            adapter=_get_adapter(request),
-            settings_store=_purpose_settings(request, "chat"),
-            provider_factory=_provider_factory_for(request, "chat"),
-        )
-        request.app.state.conversation_service = service
-    return service
+    return _ai_service(
+        request, ConversationService, "conversation_service", "chat"
+    )
 
 
 def _summary_json(state) -> dict[str, object]:
@@ -1344,7 +1439,11 @@ def _summary_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/summary")
+@app.get(
+    "/api/v1/entries/{entry_ref}/summary",
+    response_model=EntrySummary,
+    response_model_exclude_none=False,  # "not_generated" → summary: null
+)
 async def get_entry_summary(entry_ref: str, request: Request) -> dict[str, object]:
     """Read-only summary state. NEVER calls the AI provider (no cost):
     only FreshRSS read + the Lumi cache are consulted."""
@@ -1353,7 +1452,11 @@ async def get_entry_summary(entry_ref: str, request: Request) -> dict[str, objec
     return _summary_json(await service.get_summary(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/summary")
+@app.post(
+    "/api/v1/entries/{entry_ref}/summary",
+    response_model=EntrySummary,
+    response_model_exclude_none=False,
+)
 async def generate_entry_summary(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1380,7 +1483,11 @@ def _translation_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/translation")
+@app.get(
+    "/api/v1/entries/{entry_ref}/translation",
+    response_model=EntryTranslation,
+    response_model_exclude_none=False,  # "not_generated" → translated*: null
+)
 async def get_entry_translation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1391,7 +1498,11 @@ async def get_entry_translation(
     return _translation_json(await service.get_translation(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/translation")
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation",
+    response_model=EntryTranslation,
+    response_model_exclude_none=False,
+)
 async def generate_entry_translation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1436,7 +1547,10 @@ def _conversation_json(state) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/entries/{entry_ref}/conversation")
+@app.get(
+    "/api/v1/entries/{entry_ref}/conversation",
+    response_model=EntryConversation,
+)
 async def get_entry_conversation(
     entry_ref: str, request: Request
 ) -> dict[str, object]:
@@ -1447,7 +1561,10 @@ async def get_entry_conversation(
     return _conversation_json(await service.get_conversation(entry_ref))
 
 
-@app.post("/api/v1/entries/{entry_ref}/conversation/messages")
+@app.post(
+    "/api/v1/entries/{entry_ref}/conversation/messages",
+    response_model=EntryConversation,
+)
 async def send_conversation_message(
     entry_ref: str, body: ConversationQuestion, request: Request
 ) -> dict[str, object]:
@@ -1466,40 +1583,39 @@ async def send_conversation_message(
 # ---------------------------------------------------------------------------
 
 def _get_operations_service(request: Request) -> OperationsService:
-    service = request.app.state.operations_service
-    if service is None:
-        service = OperationsService(request.app.state.http_client, request.app.state.db)
-        request.app.state.operations_service = service
-    return service
+    return _cached_on_app_state(
+        request,
+        "operations_service",
+        lambda: OperationsService(request.app.state.http_client, request.app.state.db),
+    )
 
 
 def _get_rsshub_control_store(request: Request) -> RssHubControlStore:
-    store = request.app.state.rsshub_control_store
-    if store is None:
-        store = RssHubControlStore(request.app.state.db, request.app.state.secrets_store)
-        request.app.state.rsshub_control_store = store
-    return store
+    return _cached_on_app_state(
+        request,
+        "rsshub_control_store",
+        lambda: RssHubControlStore(request.app.state.db, request.app.state.secrets_store),
+    )
 
 
 def _get_backup_jobs(request: Request) -> BackupJobStore:
-    jobs = request.app.state.backup_jobs
-    if jobs is None:
-        jobs = BackupJobStore(request.app.state.db)
-        request.app.state.backup_jobs = jobs
-    return jobs
+    return _cached_on_app_state(
+        request,
+        "backup_jobs",
+        lambda: BackupJobStore(request.app.state.db),
+    )
 
 
 def _get_webdav_settings(request: Request) -> WebDavSettingsStore:
-    store = request.app.state.webdav_settings
-    if store is None:
-        store = WebDavSettingsStore(request.app.state.db, request.app.state.secrets_store)
-        request.app.state.webdav_settings = store
-    return store
+    return _cached_on_app_state(
+        request,
+        "webdav_settings",
+        lambda: WebDavSettingsStore(request.app.state.db, request.app.state.secrets_store),
+    )
 
 
 def _get_backup_engine(request: Request) -> BackupEngine:
-    engine = request.app.state.backup_engine
-    if engine is None:
+    def build():
         jobs = _get_backup_jobs(request)
         webdav = _get_webdav_settings(request)
 
@@ -1507,28 +1623,27 @@ def _get_backup_engine(request: Request) -> BackupEngine:
             doc = await webdav.load()
             return await webdav.build_client(doc)
 
-        engine = BackupEngine(request.app.state.db, jobs, webdav, webdav_factory)
-        request.app.state.backup_engine = engine
-    return engine
+        return BackupEngine(request.app.state.db, jobs, webdav, webdav_factory)
+
+    return _cached_on_app_state(request, "backup_engine", build)
 
 
 def _get_restore_service(request: Request) -> RestoreService:
-    service = request.app.state.restore_service
-    if service is None:
+    def build():
         engine = _get_backup_engine(request)
-        service = RestoreService(
+        return RestoreService(
             request.app.state.db,
             LumiSettings(),
             engine.create_safety_backup,
         )
-        request.app.state.restore_service = service
-    return service
+
+    return _cached_on_app_state(request, "restore_service", build)
 
 
 def _rsshub_runtime_configured() -> bool:
-    from lumirss.config import RssHubSettings
-
     from pydantic import ValidationError as _ValidationError
+
+    from lumirss.config import RssHubSettings
 
     try:
         return bool(RssHubSettings().RSSHUB_BASE_URL)
@@ -1536,7 +1651,11 @@ def _rsshub_runtime_configured() -> bool:
         return False
 
 
-@app.get("/api/v1/operations/status")
+@app.get(
+    "/api/v1/operations/status",
+    response_model=OperationsStatus,
+    response_model_exclude_none=False,  # latencyMs/error/lastBackup may be null
+)
 async def operations_status(request: Request) -> dict[str, object]:
     """Redacted, real dependency status for the operations UI (no fake metrics)."""
     service = _get_operations_service(request)
@@ -1575,12 +1694,25 @@ async def _rsshub_config_view_async(request: Request) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/rsshub/config")
+@app.get(
+    "/api/v1/rsshub/config",
+    response_model=RssHubConfigView,
+    # Historical wire format: secret items carry "configured" (no "value"),
+    # non-secret items carry "value" (no "configured"), "options" is always
+    # present (null for non-enum items) — exclude_unset reproduces exactly that.
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def get_rsshub_config(request: Request) -> dict[str, object]:
     return await _rsshub_config_view_async(request)
 
 
-@app.patch("/api/v1/rsshub/config")
+@app.patch(
+    "/api/v1/rsshub/config",
+    response_model=RssHubConfigView,
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def patch_rsshub_config(
     body: RssHubConfigPatch, request: Request
 ) -> dict[str, object]:
@@ -1608,13 +1740,9 @@ async def export_rsshub_config(request: Request) -> Response:
     )
 
 
-class RssHubSecretPut(BaseModel):
-    value: str = Field(min_length=1)
-
-
 @app.put("/api/v1/rsshub/config/secrets/{key}", status_code=204)
 async def put_rsshub_secret(
-    key: str, body: RssHubSecretPut, request: Request
+    key: str, body: SecretValuePut, request: Request
 ) -> Response:
     """Write one route credential / secret (write-only, never read back)."""
     store = _get_rsshub_control_store(request)
@@ -1671,14 +1799,14 @@ def _webdav_json(doc: dict, password_configured: bool) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/backups/webdav")
+@app.get("/api/v1/backups/webdav", response_model=WebDavSettingsView)
 async def get_webdav_settings(request: Request) -> dict[str, object]:
     store = _get_webdav_settings(request)
     doc = await store.load()
     return _webdav_json(doc, store.password_configured())
 
 
-@app.put("/api/v1/backups/webdav")
+@app.put("/api/v1/backups/webdav", response_model=WebDavSettingsView)
 async def put_webdav_settings(
     body: WebDavSettingsPut, request: Request
 ) -> dict[str, object]:
@@ -1701,7 +1829,10 @@ async def put_webdav_settings(
     return _webdav_json(doc, store.password_configured())
 
 
-@app.post("/api/v1/backups/webdav/test")
+@app.post(
+    "/api/v1/backups/webdav/test",
+    response_model=WebDavTestResult,  # exclude_none omits "message" on success
+)
 async def test_webdav(request: Request) -> dict[str, object]:
     """Test the WebDAV connection: create + list the backup root."""
     from lumirss.webdav import backup_root_path
@@ -1726,13 +1857,22 @@ class BackupCreate(BaseModel):
     target: Literal["local", "webdav"] = "local"
 
 
-@app.get("/api/v1/backups")
+@app.get(
+    "/api/v1/backups",
+    response_model=list[BackupJob],
+    response_model_exclude_none=False,  # queued jobs: stage/startedAt/… null
+)
 async def list_backups(request: Request) -> list[dict[str, object]]:
     jobs = _get_backup_jobs(request)
     return [_job_json(job) for job in await jobs.list()]
 
 
-@app.post("/api/v1/backups", status_code=202)
+@app.post(
+    "/api/v1/backups",
+    status_code=202,
+    response_model=BackupJob,
+    response_model_exclude_none=False,
+)
 async def create_backup(
     body: BackupCreate, request: Request
 ) -> dict[str, object]:
@@ -1742,7 +1882,7 @@ async def create_backup(
     return _job_json(job)
 
 
-@app.get("/api/v1/backups/remote")
+@app.get("/api/v1/backups/remote", response_model=RemoteBackupsResponse)
 async def list_remote_backups(request: Request) -> dict[str, object]:
     """List backups stored on WebDAV (flat names + sizes, no secret values)."""
     from lumirss.webdav import backup_root_path
@@ -1767,7 +1907,11 @@ async def list_remote_backups(request: Request) -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/backups/{job_id}")
+@app.get(
+    "/api/v1/backups/{job_id}",
+    response_model=BackupJob,
+    response_model_exclude_none=False,
+)
 async def get_backup_job(job_id: str, request: Request) -> dict[str, object]:
     jobs = _get_backup_jobs(request)
     job = await jobs.get(job_id)
@@ -1847,7 +1991,11 @@ async def _locate_backup_package(
     return dest, body.fileName
 
 
-@app.post("/api/v1/restore/preview")
+@app.post(
+    "/api/v1/restore/preview",
+    response_model=RestorePreview,
+    response_model_exclude_none=False,  # createdAt/lumiVersion may be null
+)
 async def restore_preview(
     body: RestorePreviewBody, request: Request
 ) -> dict[str, object]:
@@ -1859,7 +2007,14 @@ async def restore_preview(
     return preview
 
 
-@app.post("/api/v1/restore")
+@app.post(
+    "/api/v1/restore",
+    response_model=RestoreResult,
+    # Historical wire format: freshrssStagedAt appears only when FreshRSS
+    # data was staged; safetyBackupId is always present (null when absent).
+    response_model_exclude_none=False,
+    response_model_exclude_unset=True,
+)
 async def restore_execute(
     body: RestoreExecuteBody, request: Request
 ) -> dict[str, object]:

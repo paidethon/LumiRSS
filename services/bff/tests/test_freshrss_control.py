@@ -5,6 +5,7 @@ MockTransport asserts the exact form bodies that reach FreshRSS. Every fake
 value here is clearly test data; no real credentials are used.
 """
 
+import secrets as _secrets
 import urllib.parse
 
 import httpx
@@ -32,7 +33,6 @@ from lumirss.adapters.freshrss_control import (
 from lumirss.config import FreshRSSSettings
 from lumirss.subscriptionref import InvalidSubscriptionReference
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

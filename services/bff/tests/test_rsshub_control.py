@@ -7,19 +7,18 @@ report restartRequired honestly.
 """
 
 import asyncio
+import secrets as _secrets
 
 import pytest
 
 from lumirss.rsshub_control import (
+    SCHEMA,
     RssHubControlError,
     RssHubControlStore,
-    SCHEMA,
     export_env,
 )
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
-
-import secrets as _secrets
 
 
 def run(coroutine):

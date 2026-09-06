@@ -5,13 +5,14 @@ expressed in the upstream request (it param, feed stream path), never done
 by post-filtering in Python. Every fake value is clearly test data.
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 
 from lumirss.adapters.freshrss import FreshRSSAdapter
 from lumirss.config import FreshRSSSettings
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

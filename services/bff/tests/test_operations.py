@@ -7,11 +7,11 @@ by construction — no URL, no credential, no raw exception in the payload.
 import asyncio
 
 import httpx
-import pytest
 
 from lumirss.config import FreshRSSSettings
 from lumirss.operations import OperationsService
 from lumirss.storage import Database
+
 
 def _secrets_token() -> str:
     import secrets

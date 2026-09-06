@@ -4,16 +4,17 @@
 分类本地化名 fallback）、sourceType/categoryId 路由校验与 cursor scope。
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from lumirss.adapters.freshrss import FreshRSSAdapter, Feed
+from lumirss.adapters.freshrss import Feed, FreshRSSAdapter
+from lumirss.config import FreshRSSSettings
 from lumirss.cursor import decode_cursor
 from lumirss.main import app
-from lumirss.config import FreshRSSSettings
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

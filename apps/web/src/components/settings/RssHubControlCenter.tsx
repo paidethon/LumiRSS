@@ -207,7 +207,7 @@ export function RssHubControlCenter() {
     const map: Record<string, number | string | boolean> = {}
     for (const g of config.data.groups) {
       for (const it of g.items) {
-        if (!it.secret && it.value !== undefined) map[it.key] = it.value
+        if (!it.secret && it.value !== undefined && it.value !== null) map[it.key] = it.value
       }
     }
     return map

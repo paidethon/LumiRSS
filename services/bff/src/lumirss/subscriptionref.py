@@ -2,7 +2,8 @@
 subscription (0013 management contract).
 
 Format: ``s1.`` + base64url(utf-8 upstream stream id, e.g. ``feed/52``)
-without ``=`` padding — same packaging rules as entryRef.
+without ``=`` padding — the shared envelope lives in
+:mod:`lumirss.opaque_ref`.
 
 Encoding is NOT encryption, and a subscriptionRef is not authorization: it
 is a reversible, deterministic packaging of the FreshRSS ``feed/NN`` stream
@@ -12,13 +13,10 @@ string. Only refs whose decoded payload is a well-formed ``feed/<id>``
 (positive integer) are accepted; anything else is a malformed reference.
 """
 
-import base64
+from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 
 _REF_PREFIX = "s1."
 _MAX_REF_LENGTH = 512
-_BASE64URL_ALPHABET = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-)
 
 
 class InvalidSubscriptionReference(ValueError):
@@ -31,35 +29,34 @@ def encode_subscription_ref(stream_id: str) -> str:
     subscriptionRef."""
     if not stream_id:
         raise ValueError("upstream stream id must not be empty.")
-    payload = base64.urlsafe_b64encode(stream_id.encode("utf-8"))
-    return _REF_PREFIX + payload.decode("ascii").rstrip("=")
+    return encode_opaque_ref(_REF_PREFIX, stream_id)
+
+
+def is_well_formed_feed_stream_id(stream_id: str) -> bool:
+    """Whether ``stream_id`` matches the feed/<positive int> rule that
+    Lumi itself produces (single shared rule for ref decode and the
+    control-plane adapter)."""
+    body = stream_id.removeprefix("feed/")
+    return (
+        stream_id.startswith("feed/")
+        and body.isdigit()
+        and not body.startswith("0")
+        and len(body) <= 10
+    )
 
 
 def decode_subscription_ref(subscription_ref: str) -> str:
     """Reverse of encode_subscription_ref; raises
     InvalidSubscriptionReference on bad input."""
-    if len(subscription_ref) > _MAX_REF_LENGTH:
-        raise InvalidSubscriptionReference("subscriptionRef is too long.")
-    if not subscription_ref.startswith(_REF_PREFIX):
-        raise InvalidSubscriptionReference("subscriptionRef must start with 's1.'.")
-    payload = subscription_ref[len(_REF_PREFIX):]
-    if not payload or not _BASE64URL_ALPHABET.issuperset(payload):
-        raise InvalidSubscriptionReference("subscriptionRef payload is not valid base64url.")
-    padded = payload + "=" * (-len(payload) % 4)
-    try:
-        stream_id = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise InvalidSubscriptionReference(
-            "subscriptionRef payload is not valid UTF-8."
-        ) from exc
+    stream_id = decode_opaque_ref(
+        subscription_ref,
+        prefix=_REF_PREFIX,
+        max_length=_MAX_REF_LENGTH,
+        error_type=InvalidSubscriptionReference,
+        description="subscriptionRef",
+    )
     # Only stream ids we could have produced are accepted (feed/<positive int>).
-    body = stream_id.removeprefix("feed/")
-    if (
-        not stream_id.startswith("feed/")
-        or not body.isdigit()
-        or body.startswith("0")
-        or len(body) > 10
-    ):
+    if not is_well_formed_feed_stream_id(stream_id):
         raise InvalidSubscriptionReference(
             "subscriptionRef payload is not a well-formed feed id."
         )

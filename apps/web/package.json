@@ -9,7 +9,11 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "settings:generate": "cd ../../services/bff && uv run python scripts/export_settings_meta.py",
+    "settings:check": "pnpm settings:generate && git diff --exit-code -- src/api/generated/settings-meta.ts",
+    "api:generate": "(cd ../../services/bff && uv run python scripts/export_openapi.py) && pnpm exec openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.ts",
+    "api:check": "pnpm api:generate && git diff --exit-code -- src/api/generated"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -32,8 +36,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
-    "axe-playwright": "^2.2.2",
     "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "oxlint": "^1.79.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",

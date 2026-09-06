@@ -108,6 +108,7 @@ Generate from `uv.lock` / installed metadata.
 | uvicorn | >=0.30 | BSD-3-Clause | ASGI server | no |
 | feedparser | >=6.0.14 | BSD-2-Clause | RSS/Atom 解析（feed 预览/发现） | no |
 | defusedxml | >=0.7 | PSF-2.0 | XML 解析（0018 WebDAV PROPFIND，defusedxml） | no |
+| ruff | >=0.8 | MIT | Python linter（dev dependency，F/E/W/I/UP/B/SIM） | no |
 
 ### Web dev dependencies（不进入运行时/发布物）
 
@@ -115,6 +116,7 @@ Generate from `uv.lock` / installed metadata.
 |---|---|---|---|---|
 | @playwright/test | 1.62.x | Apache-2.0 | E2E 测试（0019，dev only） | no |
 | @axe-core/playwright | 4.13.x | MIT | 可访问性扫描（0019，dev only） | no |
+| openapi-typescript | 7.13.x | MIT | OpenAPI → TS 契约生成（dev only，pnpm api:generate） | no |
 
 ---
 

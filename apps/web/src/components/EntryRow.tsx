@@ -2,17 +2,9 @@ import { memo } from 'react'
 import type { EntryListItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
-import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
+import { formatPublishedAt } from '../lib/date-format'
 import { EntryActionButtons } from './EntryActionButtons'
 import { cx } from './ui/cx'
-
-function formatPublishedAt(value: string | null): string {
-  if (value === null) {
-    return '—'
-  }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : dateFormatter.format(date)
-}
 
 /** EntryRow — Timeline 桌面行（0009 Gate 2 重建；0011 修正补充重构）。
  *

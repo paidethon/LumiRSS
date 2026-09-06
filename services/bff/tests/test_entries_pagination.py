@@ -5,6 +5,8 @@ and the route with an injected fake adapter (query parsing, cursor scope
 rules, invalid cursor → 400 before touching FreshRSS).
 """
 
+import secrets as _secrets
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +17,6 @@ from lumirss.cursor import encode_cursor
 from lumirss.main import app
 from lumirss.models import EntryDetail, EntryListItem, EntryPage
 
-import secrets as _secrets
 # 动态生成的假凭据（非真实 secret；安全扫描要求无凭据形状字面量）
 FAKE_SECRET = "fake-test-" + _secrets.token_urlsafe(8)
 

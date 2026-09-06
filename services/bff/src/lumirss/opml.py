@@ -20,17 +20,16 @@ from dataclasses import dataclass, field
 
 import defusedxml.ElementTree as SafeET
 
-from lumirss.adapters.freshrss import AdapterError
+from lumirss.adapters.freshrss import (
+    CATEGORY_PREFIX,
+    RESERVED_CATEGORY_LABEL,
+    AdapterError,
+)
 from lumirss.adapters.freshrss_control import FreshRSSControlAdapter, InvalidFeedUrl
 
 MAX_OPML_BYTES = 2 * 1024 * 1024  # aligned with the feed-preview bound
 MAX_OPML_FEEDS = 500
 MAX_OPML_DEPTH = 8  # outline nesting cap (body > folder > feed is depth 2)
-
-_CATEGORY_PREFIX = "user/-/label/"
-# FreshRSS's default-category DB name (see freshrss_control): an OPML label
-# equal to it means "default category" — subscribing already lands there.
-_RESERVED_CATEGORY_LABEL = "Uncategorized"
 
 
 class OpmlInvalid(AdapterError):
@@ -245,7 +244,7 @@ class OpmlService:
 
             label = (entry.category_label or "").strip()
             category_applied = False
-            if label and label != _RESERVED_CATEGORY_LABEL:
+            if label and label != RESERVED_CATEGORY_LABEL:
                 try:
                     target_id = label_to_id.get(label)
                     if target_id is None:
@@ -254,7 +253,7 @@ class OpmlService:
                         )
                         # greader contract: the created category's id is
                         # derived from its label (verified in Gate 1/3).
-                        target_id = f"{_CATEGORY_PREFIX}{label}"
+                        target_id = f"{CATEGORY_PREFIX}{label}"
                         categories_created.append(label)
                     else:
                         await self._control.move_category(

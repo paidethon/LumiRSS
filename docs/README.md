@@ -27,6 +27,7 @@ version provenance.
 |---|---|
 | **Product definition (WHAT/WHY)** | [product/PRD.md](product/PRD.md) |
 | **System architecture (HOW)** | [architecture/README.md](architecture/README.md) |
+| **Build vs Reuse boundaries** | [architecture/reuse-policy.md](architecture/reuse-policy.md) |
 | **Architecture decisions** | [architecture/decisions/](architecture/decisions/) |
 | **Design system & research** | [design/](design/) |
 | **Development / testing / operations** | [development/](development/) |
@@ -40,6 +41,7 @@ version provenance.
 |---|---|
 | 了解产品范围与原则 | [product/PRD.md](product/PRD.md) |
 | 改数据路径 / API / 边界 | [architecture/README.md](architecture/README.md)（+ 相关 ADR） |
+| 改 API 契约 / settings / 生成物 | [architecture/reuse-policy.md](architecture/reuse-policy.md)（再生成 + drift 检查） |
 | 部署 / 升级 / 备份恢复 | [development/operations.md](development/operations.md) |
 | 搭建本地环境 | [development/setup.md](development/setup.md) |
 | 跑测试 | [development/testing.md](development/testing.md) |

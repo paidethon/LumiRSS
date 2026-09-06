@@ -14,8 +14,8 @@ export interface EntryDateGroup {
   items: EntryListItem[]
 }
 
-function dateKeyOf(publishedAt: string | null): string {
-  if (publishedAt === null) return 'unknown'
+function dateKeyOf(publishedAt: string | null | undefined): string {
+  if (publishedAt == null) return 'unknown'
   const d = new Date(publishedAt)
   if (Number.isNaN(d.getTime())) return 'unknown'
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`

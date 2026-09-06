@@ -13,6 +13,13 @@
  * 到 <html>（--lumi-reader-font-size 等，Gate B 接线）。 */
 
 import { create } from 'zustand'
+import { clamp } from '../lib/clamp'
+import {
+  HEX_COLOR_PATTERN,
+  NUMERIC_RANGES,
+  PORTABLE_DEFAULTS,
+  SETTING_ENUMS,
+} from '../api/generated/settings-meta'
 import {
   type ThemeMode,
   isThemeMode,
@@ -35,6 +42,8 @@ import { fontFamilyName, fontIdFromUrl } from '../lib/reader-fonts'
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
 // ---- 0017：连续数值范围（AD-0017-1，min/default/max/step 唯一来源） ----
+// 数值范围 + 默认值派生自 BFF PortableSettings（生成的 settings-meta），
+// 前端不再手工维护第二份边界。
 
 export interface NumericRange {
   min: number
@@ -50,13 +59,8 @@ export type ReaderNumericKey =
   | 'readerContentWidth'
   | 'readerPageMargin'
 
-export const READER_NUMERIC_RANGES: Record<ReaderNumericKey, NumericRange> = {
-  readerFontSize: { min: 12, max: 28, step: 1, default: 17 },
-  readerLineHeight: { min: 1.2, max: 2.4, step: 0.05, default: 1.85 },
-  readerParagraphSpacing: { min: 0, max: 2.0, step: 0.05, default: 0.85 },
-  readerContentWidth: { min: 560, max: 1080, step: 20, default: 760 },
-  readerPageMargin: { min: 12, max: 64, step: 4, default: 32 },
-}
+export const READER_NUMERIC_RANGES: Record<ReaderNumericKey, NumericRange> =
+  NUMERIC_RANGES
 
 /** 旧段距枚举 → 连续 em 值（迁移映射，AD-0017-1）。 */
 export const LEGACY_PARAGRAPH_SPACING_EM: Record<string, number> = {
@@ -192,40 +196,21 @@ export interface AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  // 服务器可持久化字段：默认值 = BFF PortableSettings（生成，勿手改）
+  ...PORTABLE_DEFAULTS,
+  // 以下为设备本地（UI-only）字段
   language: 'zh-CN',
   dimRead: false,
   groupByDate: false,
   unreadOnly: false,
-  scrollMarkUnread: false,
-  accentColor: '#6d78e8', // Lumi Mist 默认
-  uiFontSize: 16,
-  uiFontStack: 'default',
-  reduceMotion: false,
   customCss: '',
-  readerFontFamily: 'system',
-  readerBackground: 'follow',
-  readerBackgroundCustom: '#eef7ee',
-  readerParagraphSpacing: 0.85,
-  readerJustify: false,
-  readerImageMode: 'all',
   readerPresetId: 'default',
   readerPresets: [],
   filterRules: [],
   filterStats: { totalFiltered: 0, lastFilteredAt: null, lastMatchedRule: null },
-  themeMode: 'system',
-  readerFontSize: 17,
-  readerLineHeight: 1.85,
-  readerContentWidth: 760,
-  readerPageMargin: 32,
   readerCustomFontId: null,
   readerFontUrl: null,
   readerFontUrlName: '',
-  readerTextIndent: 'off',
-  readerHangingPunctuation: false,
-  readerChineseConversion: 'off',
-  readerShowReadingTime: false,
-  readerCodeHighlight: 'auto',
-  readerCodeTheme: 'auto',
   readerBionic: false,
   sidebarWidth: 240,
   sidebarCollapsed: false,
@@ -234,20 +219,21 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 }
 
 // ---- 解析 / 迁移（纯函数，可测试） ----
+// 枚举值域派生自 BFF PortableSettings（生成的 settings-meta）。
 
-const READER_BG_VALUES = ['follow', 'sepia', 'warm', 'paper', 'mint', 'custom'] as const
-const READER_FONT_FAMILIES = ['system', 'sans', 'serif', 'mono'] as const
-const IMAGE_MODES = ['all', 'grayscale', 'hidden'] as const
-const UI_FONT_STACK_VALUES = ['default', 'sans', 'serif', 'mono'] as const
-const UI_FONT_SIZES = [15, 16, 18, 20] as const
+const READER_BG_VALUES = SETTING_ENUMS.readerBackground
+const READER_FONT_FAMILIES = SETTING_ENUMS.readerFontFamily
+const IMAGE_MODES = SETTING_ENUMS.readerImageMode
+const UI_FONT_STACK_VALUES = SETTING_ENUMS.uiFontStack
+const UI_FONT_SIZES = SETTING_ENUMS.uiFontSize
 // 0012 新增枚举表
-const READER_TEXT_INDENTS = ['off', '2em'] as const
-const READER_CHINESE_CONVERSIONS = ['off', 's2t', 't2s', 'tw', 'hk'] as const
-const READER_CODE_HIGHLIGHTS = ['auto', 'off'] as const
+const READER_TEXT_INDENTS = SETTING_ENUMS.readerTextIndent
+const READER_CHINESE_CONVERSIONS = SETTING_ENUMS.readerChineseConversion
+const READER_CODE_HIGHLIGHTS = SETTING_ENUMS.readerCodeHighlight
 /** Shiki 主题白名单（auto = 随 Reader 明暗切换；其余为单主题锁定） */
-const READER_CODE_THEMES = ['auto', 'github-light', 'github-dark', 'vitesse-light', 'vitesse-dark'] as const
+const READER_CODE_THEMES = SETTING_ENUMS.readerCodeTheme
 
-const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
+const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
 /** 字体 URL 白名单校验：仅 http/https 绝对地址（0012 Gate 3）。
  * 拒绝其它协议（javascript:/data:/file: 等）与相对路径。 */
@@ -493,10 +479,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
   }
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, Math.round(value)))
-}
-
 /** 首次加载：读新 key；不存在则从旧 key（theme/reader-bg）迁移。 */
 export function loadSettings(storage: Storage | null): AppSettings {
   if (storage === null) return { ...DEFAULT_APP_SETTINGS }
@@ -653,31 +635,11 @@ export function applyAppearance(settings: AppSettings): void {
 // ---- Store ----
 
 /** 0017：server-durable（portable）设置键白名单（AD-0017-3）。
- * 这些键参与 /api/v1/settings 同步；其余设置是设备本地状态。 */
-export const PORTABLE_KEYS = [
-  'themeMode',
-  'accentColor',
-  'uiFontStack',
-  'uiFontSize',
-  'reduceMotion',
-  'readerFontFamily',
-  'readerFontSize',
-  'readerLineHeight',
-  'readerParagraphSpacing',
-  'readerContentWidth',
-  'readerPageMargin',
-  'readerBackground',
-  'readerBackgroundCustom',
-  'readerJustify',
-  'readerImageMode',
-  'readerTextIndent',
-  'readerHangingPunctuation',
-  'readerChineseConversion',
-  'readerShowReadingTime',
-  'readerCodeHighlight',
-  'readerCodeTheme',
-  'scrollMarkUnread',
-] as const
+ * 这些键参与 /api/v1/settings 同步；其余设置是设备本地状态。
+ * 键集合派生自 BFF PortableSettings（生成元数据的键即服务端接受的键）。 */
+export const PORTABLE_KEYS = Object.keys(
+  PORTABLE_DEFAULTS,
+) as (keyof typeof PORTABLE_DEFAULTS & keyof AppSettings)[]
 
 export type PortableKey = (typeof PORTABLE_KEYS)[number]
 

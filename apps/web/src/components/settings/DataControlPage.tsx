@@ -14,6 +14,7 @@
 import { useRef, useState } from 'react'
 import { Download, FileJson, Upload } from 'lucide-react'
 import { normalizeSettings, useAppSettings, type AppSettings } from '../../store/app-settings'
+import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { BackupOverview } from './backup/BackupOverview'
 import { BackupHistoryCard } from './backup/BackupHistoryCard'
@@ -73,7 +74,7 @@ function ConfigMigrationSection() {
         throw new Error('envelope')
       }
       const parts = [
-        `创建时间 ${new Date(env.createdAt).toLocaleString()}`,
+        `创建时间 ${formatTimestamp(env.createdAt)}`,
         `设置 ${Object.keys(env.settings).length} 项`,
         `过滤规则 ${env.settings.filterRules?.length ?? 0} 条`,
         `阅读预设 ${env.settings.readerPresets?.length ?? 0} 套`,

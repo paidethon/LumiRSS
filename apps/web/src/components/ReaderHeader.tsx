@@ -11,8 +11,8 @@ import { IconButton } from './ui/IconButton'
 import { Tooltip } from './ui/Tooltip'
 import { cx } from './ui/cx'
 
-function formatPublishedAt(value: string | null): string {
-  if (value === null) {
+function formatPublishedAt(value: string | null | undefined): string {
+  if (value == null) {
     return ''
   }
   const date = new Date(value)

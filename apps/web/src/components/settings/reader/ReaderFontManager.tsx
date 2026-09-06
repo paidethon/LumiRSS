@@ -20,6 +20,7 @@ import {
   listLocalFonts,
 } from '../../../lib/reader-fonts'
 import { READER_FONT_LABELS } from '../../../lib/reader-style'
+import { RadioGroup, RadioOption } from '../../ui/RadioGroup'
 import { cx } from '../../ui/cx'
 
 export function ReaderFontManager() {
@@ -96,6 +97,34 @@ export function ReaderFontManager() {
   const activeUrlFontLoaded =
     settings.readerFontUrl !== null && settings.readerCustomFontId === null
 
+  // 单选值：family:<内置档位> | local:<字体 id>（URL 字体行是管理行，
+  // 不参与单选——它只在激活时渲染，点击/删除都是「停用」动作）。
+  const currentValue =
+    settings.readerCustomFontId !== null
+      ? `local:${settings.readerCustomFontId}`
+      : `family:${settings.readerFontFamily}`
+
+  const handleSelect = (value: string) => {
+    if (value.startsWith('local:')) {
+      update({ readerCustomFontId: value.slice(6), readerFontUrl: null })
+    } else if (value.startsWith('family:')) {
+      const family = value.slice(7) as keyof typeof READER_FONT_LABELS
+      if (family in READER_FONT_LABELS) {
+        update({ readerFontFamily: family, readerCustomFontId: null, readerFontUrl: null })
+      }
+    }
+  }
+
+  const radioDot = (active: boolean) => (
+    <span
+      aria-hidden
+      className={cx(
+        'flex size-4 shrink-0 items-center justify-center rounded-full border',
+        active ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent)]' : 'border-[var(--lumi-border)]',
+      )}
+    />
+  )
+
   return (
     <div className="py-3">
       <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
@@ -106,18 +135,23 @@ export function ReaderFontManager() {
         URL 方式自托管引用。
       </p>
 
-      {/* 字体选择列表 */}
-      <div className="mt-3 flex flex-col gap-1.5" role="radiogroup" aria-label="正文字体">
+      {/* 字体选择列表（Base UI RadioGroup：↑↓/←→ roving focus） */}
+      <RadioGroup
+        aria-label="正文字体"
+        value={currentValue}
+        onValueChange={handleSelect}
+        className="mt-3 flex flex-col gap-1.5"
+      >
         {/* 档位字体（无自定义时选中） */}
         {(Object.keys(READER_FONT_LABELS) as (keyof typeof READER_FONT_LABELS)[]).map((key) => {
-          const active = settings.readerCustomFontId === null && settings.readerFontUrl === null && settings.readerFontFamily === key
+          const active =
+            settings.readerCustomFontId === null &&
+            settings.readerFontUrl === null &&
+            settings.readerFontFamily === key
           return (
-            <button
+            <RadioOption
               key={key}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => update({ readerFontFamily: key, readerCustomFontId: null, readerFontUrl: null })}
+              value={`family:${key}`}
               className={cx(
                 'flex items-center gap-2 rounded-[var(--lumi-radius-md)] border px-3 py-2 text-left transition-colors duration-[var(--lumi-motion-fast)]',
                 active
@@ -125,21 +159,19 @@ export function ReaderFontManager() {
                   : 'border-[var(--lumi-border)] hover:bg-[var(--lumi-surface-hover)]',
               )}
             >
-              <span
-                aria-hidden
-                className={cx(
-                  'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                  active ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent)]' : 'border-[var(--lumi-border)]',
-                )}
-              />
-              <span className="text-sm text-[var(--lumi-text-primary)]">
-                {READER_FONT_LABELS[key]}
-              </span>
-            </button>
+              {(checked) => (
+                <>
+                  {radioDot(checked)}
+                  <span className="text-sm text-[var(--lumi-text-primary)]">
+                    {READER_FONT_LABELS[key]}
+                  </span>
+                </>
+              )}
+            </RadioOption>
           )
         })}
 
-        {/* 本地字体 */}
+        {/* 本地字体（行 = 布局容器；单选钮 + 删除钮平级，不嵌套 button） */}
         {localFonts.map((font) => {
           const active = settings.readerCustomFontId === font.id
           return (
@@ -152,25 +184,16 @@ export function ReaderFontManager() {
                   : 'border-[var(--lumi-border)]',
               )}
             >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={active}
+              <RadioOption
+                value={`local:${font.id}`}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                onClick={() => update({ readerCustomFontId: font.id, readerFontUrl: null })}
               >
-                <span
-                  aria-hidden
-                  className={cx(
-                    'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                    active ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent)]' : 'border-[var(--lumi-border)]',
-                  )}
-                />
+                {radioDot(active)}
                 <span className="truncate text-sm text-[var(--lumi-text-primary)]">{font.name}</span>
                 <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">
                   {(font.size / 1024).toFixed(0)} KB
                 </span>
-              </button>
+              </RadioOption>
               <button
                 type="button"
                 aria-label={`删除字体 ${font.name}`}
@@ -182,37 +205,36 @@ export function ReaderFontManager() {
             </div>
           )
         })}
+      </RadioGroup>
 
-        {/* URL 字体（当前已加载的远程字体） */}
-        {activeUrlFontLoaded && settings.readerFontUrl !== null && (
-          <div className="flex items-center gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] px-3 py-2">
-            <button
-              type="button"
-              role="radio"
-              aria-checked
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              onClick={clearUrlFont}
-            >
-              <span
-                aria-hidden
-                className="flex size-4 shrink-0 items-center justify-center rounded-full border border-[var(--lumi-accent)] bg-[var(--lumi-accent)]"
-              />
-              <span className="truncate text-sm text-[var(--lumi-text-primary)]">
-                {settings.readerFontUrlName || '远程字体'}
-              </span>
-              <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">URL</span>
-            </button>
-            <button
-              type="button"
-              aria-label="停用远程字体"
-              onClick={clearUrlFont}
-              className="flex size-7 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-danger)]"
-            >
-              <Trash2 aria-hidden className="size-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
+      {/* URL 字体（当前已加载的远程字体；管理行——点击/删除都是停用） */}
+      {activeUrlFontLoaded && settings.readerFontUrl !== null && (
+        <div className="mt-1.5 flex items-center gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] px-3 py-2">
+          <button
+            type="button"
+            aria-label={`停用远程字体 ${settings.readerFontUrlName || ''}`.trim()}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            onClick={clearUrlFont}
+          >
+            <span
+              aria-hidden
+              className="flex size-4 shrink-0 items-center justify-center rounded-full border border-[var(--lumi-accent)] bg-[var(--lumi-accent)]"
+            />
+            <span className="truncate text-sm text-[var(--lumi-text-primary)]">
+              {settings.readerFontUrlName || '远程字体'}
+            </span>
+            <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">URL</span>
+          </button>
+          <button
+            type="button"
+            aria-label="停用远程字体"
+            onClick={clearUrlFont}
+            className="flex size-7 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-danger)]"
+          >
+            <Trash2 aria-hidden className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* 操作区 */}
       <div className="mt-2 flex flex-wrap items-center gap-2">

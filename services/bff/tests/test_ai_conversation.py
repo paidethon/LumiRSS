@@ -9,14 +9,14 @@ import asyncio
 
 import pytest
 
-from lumirss.ai_provider import AiNotConfigured, AiRateLimited
-from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
-from lumirss.ai_summary import AiContentUnavailable
+from lumirss.adapters.freshrss import EntryNotFound
 from lumirss.ai_conversation import (
     MAX_HISTORY_MESSAGES,
     ConversationService,
 )
-from lumirss.adapters.freshrss import EntryNotFound
+from lumirss.ai_provider import AiNotConfigured, AiRateLimited
+from lumirss.ai_settings import AiSettingsStore, AiSettingsUpdate
+from lumirss.ai_summary import AiContentUnavailable
 from lumirss.entryref import encode_entry_ref
 from lumirss.models import EntryDetail
 from lumirss.storage import Database

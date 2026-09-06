@@ -111,7 +111,7 @@ def test_normalize_collapses_whitespace_and_is_deterministic():
     second = normalize_content(raw)
 
     assert first == second
-    assert "第一段 第二段 结尾" == first
+    assert first == "第一段 第二段 结尾"
 
 
 def test_normalize_bounds_input_length():

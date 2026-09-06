@@ -7,6 +7,7 @@
 
 import { AlertCircle, CheckCircle2, Database, Rss, Satellite, Server } from 'lucide-react'
 import { useOperationsStatus } from '../../api/queries'
+import { formatTimestamp } from '../../lib/date-format'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
 
@@ -111,7 +112,7 @@ export function OperationsSettingsSection() {
     ? 'WebDAV 已配置'
     : 'WebDAV 未配置'
   const backupPending = lastBackup?.status === 'succeeded' && lastBackup.finishedAt
-    ? `上次成功 ${new Date(lastBackup.finishedAt).toLocaleString()}`
+    ? `上次成功 ${formatTimestamp(lastBackup.finishedAt)}`
     : null
 
   return (

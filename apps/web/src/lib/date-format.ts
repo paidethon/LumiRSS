@@ -21,3 +21,25 @@ export const listDateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
   minute: '2-digit',
 })
+
+/** ISO 时间戳 → 列表显示文案；缺失/无效时返回 '—'（列表行与卡片共用）。
+ * （生成的 API 类型中可选字段带 undefined，一并视为缺失。） */
+export function formatPublishedAt(
+  value: string | null | undefined,
+  formatter: Intl.DateTimeFormat = dateTimeFormatter,
+): string {
+  if (value === null || value === undefined) {
+    return '—'
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '—' : formatter.format(date)
+}
+
+/** ISO 时间戳 → 设置页文案（备份时间、环境创建时间）；无效时返回空串。 */
+export function formatTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : dateTimeFormatter.format(date)
+}

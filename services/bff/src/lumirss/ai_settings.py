@@ -12,11 +12,13 @@ Design constraints:
 """
 
 import urllib.parse
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from lumirss.storage import Database
+from lumirss.util import utc_now as _utc_now
 
 PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
 
@@ -123,10 +125,6 @@ class AiSettingsUpdate(BaseModel):
     translationLanguage: Literal["zh-CN", "en"] | None = None
 
 
-def _utc_now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class AiSettingsStore:

@@ -40,7 +40,7 @@ function groupFavorites(items: EntryListItem[], now = new Date()): DateGroup[] {
       earlier.push(item)
       continue
     }
-    const d = new Date(item.publishedAt)
+    const d = item.publishedAt ? new Date(item.publishedAt) : new Date(NaN)
     if (Number.isNaN(d.getTime())) {
       earlier.push(item)
       continue
