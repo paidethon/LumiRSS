@@ -326,7 +326,7 @@ Escape  关闭浮层（Modal/Drawer）
 | `tools/progress-dashboard/index.html` | **样式统一**（见 Gate D 第 15 条）：内联 Lumi Mist 变量副本（canvas/sidebar/surface/accent/分类柔彩/圆角）、字体栈对齐 `--lumi-font-sans`、Dark 模式跟随 `prefers-color-scheme` + `color-scheme`、卡片/徽标/代码字体视觉对齐主站；**零依赖约束不变**（纯内联 CSS 变量副本，不 import 主站文件） |
 | `AGENTS.md` | Current milestone 更新为 0010；权威顺序补 `docs/ROADMAP.md` 位置说明 |
 | `README.md` | Current status / Roadmap at a glance / Documentation 表更新 |
-| `docs/specs/0009-*.md` | 不改写历史 Spec；仅在 Spec 头部加一行"后续：0010 起编号顺延"注记？——**否，历史 Spec 冻结不动**，编号语义由 ROADMAP 变更记录承载 |
+| `docs/specs/0009-*.md` | **历史 Spec 冻结不动**（不加顺延注记）；编号语义由 ROADMAP 变更记录承载 |
 
 ## 进度看板修订详规（Gate D 第 15 条的冻结细节）
 
@@ -390,12 +390,14 @@ Escape  关闭浮层（Modal/Drawer）
 
 ## Tasks（Build 顺序，批准后严格逐步执行，每步完成立即验证）
 
-### Gate A — 设置中心框架（用户批准本 Spec 后开始）
+Gate 划分即审批边界：每个 Gate 末项为验证与评审点，经用户批准后进入下一 Gate（Gates A–D 均已获批）。
+
+### Gate A — 设置中心框架
 
 1. `store/app-settings.ts`：类型 + store + localStorage 单 key + 旧 key 迁移逻辑 + 测试；
 2. `components/settings/SettingItem.tsx`：声明式渲染器四型 + 测试；
 3. `components/settings/SettingsModal.tsx`：左导航 + 右内容骨架（空分类占位）+ 挂载入口替换 + 旧 SettingsDialog 删除；
-4. Gate A 验证：Modal 开关/导航切换/空白退出截图 + 测试 → **停，等批准**。
+4. Gate A 验证：Modal 开关/导航切换/空白退出截图 + 测试（user-approved）。
 
 ### Gate B — 分类页与真实接线
 
@@ -404,14 +406,14 @@ Escape  关闭浮层（Modal/Drawer）
 7. 快捷键实现（列表容器键盘事件）+ 速查表页 + 测试；
 8. 数据控制（清缓存）+ 关于页；
 9. 四个 planned 页（订阅/AI/账户/工作区，禁用结构）+ 测试；
-10. Gate B 验证：各分类截图 + 全部真实控件操作录验 → **停，等批准**。
+10. Gate B 验证：各分类截图 + 全部真实控件操作录验（user-approved）。
 
 ### Gate C — 侧栏架构与自适应分栏
 
 11. Sidebar 信息架构分组改造（含 Phase 2 禁用项）+ 测试；
 12. App.tsx 分栏化：flex + 宽度 store + 分隔条（拖拽/键盘/双击/折叠）+ 持久化 + 测试；
 13. 移动端回归确认（<1024 行为不变）；
-14. Gate C 验证：拖拽/折叠/刷新恢复/键盘微调录验 + 截图 → **停，等批准**。
+14. Gate C 验证：拖拽/折叠/刷新恢复/键盘微调录验 + 截图（user-approved）。
 
 ### Gate D — 移动端 Folo 化 + 看板 + 文档
 
@@ -419,7 +421,7 @@ Escape  关闭浮层（Modal/Drawer）
 16. 看板修订（内容 + 样式统一，双真源顺序）；
 17. 文档修订（PRD v6.1 / ROADMAP / PROJECT_STATE / AGENTS / README + SOURCE_MAP 登记）；
 18. 全量回归 + 视口矩阵 + 真实 smoke + devlog 0010；
-19. Gate D 验证：完整证据包 → **停，等最终批准**。
+19. Gate D 验证：完整证据包（user-approved）。
 
 ## Verification
 

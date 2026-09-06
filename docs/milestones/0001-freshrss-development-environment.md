@@ -39,26 +39,24 @@ Completed。
 
 ## Key user ↔ AI dialogue
 
-（以下为该次会话的关键片段摘要，非逐字原文；所有凭据已 `[REDACTED]`）
+（关键片段摘要，非逐字原文；所有凭据已 `[REDACTED]`）
 
-1. 用户指令：以 FreshRSS 开发环境作为第一个里程碑，先写 Spec 再动手。→ AI 产出 spec 0001，明确 Goal / Scope / Out of scope / 6 条验收标准与验证方式。
-2. AI 检查发现本机没有 Docker，给出安装命令；用户自行安装后确认 `docker compose version` 输出 2.40.3。
-3. `docker pull` 直连 Docker Hub 超时。AI 依次测试公共镜像源：`docker.m.daocloud.io` 返回 403，`docker.1ms.run` 可用但速度约 20KB/s（371MB 镜像约需 1 小时）。
-4. 用户提供 Windows 代理地址（`172.25.x.x:7890`）。AI 给出 systemd drop-in 方案（`/etc/systemd/system/docker.service.d/proxy.conf`）为 Docker daemon 配置代理；用户以 sudo 手动执行并 `systemctl restart docker`。
-5. 代理生效后 `auth.docker.io` 可达，但镜像 blob 下载多次 EOF 中断。AI 启动重试循环继续断点拉取，用户接力完成剩余下载，最终 371MB 镜像完整拉取。
-6. `docker compose up -d` 后：`docker compose ps` 显示 running；`curl -sI http://localhost:8080` 返回 302（跳转安装向导 `/i/`）。
-7. AI 引导用户完成浏览器初始化并订阅真实 RSS；用户提供 API Password 供 ClientLogin 测试（密码值只出现在命令行参数里，从未写入仓库）。两条 curl 验证全部通过，用户确认里程碑完成。
+核心指令：以 FreshRSS 开发环境作为第一个里程碑，先写 Spec 再动手（由此产出
+spec 0001：Goal / Scope / Out of scope / 6 条验收标准与验证方式）。
+
+用户参与的关键环节：本机无 Docker，由用户自行安装（`docker compose version`
+输出 2.40.3）；镜像拉取受阻时用户提供 Windows 代理地址（`172.25.x.x:7890`），
+以 sudo 手动执行 daemon 代理 drop-in（`/etc/systemd/system/docker.service.d/proxy.conf`）
+并 `systemctl restart docker`，并在多次 EOF 中断后接力完成剩余下载；浏览器
+初始化与真实 RSS 订阅由用户在 UI 中完成；API Password 仅供 ClientLogin 测试
+（只出现在命令行参数里，从未写入仓库）。两条 curl 验证通过后用户确认里程碑
+完成。拉取失败的完整过程见 Problems / How problems were solved。
 
 ## Commands actually executed
 
 （真实执行过的命令；凭据一律 `[REDACTED]`，无法逐字复原的以等价形式列出）
 
 ```bash
-# 开工检查
-git status --short --branch
-git branch -a
-git log --oneline --decorate -8
-
 # Docker 环境
 docker compose version                              # 2.40.3
 sudo apt-get install docker.io docker-compose-v2    # 用户自行执行

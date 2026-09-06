@@ -31,7 +31,7 @@ desktop + mobile
 按需加载 > 巨型 bundle；复用 0010a > 重复造轮子；
 中文阅读体验 > 机械模仿英文 Reader。
 
-## 前置条件核对（Gate 0 已真实核验，2026-08-30）
+## 前置条件核对（2026-08-30 核验）
 
 ```text
 Git:        main @ dd95924（PR #17 + #18 已合并），工作区干净
@@ -234,7 +234,7 @@ AI 摘要/翻译/对话；RSSHub route discovery；Feed 分类 CRUD；OPML；
 网页剪藏；多用户同步；服务端 Reader preference；website scraping；
 arbitrary JS injection。TTF/OTF/ZIP 字体与 CSS font package 本阶段不做。
 
-## Acceptance Criteria（指令 AC1–AC22，全文照录）
+## Acceptance Criteria（AC1–AC22）
 
 1. Reader 新设置建立在 0010a settings system 上，无第二套状态源；
 2. WOFF2 导入后刷新仍可离线加载；
@@ -262,10 +262,9 @@ arbitrary JS injection。TTF/OTF/ZIP 字体与 CSS font package 本阶段不做�
 
 ## Verification
 
-- 每个 Gate 完成即跑对应测试（不等全部写完）；
+- 每个 Gate 完成即跑对应测试；
 - Gate 12：Web 全量 test/lint/build + BFF pytest + bundle 数据 +
-  视觉矩阵截图（不入 Git 的私有 fixture 用占位/合成数据）；
-- 向用户提交完整报告后才决定 commit/push/PR。
+  视觉矩阵截图（不入 Git 的私有 fixture 用占位/合成数据）。
 
 ## Documentation updates
 

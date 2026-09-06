@@ -43,7 +43,9 @@ Native RSS / Atom → FreshRSS → FreshRSSAdapter / FreshRSSControlAdapter
 - Mutation 后优先 server-confirmed success → TanStack invalidate（不做
   optimistic updates / 不建第二套 Zustand subscription cache）。
 
-## Gate 分解（每个 Gate 一个独立 New Chat，完成即 STOP 等人工确认）
+## Gate 分解
+
+> Execution was performed in gated stages, each gated by user review.
 
 ```text
 Gate 0 — 基线审计 + 0013 Spec（已完成，本文件）
@@ -107,7 +109,7 @@ Defer 理由：
 milestone（候选 0017 统一设置）。是否改判由人工在 Gate 0 确认后生效；
 除非人工明确改判为 Included，Gate 4 不得顺手实现。
 
-## 基线审计事实（供后续 Gate 直接引用）
+## 基线审计事实（2026-08-31）
 
 ### BFF 已有能力（services/bff/src/lumirss/）
 
@@ -173,9 +175,6 @@ Known gaps:
 - ROADMAP 中旧的 "0013 activates BFF-layer filtering" 依赖描述与
   PROJECT_STATE/devlog 引用在文档清理时已移除，现存引用仅存在于历史
   milestone 归档与 web 代码注释中（保持不动）。
-
-Next Gate: Gate 1 — FreshRSS Control Plane（FreshRSSControlAdapter 复用
-现有 auth/action-token，新增 subscription/category mutation API）。
 
 ### Gate 1
 
@@ -267,9 +266,6 @@ Known gaps:
   语义更可控）；
 - Web 侧（queries/types/UI）属 Gate 2/3，本 Gate 未触碰 apps/web。
 
-Next Gate: Gate 2 — 直接 RSS/Atom 预览 + 添加订阅（BFF safe-fetch +
-Web UI；将复用本 Gate 的 subscribe mutation 与 subscriptionRef）。
-
 ### Gate 2
 
 Status: Completed (2026-08-31)
@@ -359,10 +355,6 @@ Known gaps / risks:
 - feedparser 宽容解析：畸形但带 version 的文档可能通过；风险低
   （预览只展示元数据，不执行内容）。
 
-Next Gate: Gate 3 — Subscription Center + 真实分类 + 取消订阅
-（订阅页真实 category grouping、move/unsubscribe UI、create-category
-决策）。
-
 ### Gate 3
 
 Status: Completed (2026-08-31)
@@ -450,10 +442,6 @@ Known gaps / risks:
   范围）；
 - FreshRSS unsubscribe 后历史文章是否保留未验证（UI 文案已按
   不承诺处理）。
-
-Next Gate: Gate 4 — OPML 导入/导出 + 错误/健康状态 + escape hatch
-（复用本 Gate 的 categories/subscriptions 读取层与
-invalidateSubscriptionState）。
 
 ### Gate 4
 
@@ -559,8 +547,6 @@ Known gaps / limitations:
   导出 body 10 MiB。均为 bounded 输入约定；
 - 预览的「重复」判定仅基于订阅地址精确匹配（如实文案已说明），
   不做标题模糊匹配。
-
-Next Gate: Gate 5 — 全量验收 + 文档收口。
 
 ### Gate 5
 

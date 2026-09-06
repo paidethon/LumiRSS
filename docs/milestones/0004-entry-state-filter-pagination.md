@@ -95,11 +95,7 @@ edit-tag 成功校验 body strip 后必须为 "OK"，否则 UpstreamError。
 ## Commands actually executed
 
 ```bash
-# 开工检查
-git branch --show-current        # feat/0004-entry-state-filter-pagination
-git status --short --branch      # clean
-docker compose ps                # freshrss Up 2 days
-
+# 工作分支 feat/0004-entry-state-filter-pagination；freshrss 容器 Up 2 days
 # Build（均在 services/bff 下，逐步执行，每步即时跑测试）
 uv run python probe_0004.py                        # probe（用后即删）
 uv run pytest tests/test_cursor.py -q              # 16 passed

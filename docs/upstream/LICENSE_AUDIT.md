@@ -10,6 +10,11 @@
 
 ## 1. Current LumiRSS status (verified 2026-08-28)
 
+> **Update 2026-08-29**: the user approved `AGPL-3.0-only`; `LICENSE` was
+> added at the repo root and `THIRD_PARTY_NOTICES.md` created (commit
+> `6dbcd4a`). The block below is preserved as the pre-decision snapshot;
+> the remaining conditions (no copied/adapted upstream source) still hold.
+
 ```text
 LICENSE file present:           NO (repo root has no LICENSE file)
 Declared package licenses:      none (pyproject.toml / package.json

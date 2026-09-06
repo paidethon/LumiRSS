@@ -38,7 +38,9 @@ curl -fsS -o /dev/null http://127.0.0.1/
 - 秘密（`AI_API_KEY`、`FRESHRSS_API_PASSWORD`）只在服务端 env /
   secrets.json，永不进 Git、数据库、备份或浏览器。AI Key 也可以（且推荐）
   在浏览器「设置 → AI」中直接填写：写入服务端 SecretsStore（0600），
-  env `AI_API_KEY` 保留为默认配置的回退。
+  env `AI_API_KEY` 仅作为默认配置路径的回退；已映射到某个启用的
+  profile 的 purpose 必须使用该 profile 自己的 key（无 key 即诚实
+  显示未配置，不回退 default/env key）。
 
 ## 3. Caddy auth / noauth
 

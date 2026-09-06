@@ -159,11 +159,7 @@ Status: Completed (2026-09-01)
 
 - 基线：main @ `26faaed`（0013 已合并），working tree clean；
 - 创建分支 `feat/0014-source-discovery-rsshub`；
-- 创建本 milestone 文档；docs/README + ROADMAP 激活 0014；
-- Agent Hub 能力：OpenCode 全局配置（备份后）注册 design-review /
-  architecture-visualization skill 目录引用 + Playwright MCP
-  （`npx @playwright/mcp@latest`）；配置需重启生效，本 run 以直接读
-  SKILL.md 方式按需参考。
+- 创建本 milestone 文档；docs/README + ROADMAP 激活 0014。
 
 ### Gate 1 + 2
 
@@ -268,9 +264,8 @@ Status: Completed (2026-09-01)
   discovery 对公网站按设计被 SSRF 边界拦截（400 unsafe_feed_url，
   实测）；成功路径由 28 个离线测试覆盖（与 0013 Gate 5 同一已知
   环境限制）；
-- 浏览器 UI 实机点击验证：本 run 无可用浏览器工具（Playwright MCP
-  配置已持久化，重启后可用）；UI 由 38 个 DOM 级测试 + 响应式
-  Dialog primitive 覆盖，web app index 200。
+- 浏览器 UI 实机点击验证：本里程碑执行时无可用浏览器工具；UI 由
+  38 个 DOM 级测试 + 响应式 Dialog primitive 覆盖，web app index 200。
 
 ## Completion notes
 
@@ -294,8 +289,8 @@ Implemented:
 
 Deferred / known limitations:
 
-- 浏览器实机点击验证：本 run 无浏览器工具（Playwright MCP 配置已
-  持久化，重启 OpenCode 后可用）；UI 行为由 40 个 DOM 级测试覆盖；
+- 浏览器实机点击验证：本里程碑执行时无浏览器工具；UI 行为由
+  40 个 DOM 级测试覆盖；
 - 宿主机 fake-IP DNS（198.18.0.0/15）下公网站点 discovery 按设计被
   SSRF 边界拦截（实测 400 unsafe_feed_url）——与 0013 Gate 5 同一
   已知环境限制，成功路径由 28 个离线测试覆盖；

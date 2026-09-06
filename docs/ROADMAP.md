@@ -44,6 +44,15 @@
 - [x] 0018 — Production, Operations & Backup
 - [x] 0019 — MVP Stabilization & Release
 - [x] [0020 — MVP Release Remediation](milestones/0020-release-remediation.md)
+- [x] Post-0020 settings control-plane maintenance (2026-09-05, no milestone
+  number): AI profiles + purpose mapping, 数据控制合并备份/恢复, honest
+  RSSHub control chain, version provenance
+
+## Next
+
+- 0021 — Security & Operations Hardening（candidate，编号未占用）：BFF
+  内部鉴权 / DNS-rebinding 硬化 / CSP·HSTS·rate-limit / 通用请求体限制 /
+  AI lock-map / 多设备设置冲突语义
 
 ## Phase 2 — Knowledge Workbench (deferred)
 

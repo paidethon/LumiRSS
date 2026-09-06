@@ -4,54 +4,76 @@
 
 ---
 
-## Start Here
+## Current state
 
-**Last completed**: 0020 — MVP Release Remediation
+**Last completed milestone**: 0020 — MVP Release Remediation
 → [milestones/0020-release-remediation.md](milestones/0020-release-remediation.md)
+
+**Post-0020 maintenance** (2026-09-05, merged via PR #28, no milestone number):
+settings control-plane rework — AI profiles with purpose mapping,
+「备份与恢复」merged into「数据控制」, honest RSSHub control chain,
+version provenance.
 
 **Active milestone**: —
 
-**Next planned**: 0021 — Security & Operations Hardening（候选；收纳 0020 延后的
-BFF 内部鉴权 / DNS-rebinding 硬化 / CSP·HSTS·rate-limit / 通用请求体限制 /
-AI lock-map / 多设备设置冲突语义）
+**Next candidate**: 0021 — Security & Operations Hardening（编号尚未占用）
+→ scope and priority: [ROADMAP.md](ROADMAP.md)
 
 ---
 
-## Documentation Map
+## Documentation map
 
 | Topic | Entry point |
 |---|---|
-| **Product definition** | [product/PRD.md](product/PRD.md) |
-| **System architecture** | [architecture/README.md](architecture/README.md) |
+| **Product definition (WHAT/WHY)** | [product/PRD.md](product/PRD.md) |
+| **System architecture (HOW)** | [architecture/README.md](architecture/README.md) |
 | **Architecture decisions** | [architecture/decisions/](architecture/decisions/) |
 | **Design system & research** | [design/](design/) |
-| **Milestone history** | [milestones/](milestones/) |
+| **Development / testing / operations** | [development/](development/) |
 | **Roadmap** | [ROADMAP.md](ROADMAP.md) |
+| **Milestone history** | [milestones/](milestones/) |
 | **Upstream & licensing** | [upstream/](upstream/) |
-| **Development guide** | [development/](development/) |
+
+### Need → read
+
+| 你要做什么 | 读什么 |
+|---|---|
+| 了解产品范围与原则 | [product/PRD.md](product/PRD.md) |
+| 改数据路径 / API / 边界 | [architecture/README.md](architecture/README.md)（+ 相关 ADR） |
+| 部署 / 升级 / 备份恢复 | [development/operations.md](development/operations.md) |
+| 搭建本地环境 | [development/setup.md](development/setup.md) |
+| 跑测试 | [development/testing.md](development/testing.md) |
+| 改 UI / 视觉与交互 | [design/design-system.md](design/design-system.md) |
+| 查历史回归 / 决策过程 | [milestones/](milestones/) |
+| 许可证 / 上游引用 | [upstream/](upstream/) |
 
 ---
 
-## When to read what
+## Reading paths
 
 ### Normal feature task
 
 1. This file (`docs/README.md`);
-2. Active milestone document;
+2. Active milestone document (if any);
 3. Directly affected source files and tests;
 4. Architecture docs only when touching data paths or boundaries.
 
 ### Architecture task
 
-1. Active milestone;
-2. [architecture/README.md](architecture/README.md);
-3. Relevant ADR in [architecture/decisions/](architecture/decisions/).
+1. [architecture/README.md](architecture/README.md);
+2. Relevant ADR in [architecture/decisions/](architecture/decisions/);
+3. Source and tests.
 
 ### Design task
 
-1. Active milestone;
-2. [design/design-system.md](design/design-system.md);
-3. [design/reader-research.md](design/reader-research.md) if relevant.
+1. [design/design-system.md](design/design-system.md);
+2. [design/reader-research.md](design/reader-research.md) if relevant.
+
+### Historical debugging
+
+1. Relevant milestone in [milestones/](milestones/);
+2. `git log` / `git blame`;
+3. Source and tests.
 
 ### Do NOT preload for ordinary work
 
@@ -64,9 +86,10 @@ AI lock-map / 多设备设置冲突语义）
 
 ## Milestones
 
-Completed milestones are archived in [milestones/](milestones/). Only the active
-milestone is linked from this page. Historical milestones should not be read
-during normal development.
+Completed milestones are archived in [milestones/](milestones/); release
+history in [milestones/RELEASE-NOTES-MVP.md](milestones/RELEASE-NOTES-MVP.md).
+The table below is the complete historical index for quick lookup — do not
+preload these files during normal development.
 
 | Milestone | Title | Status |
 |---|---|---|
@@ -92,3 +115,4 @@ during normal development.
 | 0018 | Production, Operations & Backup | Completed |
 | 0019 | MVP Stabilization & Release | Completed |
 | 0020 | MVP Release Remediation | Completed |
+| — | Post-0020 settings control-plane maintenance | Completed (no number) |

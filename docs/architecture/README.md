@@ -1,51 +1,34 @@
-# LumiRSS Architecture v6
+# LumiRSS Architecture
 
-> 状态：Adopted v6 baseline（已经 0009 Gate 0 本地仓库事实校准，用户于 2026-08-28 批准）
->
-> 目的：在不推翻 0001–0008 的前提下，明确 LumiRSS 当前 RSS 阅读架构、即将增加的控制平面，以及长期多来源知识工作台的扩展边界。
-
----
-
-## 1. Architecture goals
-
-LumiRSS 的架构要同时满足四件事：
-
-1. 当前是可维护的单用户、自托管 RSS 阅读器；
-2. FreshRSS 与 RSSHub 继续承担它们成熟、擅长的职责；
-3. 用户日常只操作 LumiRSS，不在多个后台之间来回切换；
-4. 未来可以扩展网页剪藏、API、邮件、Obsidian 和 Agent，而不把所有数据硬塞进 FreshRSS。
-
-核心原则：
-
-```text
-Use mature engines behind a Lumi-owned product boundary.
-```
+> 本文回答“系统现在如何实现”（HOW）。产品范围与动机见
+> [product/PRD.md](../product/PRD.md)；关键决定的历史见
+> [decisions/](decisions/) 与 [milestones/](../milestones/)。
+> 事实基准：本地源码（`apps/web/`、`services/bff/`）+ CI 于 2026-09 复核。
 
 ---
 
-## 2. Current implemented baseline
+## 1. Architecture principles
 
-本地代码已经 0009 Gate 0 核验（2026-08-28）；0020 复核当前实现状态：
-
-- FreshRSS 已作为 RSS 数据引擎；
-- RSSHub 已以最小容器方式加入开发 Compose；
-- FastAPI BFF 已代理 feeds、entry list、entry detail 和 state writes；
-- React Web 已有桌面三栏、移动列表/阅读流程和 PWA Manifest；
-- RSSHub 路由已通过 FreshRSS 进入 Lumi 阅读链路；
-- **AI 已实现**（0015–0017：文章摘要 / 翻译 / 文章对话 + AI 设置；
-  密钥只在服务端 env，结果缓存在 Lumi SQLite，绝不存 FreshRSS 正文）；
-- **订阅控制已实现**（0013 FreshRSSControlAdapter：订阅/分类管理 + OPML）；
-- **RSSHub 来源发现与控制已实现**（0014：route 发现/预览 + 实例控制）；
-- **统一设置中心已实现**（0010/0017）；**备份 / 恢复 / 运维已实现**
-  （0018）；**Caddy 生产部署已实现**（0018–0019）；
-- 仍未实现（不要描述为已存在）：web clipping、Obsidian 集成、未来多来源
-  connector 编排等显式延后的 Phase-2 特性。
-
-最终以本地代码审计结果为准。
+1. **Mature engines behind a Lumi-owned boundary.** FreshRSS 和 RSSHub 承担
+   它们擅长的职责；Lumi 提供唯一日常产品界面。
+2. **FreshRSS owns the RSS domain.** feeds / categories / entries /
+   read / starred / subscriptions / OPML 只以 FreshRSS 为真源；Lumi SQLite
+   永不影子复制 RSS 数据。
+3. **The browser talks only to the Lumi BFF**（`/api/v1/*` 相对路径），
+   不直连 FreshRSS、RSSHub 或 AI Provider，不持有上游凭据。
+4. **Two-plane split.** 读取数据面（read/data plane）与来源/服务控制面
+   （source/service control plane）分离；控制面不改变读取路径。
+5. **AI is optional and non-blocking.** AI 未配置或失败不影响阅读、
+   状态写入与来源管理；GET 类 AI 端点绝不触发 Provider 调用。
+6. **Untrusted content is sanitized as the final boundary.** 文章 HTML 经
+   受控 transform 后必须通过 DOMPurify 才能进入 React。
+7. **Honest state.** read/star 写入用 set 语义；分页 cursor 与
+   `entryRef` 均为 opaque；打开文章不自动标为已读；所有网络状态都有
+   loading/empty/error UI。
 
 ---
 
-## 3. System context
+## 2. System context
 
 ```mermaid
 flowchart LR
@@ -54,7 +37,7 @@ flowchart LR
 
     BFF --> FR[FreshRSS]
     BFF --> DB[(Lumi SQLite)]
-    BFF --> AI[AI Provider]
+    BFF --> AI[AI Provider OpenAI-compatible]
     BFF --> RH[RSSHub]
 
     RH --> FR
@@ -66,15 +49,36 @@ flowchart LR
     Web -. never direct .-> AI
 ```
 
-The browser trusts Lumi contracts, not upstream implementation details.
+浏览器只信任 Lumi 契约，不感知上游实现细节。
 
 ---
 
-## 4. Two-plane architecture
+## 3. Data ownership
 
-A major v6 clarification is the split between the **read/data plane** and the **source/service control plane**.
+| 数据 | 权威位置 |
+| --- | --- |
+| RSS feeds / categories / entries | FreshRSS |
+| read / starred 状态、刷新与保留策略 | FreshRSS |
+| 订阅 / 分类 / OPML | FreshRSS（经 `FreshRSSControlAdapter` 管理） |
+| RSSHub 路由目录（Lumi 精选元数据） | BFF 代码内静态 `CATALOG`（14 条，pinned 实例逐一验证） |
+| RSSHub 期望/已应用配置 | Lumi SQLite `lumi_settings`（`rsshub.desired` / `rsshub.applied`） |
+| RSSHub 运行时实例地址 | 环境变量 `RSSHUB_BASE_URL` / `RSSHUB_FRESHRSS_BASE_URL` |
+| AI 非机密设置与 purpose 映射 | Lumi SQLite（`ai.provider` / `ai.base_url` / `ai.model` / `ai.summary_language` / `ai.translation_language` / `ai.purposes`） |
+| AI API keys、WebDAV 密码、RSSHub 机密 | `data/secrets.json`（chmod 600；刻意放在 DB 与备份之外） |
+| AI 结果（摘要 / 译文 / 会话） | Lumi SQLite（`ai_summaries` / `ai_translations` / `ai_conversations`(+`_messages`)） |
+| 便携应用/阅读设置 | Lumi SQLite 单个 JSON 文档（`app.settings`，`schemaVersion: 1`），浏览器本地优先 + debounce 同步 |
+| 设备本地设置（布局宽度、自定义字体、过滤规则、稍后读） | 浏览器 localStorage / IndexedDB，不上传 |
+| 备份任务账本 | Lumi SQLite `backup_jobs` |
+| schema 版本 | `schema_migrations`（`migrations/0001`–`0004`，事务化 exactly-once） |
 
-### 4.1 Read/data plane
+硬规则：
+
+> FreshRSS 是 RSS 数据唯一真源。`lumi.sqlite` 不得存 feeds / entries /
+> read / starred / subscription / category 的任何影子副本。
+
+---
+
+## 4. Read / data plane
 
 ```text
 Native RSS / Atom ────────────────┐
@@ -88,724 +92,404 @@ Non-RSS → RSSHub-generated feed → FreshRSS
                               React Web
 ```
 
-Responsibilities:
+- FreshRSS 抓取并规范化 RSS 域数据；RSSHub 只在上游生成 feed；
+- `FreshRSSAdapter`（Google Reader 读路径）：ClientLogin 认证、
+  feed / entry 列表（过滤在 FreshRSS 侧执行）、entry 详情
+  （HTML → 纯文本）、`edit-tag` 写 read/star（set 语义）；
+- BFF 把上游协议映射为稳定 Lumi DTO；Web 只经 BFF 读写；
+- RSSHub 宕机时，FreshRSS 已抓取的内容照常可读。
 
-- FreshRSS fetches and normalizes RSS-domain data;
-- FreshRSS owns RSS subscriptions, entries, read state and starred state;
-- RSSHub only generates feeds upstream;
-- BFF maps FreshRSS protocol/data to Lumi-owned DTOs;
-- Web renders and mutates through the BFF only.
+---
 
-The read path must remain usable for already-fetched content when RSSHub is unavailable.
-
-### 4.2 Source/service control plane
-
-0010–0011 起规划，现已落地。Status: **FreshRSSControlAdapter implemented in
-0013**（订阅/分类管理 + OPML 导入/导出）；**RSSHub 来源发现 / 预览 / 实例
-控制 implemented in 0014**（route 发现 + 预览 + 控制面）。
+## 5. Source / service control plane
 
 ```mermaid
 flowchart TD
     Web[Lumi Web] --> BFF[FastAPI BFF]
     BFF --> FSC[FreshRSSControlAdapter]
-    BFF --> RHC[RSSHubCatalogAdapter]
-    BFF --> RHS[RSSHubControlAdapter]
+    BFF --> RHS[RssHubService + RssHubControlStore]
 
-    FSC --> FreshRSS[FreshRSS API / CLI boundary]
-    RHC --> Catalog[RSSHub route metadata]
-    RHS --> RSSHub[RSSHub health / preview / allow-listed config]
+    FSC --> FreshRSS[FreshRSS greader API]
+    RHS --> Catalog[Lumi-curated route catalog]
+    RHS --> RSSHub[RSSHub preview / health / allow-listed config]
 ```
 
-Responsibilities:
+规范表述（避免旧文档歧义）：
 
-#### FreshRSSControlAdapter
+> 正常文章读取路径绝不绕过 FreshRSS 去“读 RSSHub”。控制面组件仅为了
+> 路由目录、预览、健康探测与 allow-listed 实例配置而联系 RSSHub。
 
-- subscribe / unsubscribe;
-- edit title and category;
-- OPML import / export;
-- selected health and user configuration;
-- no exposure of raw credentials to the Web.
+### FreshRSSControlAdapter
 
-Implemented in 0013 (greader protocol via a shared `FreshRSSSession` —
-single ClientLogin, no duplicate auth/action-token system; feed title
-rename deferred).
+- subscribe / unsubscribe / 分类移动与重命名 / OPML 导入导出；
+- 复用读路径的同一个 `FreshRSSSession`（单次 ClientLogin，无第二套凭据）；
+- 不向浏览器暴露原始凭据。
 
-#### RSSHubCatalogAdapter
+### RSSHub（`RssHubService` + `RssHubControlStore`）
 
-- load and cache route catalog metadata;
-- search namespaces/routes;
-- map route parameters to safe form schemas;
-- indicate routes requiring instance configuration;
-- preserve the difference between “route exists” and “instance can currently execute it”.
-
-#### RSSHubControlAdapter
-
-- test instance health;
-- preview generated feed;
-- expose only approved configuration operations;
-- clearly report whether a setting applies immediately or requires service reload;
-- never expose arbitrary shell or Docker control.
-
-This plane enables Lumi to become the normal UI without changing the RSS read source of truth.
+- **控制链固定为 Browser → Lumi BFF → RSSHub**，浏览器不直连；
+- 路由目录是 Lumi 自有静态精选 `CATALOG`（14 条，非运行时抓取 RSSHub
+  文档），参数经 pattern 校验映射为安全表单；
+- 预览：BFF 服务端构造路径并抓取 RSSHub，返回的 `feedUrl` 使用
+  `RSSHUB_FRESHRSS_BASE_URL`（FreshRSS 抓取视角）；
+- 实例配置为 **schema 驱动的类型化 allow-list**：非机密键存
+  `lumi_settings`（desired / applied 两态），机密走 `SecretsStore`
+  （write-only）；保存不等于生效——`restartRequired = desired ≠ applied`，
+  operator 导出 `rsshub.env` 片段重启 RSSHub 后调
+  `POST /api/v1/rsshub/config/apply` 确认；Lumi 不自行重启 RSSHub；
+- 旧的浏览器侧“参考实例清单 / 总开关”假控制已退役，并有回归测试钉死；
+- 绝不暴露任意 shell / Docker 控制。
 
 ---
 
-## 5. Component responsibilities
+## 6. Component responsibilities
 
-### 5.1 React Web / PWA
+### Web / PWA
 
-Owns:
+Owns: 导航与选择状态、响应式呈现、Timeline 与 Reader、设置 UI、
+订阅/来源工作流、无障碍与键盘交互、文章 HTML 的最终净化边界。
 
-- navigation and selection state;
-- responsive presentation;
-- timeline and reader;
-- theme and reader appearance UI;
-- subscription/source workflows;
-- settings UI;
-- future AI UI surfaces;
-- accessibility and keyboard interactions;
-- sanitizing untrusted article HTML at the approved rendering boundary.
+Does not own: FreshRSS/RSSHub/AI 凭据、RSS 抓取调度、权威 read/star
+状态、服务端连接器执行。
 
-  Since 0012 the rendering boundary is a presentation pipeline:
-  raw RSS HTML → inert DOM (DOMParser) → controlled presentation
-  transforms (OpenCC S↔T conversion, bionic word-initial emphasis, Shiki
-  code highlight markers — DOM API only) → **DOMPurify as the final
-  trusted boundary** → the single sanctioned
-  `dangerouslySetInnerHTML` in `ArticleContent`. Transforms never execute
-  scripts, keep event handlers, or reintroduce iframes/styles/`javascript:`
-  URLs; raw RSS HTML never reaches React unsanitized. (See
-  `apps/web/src/lib/article-pipeline.ts` and spec 0012 §安全模型.)
+PWA 形态：可安装 manifest（standalone、图标齐全），无 Service Worker
+（无离线缓存）。
 
-Does not own:
+### BFF (FastAPI)
 
-- FreshRSS credentials;
-- direct RSS fetch scheduling;
-- RSSHub instance secrets;
-- AI provider secrets;
-- authoritative RSS read/star state;
-- server-side connector execution.
+Owns: 稳定 Lumi API 契约（typed 请求/响应模型）、输入校验、adapter
+编排、上游错误规范化（稳定错误码）、超时策略、机密处理、AI 缓存与
+设置、备份/恢复引擎。
 
-### 5.2 FastAPI BFF
+Does not own: FreshRSS 条目副本、任意 Docker 管理、前端视觉状态。
 
-Owns:
+### FreshRSS
 
-- stable Lumi API contracts;
-- input validation;
-- authentication/session boundary in later deployment milestones;
-- adapter orchestration;
-- upstream error normalization;
-- timeout/retry policy;
-- secret handling;
-- AI caching/jobs/settings when implemented;
-- future unified source registry and connector orchestration.
+RSS 域唯一真源（见 §3）。FreshRSS 自身 UI 仅作为高级逃生入口，
+不是日常工作流。
 
-Does not own:
+### RSSHub
 
-- a duplicate copy of all FreshRSS entries;
-- arbitrary Docker administration;
-- frontend-specific visual state;
-- raw passthrough of unstable upstream data structures unless explicitly documented.
+把受支持的非 RSS 来源转换为 RSS/Atom 输出；拥有路由执行与缓存行为。
+不拥有订阅状态、read/star、用户偏好或任何用户界面。
 
-### 5.3 FreshRSS
+### Lumi SQLite
 
-Owns the RSS domain:
+Lumi 自有应用状态：AI 结果缓存与元数据、AI 设置与 profile、purpose
+映射、便携应用设置（`app.settings`）、RSSHub 期望/应用配置、备份任务
+账本、`schema_migrations`。WAL + busy_timeout + foreign_keys；migrations
+为带版本号的 SQL 文件（`BEGIN IMMEDIATE` 事务、失败回滚），不用
+Alembic。不是 RSS 影子数据库。
 
-- subscriptions and feed categories;
-- feed refresh state;
-- normalized entries;
-- unread/read state;
-- starred state;
-- RSS-domain OPML.
+### Caddy / deployment edge
 
-FreshRSS UI becomes an advanced escape hatch, not the normal Lumi workflow.
-
-### 5.4 RSSHub
-
-Owns:
-
-- converting supported non-RSS sources into RSS/Atom output;
-- route-specific fetching/parsing;
-- route execution and cache behavior.
-
-Does not own:
-
-- subscription state;
-- read/star state;
-- Lumi user preferences;
-- the unified source registry;
-- the normal user-facing UI.
-
-### 5.5 Lumi SQLite
-
-Current/planned responsibilities:
-
-- AI result cache — **active (0015)**: `ai_summaries` (entryRef + contentHash + provider/model/promptVersion/language identity; status/summary/failure metadata; never stores FreshRSS article HTML);
-- AI job/error metadata — **active (0015)**: status + `failure_type` on the same row;
-- Lumi settings — **active (0015, scoped)**: allow-listed non-secret server AI settings (`ai.provider`/`ai.base_url`/`ai.model`/`ai.summary_language`/`ai.translation_language`); secrets stay in server env, never in the DB;
-- portable app settings — **active (0017)**: one typed, allow-listed JSON document (`app.settings`, `schemaVersion: 1`) holding cross-device Reader/app preferences (theme, accent, UI font, all continuous Reader typography values, reader background/image/typography prefs, reduced motion, scroll-mark-read); strict pydantic validation (unknown key / wrong type / out-of-range / NaN rejected), corrupted/future documents fall back to defaults; the browser is local-first (immediate Zustand + CSS-variable apply) with a debounced serialized `GET/PATCH/DELETE /api/v1/settings` durability layer — no secrets, no RSS-domain data;
-- versioned migrations — **active (0015)**: `schema_migrations` + transactional exactly-once `migrations/*.sql`;
-- source discovery drafts and route metadata cache — planned;
-- connector configuration references — planned;
-- future web clip/API/email/Obsidian records — planned;
-- future unified index and processing state — planned.
-
-Explicitly not an MVP shadow RSS database.
-
-### 5.6 Caddy / deployment edge
-
-Production responsibilities（**已实现 0018–0019**；见 `apps/web/Caddyfile.*`、
-`apps/web/docker-entrypoint.sh`、`docker-compose.prod.yml`）：
-
-- same-origin routing（Caddy 反代 `/api/*` → `bff:8000`，其余走 SPA）;
-- TLS（`DOMAIN` 驱动 Let's Encrypt / 自签本地 / 纯 HTTP 内网三态）;
-- security headers（X-Content-Type-Options / X-Frame-Options DENY / Referrer-Policy）;
-- access control（可选 basic_auth，单用户远程部署；auth 变量必须成对设置）;
-- no public exposure of internal FreshRSS/RSSHub ports（仅 `web` 发布 80/443）.
-
-仍待完善（延后至 0021 安全/运维硬化）：通用请求体大小/速率限制等策略。
+- same-origin 路由：`/api/*` → `bff:8000`，其余 SPA fallback；
+- TLS 三态：真实域名 → Let's Encrypt；`localhost` → 自签 + 强制
+  HTTPS；`http://:80` 形式 → 纯 HTTP（仅内网调试）；
+- 安全响应头（nosniff / X-Frame-Options DENY / no-referrer）；
+- 可选 basic auth（单用户远程部署）；FreshRSS / RSSHub 不经 Caddy 暴露，
+  仅 `web` 发布 80/443；
+- 通用请求体大小 / 速率限制等硬化明确延后（见 §14）。
 
 ---
 
-## 6. Current API surface
-
-已由本地代码核验（0020）。核心读 / 状态写路径（0009 起）：
+## 7. AI architecture
 
 ```text
-GET   /health/live             GET   /health/ready
-GET   /api/v1/feeds            GET   /api/v1/entries
-GET   /api/v1/entries/{ref}    PATCH /api/v1/entries/{ref}/state
+设置 → AI（浏览器）
+  ├── Profiles（label / Base URL / Model / 启停）
+  ├── Purpose mapping：summary（摘要）/ translation（翻译）/ chat（AI 对话）
+  ├── Default key + 全局 Base URL / Model / 两种语言
+  └── keys 经 write-only API 提交 → SecretsStore（服务端，永不可回读）
 ```
 
-自 0009 起已实现的 endpoint 家族（确切路由以源码为准）：
+- **Provider 契约**：`AIProvider` protocol，唯一实现
+  `OpenAICompatibleProvider`（`chat/completions`，共享 httpx client；
+  超时 connect 5s / read 60s；temperature 固定 0.3；无自动重试、
+  无 fallback 链、无 streaming）。profile 的本质是“不同
+  base_url + model + key 组合”，`provider` 字段固定
+  `openai_compatible`——不是多供应商路由。
+- **Key 解析 decision tree**（`AiProfileStore.effective_config`，
+  以 `services/bff/tests/test_ai_profiles_api.py` 为准）：
+
+  ```text
+  purpose → 映射目标
+  ├─ 映射到具体 profile 且存在、已启用
+  │    ├─ 有自有 secret → 生效（profile 的 base_url/model，
+  │    │                  key_source="profile_secret"）
+  │    └─ 无自有 secret → key_source="missing" → ai_not_configured
+  │         （不回退 default key，也绝不回退 env AI_API_KEY）
+  └─ 映射到 default（或映射的 profile 已删除/停用 → 落回 default，
+         UI 依据 source 字段如实显示）
+       ├─ 浏览器设置的 default key → key_source="default_secret"
+       ├─ 否则 env AI_API_KEY     → key_source="env"
+       └─ 否则                    → key_source="missing"
+  ```
+
+- **SecretsStore**：`data/secrets.json`（0600、原子写、明文 JSON），
+  刻意置于 DB 与备份之外——备份天然不含机密；恢复后需重新配置。
+- **结果缓存于 Lumi SQLite**：缓存身份 =
+  `entryRef + contentHash + provider + model + promptVersion + language`；
+  会话按文章内容 hash 聚合。prompt 版本：`summary-v1` /
+  `translation-v1` / `chat-v1`，系统提示词内含明确的
+  prompt-injection 边界。
+- **端点语义**：`GET .../summary` / `GET .../translation` 只读缓存，
+  绝不调用 Provider；`POST` 才是显式生成；失败以稳定错误码返回
+  （`ai_not_configured` / `ai_auth_error` / `ai_model_error` /
+  `ai_rate_limited` / `ai_timeout` / `ai_invalid_response` /
+  `ai_upstream_error`），上游响应体不外泄。
+- **UI 呈现**：三个 AI 能力都内嵌在 Reader 中——
+  `ReaderSummary`（摘要卡片）、`ReaderTranslation`（原文/译文切换，
+  译文为纯文本渲染，绝不进 HTML 路径，带缓存徽标）、
+  `ArticleConversation`（文章上下文对话）。
+- 明确延后：多供应商路由、fallback 链、streaming、agent 编排、
+  向量数据库 / 全库语义搜索。
+
+历史：0015 建立单 provider + env key 基础；现行为多 profile +
+浏览器配置 + 服务端 SecretsStore + purpose 映射（post-0020 维护引入，
+见 [milestones/0015](../milestones/0015-ai-summary-sqlite-foundation.md)
+与 git 历史）。
+
+翻译考古（避免未来误判）：0010a 曾引入 microsoft/deepl/dlx 翻译
+Provider 的**纯配置**设置页，其页内声明“翻译执行需 BFF 代理、届时
+生效”——执行引擎与 BFF 代理从未实现（`git log -S deepl -- services/`
+为空），该设置页已于 0017 随统一设置下线。翻译能力自 0016 起即为
+AI-only。产品中唯一的“本地”语言处理是展示层的本地简繁转换（OpenCC，
+见 §8），它是字形转换，**不是**翻译，不依赖任何 Provider。
+
+---
+
+## 8. Reader / content pipeline
 
 ```text
-订阅 / 分类 / OPML（0013）
-  /api/v1/subscriptions[/{ref}]   /api/v1/categories[/{id}]
-  /api/v1/opml/export · /import · /import/preview   /api/v1/freshrss-ui
-来源发现 / RSSHub（0014 / 0018）
-  /api/v1/source-discovery   /api/v1/feed-preview
-  /api/v1/rsshub/routes · /preview · /config[/apply|/export|/secrets/{key}]
-设置（0015 / 0017）
-  /api/v1/settings   /api/v1/settings/ai
-AI（0015–0017）
-  /api/v1/entries/{ref}/summary · /translation · /conversation[/messages]
-备份 / 恢复 / 运维（0018）
-  /api/v1/backups[/{id}|/remote|/webdav[/test]]
-  /api/v1/restore[/preview]   /api/v1/operations/status
+raw RSS HTML
+  → inert DOM (DOMParser)
+  → controlled transforms   本地简繁转换（OpenCC，仅展示层）· bionic 强调 · Shiki 代码高亮
+  → DOMPurify.sanitize      最终安全边界（html profile；禁 style 属性与
+                            form/iframe/object/embed/style/template 等标签）
+  → ArticleContent          全应用唯一 dangerouslySetInnerHTML 注入点
 ```
 
-契约原则（本地核验）：
+- 无 transform 需求时退化为直接 sanitize；raw HTML 永不未经净化进入
+  React（`apps/web/src/lib/article-pipeline.ts`、`sanitize-article-html.ts`）。
+- “打开原文”链接经 `safeExternalHttpUrl` 校验（仅绝对 http/https），
+  渲染为 `target="_blank" rel="noopener noreferrer"`。
+- Reader 定制能力（均已实现）：连续排版滑杆（字号/行距/段距/内容宽度/
+  页边距）、内置预设、`.lumitheme` 主题包（schema v1，白名单字段）、
+  自定义 CSS（自动加 `.lumi-reader` 前缀，仅作用正文，上限 64,000
+  字符）、自定义字体（WOFF2 → IndexedDB 或 URL）、中文排版（首行缩进 /
+  标点悬挂（实验） / 本地简繁转换（OpenCC，字形转换，≠ AI 翻译））、
+  阅读时长、代码高亮主题白名单、
+  滚动标记已读（可选，默认关）。
+- 便携设置经 `PORTABLE_KEYS` 同步到 `/api/v1/settings`；服务端严格
+  校验（未知键 / 越界 / NaN 一律拒绝），损坏或未来版本文档回退默认。
+- 视觉/交互规则见 [design/design-system.md](../design/design-system.md)。
 
-- `entryRef` 与 pagination cursor 均为 opaque；
-- entry list bodies are not required；detail 可含纯文本与不可信 HTML；
-- state writes use set semantics（非 toggle）；
-- list filters 映射到上游，而非过滤陈旧的客户端副本；
-- 每个家族都有 typed 请求/响应模型、校验、权限/秘密边界、超时与
-  稳定错误语义、测试。
+---
 
-### 仍为未来的家族（未实现）
+## 9. Frontend state architecture
+
+- **TanStack Query** 承载全部 server state（feeds / categories /
+  subscriptions / entries infinite / entry / AI 设置与结果 /
+  operations status / RSSHub config / backups 等）；mutation 一律
+  server-confirmed 后 invalidate，不做 optimistic update。
+- **Zustand** 承载轻量 UI 状态：
+  - `useAppSettings` —— 客户端设置唯一真源（localStorage 单键
+    `lumirss-settings`，normalize/migrate/副作用即时应用）；
+  - `useReaderUi` —— section / scope / view / selectedEntryRef /
+    mobileSidebarOpen；
+  - read-later store（设备本地）；旧 theme store 为兼容薄封装。
+- **settings-sync**：便携键 600ms debounce 序列化 PATCH 到
+  `/api/v1/settings`，启动 hydration，dirty-key 跨重载持久化，
+  pagehide keepalive。
+- 布局宽度、折叠态、自定义字体、过滤规则、稍后读列表为设备本地，
+  永不上传；secrets 永不出现在客户端。
+- 交互约束：打开文章只选中，不标已读；标已读路径 = 手动按钮或可选的
+  滚动标记（默认关）；read / starred / read-later 三态独立，均 set 语义。
+
+---
+
+## 10. API families
+
+确切路由以 `services/bff/src/lumirss/main.py` 为准；
+Web/BFF 路由对齐由 `services/bff/tests/test_api_contract.py` 钉死。
 
 ```text
-/api/v1/integrations/*   （web clipping / Obsidian / 邮件等显式延后的 Phase-2）
+健康（仅容器内可达；Caddy 只反代 /api/*）
+  GET /health/live   GET /health/ready
+
+读取 / 状态
+  GET  /api/v1/feeds            GET  /api/v1/entries
+  GET  /api/v1/entries/{ref}    PATCH /api/v1/entries/{ref}/state
+
+订阅 / 分类 / OPML / FreshRSS 入口
+  GET·POST /api/v1/subscriptions        PATCH·DELETE /api/v1/subscriptions/{ref}
+  GET  /api/v1/categories               PATCH /api/v1/categories/{id}
+  GET  /api/v1/opml/export             POST /api/v1/opml/import[/preview]
+  GET  /api/v1/freshrss-ui
+
+来源发现 / RSSHub
+  POST /api/v1/feed-preview             POST /api/v1/source-discovery
+  GET  /api/v1/rsshub/routes           POST /api/v1/rsshub/preview
+  GET·PATCH /api/v1/rsshub/config       GET  /api/v1/rsshub/config/export
+  PUT·DELETE /api/v1/rsshub/config/secrets/{key}
+  POST /api/v1/rsshub/config/apply
+
+设置
+  GET·PATCH·DELETE /api/v1/settings                 （便携 app.settings 文档）
+  GET·PUT /api/v1/settings/ai                       （全局非机密设置）
+  PUT·DELETE /api/v1/settings/ai/key                （默认 key，write-only）
+  GET·POST /api/v1/settings/ai/profiles             PATCH·DELETE .../profiles/{id}
+  PUT·DELETE /api/v1/settings/ai/profiles/{id}/secret
+  GET·PUT /api/v1/settings/ai/purposes              （purpose → profile 映射）
+
+AI 功能
+  GET·POST /api/v1/entries/{ref}/summary
+  GET·POST /api/v1/entries/{ref}/translation
+  GET  /api/v1/entries/{ref}/conversation
+  POST /api/v1/entries/{ref}/conversation/messages
+
+运维 / 备份 / 恢复 / 版本
+  GET  /api/v1/operations/status      GET  /api/v1/version
+  GET  /api/v1/backups                POST /api/v1/backups（202 后台 job）
+  GET  /api/v1/backups/{job_id}       GET  /api/v1/backups/remote（WebDAV）
+  GET·PUT /api/v1/backups/webdav      POST /api/v1/backups/webdav/test
+  POST /api/v1/restore/preview        POST /api/v1/restore
+```
+
+契约原则：
+
+- `entryRef` 与分页 cursor 均为 opaque；state 写入 set 语义；
+- 每个家族都有 typed 请求/响应模型、校验、超时与稳定错误语义；
+- AI GET 端点绝不触发 Provider 调用；key 端点 write-only，GET 只返回
+  `keyConfigured` 布尔；
+- 备份没有本地下载端点（本机文件由 operator 直接访问
+  `data/backups/`；远端经 WebDAV）；
+- `GET /api/v1/version` 返回 `{version, commit, apiVersion}`，commit 由
+  Docker build-arg `LUMIRSS_COMMIT` 注入，用于 Web/BFF 版本偏斜诊断。
+
+未实现、不要提前描述的家族：
+
+```text
+/api/v1/integrations/*   （web clipping / Obsidian / 邮件等 Phase-2）
 ```
 
 ---
 
-## 7. Adapter architecture
+## 11. Security and trust boundaries
 
-```mermaid
-flowchart LR
-    API[FastAPI routes] --> Service[Application services]
-    Service --> FRA[FreshRSSAdapter]
-    Service --> FRCA[FreshRSSControlAdapter]
-    Service --> RHCA[RSSHubCatalogAdapter]
-    Service --> RHSA[RSSHubControlAdapter]
-    Service --> AIPA[AIProviderAdapter]
-    Service --> Repo[Lumi repositories]
-```
-
-### FreshRSSAdapter — implemented domain
-
-Expected functions:
-
-- authenticate / recover tokens;
-- list feeds;
-- list entries with filters and cursor;
-- get entry detail;
-- set read/star state;
-- translate upstream failures into Lumi errors.
-
-### FreshRSSControlAdapter — implemented (0013)
-
-Expected functions:
-
-- subscribe;
-- unsubscribe;
-- change title/category;
-- OPML import/export;
-- selected user settings and diagnostics.
-
-Keep it separate from the normal read adapter so elevated/control behavior can be audited independently.
-
-### RSSHubCatalogAdapter — implemented (0014)
-
-Expected functions:
-
-- obtain a pinned/validated catalog representation;
-- search route metadata;
-- translate parameters into UI-safe schemas;
-- identify required configuration;
-- cache catalog with version/source metadata.
-
-Do not execute arbitrary code from downloaded metadata.
-
-### RSSHubControlAdapter — implemented (0018)
-
-Expected functions:
-
-- health probe;
-- route preview with timeout and output limits;
-- safe instance-base selection;
-- allow-listed config persistence;
-- controlled reload only through a narrow supervisor boundary if later approved.
-
-### AIProviderAdapter — implemented in 0015 (single provider, no SDK)
-
-Actual contract (see `services/bff/src/lumirss/ai_provider.py`):
-
-- narrow `AIProvider.summarize(text, language) -> str` protocol;
-- one direct OpenAI-compatible `chat/completions` implementation over the
-  shared httpx client (base URL + model from lumi.sqlite, API key from
-  server env only);
-- bounded timeout (connect 5s / read 60s), no auto-retry of auth /
-  invalid-request / model-not-found;
-- stable Lumi error mapping (`ai_not_configured` / `ai_auth_error` /
-  `ai_model_error` / `ai_rate_limited` / `ai_timeout` /
-  `ai_invalid_response` / `ai_upstream_error`), upstream bodies never
-  leaked;
-- explicit prompt-injection boundary in `summary-v1` system prompt.
-
-Multi-provider routing, fallback chains, streaming and agent orchestration
-remain out of scope.
+- **内容**：RSS/网站 HTML 视为不可信；transform 只动 text node 与白名单
+  属性，DOMPurify 是最终边界；正文内链接协议安全交由 DOMPurify 默认
+  规则；“打开原文”仅放行绝对 http/https。
+- **凭据**：上游凭据（`FRESHRSS_API_PASSWORD` 等）只存在于服务端 env；
+  AI / WebDAV / RSSHub 机密只存 `secrets.json`（0600）；所有机密读写
+  接口 write-only，不回显、不入日志、不进 Git、不进备份（manifest
+  `secretPolicy` 显式排除）。
+- **控制面**：BFF 无 Docker socket；RSSHub 配置为 allow-list +
+  restartRequired；恢复需先 preview 再显式输入字面量 `RESTORE`，执行前
+  自动创建当前状态安全备份；备份归档有成员数 / 总量 / 单文件上限。
+- **网络**：WebDAV 客户端 http 仅允许回环/私网字面量地址、重定向限
+  同源；来源发现与预览有 scheme/host 校验、有界 body/超时；OPML 导入
+  上限 2 MiB。
+- **边界**：Caddy 安全响应头；可选 basic auth（两个 auth 变量要么都设
+  要么都不设，只设一个容器拒绝启动）；FreshRSS/RSSHub 仅内网。
+- **版本偏斜**：关于页对比 Web 构建与 BFF commit（`/api/v1/version`）。
+- 延后硬化（0021 候选）：CSP / HSTS、速率限制、通用请求体限制、BFF
+  内部鉴权、DNS-rebinding 硬化。
 
 ---
 
-## 8. Frontend architecture v6
-
-### 8.1 Layering
-
-```text
-App Shell
-├── Navigation / Sidebar
-├── Timeline
-├── Reader
-├── Overlay Layer
-│   ├── Popover / Menu / Dialog
-│   └── future AI floating panel
-└── Responsive Layer
-    ├── mobile header
-    ├── navigation drawer
-    ├── list/detail route-state
-    └── future bottom sheet
-```
-
-### 8.2 State ownership
-
-- TanStack Query: server state, caching, invalidation, loading/error status;
-- Zustand: current view/feed/entry and other small UI state;
-- local component state: ephemeral controls;
-- persistent user preferences — **active (0017)**: ONE Zustand settings store (`useAppSettings`) is the client source of truth; local-first (localStorage cache + immediate CSS-variable application) with a debounced, serialized server durability layer (`/api/v1/settings`) — device-local state (layout widths, custom fonts, presets, filter rules) is never synced; secrets are never present client-side;
-- no duplicated feed/entry entity store unless a real offline feature is approved.
-
-Ownership boundaries (0014a roadmap revision, approved 2026-09-02):
-
-- **FreshRSS** = RSS-domain truth: feeds / entries / read / starred /
-  subscription / category. Never shadow-copied by Lumi SQLite.
-- **lumi.sqlite** (activated in 0015) = Lumi-owned application truth:
-  AI result cache, provider/model metadata, prompt version, content hash,
-  generation status, persistent Lumi server settings, future backup
-  metadata. Migration/schema strategy required before first write
-  (no unversioned SQLite file); no RSS-domain shadow data.
-- **RSSHub config** = RSSHub runtime/configuration truth. The 0018 RSSHub
-  Control Center is a typed schema-driven allow-list (settings with
-  secret/restartRequired metadata), not an arbitrary environment-variable
-  editor and not arbitrary container administration.
-
-### 8.3 Design-system layers
-
-```text
-Semantic tokens
-   ▼
-UI primitives
-   ▼
-Domain components
-   ▼
-Page/layout compositions
-```
-
-Page components must not each redefine buttons, menus, selected states or theme colors.
-
-### 8.4 Timeline model
-
-The UI should gracefully support optional visual data:
-
-- feed/source name;
-- favicon/icon;
-- timestamp;
-- title;
-- excerpt;
-- optional thumbnail;
-- read/star state.
-
-If the current API lacks excerpt/image/favicon fields:
-
-- show a clean text-only fallback;
-- do not scrape directly from the browser;
-- record a future API requirement;
-- do not block the UI reboot.
-
-### 8.5 Reader model
-
-The Reader keeps article content primary:
-
-```text
-metadata
-headline
-optional AI summary
-article body
-```
-
-Reader width, font, size, line height and background are user preferences, but the reader theme is independent from the app theme.
-
-### 8.6 AI overlay model — future
-
-```text
-AiChatCore
-├── DesktopFloatingPanel
-├── DesktopDrawerOrDock
-├── MobileBottomSheet
-└── FullscreenAiRoute
-```
-
-The presentation containers share one chat/session core. This prevents desktop and mobile from drifting into separate products.
-
----
-
-## 9. Responsive architecture
-
-The current public baseline uses a desktop breakpoint at 1024px. Milestone 0009 should preserve behavior while improving the model.
-
-Recommended target behavior:
-
-| Viewport | Navigation | Timeline | Reader | AI later |
-|---|---|---|---|---|
-| ≥1440 | fixed sidebar | fixed/resize | fluid | floating panel |
-| 1200–1439 | compact sidebar | compact | fluid | overlay/drawer |
-| 1024–1199 | collapsible sidebar | visible | visible | drawer |
-| 768–1023 | drawer | list/detail | route/detail | sheet/drawer |
-| <768 | mobile navigation | single list | separate detail | bottom sheet/fullscreen |
-
-Breakpoints are behavioral guides, not permission for hard-coded device assumptions. Container queries may be considered where useful and supported.
-
----
-
-## 10. Theme architecture
-
-### 10.1 Theme dimensions
-
-```text
-App mode       system / light / dark
-Palette        Lumi Mist and future presets
-Accent         default indigo or custom color
-Reader theme   follow app / paper / warm / sepia / green / custom
-Density        comfortable / compact (later)
-```
-
-### 10.2 Semantic tokens
-
-Suggested families:
-
-```css
---lumi-canvas
---lumi-sidebar
---lumi-surface
---lumi-surface-elevated
---lumi-reader
-
---lumi-surface-hover
---lumi-surface-selected
---lumi-surface-pressed
-
---lumi-text-primary
---lumi-text-secondary
---lumi-text-tertiary
---lumi-text-disabled
-
---lumi-border
---lumi-separator
---lumi-focus-ring
-
---lumi-accent
---lumi-accent-hover
---lumi-accent-pressed
---lumi-accent-soft
---lumi-accent-contrast
-```
-
-Components use semantic values only. Presets redefine tokens; components do not branch on named themes.
-
-### 10.3 User-custom color
-
-Initial custom-color UI should expose only safe inputs such as accent and reader background. Derived hover/pressed/soft/focus colors should be generated and contrast-checked, not manually entered one by one.
-
----
-
-## 11. Source discovery architecture — implemented (0014)
-
-```mermaid
-flowchart TD
-    Input[URL or source query] --> Normalize[Normalize and validate]
-    Normalize --> Direct[Direct RSS / Atom probe]
-    Direct --> Declared[HTML declared feeds / common endpoints]
-    Declared --> Catalog[RSSHub route match]
-    Catalog --> Preview[Candidate preview]
-    Preview --> Subscribe[Subscribe through FreshRSSControlAdapter]
-
-    Catalog -. later .-> Structured[JSON/API candidate]
-    Structured -. later .-> WebRule[Website rule / extraction]
-```
-
-MVP source discovery should prioritize stable RSS and RSSHub paths. JSON/API and website parsing belong to Phase 2 unless separately approved.
-
-Security requirements:
-
-- validate schemes and target hosts;
-- SSRF protection;
-- DNS/rebinding considerations;
-- bounded body sizes/timeouts;
-- safe redirects;
-- no browser-side fetching of arbitrary user URLs;
-- preview output sanitized and limited.
-
----
-
-## 12. Unified settings architecture — implemented (0010/0017)
-
-Lumi should expose product-relevant settings through one UI:
-
-```text
-General
-Appearance
-Reading
-Sources
-  RSS / FreshRSS
-  RSSHub
-AI
-Data and backup
-Advanced diagnostics
-```
-
-Rules:
-
-- do not mirror every FreshRSS setting;
-- expose only settings that affect Lumi behavior or service health;
-- classify settings as immediate, reload-required or restart-required;
-- advanced links to upstream UIs may exist as escape hatches;
-- secret values are write-only/masked and never echoed back.
-
----
-
-## 13. Long-term unified source layer
-
-Phase 2 architecture:
-
-```mermaid
-flowchart TD
-    Web[Lumi Web] --> API[FastAPI Application]
-    API --> Registry[Unified Source Registry]
-    Registry --> RSS[RSS Connector / FreshRSS]
-    Registry --> Clip[Web Clip Connector]
-    Registry --> JSON[JSON/API Connector]
-    Registry --> Mail[Email Connector]
-    Registry --> Obs[Obsidian Connector]
-
-    RSS --> Index[Unified Search / Index]
-    Clip --> Index
-    JSON --> Index
-    Mail --> Index
-    Obs --> Index
-
-    Index --> Agent[Agent Context Layer]
-```
-
-The registry should normalize identity, provenance, timestamps, source type and processing state without erasing connector-native data.
-
-Do not implement this whole model during MVP. Preserve extension seams now.
-
----
-
-## 14. Deployment architecture
+## 12. Deployment topology
 
 ### Development
 
-Likely services:
+```text
+docker compose up -d        # 仅 FreshRSS(127.0.0.1:8080) + RSSHub(127.0.0.1:1200)
+uv run uvicorn lumirss.main:app --reload   # services/bff，端口 8000
+pnpm dev                    # apps/web
+```
 
-- FreshRSS;
-- RSSHub;
-- BFF run locally;
-- Vite Web dev server;
-- local persistent volumes and gitignored secrets.
+镜像按 digest/版本 pin；真实凭据只进 gitignored `.env`。
 
-### Production target
+### Production（`docker-compose.prod.yml`）
 
 ```text
 Internet / private access
           ▼
-        Caddy
-      ┌───┴────┐
-      ▼        ▼
-  React Web   /api → BFF
-                   ├─ FreshRSS internal
-                   ├─ RSSHub internal
-                   ├─ SQLite volume
-                   └─ AI provider outbound
+   web (Caddy, 80/443)      ← 唯一发布端口的服务
+   ├── /            → SPA 静态（/srv，try_files → index.html）
+   └── /api/*       → bff:8000
+                      ├─ lumi-data 卷（lumi.sqlite + secrets.json + backups）
+                      ├─ freshrss-data 卷（只读，供在线备份）
+                      ├─ FreshRSS（内网，healthcheck 门控 BFF 启动）
+                      ├─ RSSHub（内网，非启动阻塞项）
+                      └─ AI Provider（出站 HTTPS）
 ```
 
-Single-user access options must be selected in a production spec, such as a Lumi session, Tailscale, Cloudflare Access or Caddy auth. Do not combine multiple auth schemes accidentally.
+- Caddy 镜像内 entrypoint 按 `LUMIRSS_AUTH_USER` + `LUMIRSS_AUTH_HASH`
+  渲染 auth / noauth 配置（都设或都不设；只设一个 → 拒绝启动）；
+- 版本溯源：`LUMIRSS_BUILD_COMMIT` → BFF `LUMIRSS_COMMIT` 与 Web
+  `VITE_GIT_COMMIT` 两个 build-arg，最终呈现在「关于」页与
+  `/api/v1/version`；
+- 日志：json-file 轮转（10 MB × 3）；资源限制按服务配置；
+- 单用户访问：内置 Caddy basic auth；Tailscale / Cloudflare Access 等
+  外层方案可替换，但不要无意叠加多套认证。
+- 完整操作手册：[development/operations.md](../development/operations.md)。
 
 ---
 
-## 15. Availability and failure isolation
+## 13. Failure isolation and observability
 
-- Reader should display already-fetched FreshRSS content when RSSHub is down;
-- AI failures never block reading, state changes or source management;
-- a source preview failure does not corrupt existing subscriptions;
-- FreshRSS failure is surfaced as dependency unavailability, not generic blank UI;
-- cached route metadata may remain usable when remote catalog refresh fails;
-- settings/control operations return explicit apply/reload state;
-- no unbounded background retry loops.
-
----
-
-## 16. Observability
-
-Minimum future observability:
-
-- structured, redacted BFF logs;
-- request correlation ID;
-- liveness and dependency readiness;
-- upstream latency/error category without secret URL query values;
-- source preview diagnostics safe for user display;
-- AI provider/model/timing/usage metadata without prompt/content leakage by default;
-- backup/restore audit summaries.
-
-Do not add a heavyweight telemetry platform before the production milestone requires it.
+- RSSHub 不可用只影响来源发现/预览，不影响阅读；
+- FreshRSS 故障以类型化“依赖不可用”呈现，不是空白页；
+- AI 未配置/失败永不阻塞阅读、状态写入与来源管理；
+- `/health/ready` 只由核心依赖（lumi.sqlite）决定；FreshRSS/RSSHub
+  只报告、永不导致 not ready；
+- 备份/恢复单并发、阶段真实上报；无无界后台重试循环；
+- 日志脱敏；`/api/v1/operations/status` 提供各依赖真实探测（延迟/
+  类型化错误），UI 在「设置 → 账户与服务」展示。
 
 ---
 
-## 17. Security model
+## 14. Deferred architecture
 
-Threat areas:
+以下为明确延后，CURRENT 文档不得描述为已存在：
 
-- untrusted RSS/HTML;
-- SSRF through source discovery and full-text extraction;
-- malicious feed URLs/redirects;
-- upstream credentials;
-- RSSHub route secrets/cookies;
-- AI prompt injection in article content;
-- arbitrary service control;
-- private Obsidian/email data in future;
-- logs/screenshots containing private subscriptions.
-
-Core controls:
-
-- server-side validation;
-- protocol/host allow-deny policy;
-- sanitization;
-- strict secret boundaries;
-- least-privilege adapters;
-- no browser credentials for upstreams;
-- no normal BFF Docker socket;
-- explicit user action for destructive operations;
-- backup encryption/retention decisions in later specs.
+- Phase-2 统一来源层：web clipping、JSON/API connector、邮件、
+  Obsidian connector、unified source registry、统一搜索/索引、
+  agent workspace；
+- 多用户 / 多租户与公共互联网硬化；
+- PWA 离线：manifest 已有，Service Worker / 离线缓存 / Push /
+  后台同步未实现；
+- AI：streaming、fallback 链、多供应商路由、向量检索；
+- Caddy 通用速率限制 / 请求体限制 / CSP·HSTS、BFF 内部鉴权
+  （0021 Security & Operations Hardening 候选范围）。
 
 ---
 
-## 18. Key architecture decisions
+## 15. Related ADRs and history
 
-### ADR-001 — FreshRSS owns RSS-domain truth
+正式 ADR（历史记录，不随实现改写）见
+[decisions/](decisions/)。关键决定速览：
 
-Accepted. Lumi does not duplicate all RSS records in SQLite.
+| ADR | 决定 | 状态 |
+|---|---|---|
+| [0001](decisions/0001-freshrss-owns-rss-state.md) | FreshRSS owns RSS-domain truth（Lumi 不复制 RSS 记录） | Accepted |
+| [0002](decisions/0002-web-only-talks-to-bff.md) | 前端只与 BFF 通信 | Accepted |
+| [0003](decisions/0003-no-rss-shadow-database.md) | 不在 SQLite 建 RSS 影子库 | Accepted |
 
-### ADR-002 — RSSHub is upstream of FreshRSS in the read path
+仅在本文维护的决定摘要（原文散见于历史里程碑）：
 
-Accepted. This preserves one RSS-domain state model.
+- **RSSHub 位于读取路径上游**：保持单一 RSS 域状态模型；控制面另建，
+  不让 BFF 绕过 FreshRSS 读文章。
+- **Lumi 是唯一日常 UI**：需要独立来源/服务控制面支撑。
+- **Folo 交互对齐，而非产品对齐**：研究其 UI 模式；社交/经济/社区
+  范围不做。
+- **App 主题与 Reader 主题相互独立**。
+- **AI 可选且非阻塞**。
+- **BFF 不做广泛 Docker 控制**；未来控制操作必须走窄 allow-list 边界。
+- **上游代码复用必须可追溯 + 许可证门禁**（pin SHA、记录来源、保留
+  notices，见 [upstream/](../upstream/)）。
 
-### ADR-003 — Lumi becomes the sole normal UI
-
-Accepted as product direction. Requires a separate source/service control plane.
-
-### ADR-004 — Frontend talks only to the BFF
-
-Accepted. Prevents credential leakage and upstream coupling.
-
-### ADR-005 — Folo interaction parity, not product parity
-
-Accepted. UI patterns are studied; social/economic/community scope is rejected for MVP.
-
-### ADR-006 — App theme and Reader theme are independent
-
-Accepted. Enables long-form reading preferences without recoloring the full app.
-
-### ADR-007 — AI is optional and non-blocking
-
-Accepted. AI does not gate normal reading or source workflows.
-
-### ADR-008 — Future non-RSS connectors use a Lumi unified layer
-
-Accepted as Phase 2 direction. FreshRSS is not the global data store.
-
-### ADR-009 — No broad Docker control in the BFF
-
-Accepted. Future control operations require a narrow allow-listed boundary.
-
-### ADR-010 — Upstream code reuse requires traceability and license gate
-
-Accepted. Pin SHA, classify reuse and keep notices.
-
----
-
-## 19. Migration from v5 wording
-
-Documents that currently say “the BFF never talks directly to RSSHub” need a precise replacement:
-
-```text
-The normal article read path never bypasses FreshRSS to read RSSHub output.
-A separate RSSHub catalog/control adapter (implemented 0014/0018) contacts
-RSSHub for route discovery, preview, health and allow-listed instance settings.
-```
-
-Documents that say “FreshRSS is the sole source of truth” should become:
-
-```text
-FreshRSS is the source of truth for the RSS domain.
-Lumi owns application settings, AI metadata and future non-RSS connector data.
-```
-
-This is a clarification and extension, not a rewrite of completed 0001–0008 behavior.
-
----
-
-## 20. Architecture acceptance for milestone 0009
-
-0009 is architectural-safe only when:
-
-- no existing BFF contract is changed without separate approval;
-- Web still uses the BFF exclusively;
-- read/star semantics and sanitization remain intact;
-- responsive behavior remains functional;
-- design tokens and component boundaries improve future theming/settings work;
-- AI panel is only a presentation boundary unless AI implementation is separately approved;
-- source/control features remain documented as planned;
-- upstream/license records exist before source-derived code is merged.
-
+里程碑级历史（每步如何走到当前架构）：
+[milestones/](../milestones/)；正常开发无需预读。

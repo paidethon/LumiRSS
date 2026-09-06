@@ -4,7 +4,7 @@
 
 - Docker & Docker Compose (for FreshRSS + RSSHub)
 - Python 3.12+ with `uv` (for BFF)
-- Node.js 20+ with `pnpm` (for Web)
+- Node.js 20+ with `pnpm` (for Web; CI uses Node 24)
 
 ## FreshRSS and RSSHub
 

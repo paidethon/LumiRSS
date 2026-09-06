@@ -15,7 +15,7 @@ source discovery & preview, AI summary / translation / article conversation,
 a unified settings center, and local + WebDAV backup with staged restore.
 Web clipping, Obsidian and other Phase-2 connectors are not implemented.
 
-> LumiRSS is under active MVP development.
+> The MVP baseline is complete and LumiRSS remains under active development.
 > Documentation and project status: [docs/README.md](docs/README.md)
 
 ---
@@ -97,7 +97,10 @@ PATCH /api/v1/entries/{entryRef}/state
 ```
 
 Entry references and cursors are opaque. Opening an article does not
-auto-mark it read. Read/star writes use set semantics.
+auto-mark it read. Read/star writes use set semantics. The full API
+family list (subscriptions, RSSHub control, AI settings/profiles,
+backups, version provenance) lives in
+[docs/architecture/README.md](docs/architecture/README.md).
 
 ---
 
