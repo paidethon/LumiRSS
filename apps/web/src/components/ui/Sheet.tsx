@@ -1,21 +1,18 @@
-/** Sheet primitive — 0009 Gate 1；0011 Gate 2 升级为完整 modal。
+/** Sheet primitive — Base UI Drawer 行为底座（原 0009/0011 自研实现迁移）。
  *
- * 移动端侧滑抽屉（Drawer）：底部小屏导航/表单用。Escape 关闭、
- * 遮罩点击关闭、关闭还焦、进入时焦点入面板。宽度由 panelClassName
- * 控制（默认 80vw / max 320px）。桌面 Drawer 场景复用同一组件。
- *
- * 0011 Gate 2（用户批准的 modal 升级，Spec AC7）：
- * - role="dialog" + aria-modal + 焦点 trap（Tab 在面板内循环）；
- * - 初始焦点：第一个可聚焦元素（无则面板自身）；
- * - 打开时锁定背景滚动（body overflow hidden，关闭恢复）；
- * - 遮罩点击关闭修复：pointerdown 目标不在面板内即关闭
- *  （原实现 `target === currentTarget` 因遮罩 div 覆盖而永不触发）。
- *
- * 0016：新增 side="right"（0016 AI 对话面板；移动端全宽 = 全屏对话）。 */
+ * 移动端侧滑抽屉：left = 侧边导航抽屉（MobileNavigationDrawer）、
+ * right = 右侧面板（ArticleConversation AI 对话）、bottom = 底部 sheet
+ * （ReaderAaPanel 阅读样式）。行为由 Base UI Drawer（stable since 1.3，
+ * 继承 Dialog 语义）提供：role=dialog + aria-modal、Escape、遮罩/外点
+ * 关闭、焦点 trap 与还原、body 滚动锁、swipe-to-dismiss（方向随 side
+ * 映射）。视觉保持 Lumi：--lumi-* token 面板、三方向定位、滑入动效
+ * 用 motion-slow token + data-starting-style/data-ending-style 实现
+ * （旧实现定义了 motion token 但从未真正动画，此处补齐且尊重
+ * prefers-reduced-motion / data-motion-reduce）。 */
 
-import { type ReactNode, useId, useRef } from 'react'
+import { type ReactNode, useRef } from 'react'
+import { Drawer as BaseDrawer } from '@base-ui/react/drawer'
 import { cx } from './cx'
-import { useModalA11y } from '../../lib/use-modal-a11y'
 
 export interface SheetProps {
   open: boolean
@@ -24,7 +21,7 @@ export interface SheetProps {
   label: string
   children: ReactNode
   /** 滑出方向：left = 侧边导航抽屉；bottom = 底部 sheet；
-   *  right = 右侧面板（0016 AI 对话） */
+   *  right = 右侧面板（AI 对话） */
   side?: 'left' | 'bottom' | 'right'
   /** 面板附加类（宽度/safe-area/背景表面由调用方定制） */
   panelClassName?: string
@@ -32,58 +29,74 @@ export interface SheetProps {
   id?: string
 }
 
-export function Sheet({ open, onClose, label, children, side = 'left', panelClassName, id }: SheetProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const labelId = useId()
-  // 0020 Gate 3：模态键盘/焦点/滚动行为复用共享 hook（与 Dialog/
-  // MobileSettingsScreen 同源）。遮罩点击关闭仍由下方 onPointerDown 处理。
-  useModalA11y(panelRef, open, onClose)
+const SWIPE_DIRECTION = {
+  left: 'left',
+  right: 'right',
+  bottom: 'down',
+} as const
 
-  if (!open) return null
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+
+export function Sheet({ open, onClose, label, children, side = 'left', panelClassName, id }: SheetProps) {
+  const popupRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div
-      className={cx(
-        'fixed inset-0 z-[var(--lumi-z-dialog)]',
-        side === 'left' && 'flex',
-        side === 'right' && 'flex justify-end',
-        side === 'bottom' && 'flex items-end',
-      )}
-      onPointerDown={(e) => {
-        // 遮罩点击关闭：目标不在面板内（遮罩 div / 容器空白）即关闭
-        if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-          onClose()
-        }
+    <BaseDrawer.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
       }}
+      swipeDirection={SWIPE_DIRECTION[side]}
     >
-      <div
-        className="absolute inset-0 bg-[var(--lumi-text-primary)]/30"
-        aria-hidden="true"
-      />
-      <div
-        ref={panelRef}
-        id={id}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelId}
-        tabIndex={-1}
-        className={cx(
-          'relative bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-dialog)]',
-          'duration-[var(--lumi-motion-slow)]',
-          side === 'left' &&
-            'h-full w-4/5 max-w-80 border-r border-[var(--lumi-border)]',
-          side === 'right' &&
-            'h-full w-full max-w-md border-l border-[var(--lumi-border)]',
-          side === 'bottom' &&
-            'max-h-[85dvh] w-full rounded-t-[var(--lumi-radius-xl)] border-t border-[var(--lumi-border)]',
-          panelClassName,
-        )}
-      >
-        <h2 id={labelId} className="sr-only">
-          {label}
-        </h2>
-        {children}
-      </div>
-    </div>
+      <BaseDrawer.Portal>
+        <BaseDrawer.Backdrop
+          className={cx(
+            'fixed inset-0 z-[var(--lumi-z-dialog)] bg-[var(--lumi-text-primary)]/30',
+            'supports-[-webkit-touch-callout:none]:absolute',
+          )}
+        />
+        <BaseDrawer.Viewport
+          className={cx(
+            'fixed inset-0 z-[var(--lumi-z-dialog)] flex',
+            side === 'right' && 'justify-end',
+            side === 'bottom' && 'items-end',
+          )}
+        >
+          <BaseDrawer.Popup
+            ref={popupRef}
+            id={id}
+            aria-modal="true"
+            initialFocus={() => {
+              const panel = popupRef.current
+              return panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel
+            }}
+            className={cx(
+              'relative bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-dialog)]',
+              'transition-transform duration-[var(--lumi-motion-slow)] ease-[var(--lumi-ease)]',
+              side === 'left' &&
+                cx(
+                  'h-full w-4/5 max-w-80 border-r border-[var(--lumi-border)]',
+                  'data-starting-style:-translate-x-full data-ending-style:-translate-x-full',
+                ),
+              side === 'right' &&
+                cx(
+                  'h-full w-full max-w-md border-l border-[var(--lumi-border)]',
+                  'data-starting-style:translate-x-full data-ending-style:translate-x-full',
+                ),
+              side === 'bottom' &&
+                cx(
+                  'max-h-[85dvh] w-full rounded-t-[var(--lumi-radius-xl)] border-t border-[var(--lumi-border)]',
+                  'data-starting-style:translate-y-full data-ending-style:translate-y-full',
+                ),
+              panelClassName,
+            )}
+          >
+            <BaseDrawer.Title className="sr-only">{label}</BaseDrawer.Title>
+            {children}
+          </BaseDrawer.Popup>
+        </BaseDrawer.Viewport>
+      </BaseDrawer.Portal>
+    </BaseDrawer.Root>
   )
 }

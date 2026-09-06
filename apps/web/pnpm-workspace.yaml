@@ -1,0 +1,6 @@
+# pnpm v11 项目配置（无 packages 字段，不构成 workspace）。
+# verifyDepsBeforeRun=false：pnpm 在 run 前的自动 install 会把
+# @base-ui/react 的可选 peers 通过 autoInstallPeers 装进包目录内部
+# （symlink + 自动 peers 组合怪癖），产生嵌套 node_modules 导致
+# 双 React 实例崩溃（vitest 与 dev server 均受影响）。
+verifyDepsBeforeRun: false

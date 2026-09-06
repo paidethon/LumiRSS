@@ -1,4 +1,5 @@
 import type { EntryListItem } from '../api/types'
+import { memo } from 'react'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { EntryActionButtons } from './EntryActionButtons'
@@ -17,8 +18,11 @@ import { listDateTimeFormatter as cardDateFormatter } from '../lib/date-format'
  *   点击平级共存（§19/§20：08:00 ◷ ★，icon + aria-label，无文字）；
  * - 动作区由 EntryActionButtons 渲染（触屏设备常显，§18）。
  *
- * 契约缺口诚实降级（Spec §8）：无摘要/缩略图 → 纯文本卡片。 */
-export default function EntryCard({
+ * 契约缺口诚实降级（Spec §8）：无摘要/缩略图 → 纯文本卡片。
+ *
+ * memo 边界：与 EntryRow 同理——props 仅稳定引用的 item + 布尔
+ * selected；没有 memo 时每次选择都会重渲染整个列表的所有卡片。 */
+function EntryCard({
   item,
   selected,
 }: {
@@ -80,6 +84,8 @@ export default function EntryCard({
     </div>
   )
 }
+
+export default memo(EntryCard)
 
 function formatPublishedAt(value: string | null): string {
   if (value === null) return '—'

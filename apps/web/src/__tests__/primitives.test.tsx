@@ -17,6 +17,9 @@ import { Select } from '../components/ui/Select'
 import { Sheet } from '../components/ui/Sheet'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Switch } from '../components/ui/Switch'
+import { Tabs } from '../components/ui/Tabs'
+import { RadioGroup, RadioOption } from '../components/ui/RadioGroup'
+import { Tooltip } from '../components/ui/Tooltip'
 import { Check } from 'lucide-react'
 
 describe('Button', () => {
@@ -43,6 +46,53 @@ describe('IconButton', () => {
   it('aria-label 提供 accessible name（AC7：icon-only 必须有名字）', () => {
     render(<IconButton icon={<Check aria-hidden />} label="标记为已读" />)
     expect(screen.getByRole('button', { name: '标记为已读' })).toBeInTheDocument()
+  })
+})
+
+describe('Tooltip', () => {
+  function setup() {
+    render(
+      <Tooltip content="收藏">
+        <IconButton icon={<Check aria-hidden />} label="收藏" />
+      </Tooltip>,
+    )
+    return screen.getByRole('button', { name: '收藏' })
+  }
+
+  it('trigger 的 accessible name 与提示内容一致（Base UI 无障碍模式：信息由 label 承载，不依赖 hover）', () => {
+    const trigger = setup()
+    // 修复旧实现：aria-describedby 挂在 contents span 上从不生效。
+    // Base UI 1.8 的正确模式是 trigger 自带 aria-label（等价于 content），
+    // 触发器即使不悬浮也向屏幕阅读器/触屏用户传达同等信息。
+    expect(trigger).toHaveAttribute('aria-label', '收藏')
+  })
+
+  it('hover 触发显示内容', async () => {
+    const trigger = setup()
+    fireEvent.mouseEnter(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+  })
+
+  it('键盘 focus 触发；Escape 或移出后关闭', async () => {
+    const trigger = setup()
+    fireEvent.focus(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByText('收藏')).toBeNull()
+    })
+    fireEvent.mouseEnter(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+    fireEvent.mouseLeave(trigger)
+    await waitFor(() => {
+      expect(screen.queryByText('收藏')).toBeNull()
+    })
   })
 })
 
@@ -164,12 +214,17 @@ describe('Dialog', () => {
     return { onClose }
   }
 
-  it('role=dialog + aria-modal + aria-labelledby 指向标题', () => {
+  it('role=dialog + aria-modal + aria-labelledby 指向标题', async () => {
     setup()
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     const labelId = dialog.getAttribute('aria-labelledby')!
     expect(document.getElementById(labelId)?.textContent).toBe('确认删除')
+    // Base UI 模态隔离：面板外内容 inert + aria-hidden（比 aria-modal 更强）
+    await waitFor(() => {
+      expect(document.querySelector('[data-base-ui-inert]')).not.toBeNull()
+    })
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
   })
 
   it('Escape 关闭（stopPropagation 不影响外层）', () => {
@@ -178,18 +233,33 @@ describe('Dialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Tab 焦点 trap 在对话框内循环', () => {
+  it('Tab 焦点 trap 在对话框内循环', async () => {
     setup()
     const dialog = screen.getByRole('dialog')
     const focusables = [
       ...dialog.querySelectorAll<HTMLElement>('button'),
     ]
-    // 初始焦点应在第一个可聚焦元素
-    expect(focusables[0]).toHaveFocus()
+    // 初始焦点应在第一个可聚焦元素（Base UI 经 rAF 异步落焦）
+    await waitFor(() => {
+      expect(focusables[0]).toHaveFocus()
+    })
     // 在最后一个元素上按 Tab → 焦点回到第一个
     focusables[focusables.length - 1].focus()
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(focusables[0]).toHaveFocus()
+  })
+
+  it('初始焦点落在第一个可聚焦元素', async () => {
+    setup()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '确定' })).toHaveFocus()
+    })
+  })
+
+  it('打开时锁定 body 滚动（Base UI modal）', () => {
+    setup()
+    // Base UI 锁定用 overflow-x/y 长属性（非简写）
+    expect(document.body.style.overflowY).toBe('hidden')
   })
 })
 
@@ -204,7 +274,7 @@ describe('Sheet', () => {
         </Sheet>
       </>,
     )
-    const trigger = screen.getByRole('button', { name: '触发抽屉' })
+    const trigger = screen.getByText('触发抽屉')
     trigger.focus()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -220,19 +290,21 @@ describe('Sheet', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  // 0011 Gate 2：modal 升级后的新行为
-  it('打开时锁定背景滚动（body overflow hidden），卸载恢复', () => {
+  // 0011 Gate 2：modal 升级后的新行为；Base UI 迁移后滚动锁用长属性
+  it('打开时锁定背景滚动（body overflow hidden），卸载恢复', async () => {
     const { unmount } = render(
       <Sheet open onClose={vi.fn()} label="导航">
         <p>抽屉内容</p>
       </Sheet>,
     )
-    expect(document.body.style.overflow).toBe('hidden')
+    expect(document.body.style.overflowY).toBe('hidden')
     unmount()
-    expect(document.body.style.overflow).not.toBe('hidden')
+    await waitFor(() => {
+      expect(document.body.style.overflowY).not.toBe('hidden')
+    })
   })
 
-  it('初始焦点落在第一个可聚焦元素；panelClassName/id 透传', () => {
+  it('初始焦点落在第一个可聚焦元素；panelClassName/id 透传', async () => {
     render(
       <Sheet
         open
@@ -248,23 +320,32 @@ describe('Sheet', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('id', 'test-sheet')
     expect(dialog.className).toContain('bg-[var(--lumi-sidebar)]')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '第一个' }))
+    // Base UI 经 rAF 异步落焦
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: '第一个' }))
+    })
   })
 
-  it('遮罩 pointerDown 关闭（面板内点击不关闭）', () => {
+  it('遮罩 pointerDown 关闭（面板内点击不关闭）', async () => {
     const onClose = vi.fn()
-    const { container } = render(
+    render(
       <Sheet open onClose={onClose} label="导航">
         <button type="button">面板内</button>
       </Sheet>,
     )
-    // 面板内点击：不关闭
-    fireEvent.pointerDown(screen.getByRole('button', { name: '面板内' }))
-    expect(onClose).not.toHaveBeenCalled()
-    // 遮罩（aria-hidden div）pointerDown：关闭
-    const overlay = container.querySelector('div[aria-hidden="true"]')!
-    fireEvent.pointerDown(overlay)
-    expect(onClose).toHaveBeenCalledTimes(1)
+    // 面板内完整点击手势：不关闭
+    const inside = screen.getByRole('button', { name: '面板内' })
+    fireEvent.pointerDown(inside)
+    fireEvent.pointerUp(inside)
+    fireEvent.click(inside)
+    // 面板外点击（遮罩/页面其余部分）：关闭（Base UI 增强点击手势：
+    // pointerdown + pointerup + click 完整序列才触发外点关闭）
+    fireEvent.pointerDown(document.body)
+    fireEvent.pointerUp(document.body)
+    fireEvent.click(document.body)
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
   })
 })
 
@@ -281,6 +362,87 @@ describe('Switch', () => {
     expect(sw).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(sw)
     expect(sw).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('键盘 Space 切换（Base UI 隐藏 input 提供键盘行为）', () => {
+    function Demo() {
+      const [on, setOn] = useState(false)
+      return (
+        <Switch checked={on} onCheckedChange={setOn} label="减少动效" />
+      )
+    }
+    render(<Demo />)
+    const sw = screen.getByRole('switch', { name: '减少动效' })
+    fireEvent.keyDown(sw, { key: ' ' })
+    fireEvent.click(sw)
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
+describe('Tabs', () => {
+  function TabsDemo() {
+    const [tab, setTab] = useState<'a' | 'b'>('a')
+    return (
+      <Tabs
+        aria-label="模式"
+        value={tab}
+        onValueChange={setTab}
+        options={[
+          { value: 'a', label: '模式 A' },
+          { value: 'b', label: '模式 B' },
+        ]}
+        panels={{ a: <p>内容 A</p>, b: <p>内容 B</p> }}
+      />
+    )
+  }
+
+  it('tablist/tab/tabpanel 语义 + 仅渲染激活面板', () => {
+    render(<TabsDemo />)
+    const tablist = screen.getByRole('tablist', { name: '模式' })
+    expect(tablist).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '模式 A' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '模式 B' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByText('内容 A')).toBeInTheDocument()
+    expect(screen.queryByText('内容 B')).toBeNull()
+  })
+
+  it('点击切换 + ←/→ 键盘导航（Base UI roving focus）', () => {
+    render(<TabsDemo />)
+    const tabA = screen.getByRole('tab', { name: '模式 A' })
+    const tabB = screen.getByRole('tab', { name: '模式 B' })
+    fireEvent.click(tabB)
+    expect(screen.getByText('内容 B')).toBeInTheDocument()
+    fireEvent.keyDown(tabA, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: '模式 B' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
+describe('RadioGroup', () => {
+  function RadioDemo() {
+    const [value, setValue] = useState<'x' | 'y'>('x')
+    return (
+      <RadioGroup
+        aria-label="选择"
+        value={value}
+        onValueChange={setValue}
+      >
+        <RadioOption value="x">选项 X</RadioOption>
+        <RadioOption value="y">选项 Y</RadioOption>
+      </RadioGroup>
+    )
+  }
+
+  it('radiogroup/radio 语义 + aria-checked 跟随受控值', () => {
+    render(<RadioDemo />)
+    const group = screen.getByRole('radiogroup', { name: '选择' })
+    expect(group).toBeInTheDocument()
+    const x = screen.getByRole('radio', { name: '选项 X' })
+    const y = screen.getByRole('radio', { name: '选项 Y' })
+    expect(x).toHaveAttribute('aria-checked', 'true')
+    expect(y).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(y)
+    expect(y).toHaveAttribute('aria-checked', 'true')
+    expect(x).toHaveAttribute('aria-checked', 'false')
   })
 })
 

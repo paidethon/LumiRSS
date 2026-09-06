@@ -147,6 +147,20 @@ Do not run full test suites for ordinary CSS or small UI changes.
 - Semantic tokens, not hard-coded colors;
 - Reusable primitives separate from domain components.
 
+### UI architecture (Base UI foundation)
+
+- Feature components MUST NOT import `@base-ui/react` directly;
+  Base UI may only be used inside `components/ui/`;
+- Reuse an existing Lumi UI primitive before creating a new one;
+- Icon-only controls must use `IconButton` unless a documented
+  exception exists (see design-system.md §19);
+- Lumi Design Tokens (`--lumi-*`) are the visual source of truth;
+- New modal/menu/popover/tooltip behavior must not be reimplemented
+  manually — Base UI owns focus trap, Escape, dismissal, scroll lock,
+  portal, positioning and ARIA;
+- Do not introduce a second headless UI library (no shadcn, Radix,
+  Headless UI, Ariakit, React Aria).
+
 ### Accessibility
 
 - Visible keyboard focus; logical tab order;

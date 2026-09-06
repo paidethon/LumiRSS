@@ -7,16 +7,19 @@
  * - 点击任一行 → push 全屏子页（内部状态栈，无路由依赖）：左上返回
  *   按钮 + 吸顶标题 + 该分类设置项（与桌面共享 useCategoryItems）。
  *
- * 修复背景（AC1/AC2）：0010 Gate D 的「Dialog fullscreenOnMobile + chip
- * 横条」方案在 390px 实测布局损坏（容器缺 max-md:flex-col，内容区被
- * 挤出视口、chips 被 stretch 拉成竖条）——按 Folo 移动端模式重设计。 */
+ * 模态行为（Escape / 焦点 / 滚动锁 / aria-modal）由 Lumi Sheet（Base UI
+ * Drawer）提供——此前自研 role="dialog" + useModalA11y 是项目里第三个
+ * 手写 modal 实现。以 matchMedia 匹配 Tailwind md 断点（48rem）决定挂载：
+ * 桌面端（CSS 切换的双壳）不渲染本组件，避免隐藏 Drawer 与桌面
+ * SettingsModal 争抢焦点管理。 */
 
-import { useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { CATEGORIES, CATEGORY_GROUPS, categoryLabel, useCategoryItems, type CategoryId } from './settings/categories'
 import { SettingItemList } from './settings/SettingItem'
-import { useModalA11y } from '../lib/use-modal-a11y'
-import { cx } from './ui/cx'
+import { Sheet } from './ui/Sheet'
+import { IconButton } from './ui/IconButton'
+import { useIsMobile } from '../lib/use-is-mobile'
 
 export default function MobileSettingsScreen({
   open,
@@ -27,37 +30,29 @@ export default function MobileSettingsScreen({
 }) {
   // null = 首页（分组列表）；非 null = 当前 push 的子页分类
   const [page, setPage] = useState<CategoryId | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  // 0020 Gate 3：复用共享模态无障碍行为（Escape 关闭 / 焦点陷阱 /
-  // 还焦 / 背景滚动锁）——此前全屏设置为弱自定义模态，缺少这些。
-  useModalA11y(panelRef, open, onClose)
+  const isMobile = useIsMobile()
 
-  if (!open) return null
+  if (!isMobile || !open) return null
 
   return (
-    <div
-      ref={panelRef}
-      tabIndex={-1}
-      className="fixed inset-0 z-[var(--lumi-z-dialog)] flex flex-col bg-[var(--lumi-canvas)] md:hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-label="设置"
+    <Sheet
+      open
+      onClose={onClose}
+      label="设置"
+      side="bottom"
+      panelClassName="h-dvh max-h-none w-full flex flex-col rounded-none border-0 bg-[var(--lumi-canvas)]"
     >
       {page === null ? (
         /* ---- 首页：分组列表（Folo mobile SettingsList 模式） ---- */
         <>
           <header className="flex items-center justify-between border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-4 py-3.5">
             <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">设置</h2>
-            <button
-              type="button"
+            <IconButton
+              size="lg"
+              icon={<X aria-hidden className="size-4" />}
+              label="关闭设置"
               onClick={onClose}
-              aria-label="关闭设置"
-              className="flex size-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-            >
-              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
+            />
           </header>
           <div className="flex-1 overflow-y-auto px-4 py-4">
             {CATEGORY_GROUPS.map((group) => (
@@ -96,7 +91,7 @@ export default function MobileSettingsScreen({
         /* ---- 子页：push 全屏分类页（Folo mobile routes/<Category> 模式） ---- */
         <SubPage id={page} onBack={() => setPage(null)} />
       )}
-    </div>
+    </Sheet>
   )
 }
 
@@ -105,19 +100,12 @@ function SubPage({ id, onBack }: { id: CategoryId; onBack: () => void }) {
   return (
     <>
       <header className="sticky top-0 flex items-center gap-2 border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-2 py-2.5">
-        <button
-          type="button"
+        <IconButton
+          size="lg"
+          icon={<ChevronLeft aria-hidden className="size-5" />}
+          label="返回设置"
           onClick={onBack}
-          aria-label="返回设置"
-          className={cx(
-            'flex size-11 items-center justify-center rounded-[var(--lumi-radius-md)]',
-            'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)]',
-            'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
-            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-          )}
-        >
-          <ChevronLeft aria-hidden className="size-5" />
-        </button>
+        />
         <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">{categoryLabel(id)}</h2>
       </header>
       <div className="flex-1 overflow-y-auto px-4 py-3">

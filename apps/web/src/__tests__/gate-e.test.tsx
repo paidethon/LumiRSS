@@ -131,13 +131,18 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
     expect(closed).toBe(1)
   })
 
-  it('打开时锁定背景滚动（body overflow hidden）', () => {
+  it('打开时锁定背景滚动（body overflow hidden）', async () => {
     const { unmount } = render(
       withProviders(<MobileSettingsScreen open onClose={() => {}} />),
     )
-    expect(document.body.style.overflow).toBe('hidden')
+    // Base UI 滚动锁用 overflow-x/y 长属性；生效与恢复均异步完成
+    await waitFor(() => {
+      expect(document.body.style.overflowY).toBe('hidden')
+    })
     unmount()
-    expect(document.body.style.overflow).not.toBe('hidden')
+    await waitFor(() => {
+      expect(document.body.style.overflowY).not.toBe('hidden')
+    })
   })
 })
 

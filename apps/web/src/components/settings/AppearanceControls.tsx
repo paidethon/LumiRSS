@@ -5,6 +5,7 @@
 import { useId } from 'react'
 import { normalizeSettings, useAppSettings } from '../../store/app-settings'
 import { prefixCustomCss, READER_BACKGROUNDS } from '../../lib/reader-style'
+import { RadioGroup, RadioOption } from '../ui/RadioGroup'
 import { cx } from '../ui/cx'
 
 const PRESET_ACCENTS = [
@@ -31,21 +32,21 @@ export function AccentColorPicker() {
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
         强调色应用于按钮、选中态与链接（全站生效）。
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2" role="radiogroup" aria-label="主题色">
+      <RadioGroup
+        aria-label="主题色"
+        value={accentColor}
+        onValueChange={(hex) => update({ accentColor: hex })}
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
         {PRESET_ACCENTS.map((hex) => (
-          <button
+          <RadioOption
             key={hex}
-            type="button"
-            role="radio"
-            aria-checked={accentColor === hex}
+            value={hex}
             aria-label={`主题色 ${hex}`}
-            onClick={() => update({ accentColor: hex })}
             className={cx(
               'size-7 rounded-full border-2 transition-transform duration-[var(--lumi-motion-fast)]',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-              accentColor === hex
-                ? 'scale-110 border-[var(--lumi-text-primary)]'
-                : 'border-transparent hover:scale-105',
+              'data-checked:scale-110 data-checked:border-[var(--lumi-text-primary)]',
+              'border-transparent hover:scale-105',
             )}
             style={{ backgroundColor: hex }}
           />
@@ -69,7 +70,7 @@ export function AccentColorPicker() {
             className="sr-only"
           />
         </label>
-      </div>
+      </RadioGroup>
     </div>
   )
 }
@@ -93,20 +94,19 @@ export function ReaderBackgroundPicker() {
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
         仅影响正文区域；浅色/深色主题各有对应色值，自定义深色背景自动切换浅色文字。
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2" role="radiogroup" aria-label="阅读背景">
+      <RadioGroup
+        aria-label="阅读背景"
+        value={settings.readerBackground}
+        onValueChange={(bg) => update({ readerBackground: bg })}
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
         {(Object.keys(READER_BACKGROUNDS) as Exclude<ReaderBackground, 'custom'>[]).map((bg) => (
-          <button
+          <RadioOption
             key={bg}
-            type="button"
-            role="radio"
-            aria-checked={settings.readerBackground === bg}
-            onClick={() => update({ readerBackground: bg })}
+            value={bg}
             className={cx(
               'flex flex-col items-center gap-1 rounded-[var(--lumi-radius-md)] p-1.5 transition-colors duration-[var(--lumi-motion-fast)]',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-              settings.readerBackground === bg
-                ? 'bg-[var(--lumi-surface-selected)]'
-                : 'hover:bg-[var(--lumi-surface-hover)]',
+              'data-checked:bg-[var(--lumi-surface-selected)] data-not-checked:hover:bg-[var(--lumi-surface-hover)]',
             )}
           >
             <span
@@ -122,7 +122,7 @@ export function ReaderBackgroundPicker() {
             <span className="text-[11px] text-[var(--lumi-text-secondary)]">
               {READER_BACKGROUNDS[bg].label}
             </span>
-          </button>
+          </RadioOption>
         ))}
         {/* 自定义色 */}
         <label
@@ -151,7 +151,7 @@ export function ReaderBackgroundPicker() {
             className="sr-only"
           />
         </label>
-      </div>
+      </RadioGroup>
       {settings.readerBackground === 'custom' && (
         <div className="mt-2 flex items-center gap-2">
           <input

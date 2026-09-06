@@ -1,10 +1,14 @@
-/** Dialog primitive — 0009 Gate 1。
+/** Dialog primitive — Base UI 行为底座（原 0009 Gate 1 自研实现迁移）。
  *
- * 模态对话框：role="dialog" + aria-modal、Escape 关闭、焦点 trap
- * （Tab 循环在对话框内）、关闭时还焦 trigger（AC7 / V5）。渲染在
- * document.body 之外的 fixed 遮罩层；深色遮罩 + dialog 阴影 token。 */
+ * 模态对话框。行为全部由 Base UI Dialog（modal）提供：role="dialog" +
+ * aria-modal、Escape 关闭、焦点 trap、关闭还焦、body 滚动锁、遮罩/
+ * 外点关闭、Title 自动 aria-labelledby（含 hideTitle 时的 sr-only 兜底，
+ * 修复旧实现 hideTitle 后 aria-labelledby 悬空的缺陷）。
+ * Lumi 只负责视觉：--lumi-* token、遮罩色、面板圆角/阴影/边框、
+ * 移动端全屏（<768 撑满 viewport）、footer 布局。 */
 
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useRef } from 'react'
+import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { cx } from './cx'
 
 export interface DialogProps {
@@ -22,103 +26,70 @@ export interface DialogProps {
   fullscreenOnMobile?: boolean
 }
 
+/** 初始焦点目标：面板内第一个可聚焦元素（无则面板自身）。
+ * 保持旧实现的焦点语义（首字符即可输入，如 AddSourceDialog 的地址框）。 */
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
 export function Dialog({ open, onClose, title, children, footer, panelClassName, hideTitle, fullscreenOnMobile }: DialogProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const titleId = useId()
-  // 关闭时还焦：记录打开前焦点（trigger 在 DOM 别处，不在本组件内）
-  const lastActiveRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    lastActiveRef.current = document.activeElement as HTMLElement
-    const panel = panelRef.current
-    // 初始焦点：第一个可聚焦元素（没有则面板自身）
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE)
-    ;(first ?? panel)?.focus()
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-        return
-      }
-      if (e.key !== 'Tab') return
-      // 焦点 trap：Tab 在对话框内循环
-      const nodes = [
-        ...(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []),
-      ].filter((n) => n.offsetParent !== null)
-      if (nodes.length === 0) return
-      const firstNode = nodes[0]
-      const lastNode = nodes[nodes.length - 1]
-      if (e.shiftKey && document.activeElement === firstNode) {
-        e.preventDefault()
-        lastNode.focus()
-      } else if (!e.shiftKey && document.activeElement === lastNode) {
-        e.preventDefault()
-        firstNode.focus()
-      }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      lastActiveRef.current?.focus()
-    }
-  }, [open, onClose])
-
-  if (!open) return null
+  const popupRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div
-      className={cx(
-        'fixed inset-0 z-[var(--lumi-z-dialog)] flex items-center justify-center p-4',
-        fullscreenOnMobile && 'items-stretch justify-stretch p-0 md:items-center md:justify-center md:p-4',
-      )}
-      onPointerDown={(e) => {
-        // 遮罩点击关闭：点击目标不在面板内（遮罩 div / 容器空白）即关闭
-        if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-          onClose()
-        }
+    <BaseDialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose()
       }}
     >
-      {/* 遮罩（移动端全屏时透明） */}
-      <div
-        className={cx(
-          'absolute inset-0 bg-[var(--lumi-text-primary)]/30',
-          fullscreenOnMobile && 'bg-transparent md:bg-[var(--lumi-text-primary)]/30',
-        )}
-        aria-hidden="true"
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className={cx(
-          'relative w-full p-5',
-          'rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)]',
-          'shadow-[var(--lumi-shadow-dialog)]',
-          panelClassName ?? 'max-w-md',
-          fullscreenOnMobile &&
-            'max-md:h-dvh max-md:w-screen max-md:rounded-none max-md:border-0 max-md:shadow-none',
-        )}
-      >
-        {!hideTitle && (
-          <h2
-            id={titleId}
-            className="mb-3 text-base font-semibold text-[var(--lumi-text-primary)]"
+      <BaseDialog.Portal>
+        {/* 遮罩（移动端全屏时透明）；iOS 26+ Safari 退为 absolute 盖住 body
+         * （官方前置：body { position: relative }，见 index.css） */}
+        <BaseDialog.Backdrop
+          className={cx(
+            'fixed inset-0 z-[var(--lumi-z-dialog)] bg-[var(--lumi-text-primary)]/30',
+            'supports-[-webkit-touch-callout:none]:absolute',
+            fullscreenOnMobile && 'bg-transparent md:bg-[var(--lumi-text-primary)]/30',
+          )}
+        />
+        {/* Viewport = 旧实现的 fixed 容器：居中 + 视口内不溢出 */}
+        <BaseDialog.Viewport
+          className={cx(
+            'fixed inset-0 z-[var(--lumi-z-dialog)] flex items-center justify-center p-4',
+            fullscreenOnMobile && 'items-stretch justify-stretch p-0 md:items-center md:justify-center md:p-4',
+          )}
+        >
+          <BaseDialog.Popup
+            ref={popupRef}
+            /* Base UI 以「面板外内容 inert」实现模态隔离（比 aria-modal 更强）；
+             * 仍显式挂 aria-modal 保持 WAI-ARIA 模态对话框契约（项目 a11y 门禁） */
+            aria-modal="true"
+            initialFocus={() => {
+              const panel = popupRef.current
+              return panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel
+            }}
+            className={cx(
+              'relative w-full p-5',
+              'rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)]',
+              'shadow-[var(--lumi-shadow-dialog)]',
+              panelClassName ?? 'max-w-md',
+              fullscreenOnMobile &&
+                'max-md:h-dvh max-md:w-screen max-md:rounded-none max-md:border-0 max-md:shadow-none',
+            )}
           >
-            {title}
-          </h2>
-        )}
-        <div className="text-sm text-[var(--lumi-text-primary)]">{children}</div>
-        {footer && (
-          <div className="mt-5 flex justify-end gap-2">{footer}</div>
-        )}
-      </div>
-    </div>
+            <BaseDialog.Title
+              className={
+                hideTitle
+                  ? 'sr-only'
+                  : 'mb-3 text-base font-semibold text-[var(--lumi-text-primary)]'
+              }
+            >
+              {title}
+            </BaseDialog.Title>
+            <div className="text-sm text-[var(--lumi-text-primary)]">{children}</div>
+            {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+          </BaseDialog.Popup>
+        </BaseDialog.Viewport>
+      </BaseDialog.Portal>
+    </BaseDialog.Root>
   )
 }
