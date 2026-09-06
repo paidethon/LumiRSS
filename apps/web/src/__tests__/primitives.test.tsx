@@ -17,6 +17,7 @@ import { Select } from '../components/ui/Select'
 import { Sheet } from '../components/ui/Sheet'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Switch } from '../components/ui/Switch'
+import { Tooltip } from '../components/ui/Tooltip'
 import { Check } from 'lucide-react'
 
 describe('Button', () => {
@@ -43,6 +44,53 @@ describe('IconButton', () => {
   it('aria-label 提供 accessible name（AC7：icon-only 必须有名字）', () => {
     render(<IconButton icon={<Check aria-hidden />} label="标记为已读" />)
     expect(screen.getByRole('button', { name: '标记为已读' })).toBeInTheDocument()
+  })
+})
+
+describe('Tooltip', () => {
+  function setup() {
+    render(
+      <Tooltip content="收藏">
+        <IconButton icon={<Check aria-hidden />} label="收藏" />
+      </Tooltip>,
+    )
+    return screen.getByRole('button', { name: '收藏' })
+  }
+
+  it('trigger 的 accessible name 与提示内容一致（Base UI 无障碍模式：信息由 label 承载，不依赖 hover）', () => {
+    const trigger = setup()
+    // 修复旧实现：aria-describedby 挂在 contents span 上从不生效。
+    // Base UI 1.8 的正确模式是 trigger 自带 aria-label（等价于 content），
+    // 触发器即使不悬浮也向屏幕阅读器/触屏用户传达同等信息。
+    expect(trigger).toHaveAttribute('aria-label', '收藏')
+  })
+
+  it('hover 触发显示内容', async () => {
+    const trigger = setup()
+    fireEvent.mouseEnter(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+  })
+
+  it('键盘 focus 触发；Escape 或移出后关闭', async () => {
+    const trigger = setup()
+    fireEvent.focus(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByText('收藏')).toBeNull()
+    })
+    fireEvent.mouseEnter(trigger)
+    await waitFor(() => {
+      expect(screen.getByText('收藏')).toBeInTheDocument()
+    })
+    fireEvent.mouseLeave(trigger)
+    await waitFor(() => {
+      expect(screen.queryByText('收藏')).toBeNull()
+    })
   })
 })
 
