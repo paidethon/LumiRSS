@@ -97,7 +97,10 @@ PATCH /api/v1/entries/{entryRef}/state
 ```
 
 Entry references and cursors are opaque. Opening an article does not
-auto-mark it read. Read/star writes use set semantics.
+auto-mark it read. Read/star writes use set semantics. The full API
+family list (subscriptions, RSSHub control, AI settings/profiles,
+backups, version provenance) lives in
+[docs/architecture/README.md](docs/architecture/README.md).
 
 ---
 
