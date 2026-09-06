@@ -9,7 +9,7 @@
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
 import { useEffect, useState, type Ref } from 'react'
-import { ALargeSmall } from 'lucide-react'
+import { ALargeSmall, X } from 'lucide-react'
 import { useAppSettings } from '../store/app-settings'
 import {
   READER_NUMERIC_RANGES,
@@ -212,14 +212,12 @@ export default function ReaderAaPanel() {
           >
             <div className="mb-1 flex items-center justify-between">
               <p className="text-sm font-medium text-[var(--lumi-text-primary)]">阅读样式</p>
-              <button
-                type="button"
+              <IconButton
+                size="lg"
+                icon={<X aria-hidden className="size-4" />}
+                label="关闭"
                 onClick={() => setSheetOpen(false)}
-                className="flex size-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]"
-              >
-                <span aria-hidden>✕</span>
-                <span className="sr-only">关闭</span>
-              </button>
+              />
             </div>
             <AaControls onOpenSettings={openSettings} />
           </Sheet>

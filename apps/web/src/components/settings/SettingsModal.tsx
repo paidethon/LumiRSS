@@ -13,7 +13,9 @@
  * <768px 不渲染本组件（由 MobileSettingsScreen 接管）。 */
 
 import { useState } from 'react'
+import { X } from 'lucide-react'
 import { Dialog } from '../ui/Dialog'
+import { IconButton } from '../ui/IconButton'
 import { SettingItemList } from './SettingItem'
 import { CATEGORIES, categoryLabel, useCategoryItems, type CategoryId } from './categories'
 import { cx } from '../ui/cx'
@@ -33,16 +35,7 @@ export default function SettingsModal({
       {/* 自定义头部（Dialog 内置标题已隐藏；此 h2 即对话框的可访问名字） */}
       <div className="flex items-center justify-between border-b border-[var(--lumi-separator)] px-5 py-3.5">
         <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">设置</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="关闭设置"
-          className="flex size-8 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-        >
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        <IconButton icon={<X aria-hidden className="size-4" />} label="关闭设置" onClick={onClose} />
       </div>
       <div className="flex h-[min(72vh,640px)] w-[min(880px,84vw)]">
         {/* 左导航（Folo 实测：行 34px / r8 / 选中 selected surface）。
