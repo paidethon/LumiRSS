@@ -8,7 +8,9 @@
  * Lumi 只负责视觉：--lumi-* token 面板与 item 样式。 */
 
 import { type ReactNode, useState } from 'react'
-import { Menu as BaseMenu, type HTMLProps } from '@base-ui/react'
+import { Menu as BaseMenu } from '@base-ui/react/menu'
+// 纯类型导入（编译期擦除）：避免从根 barrel 拉入全部 Base UI 组件
+import type { HTMLProps } from '@base-ui/react'
 import { cx } from './cx'
 
 export interface MenuItemDef {
