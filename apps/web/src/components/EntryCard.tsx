@@ -4,7 +4,7 @@ import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { EntryActionButtons } from './EntryActionButtons'
 import { cx } from './ui/cx'
-import { listDateTimeFormatter as cardDateFormatter } from '../lib/date-format'
+import { formatPublishedAt, listDateTimeFormatter } from '../lib/date-format'
 
 /** EntryCard — 移动端共享卡片（0011 Gate 3；修正补充重构）。
  *
@@ -69,7 +69,7 @@ function EntryCard({
             )}
           />
           <span className="truncate font-medium">{item.feedTitle}</span>
-          <span className="ml-auto shrink-0">{formatPublishedAt(item.publishedAt)}</span>
+          <span className="ml-auto shrink-0">{formatPublishedAt(item.publishedAt, listDateTimeFormatter)}</span>
         </button>
         <EntryActionButtons entryRef={item.entryRef} starred={item.starred} />
       </div>
@@ -94,9 +94,3 @@ function EntryCard({
 }
 
 export default memo(EntryCard)
-
-function formatPublishedAt(value: string | null): string {
-  if (value === null) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : cardDateFormatter.format(date)
-}

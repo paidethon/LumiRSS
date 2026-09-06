@@ -7,7 +7,8 @@
  * - 双击重置默认宽度；
  * - 视觉：4px 热区（hover/active 加宽到 accent），不占内容空间。 */
 
-import { useCallback, useRef } from 'react'
+import { useRef } from 'react'
+import { clamp } from '../../lib/clamp'
 import { cx } from './cx'
 
 export interface PaneSeparatorProps {
@@ -33,11 +34,6 @@ export function PaneSeparator({
 }: PaneSeparatorProps) {
   const dragging = useRef(false)
 
-  const clamp = useCallback(
-    (w: number) => Math.min(max, Math.max(min, Math.round(w))),
-    [min, max],
-  )
-
   /** pointer 拖拽：监听 window（拖出分隔条热区仍有效） */
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -48,7 +44,7 @@ export function PaneSeparator({
     const onMove = (ev: PointerEvent) => {
       if (!dragging.current) return
       // 分隔条在栏右侧：向右拖 = 加宽
-      onChange(clamp(startWidth + (ev.clientX - startX)))
+      onChange(clamp(startWidth + (ev.clientX - startX), min, max))
     }
     const onUp = () => {
       dragging.current = false
@@ -62,10 +58,10 @@ export function PaneSeparator({
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowLeft') {
       e.preventDefault()
-      onChange(clamp(value - 10))
+      onChange(clamp(value - 10, min, max))
     } else if (e.key === 'ArrowRight') {
       e.preventDefault()
-      onChange(clamp(value + 10))
+      onChange(clamp(value + 10, min, max))
     }
   }
 

@@ -17,36 +17,22 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Loader2, MessageSquare, RefreshCw, SendHorizontal, X } from 'lucide-react'
 import type { ConversationMessage } from '../api/types'
 import { useEntryConversation, useSendConversationMessageMutation } from '../api/queries'
-import { ApiError } from '../api/client'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
 import { Sheet } from './ui/Sheet'
 import { cx } from './ui/cx'
+import { aiFailureText, type AiFailureWording } from '../lib/ai-failure-text'
 
-const FAILURE_TEXT: Record<string, string> = {
-  auth_error: 'API 密钥被服务端拒绝，请检查服务端的 AI_API_KEY 配置。',
-  model_error: '模型或接口地址不存在，请检查 AI 设置中的 Base URL 与 Model。',
-  rate_limited: 'AI 服务请求过于频繁，请稍后再试。',
-  timeout: 'AI 服务响应超时，请重试。',
-  invalid_response: 'AI 服务返回了无法解析的结果，请重试。',
-  upstream_error: 'AI 服务暂时不可用，请稍后再试。',
-  not_configured: 'AI 未配置。请在右上角「设置 → AI」中填写 Base URL 与 Model，并在服务端配置 API 密钥。',
-  ai_not_configured: 'AI 未配置。请在右上角「设置 → AI」中填写 Base URL 与 Model，并在服务端配置 API 密钥。',
+/** 对话功能的特色文案；通用错误文案在 lib/ai-failure-text。 */
+const WORDING: AiFailureWording = {
+  fallback: '发送失败，请重试。',
+  interrupted: '上次对话被中断，请重试。',
+  contentUnavailable: '这篇文章没有可提问的正文内容。',
 }
 
 function failureText(error: unknown): string {
-  if (error instanceof ApiError) {
-    // BFF 错误信封类型带 ai_ 前缀（ai_rate_limited），缓存 failureType
-    // 不带——两种都按同一稳定文案查找。
-    const known =
-      FAILURE_TEXT[error.type] ??
-      FAILURE_TEXT[error.type.replace(/^ai_/, '')]
-    if (known !== undefined) {
-      return known
-    }
-  }
-  return error instanceof Error ? error.message : '发送失败，请重试。'
+  return aiFailureText(error, WORDING)
 }
 
 function MessageBubble({ message }: { message: ConversationMessage }) {

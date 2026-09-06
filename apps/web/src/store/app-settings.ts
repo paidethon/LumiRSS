@@ -13,6 +13,7 @@
  * 到 <html>（--lumi-reader-font-size 等，Gate B 接线）。 */
 
 import { create } from 'zustand'
+import { clamp } from '../lib/clamp'
 import {
   type ThemeMode,
   isThemeMode,
@@ -491,10 +492,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? source.timelineCollapsed
         : DEFAULT_APP_SETTINGS.timelineCollapsed,
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 /** 首次加载：读新 key；不存在则从旧 key（theme/reader-bg）迁移。 */

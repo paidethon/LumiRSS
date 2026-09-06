@@ -2,6 +2,7 @@
  * 只做展示层格式化，不做任何数据变换。 */
 
 import type { BackupJob, BackupJobStatus } from '../../../api/types'
+import { formatTimestamp } from '../../../lib/date-format'
 
 export const JOB_STATUS_LABELS: Record<BackupJobStatus, string> = {
   queued: '排队中',
@@ -36,9 +37,8 @@ export function formatBytes(bytes: number | undefined): string {
 
 export function formatJobTime(iso: string | null): string {
   if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
+  const formatted = formatTimestamp(iso)
+  return formatted || iso
 }
 
 export function jobStageText(job: BackupJob): string {
