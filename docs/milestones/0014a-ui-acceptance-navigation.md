@@ -32,8 +32,8 @@ D. 0014 没有获得真正的 Playwright 实机点击验收（当时 Playwright 
 
 ## Goal
 
-关闭 0014 之后发现的真实浏览器/UI 接受度缺口，并在 AI 工作开始前确立
-统一的来源入口（Add Source）与文章打开（Reader）语义：
+关闭 0014 之后发现的真实浏览器/UI 接受度缺口，确立统一的来源入口
+（Add Source）与文章打开（Reader）语义：
 
 ```text
 Any normal article-list surface（首页/订阅列表/收藏/稍后读/未来的搜索）

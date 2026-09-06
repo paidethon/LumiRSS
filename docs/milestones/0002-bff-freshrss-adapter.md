@@ -47,30 +47,21 @@ Completed。
 
 ## Key user ↔ AI dialogue
 
-（摘要，凭据一律 `[REDACTED]`）
+（摘要，凭据一律 `[REDACTED]`；Spec-driven 流程，批准前禁止 Build）
 
-1. 用户下发 0002 任务（Spec-driven，批准前禁止 Build）。AI 只读探索后停止：
-   当前分支需切到 `feat/0002-bff-freshrss-adapter`
-2. AI 生成 Spec 初稿。用户第一轮修订 8 点（Auth Token 无时间过期语义、
-   Adapter 生命周期、async 模式、timeout/trust_env、SecretStr 与空密码无效、
-   Test E/F、uv init 模板、架构图歧义）；AI 全部落实并自查出 2 处残留旧表述。
-3. 用户第二轮修订 6 点（`Timeout(10.0, connect=5.0)` 正确构造、懒创建生命周期
-   解决 health 与配置校验冲突、commit 前用 git check-ignore 而非 ls-files、
-   secret 扫描覆盖 untracked、anyio 测试策略、ClientLogin 非 200 不全是密码错）；
-   AI 落实后报告修改点，等待批准。
-4. 用户批准 Spec → Build。Smoke Test 阶段，AI 按约定暂停，请用户自行在
-   `services/bff/.env` 配置真实凭据（AI 全程未读取该文件内容），用户确认
-   "已配置" 后完成真实联调。
+- Spec 经两轮用户修订后批准。第一轮 8 点：Auth Token 无时间过期语义、
+  Adapter 生命周期、async 模式、timeout/trust_env、SecretStr 与空密码无效、
+  Test E/F、uv init 模板、架构图歧义。第二轮 6 点：`Timeout(10.0, connect=5.0)`
+  正确构造、懒创建生命周期解决 health 与配置校验冲突、commit 前用
+  `git check-ignore` 而非 `ls-files`、secret 扫描覆盖 untracked、anyio 测试
+  策略、ClientLogin 非 200 不全是密码错。
+- Smoke Test 阶段按约定暂停：真实凭据由用户自行配置在 `services/bff/.env`
+  （AI 全程未读取该文件内容），用户确认"已配置"后完成真实联调。
 
 ## Commands actually executed
 
 ```bash
-# 开工检查
-git branch --show-current        # feat/0002-bff-freshrss-adapter
-git status --short --branch      # clean
-uv --version                     # 0.12.6
-python3 --version                # 3.12.3
-
+# 环境：uv 0.12.6 / Python 3.12.3；工作分支 feat/0002-bff-freshrss-adapter
 # BFF 初始化与测试（均在 services/bff 下）
 uv sync                          # 首次超时，重试后成功（25 packages）
 uv run pytest                    # 15 passed

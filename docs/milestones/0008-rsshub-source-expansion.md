@@ -233,10 +233,8 @@ doesn't need shared cache or a browser container.
 | 截图返回 NATIVE_BROWSER_VIEWPORT_UNAVAILABLE | 浏览器视图不可见 | tooling | 以 a11y snapshot 作为证据，截图标记 UNVERIFIED（惯例） |
 | /tmp 下 probe 文件无法删除 | 沙箱 /tmp 只读 | tooling | 文件不在仓库内（git status 确认），无影响 |
 
-## Solutions
-
-See table above. All issues stayed at the tooling/network layer; none
-touched the BFF, the Web, the frozen architecture, or FreshRSS data.
+All issues above stayed at the tooling/network layer; none touched the
+BFF, the Web, the frozen architecture, or FreshRSS data.
 
 ## What I learned
 

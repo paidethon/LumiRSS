@@ -60,8 +60,7 @@ docs/                                  ← PROJECT_STATE / Board / Devlog 更新
 ```text
 基线分支：main @ c4b84e9e4d09c080f44b99a17e35a241f27465fa（Merge PR #14）
 工作分支：feat/0009-ui-reboot-reference-lab（从 main 创建，用户批准）
-工作区：  仅含已批准的 v6 文档基线改动（Gate 0 产物），无其他杂项改动；
-          开工前需 git status 复核并如实记录
+工作区：  仅含已批准的 v6 文档基线改动（Gate 0 产物），无其他杂项改动
 许可证：  AGPL-3.0-only（LICENSE 已落地，用户 2026-08-28 批准）
 ```
 
@@ -275,14 +274,14 @@ Dark： canvas #18181a / sidebar #1d1d20 / surface #222226 / accent #8993f5
 
 ## Tasks（Build 顺序，批准后严格逐步执行，每步完成立即验证）
 
-### Gate 1（用户批准本 Spec 后开始）
+### Gate 1
 
 1. `styles/tokens.css` + `styles/themes.css`（Lumi Mist Light/Dark 起始色板）；
 2. `data-theme` 挂载 + System/Light/Dark 切换器（临时 UI 放 playground）+ localStorage 持久化 + reduced-motion；
 3. 图标决策报告（现状盘点 + lucide-react 建议 + 体积/许可对比）→ **请示用户**；
 4. Primitives 逐个实现（每个含 a11y 属性 + 测试）；
 5. dev playground 路由（primitives × 主题 × 状态矩阵）；
-6. Gate 1 验证：playground 截图（Light/Dark × 桌面/移动宽度）+ lint/test/build → **停，等批准**。
+6. Gate 1 验证：playground 截图（Light/Dark × 桌面/移动宽度）+ lint/test/build（user-approved）。
 
 ### Gate 2
 
@@ -290,14 +289,14 @@ Dark： canvas #18181a / sidebar #1d1d20 / surface #222226 / accent #8993f5
 8. Sidebar 重建（token 化 + Folo 密度）；
 9. Timeline 重建（EntryRow 层级 + 降级布局 + 状态）；
 10. 既有测试适配 + 新增状态测试；
-11. Gate 2 验证：1440 Light/Dark、1024 紧凑、390 Drawer 截图 + 全量测试 → **停，等批准（未批准不进 Reader）**。
+11. Gate 2 验证：1440 Light/Dark、1024 紧凑、390 Drawer 截图 + 全量测试（user-approved）。
 
 ### Gate 3
 
 12. Reader 视觉重建（工具栏/排版/宽度）+ Reader Theme 钩子；
 13. 移动端精化（行/阅读页/触摸/safe-area 复核）；
 14. 三态主题全链路 + Reader 独立背景验证；
-15. Gate 3 验证：Reader Light/Dark + 移动截图 + DOMPurify/safe-link 测试确认 → **停，等批准**。
+15. Gate 3 验证：Reader Light/Dark + 移动截图 + DOMPurify/safe-link 测试确认（user-approved）。
 
 ### Gate 4
 
@@ -305,7 +304,7 @@ Dark： canvas #18181a / sidebar #1d1d20 / surface #222226 / accent #8993f5
 17. 全量 polish（hover/focus/动效/scrollbar/divider/键盘）；
 18. 视口矩阵截图 before/after；
 19. 全量回归（BFF 121 + Web 全绿 + lint + build）+ 真实浏览器 smoke（可逆状态恢复）；
-20. 文档收尾（PROJECT_STATE / Board / Devlog / README）→ **停，等最终批准**。
+20. 文档收尾（PROJECT_STATE / Board / Devlog / README）（user-approved）。
 
 ## Verification
 

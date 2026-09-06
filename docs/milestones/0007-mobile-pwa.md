@@ -184,10 +184,8 @@ claims offline support.
 | drawer 测试偶发拿不到「重试」按钮 | drawer 挂载新 observer 触发 stale-on-mount 后台 refetch，期间显示 skeleton | tests | waitFor 等 refetch 完成后再断言 |
 | Test F 断言总 fetch 数增加 | ReaderPlaceholder 重挂载触发 entries 后台 refetch（0005 既有行为，数据不丢、无 loading） | tests | 断言语义改为：列表立即从 cache 恢复 + Detail 不重复请求 |
 
-## Solutions
-
-See table above. All fixes stayed at the correct layer; none touched
-the BFF, the frozen architecture, or the Reader's security boundaries.
+All fixes above stayed at the correct layer; none touched the BFF, the
+frozen architecture, or the Reader's security boundaries.
 
 ## What I learned
 

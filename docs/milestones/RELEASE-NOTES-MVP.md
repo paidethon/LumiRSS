@@ -1,7 +1,8 @@
 # Release Notes — LumiRSS MVP (0018 + 0019)
 
-> 状态：release-ready 分支 `feat/0019-mvp-stabilization-release`。
-> 正式 tag 在分支合并 main 后创建。
+> 版本：MVP（0018 + 0019），2026-09-05 release-ready；分支
+> `feat/0019-mvp-stabilization-release`，正式 tag 在分支合并 main 后创建。
+> 本文仅反映发布时状态；发布后的修复与整改见 `0020-release-remediation.md`。
 
 ## 0018 — Production, Operations & Backup
 

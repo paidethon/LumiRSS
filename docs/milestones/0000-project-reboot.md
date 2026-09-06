@@ -54,42 +54,23 @@ Completed。
 
 ## Key user ↔ AI dialogue
 
-Not recorded（该次会话的逐字对话没有保存下来）。
-
-可以从任务记录确认的核心指令摘要（非逐字原文）：
+Not recorded（逐字对话没有保存下来，不做推测性补写）。任务记录中的核心指令
+摘要（非逐字原文）：
 
 > 执行 LumiRSS Project Reboot：把 main 分支收敛为最小、清晰、可继续开发的新基线；删除旧 Repository Bootstrap 内容，简化文档结构；用户手动更新的 PRD v5.0 必须保留。
-
-其余对话细节不可复原，不做推测性补写。
 
 ## Commands actually executed
 
 （命令清单来自该次会话记录；无法逐字复原的以等价形式列出）
 
-开工只读检查：
-
-```bash
-git status --short
-git branch -a
-git log --oneline --decorate --graph --all -n 30
-git diff --stat
-```
-
-分支与删除：
-
 ```bash
 git checkout -b chore/project-reboot   # 自 abef74d 创建
 git rm <10 个旧基线文件>                # 删除清单见上文 What was implemented
-```
 
-完成验证：
-
-```bash
-git status --short
-git diff --stat
-git diff --check
-find . -type f -not -path './.git/*' | sort   # 目录树核对
-git grep -n '<旧文件名/旧目录名>'               # 残留扫描（零命中）
+# 完成验证
+git diff --check                                             # 干净（无空白错误）
+find . -type f -not -path './.git/*' | sort                  # 目录树核对
+git grep -n '<旧文件名/旧目录名>'                              # 残留扫描：零命中
 python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/repository-checks.yml"))'
 ```
 

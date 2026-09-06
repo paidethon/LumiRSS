@@ -188,10 +188,8 @@ showing it); unstarring in the Starred view likewise.
 | 旧 Test K 失败 | 0005 断言“点击不触发 detail API”，与 0006 的核心行为冲突 | tests | 按 Spec 语义更新为断言点击真实发起 Detail 请求 |
 | 无法 resize 视口 | window.resizeTo 被忽略；Playwright Chromium 184MB 下载网络受限 | tooling | 强制 grid 宽度近似验证 + 856px 真实视口 |
 
-## Solutions
-
-See table above. All were minimal fixes at the correct layer; none
-touched FreshRSS, the adapter auth, or the frozen architecture.
+All fixes above were minimal and at the correct layer; none touched
+FreshRSS, the adapter auth, or the frozen architecture.
 
 ## What I learned
 

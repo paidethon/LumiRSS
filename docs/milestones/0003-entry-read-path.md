@@ -59,17 +59,15 @@ Completed。
 
 （摘要，凭据一律 `[REDACTED]`）
 
-1. 用户下发 0003 任务（Spec-driven）。AI 只读探索后发现分支仍在
-   `feat/0002-bff-freshrss-adapter`（0002 当时尚未合入 main），按指令停止报告。用户走 PR #6 合入 0002 并切出 `feat/0003-entry-read-path`。
-2. AI 生成 Spec 初稿（+626 行）。用户批准方向但要求 Build 前 6 点修订：
-   Detail API 从"未知假设"改为"源码已验证 + Live Probe 再确认"
-   （POST stream/items/contents + form `i=`）；reading-list 语义修正
-   （All except hidden / STATE_ALL / n=20 / r=d）；EntryNotFound 映射
-   规则（200+空 items → 404，0/1/>1 分支）；File Plan 数量修正
-   （2 modified + 2 new source + 4 tests，文档单独列）；pagination
-   未定义参数不契约化；contentText 措辞改为 text-only normalization。
-   AI 逐条落实（顺带删除 AC4 中过时的"参数名以 probe 为准"限定词）。
-3. 用户批准 → Build。AI 按 14 步顺序执行，每步跑测试。
+- 开工时 0002 尚未合入 main，按流程停止报告；用户经 PR #6 合入 0002 后切出
+  `feat/0003-entry-read-path`。
+- Spec 初稿获方向性批准，但 Build 前要求 6 点修订：Detail API 从"未知假设"
+  改为"源码已验证 + Live Probe 再确认"（POST stream/items/contents + form
+  `i=`）；reading-list 语义修正（All except hidden / STATE_ALL / n=20 /
+  r=d）；EntryNotFound 映射规则（200+空 items → 404，0/1/>1 分支）；File
+  Plan 数量修正（2 modified + 2 new source + 4 tests，文档单独列）；pagination
+  未定义参数不契约化；contentText 措辞改为 text-only normalization。另删除
+  AC4 中过时的"参数名以 probe 为准"限定词。
 
 ## Actual API probe（Build 第 1 步，真实容器 FreshRSS 1.29.1）
 
@@ -87,11 +85,7 @@ Completed。
 ## Commands actually executed
 
 ```bash
-# 开工检查
-git branch --show-current        # feat/0003-entry-read-path（基于 main@008bb81）
-git status --short --branch      # clean
-docker compose ps                # freshrss Up 2 days
-
+# 工作分支 feat/0003-entry-read-path（基于 main@008bb81）；freshrss 容器 Up 2 days
 # Build（均在 services/bff 下，逐步执行）
 uv run python probe_0003.py      # 只读 probe（脚本用后即删，不打印秘密/正文）
 uv run pytest tests/test_entryref.py -v        # 15 passed

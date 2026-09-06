@@ -332,8 +332,6 @@ restart 的前提下安全注入 runtime env，故如实标记）。secret 项 A
 
 ## Notes during execution
 
-（执行过程中按需追加）
-
 ### 2026-09-05 收口记录
 
 **审计与修复（G10 安全审查附带 spec 对照审计，修复均带回归测试）：**

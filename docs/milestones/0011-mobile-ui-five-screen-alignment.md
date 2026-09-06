@@ -17,7 +17,7 @@
 3. 建立清晰的移动端一级导航模型（AppSection），设置入口统一收敛到侧边栏品牌区右上角；
 4. 数据契约零造假：BFF 没有的字段/能力，UI 诚实降级或标注 planned，不伪造。
 
-## 前置条件核对（Gate 0 已真实核验，2026-08-30）
+## 前置条件核对（2026-08-30 核验）
 
 ```text
 Git:        main @ 43f8ae8（PR #16 已合并），工作区干净（仅未跟踪的任务 zip）
@@ -33,18 +33,13 @@ EntryListItem 契约: entryRef/title/feedTitle/author/url/publishedAt/read/starr
 图标:       lucide-react 已安装（1.34.0），继续沿用
 ```
 
-## Context — 概念解释（写给初学者）
+## Context — 概念定义
 
 - **AppSection vs EntryView**：`EntryView`（all/unread/starred）描述"文章列表按什么过滤"；
   本 Spec 新增 `AppSection`（home/subscriptions/search/favorites）描述"用户在哪个一级页面"。
   两者是正交概念：收藏页内部使用 `starred` 这个 EntryView 复用现有查询，而不是复制数据。
-- **disclosure / accordion**：可折叠区块的标准可访问性模式，按钮带
-  `aria-expanded` + `aria-controls`，内容区由按钮控制显隐。侧边栏"RSS 订阅"根节点
-  与订阅页的分类分组都采用该模式。
-- **导航岛（floating tab bar）**：参考图中底部导航是悬浮圆角容器（左右留 inset、
-  考虑 safe-area），而非贴边矩形条。需提供不支持 backdrop blur 的实色降级。
 - **诚实降级**：后端没有缩略图/摘要/分类/未读数时，UI 不留空占位、不造假数据，
-  而是退化为文本布局或不显示该元素。
+  而是退化为文本布局或不显示该元素。（disclosure / 导航岛等具体形态见下方设计规格。）
 
 ## Scope（只做这些，按 Gate 划分）
 
@@ -92,7 +87,7 @@ EntryListItem 契约: entryRef/title/feedTitle/author/url/publishedAt/read/starr
 
 ### Gate 6 — Regression, Docs & Handoff
 
-- 全量 test/lint/build；文档同步（见 Documentation updates）；逐文件交付报告；等验收后 commit。
+- 全量 test/lint/build；文档同步（见 Documentation updates）；逐文件交付报告。
 
 ## Non-goals（明确不做）
 
@@ -162,7 +157,7 @@ type AppSection = 'home' | 'subscriptions' | 'search' | 'favorites'
 - 收藏页：Header（菜单/居中"收藏"/真实 filter）+ starred 查询 + 最近收藏/更早分组 +
   取消星标缓存一致（现有 invalidate 前缀失效已覆盖）。
 
-## 路线修订计划（本 Spec 批准后执行文档修订）
+## 路线修订计划（2026-08-30 批准）
 
 ```text
 0001–0010  已完成历史，编号不变
@@ -194,7 +189,7 @@ type AppSection = 'home' | 'subscriptions' | 'search' | 'favorites'
 - AC12 Playground 新增五场景 fixture（确定性数据，与生产 API 类型分离，不进生产入口）；
 - AC13 BFF 零改动、既有测试全绿、0009/0010 行为无回归（含 j/k/u/s 快捷键、分栏持久化、主题）。
 
-## Tasks（Build 顺序，批准后严格逐步执行，每步完成立即验证）
+## Tasks（Build 顺序）
 
 1. Gate 1：AppSection store + MobileTabBar 四入口 + MobilePageHeader + SidebarHeader 设置入口 + 导航测试；
 2. Gate 2：SourceTree disclosure + 工作区去重 + 抽屉 scroll lock/焦点恢复 + 响应式/a11y 测试；
@@ -210,9 +205,9 @@ cd apps/web && pnpm test && pnpm lint && pnpm build
 # Gate 5 追加：Playwright 真实浏览器截图（本机 chromium，见 docs 截图矩阵记录）
 ```
 
-每个 Gate 报告必须附：刚运行的命令、退出码、测试数量、失败详情（不得沿用旧报告）。
+> Execution was performed in gated stages, each gated by user review.
 
-## Documentation updates（Gate 6 执行，路线修订在批准后先行）
+## Documentation updates
 
 - ROADMAP.md：总览/正文/依赖图/变更记录（0011 替换 + 0012–0019 顺延，保留追溯说明）；
 - PROJECT_STATE.md：当前里程碑、已知缺口、编号引用；
