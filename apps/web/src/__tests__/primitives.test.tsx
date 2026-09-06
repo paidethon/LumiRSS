@@ -164,12 +164,17 @@ describe('Dialog', () => {
     return { onClose }
   }
 
-  it('role=dialog + aria-modal + aria-labelledby 指向标题', () => {
+  it('role=dialog + aria-modal + aria-labelledby 指向标题', async () => {
     setup()
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     const labelId = dialog.getAttribute('aria-labelledby')!
     expect(document.getElementById(labelId)?.textContent).toBe('确认删除')
+    // Base UI 模态隔离：面板外内容 inert + aria-hidden（比 aria-modal 更强）
+    await waitFor(() => {
+      expect(document.querySelector('[data-base-ui-inert]')).not.toBeNull()
+    })
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
   })
 
   it('Escape 关闭（stopPropagation 不影响外层）', () => {
@@ -178,18 +183,33 @@ describe('Dialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('Tab 焦点 trap 在对话框内循环', () => {
+  it('Tab 焦点 trap 在对话框内循环', async () => {
     setup()
     const dialog = screen.getByRole('dialog')
     const focusables = [
       ...dialog.querySelectorAll<HTMLElement>('button'),
     ]
-    // 初始焦点应在第一个可聚焦元素
-    expect(focusables[0]).toHaveFocus()
+    // 初始焦点应在第一个可聚焦元素（Base UI 经 rAF 异步落焦）
+    await waitFor(() => {
+      expect(focusables[0]).toHaveFocus()
+    })
     // 在最后一个元素上按 Tab → 焦点回到第一个
     focusables[focusables.length - 1].focus()
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(focusables[0]).toHaveFocus()
+  })
+
+  it('初始焦点落在第一个可聚焦元素', async () => {
+    setup()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '确定' })).toHaveFocus()
+    })
+  })
+
+  it('打开时锁定 body 滚动（Base UI modal）', () => {
+    setup()
+    // Base UI 锁定用 overflow-x/y 长属性（非简写）
+    expect(document.body.style.overflowY).toBe('hidden')
   })
 })
 

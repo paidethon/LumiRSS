@@ -33,6 +33,18 @@ body {
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  /* Base UI 官方前置（Quick Start）：iOS 26+ Safari 浏览器 chrome 之下
+   * 可见 body 之下的内容，遮罩层需要 body 作为定位基准才能盖住视口
+   * （Backdrop 用 supports-[-webkit-touch-callout]:absolute 配合）。
+   * 只改变定位基准，不影响布局。 */
+  position: relative;
+}
+
+/* Base UI 官方前置（Quick Start）：#root 自成一个 stacking context，
+ * portal 到 body 的浮层（Dialog/Sheet/Popover/Menu/Tooltip）不再与
+ * 应用内 z-index（--lumi-z-*）竞争层级。只影响层叠，不影响布局。 */
+#root {
+  isolation: isolate;
 }
 
 /* 0009 Gate 3 — 文章正文样式（Tailwind + 少量普通 CSS，不引入
