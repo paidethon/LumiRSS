@@ -14,7 +14,7 @@ import {
   Tags,
   Zap,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, memo } from 'react'
 import { useFeeds } from '../api/queries'
 import type { Feed } from '../api/types'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
@@ -413,7 +413,10 @@ function RssTree({
   )
 }
 
-export default function Sidebar({
+/** memo 边界：props 仅 onNavigate（App 不传 / 抽屉传稳定的 zustand
+ * action）。selectedEntryRef 变化时 App 重渲染，但 Sidebar 自身不订阅
+ * selection——memo 避免整个订阅源树随每次文章选择重渲染。 */
+function Sidebar({
   onNavigate,
 }: {
   onNavigate?: () => void
@@ -547,3 +550,5 @@ export default function Sidebar({
     </nav>
   )
 }
+
+export default memo(Sidebar)

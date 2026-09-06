@@ -109,12 +109,15 @@ export function useEntries(scope: ContentScope, view: UiView) {
 
 /** 单篇 Detail。enabled：没有 selection（entryRef 为 null）时
  * 完全不发请求；切换 selection = 换 query key，旧请求由
- * TanStack Query 通过 AbortSignal 自动取消。 */
+ * TanStack Query 通过 AbortSignal 自动取消。
+ * staleTime：正文对同一 entryRef 是稳定的（read/star 走 mutation 的
+ * 精确失效）——快速来回切换时命中缓存，不重复 refetch 数百 KB 正文。 */
 export function useEntryDetail(entryRef: string | null) {
   return useQuery({
     queryKey: ['entry', entryRef],
     queryFn: ({ signal }) => getEntry(entryRef!, signal),
     enabled: entryRef !== null,
+    staleTime: 30_000,
   })
 }
 

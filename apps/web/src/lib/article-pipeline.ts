@@ -27,6 +27,47 @@ import { sanitizeArticleHtml } from './sanitize-article-html'
 import { containsCodeBlock, highlightCodeBlocks } from './code-highlight'
 import type { ReaderChineseConversion } from '../store/app-settings'
 
+// ---- 有界展示缓存（性能：Reader 按 entryRef 重挂载是防泄漏的既定架构，
+// 但重挂载不该重复付出整个正文的 sanitize / transform 成本——快速来回
+// 切换缓存文章时尤其明显。key 全部用精确输入字符串，绝不做哈希/截断，
+// 杜绝碰撞渲染错内容。） ----
+
+/** sanitize 基线缓存（sync 首帧路径），key = 原始 HTML。 */
+const sanitizeCache = new Map<string, string>()
+/** 完整管线输出缓存（值为 Promise，并发去重），key = 选项 JSON + 原始 HTML。 */
+const pipelineCache = new Map<string, Promise<string>>()
+const SANITIZE_CACHE_MAX = 12
+const PIPELINE_CACHE_MAX = 8
+
+function cacheGetOrPut(
+  cache: Map<string, string>,
+  max: number,
+  key: string,
+  compute: () => string,
+): string {
+  const hit = cache.get(key)
+  if (hit !== undefined) {
+    // 刷新插入顺序（Map 迭代序 = 插入序，实现简易 LRU 逐出）
+    cache.delete(key)
+    cache.set(key, hit)
+    return hit
+  }
+  const value = compute()
+  cache.set(key, value)
+  if (cache.size > max) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+  return value
+}
+
+/** 带缓存的 sanitize 基线（同一篇正文在 Reader 重挂载时不再重复清洗）。 */
+export function sanitizeArticleHtmlCached(html: string): string {
+  return cacheGetOrPut(sanitizeCache, SANITIZE_CACHE_MAX, html, () =>
+    sanitizeArticleHtml(html),
+  )
+}
+
 // ---- 中文简繁转换（OpenCC，dynamic import，仅启用时加载） ----
 
 type OpenCCConverter = (text: string) => string
@@ -208,4 +249,32 @@ export async function renderArticleHtml(
   // 最终安全边界：transform 后的整个 DOM serialize → DOMPurify。
   // transforms 可能引入的任何意外标记在这里被统一清洗。
   return sanitizeArticleHtml(doc.body.innerHTML)
+}
+
+/** 测试用：清空展示缓存（与 clearConverterCache 同一模式）。 */
+export function clearArticleHtmlCaches(): void {
+  sanitizeCache.clear()
+  pipelineCache.clear()
+}
+
+/** renderArticleHtml 的缓存包装。缓存值为 Promise：并发同 key 请求
+ * 天然去重；key 含全部影响输出的输入（rawHtml / conversion / bionic /
+ * codeTheme），设置变化 = 不同 key。管线失败不落缓存（可重试）。 */
+export function renderArticleHtmlCached(
+  rawHtml: string,
+  options: ArticlePipelineOptions,
+): Promise<string> {
+  const key = JSON.stringify(options) + '\u0000' + rawHtml
+  const hit = pipelineCache.get(key)
+  if (hit !== undefined) return hit
+  const promise = renderArticleHtml(rawHtml, options)
+  pipelineCache.set(key, promise)
+  if (pipelineCache.size > PIPELINE_CACHE_MAX) {
+    const oldest = pipelineCache.keys().next().value
+    if (oldest !== undefined && oldest !== key) pipelineCache.delete(oldest)
+  }
+  void promise.catch(() => {
+    if (pipelineCache.get(key) === promise) pipelineCache.delete(key)
+  })
+  return promise
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { EntryDetail } from '../api/types'
-import { sanitizeArticleHtml } from '../lib/sanitize-article-html'
-import { renderArticleHtml } from '../lib/article-pipeline'
+import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
 import { useAppSettings } from '../store/app-settings'
 import { prefersDarkScheme, resolveTheme } from '../lib/theme'
 
@@ -34,8 +33,10 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const hasHtml = rawHtml !== null && rawHtml.trim() !== ''
   // 同步初值：管线关闭时直接 sanitize（零额外开销）；开启时先渲染
   // sanitize 基线、transform 完成后替换——加载期间正文可见不空白。
+  // 缓存版：Reader 按 entryRef 重挂载（防 mutation 泄漏的既定架构），
+  // 重挂载不重复付出整个正文的清洗成本（快速来回切换时尤其明显）。
   const [html, setHtml] = useState(() =>
-    rawHtml !== null && rawHtml.trim() !== '' ? sanitizeArticleHtml(rawHtml) : '',
+    rawHtml !== null && rawHtml.trim() !== '' ? sanitizeArticleHtmlCached(rawHtml) : '',
   )
 
   // 代码主题解析：auto = 随当前应用主题明暗切换（system 模式下监听
@@ -60,7 +61,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   useEffect(() => {
     if (rawHtml === null || rawHtml.trim() === '') return
     let cancelled = false
-    void renderArticleHtml(rawHtml, {
+    void renderArticleHtmlCached(rawHtml, {
       conversion,
       bionic,
       codeTheme: resolvedCodeTheme,

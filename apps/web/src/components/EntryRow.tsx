@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { EntryListItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
@@ -26,8 +27,13 @@ function formatPublishedAt(value: string | null): string {
  *   §17/§18；预留稳定空间，hover 零跳动）。
  *
  * 状态表达不只靠颜色（AC10）：未读=字重+左侧 accent 圆点；选中=
- * selected surface + accent 圆点常亮；连续列表（无卡片、无行阴影）。 */
-export default function EntryRow({
+ * selected surface + accent 圆点常亮；连续列表（无卡片、无行阴影）。
+ *
+ * memo 边界：props 仅 item（query cache structural sharing 保持引用
+ * 稳定）+ selected（布尔）。选中态变化只影响新旧两行——没有 memo 时
+ * 每次选择都会让整个列表所有行重渲染（渲染风暴，连续点击时叠加），
+ * memo 后未受影响的行直接跳过。 */
+function EntryRow({
   item,
   selected,
 }: {
@@ -94,3 +100,5 @@ export default function EntryRow({
     </div>
   )
 }
+
+export default memo(EntryRow)

@@ -4,8 +4,16 @@
  * 恶意 HTML（script/onerror/javascript:/iframe/style/form/svg
  * namespace/malformed）经管线后危险内容全部消失。 */
 
-import { describe, expect, it } from 'vitest'
-import { renderArticleHtml, clearConverterCache } from '../lib/article-pipeline'
+import { describe, expect, it, vi } from 'vitest'
+import DOMPurify from 'dompurify'
+import {
+  clearArticleHtmlCaches,
+  clearConverterCache,
+  renderArticleHtml,
+  renderArticleHtmlCached,
+  sanitizeArticleHtmlCached,
+} from '../lib/article-pipeline'
+import { sanitizeArticleHtml } from '../lib/sanitize-article-html'
 
 const OFF = { conversion: 'off', bionic: false, codeTheme: null } as const
 
@@ -248,5 +256,56 @@ describe('renderArticleHtml — Shiki 代码高亮（Gate 8）', () => {
     expect(out).not.toContain('<script')
     // alert(1) 是代码文本，合法保留（textContent 注入，不执行）
     expect(out).toContain('alert')
+  })
+})
+
+describe('展示缓存（性能修复：Reader 重挂载不重复 sanitize/transform）', () => {
+  const raw = '<p>学习汉字 <strong>bold</strong></p><script>alert(1)</script>'
+
+  it('sanitizeArticleHtmlCached 与直接 sanitize 输出一致', () => {
+    clearArticleHtmlCaches()
+    expect(sanitizeArticleHtmlCached(raw)).toBe(sanitizeArticleHtml(raw))
+  })
+
+  it('同 key 命中缓存（不重复调用 DOMPurify），清空后重新计算', () => {
+    clearArticleHtmlCaches()
+    const spy = vi.spyOn(DOMPurify, 'sanitize')
+    try {
+      sanitizeArticleHtmlCached(raw)
+      const callsAfterFirst = spy.mock.calls.length
+      expect(callsAfterFirst).toBeGreaterThan(0)
+      sanitizeArticleHtmlCached(raw)
+      sanitizeArticleHtmlCached(raw)
+      expect(spy.mock.calls.length).toBe(callsAfterFirst) // 命中缓存，零重算
+      clearArticleHtmlCaches()
+      sanitizeArticleHtmlCached(raw)
+      expect(spy.mock.calls.length).toBe(callsAfterFirst + 1) // 清空后重算
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('renderArticleHtmlCached：同 key 返回同一 Promise（并发去重），输出与直接管线一致', async () => {
+    clearArticleHtmlCaches()
+    const p1 = renderArticleHtmlCached(raw, OFF)
+    const p2 = renderArticleHtmlCached(raw, OFF)
+    expect(p2).toBe(p1) // Promise 对象同一性 = 缓存命中
+    const direct = await renderArticleHtml(raw, OFF)
+    expect(await p1).toBe(direct)
+  })
+
+  it('设置变化 = 不同 key（s2t 转换结果不被 off 结果污染）', async () => {
+    clearArticleHtmlCaches()
+    clearConverterCache()
+    const pOff = renderArticleHtmlCached('<p>学习</p>', OFF)
+    const pS2t = renderArticleHtmlCached('<p>学习</p>', {
+      conversion: 's2t',
+      bionic: false,
+      codeTheme: null,
+    })
+    expect(await pOff).toContain('学习')
+    expect(await pS2t).toContain('學習')
+    // 再取 off：仍是简体（缓存未串键）
+    expect(await renderArticleHtmlCached('<p>学习</p>', OFF)).toContain('学习')
   })
 })
