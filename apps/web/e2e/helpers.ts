@@ -54,6 +54,20 @@ export async function waitForAppReady(page: Page) {
   await expect(page.getByRole('button', { name: '打开设置' })).toBeVisible()
 }
 
+/** 确保 BFF 侧存在 default AI key——AI journeys 自建前置（幂等）。
+ * BFF 调任何 OpenAI 兼容端点都要求非空 key（Bearer 头），mock 服务
+ * 不校验其值。只在尚未配置时经 write-only API 写入一个显式假 key
+ * （sk- 前缀同时让「key 不回显」断言有真实形状可校验）——绝不覆盖
+ * 已存在的真实用户 key。 */
+export async function ensureMockDefaultAiKey(page: Page) {
+  const status = await (await page.request.get('/api/v1/settings/ai')).json()
+  if (status.defaultKeyConfigured) return
+  const resp = await page.request.put('/api/v1/settings/ai/key', {
+    data: { value: 'sk-e2e-mock-key-not-a-real-credential' },
+  })
+  expect(resp.status()).toBe(204)
+}
+
 /** 校验页面没有横向溢出（移动端硬门）。 */
 export async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => {

@@ -9,7 +9,7 @@ const OUT = 'test-results/gate6';
   // 移动端 Reader 工具栏（紧凑菜单形态）
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await mobile.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
-  await mobile.getByText('文章 alpha').first().click();
+  await mobile.getByText('文章 alpha').filter({ visible: true }).first().click();
   await mobile.waitForTimeout(1500);
   await mobile.screenshot({ path: `${OUT}/09-mobile-reader.png` });
   const mt = {
@@ -30,7 +30,7 @@ const OUT = 'test-results/gate6';
   // 深色：设置阅读页 + Reader 双语
   const dark = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
   await dark.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
-  await dark.getByText('文章 alpha').first().click();
+  await dark.getByText('文章 alpha').filter({ visible: true }).first().click();
   await dark.waitForTimeout(1200);
   await dark.screenshot({ path: `${OUT}/11-dark-reader.png` });
   await dark.close();

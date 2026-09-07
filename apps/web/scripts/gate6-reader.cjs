@@ -8,7 +8,8 @@ fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
-  await page.getByText('文章 alpha').first().click();
+  // 桌面/移动双渲染：点击必须落在当前视口可见的那个节点上
+  await page.getByText('文章 alpha').filter({ visible: true }).first().click();
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${OUT}/04-reader-after-select.png` });
 
@@ -37,7 +38,7 @@ fs.mkdirSync(OUT, { recursive: true });
   // 移动端工具栏（390px：应为紧凑菜单形态）
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await mobile.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
-  await mobile.getByText('文章 alpha').first().click();
+  await mobile.getByText('文章 alpha').filter({ visible: true }).first().click();
   await mobile.waitForTimeout(1500);
   await mobile.screenshot({ path: `${OUT}/09-mobile-reader.png` });
   const mobileToolbar = {

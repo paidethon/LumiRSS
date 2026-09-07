@@ -8,6 +8,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
   closeMobileSettings,
+  ensureMockDefaultAiKey,
   expectNoHorizontalOverflow,
   openMobileSettings,
 } from './helpers'
@@ -72,18 +73,28 @@ test('M2 — 时间线与全屏 Reader：打开 / 全屏 / 返回 / 已读收藏
 })
 
 test('M3 — AI 摘要（mock provider）：Reader 内生成或读取缓存', async ({ page }) => {
+  // 自建前置（幂等，同 J4）：provider 调用需要非空 key；mock 配置
+  // （Base URL/Model）仍由 desktop-journeys 先行写入。
+  await ensureMockDefaultAiKey(page)
   await page.goto('/')
   const entryTitle = page.getByRole('button', { name: /文章 beta/ }).first()
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
   await entryTitle.click()
-  // 等待摘要卡进入稳定态：要么已缓存展示，要么出现生成按钮
+  // 等待摘要卡进入稳定态：已缓存展示 / 未生成按钮 / 失败重试（上轮
+  // 残留），三者收敛到 MOCK-AI-REPLY 可见
   const cached = page.getByText(/MOCK-AI-REPLY/).first()
   const generateButton = page.getByRole('button', { name: 'AI 摘要' }).last()
-  await expect(cached.or(generateButton).first()).toBeVisible({ timeout: 15_000 })
+  const retryButton = page.getByRole('button', { name: '重试' }).last()
+  await expect(cached.or(generateButton).or(retryButton).first()).toBeVisible({
+    timeout: 15_000,
+  })
   if (await cached.isVisible().catch(() => false)) {
     await expect(cached).toBeVisible()
   } else {
-    await generateButton.click()
+    await ((await generateButton.isVisible().catch(() => false))
+      ? generateButton
+      : retryButton
+    ).click()
     await expect(page.getByText(/MOCK-AI-REPLY/).first()).toBeVisible({ timeout: 30_000 })
   }
   await page.getByRole('button', { name: '返回文章列表' }).click()
