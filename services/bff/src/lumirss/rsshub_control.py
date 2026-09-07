@@ -318,6 +318,10 @@ class RssHubControlStore:
             raise RssHubInvalidValue("secret value must not be blank.")
         if len(value) > MAX_SECRET_LENGTH:
             raise RssHubInvalidValue("secret value is too long.")
+        if any(ord(char) < 32 for char in value):
+            raise RssHubInvalidValue(
+                "secret value must not contain control characters."
+            )
         self._secrets.set(self._secret_store_key(key), value)
         await self._bump_secrets_version()
 
@@ -434,6 +438,22 @@ def _validate_domain(domain: str) -> str:
     return clean
 
 
+def _validate_credential_value(value: str) -> str:
+    """Shared custom-credential value rules: non-blank, bounded, and free
+    of control characters — rejected at INPUT time so env-file rendering
+    can never fail on an already-stored value."""
+    clean = value.strip()
+    if not clean:
+        raise RssHubCustomCredentialError("value must not be blank.")
+    if len(clean) > MAX_SECRET_LENGTH:
+        raise RssHubCustomCredentialError("value is too long.")
+    if any(ord(ch) < 32 for ch in clean):
+        raise RssHubCustomCredentialError(
+            "value must not contain control characters."
+        )
+    return clean
+
+
 def _validate_label_text(value: str, field: str, max_length: int) -> str:
     clean = value.strip()
     if not clean:
@@ -519,6 +539,13 @@ class RssHubCustomCredentialStore:
         clean_name = _validate_label_text(name, "name", 80)
         clean_domain = _validate_domain(domain)
         clean_key = _validate_env_key(env_key)
+        if clean_key in ITEMS_BY_KEY:
+            # 固定 schema 键必须经 Control Center 管理：允许自定义凭据
+            # 占用同名 envKey 会在 env 文件里 last-wins 静默遮蔽它。
+            raise RssHubCustomCredentialError(
+                f"envKey '{clean_key}' belongs to the fixed Control-Center "
+                "schema; configure it there instead."
+            )
         clean_route = route.strip()
         if len(clean_route) > 200:
             raise RssHubCustomCredentialError(
@@ -533,11 +560,7 @@ class RssHubCustomCredentialStore:
                 raise RssHubCustomCredentialError(
                     f"envKey '{clean_key}' is already used."
                 )
-        clean_value = value.strip()
-        if not clean_value:
-            raise RssHubCustomCredentialError("value must not be blank.")
-        if len(clean_value) > MAX_SECRET_LENGTH:
-            raise RssHubCustomCredentialError("value is too long.")
+        clean_value = _validate_credential_value(value)
         entry_id = uuid.uuid4().hex[:16]
         now = _utc_now()
         entry = {
@@ -580,11 +603,7 @@ class RssHubCustomCredentialStore:
         entries = await self._load()
         if not any(e["id"] == entry_id for e in entries):
             raise RssHubCustomCredentialError("credential not found.")
-        clean = value.strip()
-        if not clean:
-            raise RssHubCustomCredentialError("value must not be blank.")
-        if len(clean) > MAX_SECRET_LENGTH:
-            raise RssHubCustomCredentialError("value is too long.")
+        clean = _validate_credential_value(value)
         self._secrets.set(self._secret_key(entry_id), clean)
 
     async def delete(self, entry_id: str) -> None:

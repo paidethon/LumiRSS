@@ -40,7 +40,7 @@ def test_custom_credential_crud_roundtrip(tmp_path):
         store.create(
             name="我的微博",
             domain="Weibo.com/",
-            env_key="WEIBO_COOKIES",
+            env_key="TEST_WEIBO_COOKIES",
             kind="cookie",
             value="SUB=x; SUBP=y",
             route="/weibo/search/hotfest",
@@ -48,7 +48,7 @@ def test_custom_credential_crud_roundtrip(tmp_path):
     )
     assert entry["configured"] is True
     assert entry["domain"] == "weibo.com"  # normalized
-    assert entry["envKey"] == "WEIBO_COOKIES"
+    assert entry["envKey"] == "TEST_WEIBO_COOKIES"
 
     entries = run(store.list_entries())
     assert len(entries) == 1 and entries[0]["configured"] is True
@@ -71,13 +71,57 @@ def test_custom_credential_validation(tmp_path):
     with pytest.raises(RssHubCustomCredentialError):
         run(store.create(name="x", domain="weibo.com", env_key="lower", kind="cookie", value="v"))
     with pytest.raises(RssHubCustomCredentialError):
-        run(store.create(name="x", domain="weibo.com", env_key="WEIBO_COOKIES", kind="nonsense", value="v"))
+        run(store.create(name="x", domain="weibo.com", env_key="TEST_COOKIES", kind="nonsense", value="v"))
     with pytest.raises(RssHubCustomCredentialError):
-        run(store.create(name="", domain="weibo.com", env_key="WEIBO_COOKIES", kind="cookie", value="v"))
+        run(store.create(name="", domain="weibo.com", env_key="TEST_COOKIES", kind="cookie", value="v"))
     # duplicate env key
-    run(store.create(name="a", domain="weibo.com", env_key="WEIBO_COOKIES", kind="cookie", value="v1"))
+    run(store.create(name="a", domain="weibo.com", env_key="TEST_COOKIES", kind="cookie", value="v1"))
     with pytest.raises(RssHubCustomCredentialError):
-        run(store.create(name="b", domain="douban.com", env_key="WEIBO_COOKIES", kind="cookie", value="v2"))
+        run(store.create(name="b", domain="douban.com", env_key="TEST_COOKIES", kind="cookie", value="v2"))
+
+
+def test_custom_credential_env_key_cannot_shadow_schema_keys(tmp_path):
+    """固定 schema 键（如 ACCESS_KEY）只能经 Control Center 管理；自定义
+    凭据占用同名 envKey 会在 env 文件里 last-wins 静默遮蔽它们。"""
+    store, _ = _store(tmp_path)
+    for shadowed in ("ACCESS_KEY", "ZHIHU_COOKIES", "CACHE_EXPIRE"):
+        with pytest.raises(RssHubCustomCredentialError):
+            run(
+                store.create(
+                    name="x", domain="weibo.com", env_key=shadowed,
+                    kind="cookie", value="v",
+                )
+            )
+
+
+def test_credential_value_control_chars_rejected_at_input(tmp_path):
+    """控制字符在写入时拒绝（而非等到 env 文件渲染才 400 fail-closed）：
+    避免出现「保存成功但永远无法物化」的卡死状态。"""
+    store, _ = _store(tmp_path)
+    with pytest.raises(RssHubCustomCredentialError):
+        run(
+            store.create(
+                name="x", domain="weibo.com", env_key="TEST_WEIBO_COOKIES",
+                kind="cookie", value="SUB=x\nHOST=evil",
+            )
+        )
+    entry = run(
+        store.create(
+            name="x", domain="weibo.com", env_key="TEST_WEIBO_COOKIES",
+            kind="cookie", value="SUB=ok",
+        )
+    )
+    with pytest.raises(RssHubCustomCredentialError):
+        run(store.set_value(entry["id"], "SUB=x\tTAB"))
+
+    from lumirss.rsshub_control import RssHubControlStore, RssHubInvalidValue
+
+    control = RssHubControlStore(store._db, store._secrets)
+    with pytest.raises(RssHubInvalidValue):
+        run(control.set_secret("WEIBO_COOKIES", "line1\nline2"))
+    # 合法值照常写入
+    run(control.set_secret("WEIBO_COOKIES", "SUB=ok"))
+    run(control.delete_secret("WEIBO_COOKIES"))
 
 
 def test_render_env_file_includes_values_server_side(tmp_path):
@@ -89,15 +133,15 @@ def test_render_env_file_includes_values_server_side(tmp_path):
         store.create(
             name="豆瓣",
             domain="douban.com",
-            env_key="DOUBAN_COOKIE",
+            env_key="ITEST_DOUBAN_COOKIE",
             kind="cookie",
             value="itest-douban-cookie-value",
         )
     )
     custom = await_values = run(store.collect_values())
     content = render_env_file(control, run(control.desired()), await_values)
-    assert custom.get("DOUBAN_COOKIE") == "itest-douban-cookie-value"
-    assert "DOUBAN_COOKIE=itest-douban-cookie-value" in content
+    assert custom.get("ITEST_DOUBAN_COOKIE") == "itest-douban-cookie-value"
+    assert "ITEST_DOUBAN_COOKIE=itest-douban-cookie-value" in content
     # secret values of the FIXED schema appear too (server-side only)
     assert "CACHE_TYPE=memory" in content
 

@@ -2064,10 +2064,14 @@ async def materialize_rsshub_env_file(request: Request) -> dict[str, object]:
     content = render_env_file(store, desired, custom_values)
     settings = LumiSettings()
     target_dir = settings.data_dir / "rsshub"
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # 0700 目录 + 建文件即 0600：secrets 不经默认权限暴露出窗口期
+    target_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    _os.chmod(target_dir, 0o700)
     target = target_dir / "rsshub.env"
     tmp = target_dir / ".rsshub.env.tmp"
-    tmp.write_text(content, encoding="utf-8")
+    fd = _os.open(tmp, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    with _os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
     _os.chmod(tmp, 0o600)
     _os.replace(tmp, target)
     _os.chmod(target, 0o600)

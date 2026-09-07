@@ -122,7 +122,8 @@ function CredentialsSection() {
   const [form, setForm] = useState<RssHubCredentialInput>(EMPTY_FORM)
 
   const submit = () => {
-    create.mutate(form)
+    // 成功即清空表单：凭据值不滞留在 DOM 状态里（与 SecretField 一致）
+    create.mutate(form, { onSuccess: () => setForm(EMPTY_FORM) })
   }
 
   return (
