@@ -159,7 +159,7 @@ export function WebDavCard() {
             <Switch
               checked={tlsVerify}
               onCheckedChange={setTlsVerify}
-              label={tlsVerify ? 'TLS 校验开启' : 'TLS 校验关闭'}
+              label="校验 TLS 证书"
             />
           </div>
 

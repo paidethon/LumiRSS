@@ -112,7 +112,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   it('界面字号/字体/减少动效 → store（AC11–AC13）', () => {
     openCategory(/外观/)
     // 减少动效 toggle
-    fireEvent.click(screen.getByRole('switch', { name: '减少动效开关' }))
+    fireEvent.click(screen.getByRole('switch', { name: '减少动效' }))
     expect(useAppSettings.getState().settings.reduceMotion).toBe(true)
     useAppSettings.getState().update({ reduceMotion: false })
   })

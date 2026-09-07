@@ -92,9 +92,9 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
     fireEvent.click(screen.getByRole('button', { name: '通用' }))
     expect(screen.getByRole('button', { name: '返回设置' })).toBeInTheDocument()
     // 通用页含时间线 toggle（AC6–AC9 的控件在子页真实可用）
-    expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeEnabled()
-    expect(screen.getByRole('switch', { name: '按日期分组开关' })).toBeEnabled()
-    expect(screen.getByRole('switch', { name: '启动时仅看未读开关' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '已读条目变暗' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '按日期分组' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '启动时仅看未读' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     expect(screen.queryByRole('button', { name: '返回设置' })).toBeNull()
   })
@@ -102,7 +102,7 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
   it('子页开关真实生效（AC4：与桌面共享同一 store）', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '通用' }))
-    fireEvent.click(screen.getByRole('switch', { name: '已读条目变暗开关' }))
+    fireEvent.click(screen.getByRole('switch', { name: '已读条目变暗' }))
     expect(useAppSettings.getState().settings.dimRead).toBe(true)
     useAppSettings.getState().update({ dimRead: false })
   })
@@ -110,7 +110,7 @@ describe('MobileSettingsScreen — AC1/AC2/AC4/AC5', () => {
   it('阅读页：滚动标记已读正式化（无实验徽标，保守说明）', () => {
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '阅读' }))
-    expect(screen.getByRole('switch', { name: '滚动时标记已读开关' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '滚动时标记已读' })).toBeEnabled()
     expect(screen.queryByText('实验性')).toBeNull()
     expect(screen.getByText(/完全滚出列表上方/)).toBeInTheDocument()
   })
@@ -156,7 +156,7 @@ describe('桌面/移动共享（AC5）', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: /通用/ }))
     await waitFor(() => {
-      expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeInTheDocument()
+      expect(screen.getByRole('switch', { name: '已读条目变暗' })).toBeInTheDocument()
     })
     unmount()
 
@@ -166,6 +166,6 @@ describe('桌面/移动共享（AC5）', () => {
       </QueryClientProvider>,
     )
     fireEvent.click(screen.getByRole('button', { name: '通用' }))
-    expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '已读条目变暗' })).toBeInTheDocument()
   })
 })

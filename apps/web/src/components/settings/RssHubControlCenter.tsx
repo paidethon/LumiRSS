@@ -165,7 +165,7 @@ function ConfigField({
         <Switch
           checked={value === true}
           onCheckedChange={onChange}
-          label={value === true ? '开启' : '关闭'}
+          label={item.label}
         />
       ) : item.type === 'enum' ? (
         <Select
