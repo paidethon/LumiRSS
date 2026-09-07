@@ -16,6 +16,13 @@ version provenance.
 
 **Active milestone**: —
 
+**Active task branch** (PR-ready, awaiting review): `feat/overnight-reader-translation-rsshub-20260907`
+→ reader translation three-mode views, RSSHub auto-detect/credentials/apply chain,
+backup fixes, E2E legacy closure + security hardening (2026-09-08).
+Status / evidence: [tasks/overnight-reader-translation-rsshub/STATE.md](tasks/overnight-reader-translation-rsshub/STATE.md)
+· [VALIDATION.md](tasks/overnight-reader-translation-rsshub/VALIDATION.md) ·
+[IMPLEMENTATION_REPORT.md](tasks/overnight-reader-translation-rsshub/IMPLEMENTATION_REPORT.md)
+
 **Next candidate**: 0021 — Security & Operations Hardening（编号尚未占用）
 → scope and priority: [ROADMAP.md](ROADMAP.md)
 

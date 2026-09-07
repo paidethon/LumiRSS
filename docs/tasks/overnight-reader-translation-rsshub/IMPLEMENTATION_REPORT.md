@@ -1,7 +1,7 @@
 # IMPLEMENTATION_REPORT.md — 七项需求逐项实施报告
 
 > 分支：`feat/overnight-reader-translation-rsshub-20260907`（自 e3c4de7 = origin/main 内容创建）
-> 本地 commit：`c8a1bcc`（备份）→ `1fd589c`（开关文字）→ `d3cf014`（翻译）→ `9228256`（RSSHub）→ `bef5558`（调研报告）→ 本次收尾提交
+> 本地 commit：`c8a1bcc`（备份）→ `1fd589c`（开关文字）→ `d3cf014`（翻译）→ `9228256`（RSSHub）→ `bef5558`（调研报告）→ `8399ed3`（首版收尾报告）→ 2026-09-08 收尾稳定化轮（E2E 关闭 + 安全修复 + 文档对齐，SHA 见 §收尾轮）
 > 任务状态文件：[STATE.md](STATE.md)；验收证据：[VALIDATION.md](VALIDATION.md)
 
 ## 七项需求完成表
@@ -17,6 +17,26 @@
 | 7 | 修复完整备份报错 | ✅ 根因修复 + 隔离栈备份→恢复→重启全链路实测 | commit c8a1bcc |
 
 状态口径（按任务要求）：无一项使用"已完成"夸口——第 5/6/7 项中所有未经真实外部服务验证的子项在 VALIDATION.md §5 逐条列出。
+
+## 2026-09-08 收尾稳定化轮
+
+七项交付之后，本轮把分支从"功能完成"推进到"可信、可 review、PR-ready"：
+
+1. **E2E 遗留（B/C 类）关闭**：J2 数据依赖与 a11y 对比度问题的修复
+   （`f9e86fb`/`6bed703`）已在分支祖先；本轮真实复跑 J2 ×4、a11y 7 项全绿，
+   历史问题文档归档至本目录并标注解决。
+2. **J4/M3 journeys 修复**：docker 网桥网关漂移改运行时探测；AI key 幂等
+   自建前置（write-only API，不覆盖真实 key）；摘要卡三状态收敛。属测试/
+   环境缺陷，产品代码与基线零差异。
+3. **安全审计**：分支新代码无 P0/P1；修复 env 物化权限窗口期、envKey 遮蔽
+   固定 schema 键、控制字符写入时拒绝、凭据表单残留（含 BFF 回归测试 ×2）。
+4. **浏览器翻译目标语言修复**：本地引擎按设置目标语言创建（原硬编码
+   en→zh-CN），语言变更时重建。
+5. **Base UI 契约修复**：RadioOption 改渲染 `<span>`，console error 清零
+   （1920 全程采集为证）。
+6. **验收工具修复**：gate6 脚本可见性过滤 + 新增 1920/console 采集脚本。
+7. **文档对齐**：STATE/VALIDATION/IMPLEMENTATION_REPORT 三者一致，四类
+   证据（自动化/真实集成/浏览器/未验证）分开列明。
 
 ## 最重要的根因与变更
 
@@ -54,6 +74,7 @@ docker exec freshrss sh -c 'chmod -R a+rX /var/www/FreshRSS/data'
 ## 未完成内容与继续入口
 
 - LibreTranslate / Chrome Translator API 真机验证：待有服务/环境后按 VALIDATION.md §5.2/5.3 复验（代码与失败路径已就绪）。
-- BFF 镜像构建：网络代理解除后 `docker build services/bff` 常规执行即可。
+- BFF 镜像构建：网络代理解除后 `docker build services/bff` 常规执行即可（ghcr.io uv 拉取仍被代理阻断，2026-09-08 复现）。
+- 安全审计 0021 candidates：VALIDATION.md §6。
 - 阅读设置 P1/P2 路线（背景双主题、Web Speech 朗读等）：READING_SETTINGS_RESEARCH.md §2。
 - Folo 可复用项（fuse.js 搜索、react-virtual）：FOLO_COMPARISON.md §3，建议各立小任务。

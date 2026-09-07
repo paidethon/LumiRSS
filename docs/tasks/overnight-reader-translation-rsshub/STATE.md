@@ -2,60 +2,58 @@
 
 - 基线 SHA：`e3c4de7`（= origin/main 68ded4e 的内容，PR #35 已合并）
 - 任务分支：`feat/overnight-reader-translation-rsshub-20260907`（自 e3c4de7 创建）
-- 启动时间：2026-09-07（本地）
-- 任务输入：根目录 `LumiRSS_ZCode_9h_Prompt.md`（未跟踪，保持原样，不提交）
+- 启动时间：2026-09-07；**收尾稳定化轮：2026-09-08（本轮）**
 - 参考项目 clone：`/home/zephyr/projects/research/`（Folo=Guyungy fork、read-frog、legado；不入 LumiRSS）
 
-## 运行环境（Gate 0 已核实）
+> 状态口径：下表所有「完成」均有 commit + 自动化测试 + （如适用）真实集成 /
+> 浏览器验收证据支撑；未经真实外部服务验证的子项在 VALIDATION.md §5 逐条列出。
 
-- 本地栈：FreshRSS 容器（`freshrss`，命名卷 `lumirss_freshrss-data` → /var/www/FreshRSS/data，端口 8080）、RSSHub 容器（1200，healthy）、**宿主机 uvicorn BFF**（`services/bff`，--reload，端口 8000，进程 env 无 FRESHRSS_*）、Vite dev（5173）。
-- `services/bff/.env` 现有键：FRESHRSS_BASE_URL / FRESHRSS_USERNAME / FRESHRSS_API_PASSWORD（无 FRESHRSS_DATA_DIR）。
-- Compose 项目名 `lumirss`（docker-compose.yml）。
-
-## 七项需求状态
+## 七项需求状态（最终）
 
 | # | 需求 | 状态 |
 |---|---|---|
-| 1 | 9 小时有效工作组织 | 进行中 |
-| 2 | Folo(Guyungy) 深度对比 | 调研完成：`/home/zephyr/projects/research/reports/folo-research.md`（待整理成 FOLO_COMPARISON.md） |
-| 3 | 设置开关重复文字清理 | 实施中（根因：SettingItem.tsx:109 + Switch.tsx:54 可见 span） |
-| 4 | 微信读书/Legado 阅读设置调研 | 调研完成：`/home/zephyr/projects/research/reports/reading-settings-research.md`（待整理） |
-| 5 | 翻译统一设置 + 本地翻译 + 工具栏三模式 + 双语对照 | 调研完成：`/home/zephyr/projects/research/reports/read-frog-research.md`（注意 GPL-3.0；LumiRSS=AGPL-3.0 可并入但控制维护成本）；实施待开始 |
-| 6 | RSSHub 自动配置 + 自定义站点凭据 | 待开始 |
-| 7 | 完整备份修复 | **完成（隔离栈真实验证）**，commit 待建 |
+| 1 | 长时间任务组织 | 完成（Gate 0-6 + 2026-09-08 收尾轮） |
+| 2 | Folo(Guyungy) 深度对比 | 完成（仅调研）：[FOLO_COMPARISON.md](FOLO_COMPARISON.md) |
+| 3 | 设置开关重复文字清理 | 完成：1fd589c；7 分类浏览器实测零残留（switch-duplicate-text.json 全空） |
+| 4 | 微信读书/Legado 阅读设置调研 | 完成（仅调研）：[READING_SETTINGS_RESEARCH.md](READING_SETTINGS_RESEARCH.md) |
+| 5 | 翻译三模式 + 分块双语 + 统一设置 + 本地引擎 | 完成：d3cf014；自动化回归 + 浏览器验收通过 |
+| 6 | RSSHub 自动识别 + 自定义凭据 + 应用链 | 完成：9228256；隔离栈实测 + [RSSHUB_OPERATIONS.md](RSSHUB_OPERATIONS.md) |
+| 7 | 完整备份修复 | 完成：c8a1bcc；隔离栈备份→恢复→重启全链路实测 |
 
-## Gate 1 结果（已验证）
+## 2026-09-08 收尾稳定化轮（本轮新增）
 
-- 新端点 `GET /api/v1/backups/capabilities`（assess_freshrss_backup 与执行共用同一判定）；UI 备份概览点击前展示组件/原因。
-- **修复 os.walk 静默跳过不可读目录的正确性 bug**（FreshRSS users/<u>/ 是 0770）——否则会产出缺用户库的"假完整包"。
-- **发现并修复 prod 拓扑隐患**：BFF 容器 uid 10001 无法读 0770 用户目录 → docker-compose.prod.yml BFF 加 `group_add: ["33"]`（uid10001+gid33 读取已实测）。
-- dev 栈：交付 opt-in `docker-compose.dev-backup.yml`（bind mount 迁移说明）；`services/bff/.env` 已加 FRESHRSS_DATA_DIR（等用户跑迁移命令后生效）；dev 补救=容器内 `chmod -R a+rX /var/www/FreshRSS/data`。
-- 隔离栈（/home/zephyr/projects/LumiRSS-itest，已清理容器）：备份 succeeded → 归档 29 成员校验和全对、含 users/admin/db.sqlite、无 secrets → 另一隔离实例 preview/RESTORE 执行成功（安全备份+freshrss 离线暂存 27/27 校验和匹配）→ 重启后 profile 持久、keyConfigured=false 如实。证据：LumiRSS-itest/lumi-source/backups/lumirss-20260907T154213Z.backup。
-- Hook 约束记录：安全 hook 禁止 shell 复制 FreshRSS 数据（含 config.php）到任何位置 → 用户实例的 bind 迁移列为人工步骤（1 条 docker cp + up -d）。
-- BFF 镜像构建在本环境被代理阻断（ghcr.io uv 拉取超时）——Docker 构建验证受限，已记录。
+1. **E2E B/C 遗留关闭**：`E2E-ISSUES-B-C-20260906.md` 所记 J2 数据依赖与 a11y
+   对比度问题，其修复（`f9e86fb`、`6bed703`）已在分支祖先（经 main PR #34）。
+   本轮以真实运行复核：J2 ×4（1440×3 + 1920×1）、a11y 桌面 3 项 + 移动 4 项
+   全部通过；问题文档归档至本目录并标注解决状态。
+2. **J4/M3 journeys 修复**（本轮唯一测试代码外的缺陷不在产品，在测试与环境）：
+   - docker 网络子网漂移：spec 默认网桥 IP 172.19.0.1 已过期（现 172.18.0.1），
+     改为运行时从 lumirss compose 网络探测网关（env 可覆盖，127.0.0.1 兜底）；
+   - BFF 调任何 OpenAI 兼容端点都要求非空 key：J4/M3 增加幂等自建前置
+     （仅在未配置时经 write-only API 写入显式假 key，绝不覆盖真实 key）；
+   - 摘要卡状态收敛：not_generated / failed / cached 三种前置态都收敛到断言。
+3. **安全审计**（分支新代码，只读外部审计）：无 P0/P1。已修：env 文件物化
+   0700 目录 + 建文件即 0600（窗口期消除）、自定义凭据 envKey 不得遮蔽固定
+   schema 键、控制字符在写入时拒绝、凭据表单成功后清空。其余 P3 记录为
+   0021 candidate（见 VALIDATION.md §6）。
+4. **浏览器引擎目标语言修复**：本地翻译器此前硬编码 en→zh-CN，忽略设置中的
+   目标语言；现按设置解析并随语言变更重建（ReaderTranslation.tsx）。
+5. **Base UI 契约修复**：RadioOption 改渲染 `<span>`（Base UI Radio.Root 期望
+   非 `<button>` 目标），消除 3 处 console error；1920 全程 console 零错误。
+6. **验收工具修复**：gate6-reader / gate6-mobile-dark 的 `.first()` 点击加可见性
+   过滤（390px 下会命中隐藏的桌面渲染节点）；新增 gate6-1920-console.cjs
+   （1920 视口 + console error 采集）。
 
-## 基线命令与结果
+## 最终命令结果（2026-09-08，详见 VALIDATION.md §1）
 
-- BFF：`uv run pytest -q` → **608 passed**（Gate1 后）；ruff clean
-- Web：`pnpm test` → **574 passed**；lint 0 errors；tsc -b clean
-- api:check/settings:check：生成物一致（提交后 drift 检查可通过）
+- BFF：`uv run pytest -q` → **634 passed**；ruff clean
+- Web：`pnpm test` → **580 passed**；oxlint 0 errors；`tsc -b` clean；build clean
+- api:check / settings:check：生成物零 drift
+- E2E：desktop journeys 6/6、mobile journeys 4/4×3 视口、a11y 7 项、
+  rapid-selection、ci-smoke 2/2 全部通过（对 dev 栈 5173 / 静态 4173）
 
-## 已完成 commit
+## 阻塞 / 未验证（诚实清单）
 
-- c8a1bcc fix(backup) — Gate 1（预检+0770 修复+prod group_add+隔离栈全链路验证）
-- 1fd589c fix(settings) — Gate 2（Switch 可见文字/可访问名分离）
-- d3cf014 feat(translation) — Gate 3（三模式+分块双语+统一设置页+本地翻译）
-- 9228256 feat(rsshub) — Gate 4（自动识别+自定义凭据+env 物化+apply 脚本，隔离栈实测）
-- bef5558 docs(research) — Gate 5（四份报告）
-- （Gate 6 收尾提交）
-
-## 下一步
-
-1. Gate 1 commit → Gate 2（Switch 可见文字/可访问名分离 + 调用点 + 测试）。
-2. Gate 3 翻译大项（Read Frog 报告在 /home/zephyr/projects/research/reports/）。
-3. Gate 4 RSSHub → Gate 5 报告整理 → Gate 6 回归+浏览器验收+报告。
-
-## 阻塞/备注
-
-- 无付费 API 预算：AI 翻译只用 mock/既有免费路径验证。
-- 浏览器验收用 Playwright + 无头截图（artifacts 目录，不入 Git）。
+见 [VALIDATION.md](VALIDATION.md) §5：FreshRSS bind 迁移（人工 1 条命令）、
+真实 LibreTranslate、Chrome Translator API 真机、BFF 镜像构建（代理阻断）、
+真实付费 AI provider、用户实例深色逐像素复检。
