@@ -10,6 +10,7 @@ import type {
   AiSettingsUpdate,
   ApiErrorResponse,
   ApiVersion,
+  BackupCapabilities,
   BackupJob,
   Category,
   EntryConversation,
@@ -613,6 +614,9 @@ export async function getBackupJob(id: string, signal?: AbortSignal): Promise<Ba
   return request<BackupJob>(`${API_BASE}/backups/${encodeURIComponent(id)}`, signal)
 }
 
+export async function getBackupCapabilities(signal?: AbortSignal): Promise<BackupCapabilities> {
+  return request<BackupCapabilities>(`${API_BASE}/backups/capabilities`, signal)
+}
 export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {
   const response = await rawRequest(`${API_BASE}/backups`, {
     method: 'POST',

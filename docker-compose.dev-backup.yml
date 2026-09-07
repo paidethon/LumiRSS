@@ -1,0 +1,25 @@
+# 开发栈「完整备份」能力挂载（显式 opt-in，不改变默认 dev 拓扑）。
+#
+# 背景：默认 docker-compose.yml 的 FreshRSS 数据在命名卷 freshrss-data 里，
+# 宿主机 BFF 进程无法读取 → 完整备份报
+# "FreshRSS data directory is not configured for backup."
+# 生产 Compose（docker-compose.prod.yml）不受影响：BFF 容器本身以只读方式
+# 挂载了 freshrss-data 卷。
+#
+# 本 override 把 FreshRSS 数据切换为宿主机目录 bind mount，让宿主机 BFF
+# 能做一致性在线备份。已有命名卷数据的迁移（一次性，数据保留）：
+#
+#   1. docker cp freshrss:/var/www/FreshRSS/data/. "$LUMIRSS_FRESHRSS_DATA_DIR/"
+#   2. 在 services/bff/.env 增加：FRESHRSS_DATA_DIR=<第 1 步同一宿主机目录>
+#   3. docker compose -f docker-compose.yml -f docker-compose.dev-backup.yml up -d freshrss
+#
+# 回滚：撤掉本 override 重新 up -d freshrss 即回到命名卷（旧卷未被删除）。
+# 目录属主说明：容器内 entrypoint 会把数据目录 chown 给 www-data(33:33)、
+# 文件 0664 —— 宿主机用户仍可读（备份是只读在线快照，无需写权限）。
+#
+# 必须先设置 LUMIRSS_FRESHRSS_DATA_DIR（指向一个已迁移/可用的宿主机目录），
+# 留空会让 FreshRSS 在空目录里重新初始化，看不到既有订阅。
+services:
+  freshrss:
+    volumes:
+      - "${LUMIRSS_FRESHRSS_DATA_DIR:?set LUMIRSS_FRESHRSS_DATA_DIR to a host directory containing FreshRSS data}:/var/www/FreshRSS/data"

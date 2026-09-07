@@ -335,3 +335,80 @@ describe('0018 恢复向导', () => {
     expect(screen.getByRole('button', { name: /返回重选/ })).toBeEnabled()
   })
 })
+
+const CAPABILITIES_READY = {
+  fullBackupReady: true,
+  includes: ['lumi.sqlite', 'freshrss-data'],
+  lumiDatabaseAvailable: true,
+  freshrssData: { available: true, reasonCode: null, reason: null, fileCount: 42, sqliteFileCount: 2, dbType: 'sqlite' },
+}
+
+const CAPABILITIES_NOT_CONFIGURED = {
+  fullBackupReady: false,
+  includes: ['lumi.sqlite'],
+  lumiDatabaseAvailable: true,
+  freshrssData: {
+    available: false,
+    reasonCode: 'not_configured',
+    reason: 'FreshRSS data directory is not configured for backup.',
+    fileCount: null,
+    sqliteFileCount: null,
+    dbType: null,
+  },
+}
+
+describe('备份能力预检（点击前如实展示）', () => {
+  it('不可用：显示可操作原因，创建按钮禁用', async () => {
+    renderBackup((url) => {
+      if (url === '/api/v1/backups/capabilities') return jsonResponse(CAPABILITIES_NOT_CONFIGURED)
+      if (url === '/api/v1/backups') return jsonResponse([])
+      if (url === '/api/v1/operations/status') return jsonResponse(OPERATIONS_OK)
+      if (url === '/api/v1/backups/webdav') return jsonResponse(WEBDAV_UNCONFIGURED)
+      return jsonResponse({ error: { type: 'not_found', message: `unexpected ${url}` } }, 404)
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/未配置 FreshRSS 数据目录/)
+    expect(screen.getByRole('button', { name: /创建完整备份（本机）/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /备份并上传 WebDAV/ })).toBeDisabled()
+  })
+
+  it('可用：显示将包含的组件，创建按钮可用', async () => {
+    renderBackup((url) => {
+      if (url === '/api/v1/backups/capabilities') return jsonResponse(CAPABILITIES_READY)
+      if (url === '/api/v1/backups') return jsonResponse([])
+      if (url === '/api/v1/operations/status') return jsonResponse(OPERATIONS_OK)
+      if (url === '/api/v1/backups/webdav') return jsonResponse(WEBDAV_UNCONFIGURED)
+      return jsonResponse({ error: { type: 'not_found', message: `unexpected ${url}` } }, 404)
+    })
+
+    await screen.findByText(/FreshRSS 数据（订阅 \/ 文章状态）/)
+    expect(screen.getByText(/Lumi 数据（设置 \/ AI 缓存 \/ 对话）/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /创建完整备份（本机）/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /备份并上传 WebDAV/ })).toBeEnabled()
+  })
+
+  it('外部数据库：明确说明数据目录不含文章数据', async () => {
+    renderBackup((url) => {
+      if (url === '/api/v1/backups/capabilities') {
+        return jsonResponse({
+          ...CAPABILITIES_NOT_CONFIGURED,
+          freshrssData: {
+            available: false,
+            reasonCode: 'external_database',
+            reason: 'FreshRSS uses an external MySQL/PostgreSQL database.',
+            fileCount: 30,
+            sqliteFileCount: 0,
+            dbType: 'mysql',
+          },
+        })
+      }
+      if (url === '/api/v1/backups') return jsonResponse([])
+      if (url === '/api/v1/operations/status') return jsonResponse(OPERATIONS_OK)
+      if (url === '/api/v1/backups/webdav') return jsonResponse(WEBDAV_UNCONFIGURED)
+      return jsonResponse({ error: { type: 'not_found', message: `unexpected ${url}` } }, 404)
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/外部 MySQL\/PostgreSQL/)
+    expect(screen.getByRole('button', { name: /创建完整备份（本机）/ })).toBeDisabled()
+  })
+})

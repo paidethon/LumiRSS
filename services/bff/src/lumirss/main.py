@@ -1,5 +1,6 @@
 """LumiRSS BFF application entry point."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -76,6 +77,7 @@ from lumirss.backup import (
     BackupUnsupportedVersion,
     WebDavSettingsStore,
     _job_json,
+    assess_freshrss_backup,
 )
 from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
@@ -92,6 +94,7 @@ from lumirss.models import (
     AiSettingsView,
     ApiVersionInfo,
     AppSettingsView,
+    BackupCapabilities,
     BackupJob,
     Category,
     EntryConversation,
@@ -1865,6 +1868,43 @@ class BackupCreate(BaseModel):
 async def list_backups(request: Request) -> list[dict[str, object]]:
     jobs = _get_backup_jobs(request)
     return [_job_json(job) for job in await jobs.list()]
+
+
+@app.get(
+    "/api/v1/backups/capabilities",
+    response_model=BackupCapabilities,
+)
+async def backup_capabilities(request: Request) -> dict[str, object]:
+    """Honest full-backup preflight (shown to the user before they click).
+
+    Reuses the exact assessment the engine re-runs at execution time, so
+    the UI can never offer a full backup the engine would refuse — and the
+    engine never fails with a vaguer error than the preflight detected.
+    """
+    settings = LumiSettings()
+    lumi_available = Path(settings.LUMIRSS_DB_PATH).expanduser().is_file()
+    assessment = await asyncio.to_thread(
+        assess_freshrss_backup, settings.FRESHRSS_DATA_DIR
+    )
+    freshrss_view: dict[str, object] = {
+        "available": assessment.available,
+        "reasonCode": assessment.reason_code,
+        "reason": assessment.safe_reason,
+        "fileCount": assessment.file_count or None,
+        "sqliteFileCount": assessment.sqlite_file_count or None,
+        "dbType": assessment.db_type,
+    }
+    includes: list[str] = []
+    if lumi_available:
+        includes.append("lumi.sqlite")
+    if assessment.available:
+        includes.append("freshrss-data")
+    return {
+        "fullBackupReady": lumi_available and assessment.available,
+        "includes": includes,
+        "lumiDatabaseAvailable": lumi_available,
+        "freshrssData": freshrss_view,
+    }
 
 
 @app.post(

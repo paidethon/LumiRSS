@@ -25,6 +25,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backups/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Capabilities
+         * @description Honest full-backup preflight (shown to the user before they click).
+         *
+         *     Reuses the exact assessment the engine re-runs at execution time, so
+         *     the UI can never offer a full backup the engine would refuse — and the
+         *     engine never fails with a vaguer error than the preflight detected.
+         */
+        get: operations["backup_capabilities_api_v1_backups_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups/remote": {
         parameters: {
             query?: never;
@@ -1364,6 +1388,20 @@ export interface components {
              */
             uiFontStack: "default" | "sans" | "serif" | "mono";
         };
+        /**
+         * BackupCapabilities
+         * @description GET /api/v1/backups/capabilities — what a full backup can honestly
+         *     include right now, shown to the user BEFORE they click.
+         */
+        BackupCapabilities: {
+            freshrssData: components["schemas"]["FreshrssDataBackupCapability"];
+            /** Fullbackupready */
+            fullBackupReady: boolean;
+            /** Includes */
+            includes: string[];
+            /** Lumidatabaseavailable */
+            lumiDatabaseAvailable: boolean;
+        };
         /** BackupCreate */
         BackupCreate: {
             /**
@@ -1705,6 +1743,25 @@ export interface components {
         FreshRssUiInfo: {
             /** Url */
             url?: string | null;
+        };
+        /**
+         * FreshrssDataBackupCapability
+         * @description FreshRSS component preflight — safe diagnostics only (no paths
+         *     beyond the configured root, no credentials).
+         */
+        FreshrssDataBackupCapability: {
+            /** Available */
+            available: boolean;
+            /** Dbtype */
+            dbType?: string | null;
+            /** Filecount */
+            fileCount?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Reasoncode */
+            reasonCode?: string | null;
+            /** Sqlitefilecount */
+            sqliteFileCount?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2370,6 +2427,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_capabilities_api_v1_backups_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCapabilities"];
                 };
             };
         };

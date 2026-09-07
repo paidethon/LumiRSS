@@ -601,6 +601,37 @@
     "title": "AppSettingsView",
     "type": "object"
    },
+   "BackupCapabilities": {
+    "description": "GET /api/v1/backups/capabilities — what a full backup can honestly\ninclude right now, shown to the user BEFORE they click.",
+    "properties": {
+     "freshrssData": {
+      "$ref": "#/components/schemas/FreshrssDataBackupCapability"
+     },
+     "fullBackupReady": {
+      "title": "Fullbackupready",
+      "type": "boolean"
+     },
+     "includes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Includes",
+      "type": "array"
+     },
+     "lumiDatabaseAvailable": {
+      "title": "Lumidatabaseavailable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "fullBackupReady",
+     "includes",
+     "lumiDatabaseAvailable",
+     "freshrssData"
+    ],
+    "title": "BackupCapabilities",
+    "type": "object"
+   },
    "BackupCreate": {
     "properties": {
      "target": {
@@ -1539,6 +1570,75 @@
      }
     },
     "title": "FreshRssUiInfo",
+    "type": "object"
+   },
+   "FreshrssDataBackupCapability": {
+    "description": "FreshRSS component preflight — safe diagnostics only (no paths\nbeyond the configured root, no credentials).",
+    "properties": {
+     "available": {
+      "title": "Available",
+      "type": "boolean"
+     },
+     "dbType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dbtype"
+     },
+     "fileCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filecount"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "reasonCode": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reasoncode"
+     },
+     "sqliteFileCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sqlitefilecount"
+     }
+    },
+    "required": [
+     "available"
+    ],
+    "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
    "HTTPValidationError": {
@@ -3080,6 +3180,25 @@
      }
     },
     "summary": "Create Backup"
+   }
+  },
+  "/api/v1/backups/capabilities": {
+   "get": {
+    "description": "Honest full-backup preflight (shown to the user before they click).\n\nReuses the exact assessment the engine re-runs at execution time, so\nthe UI can never offer a full backup the engine would refuse — and the\nengine never fails with a vaguer error than the preflight detected.",
+    "operationId": "backup_capabilities_api_v1_backups_capabilities_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupCapabilities"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Backup Capabilities"
    }
   },
   "/api/v1/backups/remote": {

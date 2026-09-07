@@ -17,6 +17,7 @@ import {
   generateEntryTranslation,
   getAiProfiles,
   getAiSettings,
+  getBackupCapabilities,
   getBackupJob,
   getCategories,
   getEntries,
@@ -592,6 +593,13 @@ export function useCreateBackupMutation() {
         queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
       ])
     },
+  })
+}
+
+export function useBackupCapabilities() {
+  return useQuery({
+    queryKey: ['backup-capabilities'],
+    queryFn: ({ signal }) => getBackupCapabilities(signal),
   })
 }
 

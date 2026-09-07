@@ -485,6 +485,28 @@ class RemoteBackupsResponse(BaseModel):
     backups: list[RemoteBackup]
 
 
+class FreshrssDataBackupCapability(BaseModel):
+    """FreshRSS component preflight — safe diagnostics only (no paths
+    beyond the configured root, no credentials)."""
+
+    available: bool
+    reasonCode: str | None = None
+    reason: str | None = None
+    fileCount: int | None = None
+    sqliteFileCount: int | None = None
+    dbType: str | None = None
+
+
+class BackupCapabilities(BaseModel):
+    """GET /api/v1/backups/capabilities — what a full backup can honestly
+    include right now, shown to the user BEFORE they click."""
+
+    fullBackupReady: bool
+    includes: list[str]
+    lumiDatabaseAvailable: bool
+    freshrssData: FreshrssDataBackupCapability
+
+
 class RestorePreviewFile(BaseModel):
     """One declared archive member (checksum declared by the manifest)."""
 
