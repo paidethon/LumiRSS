@@ -73,9 +73,11 @@ export default function ReaderTranslation({
   const [localError, setLocalError] = useState<string | null>(null)
   const attemptedRef = useRef<string>('')
   const localTranslatorRef = useRef<LocalTranslator | null>(null)
+  const localTranslatorLangRef = useRef<string | null>(null)
 
   const settings = useAiSettings()
   const engine = settings.data?.translationEngine ?? 'ai'
+  const targetLanguage = settings.data?.translationLanguage ?? 'zh-CN'
   const active = viewMode !== 'original'
   const serverEngine = engine !== 'browser'
 
@@ -128,6 +130,8 @@ export default function ReaderTranslation({
   }, [active, serverEngine, blocks, lookup.isPending, lookup.isError, serverSegments])
 
   // 本地引擎：整个链路只在此浏览器执行；切模式的点击即 user activation。
+  // 目标语言变更也走这里：旧语言对的译文先作废，再按新语言对重建
+  // （服务端路径经缓存身份自然切换，与此处无关）。
   useEffect(() => {
     if (!active || engine !== 'browser' || blocks === null || blocks.length === 0) {
       return
@@ -135,11 +139,17 @@ export default function ReaderTranslation({
     const controller = new AbortController()
     setLocalBusy(true)
     setLocalError(null)
+    if (localTranslatorLangRef.current !== targetLanguage) {
+      setLocalTexts(new Map())
+      localTranslatorRef.current?.destroy()
+      localTranslatorRef.current = null
+    }
     let cancelled = false
     void (async () => {
       try {
         if (localTranslatorRef.current === null) {
-          localTranslatorRef.current = await createLocalTranslator('en', 'zh-CN')
+          localTranslatorRef.current = await createLocalTranslator('en', targetLanguage)
+          localTranslatorLangRef.current = targetLanguage
         }
         const translator = localTranslatorRef.current
         const next = new Map<number, string>()
@@ -166,7 +176,7 @@ export default function ReaderTranslation({
       controller.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, engine, blocks])
+  }, [active, engine, blocks, targetLanguage])
 
   // overlay：texts 变化（或 mode 切换）时重放；纯排版切换零网络。
   useEffect(() => {
@@ -195,6 +205,7 @@ export default function ReaderTranslation({
       attemptedRef.current = ''
       localTranslatorRef.current?.destroy()
       localTranslatorRef.current = null
+      localTranslatorLangRef.current = null
     }
   }, [detail.entryRef])
 
