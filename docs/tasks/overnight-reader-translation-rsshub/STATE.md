@@ -42,10 +42,12 @@
 
 ## 已完成 commit
 
-- c8a1bcc fix(backup) — Gate 1
-- 1fd589c fix(settings) — Gate 2 开关重复文字
-- d3cf014 feat(translation) — Gate 3
-- （Gate 4 提交进行中）
+- c8a1bcc fix(backup) — Gate 1（预检+0770 修复+prod group_add+隔离栈全链路验证）
+- 1fd589c fix(settings) — Gate 2（Switch 可见文字/可访问名分离）
+- d3cf014 feat(translation) — Gate 3（三模式+分块双语+统一设置页+本地翻译）
+- 9228256 feat(rsshub) — Gate 4（自动识别+自定义凭据+env 物化+apply 脚本，隔离栈实测）
+- bef5558 docs(research) — Gate 5（四份报告）
+- （Gate 6 收尾提交）
 
 ## 下一步
 

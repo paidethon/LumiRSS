@@ -156,7 +156,8 @@ export default function ReaderHeader({
 
       {/* 工具栏：紧凑图标按钮（桌面 32px，手机 touch 44px）。
           pending 时统一转圈，双按钮禁用（同一篇同时最多一个 PATCH）。 */}
-      <div className="mt-4 flex items-center gap-1.5">
+      {/* flex-wrap：移动端窄屏溢出时换行而不是把「打开原文」挤成竖排 */}
+      <div className="mt-4 flex flex-wrap items-center gap-1.5">
         {pending ? (
           <IconButton
             icon={<Loader2 aria-hidden className="animate-spin" />}
@@ -247,7 +248,7 @@ export default function ReaderHeader({
             href={articleUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-8 items-center gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 text-sm text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 text-sm text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >
             <ExternalLink aria-hidden className="size-3.5" />
             打开原文

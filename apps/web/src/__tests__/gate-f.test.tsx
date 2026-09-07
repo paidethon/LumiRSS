@@ -285,9 +285,7 @@ describe('移动端分类可达（共享组件渲染）', () => {
   it('移动设置首页 → 翻译子页 → RSSHub 子页（Control Center 真实控制面）', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((input: RequestInfo | URL) =>
-        Promise.resolve(new Response('{}', { status: 404 })),
-      ),
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 404 }))),
     )
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '翻译' }))
