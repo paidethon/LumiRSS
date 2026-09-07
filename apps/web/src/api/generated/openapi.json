@@ -257,6 +257,17 @@
       ],
       "title": "Baseurl"
      },
+     "libretranslateUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Libretranslateurl"
+     },
      "model": {
       "anyOf": [
        {
@@ -294,6 +305,22 @@
        }
       ],
       "title": "Summarylanguage"
+     },
+     "translationEngine": {
+      "anyOf": [
+       {
+        "enum": [
+         "ai",
+         "libretranslate",
+         "browser"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationengine"
      },
      "translationLanguage": {
       "anyOf": [
@@ -333,6 +360,14 @@
       "title": "Envkeyconfigured",
       "type": "boolean"
      },
+     "libretranslateKeyConfigured": {
+      "title": "Libretranslatekeyconfigured",
+      "type": "boolean"
+     },
+     "libretranslateUrl": {
+      "title": "Libretranslateurl",
+      "type": "string"
+     },
      "model": {
       "title": "Model",
       "type": "string"
@@ -364,6 +399,15 @@
       "title": "Summarylanguage",
       "type": "string"
      },
+     "translationEngine": {
+      "enum": [
+       "ai",
+       "libretranslate",
+       "browser"
+      ],
+      "title": "Translationengine",
+      "type": "string"
+     },
      "translationLanguage": {
       "enum": [
        "zh-CN",
@@ -379,6 +423,9 @@
      "model",
      "summaryLanguage",
      "translationLanguage",
+     "translationEngine",
+     "libretranslateUrl",
+     "libretranslateKeyConfigured",
      "configured",
      "envKeyConfigured",
      "defaultKeyConfigured",
@@ -1668,6 +1715,35 @@
     "title": "HealthStatus",
     "type": "object"
    },
+   "LibreTranslateTestResult": {
+    "description": "POST /api/v1/settings/translation/libretranslate-test.",
+    "properties": {
+     "message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "LibreTranslateTestResult",
+    "type": "object"
+   },
    "OperationsBackupStatus": {
     "description": "Backup capability summary for the operations view.",
     "properties": {
@@ -2940,6 +3016,126 @@
     "title": "SubscriptionPatch",
     "type": "object"
    },
+   "TranslationSegmentBlockIn": {
+    "description": "One client-segmented content block.",
+    "properties": {
+     "index": {
+      "maximum": 63.0,
+      "minimum": 0.0,
+      "title": "Index",
+      "type": "integer"
+     },
+     "text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "text"
+    ],
+    "title": "TranslationSegmentBlockIn",
+    "type": "object"
+   },
+   "TranslationSegmentState": {
+    "description": "Per-block translation state (lookup = cache only; generate explicit).",
+    "properties": {
+     "cached": {
+      "default": false,
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "failureType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failuretype"
+     },
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "status": {
+      "enum": [
+       "success",
+       "failed",
+       "not_generated"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "translatedText": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translatedtext"
+     }
+    },
+    "required": [
+     "index",
+     "status"
+    ],
+    "title": "TranslationSegmentState",
+    "type": "object"
+   },
+   "TranslationSegmentsBody": {
+    "description": "POST …/translation/segments/lookup | /generate body.",
+    "properties": {
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/TranslationSegmentBlockIn"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Blocks",
+      "type": "array"
+     }
+    },
+    "required": [
+     "blocks"
+    ],
+    "title": "TranslationSegmentsBody",
+    "type": "object"
+   },
+   "TranslationSegmentsView": {
+    "description": "POST …/translation/segments/lookup | /generate.",
+    "properties": {
+     "engine": {
+      "title": "Engine",
+      "type": "string"
+     },
+     "segments": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationSegmentState"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "targetLanguage": {
+      "title": "Targetlanguage",
+      "type": "string"
+     }
+    },
+    "required": [
+     "engine",
+     "targetLanguage"
+    ],
+    "title": "TranslationSegmentsView",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -3844,6 +4040,106 @@
     "summary": "Generate Entry Translation"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation/segments/generate": {
+   "post": {
+    "description": "Explicit generation for the bilingual/translated views (money rule:\nonly this endpoint may call a provider; exact cache hits never do).",
+    "operationId": "generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TranslationSegmentsBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationSegmentsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Translation Segments"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/translation/segments/lookup": {
+   "post": {
+    "description": "Cached per-block state ONLY — never calls a provider.",
+    "operationId": "lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TranslationSegmentsBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationSegmentsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Lookup Translation Segments"
+   }
+  },
   "/api/v1/feed-preview": {
    "post": {
     "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
@@ -4714,6 +5010,67 @@
      }
     },
     "summary": "Put Ai Purposes"
+   }
+  },
+  "/api/v1/settings/translation/libretranslate-key": {
+   "delete": {
+    "description": "Remove the optional LibreTranslate API key.",
+    "operationId": "delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Delete Libretranslate Key"
+   },
+   "put": {
+    "description": "Write-only LibreTranslate API key (optional; empty string clears).",
+    "operationId": "put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SecretValuePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Libretranslate Key"
+   }
+  },
+  "/api/v1/settings/translation/libretranslate-test": {
+   "post": {
+    "description": "Probe the configured LibreTranslate server (GET /languages).",
+    "operationId": "test_libretranslate_api_v1_settings_translation_libretranslate_test_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibreTranslateTestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Test Libretranslate"
    }
   },
   "/api/v1/source-discovery": {

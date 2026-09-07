@@ -45,6 +45,7 @@ import {
 } from './AppearanceControls'
 import { FilterRulesSection } from './FilterRulesPage'
 import { RssHubControlCenter } from './RssHubControlCenter'
+import { TranslationSettingsSection } from './TranslationSettingsSection'
 import { OperationsSettingsSection } from './OperationsSettingsSection'
 // 数据控制（原「备份与恢复」并入）：配置迁移 + 完整备份 + 历史 + WebDAV
 import { DataBackupSection } from './DataControlPage'
@@ -311,25 +312,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
       ]
     case 'translation':
-      return [
-        {
-          type: 'custom',
-          node: (
-            <div className="py-3">
-              <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
-                正文翻译
-              </label>
-              <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                翻译由 AI Provider 驱动，在阅读页「原文/译文」切换使用；
-                译文按文章缓存，不修改原始内容，也不在浏览器保存任何 API Key。
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-                翻译使用的 AI 配置与目标语言在「AI」分类设置；未配置时翻译入口会如实提示并引导配置。
-              </p>
-            </div>
-          ),
-        },
-      ]
+      // Gate：翻译统一入口——引擎（运行位置）/ 目标语言 / LibreTranslate /
+      // 本地翻译说明；AI Profile 管理仍在「AI」分类（同一份存储）。
+      return [{ type: 'custom', node: <TranslationSettingsSection /> }]
     case 'filters':
       // 0010a F3（AC24）：OrigRead 过滤页复刻 + 显示层过滤
       return [{ type: 'custom', node: <FilterRulesSection /> }]

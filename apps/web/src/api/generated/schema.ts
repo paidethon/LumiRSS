@@ -349,6 +349,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation/segments/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Translation Segments
+         * @description Explicit generation for the bilingual/translated views (money rule:
+         *     only this endpoint may call a provider; exact cache hits never do).
+         */
+        post: operations["generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/translation/segments/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lookup Translation Segments
+         * @description Cached per-block state ONLY — never calls a provider.
+         */
+        post: operations["lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feed-preview": {
         parameters: {
             query?: never;
@@ -912,6 +953,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/translation/libretranslate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Libretranslate Key
+         * @description Write-only LibreTranslate API key (optional; empty string clears).
+         */
+        put: operations["put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put"];
+        post?: never;
+        /**
+         * Delete Libretranslate Key
+         * @description Remove the optional LibreTranslate API key.
+         */
+        delete: operations["delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/translation/libretranslate-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Libretranslate
+         * @description Probe the configured LibreTranslate server (GET /languages).
+         */
+        post: operations["test_libretranslate_api_v1_settings_translation_libretranslate_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/source-discovery": {
         parameters: {
             query?: never;
@@ -1190,12 +1275,16 @@ export interface components {
         AiSettingsUpdate: {
             /** Baseurl */
             baseUrl?: string | null;
+            /** Libretranslateurl */
+            libretranslateUrl?: string | null;
             /** Model */
             model?: string | null;
             /** Provider */
             provider?: "openai_compatible" | null;
             /** Summarylanguage */
             summaryLanguage?: ("zh-CN" | "en") | null;
+            /** Translationengine */
+            translationEngine?: ("ai" | "libretranslate" | "browser") | null;
             /** Translationlanguage */
             translationLanguage?: ("zh-CN" | "en") | null;
         };
@@ -1212,6 +1301,10 @@ export interface components {
             defaultKeyConfigured: boolean;
             /** Envkeyconfigured */
             envKeyConfigured: boolean;
+            /** Libretranslatekeyconfigured */
+            libretranslateKeyConfigured: boolean;
+            /** Libretranslateurl */
+            libretranslateUrl: string;
             /** Model */
             model: string;
             /**
@@ -1232,6 +1325,11 @@ export interface components {
              * @enum {string}
              */
             summaryLanguage: "zh-CN" | "en";
+            /**
+             * Translationengine
+             * @enum {string}
+             */
+            translationEngine: "ai" | "libretranslate" | "browser";
             /**
              * Translationlanguage
              * @enum {string}
@@ -1777,6 +1875,19 @@ export interface components {
             status: string;
         };
         /**
+         * LibreTranslateTestResult
+         * @description POST /api/v1/settings/translation/libretranslate-test.
+         */
+        LibreTranslateTestResult: {
+            /** Message */
+            message?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed";
+        };
+        /**
          * OperationsBackupStatus
          * @description Backup capability summary for the operations view.
          */
@@ -2300,6 +2411,61 @@ export interface components {
             categoryId?: string | null;
             /** Newcategorylabel */
             newCategoryLabel?: string | null;
+        };
+        /**
+         * TranslationSegmentBlockIn
+         * @description One client-segmented content block.
+         */
+        TranslationSegmentBlockIn: {
+            /** Index */
+            index: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * TranslationSegmentState
+         * @description Per-block translation state (lookup = cache only; generate explicit).
+         */
+        TranslationSegmentState: {
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /** Failuretype */
+            failureType?: string | null;
+            /** Index */
+            index: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "success" | "failed" | "not_generated";
+            /** Translatedtext */
+            translatedText?: string | null;
+        };
+        /**
+         * TranslationSegmentsBody
+         * @description POST …/translation/segments/lookup | /generate body.
+         */
+        TranslationSegmentsBody: {
+            /** Blocks */
+            blocks: components["schemas"]["TranslationSegmentBlockIn"][];
+        };
+        /**
+         * TranslationSegmentsView
+         * @description POST …/translation/segments/lookup | /generate.
+         */
+        TranslationSegmentsView: {
+            /** Engine */
+            engine: string;
+            /**
+             * Segments
+             * @default []
+             */
+            segments: components["schemas"]["TranslationSegmentState"][];
+            /** Targetlanguage */
+            targetLanguage: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2904,6 +3070,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntryTranslation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationSegmentsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationSegmentsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationSegmentsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationSegmentsView"];
                 };
             };
             /** @description Validation Error */
@@ -3734,6 +3970,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValuePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_libretranslate_api_v1_settings_translation_libretranslate_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibreTranslateTestResult"];
                 };
             };
         };

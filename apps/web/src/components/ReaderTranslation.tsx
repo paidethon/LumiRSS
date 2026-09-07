@@ -1,265 +1,308 @@
-/** ReaderTranslation — 0016：Reader 内的原文/译文视图切换。
+/** ReaderTranslation — Gate：原文 / 双语 / 仅译文 三模式内容区。
  *
- * 设计不变式：
+ * 设计不变式（延续 0016 并扩展）：
  * - 原文永远是规范内容（ArticleContent 原样渲染）；译文是派生的
- *   LumiRSS 数据，纯文本渲染（whitespace-pre-wrap），绝不进 HTML 渲染路径；
- * - 切换文章时组件重挂载（key=entryRef），视图回到「原文」，不泄漏旧状态；
- * - GET 只读缓存（零 provider 调用）；只有切到「译文」且未生成时才
- *   发出一次显式 POST（成功的精确缓存命中不会再调用）；
- * - 失败绝不破坏阅读：错误内联展示 + 重试，原文一键切回。
+ *   LumiRSS 数据，只以 textContent 注入（translation-blocks overlay），
+ *   绝不进 HTML 渲染路径；
+ * - 语言视图控制的 UI 在 ReaderHeader 工具栏（本组件只消费 viewMode），
+ *   旧的正文内“原文/译文”切换控件已移除，不存在两套不同步状态；
+ * - 新文章默认“原文”：打开页面绝不发起翻译；切到 双语/仅译文 就是
+ *   显式的按需动作（一次），精确缓存命中零 provider 调用；仅查看原文
+ *   与纯排版切换（bilingual ↔ translated）不再触发任何请求；
+ * - 配对依据稳定内容块 ID（annotateBlocks 的文档顺序编号），不是换行
+ *   猜测；失败只标失败块，重试只重试失败内容；
+ * - 执行位置如实标注：ai=AI 提供者（云端/自托管）、libretranslate=
+ *   自托管服务器、browser=此浏览器（本地 Translator API，BFF 零参与）。
  *
- * 状态机（诚实呈现）：
- *   loading        → 骨架
- *   not_configured → 说明 + 去设置
- *   content 不可用 → 说明
- *   not_generated  → 生成按钮
- *   generating     → 转圈
- *   success        → 译文标题 + 译文正文 + model · 时间（+ 缓存徽标）
- *   failed         → 按 failureType 说明 + 重试
+ * 状态呈现（非 original 模式下的附注行，诚实不遮挡正文）：
+ *   checking → 检查缓存 · generating → 翻译中 · partial → 失败块 + 重试
+ *   · done → 引擎 · 语言 · 缓存徽标 · browser 引擎错误 → 说明
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Languages, Loader2, RefreshCw } from 'lucide-react'
-import type { EntryDetail } from '../api/types'
-import { useEntryTranslation, useGenerateTranslationMutation } from '../api/queries'
-import { ApiError } from '../api/client'
+import type { EntryDetail, TranslationSegmentState } from '../api/types'
+import {
+  useAiSettings,
+  useGenerateTranslationSegmentsMutation,
+  useTranslationSegments,
+} from '../api/queries'
+import type { TranslationSegmentBlockInput } from '../api/client'
+import type { ReaderViewMode } from '../lib/translation-blocks'
+import {
+  annotateBlocks,
+  applyOverlay,
+  resetOverlay,
+  type ArticleBlock,
+} from '../lib/translation-blocks'
+import {
+  createLocalTranslator,
+  LocalTranslatorUnsupportedError,
+  type LocalTranslator,
+} from '../lib/local-translator'
 import ArticleContent from './ArticleContent'
 import { Button } from './ui/Button'
-import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
-import { dateTimeFormatter } from '../lib/date-format'
-import {
-  aiFailureText,
-  aiFailureTypeText,
-  type AiFailureWording,
-} from '../lib/ai-failure-text'
 
-function formatGeneratedAt(value: string | null | undefined): string {
-  if (value === null || value === undefined) {
-    return ''
-  }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : dateTimeFormatter.format(date)
+const ENGINE_LABELS: Record<string, string> = {
+  ai: 'AI 翻译（AI 提供者执行）',
+  libretranslate: '机器翻译（自托管服务器执行）',
+  browser: '本地翻译（此浏览器执行）',
 }
 
-/** 翻译功能的特色文案；通用错误文案在 lib/ai-failure-text。 */
-const WORDING: AiFailureWording = {
-  fallback: '翻译失败，请重试。',
-  interrupted: '上次翻译被中断，请重试。',
-  contentUnavailable: '这篇文章没有可翻译的正文内容。',
+function sameBlocks(a: ArticleBlock[] | null, b: ArticleBlock[]): boolean {
+  if (a === null || a.length !== b.length) return false
+  return a.every((block, i) => block.index === b[i].index && block.text === b[i].text)
 }
 
-function failureText(error: unknown): string {
-  return aiFailureText(error, WORDING)
+function blocksToInputs(blocks: ArticleBlock[]): TranslationSegmentBlockInput[] {
+  return blocks.map((b) => ({ index: b.index, text: b.text }))
 }
 
-/** 原文/译文分段开关。切到「译文」就是显式请求翻译视图的动作。 */
-function ViewToggle({
-  view,
-  onChange,
+export default function ReaderTranslation({
+  detail,
+  viewMode,
 }: {
-  view: 'original' | 'translated'
-  onChange: (view: 'original' | 'translated') => void
+  detail: EntryDetail
+  viewMode: ReaderViewMode
 }) {
-  const base =
-    'inline-flex min-h-9 items-center gap-1.5 rounded-[var(--lumi-radius-md)] border px-3 text-sm transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [blocks, setBlocks] = useState<ArticleBlock[] | null>(null)
+  const [localTexts, setLocalTexts] = useState<Map<number, string>>(new Map())
+  const [localBusy, setLocalBusy] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const attemptedRef = useRef<string>('')
+  const localTranslatorRef = useRef<LocalTranslator | null>(null)
+
+  const settings = useAiSettings()
+  const engine = settings.data?.translationEngine ?? 'ai'
+  const active = viewMode !== 'original'
+  const serverEngine = engine !== 'browser'
+
+  // 正文 DOM 观察管线的产物（contentHtml 是异步管线输出）稳定后，按文档
+  // 顺序给内容块编号并收集文本。viewMode=original 不做任何 DOM 改动。
+  useEffect(() => {
+    if (!active) return
+    const root = containerRef.current
+    if (root === null) return
+    let timer: number | undefined
+    const scan = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        setBlocks((prev) => {
+          const found = annotateBlocks(root)
+          return sameBlocks(prev, found) ? prev : found
+        })
+      }, 120)
+    }
+    const observer = new MutationObserver(scan)
+    observer.observe(root, { childList: true, subtree: true })
+    scan()
+    return () => {
+      observer.disconnect()
+      window.clearTimeout(timer)
+    }
+  }, [active, detail.entryRef])
+
+  const lookup = useTranslationSegments(detail.entryRef, blocks, active && serverEngine)
+  const generate = useGenerateTranslationSegmentsMutation(detail.entryRef)
+
+  // 切到 双语/仅译文 的那一次点击 = 显式请求：未生成的块自动生成一次
+  // （精确命中缓存的部分不会重复生成）。失败块的重试只送失败块。
+  const serverSegments = lookup.data?.segments
+  useEffect(() => {
+    if (!active || !serverEngine || blocks === null || blocks.length === 0) return
+    if (lookup.isPending || lookup.isError || generate.isPending) return
+    const pending = (serverSegments ?? []).filter(
+      (s) => s.status === 'not_generated',
+    )
+    const failed = (serverSegments ?? []).filter((s) => s.status === 'failed')
+    if (pending.length === 0) return
+    const signature = `${detail.entryRef}:${blocks.length}:${pending.length}`
+    if (attemptedRef.current === signature) return
+    attemptedRef.current = signature
+    generate.mutate(blocksToInputs(blocks))
+    // failed 块只在用户点重试时重新生成（money rule：不自动重试）
+    void failed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, serverEngine, blocks, lookup.isPending, lookup.isError, serverSegments])
+
+  // 本地引擎：整个链路只在此浏览器执行；切模式的点击即 user activation。
+  useEffect(() => {
+    if (!active || engine !== 'browser' || blocks === null || blocks.length === 0) {
+      return
+    }
+    const controller = new AbortController()
+    setLocalBusy(true)
+    setLocalError(null)
+    let cancelled = false
+    void (async () => {
+      try {
+        if (localTranslatorRef.current === null) {
+          localTranslatorRef.current = await createLocalTranslator('en', 'zh-CN')
+        }
+        const translator = localTranslatorRef.current
+        const next = new Map<number, string>()
+        for (const block of blocks) {
+          if (controller.signal.aborted) return
+          const text = await translator.translate(block.text, controller.signal)
+          next.set(block.index, text)
+        }
+        if (!cancelled) setLocalTexts(next)
+      } catch (error) {
+        if (!cancelled && !controller.signal.aborted) {
+          setLocalError(
+            error instanceof LocalTranslatorUnsupportedError
+              ? error.message
+              : '本地翻译失败：此浏览器可能不支持该语言对，或下载语言包失败。',
+          )
+        }
+      } finally {
+        if (!cancelled) setLocalBusy(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, engine, blocks])
+
+  // overlay：texts 变化（或 mode 切换）时重放；纯排版切换零网络。
+  useEffect(() => {
+    const root = containerRef.current
+    if (root === null || !active) return
+    const texts = new Map<number, string>()
+    if (engine === 'browser') {
+      for (const [index, text] of localTexts) texts.set(index, text)
+    } else {
+      for (const s of serverSegments ?? []) {
+        if (s.status === 'success' && s.translatedText) {
+          texts.set(s.index, s.translatedText)
+        }
+      }
+    }
+    applyOverlay(root, { texts, mode: viewMode === 'bilingual' ? 'bilingual' : 'translated' })
+    return () => resetOverlay(root)
+  }, [active, viewMode, engine, serverSegments, localTexts, blocks])
+
+  // 切换文章：重置一切（Reader 已按 entryRef 对 key 重挂载，这里兜底）。
+  useEffect(() => {
+    return () => {
+      setBlocks(null)
+      setLocalTexts(new Map())
+      setLocalError(null)
+      attemptedRef.current = ''
+      localTranslatorRef.current?.destroy()
+      localTranslatorRef.current = null
+    }
+  }, [detail.entryRef])
+
+  const retryFailed = () => {
+    if (blocks === null) return
+    const failedIndexes = new Set(
+      (serverSegments ?? [])
+        .filter((s) => s.status === 'failed')
+        .map((s) => s.index),
+    )
+    const failedBlocks = blocks.filter((b) => failedIndexes.has(b.index))
+    if (failedBlocks.length === 0) return
+    generate.mutate(blocksToInputs(failedBlocks))
+  }
+
+  const segmentList = serverSegments ?? []
+  const failedCount = segmentList.filter((s) => s.status === 'failed').length
+  const busy = generate.isPending || localBusy
+  const doneCount = engine === 'browser' ? localTexts.size : segmentList.filter((s) => s.status === 'success').length
+
   return (
-    <div
-      role="group"
-      aria-label="文章语言视图"
-      className="inline-flex items-center gap-1.5"
-    >
-      <button
-        type="button"
-        aria-pressed={view === 'original'}
-        onClick={() => onChange('original')}
-        className={cx(
-          base,
-          view === 'original'
-            ? 'border-[var(--lumi-border)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
-            : 'border-transparent text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-        )}
-      >
-        原文
-      </button>
-      <button
-        type="button"
-        aria-pressed={view === 'translated'}
-        onClick={() => onChange('translated')}
-        className={cx(
-          base,
-          view === 'translated'
-            ? 'border-[var(--lumi-border)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
-            : 'border-transparent text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-        )}
-      >
-        <Languages aria-hidden className="size-3.5" />
-        译文
-      </button>
+    <div className={cx('pt-6', viewMode === 'bilingual' && 'reader-bilingual-active')}>
+      <div ref={containerRef}>
+        <ArticleContent detail={detail} />
+      </div>
+
+      {active && (
+        <TranslationStatusBar
+          engine={engine}
+          busy={busy}
+          doneCount={doneCount}
+          failedCount={failedCount}
+          localError={localError}
+          lookupError={serverEngine && lookup.isError ? lookup.error : null}
+          cached={segmentList.some((s) => s.status === 'success' && s.cached)}
+          onRetry={failedCount > 0 ? retryFailed : undefined}
+        />
+      )}
     </div>
   )
 }
 
-/** 译文视图的内容区：按翻译状态诚实呈现。
- *
- * 进入译文视图且尚未生成时自动发起一次显式 POST（用户点「译文」即
- * 显式动作；精确缓存命中零成本）。失败状态只呈现错误 + 显式重试，
- * 不自动重试。 */
-function TranslatedView({
-  entryRef,
+/** 附注行：执行位置 · 状态 · 失败重试。role=status，不遮挡正文。 */
+function TranslationStatusBar({
+  engine,
+  busy,
+  doneCount,
+  failedCount,
+  localError,
+  lookupError,
+  cached,
+  onRetry,
 }: {
-  entryRef: string
+  engine: string
+  busy: boolean
+  doneCount: number
+  failedCount: number
+  localError: string | null
+  lookupError: unknown
+  cached: boolean
+  onRetry?: () => void
 }) {
-  const translation = useEntryTranslation(entryRef)
-  const generate = useGenerateTranslationMutation(entryRef)
-
-  const status = translation.data?.status
-  useEffect(() => {
-    if (status === 'not_generated' && !generate.isPending && !generate.isError) {
-      generate.mutate()
-    }
-    // 依赖只取稳定原始值，避免 generate 对象身份变化导致重复触发。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, generate.isPending, generate.isError])
-
-  if (translation.isPending) {
-    return (
-      <div className="flex flex-col gap-2.5" aria-label="正在加载翻译状态">
-        <Skeleton className="h-5 w-2/5" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-11/12" />
-        <Skeleton className="h-4 w-3/4" />
-      </div>
-    )
-  }
-
-  if (translation.isError) {
-    const error = translation.error
-    const noRetry =
-      error instanceof ApiError &&
-      (error.type === 'ai_not_configured' || error.type === 'ai_content_unavailable')
-    return (
-      <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5">
-        <p role="alert" className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-text-secondary)]">
-          <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0 text-[var(--lumi-text-tertiary)]" />
-          {failureText(error)}
-        </p>
-        {!noRetry && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="mt-2"
-            onClick={() => translation.refetch()}
-          >
-            <RefreshCw aria-hidden className="size-3.5" />
-            重试
-          </Button>
-        )}
-      </div>
-    )
-  }
-
-  const state = translation.data
-
-  if (state.status === 'generating' || generate.isPending) {
-    return (
-      <p role="status" className="flex items-center gap-1.5 text-sm text-[var(--lumi-text-secondary)]">
-        <Loader2 aria-hidden className="size-3.5 animate-spin" />
-        正在翻译…
-      </p>
-    )
-  }
-
-  if (generate.isError) {
-    return (
-      <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5">
-        <p role="alert" className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-danger)]">
-          <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-          {failureText(generate.error)}
-        </p>
-        <Button
-          size="sm"
-          className="mt-3"
-          onClick={() => generate.mutate()}
-        >
-          <RefreshCw aria-hidden className="size-3.5" />
-          重试
-        </Button>
-      </div>
-    )
-  }
-
-  if (state.status === 'not_generated') {
-    return (
-      <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5">
-        <p className="text-sm text-[var(--lumi-text-secondary)]">
-          按需生成，不会自动调用 AI；翻译成功后同一篇文章直接读取缓存。
-        </p>
-        <Button size="sm" className="mt-3" onClick={() => generate.mutate()}>
-          <Languages aria-hidden className="size-3.5" />
-          生成译文
-        </Button>
-      </div>
-    )
-  }
-
-  if (state.status === 'failed') {
-    const text = aiFailureTypeText(state.failureType ?? '', WORDING)
-    return (
-      <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5">
-        <p role="alert" className="text-sm leading-relaxed text-[var(--lumi-text-secondary)]">
-          {text}
-        </p>
-        <Button size="sm" className="mt-3" onClick={() => generate.mutate()}>
-          <RefreshCw aria-hidden className="size-3.5" />
-          重试
-        </Button>
-      </div>
-    )
-  }
-
-  // success（含缓存命中）：纯文本渲染，绝不进 HTML 渲染路径。
-  const generatedAt = formatGeneratedAt(state.generatedAt)
-  const metaParts = [state.model, generatedAt].filter((part) => part !== null && part !== '')
+  const engineLabel = ENGINE_LABELS[engine] ?? engine
   return (
-    <div>
-      {state.translatedTitle !== null && (
-        <h2 className="text-lg font-semibold leading-snug text-[var(--lumi-text-primary)]">
-          {state.translatedTitle}
-        </h2>
+    <p
+      role="status"
+      className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]"
+    >
+      <Languages aria-hidden className="size-3.5" />
+      <span>{engineLabel}</span>
+      {busy && (
+        <span className="inline-flex items-center gap-1 text-[var(--lumi-text-secondary)]">
+          <Loader2 aria-hidden className="size-3 animate-spin" />
+          翻译中…
+        </span>
       )}
-      <p className="mt-3 whitespace-pre-wrap text-[0.95rem] leading-[1.85] text-[var(--lumi-text-primary)]">
-        {state.translatedText}
-      </p>
-      {metaParts.length > 0 && (
-        <p className="mt-3 flex items-center gap-2 text-[11px] text-[var(--lumi-text-tertiary)]">
-          {metaParts.join(' · ')}
-          {state.cached && (
-            <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5">
+      {!busy && doneCount > 0 && (
+        <span>
+          已译 {doneCount} 段
+          {cached && (
+            <span className="ml-1.5 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5">
               缓存
             </span>
           )}
-        </p>
+        </span>
       )}
-    </div>
+      {failedCount > 0 && (
+        <span className="inline-flex items-center gap-1.5 text-[var(--lumi-danger)]">
+          <AlertCircle aria-hidden className="size-3" />
+          {failedCount} 段失败
+          {onRetry && (
+            <Button size="sm" variant="ghost" onClick={onRetry}>
+              <RefreshCw aria-hidden className="size-3" />
+              只重试失败段
+            </Button>
+          )}
+        </span>
+      )}
+      {localError !== null && (
+        <span className="text-[var(--lumi-danger)]">{localError}</span>
+      )}
+      {lookupError !== null && (
+        <span className="text-[var(--lumi-danger)]">
+          翻译服务暂不可用，原文阅读不受影响。
+        </span>
+      )}
+    </p>
   )
 }
 
-export default function ReaderTranslation({ detail }: { detail: EntryDetail }) {
-  const [view, setView] = useState<'original' | 'translated'>('original')
-
-  return (
-    <div className="pt-6">
-      <div className="flex items-center justify-between gap-3">
-        <ViewToggle view={view} onChange={setView} />
-      </div>
-      <div className="pt-4">
-        {view === 'original' ? (
-          <ArticleContent detail={detail} />
-        ) : (
-          <TranslatedView entryRef={detail.entryRef} />
-        )}
-      </div>
-    </div>
-  )
-}
+export type { TranslationSegmentState }

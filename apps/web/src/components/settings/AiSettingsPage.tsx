@@ -737,20 +737,17 @@ function GlobalSettingsCard({ settings }: { settings: AiSettings }) {
     baseUrl: string
     model: string
     summaryLanguage: 'zh-CN' | 'en'
-    translationLanguage: 'zh-CN' | 'en'
   } | null>(null)
 
   const values = draft ?? {
     baseUrl: settings.baseUrl,
     model: settings.model,
     summaryLanguage: settings.summaryLanguage,
-    translationLanguage: settings.translationLanguage,
   }
   const dirty =
     values.baseUrl !== settings.baseUrl ||
     values.model !== settings.model ||
-    values.summaryLanguage !== settings.summaryLanguage ||
-    values.translationLanguage !== settings.translationLanguage
+    values.summaryLanguage !== settings.summaryLanguage
 
   return (
     <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
@@ -801,21 +798,8 @@ function GlobalSettingsCard({ settings }: { settings: AiSettings }) {
           />
         </FieldShell>
 
-        <FieldShell label="翻译语言" hint="译文的目标语言；语言参与翻译缓存身份。">
-          <Select
-            aria-label="翻译语言"
-            value={values.translationLanguage}
-            disabled={update.isPending}
-            options={[
-              { value: 'zh-CN', label: '简体中文' },
-              { value: 'en', label: 'English' },
-            ]}
-            onChange={(e) =>
-              setDraft({ ...values, translationLanguage: e.target.value as 'zh-CN' | 'en' })
-            }
-          />
-        </FieldShell>
-
+        {/* Gate：翻译专属配置（引擎/目标语言/LibreTranslate）已整合到
+            「设置 → 翻译」，避免同一数据两处表单互不相同。 */}
         <div className="flex items-center gap-2">
           <Button
             size="sm"

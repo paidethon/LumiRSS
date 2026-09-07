@@ -378,6 +378,9 @@ class AiSettingsView(BaseModel):
     model: str
     summaryLanguage: Literal["zh-CN", "en"]
     translationLanguage: Literal["zh-CN", "en"]
+    translationEngine: Literal["ai", "libretranslate", "browser"]
+    libretranslateUrl: str
+    libretranslateKeyConfigured: bool
     configured: bool
     envKeyConfigured: bool
     defaultKeyConfigured: bool
@@ -505,6 +508,24 @@ class BackupCapabilities(BaseModel):
     includes: list[str]
     lumiDatabaseAvailable: bool
     freshrssData: FreshrssDataBackupCapability
+
+
+class TranslationSegmentState(BaseModel):
+    """Per-block translation state (lookup = cache only; generate explicit)."""
+
+    index: int
+    status: Literal["success", "failed", "not_generated"]
+    translatedText: str | None = None
+    failureType: str | None = None
+    cached: bool = False
+
+
+class TranslationSegmentsView(BaseModel):
+    """POST …/translation/segments/lookup | /generate."""
+
+    engine: str
+    targetLanguage: str
+    segments: list[TranslationSegmentState] = []
 
 
 class RestorePreviewFile(BaseModel):

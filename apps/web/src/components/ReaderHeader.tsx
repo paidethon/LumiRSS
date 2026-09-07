@@ -1,4 +1,4 @@
-import { Check, Clock, ExternalLink, Loader2, MessageSquare, Star } from 'lucide-react'
+import { Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
@@ -7,7 +7,9 @@ import { formatReadingTime, textFromHtml } from '../lib/reading-time'
 import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
 import { useAppSettings } from '../store/app-settings'
 import ReaderAaPanel from './ReaderAaPanel'
+import type { ReaderViewMode } from '../lib/translation-blocks'
 import { IconButton } from './ui/IconButton'
+import { Menu } from './ui/Menu'
 import { Tooltip } from './ui/Tooltip'
 import { cx } from './ui/cx'
 
@@ -31,11 +33,86 @@ function formatPublishedAt(value: string | null | undefined): string {
  * - set 语义（PATCH 目标状态，非 toggle）；
  * - 打开原文只放行绝对 http/https（safeExternalHttpUrl），
  *   target=_blank + rel=noopener noreferrer。 */
+/** Gate：语言视图三态控件（原文/双语/仅译文）。
+ * 桌面 = 三段分段按钮；窄屏 = 紧凑 Menu（不遮挡/不挤出工具栏）。
+ * 两态 Switch 表达不了三态，这里用显式的选项组。 */
+function LanguageViewControl({
+  value,
+  onChange,
+}: {
+  value: ReaderViewMode
+  onChange: (mode: ReaderViewMode) => void
+}) {
+  const options: { key: ReaderViewMode; label: string; short: string }[] = [
+    { key: 'original', label: '原文', short: '原文' },
+    { key: 'bilingual', label: '双语', short: '双语' },
+    { key: 'translated', label: '仅译文', short: '译文' },
+  ]
+  const base =
+    'inline-flex min-h-8 items-center gap-1 rounded-[var(--lumi-radius-md)] px-2 text-sm transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
+  return (
+    <>
+      {/* 桌面分段 */}
+      <div
+        role="group"
+        aria-label="语言视图"
+        className="hidden items-center gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5 lg:inline-flex"
+      >
+        {options.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            aria-pressed={value === option.key}
+            onClick={() => onChange(option.key)}
+            className={cx(
+              base,
+              'min-w-0 px-2.5',
+              value === option.key
+                ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+            )}
+          >
+            {option.key === 'translated' && (
+              <Languages aria-hidden className="size-3.5" />
+            )}
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {/* 移动端紧凑菜单 */}
+      <div className="lg:hidden">
+        <Menu
+          trigger={({ triggerProps }) => (
+            <Tooltip content="语言视图">
+              <IconButton
+                {...triggerProps}
+                icon={<Languages aria-hidden className={cx(value !== 'original' && 'text-[var(--lumi-accent-text)]')} />}
+                label={`语言视图：当前 ${options.find((o) => o.key === value)?.label ?? '原文'}`}
+                touch
+              />
+            </Tooltip>
+          )}
+          items={options.map((o) => ({
+            key: o.key,
+            content: value === o.key ? <strong>✓ {o.label}</strong> : o.label,
+          }))}
+          onSelect={(key) => onChange(key as ReaderViewMode)}
+        />
+      </div>
+    </>
+  )
+}
+
 export default function ReaderHeader({
   detail,
+  viewMode = 'original',
+  onViewModeChange,
   onOpenAiConversation,
 }: {
   detail: EntryDetail
+  /** Gate：语言视图（由 Reader 持有；工具栏与内容区共享同一状态）。 */
+  viewMode?: ReaderViewMode
+  onViewModeChange?: (mode: ReaderViewMode) => void
   /** 0016：打开文章限定 AI 对话（由 Reader 持有面板开关状态）。 */
   onOpenAiConversation?: () => void
 }) {
@@ -187,6 +264,12 @@ export default function ReaderHeader({
               onClick={onOpenAiConversation}
             />
           </Tooltip>
+        )}
+
+        {/* Gate：语言视图（原文/双语/仅译文）——与 稍后读/收藏/Aa 同一
+            工具栏；Reader 持有状态，正文区消费。 */}
+        {onViewModeChange !== undefined && (
+          <LanguageViewControl value={viewMode ?? 'original'} onChange={onViewModeChange} />
         )}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心

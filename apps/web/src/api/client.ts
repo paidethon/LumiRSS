@@ -12,6 +12,7 @@ import type {
   ApiVersion,
   BackupCapabilities,
   BackupJob,
+  TranslationSegmentsView,
   Category,
   EntryConversation,
   EntryDetail,
@@ -617,6 +618,56 @@ export async function getBackupJob(id: string, signal?: AbortSignal): Promise<Ba
 export async function getBackupCapabilities(signal?: AbortSignal): Promise<BackupCapabilities> {
   return request<BackupCapabilities>(`${API_BASE}/backups/capabilities`, signal)
 }
+export interface TranslationSegmentBlockInput {
+  index: number
+  text: string
+}
+
+export async function lookupTranslationSegments(
+  entryRef: string,
+  blocks: TranslationSegmentBlockInput[],
+  signal?: AbortSignal,
+): Promise<TranslationSegmentsView> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/lookup`,
+    { method: 'POST', body: JSON.stringify({ blocks }), signal, contentType: 'application/json' },
+  )
+  return (await response.json()) as TranslationSegmentsView
+}
+
+export async function generateTranslationSegments(
+  entryRef: string,
+  blocks: TranslationSegmentBlockInput[],
+  signal?: AbortSignal,
+): Promise<TranslationSegmentsView> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/generate`,
+    { method: 'POST', body: JSON.stringify({ blocks }), signal, contentType: 'application/json' },
+  )
+  return (await response.json()) as TranslationSegmentsView
+}
+
+export async function saveLibreTranslateKey(value: string): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+    contentType: 'application/json',
+  })
+}
+
+export async function clearLibreTranslateKey(): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
+    method: 'DELETE',
+  })
+}
+
+export async function testLibreTranslate(): Promise<{ status: 'ok' | 'failed'; message: string | null }> {
+  const response = await rawRequest(`${API_BASE}/settings/translation/libretranslate-test`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { status: 'ok' | 'failed'; message: string | null }
+}
+
 export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {
   const response = await rawRequest(`${API_BASE}/backups`, {
     method: 'POST',

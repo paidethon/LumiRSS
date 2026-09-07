@@ -19,6 +19,11 @@ import {
   getAiSettings,
   getBackupCapabilities,
   getBackupJob,
+  generateTranslationSegments,
+  lookupTranslationSegments,
+  saveLibreTranslateKey,
+  clearLibreTranslateKey,
+  testLibreTranslate,
   getCategories,
   getEntries,
   getEntry,
@@ -55,7 +60,7 @@ import {
   updateAiSettings,
   updateWebDavSettings,
 } from './client'
-import type { AiProfileInput } from './client'
+import type { AiProfileInput, TranslationSegmentBlockInput } from './client'
 import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
@@ -287,6 +292,8 @@ export function useUpdateAiSettingsMutation() {
       model?: string
       summaryLanguage?: 'zh-CN' | 'en'
       translationLanguage?: 'zh-CN' | 'en'
+      translationEngine?: 'ai' | 'libretranslate' | 'browser'
+      libretranslateUrl?: string
     }) => updateAiSettings(update),
     onSuccess: async () => {
       await Promise.all([
@@ -593,6 +600,62 @@ export function useCreateBackupMutation() {
         queryClient.invalidateQueries({ queryKey: ['operations-status'] }),
       ])
     },
+  })
+}
+
+export function useTranslationSegments(
+  entryRef: string,
+  blocks: TranslationSegmentBlockInput[] | null,
+  enabled: boolean,
+) {
+  const blocksKey = blocks ? JSON.stringify(blocks) : ''
+  return useQuery({
+    queryKey: ['translation-segments', entryRef, blocksKey],
+    queryFn: ({ signal }) =>
+      lookupTranslationSegments(entryRef, blocks as TranslationSegmentBlockInput[], signal),
+    // blocks 稳定后才有意义；同一内容版本的精确缓存永不重复请求
+    enabled: enabled && blocks !== null && blocks.length > 0,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  })
+}
+
+export function useGenerateTranslationSegmentsMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (blocks: TranslationSegmentBlockInput[]) =>
+      generateTranslationSegments(entryRef, blocks),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['translation-segments', entryRef],
+      })
+    },
+  })
+}
+
+export function useSaveLibreTranslateKeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (value: string) => saveLibreTranslateKey(value),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
+    },
+  })
+}
+
+export function useClearLibreTranslateKeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => clearLibreTranslateKey(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ai-settings'] })
+    },
+  })
+}
+
+export function useTestLibreTranslateMutation() {
+  return useMutation({
+    mutationFn: () => testLibreTranslate(),
   })
 }
 

@@ -51,9 +51,11 @@ from lumirss.ai_provider import (
 )
 from lumirss.ai_settings import (
     KEY_BASE_URL,
+    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
     KEY_SUMMARY_LANGUAGE,
+    KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
     AiSettingsStore,
     AiSettingsUpdate,
@@ -61,6 +63,13 @@ from lumirss.ai_settings import (
 )
 from lumirss.ai_summary import AiContentUnavailable, SummaryService
 from lumirss.ai_translation import TranslationService
+from lumirss.ai_translation_segments import (
+    LIBRETRANSLATE_KEY_NAME,
+    TRANSLATION_ENGINE_BROWSER,
+    SegmentInput,
+    SegmentTranslationService,
+    SegmentTranslationUnavailable,
+)
 from lumirss.app_settings import (
     AppSettingsStore,
     InvalidAppSettings,
@@ -117,6 +126,7 @@ from lumirss.models import (
     RssHubConfigView,
     SourceDiscoveryResponse,
     Subscription,
+    TranslationSegmentsView,
     WebDavSettingsView,
     WebDavTestResult,
 )
@@ -268,6 +278,7 @@ _ERROR_RESPONSES = {
     InvalidAppSettings: (400, "invalid_app_settings"),
     # 0015 AI summary
     AiNotConfigured: (503, "ai_not_configured"),
+    SegmentTranslationUnavailable: (400, "translation_unavailable"),
     AiAuthError: (502, "ai_auth_error"),
     AiModelError: (502, "ai_model_error"),
     AiRateLimited: (429, "ai_rate_limited"),
@@ -1046,6 +1057,7 @@ def _get_ai_profile_store(request: Request) -> AiProfileStore:
 async def _ai_settings_json(
     values: dict[str, str],
     profiles: AiProfileStore | None = None,
+    secrets: SecretsStore | None = None,
 ) -> dict[str, object]:
     """Browser-safe AI settings view — NEVER contains an API key.
 
@@ -1055,12 +1067,18 @@ async def _ai_settings_json(
     """
     settings = LumiSettings()
     env_key = settings.AI_API_KEY.get_secret_value()
+    secrets = secrets or SecretsStore(settings.secrets_path)
     payload: dict[str, object] = {
         "provider": values[KEY_PROVIDER],
         "baseUrl": values[KEY_BASE_URL],
         "model": values[KEY_MODEL],
         "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
+        "translationEngine": values[KEY_TRANSLATION_ENGINE],
+        "libretranslateUrl": values[KEY_LIBRETRANSLATE_URL],
+        "libretranslateKeyConfigured": bool(
+            (secrets.get(LIBRETRANSLATE_KEY_NAME) or "").strip()
+        ),
         "configured": settings.ai_configured,
         "envKeyConfigured": bool(env_key.strip()),
         "defaultKeyConfigured": settings.ai_configured
@@ -1100,7 +1118,9 @@ async def get_ai_settings(request: Request) -> dict[str, object]:
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(await store.load(), profiles)
+    return await _ai_settings_json(
+        await store.load(), profiles, _get_secrets_store(request)
+    )
 
 
 @app.put(
@@ -1118,7 +1138,9 @@ async def put_ai_settings(
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(await store.save(update), profiles)
+    return await _ai_settings_json(
+        await store.save(update), profiles, _get_secrets_store(request)
+    )
 
 
 class SecretValuePut(BaseModel):
@@ -1174,6 +1196,141 @@ async def delete_default_ai_key(request: Request) -> Response:
     """Remove the browser-set default key (env fallback resumes)."""
     _get_ai_profile_store(request).clear_default_key()
     return Response(status_code=204)
+
+
+@app.put("/api/v1/settings/translation/libretranslate-key", status_code=204)
+async def put_libretranslate_key(secret: SecretValuePut, request: Request) -> Response:
+    """Write-only LibreTranslate API key (optional; empty string clears)."""
+    value = secret.value.strip()
+    if not value:
+        _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
+    else:
+        _get_secrets_store(request).set(LIBRETRANSLATE_KEY_NAME, value)
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/settings/translation/libretranslate-key", status_code=204)
+async def delete_libretranslate_key(request: Request) -> Response:
+    """Remove the optional LibreTranslate API key."""
+    _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
+    return Response(status_code=204)
+
+
+def _get_secrets_store(request: Request) -> SecretsStore:
+    return request.app.state.secrets_store
+
+
+class LibreTranslateTestResult(BaseModel):
+    """POST /api/v1/settings/translation/libretranslate-test."""
+
+    status: Literal["ok", "failed"]
+    message: str | None = None
+
+
+@app.post(
+    "/api/v1/settings/translation/libretranslate-test",
+    response_model=LibreTranslateTestResult,
+)
+async def test_libretranslate(request: Request) -> dict[str, object]:
+    """Probe the configured LibreTranslate server (GET /languages)."""
+    values = await _get_ai_settings_store(request).load()
+    base = values[KEY_LIBRETRANSLATE_URL]
+    if not base:
+        return {"status": "failed", "message": "LibreTranslate 服务地址未配置。"}
+    try:
+        response = await request.app.state.http_client.get(
+            f"{base}/languages", timeout=10.0
+        )
+        response.raise_for_status()
+        languages = response.json()
+        if not isinstance(languages, list):
+            raise ValueError("unexpected payload")
+        return {"status": "ok", "message": f"连接成功（{len(languages)} 种语言）。"}
+    except Exception:
+        return {"status": "failed", "message": "连接失败：BFF 无法访问该地址或服务未就绪。"}
+
+
+def _get_segment_service(request: Request) -> SegmentTranslationService:
+    """Block-aligned translation (bilingual views); purpose='translation'."""
+    return _cached_on_app_state(
+        request,
+        "segment_translation_service",
+        lambda: SegmentTranslationService(
+            db=request.app.state.db,
+            settings_store=_get_ai_settings_store(request),
+            provider_factory=_provider_factory_for(request, "translation"),
+            secrets=request.app.state.secrets_store,
+        ),
+    )
+
+
+class TranslationSegmentBlockIn(BaseModel):
+    """One client-segmented content block."""
+
+    index: int = Field(ge=0, le=63)
+    text: str = Field(min_length=1, max_length=20000)
+
+
+class TranslationSegmentsBody(BaseModel):
+    """POST …/translation/segments/lookup | /generate body."""
+
+    blocks: list[TranslationSegmentBlockIn] = Field(min_length=1, max_length=64)
+
+
+def _segment_inputs(body: TranslationSegmentsBody) -> list[SegmentInput]:
+    return [SegmentInput(index=b.index, text=b.text) for b in body.blocks]
+
+
+def _segments_view(states, settings_values) -> dict[str, object]:
+    return {
+        "engine": settings_values[KEY_TRANSLATION_ENGINE],
+        "targetLanguage": settings_values[KEY_TRANSLATION_LANGUAGE],
+        "segments": [
+            {
+                "index": s.index,
+                "status": s.status,
+                "translatedText": s.translated_text,
+                "failureType": s.failure_type,
+                "cached": s.cached,
+            }
+            for s in states
+        ],
+    }
+
+
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation/segments/lookup",
+    response_model=TranslationSegmentsView,
+)
+async def lookup_translation_segments(
+    entry_ref: str, body: TranslationSegmentsBody, request: Request
+) -> dict[str, object]:
+    """Cached per-block state ONLY — never calls a provider."""
+    decode_entry_ref(entry_ref)  # 400 on malformed refs before any work
+    service = _get_segment_service(request)
+    settings_values = await service._resolve_settings()
+    if settings_values[KEY_TRANSLATION_ENGINE] == TRANSLATION_ENGINE_BROWSER:
+        return _segments_view([], settings_values) | {
+            "engine": TRANSLATION_ENGINE_BROWSER, "segments": []
+        }
+    states = await service.lookup(entry_ref, _segment_inputs(body), settings_values)
+    return _segments_view(states, settings_values)
+
+
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation/segments/generate",
+    response_model=TranslationSegmentsView,
+)
+async def generate_translation_segments(
+    entry_ref: str, body: TranslationSegmentsBody, request: Request
+) -> dict[str, object]:
+    """Explicit generation for the bilingual/translated views (money rule:
+    only this endpoint may call a provider; exact cache hits never do)."""
+    decode_entry_ref(entry_ref)
+    service = _get_segment_service(request)
+    states = await service.generate(entry_ref, _segment_inputs(body))
+    settings_values = await service._resolve_settings()
+    return _segments_view(states, settings_values)
 
 
 @app.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])
