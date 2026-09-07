@@ -16,6 +16,8 @@ operator confirms "applied" after restarting RSSHub with the exported config).
 """
 
 import json
+import re
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -387,4 +389,261 @@ def export_env(store: RssHubControlStore, desired: dict[str, Any]) -> str:
     for item in SECRET_ITEMS:
         if secret_flags.get(item.key):
             lines.append(f"# {item.key}=<configured>")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Custom site / route credentials (Gate) — metadata in lumi KV, values in
+# the write-only SecretsStore. A custom credential maps ONE site to ONE
+# RSSHub env key that its route actually reads; adding a site + a cookie
+# can never conjure an RSSHub route that upstream does not have.
+# ---------------------------------------------------------------------------
+
+CUSTOM_CREDENTIALS_KEY = "rsshub.custom_credentials"
+CUSTOM_SECRET_PREFIX = "rsshub.custom."
+
+MAX_CUSTOM_CREDENTIALS = 32
+CREDENTIAL_KINDS = ("cookie", "token", "api_key", "bearer", "other")
+
+_CUSTOM_ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+_CUSTOM_DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
+
+
+class RssHubCustomCredentialError(RssHubControlError):
+    """Browser-safe validation error for custom credential entries."""
+
+
+def _validate_env_key(env_key: str) -> str:
+    clean = env_key.strip()
+    if not _CUSTOM_ENV_KEY_RE.match(clean):
+        raise RssHubCustomCredentialError(
+            "envKey must be UPPER_SNAKE_CASE (letters, digits, underscore, "
+            "starting with a letter)."
+        )
+    return clean
+
+
+def _validate_domain(domain: str) -> str:
+    clean = domain.strip().lower().rstrip("/")
+    if clean.startswith(("http://", "https://")) or "/" in clean or " " in clean:
+        raise RssHubCustomCredentialError(
+            "domain must be a bare hostname like example.com (no scheme/path)."
+        )
+    if len(clean) > 253 or not _CUSTOM_DOMAIN_RE.match(clean):
+        raise RssHubCustomCredentialError("domain is not a valid hostname.")
+    return clean
+
+
+def _validate_label_text(value: str, field: str, max_length: int) -> str:
+    clean = value.strip()
+    if not clean:
+        raise RssHubCustomCredentialError(f"{field} must not be blank.")
+    if len(clean) > max_length:
+        raise RssHubCustomCredentialError(
+            f"{field} must be at most {max_length} characters."
+        )
+    if any(ord(ch) < 32 for ch in clean):
+        raise RssHubCustomCredentialError(
+            f"{field} must not contain control characters."
+        )
+    return clean
+
+
+class RssHubCustomCredentialStore:
+    """CRUD for user-defined site-to-route-credential mappings."""
+
+    def __init__(self, db: Database, secrets: SecretsStore) -> None:
+        self._db = db
+        self._secrets = secrets
+
+    async def _load(self) -> list[dict[str, Any]]:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT value FROM lumi_settings WHERE key = ?",
+            (CUSTOM_CREDENTIALS_KEY,),
+        )
+        if row is None or not row["value"]:
+            return []
+        try:
+            parsed = json.loads(row["value"])
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    async def _save(self, entries: list[dict[str, Any]]) -> None:
+        payload = json.dumps(entries, ensure_ascii=False, sort_keys=True)
+        await self._db.execute(
+            "INSERT INTO lumi_settings (key, value, updated_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+            "updated_at = excluded.updated_at",
+            (CUSTOM_CREDENTIALS_KEY, payload, _utc_now()),
+        )
+
+    @staticmethod
+    def _secret_key(entry_id: str) -> str:
+        return CUSTOM_SECRET_PREFIX + entry_id
+
+    async def list_entries(self) -> list[dict[str, Any]]:
+        entries = await self._load()
+        return [
+            {
+                "id": e["id"],
+                "name": e["name"],
+                "domain": e["domain"],
+                "route": e["route"],
+                "envKey": e["envKey"],
+                "kind": e["kind"],
+                "configured": self._secrets.configured(self._secret_key(e["id"])),
+                "createdAt": e["createdAt"],
+                "updatedAt": e["updatedAt"],
+            }
+            for e in entries
+        ]
+
+    async def create(
+        self,
+        *,
+        name: str,
+        domain: str,
+        env_key: str,
+        kind: str,
+        value: str,
+        route: str = "",
+    ) -> dict[str, Any]:
+        entries = await self._load()
+        if len(entries) >= MAX_CUSTOM_CREDENTIALS:
+            raise RssHubCustomCredentialError(
+                f"Too many custom credentials (max {MAX_CUSTOM_CREDENTIALS})."
+            )
+        clean_name = _validate_label_text(name, "name", 80)
+        clean_domain = _validate_domain(domain)
+        clean_key = _validate_env_key(env_key)
+        clean_route = route.strip()
+        if len(clean_route) > 200:
+            raise RssHubCustomCredentialError(
+                "route must be at most 200 characters."
+            )
+        if kind not in CREDENTIAL_KINDS:
+            raise RssHubCustomCredentialError(
+                f"kind must be one of {', '.join(CREDENTIAL_KINDS)}."
+            )
+        for existing in entries:
+            if existing["envKey"] == clean_key:
+                raise RssHubCustomCredentialError(
+                    f"envKey '{clean_key}' is already used."
+                )
+        clean_value = value.strip()
+        if not clean_value:
+            raise RssHubCustomCredentialError("value must not be blank.")
+        if len(clean_value) > MAX_SECRET_LENGTH:
+            raise RssHubCustomCredentialError("value is too long.")
+        entry_id = uuid.uuid4().hex[:16]
+        now = _utc_now()
+        entry = {
+            "id": entry_id,
+            "name": clean_name,
+            "domain": clean_domain,
+            "route": clean_route,
+            "envKey": clean_key,
+            "kind": kind,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        entries.append(entry)
+        await self._save(entries)
+        self._secrets.set(self._secret_key(entry_id), clean_value)
+        view = await self.list_entries()
+        return next(e for e in view if e["id"] == entry_id)
+
+    async def update_metadata(
+        self, entry_id: str, *, name: str | None = None, route: str | None = None
+    ) -> dict[str, Any]:
+        entries = await self._load()
+        for entry in entries:
+            if entry["id"] == entry_id:
+                if name is not None:
+                    entry["name"] = _validate_label_text(name, "name", 80)
+                if route is not None:
+                    if len(route.strip()) > 200:
+                        raise RssHubCustomCredentialError(
+                            "route must be at most 200 characters."
+                        )
+                    entry["route"] = route.strip()
+                entry["updatedAt"] = _utc_now()
+                await self._save(entries)
+                view = await self.list_entries()
+                return next(e for e in view if e["id"] == entry_id)
+        raise RssHubCustomCredentialError("credential not found.")
+
+    async def set_value(self, entry_id: str, value: str) -> None:
+        entries = await self._load()
+        if not any(e["id"] == entry_id for e in entries):
+            raise RssHubCustomCredentialError("credential not found.")
+        clean = value.strip()
+        if not clean:
+            raise RssHubCustomCredentialError("value must not be blank.")
+        if len(clean) > MAX_SECRET_LENGTH:
+            raise RssHubCustomCredentialError("value is too long.")
+        self._secrets.set(self._secret_key(entry_id), clean)
+
+    async def delete(self, entry_id: str) -> None:
+        entries = await self._load()
+        remaining = [e for e in entries if e["id"] != entry_id]
+        if len(remaining) == len(entries):
+            raise RssHubCustomCredentialError("credential not found.")
+        await self._save(remaining)
+        self._secrets.delete(self._secret_key(entry_id))
+
+    async def collect_values(self) -> dict[str, str]:
+        """env key to value, for SERVER-SIDE env-file materialization only
+        (values never reach the browser or the export endpoint)."""
+        result: dict[str, str] = {}
+        for entry in await self._load():
+            value = self._secrets.get(self._secret_key(entry["id"]))
+            if value:
+                result[entry["envKey"]] = value
+        return result
+
+
+def _env_escape(key: str, value: str) -> str:
+    """docker-compose env_file safe rendering: no control chars, no
+    newlines, no shell eval anywhere in the pipeline."""
+    if any(ord(ch) < 32 for ch in value):
+        raise RssHubInvalidValue(
+            f"'{key}' contains control characters and cannot be rendered."
+        )
+    return value
+
+
+def render_env_file(
+    store: RssHubControlStore,
+    desired: dict[str, Any],
+    custom_values: dict[str, str],
+) -> str:
+    """Materialize a complete RSSHub env file INCLUDING secret values.
+
+    Server-side only: the caller writes this to a 0600 file under the BFF
+    data dir and never returns it to the browser.
+    """
+    effective = store.effective(desired)
+    secret_flags = store.secret_configured_map()
+    lines = [
+        "# LumiRSS RSSHub env file — GENERATED; apply via apply_rsshub_config.py",
+        "# Contains secret values; keep on the BFF host, chmod 0600,",
+        "# never commit and never serve to the browser.",
+        "",
+    ]
+    for item in NON_SECRET_ITEMS:
+        raw = effective[item.key]
+        rendered = ("true" if raw else "false") if item.type == "bool" else str(raw)
+        lines.append(f"{item.key}={_env_escape(item.key, rendered)}")
+    for item in SECRET_ITEMS:
+        if secret_flags.get(item.key):
+            value = store._secrets.get(store._secret_store_key(item.key)) or ""
+            lines.append(f"{item.key}={_env_escape(item.key, value)}")
+    lines.append("")
+    lines.append("# Custom site/route credentials (Control Center managed):")
+    for env_key, value in custom_values.items():
+        lines.append(f"{_env_escape(env_key, env_key)}={_env_escape(env_key, value)}")
     return "\n".join(lines) + "\n"

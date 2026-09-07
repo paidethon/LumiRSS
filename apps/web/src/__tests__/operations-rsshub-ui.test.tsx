@@ -112,6 +112,10 @@ describe('0018 RSSHub Control Center', () => {
     renderWithHandler((url) => {
       if (url === '/api/v1/rsshub/config') return jsonResponse(RSSHUB_CONFIG)
       if (url === '/api/v1/operations/status') return jsonResponse(OPERATIONS_OK)
+      if (url === '/api/v1/rsshub/detect') {
+        return jsonResponse({ configured: true, candidates: [] })
+      }
+      if (url === '/api/v1/rsshub/credentials') return jsonResponse([])
       return jsonResponse({ error: { type: 'not_found', message: `unexpected ${url}` } }, 404)
     })
 

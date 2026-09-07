@@ -42,7 +42,10 @@
 
 ## 已完成 commit
 
-（Gate 1 提交进行中）
+- c8a1bcc fix(backup) — Gate 1
+- 1fd589c fix(settings) — Gate 2 开关重复文字
+- d3cf014 feat(translation) — Gate 3
+- （Gate 4 提交进行中）
 
 ## 下一步
 

@@ -2769,6 +2769,117 @@
     "title": "RssHubConfigView",
     "type": "object"
    },
+   "RssHubCredentialCreate": {
+    "description": "POST /api/v1/rsshub/credentials body (value is write-only).",
+    "properties": {
+     "domain": {
+      "maxLength": 253,
+      "minLength": 1,
+      "title": "Domain",
+      "type": "string"
+     },
+     "envKey": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Envkey",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "cookie",
+       "token",
+       "api_key",
+       "bearer",
+       "other"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "route": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Route",
+      "type": "string"
+     },
+     "value": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "domain",
+     "envKey",
+     "kind",
+     "value"
+    ],
+    "title": "RssHubCredentialCreate",
+    "type": "object"
+   },
+   "RssHubDetectCandidate": {
+    "properties": {
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "reachable": {
+      "title": "Reachable",
+      "type": "boolean"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "source",
+     "reachable"
+    ],
+    "title": "RssHubDetectCandidate",
+    "type": "object"
+   },
+   "RssHubDetectResult": {
+    "description": "GET /api/v1/rsshub/detect — bounded candidate probing.",
+    "properties": {
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubDetectCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "configured"
+    ],
+    "title": "RssHubDetectResult",
+    "type": "object"
+   },
    "RssHubParameter": {
     "description": "One RSSHub route parameter descriptor (form-renderable).",
     "properties": {
@@ -4440,6 +4551,27 @@
     "summary": "Apply Rsshub Config"
    }
   },
+  "/api/v1/rsshub/config/env-file": {
+   "post": {
+    "description": "Write the FULL env file (secret values included) server-side to a\n0600 file under the BFF data dir for apply_rsshub_config.py. The file\ncontent never passes through the browser; the response carries only\ncounts and the file name.",
+    "operationId": "materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Materialize Rsshub Env File Api V1 Rsshub Config Env File Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Materialize Rsshub Env File"
+   }
+  },
   "/api/v1/rsshub/config/export": {
    "get": {
     "description": "Render the desired config as an env fragment (secrets never echoed).",
@@ -4529,6 +4661,190 @@
      }
     },
     "summary": "Put Rsshub Secret"
+   }
+  },
+  "/api/v1/rsshub/credentials": {
+   "get": {
+    "description": "Custom site/route credentials (values are write-only; configured\nflags only). Adding one NEVER fabricates an RSSHub route.",
+    "operationId": "list_rsshub_credentials_api_v1_rsshub_credentials_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Rsshub Credentials Api V1 Rsshub Credentials Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Credentials"
+   },
+   "post": {
+    "operationId": "create_rsshub_credential_api_v1_rsshub_credentials_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubCredentialCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Rsshub Credential Api V1 Rsshub Credentials Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Rsshub Credential"
+   }
+  },
+  "/api/v1/rsshub/credentials/{credential_id}": {
+   "delete": {
+    "operationId": "delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Credential"
+   },
+   "patch": {
+    "operationId": "patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Patch Rsshub Credential Api V1 Rsshub Credentials  Credential Id  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Rsshub Credential"
+   }
+  },
+  "/api/v1/rsshub/credentials/{credential_id}/value": {
+   "put": {
+    "operationId": "put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Rsshub Credential Value"
+   }
+  },
+  "/api/v1/rsshub/detect": {
+   "get": {
+    "description": "Auto-identify the RSSHub instance within BOUNDED candidates only:\nthe configured URL, this project's compose DNS name, and the host\nloopback. Never a LAN scan; never any authenticated read-back.",
+    "operationId": "detect_rsshub_api_v1_rsshub_detect_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubDetectResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Detect Rsshub"
    }
   },
   "/api/v1/rsshub/preview": {

@@ -24,6 +24,10 @@ import {
   saveLibreTranslateKey,
   clearLibreTranslateKey,
   testLibreTranslate,
+  listRssHubCredentials,
+  createRssHubCredential,
+  deleteRssHubCredential,
+  detectRssHub,
   getCategories,
   getEntries,
   getEntry,
@@ -60,7 +64,7 @@ import {
   updateAiSettings,
   updateWebDavSettings,
 } from './client'
-import type { AiProfileInput, TranslationSegmentBlockInput } from './client'
+import type { AiProfileInput, RssHubCredentialInput, TranslationSegmentBlockInput } from './client'
 import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
@@ -629,6 +633,46 @@ export function useGenerateTranslationSegmentsMutation(entryRef: string) {
       await queryClient.invalidateQueries({
         queryKey: ['translation-segments', entryRef],
       })
+    },
+  })
+}
+
+export function useDetectRssHub() {
+  return useQuery({
+    queryKey: ['rsshub-detect'],
+    queryFn: ({ signal }) => detectRssHub(signal),
+  })
+}
+
+export function useRssHubCredentials() {
+  return useQuery({
+    queryKey: ['rsshub-credentials'],
+    queryFn: ({ signal }) => listRssHubCredentials(signal),
+  })
+}
+
+export function useCreateRssHubCredentialMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: RssHubCredentialInput) => createRssHubCredential(input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rsshub-credentials'] }),
+        queryClient.invalidateQueries({ queryKey: ['rsshub-config'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteRssHubCredentialMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteRssHubCredential(id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rsshub-credentials'] }),
+        queryClient.invalidateQueries({ queryKey: ['rsshub-config'] }),
+      ])
     },
   })
 }

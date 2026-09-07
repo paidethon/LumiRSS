@@ -661,6 +661,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rsshub/config/env-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Rsshub Env File
+         * @description Write the FULL env file (secret values included) server-side to a
+         *     0600 file under the BFF data dir for apply_rsshub_config.py. The file
+         *     content never passes through the browser; the response carries only
+         *     counts and the file name.
+         */
+        post: operations["materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rsshub/config/export": {
         parameters: {
             query?: never;
@@ -700,6 +723,85 @@ export interface paths {
          * @description Clear one secret (explicit action).
          */
         delete: operations["delete_rsshub_secret_api_v1_rsshub_config_secrets__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Credentials
+         * @description Custom site/route credentials (values are write-only; configured
+         *     flags only). Adding one NEVER fabricates an RSSHub route.
+         */
+        get: operations["list_rsshub_credentials_api_v1_rsshub_credentials_get"];
+        put?: never;
+        /** Create Rsshub Credential */
+        post: operations["create_rsshub_credential_api_v1_rsshub_credentials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Rsshub Credential */
+        delete: operations["delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Rsshub Credential */
+        patch: operations["patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials/{credential_id}/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Rsshub Credential Value */
+        put: operations["put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Rsshub
+         * @description Auto-identify the RSSHub instance within BOUNDED candidates only:
+         *     the configured URL, this project's compose DNS name, and the host
+         *     loopback. Never a LAN scan; never any authenticated read-back.
+         */
+        get: operations["detect_rsshub_api_v1_rsshub_detect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2297,6 +2399,54 @@ export interface components {
             schemaVersion: number;
         };
         /**
+         * RssHubCredentialCreate
+         * @description POST /api/v1/rsshub/credentials body (value is write-only).
+         */
+        RssHubCredentialCreate: {
+            /** Domain */
+            domain: string;
+            /** Envkey */
+            envKey: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cookie" | "token" | "api_key" | "bearer" | "other";
+            /** Name */
+            name: string;
+            /**
+             * Route
+             * @default
+             */
+            route: string;
+            /** Value */
+            value: string;
+        };
+        /** RssHubDetectCandidate */
+        RssHubDetectCandidate: {
+            /** Latencyms */
+            latencyMs?: number | null;
+            /** Reachable */
+            reachable: boolean;
+            /** Source */
+            source: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * RssHubDetectResult
+         * @description GET /api/v1/rsshub/detect — bounded candidate probing.
+         */
+        RssHubDetectResult: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["RssHubDetectCandidate"][];
+            /** Configured */
+            configured: boolean;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -3443,6 +3593,28 @@ export interface operations {
             };
         };
     };
+    materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     export_rsshub_config_api_v1_rsshub_config_export_get: {
         parameters: {
             query?: never;
@@ -3521,6 +3693,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_credentials_api_v1_rsshub_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    create_rsshub_credential_api_v1_rsshub_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_rsshub_api_v1_rsshub_detect_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubDetectResult"];
                 };
             };
         };
