@@ -25,5 +25,12 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     // e2e/ 归 Playwright（playwright.config.ts），vitest 不收集
     exclude: ['**/node_modules/**', 'e2e/**', 'dist/**'],
+    // 每个 worker 都是一个完整 jsdom 环境 + 全量模块图；不设上限时
+    // vitest 会按逻辑核数（本机 20）全开，多进程并发（构建/后端测试
+    // 同时运行）下事件循环饥饿会让 waitFor 超时（历史 scroll-mark-unread
+    // / mobile-reader 抖动）。封顶后单文件仍能拿到稳定 CPU 配额。
+    poolOptions: {
+      threads: { minThreads: 1, maxThreads: 8 },
+    },
   },
 })
