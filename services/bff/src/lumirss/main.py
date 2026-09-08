@@ -152,6 +152,7 @@ from lumirss.rsshub import (
     RssHubService,
 )
 from lumirss.rsshub_control import (
+    MAX_SECRET_LENGTH,
     RssHubControlError,
     RssHubControlStore,
     RssHubCustomCredentialError,
@@ -1149,9 +1150,23 @@ async def put_ai_settings(
 
 
 class SecretValuePut(BaseModel):
-    """Write-only secret body (shared by AI keys and RSSHub secrets)."""
+    """Write-only secret body (shared by AI keys and RSSHub secrets).
 
-    value: str = Field(min_length=1)
+    0021 hardening: bounded length (same bound as the RSSHub secret
+    schema) and control-character rejection at INPUT time — a control
+    character in an API key is never legitimate, and storing one would
+    poison env-file rendering / upstream calls until the value is
+    replaced.
+    """
+
+    value: str = Field(min_length=1, max_length=MAX_SECRET_LENGTH)
+
+    @field_validator("value")
+    @classmethod
+    def _reject_control_characters(cls, value: str) -> str:
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("value must not contain control characters.")
+        return value
 
 
 class AiProfileCreate(BaseModel):
@@ -2015,29 +2030,31 @@ async def create_rsshub_credential(
     )
 
 
+class RssHubCredentialMetadataPatch(BaseModel):
+    """PATCH /api/v1/rsshub/credentials/{id} body (metadata only)."""
+
+    name: str | None = None
+    route: str | None = None
+
+
 @app.patch("/api/v1/rsshub/credentials/{credential_id}", response_model=dict[str, object])
 async def patch_rsshub_credential(
-    credential_id: str, request: Request
+    credential_id: str, body: RssHubCredentialMetadataPatch, request: Request
 ) -> dict[str, object]:
-    body = await request.json()
-    name = body.get("name") if isinstance(body, dict) else None
-    route = body.get("route") if isinstance(body, dict) else None
     return await _get_rsshub_credentials_store(request).update_metadata(
         credential_id,
-        name=name if isinstance(name, str) else None,
-        route=route if isinstance(route, str) else None,
+        name=body.name,
+        route=body.route,
     )
 
 
 @app.put("/api/v1/rsshub/credentials/{credential_id}/value", status_code=204)
 async def put_rsshub_credential_value(
-    credential_id: str, request: Request
+    credential_id: str, body: RssHubCredentialValuePut, request: Request
 ) -> Response:
-    body = await request.json()
-    value = body.get("value") if isinstance(body, dict) else None
-    if not isinstance(value, str) or not value.strip():
+    if not body.value.strip():
         raise RssHubInvalidValue("value must not be blank.")
-    await _get_rsshub_credentials_store(request).set_value(credential_id, value)
+    await _get_rsshub_credentials_store(request).set_value(credential_id, body.value)
     return Response(status_code=204)
 
 

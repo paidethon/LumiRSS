@@ -49,6 +49,18 @@ class RssHubUnknownKey(RssHubControlError):
     """A config/secret key outside the typed allow-list (rsshub_unknown_key)."""
 
 
+# 0021 hardening: keys arrive from request paths; error messages are
+# surfaced to the browser, so cap how much of an arbitrary long key the
+# message echoes back.
+_UNKNOWN_KEY_ECHO_LIMIT = 64
+
+
+def _echo_key(key: str) -> str:
+    if len(key) <= _UNKNOWN_KEY_ECHO_LIMIT:
+        return key
+    return key[:_UNKNOWN_KEY_ECHO_LIMIT] + "…"
+
+
 class RssHubInvalidValue(RssHubControlError):
     """A value failing type/range validation (rsshub_invalid_value)."""
 
@@ -262,7 +274,7 @@ class RssHubControlStore:
         for key, value in values.items():
             item = ITEMS_BY_KEY.get(key)
             if item is None:
-                raise RssHubUnknownKey(f"unknown RSSHub config key '{key}'")
+                raise RssHubUnknownKey(f"unknown RSSHub config key '{_echo_key(key)}'")
             if item.secret:
                 raise RssHubInvalidValue(
                     f"'{key}' is a secret; use the secret endpoint."
@@ -313,7 +325,7 @@ class RssHubControlStore:
         """Write one secret (write-only; bumps secretsVersion)."""
         item = ITEMS_BY_KEY.get(key)
         if item is None or not item.secret:
-            raise RssHubUnknownKey(f"'{key}' is not a known secret key.")
+            raise RssHubUnknownKey(f"'{_echo_key(key)}' is not a known secret key.")
         if not value.strip():
             raise RssHubInvalidValue("secret value must not be blank.")
         if len(value) > MAX_SECRET_LENGTH:
@@ -329,7 +341,7 @@ class RssHubControlStore:
         """Clear one secret (bumps secretsVersion)."""
         item = ITEMS_BY_KEY.get(key)
         if item is None or not item.secret:
-            raise RssHubUnknownKey(f"'{key}' is not a known secret key.")
+            raise RssHubUnknownKey(f"'{_echo_key(key)}' is not a known secret key.")
         self._secrets.delete(self._secret_store_key(key))
         await self._bump_secrets_version()
 

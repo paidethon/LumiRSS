@@ -28,6 +28,7 @@ placeholders (no runtime value or identifier is ever interpolated).
 """
 
 import asyncio
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -35,6 +36,7 @@ import httpx
 from lumirss.ai_artifacts import (
     FAILURE_INVALID_RESPONSE,
     FAILURE_UPSTREAM,
+    GenerationLockPool,
     normalize_ai_content,
 )
 from lumirss.ai_provider import AiNotConfigured, AiProviderError
@@ -114,30 +116,33 @@ def _marker(index: int) -> str:
     return "<<<BLOCK " + str(index) + ">>>"
 
 
+# 0021 hardening: markers only count when they occupy a whole line on
+# their own. A `<<<BLOCK n>>>` embedded inside translated prose (echoed
+# article content) must never split or attribute blocks.
+_MARKER_LINE_RE = re.compile(r"^<<<BLOCK (\d+)>>>[ \t]*$", re.MULTILINE)
+
+
 def parse_segment_batch(raw: str, indexes: list[int]) -> dict[int, str]:
     """Split a marker-delimited provider reply into per-block texts.
 
-    Every expected marker MUST appear with non-empty text; a single
-    missing/empty block invalidates the whole batch (the caller marks
-    those rows failed with invalid_response — never silently partial).
+    0021 hardening (malicious-provider-response): the reply's marker
+    lines must match the requested index sequence EXACTLY — line-anchored,
+    same order, no duplicates, no extra markers. Any deviation invalidates
+    the whole batch (the caller marks those rows failed with
+    invalid_response — never silently partial, never reordered).
     """
-    text = raw.strip()
-    positions: list[tuple[int, int, int]] = []
-    for index in indexes:
-        marker = _marker(index)
-        at = text.find(marker)
-        if at == -1:
-            return {}
-        positions.append((at, index, len(marker)))
-    positions.sort()
+    positions = list(_MARKER_LINE_RE.finditer(raw.strip()))
+    found = [int(match.group(1)) for match in positions]
+    if found != indexes:
+        return {}
     result: dict[int, str] = {}
-    for pos, (at, index, marker_len) in enumerate(positions):
-        start = at + marker_len
-        end = positions[pos + 1][0] if pos + 1 < len(positions) else len(text)
-        chunk = text[start:end].strip()
+    for pos, match in enumerate(positions):
+        start = match.end()
+        end = positions[pos + 1].start() if pos + 1 < len(positions) else len(raw)
+        chunk = raw[start:end].strip()
         if not chunk:
             return {}
-        result[index] = chunk
+        result[int(match.group(1))] = chunk
     return result
 
 
@@ -153,7 +158,14 @@ class SegmentTranslationService:
         self._httpx_factory = httpx_client_factory or (
             lambda: httpx.AsyncClient(timeout=LIBRETRANSLATE_TIMEOUT_SECONDS)
         )
-        self._article_locks: dict[str, asyncio.Lock] = {}
+        # 0021 hardening: bounded lock pool (same semantics as summary
+        # generation) — keys derive from unbounded entry refs, so the old
+        # per-instance dict could grow without limit. The service-level
+        # semaphore caps AGGREGATE provider batches: per-article locks
+        # serialize same-entry work, but many different articles in flight
+        # must not multiply the concurrency budget.
+        self._article_locks = GenerationLockPool()
+        self._batch_semaphore = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
 
     async def _resolve_settings(self) -> dict[str, str]:
         """Engine/URL settings come from the plain AI settings store."""
@@ -239,7 +251,7 @@ class SegmentTranslationService:
 
         # Serialize per article: duplicate generate flows for the same
         # entry would duplicate provider batches otherwise.
-        lock = self._article_locks.setdefault(entry_ref, asyncio.Lock())
+        lock = self._article_locks.lock_for(entry_ref)
         async with lock:
             cache: dict[int, SegmentState] = {}
             missing: list[SegmentInput] = []
@@ -296,10 +308,9 @@ class SegmentTranslationService:
         provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
 
         async def run(batch):
-            async with semaphore:
+            async with self._batch_semaphore:
                 await self._run_ai_batch(
                     entry_ref, batch, settings, language, provider
                 )

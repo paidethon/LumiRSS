@@ -317,3 +317,102 @@ def test_libretranslate_sends_optional_api_key(tmp_path):
 
 def test_prompt_version_scopes_cache(tmp_path):
     assert SEGMENTS_PROMPT_VERSION != "translation-v1"
+
+
+# ---------------------------------------------------------------------------
+# 0021: malicious-provider-response hardening (parse_segment_batch)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_batch_rejects_out_of_order_markers():
+    raw = f"{_marker(1)}\n第二段。\n\n{_marker(0)}\n第一段。"
+    assert parse_segment_batch(raw, [0, 1]) == {}
+
+
+def test_parse_batch_rejects_duplicate_marker():
+    raw = f"{_marker(0)}\n第一段。\n\n{_marker(0)}\n重复标记。"
+    assert parse_segment_batch(raw, [0]) == {}
+
+
+def test_parse_batch_rejects_extra_unrequested_marker():
+    raw = f"{_marker(0)}\n第一段。\n\n{_marker(5)}\n走私块。"
+    assert parse_segment_batch(raw, [0]) == {}
+
+
+def test_parse_batch_inline_marker_never_splits():
+    # Marker echoed inside translated prose (not on its own line) is
+    # content, not a delimiter — the batch still parses by its real lines.
+    raw = f"{_marker(0)}\n行内标记 >>>{_marker(1)}<<< 不应分块。"
+    result = parse_segment_batch(raw, [0])
+    assert result == {0: f"行内标记 >>>{_marker(1)}<<< 不应分块。"}
+
+
+def test_parse_batch_accepts_trailing_whitespace_on_marker_line():
+    raw = f"{_marker(0)}  \n第一段。\n{_marker(1)}\t\n第二段。"
+    result = parse_segment_batch(raw, [0, 1])
+    assert result == {0: "第一段。", 1: "第二段。"}
+
+
+# ---------------------------------------------------------------------------
+# 0021: bounded lock pool + service-level batch concurrency
+# ---------------------------------------------------------------------------
+
+
+def test_article_locks_use_bounded_pool(tmp_path):
+    from lumirss.ai_artifacts import GenerationLockPool
+
+    service, _settings, _secrets = _make_service(tmp_path)
+    assert isinstance(service._article_locks, GenerationLockPool)
+    lock_a = service._article_locks.lock_for("entry-1")
+    lock_a_again = service._article_locks.lock_for("entry-1")
+    assert lock_a is lock_a_again
+
+
+async def _idle_provider_factory(base_url, model):
+    """Provider whose complete() is never reached (batch runner stubbed)."""
+
+    class _IdleProvider:
+        async def complete(self, messages):
+            raise AssertionError("complete() must not run in this flow")
+
+    return _IdleProvider()
+
+
+def test_batch_semaphore_is_service_level(tmp_path):
+    """Two concurrent generate calls share ONE bounded batch budget.
+
+    Each article splits into 3 batches (12 blocks × 3000 chars, batch cap
+    12000) → 6 batch tasks in flight. A per-call semaphore would allow a
+    peak of 6; the shared service-level one caps the peak at
+    MAX_CONCURRENT_BATCHES.
+    """
+    service, settings, _secrets = _make_service(
+        tmp_path, provider_factory=_idle_provider_factory
+    )
+    run(settings.save(AiSettingsUpdate(baseUrl="http://ai.local/v1", model="m1")))
+
+    peak = {"concurrent": 0, "max": 0}
+
+    async def slow_batch(entry_ref, batch, *args, **kwargs):
+        peak["concurrent"] += 1
+        peak["max"] = max(peak["max"], peak["concurrent"])
+        await asyncio.sleep(0.05)
+        peak["concurrent"] -= 1
+
+    service._run_ai_batch = slow_batch  # type: ignore[method-assign]
+
+    from lumirss.ai_translation_segments import MAX_CONCURRENT_BATCHES
+
+    blocks = [
+        SegmentInput(index=i, text="x" * 3000) for i in range(12)
+    ]
+
+    async def two_articles():
+        await asyncio.gather(
+            service.generate("entry-A", blocks),
+            service.generate("entry-B", blocks),
+        )
+
+    run(two_articles())
+    assert peak["max"] <= MAX_CONCURRENT_BATCHES
+    assert peak["max"] >= 2

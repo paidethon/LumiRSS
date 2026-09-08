@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from lumirss.main import app
 from lumirss.rsshub_control import (
+    RssHubControlError,
     RssHubCustomCredentialError,
     RssHubCustomCredentialStore,
     render_env_file,
@@ -249,6 +250,46 @@ def test_credentials_routes_and_env_file_endpoint(tmp_path, monkeypatch):
         deleted = client.delete(f"/api/v1/rsshub/credentials/{listing[0]['id']}")
         assert deleted.status_code == 204
         assert client.get("/api/v1/rsshub/credentials").json() == []
+
+
+def test_credential_endpoints_reject_malformed_json_stably(tmp_path, monkeypatch):
+    """0021: raw request.json() used to surface as 500; both endpoints now
+    take typed bodies so malformed JSON maps to the stable validation
+    envelope (422 invalid_request, static message) instead of an
+    unhandled exception."""
+    with _client(tmp_path, monkeypatch) as client:
+        for method, url, body in (
+            ("PATCH", "/api/v1/rsshub/credentials/some-id", "{not json"),
+            (
+                "PUT",
+                "/api/v1/rsshub/credentials/some-id/value",
+                "not json at all",
+            ),
+        ):
+            response = client.request(
+                method, url, content=body, headers={"Content-Type": "application/json"}
+            )
+            assert response.status_code == 422, (method, response.status_code)
+            payload = response.json()
+            assert payload["error"]["type"] == "invalid_request"
+
+
+def test_unknown_key_error_message_caps_echo_length(tmp_path):
+    """0021: arbitrary long keys from request paths must not be fully
+    echoed back in browser-visible error messages."""
+    from lumirss.rsshub_control import RssHubControlStore
+    from lumirss.secrets_store import SecretsStore as _Secrets
+    from lumirss.storage import Database as _Database
+
+    db = _Database(tmp_path / "lumi.sqlite")
+    run(db.migrate())
+    store = RssHubControlStore(db, _Secrets(tmp_path / "secrets.json"))
+    long_key = "K" * 500
+    with pytest.raises(RssHubControlError) as exc_info:
+        run(store.set_secret(long_key, "value"))
+    message = str(exc_info.value)
+    assert "K" * 65 not in message
+    assert len(message) < 200
 
 
 def test_detect_route_reports_bounded_candidates(tmp_path, monkeypatch):
