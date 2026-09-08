@@ -378,6 +378,9 @@ class AiSettingsView(BaseModel):
     model: str
     summaryLanguage: Literal["zh-CN", "en"]
     translationLanguage: Literal["zh-CN", "en"]
+    translationEngine: Literal["ai", "libretranslate", "browser"]
+    libretranslateUrl: str
+    libretranslateKeyConfigured: bool
     configured: bool
     envKeyConfigured: bool
     defaultKeyConfigured: bool
@@ -483,6 +486,46 @@ class RemoteBackupsResponse(BaseModel):
     """GET /api/v1/backups/remote."""
 
     backups: list[RemoteBackup]
+
+
+class FreshrssDataBackupCapability(BaseModel):
+    """FreshRSS component preflight — safe diagnostics only (no paths
+    beyond the configured root, no credentials)."""
+
+    available: bool
+    reasonCode: str | None = None
+    reason: str | None = None
+    fileCount: int | None = None
+    sqliteFileCount: int | None = None
+    dbType: str | None = None
+
+
+class BackupCapabilities(BaseModel):
+    """GET /api/v1/backups/capabilities — what a full backup can honestly
+    include right now, shown to the user BEFORE they click."""
+
+    fullBackupReady: bool
+    includes: list[str]
+    lumiDatabaseAvailable: bool
+    freshrssData: FreshrssDataBackupCapability
+
+
+class TranslationSegmentState(BaseModel):
+    """Per-block translation state (lookup = cache only; generate explicit)."""
+
+    index: int
+    status: Literal["success", "failed", "not_generated"]
+    translatedText: str | None = None
+    failureType: str | None = None
+    cached: bool = False
+
+
+class TranslationSegmentsView(BaseModel):
+    """POST …/translation/segments/lookup | /generate."""
+
+    engine: str
+    targetLanguage: str
+    segments: list[TranslationSegmentState] = []
 
 
 class RestorePreviewFile(BaseModel):

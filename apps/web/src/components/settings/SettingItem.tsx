@@ -14,6 +14,7 @@
  * （旧 planned 徽标机制已退役：不向用户暴露未实现的设置行。 */
 
 import type { ReactNode } from 'react'
+import { useId } from 'react'
 import { Select, type SelectOption } from '../ui/Select'
 import { Switch } from '../ui/Switch'
 import { Button } from '../ui/Button'
@@ -68,12 +69,22 @@ export type SettingItemDef =
 function RowShell({
   label,
   description,
+  labelId,
+  labelFor,
   children,
-}: SettingRowBase & { children: ReactNode }) {
+}: SettingRowBase & {
+  labelId?: string
+  labelFor?: string
+  children: ReactNode
+}) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+        <label
+          id={labelId}
+          htmlFor={labelFor}
+          className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]"
+        >
           {label}
         </label>
         {description !== undefined && (
@@ -91,6 +102,24 @@ function toSelectOptions(options: readonly { value: string | number; label: stri
   return options.map((o) => ({ value: String(o.value), label: o.label }))
 }
 
+/** 开关行：可见标题在左（关联点击 + aria-labelledby），右侧只有控件本体，
+ * 不再渲染重复的「XX开关」可见文案。 */
+function ToggleRowView(def: ToggleRow) {
+  const switchId = useId()
+  const titleId = useId()
+  return (
+    <RowShell label={def.label} description={def.description} labelId={titleId} labelFor={switchId}>
+      <Switch
+        id={switchId}
+        labelledby={titleId}
+        label={`${def.label}开关`}
+        checked={def.checked}
+        onCheckedChange={def.onCheckedChange}
+      />
+    </RowShell>
+  )
+}
+
 /** 单条渲染（Folo builder 的最小对照实现）。 */
 export function SettingItem({ def }: { def: SettingItemDef }) {
   switch (def.type) {
@@ -101,15 +130,7 @@ export function SettingItem({ def }: { def: SettingItemDef }) {
         </h3>
       )
     case 'toggle':
-      return (
-        <RowShell {...def}>
-          <Switch
-            checked={def.checked}
-            onCheckedChange={def.onCheckedChange}
-            label={`${def.label}开关`}
-          />
-        </RowShell>
-      )
+      return <ToggleRowView {...def} />
     case 'select': {
       const options = toSelectOptions(def.options)
       return (

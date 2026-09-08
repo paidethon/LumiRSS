@@ -10,7 +10,9 @@ import type {
   AiSettingsUpdate,
   ApiErrorResponse,
   ApiVersion,
+  BackupCapabilities,
   BackupJob,
+  TranslationSegmentsView,
   Category,
   EntryConversation,
   EntryDetail,
@@ -611,6 +613,137 @@ export async function listBackups(signal?: AbortSignal): Promise<BackupJob[]> {
 
 export async function getBackupJob(id: string, signal?: AbortSignal): Promise<BackupJob> {
   return request<BackupJob>(`${API_BASE}/backups/${encodeURIComponent(id)}`, signal)
+}
+
+export async function getBackupCapabilities(signal?: AbortSignal): Promise<BackupCapabilities> {
+  return request<BackupCapabilities>(`${API_BASE}/backups/capabilities`, signal)
+}
+export interface TranslationSegmentBlockInput {
+  index: number
+  text: string
+}
+
+export async function lookupTranslationSegments(
+  entryRef: string,
+  blocks: TranslationSegmentBlockInput[],
+  signal?: AbortSignal,
+): Promise<TranslationSegmentsView> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/lookup`,
+    { method: 'POST', body: JSON.stringify({ blocks }), signal, contentType: 'application/json' },
+  )
+  return (await response.json()) as TranslationSegmentsView
+}
+
+export async function generateTranslationSegments(
+  entryRef: string,
+  blocks: TranslationSegmentBlockInput[],
+  signal?: AbortSignal,
+): Promise<TranslationSegmentsView> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/generate`,
+    { method: 'POST', body: JSON.stringify({ blocks }), signal, contentType: 'application/json' },
+  )
+  return (await response.json()) as TranslationSegmentsView
+}
+
+export async function saveLibreTranslateKey(value: string): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+    contentType: 'application/json',
+  })
+}
+
+export async function clearLibreTranslateKey(): Promise<void> {
+  await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
+    method: 'DELETE',
+  })
+}
+
+export async function testLibreTranslate(): Promise<{ status: 'ok' | 'failed'; message: string | null }> {
+  const response = await rawRequest(`${API_BASE}/settings/translation/libretranslate-test`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { status: 'ok' | 'failed'; message: string | null }
+}
+
+export interface RssHubCredentialEntry {
+  id: string
+  name: string
+  domain: string
+  route: string
+  envKey: string
+  kind: string
+  configured: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RssHubCredentialInput {
+  name: string
+  domain: string
+  envKey: string
+  kind: string
+  value: string
+  route: string
+}
+
+export interface RssHubDetectCandidate {
+  url: string
+  source: string
+  reachable: boolean
+  latencyMs: number | null
+}
+
+export async function detectRssHub(signal?: AbortSignal): Promise<{
+  configured: boolean
+  candidates: RssHubDetectCandidate[]
+}> {
+  return request<{ configured: boolean; candidates: RssHubDetectCandidate[] }>(
+    `${API_BASE}/rsshub/detect`,
+    signal,
+  )
+}
+
+export async function listRssHubCredentials(signal?: AbortSignal): Promise<RssHubCredentialEntry[]> {
+  return request<RssHubCredentialEntry[]>(`${API_BASE}/rsshub/credentials`, signal)
+}
+
+export async function createRssHubCredential(input: RssHubCredentialInput): Promise<RssHubCredentialEntry> {
+  const response = await rawRequest(`${API_BASE}/rsshub/credentials`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubCredentialEntry
+}
+
+export async function deleteRssHubCredential(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/credentials/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function materializeRssHubEnvFile(): Promise<{
+  fileName: string
+  dirName: string
+  lineCount: number
+  secretCount: number
+  customCredentialCount: number
+  note: string
+}> {
+  const response = await rawRequest(`${API_BASE}/rsshub/config/env-file`, {
+    method: 'POST',
+  })
+  return (await response.json()) as {
+    fileName: string
+    dirName: string
+    lineCount: number
+    secretCount: number
+    customCredentialCount: number
+    note: string
+  }
 }
 
 export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {

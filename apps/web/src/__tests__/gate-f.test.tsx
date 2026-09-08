@@ -112,7 +112,7 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   it('界面字号/字体/减少动效 → store（AC11–AC13）', () => {
     openCategory(/外观/)
     // 减少动效 toggle
-    fireEvent.click(screen.getByRole('switch', { name: '减少动效开关' }))
+    fireEvent.click(screen.getByRole('switch', { name: '减少动效' }))
     expect(useAppSettings.getState().settings.reduceMotion).toBe(true)
     useAppSettings.getState().update({ reduceMotion: false })
   })
@@ -162,16 +162,37 @@ describe('外观页（F1/F6/F7 UI，AC10–AC22）', () => {
   })
 })
 
-describe('翻译页（0017：退役为 AI 翻译说明）', () => {
-  it('旧多 Provider 配置已移除，改为 AI 翻译说明 + 指引', () => {
+describe('翻译页（Gate：统一翻译设置入口）', () => {
+  it('引擎（运行位置）+ 目标语言 + 按需说明 + AI Profile 指引', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/settings/ai') {
+          return Promise.resolve(new Response(JSON.stringify({
+            provider: 'openai_compatible', baseUrl: '', model: '',
+            summaryLanguage: 'zh-CN', translationLanguage: 'zh-CN',
+            translationEngine: 'ai', libretranslateUrl: '',
+            libretranslateKeyConfigured: false,
+            configured: false, envKeyConfigured: false, defaultKeyConfigured: false,
+            purposes: { translation: 'default' },
+            purposeStatus: { translation: { profileId: 'default', source: 'default', baseUrl: '', model: '', keyConfigured: false } },
+          }), { status: 200, headers: { 'content-type': 'application/json' } }))
+        }
+        return Promise.resolve(new Response('{}', { status: 404 }))
+      }),
+    )
     openCategory(/^翻译$/)
-    // 0017：不再有 Microsoft/DeepL/DeepLX provider 配置与 API Key 输入
+    // 旧多 Provider 配置与旧指针文案不存在
     expect(screen.queryByText('Microsoft Translator')).not.toBeInTheDocument()
     expect(screen.queryByText('DeepL（免费版）')).not.toBeInTheDocument()
-    expect(screen.getByText('正文翻译')).toBeInTheDocument()
-    expect(screen.getByText(/翻译由 AI Provider 驱动/)).toBeInTheDocument()
-    // 翻译目标语言指向 AI 分类
-    expect(screen.getByText(/「AI」分类/)).toBeInTheDocument()
+    expect(await screen.findByText('翻译引擎与目标语言')).toBeInTheDocument()
+    expect(screen.getByText(/AI 翻译 — AI 提供者执行/)).toBeInTheDocument()
+    expect(screen.getByText(/此浏览器执行/)).toBeInTheDocument()
+    expect(screen.getByText(/自托管服务器执行/)).toBeInTheDocument()
+    expect(screen.getByText(/打开文章绝不自动翻译/)).toBeInTheDocument()
+    // Profile 管理指向 AI 分类（同一份存储）
+    expect(screen.getByText(/「设置 → AI」/)).toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 })
 
@@ -261,10 +282,16 @@ describe('备份页（F5，AC26/AC27 纯函数层）', () => {
 })
 
 describe('移动端分类可达（共享组件渲染）', () => {
-  it('移动设置首页 → 翻译子页 → RSSHub 子页（Control Center 真实控制面）', () => {
+  it('移动设置首页 → 翻译子页 → RSSHub 子页（Control Center 真实控制面）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { status: 404 }))),
+    )
     render(withProviders(<MobileSettingsScreen open onClose={() => {}} />))
     fireEvent.click(screen.getByRole('button', { name: '翻译' }))
-    expect(screen.getByText('正文翻译')).toBeInTheDocument()
+    // 统一翻译设置入口真实渲染（含加载/错误态，不再是指针文案）
+    await screen.findByText(/翻译设置/)
+    expect(screen.queryByText('正文翻译')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     fireEvent.click(screen.getByRole('button', { name: 'RSSHub' }))
     // 假控制（实例清单/总开关）已删除；Control Center 是唯一内容

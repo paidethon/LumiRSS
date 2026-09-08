@@ -257,6 +257,17 @@
       ],
       "title": "Baseurl"
      },
+     "libretranslateUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Libretranslateurl"
+     },
      "model": {
       "anyOf": [
        {
@@ -294,6 +305,22 @@
        }
       ],
       "title": "Summarylanguage"
+     },
+     "translationEngine": {
+      "anyOf": [
+       {
+        "enum": [
+         "ai",
+         "libretranslate",
+         "browser"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationengine"
      },
      "translationLanguage": {
       "anyOf": [
@@ -333,6 +360,14 @@
       "title": "Envkeyconfigured",
       "type": "boolean"
      },
+     "libretranslateKeyConfigured": {
+      "title": "Libretranslatekeyconfigured",
+      "type": "boolean"
+     },
+     "libretranslateUrl": {
+      "title": "Libretranslateurl",
+      "type": "string"
+     },
      "model": {
       "title": "Model",
       "type": "string"
@@ -364,6 +399,15 @@
       "title": "Summarylanguage",
       "type": "string"
      },
+     "translationEngine": {
+      "enum": [
+       "ai",
+       "libretranslate",
+       "browser"
+      ],
+      "title": "Translationengine",
+      "type": "string"
+     },
      "translationLanguage": {
       "enum": [
        "zh-CN",
@@ -379,6 +423,9 @@
      "model",
      "summaryLanguage",
      "translationLanguage",
+     "translationEngine",
+     "libretranslateUrl",
+     "libretranslateKeyConfigured",
      "configured",
      "envKeyConfigured",
      "defaultKeyConfigured",
@@ -599,6 +646,37 @@
      "stored"
     ],
     "title": "AppSettingsView",
+    "type": "object"
+   },
+   "BackupCapabilities": {
+    "description": "GET /api/v1/backups/capabilities — what a full backup can honestly\ninclude right now, shown to the user BEFORE they click.",
+    "properties": {
+     "freshrssData": {
+      "$ref": "#/components/schemas/FreshrssDataBackupCapability"
+     },
+     "fullBackupReady": {
+      "title": "Fullbackupready",
+      "type": "boolean"
+     },
+     "includes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Includes",
+      "type": "array"
+     },
+     "lumiDatabaseAvailable": {
+      "title": "Lumidatabaseavailable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "fullBackupReady",
+     "includes",
+     "lumiDatabaseAvailable",
+     "freshrssData"
+    ],
+    "title": "BackupCapabilities",
     "type": "object"
    },
    "BackupCreate": {
@@ -1541,6 +1619,75 @@
     "title": "FreshRssUiInfo",
     "type": "object"
    },
+   "FreshrssDataBackupCapability": {
+    "description": "FreshRSS component preflight — safe diagnostics only (no paths\nbeyond the configured root, no credentials).",
+    "properties": {
+     "available": {
+      "title": "Available",
+      "type": "boolean"
+     },
+     "dbType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dbtype"
+     },
+     "fileCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Filecount"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "reasonCode": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reasoncode"
+     },
+     "sqliteFileCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sqlitefilecount"
+     }
+    },
+    "required": [
+     "available"
+    ],
+    "title": "FreshrssDataBackupCapability",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -1566,6 +1713,35 @@
      "status"
     ],
     "title": "HealthStatus",
+    "type": "object"
+   },
+   "LibreTranslateTestResult": {
+    "description": "POST /api/v1/settings/translation/libretranslate-test.",
+    "properties": {
+     "message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "LibreTranslateTestResult",
     "type": "object"
    },
    "OperationsBackupStatus": {
@@ -2593,6 +2769,117 @@
     "title": "RssHubConfigView",
     "type": "object"
    },
+   "RssHubCredentialCreate": {
+    "description": "POST /api/v1/rsshub/credentials body (value is write-only).",
+    "properties": {
+     "domain": {
+      "maxLength": 253,
+      "minLength": 1,
+      "title": "Domain",
+      "type": "string"
+     },
+     "envKey": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Envkey",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "cookie",
+       "token",
+       "api_key",
+       "bearer",
+       "other"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "route": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Route",
+      "type": "string"
+     },
+     "value": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "domain",
+     "envKey",
+     "kind",
+     "value"
+    ],
+    "title": "RssHubCredentialCreate",
+    "type": "object"
+   },
+   "RssHubDetectCandidate": {
+    "properties": {
+     "latencyMs": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyms"
+     },
+     "reachable": {
+      "title": "Reachable",
+      "type": "boolean"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "source",
+     "reachable"
+    ],
+    "title": "RssHubDetectCandidate",
+    "type": "object"
+   },
+   "RssHubDetectResult": {
+    "description": "GET /api/v1/rsshub/detect — bounded candidate probing.",
+    "properties": {
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubDetectCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "configured"
+    ],
+    "title": "RssHubDetectResult",
+    "type": "object"
+   },
    "RssHubParameter": {
     "description": "One RSSHub route parameter descriptor (form-renderable).",
     "properties": {
@@ -2840,6 +3127,126 @@
     "title": "SubscriptionPatch",
     "type": "object"
    },
+   "TranslationSegmentBlockIn": {
+    "description": "One client-segmented content block.",
+    "properties": {
+     "index": {
+      "maximum": 63.0,
+      "minimum": 0.0,
+      "title": "Index",
+      "type": "integer"
+     },
+     "text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "text"
+    ],
+    "title": "TranslationSegmentBlockIn",
+    "type": "object"
+   },
+   "TranslationSegmentState": {
+    "description": "Per-block translation state (lookup = cache only; generate explicit).",
+    "properties": {
+     "cached": {
+      "default": false,
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "failureType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failuretype"
+     },
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "status": {
+      "enum": [
+       "success",
+       "failed",
+       "not_generated"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "translatedText": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translatedtext"
+     }
+    },
+    "required": [
+     "index",
+     "status"
+    ],
+    "title": "TranslationSegmentState",
+    "type": "object"
+   },
+   "TranslationSegmentsBody": {
+    "description": "POST …/translation/segments/lookup | /generate body.",
+    "properties": {
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/TranslationSegmentBlockIn"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Blocks",
+      "type": "array"
+     }
+    },
+    "required": [
+     "blocks"
+    ],
+    "title": "TranslationSegmentsBody",
+    "type": "object"
+   },
+   "TranslationSegmentsView": {
+    "description": "POST …/translation/segments/lookup | /generate.",
+    "properties": {
+     "engine": {
+      "title": "Engine",
+      "type": "string"
+     },
+     "segments": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationSegmentState"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "targetLanguage": {
+      "title": "Targetlanguage",
+      "type": "string"
+     }
+    },
+    "required": [
+     "engine",
+     "targetLanguage"
+    ],
+    "title": "TranslationSegmentsView",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -3080,6 +3487,25 @@
      }
     },
     "summary": "Create Backup"
+   }
+  },
+  "/api/v1/backups/capabilities": {
+   "get": {
+    "description": "Honest full-backup preflight (shown to the user before they click).\n\nReuses the exact assessment the engine re-runs at execution time, so\nthe UI can never offer a full backup the engine would refuse — and the\nengine never fails with a vaguer error than the preflight detected.",
+    "operationId": "backup_capabilities_api_v1_backups_capabilities_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BackupCapabilities"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Backup Capabilities"
    }
   },
   "/api/v1/backups/remote": {
@@ -3725,6 +4151,106 @@
     "summary": "Generate Entry Translation"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation/segments/generate": {
+   "post": {
+    "description": "Explicit generation for the bilingual/translated views (money rule:\nonly this endpoint may call a provider; exact cache hits never do).",
+    "operationId": "generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TranslationSegmentsBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationSegmentsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Translation Segments"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/translation/segments/lookup": {
+   "post": {
+    "description": "Cached per-block state ONLY — never calls a provider.",
+    "operationId": "lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TranslationSegmentsBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationSegmentsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Lookup Translation Segments"
+   }
+  },
   "/api/v1/feed-preview": {
    "post": {
     "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
@@ -4025,6 +4551,27 @@
     "summary": "Apply Rsshub Config"
    }
   },
+  "/api/v1/rsshub/config/env-file": {
+   "post": {
+    "description": "Write the FULL env file (secret values included) server-side to a\n0600 file under the BFF data dir for apply_rsshub_config.py. The file\ncontent never passes through the browser; the response carries only\ncounts and the file name.",
+    "operationId": "materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Materialize Rsshub Env File Api V1 Rsshub Config Env File Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Materialize Rsshub Env File"
+   }
+  },
   "/api/v1/rsshub/config/export": {
    "get": {
     "description": "Render the desired config as an env fragment (secrets never echoed).",
@@ -4114,6 +4661,190 @@
      }
     },
     "summary": "Put Rsshub Secret"
+   }
+  },
+  "/api/v1/rsshub/credentials": {
+   "get": {
+    "description": "Custom site/route credentials (values are write-only; configured\nflags only). Adding one NEVER fabricates an RSSHub route.",
+    "operationId": "list_rsshub_credentials_api_v1_rsshub_credentials_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Rsshub Credentials Api V1 Rsshub Credentials Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Credentials"
+   },
+   "post": {
+    "operationId": "create_rsshub_credential_api_v1_rsshub_credentials_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubCredentialCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Rsshub Credential Api V1 Rsshub Credentials Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Rsshub Credential"
+   }
+  },
+  "/api/v1/rsshub/credentials/{credential_id}": {
+   "delete": {
+    "operationId": "delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Credential"
+   },
+   "patch": {
+    "operationId": "patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Patch Rsshub Credential Api V1 Rsshub Credentials  Credential Id  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Rsshub Credential"
+   }
+  },
+  "/api/v1/rsshub/credentials/{credential_id}/value": {
+   "put": {
+    "operationId": "put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Rsshub Credential Value"
+   }
+  },
+  "/api/v1/rsshub/detect": {
+   "get": {
+    "description": "Auto-identify the RSSHub instance within BOUNDED candidates only:\nthe configured URL, this project's compose DNS name, and the host\nloopback. Never a LAN scan; never any authenticated read-back.",
+    "operationId": "detect_rsshub_api_v1_rsshub_detect_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubDetectResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Detect Rsshub"
    }
   },
   "/api/v1/rsshub/preview": {
@@ -4595,6 +5326,67 @@
      }
     },
     "summary": "Put Ai Purposes"
+   }
+  },
+  "/api/v1/settings/translation/libretranslate-key": {
+   "delete": {
+    "description": "Remove the optional LibreTranslate API key.",
+    "operationId": "delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Delete Libretranslate Key"
+   },
+   "put": {
+    "description": "Write-only LibreTranslate API key (optional; empty string clears).",
+    "operationId": "put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SecretValuePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Libretranslate Key"
+   }
+  },
+  "/api/v1/settings/translation/libretranslate-test": {
+   "post": {
+    "description": "Probe the configured LibreTranslate server (GET /languages).",
+    "operationId": "test_libretranslate_api_v1_settings_translation_libretranslate_test_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LibreTranslateTestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Test Libretranslate"
    }
   },
   "/api/v1/source-discovery": {

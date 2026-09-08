@@ -5,12 +5,40 @@
  * 各 journey 串行（订阅与 AI 配置有先后依赖）。
  */
 
+import { execFileSync } from 'node:child_process'
 import { expect, test, type Page } from '@playwright/test'
-import { openSettingsCategory, visibleDialog } from './helpers'
+import { ensureMockDefaultAiKey, openSettingsCategory, visibleDialog } from './helpers'
 import { createAiMockServer, createFeedServer } from './mock-servers.mjs'
 
-// 容器内 BFF/FreshRSS 通过 docker 网桥 IP 访问宿主机上的 mock 服务
-const BRIDGE = process.env.LUMIRSS_E2E_BRIDGE_IP ?? '172.19.0.1'
+/** 容器内 BFF/FreshRSS 访问宿主机 mock 服务要经 docker 网桥网关。子网
+ * 随网络重建漂移（曾硬编码 172.19.0.1，网络重建后过期——J4/M3 全红
+ * 的根因），所以运行时从 lumirss compose 网络读真实网关；docker CLI
+ * 不可用时回退 LUMIRSS_E2E_BRIDGE_IP，再回退宿主机回环（宿主机 BFF
+ * 拓扑，mock 绑定 0.0.0.0 时网关地址同样可达）。 */
+function resolveBridgeIp(): string {
+  const explicit = process.env.LUMIRSS_E2E_BRIDGE_IP
+  if (explicit) return explicit
+  try {
+    const names = execFileSync('docker', ['network', 'ls', '--format', '{{.Name}}'], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .map((n) => n.trim())
+      .filter((n) => n === 'lumirss_default' || n.toLowerCase().includes('lumirss'))
+    for (const name of names) {
+      const info = JSON.parse(
+        execFileSync('docker', ['network', 'inspect', name], { encoding: 'utf8' }),
+      ) as Array<{ IPAM?: { Config?: Array<{ Gateway?: string }> } }>
+      const gateway = info[0]?.IPAM?.Config?.[0]?.Gateway
+      if (gateway) return gateway
+    }
+  } catch {
+    // docker CLI 不可用 / 无匹配网络 → 走回退
+  }
+  return '127.0.0.1'
+}
+
+const BRIDGE = resolveBridgeIp()
 const FEED_PORT = 18083
 const AI_PORT = 18082
 const FEED_URL = `http://${BRIDGE}:${FEED_PORT}/feed.xml`
@@ -151,11 +179,15 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
 })
 
 test('J4 — AI：mock provider 设置 / key 不回显 / 摘要生成与失败重试诚实', async ({ page }) => {
+  // 自建前置（幂等）：BFF 调 provider 需要非空 key（Bearer 头），mock
+  // 不校验值——未配置时经 write-only API 写入显式假 key，不依赖开发机
+  // 恰好残留服务端 key；已配置（真实 key 或上轮 mock key）则不动。
+  await ensureMockDefaultAiKey(page)
   await page.goto('/')
   await openSettingsCategory(page, 'AI')
   const dialog = visibleDialog(page)
 
-  // 配置 mock provider（key 只在服务端 env；UI 无 key 输入 = 不回显）。
+  // 配置 mock provider（key 只在服务端；UI 无 key 输入 = 不回显）。
   // 幂等：若表单与服务器已一致（重跑），保存按钮禁用则直接继续。
   await dialog.getByLabel(/Base URL|服务地址/).fill(`http://${BRIDGE}:${AI_PORT}/v1`)
   await dialog.getByLabel(/模型|Model/).fill('mock-model')
@@ -169,11 +201,26 @@ test('J4 — AI：mock provider 设置 / key 不回显 / 摘要生成与失败�
   expect(bodyText).not.toContain('sk-')
   await page.keyboard.press('Escape')
 
-  // 打开文章 → 「AI 摘要」按钮（唯一可能产生付费调用的动作）→ mock 返回
+  // 打开文章 → 摘要卡状态机收敛（幂等）：not_generated →「AI 摘要」；
+  // 上轮失败残留 →「重试」；已缓存成功 → 直接断言。三者都收敛到
+  // MOCK-AI-REPLY 可见。点击是唯一可能产生付费调用的动作（mock 返回）。
   const entryTitle = page.getByRole('button', { name: /文章 beta/ }).first()
   await entryTitle.click()
-  await page.locator('article').first().getByRole('button', { name: 'AI 摘要' }).click()
-  await expect(page.getByText(/MOCK-AI-REPLY/).first()).toBeVisible({ timeout: 30_000 })
+  const reader = page.locator('article').first()
+  const mockReply = page.getByText(/MOCK-AI-REPLY/).first()
+  const generateButton = reader.getByRole('button', { name: 'AI 摘要' })
+  const retryButton = reader.getByRole('button', { name: '重试' })
+  await expect(generateButton.or(retryButton).or(mockReply).first()).toBeVisible({
+    timeout: 15_000,
+  })
+  if (await mockReply.isVisible().catch(() => false)) {
+    // 已缓存命中，不再触发 provider
+  } else if (await generateButton.isVisible().catch(() => false)) {
+    await generateButton.click()
+  } else {
+    await retryButton.click()
+  }
+  await expect(mockReply).toBeVisible({ timeout: 30_000 })
 })
 
 test('J5 — 设置与运维：刷新后持久化', async ({ page }) => {

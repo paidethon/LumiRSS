@@ -5,7 +5,7 @@
  * 截图与 Gate 4 走查）。 */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button } from '../components/ui/Button'
 import { Dialog } from '../components/ui/Dialog'
@@ -375,6 +375,48 @@ describe('Switch', () => {
     const sw = screen.getByRole('switch', { name: '减少动效' })
     fireEvent.keyDown(sw, { key: ' ' })
     fireEvent.click(sw)
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('不渲染可见标签文字（重复文案修复）：label 只是无障碍名称', () => {
+    function Demo() {
+      const [on, setOn] = useState(false)
+      return <Switch checked={on} onCheckedChange={setOn} label="深色模式" />
+    }
+    render(<Demo />)
+    expect(screen.getByRole('switch', { name: '深色模式' })).toBeInTheDocument()
+    expect(screen.queryByText('深色模式')).toBeNull()
+  })
+
+  it('labelledby + htmlFor：开关名称来自行标题，点击标题可切换', () => {
+    function Demo() {
+      const [on, setOn] = useState(false)
+      const switchId = useId()
+      const titleId = useId()
+      return (
+        <div>
+          <label id={titleId} htmlFor={switchId}>
+            已读条目变暗
+          </label>
+          <Switch
+            id={switchId}
+            labelledby={titleId}
+            label="已读条目变暗开关"
+            checked={on}
+            onCheckedChange={setOn}
+          />
+        </div>
+      )
+    }
+    render(<Demo />)
+    const sw = screen.getByRole('switch', { name: '已读条目变暗' })
+    // 可见的「XX开关」机械文案不存在，行标题只出现一次
+    expect(screen.queryByText('已读条目变暗开关')).toBeNull()
+    expect(screen.getByText('已读条目变暗')).toBeInTheDocument()
+    // aria-labelledby 指向标题元素
+    expect(sw).toHaveAttribute('aria-labelledby')
+    // 点击左侧标题文字 → 开关切换（label htmlFor 关联 button）
+    fireEvent.click(screen.getByText('已读条目变暗'))
     expect(sw).toHaveAttribute('aria-checked', 'true')
   })
 })

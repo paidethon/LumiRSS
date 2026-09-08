@@ -55,6 +55,12 @@ services:
     volumes:
       - lumi-data:/data
       - freshrss-data:/freshrss-data:ro
+    # FreshRSS 把 data/users/<user>/ 建为 0770 root:www-data（uid 33）。
+    # BFF 以非 root（10001）运行，没有附加组就无法遍历用户目录 —— 完整备份
+    # 会因此失败（预检会如实报 unreadable_entries）。附加 gid 33 后即可
+    # 只读访问（文件 0664 属 www-data 组）。
+    group_add:
+      - "33"
     depends_on:
       freshrss:
         condition: service_healthy

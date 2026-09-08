@@ -19,9 +19,11 @@ a previous process never wedge new work.
 
 import asyncio
 import contextlib
+import dataclasses
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -91,6 +93,158 @@ class BackupUnsupportedVersion(Exception):
 class BackupFreshrssUnavailable(Exception):
     """FRESHRSS_DATA_DIR is not available; full backup cannot proceed."""
 
+
+# ---------------------------------------------------------------------------
+# Full-backup capability preflight (0018 hardening)
+#
+# One honest assessment shared by the pre-click capabilities endpoint and
+# the execution-time validation, so the UI can never promise more than the
+# engine will actually do. Reason strings are safe for the browser: they
+# name configuration problems, never paths beyond the configured root and
+# never credential material.
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class FreshRssBackupAssessment:
+    available: bool
+    reason_code: str | None = None
+    safe_reason: str | None = None
+    file_count: int = 0
+    sqlite_file_count: int = 0
+    db_type: str | None = None
+
+
+_FRESHRSS_REASON_TEXT = {
+    "not_configured": "FreshRSS data directory is not configured for backup.",
+    "path_missing": "The configured FreshRSS data directory does not exist.",
+    "not_a_directory": "The configured FreshRSS data path is not a directory.",
+    "not_readable": "The FreshRSS data directory is not readable by the BFF process.",
+    "invalid_data_dir": (
+        "This directory does not look like a FreshRSS data directory "
+        "(config.php and users/ are both missing)."
+    ),
+    "external_database": (
+        "FreshRSS uses an external MySQL/PostgreSQL database; the data "
+        "directory alone is not a complete backup source."
+    ),
+    "unreadable_entries": (
+        "Some files inside the FreshRSS data directory are not readable "
+        "by the BFF process."
+    ),
+}
+
+# FreshRSS config.php: `'type' => 'sqlite'` inside the 'db' array.
+_FRESHRSS_DB_TYPE_RE = re.compile(r"'type'\s*=>\s*'([A-Za-z]+)'")
+
+_SUPPORTED_FRESHRSS_DB_TYPES = ("sqlite",)
+
+
+def _unavailable(
+    reason_code: str,
+    file_count: int = 0,
+    sqlite_file_count: int = 0,
+    db_type: str | None = None,
+) -> FreshRssBackupAssessment:
+    return FreshRssBackupAssessment(
+        available=False,
+        reason_code=reason_code,
+        safe_reason=_FRESHRSS_REASON_TEXT[reason_code],
+        file_count=file_count,
+        sqlite_file_count=sqlite_file_count,
+        db_type=db_type,
+    )
+
+
+def _detect_freshrss_db_type(data_dir: Path) -> str | None:
+    try:
+        text = (data_dir / "config.php").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return None
+    match = _FRESHRSS_DB_TYPE_RE.search(text)
+    return match.group(1).lower() if match else None
+
+
+def assess_freshrss_backup(data_dir: str) -> FreshRssBackupAssessment:
+    """Preflight the FreshRSS data directory for a full backup.
+
+    Mirrors exactly what ``_collect_freshrss_files`` will do (same walk,
+    same readability requirement, same SQLite-only support boundary) so a
+    green preflight cannot still fail for a reason it could have detected.
+    """
+    clean = data_dir.strip()
+    if not clean:
+        return _unavailable("not_configured")
+    path = Path(clean)
+    try:
+        if not path.exists():
+            return _unavailable("path_missing")
+        if not path.is_dir():
+            return _unavailable("not_a_directory")
+        if not os.access(path, os.R_OK | os.X_OK):
+            return _unavailable("not_readable")
+    except OSError:
+        return _unavailable("not_readable")
+
+    has_marker = (path / "config.php").is_file() or (path / "users").is_dir()
+    if not has_marker:
+        return _unavailable("invalid_data_dir")
+
+    db_type = _detect_freshrss_db_type(path)
+    if db_type is not None and db_type not in _SUPPORTED_FRESHRSS_DB_TYPES:
+        return _unavailable("external_database", db_type=db_type)
+
+    file_count = 0
+    sqlite_file_count = 0
+    walk_errors: list[str] = []
+
+    def _note_walk_error(error: OSError) -> None:
+        walk_errors.append(str(error))
+
+    for root, dirs, names in os.walk(path, onerror=_note_walk_error):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in sorted(names):
+            source = Path(root) / name
+            if source.is_symlink():
+                continue
+            file_count += 1
+            if _is_sqlite_file(name):
+                sqlite_file_count += 1
+            try:
+                if not os.access(source, os.R_OK):
+                    return _unavailable(
+                        "unreadable_entries",
+                        file_count=file_count,
+                        sqlite_file_count=sqlite_file_count,
+                        db_type=db_type,
+                    )
+            except OSError:
+                return _unavailable(
+                    "unreadable_entries",
+                    file_count=file_count,
+                    sqlite_file_count=sqlite_file_count,
+                    db_type=db_type,
+                )
+    if walk_errors:
+        # FreshRSS creates users/<name>/ as 0770 root:www-data; a BFF that
+        # cannot traverse it must NOT report "available" while silently
+        # skipping the most valuable directory (os.walk's default onerror
+        # swallows exactly this, and failed subdirs never yield an
+        # iteration, so this must be checked after the loop).
+        return _unavailable(
+            "unreadable_entries",
+            file_count=file_count,
+            sqlite_file_count=sqlite_file_count,
+            db_type=db_type,
+        )
+    return FreshRssBackupAssessment(
+        available=True,
+        file_count=file_count,
+        sqlite_file_count=sqlite_file_count,
+        db_type=db_type,
+    )
 
 
 
@@ -495,8 +649,13 @@ def _collect_freshrss_files(
         )
     files: list[dict[str, Any]] = []
     total = 0
-    for root, dirs, names in os.walk(data_dir):
-        dirs[:] = [d for d in dirs if d not in (".git",)]
+    walk_errors: list[str] = []
+
+    def _note_walk_error(error: OSError) -> None:
+        walk_errors.append(str(error))
+
+    for root, dirs, names in os.walk(data_dir, onerror=_note_walk_error):
+        dirs[:] = [d for d in dirs if d != ".git"]
         for name in sorted(names):
             source = Path(root) / name
             if source.is_symlink():
@@ -536,6 +695,15 @@ def _collect_freshrss_files(
                     "component": "freshrss-data",
                 }
             )
+    if walk_errors:
+        # Same honesty rule as the preflight: an untraversable directory
+        # (e.g. users/<name>/ 0770) must fail the backup, never silently
+        # vanish from the "full" archive. os.walk skips failed subdirs
+        # without yielding them, so this must be checked after the loop.
+        raise BackupFreshrssUnavailable(
+            "The FreshRSS data directory is not fully readable by the "
+            "BFF process."
+        )
     return files
 
 
@@ -662,15 +830,22 @@ class BackupEngine:
 
             await self._jobs.update_stage(job_id, "backing-up-freshrss")
             freshrss_dir = settings.FRESHRSS_DATA_DIR.strip()
-            if freshrss_dir:
+            if freshrss_dir or require_freshrss:
+                # Same assessment the capabilities endpoint showed the user:
+                # execution must never succeed "by luck" after a failed
+                # preflight, nor fail with a vaguer error than the preflight.
+                assessment = await asyncio.to_thread(
+                    assess_freshrss_backup, freshrss_dir
+                )
+                if not assessment.available:
+                    raise BackupFreshrssUnavailable(
+                        assessment.safe_reason
+                        or "FreshRSS data is not available for backup."
+                    )
                 files.extend(
                     await asyncio.to_thread(
                         _collect_freshrss_files, Path(freshrss_dir), workdir
                     )
-                )
-            elif require_freshrss:
-                raise BackupFreshrssUnavailable(
-                    "FreshRSS data directory is not configured for backup."
                 )
 
             await self._jobs.update_stage(job_id, "building-archive")

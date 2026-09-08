@@ -1,5 +1,6 @@
 """LumiRSS BFF application entry point."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -50,9 +51,11 @@ from lumirss.ai_provider import (
 )
 from lumirss.ai_settings import (
     KEY_BASE_URL,
+    KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
     KEY_SUMMARY_LANGUAGE,
+    KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
     AiSettingsStore,
     AiSettingsUpdate,
@@ -60,6 +63,13 @@ from lumirss.ai_settings import (
 )
 from lumirss.ai_summary import AiContentUnavailable, SummaryService
 from lumirss.ai_translation import TranslationService
+from lumirss.ai_translation_segments import (
+    LIBRETRANSLATE_KEY_NAME,
+    TRANSLATION_ENGINE_BROWSER,
+    SegmentInput,
+    SegmentTranslationService,
+    SegmentTranslationUnavailable,
+)
 from lumirss.app_settings import (
     AppSettingsStore,
     InvalidAppSettings,
@@ -76,6 +86,7 @@ from lumirss.backup import (
     BackupUnsupportedVersion,
     WebDavSettingsStore,
     _job_json,
+    assess_freshrss_backup,
 )
 from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
@@ -92,6 +103,7 @@ from lumirss.models import (
     AiSettingsView,
     ApiVersionInfo,
     AppSettingsView,
+    BackupCapabilities,
     BackupJob,
     Category,
     EntryConversation,
@@ -114,6 +126,7 @@ from lumirss.models import (
     RssHubConfigView,
     SourceDiscoveryResponse,
     Subscription,
+    TranslationSegmentsView,
     WebDavSettingsView,
     WebDavTestResult,
 )
@@ -141,6 +154,8 @@ from lumirss.rsshub import (
 from lumirss.rsshub_control import (
     RssHubControlError,
     RssHubControlStore,
+    RssHubCustomCredentialError,
+    RssHubCustomCredentialStore,
     RssHubInvalidValue,
     RssHubUnknownKey,
     config_view,
@@ -183,6 +198,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.feed_preview_service = None
     app.state.source_discovery_service = None
     app.state.rsshub_service = None
+    app.state.rsshub_credentials_store = None
+    app.state.segment_translation_service = None
     app.state.operations_service = None
     app.state.rsshub_control_store = None
     app.state.backup_jobs = None
@@ -265,6 +282,8 @@ _ERROR_RESPONSES = {
     InvalidAppSettings: (400, "invalid_app_settings"),
     # 0015 AI summary
     AiNotConfigured: (503, "ai_not_configured"),
+    SegmentTranslationUnavailable: (400, "translation_unavailable"),
+    RssHubCustomCredentialError: (400, "rsshub_invalid_value"),
     AiAuthError: (502, "ai_auth_error"),
     AiModelError: (502, "ai_model_error"),
     AiRateLimited: (429, "ai_rate_limited"),
@@ -1043,6 +1062,7 @@ def _get_ai_profile_store(request: Request) -> AiProfileStore:
 async def _ai_settings_json(
     values: dict[str, str],
     profiles: AiProfileStore | None = None,
+    secrets: SecretsStore | None = None,
 ) -> dict[str, object]:
     """Browser-safe AI settings view — NEVER contains an API key.
 
@@ -1052,12 +1072,18 @@ async def _ai_settings_json(
     """
     settings = LumiSettings()
     env_key = settings.AI_API_KEY.get_secret_value()
+    secrets = secrets or SecretsStore(settings.secrets_path)
     payload: dict[str, object] = {
         "provider": values[KEY_PROVIDER],
         "baseUrl": values[KEY_BASE_URL],
         "model": values[KEY_MODEL],
         "summaryLanguage": values[KEY_SUMMARY_LANGUAGE],
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
+        "translationEngine": values[KEY_TRANSLATION_ENGINE],
+        "libretranslateUrl": values[KEY_LIBRETRANSLATE_URL],
+        "libretranslateKeyConfigured": bool(
+            (secrets.get(LIBRETRANSLATE_KEY_NAME) or "").strip()
+        ),
         "configured": settings.ai_configured,
         "envKeyConfigured": bool(env_key.strip()),
         "defaultKeyConfigured": settings.ai_configured
@@ -1097,7 +1123,9 @@ async def get_ai_settings(request: Request) -> dict[str, object]:
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(await store.load(), profiles)
+    return await _ai_settings_json(
+        await store.load(), profiles, _get_secrets_store(request)
+    )
 
 
 @app.put(
@@ -1115,7 +1143,9 @@ async def put_ai_settings(
     """
     store = _get_ai_settings_store(request)
     profiles = _get_ai_profile_store(request)
-    return await _ai_settings_json(await store.save(update), profiles)
+    return await _ai_settings_json(
+        await store.save(update), profiles, _get_secrets_store(request)
+    )
 
 
 class SecretValuePut(BaseModel):
@@ -1171,6 +1201,141 @@ async def delete_default_ai_key(request: Request) -> Response:
     """Remove the browser-set default key (env fallback resumes)."""
     _get_ai_profile_store(request).clear_default_key()
     return Response(status_code=204)
+
+
+@app.put("/api/v1/settings/translation/libretranslate-key", status_code=204)
+async def put_libretranslate_key(secret: SecretValuePut, request: Request) -> Response:
+    """Write-only LibreTranslate API key (optional; empty string clears)."""
+    value = secret.value.strip()
+    if not value:
+        _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
+    else:
+        _get_secrets_store(request).set(LIBRETRANSLATE_KEY_NAME, value)
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/settings/translation/libretranslate-key", status_code=204)
+async def delete_libretranslate_key(request: Request) -> Response:
+    """Remove the optional LibreTranslate API key."""
+    _get_secrets_store(request).delete(LIBRETRANSLATE_KEY_NAME)
+    return Response(status_code=204)
+
+
+def _get_secrets_store(request: Request) -> SecretsStore:
+    return request.app.state.secrets_store
+
+
+class LibreTranslateTestResult(BaseModel):
+    """POST /api/v1/settings/translation/libretranslate-test."""
+
+    status: Literal["ok", "failed"]
+    message: str | None = None
+
+
+@app.post(
+    "/api/v1/settings/translation/libretranslate-test",
+    response_model=LibreTranslateTestResult,
+)
+async def test_libretranslate(request: Request) -> dict[str, object]:
+    """Probe the configured LibreTranslate server (GET /languages)."""
+    values = await _get_ai_settings_store(request).load()
+    base = values[KEY_LIBRETRANSLATE_URL]
+    if not base:
+        return {"status": "failed", "message": "LibreTranslate 服务地址未配置。"}
+    try:
+        response = await request.app.state.http_client.get(
+            f"{base}/languages", timeout=10.0
+        )
+        response.raise_for_status()
+        languages = response.json()
+        if not isinstance(languages, list):
+            raise ValueError("unexpected payload")
+        return {"status": "ok", "message": f"连接成功（{len(languages)} 种语言）。"}
+    except Exception:
+        return {"status": "failed", "message": "连接失败：BFF 无法访问该地址或服务未就绪。"}
+
+
+def _get_segment_service(request: Request) -> SegmentTranslationService:
+    """Block-aligned translation (bilingual views); purpose='translation'."""
+    return _cached_on_app_state(
+        request,
+        "segment_translation_service",
+        lambda: SegmentTranslationService(
+            db=request.app.state.db,
+            settings_store=_get_ai_settings_store(request),
+            provider_factory=_provider_factory_for(request, "translation"),
+            secrets=request.app.state.secrets_store,
+        ),
+    )
+
+
+class TranslationSegmentBlockIn(BaseModel):
+    """One client-segmented content block."""
+
+    index: int = Field(ge=0, le=63)
+    text: str = Field(min_length=1, max_length=20000)
+
+
+class TranslationSegmentsBody(BaseModel):
+    """POST …/translation/segments/lookup | /generate body."""
+
+    blocks: list[TranslationSegmentBlockIn] = Field(min_length=1, max_length=64)
+
+
+def _segment_inputs(body: TranslationSegmentsBody) -> list[SegmentInput]:
+    return [SegmentInput(index=b.index, text=b.text) for b in body.blocks]
+
+
+def _segments_view(states, settings_values) -> dict[str, object]:
+    return {
+        "engine": settings_values[KEY_TRANSLATION_ENGINE],
+        "targetLanguage": settings_values[KEY_TRANSLATION_LANGUAGE],
+        "segments": [
+            {
+                "index": s.index,
+                "status": s.status,
+                "translatedText": s.translated_text,
+                "failureType": s.failure_type,
+                "cached": s.cached,
+            }
+            for s in states
+        ],
+    }
+
+
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation/segments/lookup",
+    response_model=TranslationSegmentsView,
+)
+async def lookup_translation_segments(
+    entry_ref: str, body: TranslationSegmentsBody, request: Request
+) -> dict[str, object]:
+    """Cached per-block state ONLY — never calls a provider."""
+    decode_entry_ref(entry_ref)  # 400 on malformed refs before any work
+    service = _get_segment_service(request)
+    settings_values = await service._resolve_settings()
+    if settings_values[KEY_TRANSLATION_ENGINE] == TRANSLATION_ENGINE_BROWSER:
+        return _segments_view([], settings_values) | {
+            "engine": TRANSLATION_ENGINE_BROWSER, "segments": []
+        }
+    states = await service.lookup(entry_ref, _segment_inputs(body), settings_values)
+    return _segments_view(states, settings_values)
+
+
+@app.post(
+    "/api/v1/entries/{entry_ref}/translation/segments/generate",
+    response_model=TranslationSegmentsView,
+)
+async def generate_translation_segments(
+    entry_ref: str, body: TranslationSegmentsBody, request: Request
+) -> dict[str, object]:
+    """Explicit generation for the bilingual/translated views (money rule:
+    only this endpoint may call a provider; exact cache hits never do)."""
+    decode_entry_ref(entry_ref)
+    service = _get_segment_service(request)
+    states = await service.generate(entry_ref, _segment_inputs(body))
+    settings_values = await service._resolve_settings()
+    return _segments_view(states, settings_values)
 
 
 @app.get("/api/v1/settings/ai/profiles", response_model=list[AiProfile])
@@ -1590,6 +1755,35 @@ def _get_operations_service(request: Request) -> OperationsService:
     )
 
 
+def _get_rsshub_credentials_store(request: Request) -> RssHubCustomCredentialStore:
+    return _cached_on_app_state(
+        request,
+        "rsshub_credentials_store",
+        lambda: RssHubCustomCredentialStore(
+            request.app.state.db, request.app.state.secrets_store
+        ),
+    )
+
+
+async def _probe_rsshub(client: httpx.AsyncClient, url: str, source: str) -> dict[str, object]:
+    """One bounded /healthz probe (2s timeout, honest latency or failure)."""
+    import time as _time
+
+    started = _time.monotonic()
+    try:
+        response = await client.get(f"{url}/healthz", timeout=2.0)
+        reachable = response.status_code == 200
+    except Exception:
+        reachable = False
+    latency = int((_time.monotonic() - started) * 1000)
+    return {
+        "url": url,
+        "source": source,
+        "reachable": reachable,
+        "latencyMs": latency if reachable else None,
+    }
+
+
 def _get_rsshub_control_store(request: Request) -> RssHubControlStore:
     return _cached_on_app_state(
         request,
@@ -1740,6 +1934,160 @@ async def export_rsshub_config(request: Request) -> Response:
     )
 
 
+# ---- Gate: auto-detect, custom credentials, server-side env file ----
+
+
+class RssHubDetectCandidate(BaseModel):
+    url: str
+    source: str
+    reachable: bool
+    latencyMs: int | None = None
+
+
+class RssHubDetectResult(BaseModel):
+    """GET /api/v1/rsshub/detect — bounded candidate probing."""
+
+    configured: bool
+    candidates: list[RssHubDetectCandidate] = []
+
+
+@app.get("/api/v1/rsshub/detect", response_model=RssHubDetectResult)
+async def detect_rsshub(request: Request) -> dict[str, object]:
+    """Auto-identify the RSSHub instance within BOUNDED candidates only:
+    the configured URL, this project's compose DNS name, and the host
+    loopback. Never a LAN scan; never any authenticated read-back."""
+    from lumirss.config import RssHubSettings
+
+    configured = RssHubSettings().RSSHUB_BASE_URL
+    candidates: list[dict[str, object]] = []
+    probes: list[tuple[str, str]] = []
+    if configured:
+        probes.append((configured, "configured"))
+    probes.append(("http://rsshub:1200", "compose-dns"))
+    probes.append(("http://127.0.0.1:1200", "host-loopback"))
+    client = request.app.state.http_client
+    results = await asyncio.gather(
+        *(_probe_rsshub(client, url, source) for url, source in probes),
+        return_exceptions=True,
+    )
+    for item in results:
+        if isinstance(item, BaseException):
+            continue
+        candidates.append(item)  # type: ignore[arg-type]
+    return {"configured": bool(configured), "candidates": candidates}
+
+
+class RssHubCredentialCreate(BaseModel):
+    """POST /api/v1/rsshub/credentials body (value is write-only)."""
+
+    name: str = Field(min_length=1, max_length=80)
+    domain: str = Field(min_length=1, max_length=253)
+    envKey: str = Field(min_length=1, max_length=64)
+    kind: Literal["cookie", "token", "api_key", "bearer", "other"]
+    value: str = Field(min_length=1, max_length=10000)
+    route: str = Field(default="", max_length=200)
+
+
+class RssHubCredentialValuePut(BaseModel):
+    """PUT /api/v1/rsshub/credentials/{id}/value body."""
+
+    value: str = Field(min_length=1, max_length=10000)
+
+
+@app.get("/api/v1/rsshub/credentials", response_model=list[dict[str, object]])
+async def list_rsshub_credentials(request: Request) -> list[dict[str, object]]:
+    """Custom site/route credentials (values are write-only; configured
+    flags only). Adding one NEVER fabricates an RSSHub route."""
+    return await _get_rsshub_credentials_store(request).list_entries()
+
+
+@app.post("/api/v1/rsshub/credentials", response_model=dict[str, object], status_code=201)
+async def create_rsshub_credential(
+    body: RssHubCredentialCreate, request: Request
+) -> dict[str, object]:
+    return await _get_rsshub_credentials_store(request).create(
+        name=body.name,
+        domain=body.domain,
+        env_key=body.envKey,
+        kind=body.kind,
+        value=body.value,
+        route=body.route,
+    )
+
+
+@app.patch("/api/v1/rsshub/credentials/{credential_id}", response_model=dict[str, object])
+async def patch_rsshub_credential(
+    credential_id: str, request: Request
+) -> dict[str, object]:
+    body = await request.json()
+    name = body.get("name") if isinstance(body, dict) else None
+    route = body.get("route") if isinstance(body, dict) else None
+    return await _get_rsshub_credentials_store(request).update_metadata(
+        credential_id,
+        name=name if isinstance(name, str) else None,
+        route=route if isinstance(route, str) else None,
+    )
+
+
+@app.put("/api/v1/rsshub/credentials/{credential_id}/value", status_code=204)
+async def put_rsshub_credential_value(
+    credential_id: str, request: Request
+) -> Response:
+    body = await request.json()
+    value = body.get("value") if isinstance(body, dict) else None
+    if not isinstance(value, str) or not value.strip():
+        raise RssHubInvalidValue("value must not be blank.")
+    await _get_rsshub_credentials_store(request).set_value(credential_id, value)
+    return Response(status_code=204)
+
+
+@app.delete("/api/v1/rsshub/credentials/{credential_id}", status_code=204)
+async def delete_rsshub_credential(credential_id: str, request: Request) -> Response:
+    await _get_rsshub_credentials_store(request).delete(credential_id)
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/rsshub/config/env-file")
+async def materialize_rsshub_env_file(request: Request) -> dict[str, object]:
+    """Write the FULL env file (secret values included) server-side to a
+    0600 file under the BFF data dir for apply_rsshub_config.py. The file
+    content never passes through the browser; the response carries only
+    counts and the file name."""
+    import os as _os
+
+    from lumirss.rsshub_control import render_env_file
+
+    store = _get_rsshub_control_store(request)
+    credentials = _get_rsshub_credentials_store(request)
+    desired = await store.desired()
+    custom_values = await credentials.collect_values()
+    content = render_env_file(store, desired, custom_values)
+    settings = LumiSettings()
+    target_dir = settings.data_dir / "rsshub"
+    # 0700 目录 + 建文件即 0600：secrets 不经默认权限暴露出窗口期
+    target_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    _os.chmod(target_dir, 0o700)
+    target = target_dir / "rsshub.env"
+    tmp = target_dir / ".rsshub.env.tmp"
+    fd = _os.open(tmp, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    with _os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    _os.chmod(tmp, 0o600)
+    _os.replace(tmp, target)
+    _os.chmod(target, 0o600)
+    secret_count = len(store.secret_configured_map()) and sum(
+        1 for configured in store.secret_configured_map().values() if configured
+    )
+    return {
+        "fileName": "rsshub.env",
+        "dirName": "rsshub",
+        "lineCount": len(content.splitlines()),
+        "secretCount": secret_count,
+        "customCredentialCount": len(custom_values),
+        "note": "Written server-side (0600). Apply with apply_rsshub_config.py.",
+    }
+
+
 @app.put("/api/v1/rsshub/config/secrets/{key}", status_code=204)
 async def put_rsshub_secret(
     key: str, body: SecretValuePut, request: Request
@@ -1865,6 +2213,43 @@ class BackupCreate(BaseModel):
 async def list_backups(request: Request) -> list[dict[str, object]]:
     jobs = _get_backup_jobs(request)
     return [_job_json(job) for job in await jobs.list()]
+
+
+@app.get(
+    "/api/v1/backups/capabilities",
+    response_model=BackupCapabilities,
+)
+async def backup_capabilities(request: Request) -> dict[str, object]:
+    """Honest full-backup preflight (shown to the user before they click).
+
+    Reuses the exact assessment the engine re-runs at execution time, so
+    the UI can never offer a full backup the engine would refuse — and the
+    engine never fails with a vaguer error than the preflight detected.
+    """
+    settings = LumiSettings()
+    lumi_available = Path(settings.LUMIRSS_DB_PATH).expanduser().is_file()
+    assessment = await asyncio.to_thread(
+        assess_freshrss_backup, settings.FRESHRSS_DATA_DIR
+    )
+    freshrss_view: dict[str, object] = {
+        "available": assessment.available,
+        "reasonCode": assessment.reason_code,
+        "reason": assessment.safe_reason,
+        "fileCount": assessment.file_count or None,
+        "sqliteFileCount": assessment.sqlite_file_count or None,
+        "dbType": assessment.db_type,
+    }
+    includes: list[str] = []
+    if lumi_available:
+        includes.append("lumi.sqlite")
+    if assessment.available:
+        includes.append("freshrss-data")
+    return {
+        "fullBackupReady": lumi_available and assessment.available,
+        "includes": includes,
+        "lumiDatabaseAvailable": lumi_available,
+        "freshrssData": freshrss_view,
+    }
 
 
 @app.post(

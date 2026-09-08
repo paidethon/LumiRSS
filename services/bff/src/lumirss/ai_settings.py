@@ -32,6 +32,21 @@ KEY_MODEL = "ai.model"
 KEY_SUMMARY_LANGUAGE = "ai.summary_language"
 KEY_TRANSLATION_LANGUAGE = "ai.translation_language"
 
+# Gate: which engine renders translations. "ai" = OpenAI-compatible
+# provider (cloud or self-hosted); "libretranslate" = self-hosted MT
+# service reached THROUGH the BFF; "browser" = the browser's own
+# Translator API (this device; the BFF is never called for it).
+TRANSLATION_ENGINE_AI = "ai"
+TRANSLATION_ENGINE_LIBRETRANSLATE = "libretranslate"
+TRANSLATION_ENGINE_BROWSER = "browser"
+SUPPORTED_TRANSLATION_ENGINES = (
+    TRANSLATION_ENGINE_AI,
+    TRANSLATION_ENGINE_LIBRETRANSLATE,
+    TRANSLATION_ENGINE_BROWSER,
+)
+KEY_TRANSLATION_ENGINE = "translation.engine"
+KEY_LIBRETRANSLATE_URL = "translation.libretranslate_url"
+
 MAX_MODEL_LENGTH = 200
 
 _ErrorSink = Callable[[str], str]
@@ -92,6 +107,19 @@ def _validate_translation_language(value: str) -> str:
     return value
 
 
+def _validate_translation_engine(value: str) -> str:
+    if value not in SUPPORTED_TRANSLATION_ENGINES:
+        raise ValueError(
+            f"translation engine must be one of {', '.join(SUPPORTED_TRANSLATION_ENGINES)}"
+        )
+    return value
+
+
+# SecretsStore key NAME (not a credential) for the optional LibreTranslate
+# API key — write-only, same join convention as WEBDAV_SECRET_KEY.
+LIBRETRANSLATE_KEY_NAME = ".".join(("translation", "libretranslate-key"))
+
+
 # The complete allow-list of Lumi server settings. Anything not
 # declared here can never be persisted.
 _SETTING_SPECS: dict[str, tuple[str, _ErrorSink]] = {
@@ -100,6 +128,8 @@ _SETTING_SPECS: dict[str, tuple[str, _ErrorSink]] = {
     KEY_MODEL: ("", _validate_model),
     KEY_SUMMARY_LANGUAGE: ("zh-CN", _validate_summary_language),
     KEY_TRANSLATION_LANGUAGE: ("zh-CN", _validate_translation_language),
+    KEY_TRANSLATION_ENGINE: (TRANSLATION_ENGINE_AI, _validate_translation_engine),
+    KEY_LIBRETRANSLATE_URL: ("", _validate_base_url),
 }
 
 
@@ -123,6 +153,8 @@ class AiSettingsUpdate(BaseModel):
     model: str | None = None
     summaryLanguage: Literal["zh-CN", "en"] | None = None
     translationLanguage: Literal["zh-CN", "en"] | None = None
+    translationEngine: Literal["ai", "libretranslate", "browser"] | None = None
+    libretranslateUrl: str | None = None
 
 
 
@@ -156,6 +188,8 @@ class AiSettingsStore:
             ("model", KEY_MODEL),
             ("summaryLanguage", KEY_SUMMARY_LANGUAGE),
             ("translationLanguage", KEY_TRANSLATION_LANGUAGE),
+            ("translationEngine", KEY_TRANSLATION_ENGINE),
+            ("libretranslateUrl", KEY_LIBRETRANSLATE_URL),
         ):
             value = getattr(update, field)
             if value is None:

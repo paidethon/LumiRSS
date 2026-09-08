@@ -29,6 +29,7 @@ import {
 } from '../../api/queries'
 import type { ApiError } from '../../api/client'
 import type { RssHubConfigItem } from '../../api/types'
+import { RssHubAutoConfigCard } from './RssHubAutoConfigCard'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Skeleton } from '../ui/Skeleton'
@@ -165,7 +166,7 @@ function ConfigField({
         <Switch
           checked={value === true}
           onCheckedChange={onChange}
-          label={value === true ? '开启' : '关闭'}
+          label={item.label}
         />
       ) : item.type === 'enum' ? (
         <Select
@@ -260,6 +261,7 @@ export function RssHubControlCenter() {
   return (
     <div className="flex flex-col gap-4 py-1">
       <RuntimeCard />
+      <RssHubAutoConfigCard />
 
       {data.pendingCount > 0 && (
         <div role="status" className="flex items-start gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] px-3.5 py-2.5">

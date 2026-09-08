@@ -101,7 +101,10 @@ export default function Playground() {
         </Section>
 
         <Section title="Switch / Select / Slider">
-          <Switch checked={switchOn} onCheckedChange={setSwitchOn} label="深色模式" />
+          <span className="flex items-center gap-2.5">
+            <span className="text-sm text-[var(--lumi-text-primary)]">深色模式</span>
+            <Switch checked={switchOn} onCheckedChange={setSwitchOn} label="深色模式" />
+          </span>
           <Select
             aria-label="演示下拉"
             value={select}
@@ -279,21 +282,30 @@ function ReaderFixtureSection() {
             { value: '2em', label: '缩进 2em' },
           ]}
         />
-        <Switch
-          checked={settings.readerBionic}
-          onCheckedChange={(v) => update({ readerBionic: v })}
-          label="词首强调"
-        />
-        <Switch
-          checked={settings.readerHangingPunctuation}
-          onCheckedChange={(v) => update({ readerHangingPunctuation: v })}
-          label="标点悬挂"
-        />
-        <Switch
-          checked={settings.readerCodeHighlight === 'auto'}
-          onCheckedChange={(v) => update({ readerCodeHighlight: v ? 'auto' : 'off' })}
-          label="代码高亮"
-        />
+        <span className="flex items-center gap-2.5">
+          <span className="text-sm text-[var(--lumi-text-primary)]">词首强调</span>
+          <Switch
+            checked={settings.readerBionic}
+            onCheckedChange={(v) => update({ readerBionic: v })}
+            label="词首强调"
+          />
+        </span>
+        <span className="flex items-center gap-2.5">
+          <span className="text-sm text-[var(--lumi-text-primary)]">标点悬挂</span>
+          <Switch
+            checked={settings.readerHangingPunctuation}
+            onCheckedChange={(v) => update({ readerHangingPunctuation: v })}
+            label="标点悬挂"
+          />
+        </span>
+        <span className="flex items-center gap-2.5">
+          <span className="text-sm text-[var(--lumi-text-primary)]">代码高亮</span>
+          <Switch
+            checked={settings.readerCodeHighlight === 'auto'}
+            onCheckedChange={(v) => update({ readerCodeHighlight: v ? 'auto' : 'off' })}
+            label="代码高亮"
+          />
+        </span>
       </div>
       {/* .lumi-reader 作用域（custom CSS / reader 变量消费同正式 Reader） */}
       <div className="lumi-reader rounded-[var(--lumi-radius-lg)] bg-[var(--lumi-reader-bg,transparent)] p-6 max-lg:p-4">

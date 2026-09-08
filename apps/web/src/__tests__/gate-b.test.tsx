@@ -197,7 +197,9 @@ describe('分类页 planned 语义（AC10）', () => {
       expect(screen.getByLabelText('默认 Base URL')).toBeInTheDocument()
       expect(screen.getByLabelText('默认 Model')).toBeInTheDocument()
       expect(screen.getByLabelText('摘要语言')).toBeInTheDocument()
-      expect(screen.getByLabelText('翻译语言')).toBeInTheDocument()
+      // Gate：翻译专属配置（目标语言/引擎）已整合到「设置 → 翻译」，
+      // AI 页不再有重复的翻译表单
+      expect(screen.queryByLabelText('翻译语言')).toBeNull()
     })
     vi.unstubAllGlobals()
   })

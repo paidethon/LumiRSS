@@ -52,9 +52,11 @@ export function RadioOption<T extends string>({ value, children, className, styl
       )}
       style={style}
       render={(props, state) => (
-        <button type="button" {...props}>
+        // Base UI 期望非 <button> 渲染目标（radio 语义/键盘全部由
+        // Base UI 注入），原生 button 反而触发 nativeButton 契约警告。
+        <span {...props}>
           {typeof children === 'function' ? children(state.checked) : children}
-        </button>
+        </span>
       )}
     />
   )

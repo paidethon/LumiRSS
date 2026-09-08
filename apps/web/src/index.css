@@ -67,6 +67,33 @@ body {
   margin: 0 0 var(--lumi-reader-paragraph-spacing, 0.85em);
 }
 
+/* Gate: 双语对照 overlay（.lb-* 节点由 translation-blocks.ts 以 DOM API
+ * 插入，textContent only）。
+ * - .lb-pair：桌面（≥1024px 且阅读区足够宽）原文左 / 译文右；
+ *   窄屏自动单列，退化为“原文 → 译文”纵向成对。
+ * - .lb-translation：译文与原文同字号弱一档颜色，继承阅读变量。
+ * - 仅译文模式下被隐藏的原文块由内联 display:none 控制。 */
+.lb-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 var(--lumi-reader-bilingual-gap, 2rem);
+}
+
+@media (min-width: 1024px) {
+  .reader-bilingual-active .lb-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.lb-translation {
+  color: var(--lumi-reader-translation-text, var(--lumi-text-secondary));
+  margin: 0 0 var(--lumi-reader-paragraph-spacing, 0.85em);
+}
+
+.lb-pair > .lb-translation {
+  margin-bottom: var(--lumi-reader-paragraph-spacing, 0.85em);
+}
+
 /* 0012 Gate 4：中文首行缩进——仅作用于正文顶层段落（> p）。
  * - 标题不在 .article-content &gt; p 选择器内，天然不缩进；
  * - blockquote/list 内的 p 非直系子代，不继承；

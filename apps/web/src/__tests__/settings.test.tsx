@@ -120,8 +120,8 @@ describe('SettingsModal — 通用页清洁原则', () => {
     expect(screen.queryByText('侧栏隐藏已读')).toBeNull()
     expect(screen.queryByText('显示未读圆点')).toBeNull()
     // 真实可用的开关保留
-    expect(screen.getByRole('switch', { name: '已读条目变暗开关' })).toBeEnabled()
-    expect(screen.getByRole('switch', { name: '按日期分组开关' })).toBeEnabled()
-    expect(screen.getByRole('switch', { name: '启动时仅看未读开关' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '已读条目变暗' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '按日期分组' })).toBeEnabled()
+    expect(screen.getByRole('switch', { name: '启动时仅看未读' })).toBeEnabled()
   })
 })

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { useEntryDetail } from '../api/queries'
 import { ApiError } from '../api/client'
 import { useReaderUi } from '../store/reader-ui'
+import type { ReaderViewMode } from '../lib/translation-blocks'
 import ArticleConversation from './ArticleConversation'
 import ReaderHeader from './ReaderHeader'
 import ReaderPlaceholder from './ReaderPlaceholder'
@@ -33,6 +34,13 @@ export default function Reader() {
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
   // 0016：AI 对话面板开关（纯 UI 状态；面板内容跟随当前文章）。
   const [aiConversationOpen, setAiConversationOpen] = useState(false)
+  // Gate：语言视图（原文/双语/仅译文）——Reader 层持有，工具栏与内容区
+  // 共享同一状态；默认原文（打开文章绝不发起翻译）。
+  const [viewMode, setViewMode] = useState<ReaderViewMode>('original')
+  useEffect(() => {
+    // 换文章回原文：不为“打开页面”付任何翻译钱。
+    setViewMode('original')
+  }, [selectedEntryRef])
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -137,17 +145,19 @@ export default function Reader() {
         <ReaderHeader
           key={`header-${detail.entryRef}`}
           detail={detail}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           onOpenAiConversation={() => setAiConversationOpen(true)}
         />
         {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
             AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
             pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
         <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
-        {/* 0016：原文/译文切换 + 文章正文（译文为纯文本派生视图，
-            原文渲染路径不变） */}
+        {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染） */}
         <ReaderTranslation
           key={`translation-${detail.entryRef}`}
           detail={detail}
+          viewMode={viewMode}
         />
         {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏） */}
         <ArticleConversation

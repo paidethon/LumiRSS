@@ -145,7 +145,6 @@ describe('AiSettingsSection — 默认配置保存（仅非机密字段）', () 
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
       summaryLanguage: 'zh-CN',
-      translationLanguage: 'zh-CN',
     })
     expect(putBodies[0]).not.toHaveProperty('apiKey')
     expect(putBodies[0]).not.toHaveProperty('key')

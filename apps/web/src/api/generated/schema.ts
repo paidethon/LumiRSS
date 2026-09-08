@@ -25,6 +25,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backups/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Capabilities
+         * @description Honest full-backup preflight (shown to the user before they click).
+         *
+         *     Reuses the exact assessment the engine re-runs at execution time, so
+         *     the UI can never offer a full backup the engine would refuse — and the
+         *     engine never fails with a vaguer error than the preflight detected.
+         */
+        get: operations["backup_capabilities_api_v1_backups_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups/remote": {
         parameters: {
             query?: never;
@@ -325,6 +349,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation/segments/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Translation Segments
+         * @description Explicit generation for the bilingual/translated views (money rule:
+         *     only this endpoint may call a provider; exact cache hits never do).
+         */
+        post: operations["generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/translation/segments/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lookup Translation Segments
+         * @description Cached per-block state ONLY — never calls a provider.
+         */
+        post: operations["lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feed-preview": {
         parameters: {
             query?: never;
@@ -596,6 +661,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rsshub/config/env-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Rsshub Env File
+         * @description Write the FULL env file (secret values included) server-side to a
+         *     0600 file under the BFF data dir for apply_rsshub_config.py. The file
+         *     content never passes through the browser; the response carries only
+         *     counts and the file name.
+         */
+        post: operations["materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rsshub/config/export": {
         parameters: {
             query?: never;
@@ -635,6 +723,85 @@ export interface paths {
          * @description Clear one secret (explicit action).
          */
         delete: operations["delete_rsshub_secret_api_v1_rsshub_config_secrets__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Credentials
+         * @description Custom site/route credentials (values are write-only; configured
+         *     flags only). Adding one NEVER fabricates an RSSHub route.
+         */
+        get: operations["list_rsshub_credentials_api_v1_rsshub_credentials_get"];
+        put?: never;
+        /** Create Rsshub Credential */
+        post: operations["create_rsshub_credential_api_v1_rsshub_credentials_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Rsshub Credential */
+        delete: operations["delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Rsshub Credential */
+        patch: operations["patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/rsshub/credentials/{credential_id}/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Rsshub Credential Value */
+        put: operations["put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Rsshub
+         * @description Auto-identify the RSSHub instance within BOUNDED candidates only:
+         *     the configured URL, this project's compose DNS name, and the host
+         *     loopback. Never a LAN scan; never any authenticated read-back.
+         */
+        get: operations["detect_rsshub_api_v1_rsshub_detect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -882,6 +1049,50 @@ export interface paths {
          */
         put: operations["put_ai_purposes_api_v1_settings_ai_purposes_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/translation/libretranslate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Libretranslate Key
+         * @description Write-only LibreTranslate API key (optional; empty string clears).
+         */
+        put: operations["put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put"];
+        post?: never;
+        /**
+         * Delete Libretranslate Key
+         * @description Remove the optional LibreTranslate API key.
+         */
+        delete: operations["delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/translation/libretranslate-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Libretranslate
+         * @description Probe the configured LibreTranslate server (GET /languages).
+         */
+        post: operations["test_libretranslate_api_v1_settings_translation_libretranslate_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1166,12 +1377,16 @@ export interface components {
         AiSettingsUpdate: {
             /** Baseurl */
             baseUrl?: string | null;
+            /** Libretranslateurl */
+            libretranslateUrl?: string | null;
             /** Model */
             model?: string | null;
             /** Provider */
             provider?: "openai_compatible" | null;
             /** Summarylanguage */
             summaryLanguage?: ("zh-CN" | "en") | null;
+            /** Translationengine */
+            translationEngine?: ("ai" | "libretranslate" | "browser") | null;
             /** Translationlanguage */
             translationLanguage?: ("zh-CN" | "en") | null;
         };
@@ -1188,6 +1403,10 @@ export interface components {
             defaultKeyConfigured: boolean;
             /** Envkeyconfigured */
             envKeyConfigured: boolean;
+            /** Libretranslatekeyconfigured */
+            libretranslateKeyConfigured: boolean;
+            /** Libretranslateurl */
+            libretranslateUrl: string;
             /** Model */
             model: string;
             /**
@@ -1208,6 +1427,11 @@ export interface components {
              * @enum {string}
              */
             summaryLanguage: "zh-CN" | "en";
+            /**
+             * Translationengine
+             * @enum {string}
+             */
+            translationEngine: "ai" | "libretranslate" | "browser";
             /**
              * Translationlanguage
              * @enum {string}
@@ -1363,6 +1587,20 @@ export interface components {
              * @enum {string}
              */
             uiFontStack: "default" | "sans" | "serif" | "mono";
+        };
+        /**
+         * BackupCapabilities
+         * @description GET /api/v1/backups/capabilities — what a full backup can honestly
+         *     include right now, shown to the user BEFORE they click.
+         */
+        BackupCapabilities: {
+            freshrssData: components["schemas"]["FreshrssDataBackupCapability"];
+            /** Fullbackupready */
+            fullBackupReady: boolean;
+            /** Includes */
+            includes: string[];
+            /** Lumidatabaseavailable */
+            lumiDatabaseAvailable: boolean;
         };
         /** BackupCreate */
         BackupCreate: {
@@ -1706,6 +1944,25 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /**
+         * FreshrssDataBackupCapability
+         * @description FreshRSS component preflight — safe diagnostics only (no paths
+         *     beyond the configured root, no credentials).
+         */
+        FreshrssDataBackupCapability: {
+            /** Available */
+            available: boolean;
+            /** Dbtype */
+            dbType?: string | null;
+            /** Filecount */
+            fileCount?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Reasoncode */
+            reasonCode?: string | null;
+            /** Sqlitefilecount */
+            sqliteFileCount?: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1718,6 +1975,19 @@ export interface components {
         HealthStatus: {
             /** Status */
             status: string;
+        };
+        /**
+         * LibreTranslateTestResult
+         * @description POST /api/v1/settings/translation/libretranslate-test.
+         */
+        LibreTranslateTestResult: {
+            /** Message */
+            message?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed";
         };
         /**
          * OperationsBackupStatus
@@ -2129,6 +2399,54 @@ export interface components {
             schemaVersion: number;
         };
         /**
+         * RssHubCredentialCreate
+         * @description POST /api/v1/rsshub/credentials body (value is write-only).
+         */
+        RssHubCredentialCreate: {
+            /** Domain */
+            domain: string;
+            /** Envkey */
+            envKey: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cookie" | "token" | "api_key" | "bearer" | "other";
+            /** Name */
+            name: string;
+            /**
+             * Route
+             * @default
+             */
+            route: string;
+            /** Value */
+            value: string;
+        };
+        /** RssHubDetectCandidate */
+        RssHubDetectCandidate: {
+            /** Latencyms */
+            latencyMs?: number | null;
+            /** Reachable */
+            reachable: boolean;
+            /** Source */
+            source: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * RssHubDetectResult
+         * @description GET /api/v1/rsshub/detect — bounded candidate probing.
+         */
+        RssHubDetectResult: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["RssHubDetectCandidate"][];
+            /** Configured */
+            configured: boolean;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -2243,6 +2561,61 @@ export interface components {
             categoryId?: string | null;
             /** Newcategorylabel */
             newCategoryLabel?: string | null;
+        };
+        /**
+         * TranslationSegmentBlockIn
+         * @description One client-segmented content block.
+         */
+        TranslationSegmentBlockIn: {
+            /** Index */
+            index: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * TranslationSegmentState
+         * @description Per-block translation state (lookup = cache only; generate explicit).
+         */
+        TranslationSegmentState: {
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /** Failuretype */
+            failureType?: string | null;
+            /** Index */
+            index: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "success" | "failed" | "not_generated";
+            /** Translatedtext */
+            translatedText?: string | null;
+        };
+        /**
+         * TranslationSegmentsBody
+         * @description POST …/translation/segments/lookup | /generate body.
+         */
+        TranslationSegmentsBody: {
+            /** Blocks */
+            blocks: components["schemas"]["TranslationSegmentBlockIn"][];
+        };
+        /**
+         * TranslationSegmentsView
+         * @description POST …/translation/segments/lookup | /generate.
+         */
+        TranslationSegmentsView: {
+            /** Engine */
+            engine: string;
+            /**
+             * Segments
+             * @default []
+             */
+            segments: components["schemas"]["TranslationSegmentState"][];
+            /** Targetlanguage */
+            targetLanguage: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2370,6 +2743,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_capabilities_api_v1_backups_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCapabilities"];
                 };
             };
         };
@@ -2840,6 +3233,76 @@ export interface operations {
             };
         };
     };
+    generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationSegmentsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationSegmentsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_translation_segments_api_v1_entries__entry_ref__translation_segments_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationSegmentsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationSegmentsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_feed_api_v1_feed_preview_post: {
         parameters: {
             query?: never;
@@ -3130,6 +3593,28 @@ export interface operations {
             };
         };
     };
+    materialize_rsshub_env_file_api_v1_rsshub_config_env_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     export_rsshub_config_api_v1_rsshub_config_export_get: {
         parameters: {
             query?: never;
@@ -3208,6 +3693,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_credentials_api_v1_rsshub_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    create_rsshub_credential_api_v1_rsshub_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubCredentialCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_credential_api_v1_rsshub_credentials__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_rsshub_credential_api_v1_rsshub_credentials__credential_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rsshub_credential_value_api_v1_rsshub_credentials__credential_id__value_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_rsshub_api_v1_rsshub_detect_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubDetectResult"];
                 };
             };
         };
@@ -3657,6 +4310,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_libretranslate_key_api_v1_settings_translation_libretranslate_key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValuePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_libretranslate_key_api_v1_settings_translation_libretranslate_key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_libretranslate_api_v1_settings_translation_libretranslate_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibreTranslateTestResult"];
                 };
             };
         };

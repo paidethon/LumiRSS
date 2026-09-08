@@ -8,7 +8,7 @@
  * - 页面刷新后 job 状态从服务端恢复（TanStack Query refetch）。
  */
 
-import { useCreateBackupMutation, useBackups, useOperationsStatus } from '../../../api/queries'
+import { useBackupCapabilities, useCreateBackupMutation, useBackups, useOperationsStatus } from '../../../api/queries'
 import type { BackupJob } from '../../../api/types'
 import { Button } from '../../ui/Button'
 import { Skeleton } from '../../ui/Skeleton'
@@ -18,6 +18,7 @@ import {
   componentLabel,
   formatBytes,
   formatJobTime,
+  freshrssReasonText,
   jobStageText,
 } from './backup-format'
 
@@ -48,6 +49,7 @@ function ActiveJobCard({ job }: { job: BackupJob }) {
 export function BackupOverview() {
   const status = useOperationsStatus()
   const jobs = useBackups()
+  const capabilities = useBackupCapabilities()
   const create = useCreateBackupMutation()
 
   const activeJob = jobs.data?.find((job) => isActiveJob(job))
@@ -55,6 +57,12 @@ export function BackupOverview() {
   const lastSucceeded = jobs.data?.find((job) => job.type === 'full' && job.status === 'succeeded')
   const lastFailed = jobs.data?.find(
     (job) => (job.status === 'failed' || job.status === 'interrupted'),
+  )
+  // 点击前就如实告知完整备份能不能做、为什么不能；后端执行时仍会校验。
+  const fullBackupReady = capabilities.data?.fullBackupReady
+  const freshrssReason = freshrssReasonText(
+    capabilities.data?.freshrssData.reasonCode,
+    capabilities.data?.freshrssData.reason,
   )
 
   if (jobs.isError) {
@@ -119,20 +127,38 @@ export function BackupOverview() {
           )}
           <div className="flex items-start justify-between gap-3 py-2">
             <dt className="shrink-0 text-[var(--lumi-text-secondary)]">备份内容</dt>
-            <dd className="min-w-0 text-right text-xs leading-relaxed text-[var(--lumi-text-primary)]">
-              Lumi 数据库（设置 / AI 缓存 / 对话）+ FreshRSS 数据（订阅 / 文章状态）。
+            <dd className="min-w-0 text-right text-xs leading-relaxed">
+              {capabilities.data === undefined ? (
+                <span className="text-[var(--lumi-text-tertiary)]">检查备份能力…</span>
+              ) : (
+                <span className="text-[var(--lumi-text-primary)]">
+                  {capabilities.data.includes.length > 0 ? (
+                    capabilities.data.includes.map(componentLabel).join('；')
+                  ) : (
+                    <span className="text-[var(--lumi-danger)]">当前没有任何可备份组件</span>
+                  )}
+                </span>
+              )}
               <span className="mt-0.5 block text-[var(--lumi-text-tertiary)]">
                 秘密（WebDAV 密码 / RSSHub 凭据 / API Key）不进入备份；恢复后需重新配置。
               </span>
             </dd>
           </div>
+          {freshrssReason && (
+            <div className="flex items-start justify-between gap-3 py-2">
+              <dt className="shrink-0 text-[var(--lumi-text-secondary)]">FreshRSS 数据</dt>
+              <dd className="min-w-0 text-right text-xs leading-relaxed text-[var(--lumi-danger)]">
+                {freshrssReason}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          disabled={busy}
+          disabled={busy || fullBackupReady === false}
           onClick={() => create.mutate('local')}
         >
           {create.isPending && create.variables === 'local' ? (
@@ -145,7 +171,7 @@ export function BackupOverview() {
         <Button
           size="sm"
           variant="secondary"
-          disabled={busy}
+          disabled={busy || fullBackupReady === false}
           onClick={() => create.mutate('webdav')}
         >
           {create.isPending && create.variables === 'webdav' ? (
@@ -156,6 +182,11 @@ export function BackupOverview() {
           备份并上传 WebDAV
         </Button>
       </div>
+      {fullBackupReady === false && (
+        <p role="alert" className={cx('mt-2 text-xs leading-relaxed text-[var(--lumi-danger)]')}>
+          {freshrssReason ?? '完整备份当前不可用。'}
+        </p>
+      )}
       {create.isError && (
         <p role="alert" className={cx('mt-2 text-xs leading-relaxed text-[var(--lumi-danger)]')}>
           创建失败：{create.error instanceof Error ? create.error.message : '请稍后重试。'}

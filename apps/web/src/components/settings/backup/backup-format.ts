@@ -56,3 +56,26 @@ export const COMPONENT_LABELS: Record<string, string> = {
 export function componentLabel(component: string): string {
   return COMPONENT_LABELS[component] ?? component
 }
+
+/** 能力预检 reasonCode（BFF assess_freshrss_backup）→ 用户可操作的中文说明。
+ * 未知 code 回退到服务端 reason（英文安全文案），不吞掉真实状态。 */
+export const FRESHRSS_REASON_HINTS: Record<string, string> = {
+  not_configured:
+    '未配置 FreshRSS 数据目录：生产 Compose 已自动挂载；开发部署需在 BFF 的 .env 设置 FRESHRSS_DATA_DIR 指向宿主机可读的 FreshRSS data 目录。',
+  path_missing: '配置的 FreshRSS 数据目录不存在，请检查挂载与路径配置。',
+  not_a_directory: '配置的 FreshRSS 数据路径不是目录，请检查 FRESHRSS_DATA_DIR。',
+  not_readable: 'BFF 进程没有读取 FreshRSS 数据目录的权限，请检查挂载与文件权限。',
+  invalid_data_dir:
+    '该目录缺少 config.php / users，不像有效的 FreshRSS 数据目录，请确认路径指向 FreshRSS 的 data 目录本身。',
+  external_database:
+    'FreshRSS 使用外部 MySQL/PostgreSQL 数据库：数据目录不含文章数据，完整备份不支持此拓扑，请直接备份数据库。',
+  unreadable_entries: 'FreshRSS 数据目录内部分文件不可读，请检查文件权限。',
+}
+
+export function freshrssReasonText(
+  reasonCode: string | null | undefined,
+  fallback: string | null | undefined,
+): string | null {
+  if (!reasonCode) return null
+  return FRESHRSS_REASON_HINTS[reasonCode] ?? fallback ?? reasonCode
+}
