@@ -35,7 +35,7 @@ Non-RSS source → RSSHub → FreshRSS
 ```
 
 FreshRSS owns RSS-domain state. RSSHub generates feeds upstream. The Web
-client talks only to the Lumi BFF. Full explanation: [docs/architecture/README.md](docs/architecture/README.md).
+client talks only to the Lumi BFF. Full explanation: [docs/explanation/architecture.md](docs/explanation/architecture.md).
 
 ---
 
@@ -67,7 +67,7 @@ pnpm test
 pnpm build
 ```
 
-Detailed development guide: [docs/development/](docs/development/)
+Detailed development guide: [docs/getting-started.md](docs/getting-started.md)
 
 ---
 
@@ -82,7 +82,7 @@ Caddy serves the Web build and reverse-proxies `/api` to the BFF;
 FreshRSS / RSSHub stay on the internal network. Single-user Basic Auth,
 automated TLS, health endpoints, backups (local + WebDAV) and staged
 restore are included. Full runbook:
-[docs/development/operations.md](docs/development/operations.md).
+[docs/how-to/deploy.md](docs/how-to/deploy.md).
 
 ---
 
@@ -100,7 +100,7 @@ Entry references and cursors are opaque. Opening an article does not
 auto-mark it read. Read/star writes use set semantics. The full API
 family list (subscriptions, RSSHub control, AI settings/profiles,
 backups, version provenance) lives in
-[docs/architecture/README.md](docs/architecture/README.md).
+[docs/explanation/architecture.md](docs/explanation/architecture.md).
 
 ---
 

@@ -1,92 +1,31 @@
 # LumiRSS Roadmap
 
-> What comes next, in order.
-> Detailed results for each milestone: [milestones/](milestones/)
+> What comes next, in order. Completed milestones and release notes:
+> [history/milestones.md](history/milestones.md)
 
----
+## Now
 
-## Foundation
+- MVP 稳定化：以真实使用反馈驱动缺陷修复与体验打磨，不开新的大功能面。
 
-- [x] 0000 — Project Reboot
-- [x] 0001 — FreshRSS Development Environment
-- [x] 0002 — BFF & FreshRSS Adapter
-- [x] 0003 — Entry Read Path
-- [x] 0004 — Entry State, Filters & Pagination
-- [x] 0005 — Web Shell
-- [x] 0006 — Reader
-- [x] 0007 — Mobile & PWA
-- [x] 0008 — RSSHub Source Expansion
+## Next（候选，立项由用户批准的 spec 决定）
 
-## Experience
+- BFF 结构化日志与关联 ID（发布时已知限制，operations/status 已含延迟
+  与错误分类）；
+- BFF 生产镜像依赖 pin；web（Caddy）服务 healthcheck（发布时已知限制）；
+- 稍后读（read-later）跨设备同步——落地时应迁到 Lumi SQLite 而非第三方
+  存储（见 [explanation/reuse-policy.md](explanation/reuse-policy.md)）。
 
-- [x] [0009 — UI Reboot & Reference Lab](milestones/0009-ui-reboot-reference-lab.md)
-- [x] [0010 — Settings Center & Adaptive Shell (+0010a)](milestones/0010-settings-center-adaptive-shell.md)
-- [x] [0011 — Mobile UI Five-Screen Alignment](milestones/0011-mobile-ui-five-screen-alignment.md)
-- [x] [0012 — Reader Style Deep Customization](milestones/0012-reader-style-deep-customization.md)
-- [x] [0017 — Reader Power UX & Unified Settings](milestones/0017-reader-power-ux-unified-settings.md)
+## Later
 
-## Source Control
+- **Phase 2 — Knowledge Workbench**：web clipping、结构化 JSON/API 来源、
+  邮件 newsletter、Obsidian library connector、统一来源注册表、
+  agent workspace。
 
-- [x] [0013 — Unified Subscription Center](milestones/0013-unified-subscription-center.md)
-- [x] [0014 — Source Discovery & RSSHub Integration](milestones/0014-source-discovery-rsshub-integration.md)
-- [x] [0014a — UI Acceptance & Navigation Consistency](milestones/0014a-ui-acceptance-navigation.md)
-- 0014a 是 0014 的 post-implementation 验收 follow-up：关闭真实浏览器
-  验收缺口（桌面添加来源入口 / 移动收藏 → 全屏 Reader / 设置 stale
-  标签 / Playwright 验收），不重排已完成的编号。
+## Explicitly deferred / rejected
 
-## Intelligence
-
-- [x] [0015 — AI Foundation, Summary & Lumi SQLite Foundation](milestones/0015-ai-summary-sqlite-foundation.md)
-- [x] [0016 — Translation & AI Conversation](milestones/0016-translation-ai-conversation.md)
-
-## Completion
-
-- [x] 0018 — Production, Operations & Backup
-- [x] 0019 — MVP Stabilization & Release
-- [x] [0020 — MVP Release Remediation](milestones/0020-release-remediation.md)
-- [x] Post-0020 settings control-plane maintenance (2026-09-05, no milestone
-  number): AI profiles + purpose mapping, 数据控制合并备份/恢复, honest
-  RSSHub control chain, version provenance
-
-## Next
-
-- [x] 0021 — Security & Operations Hardening（候选范围已实施于维护分支
-  `chore/postmerge-reality-security-hardening-20260908`，PR-ready；编号是否
-  正式占用由用户合并时决定）：BFF 内部鉴权（opt-in token）/ DNS-rebinding
-  审计确认 / CSP·HSTS·Permissions-Policy / 控制面限流 / 全局请求体上限 /
-  AI lock-map 有界化 / 多设备设置冲突语义（409 + re-hydrate）
-  → 明细与证据：[tasks/postmerge-reality-security-hardening/VALIDATION.md](tasks/postmerge-reality-security-hardening/VALIDATION.md)
-
-## Phase 2 — Knowledge Workbench (deferred)
-
-Web clipping, structured JSON/API sources, email newsletters, Obsidian library
-connector, unified source registry, agent workspace.
-
----
-
-## Roadmap notes
-
-**0011 renumbering** (2026-08-30): Original 0011 (Reader Style) was replaced
-by Mobile UI Navigation; 0012–0019 shifted accordingly. AI Summary (originally
-0009) is now 0015.
-
-**0014a insertion + 0015–0019 content revision** (2026-09-02): After 0014,
-a real-product acceptance pass found UI gaps; 0014a inserted as a suffix
-milestone (historical numbering preserved). 0015–0019 revised per
-user-approved decisions:
-
-- 0015 activates **lumi.sqlite** as Lumi-owned application truth
-  (FreshRSS remains the RSS-domain source of truth; no shadow copies);
-- 0017 **Reader Power UX** requires continuous bounded controls
-  (font size / line height / paragraph spacing / content width /
-  horizontal margins), not only discrete presets;
-- 0018 **Production, Operations & Backup** includes a schema-driven
-  **RSSHub Control Center**, FreshRSS operations integration and
-  **WebDAV backup/restore**.
-
-**0011a Basic Global Search**: candidate milestone, requires user-approved BFF
-search contract. Until then the search page stays honest-empty.
-
-**Rejected for MVP**: Folo product clone, community/social, algorithmic
-recommendation, multi-user platform, arbitrary Docker admin from BFF,
-duplicating FreshRSS RSS database in SQLite, native mobile app.
+- 多用户 / 多租户、公共互联网硬化（单用户是产品前提）；
+- PWA 离线缓存 / Service Worker / Push（manifest 已有，其余明确延后）；
+- Folo 产品克隆、社区/社交、算法推荐、原生移动 App；
+- BFF 任意 Docker 管理（未来服务控制必须走窄 allow-list 边界）；
+- 在 SQLite 复制 FreshRSS RSS 数据库（搜索投影除外——派生、可重建，
+  见 [explanation/search.md](explanation/search.md)）。
