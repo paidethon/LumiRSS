@@ -35,6 +35,7 @@ import httpx
 
 from lumirss.adapters.freshrss import AdapterError, html_to_text
 from lumirss.adapters.freshrss_control import InvalidFeedUrl
+from lumirss.http_fetch import follow_redirects
 
 # Re-exported so main.py's error table can map it next to the preview errors.
 __all__ = [
@@ -258,31 +259,36 @@ async def safe_fetch(
     links against where the document actually came from) and the final
     content-type header.
     """
-    current = url
-    for _hop in range(max_redirects + 1):
-        await _require_dialable(resolver, validate_feed_url(current))
-        response = await _send(client, current)
-        try:
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get("location")
-                if not location:
-                    raise FeedFetchError(
-                        "Feed URL redirected without a target location."
-                    )
-                current = urllib.parse.urljoin(current, location)
-                continue
-            if response.status_code != 200:
-                raise FeedFetchError(
-                    f"The feed URL answered HTTP {response.status_code}."
-                )
-            return FetchedDocument(
-                body=await read_bounded_body(response),
-                final_url=current,
-                content_type=response.headers.get("content-type"),
+
+    async def validate_hop(hop_url: str) -> None:
+        await _require_dialable(resolver, validate_feed_url(hop_url))
+
+    def fail(event: str) -> Exception:
+        if event == "no_location":
+            return FeedFetchError(
+                "Feed URL redirected without a target location."
             )
-        finally:
-            await response.aclose()
-    raise FeedFetchError("Feed URL redirected too many times.")
+        return FeedFetchError("Feed URL redirected too many times.")
+
+    response, final_url = await follow_redirects(
+        url,
+        send=lambda hop_url: _send(client, hop_url),
+        validate_hop=validate_hop,
+        fail=fail,
+        max_redirects=max_redirects,
+    )
+    try:
+        if response.status_code != 200:
+            raise FeedFetchError(
+                f"The feed URL answered HTTP {response.status_code}."
+            )
+        return FetchedDocument(
+            body=await read_bounded_body(response),
+            final_url=final_url,
+            content_type=response.headers.get("content-type"),
+        )
+    finally:
+        await response.aclose()
 
 
 async def _send(client: httpx.AsyncClient, url: str) -> httpx.Response:

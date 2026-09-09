@@ -26,6 +26,8 @@ from pathlib import Path
 import httpx
 from defusedxml import ElementTree
 
+from lumirss.http_fetch import follow_redirects, origin_of
+
 _MAX_REDIRECTS = 5
 _MAX_RESPONSE_BYTES = 256 * 1024 * 1024  # 256 MiB bound for downloaded backups
 _MAX_LIST_BYTES = 8 * 1024 * 1024  # 8 MiB bound for PROPFIND listings
@@ -176,22 +178,22 @@ class WebDavClient:
         content: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        origin = urllib.parse.urlsplit(self._settings.server_url)
-        base_origin = urllib.parse.urlunsplit(
-            (origin.scheme.lower(), origin.netloc.lower(), "", "", "")
-        )
-        current = base_origin + path
-        for _hop in range(_MAX_REDIRECTS + 1):
-            parts = urllib.parse.urlsplit(current)
-            hop_origin = urllib.parse.urlunsplit(
-                (parts.scheme.lower(), parts.netloc.lower(), "", "", "")
-            )
-            if hop_origin != base_origin:
+        base_origin = origin_of(self._settings.server_url)
+
+        async def validate_hop(hop_url: str) -> None:
+            if origin_of(hop_url) != base_origin:
                 raise WebDavError("WebDAV redirected outside its origin.")
+
+        def fail(event: str) -> Exception:
+            if event == "no_location":
+                return WebDavError("WebDAV redirected without a location.")
+            return WebDavError("WebDAV redirected too many times.")
+
+        async def send(hop_url: str) -> httpx.Response:
             try:
-                response = await self._client.request(
+                return await self._client.request(
                     method,
-                    current,
+                    hop_url,
                     content=content,
                     headers=headers,
                     auth=self._auth,
@@ -199,15 +201,17 @@ class WebDavClient:
                 )
             except httpx.HTTPError:
                 raise WebDavError("Could not reach the WebDAV server.") from None
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get("location")
-                await response.aclose()
-                if not location:
-                    raise WebDavError("WebDAV redirected without a location.")
-                current = urllib.parse.urljoin(current, location)
-                continue
-            return response
-        raise WebDavError("WebDAV redirected too many times.")
+
+        # Non-redirect statuses are all meaningful WebDAV results — the
+        # caller interprets them; only the loop mechanics live in the helper.
+        response, _final_url = await follow_redirects(
+            base_origin + path,
+            send=send,
+            validate_hop=validate_hop,
+            fail=fail,
+            max_redirects=_MAX_REDIRECTS,
+        )
+        return response
 
     async def ensure_dir(self, path: str) -> None:
         """MKCOL each segment; already-exists (405/409/301) is fine."""
