@@ -1,6 +1,7 @@
 /** E2E helpers — settings 导航、API 等待、视口无关的操作封装。
  * 只使用页面可见语义（role/name），不依赖实现类名。 */
 
+import { execFileSync } from 'node:child_process'
 import { expect, type Page } from '@playwright/test'
 
 /** 打开设置中心并进入某个分类。 */
@@ -74,4 +75,32 @@ export async function expectNoHorizontalOverflow(page: Page) {
     return document.documentElement.scrollWidth - document.documentElement.clientWidth
   })
   expect(overflow).toBeLessThanOrEqual(1)
+}
+
+/** 容器内 BFF/FreshRSS 访问宿主机 mock 服务要经 docker 网桥网关。子网
+ * 随网络重建漂移（曾硬编码 172.19.0.1，网络重建后过期——J4/M3 全红
+ * 的根因），所以运行时从 lumirss compose 网络读真实网关；docker CLI
+ * 不可用时回退 LUMIRSS_E2E_BRIDGE_IP，再回退宿主机回环（宿主机 BFF
+ * 拓扑，mock 绑定 0.0.0.0 时网关地址同样可达）。 */
+export function resolveBridgeIp(): string {
+  const explicit = process.env.LUMIRSS_E2E_BRIDGE_IP
+  if (explicit) return explicit
+  try {
+    const names = execFileSync('docker', ['network', 'ls', '--format', '{{.Name}}'], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .map((n) => n.trim())
+      .filter((n) => n === 'lumirss_default' || n.toLowerCase().includes('lumirss'))
+    for (const name of names) {
+      const info = JSON.parse(
+        execFileSync('docker', ['network', 'inspect', name], { encoding: 'utf8' }),
+      ) as Array<{ IPAM?: { Config?: Array<{ Gateway?: string }> } }>
+      const gateway = info[0]?.IPAM?.Config?.[0]?.Gateway
+      if (gateway) return gateway
+    }
+  } catch {
+    // docker CLI 不可用 / 无匹配网络 → 走回退
+  }
+  return '127.0.0.1'
 }

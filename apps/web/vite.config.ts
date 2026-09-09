@@ -19,6 +19,13 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:8000',
     },
   },
+  preview: {
+    // ci-smoke（LUMIRSS_CI_STATIC=1）跑在 vite preview 上，其契约是
+    // “静态、无后端 API”的降级态。preview 默认继承 server.proxy——
+    // 只要本机 8000 恰好跑着 dev BFF，“无 API”前提就被静默破坏
+    // （备份历史会渲染出真实任务）。显式清空，让降级态测试确定性成立。
+    proxy: {},
+  },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
