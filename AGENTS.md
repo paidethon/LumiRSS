@@ -26,7 +26,7 @@ network); multi-user tenancy and public-internet hardening are out of scope.
 
 ## 2. Architecture invariants
 
-These are non-negotiable. Full explanation: [architecture/README.md](docs/architecture/README.md).
+These are non-negotiable. Full explanation: [docs/explanation/architecture.md](docs/explanation/architecture.md).
 
 ```text
 Native RSS / Atom ───────────────┐
@@ -69,11 +69,12 @@ docker-compose.yml    FreshRSS + RSSHub dev services
 Start here for any task:
 
 1. Read `docs/README.md` (navigation index);
-2. Read the **active milestone** document;
+2. Read the active task's spec / scope document (if any);
 3. Read directly affected source files and tests;
-4. Read `docs/architecture/` only when touching data paths or boundaries;
+4. Read `docs/explanation/architecture.md` only when touching data paths
+   or boundaries;
 5. Read `docs/product/PRD.md` only when product scope is unclear;
-6. Do NOT read completed milestones, upstream studies or reference repos
+6. Do NOT read milestone history, upstream studies or reference repos
    unless the task specifically requires them.
 
 ---
@@ -173,7 +174,7 @@ Do not run full test suites for ordinary CSS or small UI changes.
 
 - Prefer upstream/framework capability before implementing infrastructure;
   boundaries and KEEP-justifications live in
-  [docs/architecture/reuse-policy.md](docs/architecture/reuse-policy.md);
+  [docs/explanation/reuse-policy.md](docs/explanation/reuse-policy.md);
 - Server API contracts must not be manually duplicated in Web — types are
   generated from OpenAPI (`pnpm api:generate` / `api:check`);
 - Portable settings defaults/enums/bounds come from the generated
@@ -194,7 +195,7 @@ Do not run full test suites for ordinary CSS or small UI changes.
 
 Read only:
 ```text
-AGENTS.md → docs/README.md → active milestone → affected files + tests
+AGENTS.md → docs/README.md → task scope → affected files + tests
 ```
 
 ### Do not preload

@@ -3028,6 +3028,187 @@
     "title": "RssHubRoute",
     "type": "object"
    },
+   "SearchIndexInfo": {
+    "description": "Honest state of the derived projection behind this response.",
+    "properties": {
+     "entryCount": {
+      "title": "Entrycount",
+      "type": "integer"
+     },
+     "lastSyncedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsyncedat"
+     },
+     "partial": {
+      "default": false,
+      "title": "Partial",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "entryCount"
+    ],
+    "title": "SearchIndexInfo",
+    "type": "object"
+   },
+   "SearchItem": {
+    "description": "One search hit — list metadata plus a safe plain-text snippet.\n\n``snippet`` is plain text extracted from the sanitized content text\n(never HTML); the web client renders it as text only.",
+    "properties": {
+     "author": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "matchedFields": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Matchedfields",
+      "type": "array"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "read": {
+      "title": "Read",
+      "type": "boolean"
+     },
+     "snippet": {
+      "title": "Snippet",
+      "type": "string"
+     },
+     "starred": {
+      "title": "Starred",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "feedUrl",
+     "publishedAt",
+     "read",
+     "starred",
+     "snippet",
+     "matchedFields"
+    ],
+    "title": "SearchItem",
+    "type": "object"
+   },
+   "SearchRebuildResult": {
+    "description": "Envelope for POST /api/v1/search/rebuild.",
+    "properties": {
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "title": "Entrycount",
+      "type": "integer"
+     },
+     "pages": {
+      "title": "Pages",
+      "type": "integer"
+     },
+     "partial": {
+      "title": "Partial",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "entryCount",
+     "pages",
+     "partial",
+     "elapsedMs"
+    ],
+    "title": "SearchRebuildResult",
+    "type": "object"
+   },
+   "SearchResponse": {
+    "description": "Envelope for GET /api/v1/search.",
+    "properties": {
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     },
+     "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+     },
+     "index": {
+      "$ref": "#/components/schemas/SearchIndexInfo"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SearchItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor",
+     "hasMore",
+     "elapsedMs",
+     "index"
+    ],
+    "title": "SearchResponse",
+    "type": "object"
+   },
    "SecretValuePut": {
     "description": "Write-only secret body (shared by AI keys and RSSHub secrets).\n\n0021 hardening: bounded length (same bound as the RSSHub secret\nschema) and control-character rejection at INPUT time — a control\ncharacter in an API key is never legitimate, and storing one would\npoison env-file rendering / upstream calls until the value is\nreplaced.",
     "properties": {
@@ -4005,7 +4186,7 @@
   },
   "/api/v1/entries/{entry_ref}/state": {
    "patch": {
-    "description": "Set the read/starred state of one entry (set semantics, not toggle).\n\n204 means FreshRSS accepted the write; it does not re-confirm that the\nentry exists. Invalid refs and invalid bodies are rejected before any\nFreshRSS call.",
+    "description": "Set the read/starred state of one entry (set semantics, not toggle).\n\n204 means FreshRSS accepted the write; it does not re-confirm that the\nentry exists. Invalid refs and invalid bodies are rejected before any\nFreshRSS call. The accepted state is mirrored into the derived search\nprojection so its unread/starred filters stay fresh between syncs.",
     "operationId": "entry_state_api_v1_entries__entry_ref__state_patch",
     "parameters": [
      {
@@ -4974,6 +5155,187 @@
      }
     },
     "summary": "Rsshub Routes"
+   }
+  },
+  "/api/v1/search": {
+   "get": {
+    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 chars, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive.",
+    "operationId": "search_api_v1_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Categoryid"
+      }
+     },
+     {
+      "in": "query",
+      "name": "state",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "State"
+      }
+     },
+     {
+      "in": "query",
+      "name": "favorite",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Favorite"
+      }
+     },
+     {
+      "in": "query",
+      "name": "from_",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From "
+      }
+     },
+     {
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search"
+   }
+  },
+  "/api/v1/search/rebuild": {
+   "post": {
+    "description": "Rebuild the projection from FreshRSS (bounded, honest stats).",
+    "operationId": "rebuild_index_api_v1_search_rebuild_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchRebuildResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rebuild Index"
    }
   },
   "/api/v1/settings": {

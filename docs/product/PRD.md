@@ -1,7 +1,7 @@
 # LumiRSS 产品需求文档（PRD）
 
 > 职责：定义产品“应该具备什么能力”（WHAT / WHY）。
-> 系统如何实现（HOW）见 [architecture/README.md](../architecture/README.md)；
+> 系统如何实现（HOW）见 [explanation/architecture.md](../explanation/architecture.md)；
 > 下一步计划见 [ROADMAP.md](../ROADMAP.md)。
 
 ---

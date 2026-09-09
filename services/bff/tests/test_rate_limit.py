@@ -9,7 +9,8 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
-from lumirss.main import _rate_windows, app
+from lumirss.main import app
+from lumirss.middleware import _rate_windows
 
 
 def run(coroutine):
@@ -17,15 +18,15 @@ def run(coroutine):
 
 
 def _shrink_rules(monkeypatch):
-    """Two requests per 60s window for every rule (module-level table is
-    read per request, so patching it changes live behavior)."""
-    import lumirss.main as main_module
+    """Two requests per 60s window for every rule (middleware reads the
+    module-level table per request, so patching it changes live behavior)."""
+    import lumirss.middleware as middleware
 
     shrunk = tuple(
         (method, prefix, bucket, 2, 60)
-        for method, prefix, bucket, _max, _window in main_module._RATE_RULES
+        for method, prefix, bucket, _max, _window in middleware._RATE_RULES
     )
-    monkeypatch.setattr(main_module, "_RATE_RULES", shrunk)
+    monkeypatch.setattr(middleware, "_RATE_RULES", shrunk)
 
 
 def test_rate_limited_returns_stable_429_with_retry_after(monkeypatch, tmp_path):

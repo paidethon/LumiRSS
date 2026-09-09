@@ -10,7 +10,7 @@ WORKDIR /app
 # contract): --build-arg VITE_GIT_COMMIT=<git sha> from compose / CI.
 ARG VITE_GIT_COMMIT=""
 ENV VITE_GIT_COMMIT=${VITE_GIT_COMMIT}
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build

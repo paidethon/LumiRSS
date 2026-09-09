@@ -132,7 +132,15 @@ export default function App() {
           }`}
           style={{ '--lumi-timeline-width': `${settings.timelineWidth}px` } as React.CSSProperties}
         >
-          <EntryList />
+          {/* 0022：桌面（lg）搜索 = Timeline 列位；移动端走上方 section 区。
+              hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。 */}
+          {section === 'search' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <SearchPage />
+            </div>
+          ) : (
+            <EntryList />
+          )}
         </section>
 
         {/* Timeline | Reader 分隔条（未隐藏且未移动端时） */}

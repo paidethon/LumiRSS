@@ -31,7 +31,7 @@ jobs:
             "AGENTS.md"
             "docs/README.md"
             "docs/product/PRD.md"
-            "docs/architecture/README.md"
+            "docs/explanation/architecture.md"
           )
 
           for file in "${required_files[@]}"; do
@@ -58,6 +58,9 @@ jobs:
             printf '%s\n' "$tracked_sensitive"
             exit 1
           fi
+
+      - name: Validate env example templates
+        run: python3 scripts/check_env_example.py
 
       - name: Basic repository sanity
         shell: bash

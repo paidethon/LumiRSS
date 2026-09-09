@@ -2,7 +2,7 @@
 
 > 长期视觉与交互规则（源于 0009 UI Reboot 规格，2026-08-28 用户批准；
 > 现为设计权威文档）。历史过程见
-> [milestones/0009-ui-reboot-reference-lab.md](../milestones/0009-ui-reboot-reference-lab.md)；
+> [history/milestones.md](../history/milestones.md)；
 > 阅读器定制研究依据见 [reader-research.md](reader-research.md)。
 > 本文描述视觉/交互规则与目标状态；实现细节以源码为准。
 
@@ -208,7 +208,7 @@ Accent    Lumi Indigo 默认；AccentColorPicker 自定义取色，
   JSON 文档，跨设备）；布局宽度、自定义字体、过滤规则等设备本地键
   永不上传；
 - secrets 永不进入设置存储。架构细节见
-  [architecture/README.md](../architecture/README.md) §9。
+  [explanation/architecture.md](../explanation/architecture.md)「Frontend state」。
 
 ---
 
@@ -428,7 +428,7 @@ a giant card. Reader theme is independent from the app theme.
 
 Preserve the DOMPurify-based sanctioned HTML boundary. Visual work must
 never relax sanitization for prettier embeds. Pipeline detail:
-[architecture/README.md](../architecture/README.md) §8.
+[explanation/architecture.md](../explanation/architecture.md)「Reader content pipeline」。
 
 ### 12.5 AI surfaces（已实现：内嵌于 Reader）
 
@@ -555,7 +555,7 @@ UI 改动至少覆盖以下视口（明暗两主题）：
 必须检查的状态：loading / empty / error / selected / unread-read /
 starred / 长标题 / 无图 / 键盘导航 / 移动 drawer 与 list→reader 返回流。
 
-命令与 CI 视角见 [development/testing.md](../development/testing.md)。
+命令与 CI 视角见 [reference/testing.md](../reference/testing.md)。
 
 ### Behavior regression guard
 

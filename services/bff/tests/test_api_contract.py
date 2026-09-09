@@ -35,9 +35,23 @@ def _normalize_path(path: str) -> str:
     return re.sub(r"\{[^}]*\}", "{}", path)
 
 
+def _iter_api_routes():
+    """Yield concrete APIRoute objects, recursing into included routers
+    (include_router wraps each router; request matching is unaffected)."""
+    from fastapi.routing import APIRoute
+
+    stack = list(app.routes)
+    while stack:
+        route = stack.pop(0)
+        if isinstance(route, APIRoute):
+            yield route
+        elif hasattr(route, "original_router"):
+            stack.extend(route.original_router.routes)
+
+
 def _registered_api_routes() -> set[str]:
     paths = set()
-    for route in app.routes:
+    for route in _iter_api_routes():
         path = getattr(route, "path", "")
         if path.startswith("/api/v1"):
             paths.add(_normalize_path(path))
@@ -74,7 +88,7 @@ def test_web_client_paths_exist_on_bff():
 def test_critical_control_plane_routes_are_registered():
     """The exact routes from the production 404 incident, with methods."""
     methods_by_path: dict[str, set[str]] = {}
-    for route in app.routes:
+    for route in _iter_api_routes():
         path = getattr(route, "path", "")
         if path.startswith("/api/v1"):
             methods_by_path.setdefault(path, set()).update(

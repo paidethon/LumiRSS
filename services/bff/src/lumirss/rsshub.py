@@ -43,6 +43,7 @@ from lumirss.feed_preview import (
     parse_feed_document,
     read_bounded_body,
 )
+from lumirss.http_fetch import follow_redirects, origin_of
 
 __all__ = [
     "CATALOG",
@@ -352,36 +353,36 @@ class RssHubService:
         public-IP validation applies here (it may be a loopback/Docker
         address). What MUST hold: every hop stays on exactly that origin.
         """
-        base = urllib.parse.urlsplit(base_url)
-        base_origin = urllib.parse.urlunsplit((base.scheme, base.netloc, "", "", ""))
-        current = base_origin + path
-        for _hop in range(_MAX_REDIRECTS + 1):
-            parts = urllib.parse.urlsplit(current)
-            origin = urllib.parse.urlunsplit(
-                (parts.scheme.lower(), parts.netloc.lower(), "", "", "")
-            )
-            if origin != base_origin.lower():
+        base_origin = origin_of(base_url)
+
+        async def validate_hop(hop_url: str) -> None:
+            if origin_of(hop_url) != base_origin.lower():
                 raise RssHubFetchError(
                     "RSSHub redirected outside its configured origin."
                 )
-            response = await self._send(current)
-            try:
-                if response.status_code in (301, 302, 303, 307, 308):
-                    location = response.headers.get("location")
-                    if not location:
-                        raise RssHubFetchError(
-                            "RSSHub redirected without a target location."
-                        )
-                    current = urllib.parse.urljoin(current, location)
-                    continue
-                if response.status_code != 200:
-                    raise RssHubFetchError(
-                        f"RSSHub answered HTTP {response.status_code}."
-                    )
-                return await read_bounded_body(response), current
-            finally:
-                await response.aclose()
-        raise RssHubFetchError("RSSHub redirected too many times.")
+
+        def fail(event: str) -> Exception:
+            if event == "no_location":
+                return RssHubFetchError(
+                    "RSSHub redirected without a target location."
+                )
+            return RssHubFetchError("RSSHub redirected too many times.")
+
+        response, final_url = await follow_redirects(
+            base_origin + path,
+            send=self._send,
+            validate_hop=validate_hop,
+            fail=fail,
+            max_redirects=_MAX_REDIRECTS,
+        )
+        try:
+            if response.status_code != 200:
+                raise RssHubFetchError(
+                    f"RSSHub answered HTTP {response.status_code}."
+                )
+            return await read_bounded_body(response), final_url
+        finally:
+            await response.aclose()
 
     async def _send(self, url: str) -> httpx.Response:
         request = self._client.build_request("GET", url, headers=_HEADERS)

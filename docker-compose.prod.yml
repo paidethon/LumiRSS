@@ -1,18 +1,27 @@
 # LumiRSS production stack.
 #
-# Usage:
+# Preferred usage (one command; see ./lumirss):
+#   sudo ./lumirss deploy
+#
+# Manual equivalent:
 #   cp .env.prod.example .env.prod        # fill in secrets
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Images: prebuilt from GHCR by default (LUMIRSS_IMAGE_TAG, default
+# latest). The build: stanzas are the local-build fallback —
+# `./lumirss deploy --build` (or `docker compose build`) compiles from
+# this checkout when no prebuilt image is available/usable.
 #
 # Only the Caddy "web" service is published to the host. FreshRSS and
 # RSSHub stay on the internal network and are never exposed publicly.
 # The BFF has NO Docker socket; FreshRSS data is mounted READ-ONLY for
 # consistent online backup (sqlite backup API, not a raw copy).
 
-name: lumirss-prod
+name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
 
 services:
   web:
+    image: ghcr.io/paidethon/lumirss-web:${LUMIRSS_IMAGE_TAG:-latest}
     build:
       context: ./apps/web
       args:
@@ -26,8 +35,8 @@ services:
     # environment 优先级高于 env_file，会把 .env.prod 里的 DOMAIN 覆盖成
     # shell 插值值，导致真实域名永远不生效（TLS 无法自动签发）。
     ports:
-      - "80:80"
-      - "443:443"
+      - "${LUMIRSS_HTTP_PORT:-80}:80"
+      - "${LUMIRSS_HTTPS_PORT:-443}:443"
     depends_on:
       bff:
         condition: service_healthy
@@ -40,6 +49,7 @@ services:
     cpus: 0.5
 
   bff:
+    image: ghcr.io/paidethon/lumirss-bff:${LUMIRSS_IMAGE_TAG:-latest}
     build:
       context: ./services/bff
       args:

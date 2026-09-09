@@ -180,24 +180,59 @@ describe('SubscriptionsPage（AC11）', () => {
   })
 })
 
-describe('SearchPage（AC11 / 决策 2）', () => {
-  it('诚实空态：全局搜索能力尚未接入（0011a 候选说明）', () => {
+describe('SearchPage（0022 全局搜索正式功能）', () => {
+  it('空查询：显示引导空态（不发搜索请求）', () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
     render(withProviders(<SearchPage />))
-    expect(screen.getByText('全局搜索能力尚未接入')).toBeInTheDocument()
-    expect(screen.getByText(/0011a/)).toBeInTheDocument()
-    // 不渲染范围 chips / 热门搜索（无契约）
-    expect(screen.queryByText('标题')).toBeNull()
-    expect(screen.queryByText('热门搜索')).toBeNull()
+    expect(screen.getByText('搜索你的全部订阅')).toBeInTheDocument()
+    const searchCalls = fetchSpy.mock.calls.filter((call) =>
+      String(call[0]).includes('/api/v1/search'),
+    )
+    expect(searchCalls).toHaveLength(0)
   })
 
-  it('Enter 提交 → 记录到历史 + 状态卡片（不冒充全局搜索）', () => {
+  it('Enter 提交 → 记录到历史 + 渲染真实结果', async () => {
+    const fetchSpy = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              entryRef: 'e1.abc',
+              title: 'Midjourney V7 发布',
+              feedTitle: '设计日报',
+              feedUrl: 'https://example.com/feed',
+              url: null,
+              author: null,
+              publishedAt: '2026-09-01T00:00:00Z',
+              read: false,
+              starred: false,
+              snippet: 'Midjourney V7 正式发布…',
+              matchedFields: ['title'],
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+          elapsedMs: 3,
+          index: { entryCount: 42, lastSyncedAt: '100', partial: false },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
     render(withProviders(<SearchPage />))
     const input = screen.getByRole('searchbox', { name: '搜索' })
     fireEvent.change(input, { target: { value: 'Midjourney V7' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(screen.getByText(/已记录「Midjourney V7」/)).toBeInTheDocument()
-    // 历史出现该词条
-    expect(screen.getByRole('button', { name: 'Midjourney V7' })).toBeInTheDocument()
+    // 结果行渲染（真实查询，不冒充）
+    expect(await screen.findByText('Midjourney V7 发布')).toBeInTheDocument()
+    expect(screen.getByText(/Midjourney V7 正式发布/)).toBeInTheDocument()
+    // 历史记录该词条（有查询时历史区块隐藏 → 断言持久化状态）
+    expect(readSearchHistory()).toContain('Midjourney V7')
+    // 查询参数：q=Midjourney V7（calls[0] 是 useFeeds 的 /feeds）
+    const searchCall = fetchSpy.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/search'),
+    )
+    expect(String(searchCall?.[0] ?? '')).toContain('q=Midjourney')
   })
 
   it('取消按钮：清空输入与提交态', () => {
@@ -219,12 +254,24 @@ describe('SearchPage（AC11 / 决策 2）', () => {
     expect(screen.queryByRole('button', { name: 'b' })).toBeNull()
   })
 
-  it('点历史词条 → 填入输入框并显示状态卡片', () => {
+  it('点历史词条 → 填入输入框并执行搜索', async () => {
+    const fetchSpy = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [],
+          nextCursor: null,
+          hasMore: false,
+          elapsedMs: 1,
+          index: { entryCount: 7, lastSyncedAt: '100', partial: false },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
     localStorage.setItem('lumirss-search-history', JSON.stringify(['RAG']))
     render(withProviders(<SearchPage />))
     fireEvent.click(screen.getByRole('button', { name: 'RAG' }))
     expect(screen.getByRole('searchbox', { name: '搜索' })).toHaveValue('RAG')
-    expect(screen.getByText(/已记录「RAG」/)).toBeInTheDocument()
+    await screen.findByText('没有找到与「RAG」相关的内容')
   })
 })
 

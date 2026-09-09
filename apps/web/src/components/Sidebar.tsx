@@ -10,6 +10,7 @@ import {
   Mail,
   Plus,
   Rss,
+  Search as SearchIcon,
   Star,
   Tags,
   Zap,
@@ -430,6 +431,7 @@ function Sidebar({
   onNavigate?: () => void
 }) {
   const view = useReaderUi((s) => s.view)
+  const section = useReaderUi((s) => s.section)
   const selectView = useReaderUi((s) => s.selectView)
   const selectScope = useReaderUi((s) => s.selectScope)
   const selectSection = useReaderUi((s) => s.selectSection)
@@ -549,6 +551,18 @@ function Sidebar({
         >
           <Star aria-hidden className={icon16} />
           收藏
+        </NavItem>
+
+        {/* 0022：全局搜索（section=search；桌面渲染在 Timeline 列位） */}
+        <NavItem
+          active={section === 'search'}
+          onClick={() => {
+            selectSection('search')
+            onNavigate?.()
+          }}
+        >
+          <SearchIcon aria-hidden className={icon16} />
+          搜索
         </NavItem>
 
         <div className="mt-1 flex flex-col gap-0.5">

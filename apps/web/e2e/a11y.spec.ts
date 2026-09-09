@@ -88,12 +88,11 @@ test('a11y — 设置：外观 / 数据控制 / 账户与服务', async ({ page 
   }
 })
 
-test.describe('a11y — 搜索页（诚实空态，移动入口）', () => {
-  test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'mobile search tab')
-
+test.describe('a11y — 搜索页（0022 正式功能，双端入口）', () => {
   test('搜索页扫描', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('button', { name: '搜索', exact: true }).click()
+    // 桌面：Sidebar「搜索」；移动：底栏「搜索」——同名按钮，两端可达
+    await page.getByRole('button', { name: '搜索', exact: true }).first().click()
     await expect(page.getByRole('searchbox').first()).toBeVisible()
     await expectNoCriticalViolations(page)
   })
