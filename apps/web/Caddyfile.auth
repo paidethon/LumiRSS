@@ -9,17 +9,23 @@
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
+		X-XSS-Protection "0"
 		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-aYPnowo+pCHklZyinTQjBAXVsi+QpQ7CfuGVjPnioBo='; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src * data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	handle /api/* {
+		reverse_proxy bff:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
 	}
 
 	# Single-user access control. The hash must be a bcrypt hash generated
 	# with `docker run --rm caddy:2-alpine caddy hash-password`.
 	basic_auth {
 		__AUTH_USER__ __AUTH_HASH__
-	}
-
-	handle /api/* {
-		reverse_proxy bff:8000
 	}
 
 	handle {

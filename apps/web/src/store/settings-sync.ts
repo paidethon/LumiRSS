@@ -10,6 +10,7 @@
  * - 失败静默（不打扰用户、不回滚 UI）；下一次变更自然重试；
  *   pagehide 时用 keepalive 补发最终值（不丢最后一次调整）。 */
 
+import { ApiError } from '../api/client'
 import {
   getServerSettings,
   patchServerSettings,
@@ -40,6 +41,11 @@ let queuedFlush = false
 let flushedFinal = false
 /** store 订阅的退订句柄（测试重置用）。 */
 let unsubscribe: (() => void) | null = null
+/** 0021：最近一次见到的服务端 revision（乐观并发）。null = 未知
+ * （旧服务端 / 尚未读取）→ PATCH 不带 baseRevision，行为与历史一致。 */
+let serverRevision: number | null = null
+/** 0021：一次 flush 内因 409 冲突自动重试的次数上限（防循环）。 */
+const MAX_CONFLICT_RETRIES = 1
 
 export interface SettingsSyncOptions {
   /** 测试注入：debounce 时长（0 = 立即）。 */
@@ -92,7 +98,10 @@ function scheduleFlush(): void {
 
 /** 串行化的 PATCH：只发最新快照；in-flight 时挂起等待，完成后重发。
  * AUDIT-010：成功时清除本次发送的 dirty 键（已落库）；失败时保留，
- * 使其既不被 hydration 覆盖，又能在下次变更/联网/重载时重试。 */
+ * 使其既不被 hydration 覆盖，又能在下次变更/联网/重载时重试。
+ * 0021：携带 baseRevision 做乐观并发；409 = 另一设备已写入 →
+ * 静默 re-hydrate（server 值合并回本地，dirty 键保留）后重试一次，
+ * 避免陈旧快照静默覆盖他人变更。 */
 async function flush(): Promise<void> {
   if (inFlight !== null) {
     queuedFlush = true
@@ -101,11 +110,33 @@ async function flush(): Promise<void> {
   const sending = new Set(dirtyKeys)
   const payload = portableSettings(useAppSettings.getState().settings)
   inFlight = sendPatch(payload)
-    .then(() => {
+    .then((revision) => {
+      if (typeof revision === 'number') serverRevision = revision
       for (const key of sending) dirtyKeys.delete(key)
       persistDirtyKeys()
     })
-    .catch(() => {
+    .catch(async (error: unknown) => {
+      if (isSettingsConflict(error) && serverRevision !== null) {
+        // 冲突：丢弃对 revision 的认知，re-hydrate 让服务端值合并回
+        // 本地（dirty 键保留），随后立刻重试一次（带上新 revision）。
+        serverRevision = null
+        await hydrate()
+        for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES; attempt += 1) {
+          try {
+            const retryPayload = portableSettings(
+              useAppSettings.getState().settings,
+            )
+            const retryRevision = await sendPatch(retryPayload)
+            if (typeof retryRevision === 'number') serverRevision = retryRevision
+            for (const key of sending) dirtyKeys.delete(key)
+            persistDirtyKeys()
+            return
+          } catch {
+            /* 重试仍失败：dirty 键保留，等下一次变更/联网/重载 */
+          }
+        }
+        return
+      }
       /* 静默：网络/服务端失败不回滚 UI；dirty 键保留 → 后续重试 */
     })
     .finally(() => {
@@ -118,8 +149,18 @@ async function flush(): Promise<void> {
   await inFlight
 }
 
-function sendPatch(payload: PortableValues): Promise<void> {
-  return patchServerSettings(payload).then(() => undefined)
+function isSettingsConflict(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.type === 'app_settings_conflict'
+  )
+}
+
+function sendPatch(payload: PortableValues): Promise<number | null> {
+  const body: Record<string, string | number | boolean> = { ...payload }
+  if (serverRevision !== null) body.baseRevision = serverRevision
+  return patchServerSettings(body).then((server) => server.revision ?? null)
 }
 
 async function sendNow(): Promise<void> {
@@ -133,6 +174,7 @@ async function sendNow(): Promise<void> {
 async function hydrate(): Promise<void> {
   try {
     const server = await getServerSettings()
+    serverRevision = typeof server.revision === 'number' ? server.revision : null
     if (!server.stored) {
       // 首次访问：本地 portable 值作迁移种子 PUSH（幂等）。
       await sendPatch(portableSettings(useAppSettings.getState().settings))
@@ -232,6 +274,7 @@ export function resetSettingsSyncForTests(): void {
   dirtyKeys = new Set()
   persistDirtyKeys()
   applyingServerValues = false
+  serverRevision = null
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer)
     debounceTimer = null

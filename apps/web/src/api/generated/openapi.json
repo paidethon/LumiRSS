@@ -461,7 +461,7 @@
    },
    "AppSettingsView": {
     "additionalProperties": false,
-    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values.",
+    "description": "GET/PATCH /api/v1/settings — the portable document + ``stored`` flag.\n\n``stored=false`` means the server holds no explicit document yet (the\nclient may seed it from local values); otherwise the fields are the\nserver-durable values. ``revision`` (0021) is a content-hash of the\nstored document for optimistic concurrency: a PATCH may carry\n``baseRevision`` and is refused with a stable 409 when it no longer\nmatches.",
     "properties": {
      "accentColor": {
       "default": "#6d78e8",
@@ -594,6 +594,10 @@
       "title": "Reducemotion",
       "type": "boolean"
      },
+     "revision": {
+      "title": "Revision",
+      "type": "integer"
+     },
      "schemaVersion": {
       "const": 1,
       "default": 1,
@@ -643,7 +647,8 @@
      }
     },
     "required": [
-     "stored"
+     "stored",
+     "revision"
     ],
     "title": "AppSettingsView",
     "type": "object"
@@ -2824,6 +2829,51 @@
     "title": "RssHubCredentialCreate",
     "type": "object"
    },
+   "RssHubCredentialMetadataPatch": {
+    "description": "PATCH /api/v1/rsshub/credentials/{id} body (metadata only).",
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "route": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Route"
+     }
+    },
+    "title": "RssHubCredentialMetadataPatch",
+    "type": "object"
+   },
+   "RssHubCredentialValuePut": {
+    "description": "PUT /api/v1/rsshub/credentials/{id}/value body.",
+    "properties": {
+     "value": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "value"
+    ],
+    "title": "RssHubCredentialValuePut",
+    "type": "object"
+   },
    "RssHubDetectCandidate": {
     "properties": {
      "latencyMs": {
@@ -2979,9 +3029,10 @@
     "type": "object"
    },
    "SecretValuePut": {
-    "description": "Write-only secret body (shared by AI keys and RSSHub secrets).",
+    "description": "Write-only secret body (shared by AI keys and RSSHub secrets).\n\n0021 hardening: bounded length (same bound as the RSSHub secret\nschema) and control-character rejection at INPUT time — a control\ncharacter in an API key is never legitimate, and storing one would\npoison env-file rendering / upstream calls until the value is\nreplaced.",
     "properties": {
      "value": {
+      "maxLength": 10000,
       "minLength": 1,
       "title": "Value",
       "type": "string"
@@ -4769,6 +4820,16 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubCredentialMetadataPatch"
+       }
+      }
+     },
+     "required": true
+    },
     "responses": {
      "200": {
       "content": {
@@ -4810,6 +4871,16 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubCredentialValuePut"
+       }
+      }
+     },
+     "required": true
+    },
     "responses": {
      "204": {
       "description": "Successful Response"
@@ -4934,7 +5005,7 @@
     "summary": "Get App Settings"
    },
    "patch": {
-    "description": "Persist a partial portable settings update (strictly validated).\n\nThe body is parsed manually so that EVERY invalid payload — unknown\nkey, wrong type, out-of-range, NaN/Infinity, malformed JSON — is\nrejected with the stable 400 invalid_app_settings error (FastAPI's\ndefault 422 serialization crashes on non-finite numbers). There is\ndeliberately no field that can carry any secret.",
+    "description": "Persist a partial portable settings update (strictly validated).\n\nThe body is parsed manually so that EVERY invalid payload — unknown\nkey, wrong type, out-of-range, NaN/Infinity, malformed JSON — is\nrejected with the stable 400 invalid_app_settings error (FastAPI's\ndefault 422 serialization crashes on non-finite numbers). There is\ndeliberately no field that can carry any secret.\n\n0021 multi-device semantics: a body carrying ``baseRevision`` that no\nlonger matches the stored document is refused with the stable 409\napp_settings_conflict — the stale client re-hydrates and retries.\nBodies without baseRevision keep the historical last-write-wins\nbehavior (older clients unaffected).",
     "operationId": "patch_app_settings_api_v1_settings_patch",
     "responses": {
      "200": {

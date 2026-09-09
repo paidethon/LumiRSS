@@ -27,6 +27,12 @@ from lumirss.util import utc_now as _utc_now
 SETTINGS_SCHEMA_VERSION = 1
 STORAGE_KEY = "app.settings"
 
+
+class AppSettingsConflict(Exception):
+    """0021: a PATCH carried a baseRevision that no longer matches the
+    stored document — another device saved in between. Message is
+    browser-safe and static."""
+
 THEME_MODES = ("system", "light", "dark")
 UI_FONT_STACKS = ("default", "sans", "serif", "mono")
 UI_FONT_SIZES = (15, 16, 18, 20)
@@ -252,3 +258,31 @@ class AppSettingsStore:
             "DELETE FROM lumi_settings WHERE key = ?", (STORAGE_KEY,)
         )
         return defaults()
+
+    async def document_revision(self) -> int:
+        """Content-hash revision of the stored row (0021, ETag semantics).
+
+        0 = nothing stored. Any save that changes the stored JSON yields a
+        different revision; a no-op rewrite of identical content keeps it,
+        which is safe for concurrency (nothing was actually lost).
+        Computed over the raw stored value so legacy rows work unchanged.
+        """
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT value FROM lumi_settings WHERE key = ?", (STORAGE_KEY,)
+        )
+        if row is None:
+            return 0
+        return revision_from_value(row["value"])
+
+
+def revision_from_value(value: object) -> int:
+    """Stable revision for a raw stored value (0 for None/blank)."""
+    if value is None:
+        return 0
+    import hashlib
+
+    digest = hashlib.sha256(str(value).encode("utf-8")).digest()
+    # 48 bits: comfortably collision-free for this use AND below 2^53 so
+    # the browser can hold it in a JS number without precision loss.
+    return int.from_bytes(digest[:6], "big")

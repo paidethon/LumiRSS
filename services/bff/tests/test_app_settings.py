@@ -23,6 +23,52 @@ def _client(db_path):
     return TestClient(app), db_path
 
 
+def test_settings_revision_round_trip_and_conflict(tmp_path):
+    """0021: GET exposes a revision; PATCH with the matching baseRevision
+    succeeds and bumps it; a stale baseRevision is refused with the stable
+    409 app_settings_conflict; omitting baseRevision stays last-write-wins."""
+    with TestClient(app) as client:
+        app.state.db = Database(tmp_path / "lumi.sqlite")
+
+        first = client.get("/api/v1/settings").json()
+        assert isinstance(first["revision"], int) and first["revision"] >= 0
+
+        patched = client.patch(
+            "/api/v1/settings",
+            json={"themeMode": "dark", "baseRevision": first["revision"]},
+        )
+        assert patched.status_code == 200
+        second = patched.json()
+        assert second["themeMode"] == "dark"
+        assert second["revision"] != first["revision"]
+
+        # Stale baseRevision → stable 409, nothing applied.
+        stale = client.patch(
+            "/api/v1/settings",
+            json={"themeMode": "light", "baseRevision": first["revision"]},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"]["type"] == "app_settings_conflict"
+        assert client.get("/api/v1/settings").json()["themeMode"] == "dark"
+
+        # Current baseRevision → accepted.
+        fresh = client.patch(
+            "/api/v1/settings",
+            json={"themeMode": "light", "baseRevision": second["revision"]},
+        )
+        assert fresh.status_code == 200
+        assert fresh.json()["themeMode"] == "light"
+
+        # No baseRevision (older client) → last-write-wins as before.
+        legacy = client.patch("/api/v1/settings", json={"themeMode": "dark"})
+        assert legacy.status_code == 200
+
+        # Invalid baseRevision shape → stable 400.
+        bad = client.patch("/api/v1/settings", json={"baseRevision": -1})
+        assert bad.status_code == 400
+        assert bad.json()["error"]["type"] == "invalid_app_settings"
+
+
 def test_get_settings_returns_defaults_when_nothing_stored(tmp_path):
     with TestClient(app) as client:
         app.state.db = Database(tmp_path / "lumi.sqlite")

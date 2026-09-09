@@ -7,14 +7,20 @@
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
+		X-XSS-Protection "0"
 		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-aYPnowo+pCHklZyinTQjBAXVsi+QpQ7CfuGVjPnioBo='; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src * data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	handle /api/* {
+		reverse_proxy bff:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
 	}
 
 	# Same-origin API: browser talks only to the BFF.
-	handle /api/* {
-		reverse_proxy bff:8000
-	}
-
 	handle {
 		root * /srv
 		try_files {path} /index.html
