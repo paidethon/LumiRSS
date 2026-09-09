@@ -127,9 +127,11 @@ jobs:
 
       - name: Install Chromium
         working-directory: apps/web
-        run: >
+        run: |
+          # The runner's google-chrome apt source can serve a stale index
+          # (Hash Sum mismatch) which fails --with-deps' apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
           pnpm exec playwright install --with-deps chromium
-          || { sleep 20; pnpm exec playwright install --with-deps chromium; }
 
       - name: Build production bundle
         working-directory: apps/web
