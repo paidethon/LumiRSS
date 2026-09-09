@@ -20,6 +20,6 @@ def _isolate_freshrss_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
 def _reset_rate_limit_windows() -> None:
     """0021 rate limits are process-global fixed windows; tests must not
     inherit (or leak into) each other's counters."""
-    import lumirss.main as main_module
+    import lumirss.middleware as middleware
 
-    main_module._rate_windows.clear()
+    middleware._rate_windows.clear()
