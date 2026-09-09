@@ -50,9 +50,12 @@
 
 ## Next
 
-- 0021 — Security & Operations Hardening（candidate，编号未占用）：BFF
-  内部鉴权 / DNS-rebinding 硬化 / CSP·HSTS·rate-limit / 通用请求体限制 /
-  AI lock-map / 多设备设置冲突语义
+- [x] 0021 — Security & Operations Hardening（候选范围已实施于维护分支
+  `chore/postmerge-reality-security-hardening-20260908`，PR-ready；编号是否
+  正式占用由用户合并时决定）：BFF 内部鉴权（opt-in token）/ DNS-rebinding
+  审计确认 / CSP·HSTS·Permissions-Policy / 控制面限流 / 全局请求体上限 /
+  AI lock-map 有界化 / 多设备设置冲突语义（409 + re-hydrate）
+  → 明细与证据：[tasks/postmerge-reality-security-hardening/VALIDATION.md](tasks/postmerge-reality-security-hardening/VALIDATION.md)
 
 ## Phase 2 — Knowledge Workbench (deferred)
 
