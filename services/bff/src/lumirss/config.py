@@ -141,6 +141,9 @@ class LumiSettings(BaseSettings):
     LUMIRSS_COMMIT: str = ""
     AI_API_KEY: SecretStr = SecretStr("")
     LUMIRSS_INTERNAL_TOKEN: SecretStr = SecretStr("")
+    # Search projection sync cadence (0022); 0 disables the background sync
+    # (tests set this to stay hermetic from the developer's FreshRSS).
+    LUMIRSS_SEARCH_SYNC_INTERVAL: float = 60.0
 
     @property
     def ai_configured(self) -> bool:

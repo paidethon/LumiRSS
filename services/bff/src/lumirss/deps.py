@@ -52,6 +52,7 @@ from lumirss.rsshub_control import (
     RssHubControlStore,
     RssHubCustomCredentialStore,
 )
+from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
 from lumirss.source_discovery import (
     SourceDiscoveryService,
@@ -343,5 +344,25 @@ def _get_restore_service(request: Request) -> RestoreService:
         )
 
     return _cached_on_app_state(request, "restore_service", build)
+
+
+def _get_search_service(request: Request) -> SearchIndexService:
+    """Derived search projection over the shared FreshRSS session.
+
+    Built lazily like the other services. FreshRSS may be unconfigured
+    (CI, degraded dev): search over an already-built projection still
+    works, while sync/rebuild report the missing dependency honestly.
+    """
+
+    def build():
+        try:
+            adapter = FreshRSSAdapter(
+                request.app.state.http_client, FreshRSSSettings()
+            )
+        except (ConfigError, ValidationError):
+            adapter = None
+        return SearchIndexService(request.app.state.db, adapter)
+
+    return _cached_on_app_state(request, "search_service", build)
 
 

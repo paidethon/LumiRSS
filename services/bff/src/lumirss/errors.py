@@ -90,6 +90,7 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     RssHubUnknownKey,
 )
+from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.source_discovery import (
     InvalidSourceUrl,
@@ -174,6 +175,8 @@ _ERROR_RESPONSES = {
     SecretsStoreError: (500, "secret_store_error"),
     # 0021 global body cap
     RequestBodyTooLarge: (413, "request_too_large"),
+    # 0022 global search
+    SearchQueryError: (400, "invalid_search_query"),
 }
 
 
@@ -238,6 +241,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RestoreFailed)
     @app.exception_handler(SecretsStoreError)
     @app.exception_handler(RequestBodyTooLarge)
+    @app.exception_handler(SearchQueryError)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

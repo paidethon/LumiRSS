@@ -17,6 +17,14 @@ def _isolate_freshrss_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _disable_search_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """0022: the background search sync must not run under TestClient —
+    on a developer machine it would pull the real FreshRSS reading list
+    into the per-test database and make count assertions nondeterministic."""
+    monkeypatch.setenv("LUMIRSS_SEARCH_SYNC_INTERVAL", "0")
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limit_windows() -> None:
     """0021 rate limits are process-global fixed windows; tests must not
     inherit (or leak into) each other's counters."""

@@ -1,12 +1,15 @@
 """LumiRSS BFF application entry point.
 
-Assembly only: lifespan (shared clients/stores), the pure-ASGI hardening
-middleware stack, route modules and the stable error envelope. Route
-handlers live in ``lumirss/routers/*``, request plumbing in
-``lumirss.deps``, error mapping in ``lumirss.errors`` and request
-hardening in ``lumirss.middleware``.
+Assembly only: lifespan (shared clients/stores + the search sync task),
+the pure-ASGI hardening middleware stack, route modules and the stable
+error envelope. Route handlers live in ``lumirss/routers/*``, request
+plumbing in ``lumirss.deps``, error mapping in ``lumirss.errors`` and
+request hardening in ``lumirss.middleware``.
 """
 
+import asyncio
+import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -32,11 +35,15 @@ from lumirss.routers import (
     operations,
     opml,
     rsshub,
+    search,
     settings,
     subscriptions,
 )
+from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
+
+_logger = logging.getLogger("lumirss.search")
 
 
 @asynccontextmanager
@@ -45,7 +52,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     on the first /api/v1/feeds request (so /health/live works even when
     FreshRSS is not configured). The Lumi SQLite Database handle is created
     here too — cheap, no file I/O; migrations run lazily on the first
-    storage use (0015)."""
+    storage use (0015). The derived search projection is synced by a
+    background task (0022): rebuild when empty, then catch up each
+    interval. Its failures are logged, never fatal."""
     app.state.http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=5.0),
         trust_env=False,
@@ -71,7 +80,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.webdav_settings = None
     app.state.backup_engine = None
     app.state.restore_service = None
+    app.state.search_service = None
+
+    settings = LumiSettings()
+    interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
+    if interval > 0:
+        # Build the projection service eagerly so the background sync runs
+        # even before the first search request. Unconfigured FreshRSS
+        # (tests, degraded dev) simply leaves it disabled.
+        try:
+            from lumirss.adapters.freshrss import FreshRSSAdapter
+            from lumirss.config import FreshRSSSettings
+
+            app.state.search_service = SearchIndexService(
+                app.state.db,
+                FreshRSSAdapter(app.state.http_client, FreshRSSSettings()),
+            )
+        except Exception:  # noqa: BLE001 — never block startup on search
+            _logger.info("search sync disabled (FreshRSS not configured)")
+
+    async def search_sync_loop() -> None:
+        while True:
+            await asyncio.sleep(interval)
+            service: SearchIndexService | None = app.state.search_service
+            if service is None:
+                continue
+            try:
+                await service.maybe_sync()
+            except Exception:  # noqa: BLE001 — sync must never kill the app
+                _logger.exception("search index sync failed; will retry")
+
+    sync_task = asyncio.create_task(search_sync_loop())
     yield
+    sync_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sync_task
     await app.state.http_client.aclose()
 
 
@@ -104,5 +147,6 @@ app.include_router(entry_ai.router)
 app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
+app.include_router(search.router)
 
 register_error_handlers(app)

@@ -16,7 +16,13 @@ import httpx
 
 from lumirss.config import FreshRSSSettings
 from lumirss.entryref import encode_entry_ref
-from lumirss.models import EntryDetail, EntryListItem, EntryPage
+from lumirss.models import (
+    EntryDetail,
+    EntryDocument,
+    EntryDocumentPage,
+    EntryListItem,
+    EntryPage,
+)
 
 EntryView = Literal["all", "unread", "starred"]
 
@@ -53,6 +59,10 @@ _NETWORK_ERRORS = (httpx.TransportError,)
 # unread); n = max items; r defaults to "d" (newest first). View filters are
 # passed upstream as the `it` parameter so FreshRSS does the filtering.
 _ENTRY_LIST_LIMIT = 20
+
+# Search-projection harvest page size (0022): larger than the entry list
+# pages because the sync walks the whole reading list in bounded chunks.
+_DOCUMENT_HARVEST_LIMIT = 50
 
 # FreshRSS state markers (1.29.1 source verified; probe confirmed).
 _READ_MARKER = "user/-/state/com.google/read"
@@ -464,6 +474,65 @@ class FreshRSSAdapter(FreshRSSSession):
             upstreamContinuation=self._continuation_of(payload),
         )
 
+    async def list_entry_documents(
+        self,
+        *,
+        continuation: str | None = None,
+        limit: int = _DOCUMENT_HARVEST_LIMIT,
+    ) -> EntryDocumentPage:
+        """Paged harvest of entries WITH plain-text bodies.
+
+        Exists solely to build the derived search projection
+        (search_index.py) — FreshRSS stays the RSS-domain source of
+        truth, and this read path serves no other feature. Same reading
+        list stream as ``list_entries(view="all")`` (newest first), but
+        each document carries the html_to_text rendering of the upstream
+        content so the projection can be rebuilt without per-entry
+        items/contents calls.
+        """
+        token = await self._get_auth_token()
+        try:
+            payload = await self._request_stream(
+                token, "all", None, None, continuation, limit=limit
+            )
+        except AuthenticationError:
+            self._clear_tokens()
+            token = await self._get_auth_token()
+            payload = await self._request_stream(
+                token, "all", None, None, continuation, limit=limit
+            )
+        documents: list[EntryDocument] = []
+        for item in self._iter_items(payload, "stream/contents"):
+            base = self._common_fields(item)
+            if base is None:
+                continue
+            origin = item.get("origin")
+            stream_id = (
+                origin.get("streamId")
+                if isinstance(origin, dict) and isinstance(origin.get("streamId"), str)
+                else ""
+            )
+            feed_url = stream_id.removeprefix("feed/")
+            documents.append(
+                EntryDocument(
+                    item_id=base["item_id"],
+                    entryRef=encode_entry_ref(base["item_id"]),
+                    feedUrl=feed_url,
+                    feedTitle=base["feed_title"],
+                    title=base["title"],
+                    author=base["author"],
+                    url=base["url"],
+                    publishedAt=base["published_at"] or "",
+                    read=base["read"],
+                    starred=base["starred"],
+                    contentText=html_to_text(base["content_html"]),
+                )
+            )
+        return EntryDocumentPage(
+            documents=documents,
+            upstreamContinuation=self._continuation_of(payload),
+        )
+
     async def get_entry(self, item_id: str) -> EntryDetail:
         """Return one entry with its body (read-only).
 
@@ -608,6 +677,7 @@ class FreshRSSAdapter(FreshRSSSession):
         feed_url: str | None,
         category_id: str | None,
         continuation: str | None,
+        limit: int = _ENTRY_LIST_LIMIT,
     ) -> dict:
         """GET stream/contents (read-only, bounded n=20, filtered upstream).
 
@@ -625,7 +695,7 @@ class FreshRSSAdapter(FreshRSSSession):
             )
         else:
             stream_path = "reading-list"
-        params: dict[str, str] = {"output": "json", "n": str(_ENTRY_LIST_LIMIT)}
+        params: dict[str, str] = {"output": "json", "n": str(limit)}
         it_filter = _VIEW_FILTERS.get(view)
         if it_filter is not None:
             params["it"] = it_filter

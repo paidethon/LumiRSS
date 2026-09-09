@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field, model_validator
 
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
-from lumirss.deps import _get_adapter
+from lumirss.deps import _get_adapter, _get_search_service
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.models import (
     EntryDetail,
@@ -123,13 +123,19 @@ async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request
 
     204 means FreshRSS accepted the write; it does not re-confirm that the
     entry exists. Invalid refs and invalid bodies are rejected before any
-    FreshRSS call.
+    FreshRSS call. The accepted state is mirrored into the derived search
+    projection so its unread/starred filters stay fresh between syncs.
     """
     item_id = decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
     adapter = _get_adapter(request)
     await adapter.set_entry_state(
         item_id, read=update.read, starred=update.starred
     )
+    search = _get_search_service(request)
+    if update.read is not None:
+        await search.set_entry_read(entry_ref, update.read)
+    if update.starred is not None:
+        await search.set_entry_starred(entry_ref, update.starred)
     return Response(status_code=204)
 
 

@@ -673,3 +673,82 @@ class RssHubConfigView(BaseModel):
     pendingCount: int
     pendingSecrets: bool
     groups: list[RssHubConfigGroup]
+
+
+# ---------------------------------------------------------------------------
+# Global search (0022) — derived FTS projection over FreshRSS entries
+# ---------------------------------------------------------------------------
+
+
+class EntryDocument(BaseModel):
+    """Adapter-level harvest item: list fields + the plain-text body.
+
+    Used ONLY to build the derived search projection (search_index.py);
+    it never appears in an API response.
+    """
+
+    item_id: str
+    entryRef: str
+    feedUrl: str
+    feedTitle: str
+    title: str
+    author: str | None = None
+    url: str | None = None
+    publishedAt: str
+    read: bool
+    starred: bool
+    contentText: str
+
+
+class EntryDocumentPage(BaseModel):
+    """Adapter-level harvest page (search projection input only)."""
+
+    documents: list[EntryDocument]
+    upstreamContinuation: str | None
+
+
+class SearchItem(BaseModel):
+    """One search hit — list metadata plus a safe plain-text snippet.
+
+    ``snippet`` is plain text extracted from the sanitized content text
+    (never HTML); the web client renders it as text only.
+    """
+
+    entryRef: str
+    title: str
+    feedTitle: str
+    feedUrl: str
+    author: str | None = None
+    url: str | None = None
+    publishedAt: str
+    read: bool
+    starred: bool
+    snippet: str
+    matchedFields: list[str]
+
+
+class SearchIndexInfo(BaseModel):
+    """Honest state of the derived projection behind this response."""
+
+    entryCount: int
+    lastSyncedAt: str | None = None
+    partial: bool = False
+
+
+class SearchResponse(BaseModel):
+    """Envelope for GET /api/v1/search."""
+
+    items: list[SearchItem]
+    nextCursor: str | None
+    hasMore: bool
+    elapsedMs: int
+    index: SearchIndexInfo
+
+
+class SearchRebuildResult(BaseModel):
+    """Envelope for POST /api/v1/search/rebuild."""
+
+    entryCount: int
+    pages: int
+    partial: bool
+    elapsedMs: int

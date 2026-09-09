@@ -291,7 +291,8 @@ export interface paths {
          *
          *     204 means FreshRSS accepted the write; it does not re-confirm that the
          *     entry exists. Invalid refs and invalid bodies are rejected before any
-         *     FreshRSS call.
+         *     FreshRSS call. The accepted state is mirrored into the derived search
+         *     projection so its unread/starred filters stay fresh between syncs.
          */
         patch: operations["entry_state_api_v1_entries__entry_ref__state_patch"];
         trace?: never;
@@ -852,6 +853,52 @@ export interface paths {
         get: operations["rsshub_routes_api_v1_rsshub_routes_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search
+         * @description Global search over the derived projection.
+         *
+         *     ``q`` is required (1-200 chars, at most 4 whitespace-split terms).
+         *     ``state`` accepts "unread" (default: all); ``favorite`` filters
+         *     starred entries; ``from``/``to`` are inclusive/exclusive ISO dates
+         *     (YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two
+         *     are mutually exclusive.
+         */
+        get: operations["search_api_v1_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Index
+         * @description Rebuild the projection from FreshRSS (bounded, honest stats).
+         */
+        post: operations["rebuild_index_api_v1_search_rebuild_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2522,6 +2569,81 @@ export interface components {
             title: string;
         };
         /**
+         * SearchIndexInfo
+         * @description Honest state of the derived projection behind this response.
+         */
+        SearchIndexInfo: {
+            /** Entrycount */
+            entryCount: number;
+            /** Lastsyncedat */
+            lastSyncedAt?: string | null;
+            /**
+             * Partial
+             * @default false
+             */
+            partial: boolean;
+        };
+        /**
+         * SearchItem
+         * @description One search hit — list metadata plus a safe plain-text snippet.
+         *
+         *     ``snippet`` is plain text extracted from the sanitized content text
+         *     (never HTML); the web client renders it as text only.
+         */
+        SearchItem: {
+            /** Author */
+            author?: string | null;
+            /** Entryref */
+            entryRef: string;
+            /** Feedtitle */
+            feedTitle: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Matchedfields */
+            matchedFields: string[];
+            /** Publishedat */
+            publishedAt: string;
+            /** Read */
+            read: boolean;
+            /** Snippet */
+            snippet: string;
+            /** Starred */
+            starred: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * SearchRebuildResult
+         * @description Envelope for POST /api/v1/search/rebuild.
+         */
+        SearchRebuildResult: {
+            /** Elapsedms */
+            elapsedMs: number;
+            /** Entrycount */
+            entryCount: number;
+            /** Pages */
+            pages: number;
+            /** Partial */
+            partial: boolean;
+        };
+        /**
+         * SearchResponse
+         * @description Envelope for GET /api/v1/search.
+         */
+        SearchResponse: {
+            /** Elapsedms */
+            elapsedMs: number;
+            /** Hasmore */
+            hasMore: boolean;
+            index: components["schemas"]["SearchIndexInfo"];
+            /** Items */
+            items: components["schemas"]["SearchItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
          * SecretValuePut
          * @description Write-only secret body (shared by AI keys and RSSHub secrets).
          *
@@ -3957,6 +4079,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubCatalog"];
+                };
+            };
+        };
+    };
+    search_api_v1_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                cursor?: string | null;
+                limit?: number;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+                state?: string | null;
+                favorite?: boolean | null;
+                from_?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_index_api_v1_search_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchRebuildResult"];
                 };
             };
         };
