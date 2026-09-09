@@ -2,7 +2,13 @@
  * useFeeds/useEntries 在 Sidebar / EntryList / ReaderPlaceholder 间共享
  * （同 query key 命中同一份 cache，不会重复请求）。 */
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import {
   applyRssHubConfig,
   clearAiProfileSecret,
@@ -51,6 +57,7 @@ import {
   previewRestore,
   previewRssHub,
   renameCategory,
+  searchEntries,
   sendConversationMessage,
   setAiProfileSecret,
   setDefaultAiSecret,
@@ -114,6 +121,40 @@ export function useEntries(scope: ContentScope, view: UiView) {
         signal,
       ),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+}
+
+/** 0022 全局搜索：q 已在页面侧防抖（300ms）；这里只负责无限分页。
+ * staleTime 0：搜索期望每次输入都触发新请求；q 变化 = 换 key，
+ * 旧请求由 AbortSignal 自动取消。enabled：空查询不发请求。 */
+export function useSearch(
+  q: string,
+  filters: {
+    feedUrl?: string | null
+    categoryId?: string | null
+    state?: 'unread' | null
+    favorite?: boolean | null
+  },
+) {
+  const trimmed = q.trim()
+  return useInfiniteQuery({
+    queryKey: ['search', { q: trimmed, ...filters }],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      searchEntries(
+        {
+          q: trimmed,
+          cursor: pageParam,
+          feedUrl: filters.feedUrl ?? null,
+          categoryId: filters.categoryId ?? null,
+          state: filters.state ?? null,
+          favorite: filters.favorite ?? null,
+        },
+        signal,
+      ),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: trimmed.length > 0,
+    placeholderData: keepPreviousData,
   })
 }
 

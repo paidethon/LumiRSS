@@ -30,6 +30,7 @@ import type {
   RestoreResult,
   RssHubConfig,
   RssHubRoutesResponse,
+  SearchResponse,
   ServerSettings,
   SourceDiscoveryResponse,
   Subscription,
@@ -167,8 +168,7 @@ export async function getEntries(
     cursor?: string | null
   },
   signal?: AbortSignal,
-): Promise<EntryListResponse> {
-  const query = new URLSearchParams()
+): Promise<EntryListResponse> {  const query = new URLSearchParams()
   // view 始终显式携带，与 query key 的 scope 保持一致（与 cursor scope
   // 构造性一致，规避 invalid_cursor 400）。read-later 是前端 workspace
   // 语义（无 BFF 契约）：翻译为 view=all 全量拉取，列表侧客户端过滤。
@@ -189,6 +189,51 @@ export async function getEntries(
     query.set('cursor', params.cursor)
   }
   return request<EntryListResponse>(`${API_BASE}/entries?${query}`, signal)
+}
+
+/** 0022 全局搜索：q 必填；cursor opaque 原样透传；过滤器由页面构造。 */
+export async function searchEntries(
+  params: {
+    q: string
+    cursor?: string | null
+    limit?: number
+    feedUrl?: string | null
+    categoryId?: string | null
+    state?: 'unread' | null
+    favorite?: boolean | null
+    from?: string | null
+    to?: string | null
+  },
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const query = new URLSearchParams()
+  query.set('q', params.q)
+  if (params.cursor != null) {
+    // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
+    query.set('cursor', params.cursor)
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.feedUrl != null) {
+    query.set('feedUrl', params.feedUrl)
+  }
+  if (params.categoryId != null) {
+    query.set('categoryId', params.categoryId)
+  }
+  if (params.state != null) {
+    query.set('state', params.state)
+  }
+  if (params.favorite != null) {
+    query.set('favorite', params.favorite ? 'true' : 'false')
+  }
+  if (params.from != null) {
+    query.set('from', params.from)
+  }
+  if (params.to != null) {
+    query.set('to', params.to)
+  }
+  return request<SearchResponse>(`${API_BASE}/search?${query}`, signal)
 }
 
 /** 读单篇文章 Detail。entryRef 虽是 URL-safe base64url，仍统一

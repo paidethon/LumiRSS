@@ -32,12 +32,12 @@ test('M1 — 底部导航与抽屉：一级入口 / 搜索诚实 / 设置触达'
   // 底部栏不遮挡内容：页面可以滚动到底且无横向溢出
   await expectNoHorizontalOverflow(page)
 
-  // 搜索页诚实边界
+  // 搜索页（0022 正式功能）：真实查询 → 诚实无结果；不假成功
   await page.getByRole('button', { name: '搜索', exact: true }).click()
   const searchInput = page.getByRole('searchbox').first()
   await searchInput.fill('不存在的查询词')
   await searchInput.press('Enter')
-  await expect(page.getByText(/尚未接入|暂不支持|尚未提供|全局搜索/).first()).toBeVisible()
+  await expect(page.getByText(/没有找到与「不存在的查询词」相关的内容/)).toBeVisible()
   const bodyText = await page.locator('body').innerText()
   expect(bodyText).not.toMatch(/共 \d+ 条结果|条相关结果/)
 

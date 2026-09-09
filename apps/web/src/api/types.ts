@@ -99,3 +99,10 @@ export type RemoteBackup = Schemas['RemoteBackup']
 export type RemoteBackupsResponse = Schemas['RemoteBackupsResponse']
 export type RestorePreview = Schemas['RestorePreview']
 export type RestoreResult = Schemas['RestoreResult']
+
+// ---- 0022 Global Search ----
+
+export type SearchItem = Schemas['SearchItem']
+export type SearchIndexInfo = Schemas['SearchIndexInfo']
+export type SearchResponse = Schemas['SearchResponse']
+export type SearchRebuildResult = Schemas['SearchRebuildResult']
