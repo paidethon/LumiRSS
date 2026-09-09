@@ -31,7 +31,7 @@ jobs:
             "AGENTS.md"
             "docs/README.md"
             "docs/product/PRD.md"
-            "docs/architecture/README.md"
+            "docs/explanation/architecture.md"
           )
 
           for file in "${required_files[@]}"; do
