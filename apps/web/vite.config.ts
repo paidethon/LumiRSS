@@ -1,7 +1,6 @@
-/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 // 构建溯源（关于页展示，与 BFF GET /api/v1/version 对照判断 Web/BFF 版本错配）：
 // Docker/CI 构建时通过 VITE_GIT_COMMIT 注入；本地 dev 留空。
@@ -29,8 +28,7 @@ export default defineConfig({
     // vitest 会按逻辑核数（本机 20）全开，多进程并发（构建/后端测试
     // 同时运行）下事件循环饥饿会让 waitFor 超时（历史 scroll-mark-unread
     // / mobile-reader 抖动）。封顶后单文件仍能拿到稳定 CPU 配额。
-    poolOptions: {
-      threads: { minThreads: 1, maxThreads: 8 },
-    },
+    // （vitest 4 移除了 poolOptions，worker 上限统一走 maxWorkers。）
+    maxWorkers: 8,
   },
 })
