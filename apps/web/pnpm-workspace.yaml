@@ -4,3 +4,5 @@
 # （symlink + 自动 peers 组合怪癖），产生嵌套 node_modules 导致
 # 双 React 实例崩溃（vitest 与 dev server 均受影响）。
 verifyDepsBeforeRun: false
+overrides:
+  js-yaml: ^4.3.2
