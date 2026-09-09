@@ -59,6 +59,9 @@ jobs:
             exit 1
           fi
 
+      - name: Validate env example templates
+        run: python3 scripts/check_env_example.py
+
       - name: Basic repository sanity
         shell: bash
         run: |

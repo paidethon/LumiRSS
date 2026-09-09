@@ -78,12 +78,25 @@ def test_chunked_body_streaming_guard():
 
 
 def test_normal_requests_pass_through_untouched(tmp_path):
-    """Below the ceiling nothing changes: a small valid POST still works."""
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/opml/import/preview",
-            content=b"<?xml version='1.0'?><opml version='2.0'><body/></opml>",
-            headers={"Content-Type": "text/xml"},
-        )
+    """Below the ceiling nothing changes: a small valid POST still works.
+
+    Preview reads current FreshRSS subscriptions, so the control adapter is
+    stubbed — hermetic against developer .env and CI (no live FreshRSS).
+    """
+
+    class _StubControl:
+        async def list_subscriptions(self):
+            return []
+
+    try:
+        with TestClient(app) as client:
+            app.state.freshrss_control_adapter = _StubControl()
+            response = client.post(
+                "/api/v1/opml/import/preview",
+                content=b"<?xml version='1.0'?><opml version='2.0'><body/></opml>",
+                headers={"Content-Type": "text/xml"},
+            )
+    finally:
+        app.state.freshrss_control_adapter = None
     assert response.status_code in (200, 400)  # parsed, not size-rejected
     assert response.json().get("error", {}).get("type") != ENVELOPE_TYPE
