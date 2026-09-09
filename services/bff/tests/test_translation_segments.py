@@ -353,6 +353,14 @@ def test_parse_batch_accepts_trailing_whitespace_on_marker_line():
     assert result == {0: "第一段。", 1: "第二段。"}
 
 
+def test_parse_batch_handles_leading_and_trailing_whitespace_offsets():
+    """Indices come from a stripped copy; slicing must use the same copy
+    (a leading blank line used to offset every chunk)."""
+    raw = f"\n\n  {_marker(0)}\n第一段。\n\n{_marker(1)}\n第二段。  \n"
+    result = parse_segment_batch(raw, [0, 1])
+    assert result == {0: "第一段。", 1: "第二段。"}
+
+
 # ---------------------------------------------------------------------------
 # 0021: bounded lock pool + service-level batch concurrency
 # ---------------------------------------------------------------------------

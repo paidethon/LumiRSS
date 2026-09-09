@@ -131,15 +131,16 @@ def parse_segment_batch(raw: str, indexes: list[int]) -> dict[int, str]:
     the whole batch (the caller marks those rows failed with
     invalid_response — never silently partial, never reordered).
     """
-    positions = list(_MARKER_LINE_RE.finditer(raw.strip()))
+    text = raw.strip()
+    positions = list(_MARKER_LINE_RE.finditer(text))
     found = [int(match.group(1)) for match in positions]
     if found != indexes:
         return {}
     result: dict[int, str] = {}
     for pos, match in enumerate(positions):
         start = match.end()
-        end = positions[pos + 1].start() if pos + 1 < len(positions) else len(raw)
-        chunk = raw[start:end].strip()
+        end = positions[pos + 1].start() if pos + 1 < len(positions) else len(text)
+        chunk = text[start:end].strip()
         if not chunk:
             return {}
         result[int(match.group(1))] = chunk
