@@ -27,6 +27,7 @@ from lumirss.cursor import InvalidCursor
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 
 from .adapters.freshrss import ConfigError, FreshRSSAdapter
+from .models import EntryDocument
 from .search_meta_store import SearchFeedStore
 from .search_store import SearchStore
 from .search_writer import SearchEntryWriter
@@ -83,6 +84,10 @@ class SearchIndexService:
         self._store = SearchStore(database)
         self._writer = SearchEntryWriter(database)
         self._feeds = SearchFeedStore(database)
+        # FreshRSS stream items carry only feed/<numeric-id>, not the feed
+        # URL; the subscription list provides the title -> URL mapping used
+        # to resolve feed scoping for harvested documents.
+        self._feed_title_to_url: dict[str, str] = {}
 
     # -- sync ---------------------------------------------------------------
 
@@ -99,6 +104,8 @@ class SearchIndexService:
         total = 0
         continuation: str | None = None
         partial = False
+        await self._refresh_feed_categories(int(started))
+        await self._db.execute("DELETE FROM search_entries")
         while pages < max_pages:
             page = await self._adapter.list_entry_documents(
                 continuation=continuation
@@ -309,7 +316,7 @@ class SearchIndexService:
             await self._writer.insert_entry(
                 item_id=doc.item_id,
                 entry_ref=doc.entryRef,
-                feed_url=doc.feedUrl,
+                feed_url=self._resolve_feed_url(doc),
                 feed_title=doc.feedTitle,
                 title=doc.title,
                 author=doc.author or "",
@@ -322,8 +329,12 @@ class SearchIndexService:
             )
 
     async def _refresh_feed_categories(self, now: int) -> None:
-        """Mirror the FreshRSS subscription list into search_feeds."""
+        """Mirror the FreshRSS subscription list into search_feeds, and
+        refresh the title -> feed_url resolution map for the harvest."""
         feeds = await self._require_adapter().list_feeds()
+        self._feed_title_to_url = {
+            feed.title: feed.feed_url for feed in feeds if feed.title
+        }
         await self._feeds.clear_feeds()
         for feed in feeds:
             await self._feeds.insert_feed(
@@ -332,6 +343,23 @@ class SearchIndexService:
                 category_id=feed.category_id,
                 refreshed_at=now,
             )
+
+    def _resolve_feed_url(self, doc: EntryDocument) -> str:
+        """Real feed URL for a harvested document.
+
+        FreshRSS stream items expose ``origin.streamId = feed/<numeric>``,
+        not the feed URL, so the sync resolves the URL through the
+        subscription list (title match). Unresolved documents keep the
+        raw stream id — they stay searchable but cannot match feed or
+        category filters (honest degradation, self-heals on next sync).
+        """
+        if doc.feedUrl.startswith(("http://", "https://")):
+            return doc.feedUrl
+        resolved = self._feed_title_to_url.get(doc.feedTitle)
+        if resolved is not None:
+            return resolved
+        raw = doc.feedUrl.removeprefix("feed/")
+        return raw if raw.startswith(("http://", "https://")) else doc.feedUrl
 
     async def _known_states(self) -> dict:
         rows = await self._store.known_states()

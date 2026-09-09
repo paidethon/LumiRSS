@@ -312,7 +312,7 @@ export default function SearchPage() {
                 description={error instanceof Error ? error.message : '请稍后重试。'}
               />
               <div className="flex justify-center">
-                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <Button variant="secondary" size="sm" onClick={() => refetch()}>
                   重试
                 </Button>
               </div>

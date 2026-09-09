@@ -1,0 +1,72 @@
+name: Publish images
+
+# Builds and pushes the BFF + Web images to GHCR on every merge to main
+# and on version tags. `latest` tracks main; version tags are immutable
+# references for update/rollback (LUMIRSS_IMAGE_TAG in .env.prod pins).
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  push-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          set -euo pipefail
+          sha_tag="${GITHUB_SHA::12}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "extra=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$sha_tag" >> "$GITHUB_OUTPUT"
+            echo "extra=$sha_tag latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push BFF image
+        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.10.0
+        with:
+          context: ./services/bff
+          push: true
+          build-args: |
+            LUMIRSS_COMMIT=${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}/lumirss-bff:${{ steps.tags.outputs.version }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-bff:latest', github.repository) || '' }}
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        with:
+          context: ./apps/web
+          push: true
+          build-args: |
+            VITE_GIT_COMMIT=${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}/lumirss-web:${{ steps.tags.outputs.version }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-web:latest', github.repository) || '' }}

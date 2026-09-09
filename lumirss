@@ -1,0 +1,383 @@
+#!/usr/bin/env bash
+# LumiRSS self-hosted lifecycle: deploy / update / status / logs / backup /
+# restore / doctor / rollback.
+#
+# Quick start on a fresh Ubuntu 22.04/24.04 x86_64 server:
+#   git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
+#   sudo ./lumirss deploy
+#
+# Requirements: bash, docker engine + compose plugin, git, curl.
+# Root is required only when the docker daemon needs it (or sudo docker).
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+COMPOSE_FILE="docker-compose.prod.yml"
+ENV_FILE=".env.prod"
+BACKUP_DIR="${LUMIRSS_BACKUP_DIR:-./backups}"
+DC() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+log()  { printf '\033[1;34m[lumirss]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[lumirss]\033[0m %s\n' "$*" >&2; }
+err()  { printf '\033[1;31m[lumirss]\033[0m %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# docker access: prefer the current user; fall back to sudo when needed.
+docker_cmd() {
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
+    sudo -n docker "$@"
+  else
+    docker "$@"
+  fi
+}
+DC_D() { docker_cmd compose -f "$COMPOSE_FILE" "$@"; }
+
+# ---------------------------------------------------------------------------
+usage() {
+  cat <<'USAGE'
+LumiRSS — self-hosted reader lifecycle
+
+  sudo ./lumirss deploy [--build] [--dry-run]   first-time / re-run install
+  ./lumirss update  [--build]                   backup → pull → up → health
+  ./lumirss status                              containers, health, versions
+  ./lumirss logs [service] [-f]                 stack or single-service logs
+  ./lumirss backup                              tar.gz of lumi + FreshRSS data
+  ./lumirss restore <backup.tar.gz> [--yes]     stop → restore → start → health
+  ./lumirss doctor                              PASS/WARN/FAIL diagnostics
+  ./lumirss rollback                            previous images + config
+
+Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
+LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH (non-interactive deploys).
+USAGE
+}
+
+require_env_file() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    err "$ENV_FILE not found — run './lumirss deploy' first."
+    exit 1
+  fi
+}
+
+env_value() { # env_value KEY [FILE]
+  local file="${2:-$ENV_FILE}"
+  [[ -f "$file" ]] || return 0
+  grep -E "^$1=" "$file" | tail -1 | cut -d= -f2- || true
+}
+
+git_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
+
+# ---------------------------------------------------------------------------
+hash_password() { # bcrypt for Caddy basic_auth; $ escaped for compose env
+  local plain="$1" h
+  if h="$(docker_cmd run --rm caddy:2-alpine caddy hash-password --plaintext "$plain" 2>/dev/null)"; then
+    :
+  elif docker_cmd image inspect freshrss/freshrss:1.29.1 >/dev/null 2>&1; then
+    h="$(docker_cmd run --rm freshrss/freshrss:1.29.1 php -r 'echo password_hash($argv[1], PASSWORD_BCRYPT);' "$plain" 2>/dev/null)"
+  elif command -v python3 >/dev/null && python3 -c 'import bcrypt' 2>/dev/null; then
+    h="$(python3 -c 'import bcrypt,sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())' "$plain")"
+  fi
+  if [[ -n "${h:-}" ]]; then printf '%s' "$h" | sed 's/\$/\$\$/g'; fi
+}
+
+# ---------------------------------------------------------------------------
+preflight() {
+  command -v docker >/dev/null || { err "docker is required (https://docs.docker.com/engine/install/ubuntu/)"; exit 1; }
+  docker_cmd compose version >/dev/null 2>&1 || { err "docker compose plugin is required"; exit 1; }
+  command -v curl >/dev/null || { err "curl is required"; exit 1; }
+  local arch
+  arch="$(uname -m)"
+  [[ "$arch" == "x86_64" ]] || warn "images are built for x86_64; this host is $arch"
+
+  local domain
+  domain="$(env_value DOMAIN)"
+  if [[ -n "$domain" && "$domain" != "localhost" && "$domain" != "127.0.0.1" ]]; then
+    if command -v getent >/dev/null && ! getent hosts "$domain" >/dev/null; then
+      warn "DNS: '$domain' does not resolve yet — Let's Encrypt TLS will fail until it does."
+    fi
+    if command -v ss >/dev/null; then
+      for port in 80 443; do
+        if ss -tln 2>/dev/null | grep -qE "[:.]$port\b"; then
+          warn "port $port is already in use — stop the conflicting service or change the published ports."
+        fi
+      done
+    fi
+  fi
+  local avail
+  avail="$(df -P . | awk 'NR==2{print $4}')"
+  if [[ "$avail" -lt 2097152 ]]; then warn "less than 2 GiB free disk space"; fi
+}
+
+# ---------------------------------------------------------------------------
+configure() { # interactive when values are missing; env vars win
+  if [[ ! -f "$ENV_FILE" ]]; then
+    cp .env.prod.example "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+  fi
+
+  local domain user hash token
+  domain="$(env_value DOMAIN)"; user="$(env_value LUMIRSS_AUTH_USER)"
+  hash="$(env_value LUMIRSS_AUTH_HASH)"; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+
+  if [[ -n "${LUMIRSS_DOMAIN:-}" ]]; then domain="$LUMIRSS_DOMAIN"; fi
+  if [[ -n "${LUMIRSS_AUTH_USER:-}" ]]; then user="$LUMIRSS_AUTH_USER"; fi
+  if [[ -n "${LUMIRSS_AUTH_HASH:-}" ]]; then hash="$LUMIRSS_AUTH_HASH"; fi
+
+  if [[ -z "$domain" && ! -t 0 ]]; then domain="localhost"; fi
+  if [[ -z "$user" && ! -t 0 ]]; then user=""; fi
+  if [[ -z "$hash" && ! -t 0 && -n "${LUMIRSS_AUTH_PASSWORD:-}" ]]; then
+    hash="$(hash_password "$LUMIRSS_AUTH_PASSWORD")"
+  fi
+  if [[ -z "$token" ]]; then
+    token="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    sed -i "s|^LUMIRSS_INTERNAL_TOKEN=.*|LUMIRSS_INTERNAL_TOKEN=$token|" "$ENV_FILE"
+  fi
+
+  if [[ -t 0 ]]; then
+    if [[ -z "$domain" ]]; then
+      read -r -p "Domain (empty = localhost/HTTP only): " domain
+      sed -i "s|^DOMAIN=.*|DOMAIN=$domain|" "$ENV_FILE"
+    fi
+    if [[ -z "$user" ]]; then
+      read -r -p "Admin username for browser login (empty = no auth): " user
+      sed -i "s|^LUMIRSS_AUTH_USER=.*|LUMIRSS_AUTH_USER=$user|" "$ENV_FILE"
+    fi
+    if [[ -z "$hash" && -n "$user" ]]; then
+      log "Set the browser password (input hidden)."
+      hash="$(docker_cmd run --rm caddy:2-alpine caddy hash-password 2>/dev/null | sed 's/\$/$$/g' || true)"
+      if [[ -z "$hash" ]]; then
+        read -r -s -p "Password (used to generate the bcrypt hash): " plain_pw; echo
+        if [[ -n "$plain_pw" ]]; then hash="$(hash_password "$plain_pw")"; fi
+      fi
+      if [[ -n "$hash" ]]; then
+        sed -i "s|^LUMIRSS_AUTH_HASH=.*|LUMIRSS_AUTH_HASH=$hash|" "$ENV_FILE"
+      fi
+    fi
+  else
+    sed -i "s|^DOMAIN=.*|DOMAIN=$domain|" "$ENV_FILE"
+    sed -i "s|^LUMIRSS_AUTH_USER=.*|LUMIRSS_AUTH_USER=$user|" "$ENV_FILE"
+    if [[ -n "$hash" ]]; then sed -i "s|^LUMIRSS_AUTH_HASH=.*|LUMIRSS_AUTH_HASH=$hash|" "$ENV_FILE"; fi
+  fi
+  log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user})"
+}
+
+# ---------------------------------------------------------------------------
+images_pull_or_build() { # $1 = "--build" optional
+  local mode="${1:-}"
+  if [[ "$mode" == "--build" ]]; then
+    log "building images locally (LUMIRSS_BUILD_COMMIT=$(git_commit))"
+    LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
+    return 0
+  fi
+  log "pulling prebuilt images (tag: ${LUMIRSS_IMAGE_TAG:-latest})"
+  if LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D pull --ignore-buildable 2>&1 | grep -qE " Pulled| up to date"; then
+    return 0
+  fi
+  warn "pull failed — building locally instead (this takes a few minutes)"
+  LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
+}
+
+wait_health() { # wait_health <timeout_seconds>
+  local timeout="${1:-120}" waited=0
+  log "waiting for health (max ${timeout}s)…"
+  until DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1; do
+    sleep 3; waited=$((waited + 3))
+    if [[ $waited -ge $timeout ]]; then
+      err "health check timed out after ${timeout}s"
+      return 1
+    fi
+  done
+  log "healthy."
+}
+
+snapshot_for_rollback() {
+  mkdir -p "$BACKUP_DIR"
+  cp -f "$ENV_FILE" "$BACKUP_DIR/.env.prod.previous"
+  local tag
+  tag="$(env_value LUMIRSS_IMAGE_TAG)"
+  echo "${tag:-latest}" > "$BACKUP_DIR/.image-tag.previous"
+}
+
+# ---------------------------------------------------------------------------
+cmd_deploy() {
+  preflight
+  configure
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    log "dry-run: validated configuration and preflight only."
+    DC_D config >/dev/null && log "compose config renders OK."
+    return 0
+  fi
+  snapshot_for_rollback
+  images_pull_or_build "${1:-}"
+  export LUMIRSS_BUILD_COMMIT="$(git_commit)"
+  DC_D up -d --remove-orphans
+  if wait_health 180; then
+    log "deploy complete. Open: http://localhost/ (or https://$(env_value DOMAIN)/)"
+    ./lumirss status || true
+  else
+    err "deploy failed health check — run './lumirss logs bff' or './lumirss rollback'."
+    exit 1
+  fi
+}
+
+cmd_update() {
+  require_env_file
+  preflight
+  cmd_backup || warn "pre-update backup failed — continuing (existing backups: $BACKUP_DIR)"
+  snapshot_for_rollback
+  images_pull_or_build "${1:-}"
+  export LUMIRSS_BUILD_COMMIT="$(git_commit)"
+  DC_D up -d --remove-orphans
+  if wait_health 180; then
+    log "update complete."
+    ./lumirss status || true
+  else
+    err "update failed health check — run './lumirss rollback'."
+    exit 1
+  fi
+}
+
+cmd_status() {
+  require_env_file
+  DC_D ps
+  local port
+  echo
+  if DC_D ps --status running 2>/dev/null | grep -q lumirss-web; then
+    local commit port suffix
+    port="${LUMIRSS_HTTP_PORT:-80}"
+    if [[ "$port" != "80" ]]; then suffix=":$port"; else suffix=""; fi
+    local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+    commit="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=5).read().decode())" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "?")' 2>/dev/null || echo "?")"
+    log "web: http://localhost${suffix}/ (domain: $(env_value DOMAIN) | bff commit: $commit | image tag: $(env_value LUMIRSS_IMAGE_TAG || echo latest))"
+  else
+    warn "stack is not running — './lumirss deploy' to start."
+  fi
+}
+
+cmd_logs() {
+  require_env_file
+  DC_D logs "$@"
+}
+
+cmd_backup() {
+  require_env_file
+  local proj stamp dir
+  proj="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","lumirss-prod"))' 2>/dev/null || echo lumirss-prod)"
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_DIR"
+  dir="$BACKUP_DIR/$stamp"
+  mkdir -p "$dir"
+  log "backing up volumes of project '$proj' to $dir"
+  for vol in lumi-data freshrss-data; do
+    BACKUP_IMAGE="${LUMIRSS_BACKUP_IMAGE:-alpine:3.20}"
+    docker_cmd run --rm -v "${proj}_${vol}:/src:ro" -v "$dir":/dst "$BACKUP_IMAGE" \
+      tar czf "/dst/${vol}.tar.gz" -C /src . || { err "backup of $vol failed"; exit 1; }
+  done
+  tar czf "$BACKUP_DIR/$stamp.config.tar.gz" -C . "$ENV_FILE" docker-compose.prod.yml
+  echo "$stamp" > "$BACKUP_DIR/LATEST"
+  log "backup done: $BACKUP_DIR/$stamp (+ .config.tar.gz)"
+}
+
+cmd_restore() {
+  require_env_file
+  local target="${1:-}"; shift || true
+  if [[ -z "$target" ]]; then { err "usage: ./lumirss restore <backup.tar.gz> [--yes]"; exit 1; }; fi
+  local yes=""; [[ "${1:-}" == "--yes" ]] && yes=1
+  if [[ -z "$yes" && -t 0 ]]; then
+    read -r -p "DESTRUCTIVE: restore from $target and OVERWRITE current data? Type RESTORE to continue: " ans
+    [[ "$ans" == "RESTORE" ]] || { log "aborted."; return 0; }
+  elif [[ -z "$yes" ]]; then
+    err "refusing destructive restore without --yes (or an interactive terminal)."; exit 1
+  fi
+  local vol="lumi-data"
+  if [[ "$target" == *freshrss-data* ]]; then vol="freshrss-data"; fi
+  local proj
+  proj="$(DC_D config --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name","lumirss-prod"))' 2>/dev/null || echo lumirss-prod)"
+  log "stopping bff…"; DC_D stop bff >/dev/null 2>&1 || true
+  log "restoring $vol from $target"
+  BACKUP_IMAGE="${LUMIRSS_BACKUP_IMAGE:-alpine:3.20}"
+  docker_cmd run --rm -v "${proj}_${vol}:/dst" -v "$(cd "$(dirname "$target")" && pwd)":/src:ro "$BACKUP_IMAGE" \
+    sh -c "rm -rf /dst/..?* /dst/.[!.]* /dst/* 2>/dev/null; tar xzf /src/$(basename "$target") -C /dst"
+  DC_D start bff >/dev/null 2>&1 || true
+  wait_health 180 && log "restore complete."
+}
+
+cmd_doctor() {
+  local fail=0
+  check() { # check PASS|WARN|FAIL description…
+    local level="$1"; shift
+    case "$level" in
+      PASS) log "PASS  $*";;
+      WARN) warn "WARN  $*";;
+      FAIL) err   "FAIL  $*"; fail=1;;
+    esac
+  }
+  command -v docker >/dev/null && check PASS "docker installed" || check FAIL "docker missing"
+  docker_cmd compose version >/dev/null 2>&1 && check PASS "compose plugin" || check FAIL "compose plugin missing"
+  if [[ -f "$ENV_FILE" ]]; then
+    check PASS "$ENV_FILE present"
+  else
+    check WARN "$ENV_FILE missing (run deploy)"
+  fi
+  local domain; domain="$(env_value DOMAIN)"
+  if [[ -n "$domain" && "$domain" != localhost ]]; then
+    getent hosts "$domain" >/dev/null 2>&1 && check PASS "DNS $domain" || check WARN "DNS $domain not resolving"
+  fi
+  if docker_cmd info >/dev/null 2>&1; then
+    if [[ -f "$ENV_FILE" ]]; then
+      local running
+      running="$(DC_D ps --status running 2>/dev/null | tail -n +2 | wc -l)"
+      [[ "$running" -eq 4 ]] && check PASS "4/4 containers running" || check WARN "only $running/4 containers running"
+      DC_D exec bff python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status==200 else 1)" >/dev/null 2>&1 \
+        && check PASS "bff health/ready" || check WARN "bff health/ready not OK"
+      for svc in lumirss-freshrss lumirss-rsshub; do
+        state="$(docker_cmd inspect --format '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo missing)"
+        if [[ "$state" == "healthy" ]]; then
+          check PASS "$svc healthy"
+        else
+          check WARN "$svc health: $state"
+        fi
+      done
+    fi
+  else
+    check WARN "no docker daemon access"
+  fi
+  local avail; avail="$(df -P . | awk 'NR==2{print $4}')"
+  [[ "$avail" -ge 2097152 ]] && check PASS "disk >= 2 GiB" || check WARN "disk < 2 GiB"
+  [[ -w "$BACKUP_DIR" || -w . ]] && check PASS "backup dir writable" || check WARN "backup dir not writable"
+  [[ $fail -eq 0 ]] && log "doctor: no failures." || { err "doctor found failures."; exit 1; }
+}
+
+cmd_rollback() {
+  require_env_file
+  local prev_tag prev_env
+  prev_tag="$(cat "$BACKUP_DIR/.image-tag.previous" 2>/dev/null || echo latest)"
+  prev_env="$BACKUP_DIR/.env.prod.previous"
+  if [[ -f "$prev_env" ]]; then cp -f "$prev_env" "$ENV_FILE"; fi
+  log "rolling back to image tag: $prev_tag (config restored from previous snapshot)"
+  LUMIRSS_IMAGE_TAG="$prev_tag" DC_D up -d --remove-orphans
+  wait_health 180 && log "rollback complete (tag: $prev_tag)." || { err "rollback health check failed."; exit 1; }
+}
+
+# ---------------------------------------------------------------------------
+main() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    deploy)
+      local extra=()
+      for a in "$@"; do [[ "$a" == "--dry-run" ]] && export DRY_RUN=1 || extra+=("$a"); done
+      cmd_deploy "${extra:-}";;
+    update)   cmd_update "$@";;
+    status)   cmd_status;;
+    logs)     cmd_logs "$@";;
+    backup)   cmd_backup;;
+    restore)  cmd_restore "$@";;
+    doctor)   cmd_doctor;;
+    rollback) cmd_rollback;;
+    -h|--help|help|"") usage;;
+    *) err "unknown command: $cmd"; usage; exit 1;;
+  esac
+}
+
+main "$@"
