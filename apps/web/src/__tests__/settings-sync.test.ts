@@ -22,8 +22,17 @@ function makeServer(): {
   doc: Partial<ServerSettings>
   patchCalls: Record<string, string | number | boolean>[]
   failPatch: boolean
+  revision: number
+  conflictsRemaining: number
 } {
-  return { stored: false, doc: {}, patchCalls: [], failPatch: false }
+  return {
+    stored: false,
+    doc: {},
+    patchCalls: [],
+    failPatch: false,
+    revision: 0,
+    conflictsRemaining: 0,
+  }
 }
 
 function stubFetch(server: ReturnType<typeof makeServer>) {
@@ -33,7 +42,12 @@ function stubFetch(server: ReturnType<typeof makeServer>) {
       const method = init?.method ?? 'GET'
       if (method === 'GET') {
         return new Response(
-          JSON.stringify({ schemaVersion: 1, stored: server.stored, ...server.doc }),
+          JSON.stringify({
+            schemaVersion: 1,
+            stored: server.stored,
+            revision: server.revision,
+            ...server.doc,
+          }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         )
       }
@@ -44,11 +58,26 @@ function stubFetch(server: ReturnType<typeof makeServer>) {
           })
         }
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, string | number | boolean>
+        if (server.conflictsRemaining > 0) {
+          server.conflictsRemaining -= 1
+          return new Response(
+            JSON.stringify({
+              error: { type: 'app_settings_conflict', message: 'conflict' },
+            }),
+            { status: 409 },
+          )
+        }
         server.patchCalls.push(body)
         server.stored = true
         server.doc = { ...server.doc, ...body }
+        server.revision += 1
         return new Response(
-          JSON.stringify({ schemaVersion: 1, stored: true, ...server.doc }),
+          JSON.stringify({
+            schemaVersion: 1,
+            stored: true,
+            revision: server.revision,
+            ...server.doc,
+          }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         )
       }
@@ -299,5 +328,37 @@ describe('resetReader — 只重置 Reader 子集并同步默认值', () => {
     expect(s.themeMode).toBe('dark') // 非 reader 设置保留
     expect(s.accentColor).toBe('#5a9e6f')
     expect(s.sidebarWidth).toBe(260)
+  })
+})
+
+describe('0021 — baseRevision 乐观并发', () => {
+  it('PATCH 携带服务端最近 revision；冲突时 re-hydrate 并重试一次', async () => {
+    const server = makeServer()
+    server.doc = { themeMode: 'light', accentColor: '#111111' }
+    server.stored = true
+    server.conflictsRemaining = 1 // 第一次 PATCH 冲突，之后放行
+    const fetchMock = stubFetch(server)
+
+    initSettingsSync({ debounceMs: 0 })
+    await flush() // hydration 完成：serverRevision = 0
+
+    useAppSettings.getState().update({ accentColor: '#abcdef' })
+    await flush()
+
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(
+          ([, init]) => (init?.method ?? 'GET') === 'PATCH',
+        ).length,
+      ).toBeGreaterThanOrEqual(3),
+    )
+
+    const patchBodies = server.patchCalls
+    // 重试成功：最终值落库，且带上了服务端当前 revision
+    const last = patchBodies[patchBodies.length - 1]
+    expect(last.accentColor).toBe('#abcdef')
+    expect(typeof last.baseRevision).toBe('number')
+    // 本地状态与脏键最终一致（冲突路径不吞用户变更）
+    expect(useAppSettings.getState().settings.accentColor).toBe('#abcdef')
   })
 })

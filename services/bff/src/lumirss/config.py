@@ -140,6 +140,7 @@ class LumiSettings(BaseSettings):
     LUMIRSS_VERSION: str = "0.1.0"
     LUMIRSS_COMMIT: str = ""
     AI_API_KEY: SecretStr = SecretStr("")
+    LUMIRSS_INTERNAL_TOKEN: SecretStr = SecretStr("")
 
     @property
     def ai_configured(self) -> bool:

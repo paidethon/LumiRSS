@@ -895,6 +895,12 @@ export interface paths {
          *     rejected with the stable 400 invalid_app_settings error (FastAPI's
          *     default 422 serialization crashes on non-finite numbers). There is
          *     deliberately no field that can carry any secret.
+         *
+         *     0021 multi-device semantics: a body carrying ``baseRevision`` that no
+         *     longer matches the stored document is refused with the stable 409
+         *     app_settings_conflict — the stale client re-hydrates and retries.
+         *     Bodies without baseRevision keep the historical last-write-wins
+         *     behavior (older clients unaffected).
          */
         patch: operations["patch_app_settings_api_v1_settings_patch"];
         trace?: never;
@@ -1456,7 +1462,10 @@ export interface components {
          *
          *     ``stored=false`` means the server holds no explicit document yet (the
          *     client may seed it from local values); otherwise the fields are the
-         *     server-durable values.
+         *     server-durable values. ``revision`` (0021) is a content-hash of the
+         *     stored document for optimistic concurrency: a PATCH may carry
+         *     ``baseRevision`` and is refused with a stable 409 when it no longer
+         *     matches.
          */
         AppSettingsView: {
             /**
@@ -1556,6 +1565,8 @@ export interface components {
              * @default false
              */
             reduceMotion: boolean;
+            /** Revision */
+            revision: number;
             /**
              * Schemaversion
              * @default 1
@@ -2422,6 +2433,24 @@ export interface components {
             /** Value */
             value: string;
         };
+        /**
+         * RssHubCredentialMetadataPatch
+         * @description PATCH /api/v1/rsshub/credentials/{id} body (metadata only).
+         */
+        RssHubCredentialMetadataPatch: {
+            /** Name */
+            name?: string | null;
+            /** Route */
+            route?: string | null;
+        };
+        /**
+         * RssHubCredentialValuePut
+         * @description PUT /api/v1/rsshub/credentials/{id}/value body.
+         */
+        RssHubCredentialValuePut: {
+            /** Value */
+            value: string;
+        };
         /** RssHubDetectCandidate */
         RssHubDetectCandidate: {
             /** Latencyms */
@@ -2495,6 +2524,12 @@ export interface components {
         /**
          * SecretValuePut
          * @description Write-only secret body (shared by AI keys and RSSHub secrets).
+         *
+         *     0021 hardening: bounded length (same bound as the RSSHub secret
+         *     schema) and control-character rejection at INPUT time — a control
+         *     character in an API key is never legitimate, and storing one would
+         *     poison env-file rendering / upstream calls until the value is
+         *     replaced.
          */
         SecretValuePut: {
             /** Value */
@@ -3792,7 +3827,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubCredentialMetadataPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3825,7 +3864,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubCredentialValuePut"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {

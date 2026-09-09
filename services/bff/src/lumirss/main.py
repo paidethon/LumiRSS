@@ -1,7 +1,9 @@
 """LumiRSS BFF application entry point."""
 
 import asyncio
+import hmac
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -71,6 +73,7 @@ from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
 from lumirss.app_settings import (
+    AppSettingsConflict,
     AppSettingsStore,
     InvalidAppSettings,
     PortableSettingsPatch,
@@ -152,6 +155,7 @@ from lumirss.rsshub import (
     RssHubService,
 )
 from lumirss.rsshub_control import (
+    MAX_SECRET_LENGTH,
     RssHubControlError,
     RssHubControlStore,
     RssHubCustomCredentialError,
@@ -219,6 +223,204 @@ app = FastAPI(
     response_model_exclude_none=True,
 )
 
+# 0021 hardening: global request-body ceiling. Route-level bounds remain
+# authoritative (OPML 2 MiB streamed cap, pydantic per-field max_length);
+# this middleware only prevents unbounded bodies from being buffered at
+# all before validation — JSON endpoints would otherwise read the entire
+# body into memory just to fail validation afterwards.
+MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+
+
+class RequestBodyTooLarge(Exception):
+    """Raised by the streamed body guard; mapped to the stable 413
+    envelope via the exception-handler table below."""
+
+    def __init__(self) -> None:
+        super().__init__("The request body is too large.")
+
+
+REQUEST_TOO_LARGE_BODY = (
+    b'{"error":{"type":"request_too_large",'
+    b'"message":"The request body is too large."}}'
+)
+
+
+async def _reject_too_large(send) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(REQUEST_TOO_LARGE_BODY)).encode()),
+            ],
+        }
+    )
+    await send(
+        {"type": "http.response.body", "body": REQUEST_TOO_LARGE_BODY},
+    )
+
+
+class RequestSizeLimitMiddleware:
+    """Pure-ASGI body cap (Content-Length fast path + streamed guard)."""
+
+    def __init__(self, app, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or scope["method"] not in ("POST", "PUT", "PATCH"):
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > self.max_bytes:
+                    await _reject_too_large(send)
+                    return
+            except ValueError:
+                pass  # malformed Content-Length: the streamed guard decides
+        received = 0
+
+        async def guarded_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise RequestBodyTooLarge()
+            return message
+
+        await self.app(scope, guarded_receive, send)
+
+
+app.add_middleware(RequestSizeLimitMiddleware)
+
+
+# 0021 hardening: lightweight fixed-window rate limits for the expensive
+# or destructive control-plane routes (AI/MT generation, restore, backup,
+# outbound discovery, RSSHub mutations). Single-user thresholds are
+# deliberately generous — this only stops runaway loops and abuse after
+# an auth-bypass, not normal reading. In-memory per process (restart
+# resets); reading endpoints stay unlimited by design.
+_RATE_RULES: tuple[tuple[str, str, str, int, int], ...] = (
+    # (method, path prefix, bucket, max requests, window seconds)
+    ("POST", "/api/v1/restore", "restore", 10, 60),
+    ("POST", "/api/v1/backups/webdav", "backup_webdav", 10, 60),
+    ("POST", "/api/v1/backups", "backup", 12, 60),
+    ("POST", "/api/v1/opml/import", "opml", 6, 60),
+    ("POST", "/api/v1/feed-preview", "outbound", 30, 60),
+    ("POST", "/api/v1/source-discovery", "outbound", 30, 60),
+    ("POST", "/api/v1/entries/", "ai_generate", 120, 60),
+    ("POST", "/api/v1/rsshub/", "rsshub_write", 60, 60),
+    ("PUT", "/api/v1/rsshub/", "rsshub_write", 60, 60),
+    ("PATCH", "/api/v1/rsshub/", "rsshub_write", 60, 60),
+    ("DELETE", "/api/v1/rsshub/", "rsshub_write", 60, 60),
+)
+_rate_windows: dict[str, tuple[int, int]] = {}
+
+
+class RateLimitMiddleware:
+    """Pure-ASGI fixed-window limiter (method+prefix → shared bucket).
+
+    Reads ``_RATE_RULES`` per request (module global), so tests can
+    shrink the limits without rebuilding the app stack."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http":
+            method = scope.get("method", "")
+            path = scope.get("path", "")
+            for rule_method, prefix, bucket, maximum, window in _RATE_RULES:
+                if method == rule_method and path.startswith(prefix):
+                    now = int(time.time())
+                    window_start, count = _rate_windows.get(bucket, (now, 0))
+                    if window_start != now // window:
+                        window_start, count = now // window, 0
+                    count += 1
+                    _rate_windows[bucket] = (window_start, count)
+                    if count > maximum:
+                        retry_after = window - (now % window)
+                        await _reject_rate_limited(send, retry_after)
+                        return
+                    break
+        await self.app(scope, receive, send)
+
+
+async def _reject_rate_limited(send, retry_after: int) -> None:
+    body = (
+        b'{"error":{"type":"rate_limited",'
+        b'"message":"Too many requests; slow down."}}'
+    )
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 429,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"retry-after", str(max(1, retry_after)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(RateLimitMiddleware)
+
+
+class InternalTokenMiddleware:
+    """Single-user internal protection (0021, opt-in).
+
+    When LUMIRSS_INTERNAL_TOKEN is configured, every /api/* request must
+    carry a matching X-Lumi-Token header. /health/* stays open (container
+    healthchecks run in-container). In production the token is injected
+    upstream by Caddy (docker-entrypoint.sh), so the browser needs
+    nothing; anything dialing the BFF directly inside the docker network
+    is rejected. Unset (default) = previous behavior, dev friendly.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http" and scope["method"] != "OPTIONS":
+            path = scope.get("path", "")
+            if path.startswith("/api/"):
+                token = LumiSettings().LUMIRSS_INTERNAL_TOKEN.get_secret_value()
+                if token:
+                    supplied = ""
+                    for key, value in scope.get("headers") or []:
+                        if key == b"x-lumi-token":
+                            supplied = value.decode("latin-1")
+                            break
+                    if not hmac.compare_digest(supplied, token):
+                        await _reject_unauthorized(send)
+                        return
+        await self.app(scope, receive, send)
+
+
+async def _reject_unauthorized(send) -> None:
+    body = b'{"error":{"type":"unauthorized",'
+    body += b'"message":"Missing or invalid internal token."}}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 401,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(InternalTokenMiddleware)
+
 
 @app.get("/health/live", response_model=HealthStatus)
 async def health_live() -> dict[str, str]:
@@ -280,6 +482,8 @@ _ERROR_RESPONSES = {
     AiProfileNotFound: (404, "ai_profile_not_found"),
     # 0017 portable app settings
     InvalidAppSettings: (400, "invalid_app_settings"),
+    # 0021 multi-device settings conflicts
+    AppSettingsConflict: (409, "app_settings_conflict"),
     # 0015 AI summary
     AiNotConfigured: (503, "ai_not_configured"),
     SegmentTranslationUnavailable: (400, "translation_unavailable"),
@@ -309,6 +513,8 @@ _ERROR_RESPONSES = {
     RestorePreviewRequired: (400, "backup_restore_preview_required"),
     RestoreFailed: (500, "restore_failed"),
     SecretsStoreError: (500, "secret_store_error"),
+    # 0021 global body cap
+    RequestBodyTooLarge: (413, "request_too_large"),
 }
 
 
@@ -343,6 +549,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RssHubInvalidParameters)
 @app.exception_handler(RssHubFetchError)
 @app.exception_handler(InvalidAppSettings)
+@app.exception_handler(AppSettingsConflict)
 @app.exception_handler(InvalidAiSettings)
 @app.exception_handler(AiProfileNotFound)
 @app.exception_handler(AiNotConfigured)
@@ -369,6 +576,7 @@ _ERROR_RESPONSES = {
 @app.exception_handler(RestorePreviewRequired)
 @app.exception_handler(RestoreFailed)
 @app.exception_handler(SecretsStoreError)
+@app.exception_handler(RequestBodyTooLarge)
 async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
     status, error_type = _ERROR_RESPONSES[type(exc)]
     return JSONResponse(
@@ -1149,9 +1357,23 @@ async def put_ai_settings(
 
 
 class SecretValuePut(BaseModel):
-    """Write-only secret body (shared by AI keys and RSSHub secrets)."""
+    """Write-only secret body (shared by AI keys and RSSHub secrets).
 
-    value: str = Field(min_length=1)
+    0021 hardening: bounded length (same bound as the RSSHub secret
+    schema) and control-character rejection at INPUT time — a control
+    character in an API key is never legitimate, and storing one would
+    poison env-file rendering / upstream calls until the value is
+    replaced.
+    """
+
+    value: str = Field(min_length=1, max_length=MAX_SECRET_LENGTH)
+
+    @field_validator("value")
+    @classmethod
+    def _reject_control_characters(cls, value: str) -> str:
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("value must not contain control characters.")
+        return value
 
 
 class AiProfileCreate(BaseModel):
@@ -1447,8 +1669,13 @@ def _reject_nonfinite(value: str) -> float:
     raise InvalidAppSettings(f"non-finite number '{value}' is not allowed")
 
 
-def _parse_settings_patch(raw: bytes) -> PortableSettingsPatch:
-    """Strict body parsing: every invalid payload becomes a stable 400."""
+def _parse_settings_patch(raw: bytes) -> tuple[PortableSettingsPatch, int | None]:
+    """Strict body parsing: every invalid payload becomes a stable 400.
+
+    0021: the body may carry ``baseRevision`` (int ≥ 0) — the revision the
+    client last saw (optimistic concurrency). It is transport metadata,
+    popped before settings validation so it can never masquerade as a
+    settings key."""
     import json as _json
 
     try:
@@ -1457,20 +1684,39 @@ def _parse_settings_patch(raw: bytes) -> PortableSettingsPatch:
         raise InvalidAppSettings("request body must be a valid JSON object") from exc
     if not isinstance(parsed, dict):
         raise InvalidAppSettings("request body must be a JSON object")
+    base_revision_raw = parsed.pop("baseRevision", None)
+    if base_revision_raw is None:
+        base_revision = None
+    elif isinstance(base_revision_raw, int) and not isinstance(
+        base_revision_raw, bool
+    ) and base_revision_raw >= 0:
+        base_revision = base_revision_raw
+    else:
+        raise InvalidAppSettings("Invalid baseRevision: must be a non-negative int")
     try:
-        return PortableSettingsPatch.model_validate(parsed)
+        patch = PortableSettingsPatch.model_validate(parsed)
     except ValidationError as exc:
         first = exc.errors()[0]
         location = ".".join(str(part) for part in first.get("loc", ()))
         raise InvalidAppSettings(
             f"Invalid {location}: {first.get('msg', 'value rejected')}"
         ) from exc
+    return patch, base_revision
 
 
-def _app_settings_json(document, stored: bool) -> dict[str, object]:
+def _app_settings_json(
+    document, stored: bool, revision: int | None = None
+) -> dict[str, object]:
     """Browser-safe portable settings view — no secrets exist by design."""
     payload = document.model_dump()
-    return {"schemaVersion": payload["schemaVersion"], "stored": stored, **payload}
+    view: dict[str, object] = {
+        "schemaVersion": payload["schemaVersion"],
+        "stored": stored,
+        **payload,
+    }
+    if revision is not None:
+        view["revision"] = revision
+    return view
 
 
 @app.get("/api/v1/settings", response_model=AppSettingsView)
@@ -1483,7 +1729,7 @@ async def get_app_settings(request: Request) -> dict[str, object]:
     """
     store = _get_app_settings_store(request)
     document, stored = await store.load()
-    return _app_settings_json(document, stored)
+    return _app_settings_json(document, stored, await store.document_revision())
 
 
 @app.patch("/api/v1/settings", response_model=AppSettingsView)
@@ -1495,14 +1741,26 @@ async def patch_app_settings(request: Request) -> dict[str, object]:
     rejected with the stable 400 invalid_app_settings error (FastAPI's
     default 422 serialization crashes on non-finite numbers). There is
     deliberately no field that can carry any secret.
+
+    0021 multi-device semantics: a body carrying ``baseRevision`` that no
+    longer matches the stored document is refused with the stable 409
+    app_settings_conflict — the stale client re-hydrates and retries.
+    Bodies without baseRevision keep the historical last-write-wins
+    behavior (older clients unaffected).
     """
-    update = _parse_settings_patch(await request.body())
+    update, base_revision = _parse_settings_patch(await request.body())
     store = _get_app_settings_store(request)
+    if base_revision is not None:
+        current_revision = await store.document_revision()
+        if current_revision != base_revision:
+            raise AppSettingsConflict(
+                "Settings were changed by another device; reload and retry."
+            )
     try:
         merged = await store.save(update)
     except ValueError as exc:
         raise InvalidAppSettings(str(exc)) from exc
-    return _app_settings_json(merged, True)
+    return _app_settings_json(merged, True, await store.document_revision())
 
 
 @app.delete("/api/v1/settings", status_code=204)
@@ -2015,29 +2273,31 @@ async def create_rsshub_credential(
     )
 
 
+class RssHubCredentialMetadataPatch(BaseModel):
+    """PATCH /api/v1/rsshub/credentials/{id} body (metadata only)."""
+
+    name: str | None = None
+    route: str | None = None
+
+
 @app.patch("/api/v1/rsshub/credentials/{credential_id}", response_model=dict[str, object])
 async def patch_rsshub_credential(
-    credential_id: str, request: Request
+    credential_id: str, body: RssHubCredentialMetadataPatch, request: Request
 ) -> dict[str, object]:
-    body = await request.json()
-    name = body.get("name") if isinstance(body, dict) else None
-    route = body.get("route") if isinstance(body, dict) else None
     return await _get_rsshub_credentials_store(request).update_metadata(
         credential_id,
-        name=name if isinstance(name, str) else None,
-        route=route if isinstance(route, str) else None,
+        name=body.name,
+        route=body.route,
     )
 
 
 @app.put("/api/v1/rsshub/credentials/{credential_id}/value", status_code=204)
 async def put_rsshub_credential_value(
-    credential_id: str, request: Request
+    credential_id: str, body: RssHubCredentialValuePut, request: Request
 ) -> Response:
-    body = await request.json()
-    value = body.get("value") if isinstance(body, dict) else None
-    if not isinstance(value, str) or not value.strip():
+    if not body.value.strip():
         raise RssHubInvalidValue("value must not be blank.")
-    await _get_rsshub_credentials_store(request).set_value(credential_id, value)
+    await _get_rsshub_credentials_store(request).set_value(credential_id, body.value)
     return Response(status_code=204)
 
 

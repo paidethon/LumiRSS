@@ -46,7 +46,47 @@ curl -fsS -o /dev/null http://127.0.0.1/
 
 - 两者都设置 → 渲染 `Caddyfile.auth`（basic_auth，bcrypt）。
 - 都为空 → `Caddyfile.noauth`（受信内网/已有外层认证）。
-- 安全响应头（nosniff / DENY / no-referrer）两种模式都启用。
+- 安全响应头（nosniff / DENY / no-referrer / HSTS / Permissions-Policy /
+  CSP——见 §3.1）两种模式都启用。
+
+### 3.1 BFF internal token（0021，可选但推荐）
+
+`.env.prod` 设置 `LUMIRSS_INTERNAL_TOKEN`（URL-safe 字符集，如
+`openssl rand -base64 32` 的输出）后：
+
+- BFF 拒绝一切不带匹配 `X-Lumi-Token` 头的 `/api/*` 请求（401）；
+  `/health/*` 豁免（容器 healthcheck 用）。
+- Caddy 的 entrypoint 会渲染 `header_up X-Lumi-Token …`，因此浏览器
+  正常使用不受影响；只有**绕过 Caddy 直连 BFF** 的内网调用被拒。
+- 两个容器读同一份 `.env.prod`，一起设置即可；只设 BFF 侧会让所有
+  API 变 401，只设 Caddy 侧无效果。留空（默认）= 关闭，行为与
+  0021 之前一致（开发栈/E2E 不受影响）。
+
+### 3.2 安全响应头与 CSP
+
+- CSP：`script-src 'self'` + 内联主题脚本按 sha256 pin（修改
+  `apps/web/index.html` 的内联脚本时必须同步更新两个 Caddyfile 的哈希；
+  `apps/web/src/__tests__/csp-hash.test.ts` 会在漂移时报错）。
+  `style-src` 保留 `unsafe-inline`（净化后的文章 style 属性需要）；
+  `img-src`/`media-src` 允许远端（文章内嵌第三方媒体）。
+- 另有 HSTS（max-age=1y）、`Permissions-Policy`（camera/mic/geo 关闭）、
+  `frame-ancestors 'none'`。
+
+### 3.3 请求体上限与限流（0021）
+
+- 全局请求体 4 MiB 上限（超限 → 稳定 413 `request_too_large`）；
+  OPML 导入保留自身更严格的 2 MiB 边界。
+- 昂贵控制面路由有进程内固定窗口限流（超限 → 稳定 429
+  `rate_limited` + `Retry-After`）：restore 10/min、backups 12/min、
+  feed 预览/来源发现 30/min、AI/MT 生成 120/min、RSSHub 变更 60/min。
+  阅读类 GET 不限流。阈值面向单用户，进程重启即重置。
+
+### 3.4 多设备设置冲突（0021）
+
+`GET/PATCH /api/v1/settings` 暴露内容哈希 `revision`；PATCH 可带
+`baseRevision`，与当前不一致时返回稳定 409 `app_settings_conflict`
+（另一设备已写入）。Web 同步层会自动 re-hydrate 并重试一次；不带
+`baseRevision` 的调用保持 last-write-wins（旧客户端兼容）。
 
 ## 4. Health / readiness
 

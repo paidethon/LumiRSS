@@ -1,7 +1,6 @@
-/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 // 构建溯源（关于页展示，与 BFF GET /api/v1/version 对照判断 Web/BFF 版本错配）：
 // Docker/CI 构建时通过 VITE_GIT_COMMIT 注入；本地 dev 留空。
@@ -20,10 +19,23 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:8000',
     },
   },
+  preview: {
+    // ci-smoke（LUMIRSS_CI_STATIC=1）跑在 vite preview 上，其契约是
+    // “静态、无后端 API”的降级态。preview 默认继承 server.proxy——
+    // 只要本机 8000 恰好跑着 dev BFF，“无 API”前提就被静默破坏
+    // （备份历史会渲染出真实任务）。显式清空，让降级态测试确定性成立。
+    proxy: {},
+  },
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     // e2e/ 归 Playwright（playwright.config.ts），vitest 不收集
     exclude: ['**/node_modules/**', 'e2e/**', 'dist/**'],
+    // 每个 worker 都是一个完整 jsdom 环境 + 全量模块图；不设上限时
+    // vitest 会按逻辑核数（本机 20）全开，多进程并发（构建/后端测试
+    // 同时运行）下事件循环饥饿会让 waitFor 超时（历史 scroll-mark-unread
+    // / mobile-reader 抖动）。封顶后单文件仍能拿到稳定 CPU 配额。
+    // （vitest 4 移除了 poolOptions，worker 上限统一走 maxWorkers。）
+    maxWorkers: 8,
   },
 })

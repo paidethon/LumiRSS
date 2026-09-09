@@ -263,3 +263,29 @@ def test_manual_trigger_only_get_routes_never_build_a_provider(tmp_path):
         assert client.get("/api/v1/settings/ai").status_code == 200
         assert client.get("/api/v1/settings/ai/profiles").status_code == 200
         assert client.get("/api/v1/settings/ai/purposes").status_code == 200
+
+
+def test_secret_value_put_rejects_oversized_and_control_characters(tmp_path):
+    """0021: SecretValuePut bounds — same MAX_SECRET_LENGTH as the RSSHub
+    secret schema, and control characters rejected at input time (they
+    would poison env rendering / upstream calls until replaced)."""
+    with TestClient(app) as client:
+        _use_temp_state(tmp_path)
+
+        oversized = "k" * 10001
+        too_long = client.put("/api/v1/settings/ai/key", json={"value": oversized})
+        assert too_long.status_code == 422
+        assert too_long.json()["error"]["type"] == "invalid_request"
+
+        control = client.put(
+            "/api/v1/settings/ai/key", json={"value": "sk-line1\nline2"}
+        )
+        assert control.status_code == 422
+        assert control.json()["error"]["type"] == "invalid_request"
+
+        # Nothing was stored by the rejected writes.
+        assert client.get("/api/v1/settings/ai").json()["defaultKeyConfigured"] is False
+
+        # Exactly at the bound is accepted.
+        ok = client.put("/api/v1/settings/ai/key", json={"value": "k" * 10000})
+        assert ok.status_code == 204

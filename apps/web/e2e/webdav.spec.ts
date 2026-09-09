@@ -6,16 +6,17 @@
 
 import http from 'node:http'
 import { expect, test, type Page } from '@playwright/test'
-import { openSettingsCategory, visibleDialog } from './helpers'
+import { openSettingsCategory, resolveBridgeIp, visibleDialog } from './helpers'
 import { createWebDavServer } from './webdav-server'
 
 const WEBDAV_PORT = 18081
 const WEBDAV_USER = 'e2e-dav-user'
 const WEBDAV_PASS = 'e2e-dav-pass'
-// BFF 在容器里运行：127.0.0.1 指向容器自身。默认走 docker 网桥 IP
-// （私有网段，符合 BFF 的 WebDAV http 策略）；宿主机直跑时用 127.0.0.1。
+// BFF 在容器里运行：127.0.0.1 指向容器自身。默认走 docker 网桥网关
+// （私有网段，符合 BFF 的 WebDAV http 策略）。网桥子网随网络重建漂移
+// （硬编码 172.19.0.1 曾过期——J4/M3 同类根因），运行时探测。
 const WEBDAV_URL =
-  process.env.LUMIRSS_E2E_WEBDAV_URL ?? `http://172.19.0.1:${WEBDAV_PORT}/`
+  process.env.LUMIRSS_E2E_WEBDAV_URL ?? `http://${resolveBridgeIp()}:${WEBDAV_PORT}/`
 
 test.describe.configure({ mode: 'serial' })
 

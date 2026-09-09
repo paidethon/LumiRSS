@@ -412,10 +412,14 @@ class AppSettingsView(PortableSettings):
 
     ``stored=false`` means the server holds no explicit document yet (the
     client may seed it from local values); otherwise the fields are the
-    server-durable values.
+    server-durable values. ``revision`` (0021) is a content-hash of the
+    stored document for optimistic concurrency: a PATCH may carry
+    ``baseRevision`` and is refused with a stable 409 when it no longer
+    matches.
     """
 
     stored: bool
+    revision: int
 
 
 # ---------------------------------------------------------------------------

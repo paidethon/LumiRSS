@@ -14,14 +14,16 @@ settings control-plane rework — AI profiles with purpose mapping,
 「备份与恢复」merged into「数据控制」, honest RSSHub control chain,
 version provenance.
 
-**Active milestone**: —
+**Active milestone**: —（0021 Security & Operations Hardening 的候选范围已由
+维护分支实施，见下方任务分支；里程碑编号仍空闲，是否立项由用户决定）
 
-**Active task branch** (PR-ready, awaiting review): `feat/overnight-reader-translation-rsshub-20260907`
-→ reader translation three-mode views, RSSHub auto-detect/credentials/apply chain,
-backup fixes, E2E legacy closure + security hardening (2026-09-08).
-Status / evidence: [tasks/overnight-reader-translation-rsshub/STATE.md](tasks/overnight-reader-translation-rsshub/STATE.md)
-· [VALIDATION.md](tasks/overnight-reader-translation-rsshub/VALIDATION.md) ·
-[IMPLEMENTATION_REPORT.md](tasks/overnight-reader-translation-rsshub/IMPLEMENTATION_REPORT.md)
+**Active task branch** (PR-ready, awaiting review):
+`chore/postmerge-reality-security-hardening-20260908`
+→ post-merge 真实运行闭环（备份/恢复、Docker 代理根因、真实 LibreTranslate、
+Chrome Translator 真机、flaky 根治）+ 0021 安全与运维硬化（内部 token、
+CSP/HSTS、请求体上限、限流、设置冲突语义），2026-09-09。
+Status / evidence: [tasks/postmerge-reality-security-hardening/STATE.md](tasks/postmerge-reality-security-hardening/STATE.md)
+· [VALIDATION.md](tasks/postmerge-reality-security-hardening/VALIDATION.md)
 
 **Next candidate**: 0021 — Security & Operations Hardening（编号尚未占用）
 → scope and priority: [ROADMAP.md](ROADMAP.md)
