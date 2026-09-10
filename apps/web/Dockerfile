@@ -15,7 +15,11 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM caddy:2-alpine
+# caddy pinned by digest (same drift policy as freshrss/rsshub in compose):
+# a stale floating `caddy:2-alpine` on registry mirrors built an image whose
+# Caddy predates the `basic_auth` directive and crash-looped at start.
+# 98eb57d… = caddy 2.11.4 (alpine).
+FROM caddy:2-alpine@sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a
 COPY --from=build /app/dist /srv
 COPY Caddyfile.noauth /etc/caddy/Caddyfile.noauth
 COPY Caddyfile.auth /etc/caddy/Caddyfile.auth
