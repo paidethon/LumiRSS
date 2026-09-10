@@ -1,0 +1,110 @@
+[
+ {
+  "name": "Apple ML Research",
+  "url": "https://machinelearning.apple.com/rss.xml",
+  "status": 200,
+  "finalUrl": "https://machinelearning.apple.com/rss.xml",
+  "contentType": "text/xml",
+  "latencyS": 0.09,
+  "feedType": "rss20",
+  "feedTitle": "Apple Machine Learning Research",
+  "itemCount": 10,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Mistral AI News",
+  "url": "https://mistral.ai/rss.xml",
+  "status": 200,
+  "finalUrl": "https://mistral.ai/news/rss",
+  "contentType": "text/plain",
+  "latencyS": 0.49,
+  "feedType": "rss20",
+  "feedTitle": "Mistral AI Blog",
+  "itemCount": 86,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Together AI Blog",
+  "url": "https://www.together.ai/blog/rss.xml",
+  "status": 200,
+  "finalUrl": "https://www.together.ai/blog/rss.xml",
+  "contentType": "application/rss+xml",
+  "latencyS": 0.66,
+  "feedType": "rss20",
+  "feedTitle": "Together.ai",
+  "itemCount": 100,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Arize AI Blog",
+  "url": "https://arize.com/blog/feed/",
+  "status": 200,
+  "finalUrl": "https://arize.com/blog/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 1.0,
+  "feedType": "rss20",
+  "feedTitle": "AI Engineering Blog: Agents, Evals & Observability | Arize AI",
+  "itemCount": 10,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Hamel Husain",
+  "url": "https://hamel.dev/index.xml",
+  "status": 200,
+  "finalUrl": "https://hamel.dev/index.xml",
+  "contentType": "application/xml",
+  "latencyS": 1.15,
+  "feedType": "rss20",
+  "feedTitle": "Hamel's Blog",
+  "itemCount": 20,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Vicki Boykis",
+  "url": "https://vickiboykis.com/index.xml",
+  "status": 200,
+  "finalUrl": "https://vickiboykis.com/index.xml",
+  "contentType": "application/xml",
+  "latencyS": 0.48,
+  "feedType": "rss20",
+  "feedTitle": "Tech Blog on ✰Vicki Boykis✰",
+  "itemCount": 20,
+  "verdict": "PASS"
+ },
+ {
+  "name": "Import AI",
+  "url": "https://www.jack-clark.net/feed/",
+  "status": 200,
+  "finalUrl": "https://jack-clark.net/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 1.97,
+  "feedType": "rss20",
+  "feedTitle": "Import AI",
+  "itemCount": 10,
+  "verdict": "PASS"
+ },
+ {
+  "name": "MarkTechPost",
+  "url": "https://www.marktechpost.com/feed/",
+  "status": 200,
+  "finalUrl": "https://www.marktechpost.com/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 2.33,
+  "feedType": "rss20",
+  "feedTitle": "MarkTechPost",
+  "itemCount": 10,
+  "verdict": "PASS"
+ },
+ {
+  "name": "MIT AI News (Simon extra)",
+  "url": "https://www.technologyreview.com/feed/",
+  "status": 200,
+  "finalUrl": "https://www.technologyreview.com/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 0.8,
+  "feedType": "rss20",
+  "feedTitle": "MIT Technology Review",
+  "itemCount": 10,
+  "verdict": "PASS"
+ }
+]

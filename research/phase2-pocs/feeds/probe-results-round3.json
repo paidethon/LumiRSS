@@ -1,0 +1,228 @@
+[
+ {
+  "name": "vLLM Blog",
+  "url": "https://vllm.ai/blog/rss.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://vllm.ai/blog/rss.xml",
+  "contentType": "application/xml",
+  "latencyS": 1.62,
+  "feedType": "rss20",
+  "feedTitle": "vLLM Blog",
+  "itemCount": 50,
+  "latest": "2026-09-09",
+  "verdict": "PASS"
+ },
+ {
+  "name": "vLLM Blog (alt)",
+  "url": "https://blog.vllm.ai/feed.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://vllm.ai/feed.xml",
+  "contentType": "text/html",
+  "latencyS": 0.87,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "LangChain Blog",
+  "url": "https://www.langchain.com/blog/rss.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://www.langchain.com/blog/rss.xml",
+  "contentType": "application/rss+xml",
+  "latencyS": 0.88,
+  "feedType": "rss20",
+  "feedTitle": "LangChain Blog",
+  "itemCount": 100,
+  "latest": "2026-09-10",
+  "verdict": "PASS"
+ },
+ {
+  "name": "LangChain Blog (alt2)",
+  "url": "https://blog.langchain.com/rss/",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://www.langchain.com/blog",
+  "contentType": "text/html",
+  "latencyS": 1.23,
+  "verdict": "NO_ENTRIES"
+ },
+ {
+  "name": "LlamaIndex Blog",
+  "url": "https://www.llamaindex.ai/blog/rss",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://www.llamaindex.ai/blog/rss",
+  "contentType": "text/html",
+  "latencyS": 0.81,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "LlamaIndex Blog (alt)",
+  "url": "https://www.llamaindex.ai/rss",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://www.llamaindex.ai/rss",
+  "contentType": "text/html",
+  "latencyS": 0.28,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Modal Blog",
+  "url": "https://modal.blog/feed",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://modal.com/blog",
+  "contentType": "text/html",
+  "latencyS": 2.33,
+  "verdict": "NO_ENTRIES"
+ },
+ {
+  "name": "Modal Blog (alt)",
+  "url": "https://modal.com/blog/rss.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://modal.com/blog/rss.xml",
+  "contentType": "text/html",
+  "latencyS": 1.08,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "W&B Blog",
+  "url": "https://wandb.ai/fully-connected/rss.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://wandb.ai/fully-connected/rss.xml",
+  "contentType": "application/rss+xml",
+  "latencyS": 0.65,
+  "verdict": "NO_ENTRIES"
+ },
+ {
+  "name": "W&B Blog (alt)",
+  "url": "https://www.wandb.ai/feed.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://wandb.ai/feed.xml",
+  "contentType": "text/html",
+  "latencyS": 1.58,
+  "verdict": "NO_ENTRIES"
+ },
+ {
+  "name": "Replicate Blog",
+  "url": "https://blog.replicate.com/feed/",
+  "category": "engineering",
+  "verdict": "EXC",
+  "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1000)"
+ },
+ {
+  "name": "Evidently AI",
+  "url": "https://www.evidentlyai.com/blog/rss.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://www.evidentlyai.com/blog/rss.xml",
+  "contentType": "text/html",
+  "latencyS": 0.88,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "The Batch",
+  "url": "https://www.deeplearning.ai/feed/the-batch/",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://www.deeplearning.ai/feed/the-batch",
+  "contentType": "text/html",
+  "latencyS": 0.84,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "The Batch (alt)",
+  "url": "https://deeplearning.ai/the-batch/feed/",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://www.deeplearning.ai/the-batch/feed",
+  "contentType": "text/html",
+  "latencyS": 2.23,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "TLDR AI",
+  "url": "https://tldr.tech/ai/feed.xml",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://tldr.tech/ai/feed.xml",
+  "contentType": "text/html",
+  "latencyS": 1.39,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "TLDR AI (alt)",
+  "url": "https://tldr.tech/ai/rss.xml",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://tldr.tech/ai/rss.xml",
+  "contentType": "text/html",
+  "latencyS": 0.42,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "BAIR Blog",
+  "url": "https://bair.berkeley.edu/blog/feed.xml",
+  "category": "labs",
+  "verdict": "EXC",
+  "error": "ConnectTimeout: _ssl.c:983: The handshake operation timed out"
+ },
+ {
+  "name": "AI2 Blog",
+  "url": "https://allenai.org/blog/rss",
+  "category": "labs",
+  "status": 404,
+  "finalUrl": "https://allenai.org/blog/rss",
+  "contentType": "text/html",
+  "latencyS": 1.21,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "AI2 Blog (alt)",
+  "url": "https://allenai.org/blog/feed",
+  "category": "labs",
+  "status": 404,
+  "finalUrl": "https://allenai.org/blog/feed",
+  "contentType": "text/html",
+  "latencyS": 0.98,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Cohere Blog",
+  "url": "https://cohere.com/blog/rss",
+  "category": "labs",
+  "status": 200,
+  "finalUrl": "https://cohere.com/blog",
+  "contentType": "text/html",
+  "latencyS": 2.34,
+  "verdict": "NO_ENTRIES"
+ },
+ {
+  "name": "Groq Blog",
+  "url": "https://groq.com/blog/rss",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://groq.com/blog/rss",
+  "contentType": "text/html",
+  "latencyS": 0.75,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Chip Huyen blog",
+  "url": "https://huyenchip.com/feed.xml",
+  "category": "experts",
+  "status": 200,
+  "finalUrl": "https://huyenchip.com/feed.xml",
+  "contentType": "application/xml",
+  "latencyS": 1.34,
+  "feedType": "rss20",
+  "feedTitle": "Chip Huyen",
+  "itemCount": 10,
+  "latest": "2025-01-15",
+  "verdict": "PASS"
+ }
+]

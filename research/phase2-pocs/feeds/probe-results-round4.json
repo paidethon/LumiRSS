@@ -1,0 +1,169 @@
+[
+ {
+  "name": "PyTorch Blog",
+  "url": "https://pytorch.org/blog/feed.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://pytorch.org/blog/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 1.59,
+  "feedType": "rss20",
+  "feedTitle": "Blog – PyTorch",
+  "itemCount": 10,
+  "latest": "2026-09-09",
+  "verdict": "PASS"
+ },
+ {
+  "name": "TensorFlow Blog",
+  "url": "https://blog.tensorflow.org/feeds/posts.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://blog.tensorflow.org/feeds/posts.xml",
+  "contentType": "text/html",
+  "latencyS": 0.95,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Weaviate Blog",
+  "url": "https://weaviate.io/blog/rss.xml",
+  "category": "engineering",
+  "status": 200,
+  "finalUrl": "https://weaviate.io/blog/rss.xml",
+  "contentType": "application/xml",
+  "latencyS": 1.48,
+  "feedType": "rss20",
+  "feedTitle": "Weaviate Blog",
+  "itemCount": 20,
+  "latest": "2026-09-08",
+  "verdict": "PASS"
+ },
+ {
+  "name": "Weaviate Blog (alt)",
+  "url": "https://weaviate.io/blog/feed.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://weaviate.io/blog/feed.xml",
+  "contentType": "text/html",
+  "latencyS": 0.65,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Qdrant Blog",
+  "url": "https://qdrant.tech/rss/",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://qdrant.tech/rss/",
+  "contentType": "text/html",
+  "latencyS": 0.81,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Qdrant Blog (alt)",
+  "url": "https://qdrant.tech/articles/rss/",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://qdrant.tech/articles/rss/",
+  "contentType": "text/html",
+  "latencyS": 0.24,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "GitHub AI Blog",
+  "url": "https://github.blog/category/ai/feed/",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://github.blog/ai/feed/",
+  "contentType": "text/html",
+  "latencyS": 1.56,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Jina AI Blog",
+  "url": "https://jina.ai/blog/feed.xml",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://jina.ai/blog/feed.xml",
+  "contentType": "text/html",
+  "latencyS": 0.82,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "LlamaIndex Blog",
+  "url": "https://www.llamaindex.ai/blog/feed",
+  "category": "engineering",
+  "status": 404,
+  "finalUrl": "https://www.llamaindex.ai/blog/feed",
+  "contentType": "text/html",
+  "latencyS": 0.84,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Data Elixir",
+  "url": "https://dataelixir.com/feed/",
+  "category": "newsletters",
+  "status": 200,
+  "finalUrl": "https://dataelixir.com/feed/",
+  "contentType": "application/rss+xml",
+  "latencyS": 1.67,
+  "feedType": "rss20",
+  "feedTitle": "Data Elixir",
+  "itemCount": 4,
+  "latest": "2020-11-17",
+  "verdict": "PASS"
+ },
+ {
+  "name": "Towards AI",
+  "url": "https://pub.towardsai.net/feed",
+  "category": "newsletters",
+  "status": 200,
+  "finalUrl": "https://pub.towardsai.net/feed",
+  "contentType": "text/xml",
+  "latencyS": 1.47,
+  "feedType": "rss20",
+  "feedTitle": "Towards AI - Medium",
+  "itemCount": 10,
+  "latest": "2026-09-10",
+  "verdict": "PASS"
+ },
+ {
+  "name": "Ben's Bites",
+  "url": "https://www.bensbites.com/rss.xml",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://www.bensbites.com/rss.xml",
+  "contentType": "text/html",
+  "latencyS": 1.29,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "Ben's Bites (alt)",
+  "url": "https://bensbites.beehiiv.com/feed",
+  "category": "newsletters",
+  "status": 404,
+  "finalUrl": "https://bensbites.beehiiv.com/feed",
+  "contentType": "text/plain",
+  "latencyS": 1.24,
+  "verdict": "HTTP_404"
+ },
+ {
+  "name": "The Rundown AI",
+  "url": "https://www.therundown.ai/feed",
+  "category": "newsletters",
+  "status": 200,
+  "finalUrl": "https://www.therundown.ai/feed",
+  "contentType": "application/rss+xml",
+  "latencyS": 0.93,
+  "feedType": "rss20",
+  "feedTitle": "The Rundown AI",
+  "itemCount": 50,
+  "latest": "2026-09-10",
+  "verdict": "PASS"
+ },
+ {
+  "name": "RunLLM/other",
+  "url": "https://newsletter.maartengrootendorst.nl/feed",
+  "category": "newsletters",
+  "verdict": "EXC",
+  "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1000)"
+ }
+]
