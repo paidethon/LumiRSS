@@ -75,7 +75,10 @@ Start here for any task:
    or boundaries;
 5. Read `docs/product/PRD.md` only when product scope is unclear;
 6. Do NOT read milestone history, upstream studies or reference repos
-   unless the task specifically requires them.
+   unless the task specifically requires them;
+7. Do NOT read `docs/research/` (phase2 reports, ai-feeds, performance,
+   local-translation) by default — only open the specific report named by
+   an active milestone's implementation prompt.
 
 ---
 

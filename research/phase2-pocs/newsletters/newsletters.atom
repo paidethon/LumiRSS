@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Newsletter Bridge</title>
+  <updated>2026-09-10T17:09:44Z</updated>
+  <id>http://127.0.0.1:8080/feeds/newsletters.atom</id>
+  <entry>
+    <id>urn:mail:m0</id>
+    <title>Weekly AI Digest #42</title>
+    <author><name>digest@newsletters.example</name></author>
+    <updated>Thu, 10 Sep 2026 17:09:44 +0000</updated>
+    <link href="http://127.0.0.1:8080/feeds/newsletters.atom#m0"/>
+    <content type="html">&lt;html>&lt;body>&lt;h1>Weekly AI Digest #42&lt;/h1>&lt;p>Article body #0 …&lt;/p>&lt;/body>&lt;/html>
+</content>
+  </entry>
+  <entry>
+    <id>urn:mail:m1</id>
+    <title>Deep dive: state-space models</title>
+    <author><name>digest@newsletters.example</name></author>
+    <updated>Thu, 10 Sep 2026 17:09:44 +0000</updated>
+    <link href="http://127.0.0.1:8080/feeds/newsletters.atom#m1"/>
+    <content type="html">&lt;html>&lt;body>&lt;h1>Deep dive: state-space models&lt;/h1>&lt;p>Article body #1 …&lt;/p>&lt;/body>&lt;/html>
+</content>
+  </entry>
+</feed>

@@ -1,0 +1,6 @@
+# Generated PoC artifacts — reproducible via the scripts; not committed.
+snapshots/snapshots/
+obsidian/fixture-vault/
+# vendored dependency (373KB): re-download before running poc_graph.mjs
+# curl -o graph/cytoscape.min.js https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js
+graph/cytoscape.min.js
