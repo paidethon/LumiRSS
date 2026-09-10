@@ -34,9 +34,11 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→
 | `./lumirss logs [service] [-f]` | 全栈或单服务日志 |
 | `./lumirss backup` | lumi-data + freshrss-data 卷 tar.gz + 配置归档到 `./backups/`（`LUMIRSS_BACKUP_DIR` 可改） |
 | `./lumirss restore <backup.tar.gz> [--yes]` | 停 bff → 覆盖恢复卷 → 启动 → 健康检查（破坏性，需输入 `RESTORE` 或 `--yes`） |
-| `./lumirss doctor` | PASS/WARN/FAIL 诊断（docker、compose、.env.prod、DNS、容器与健康、备份就绪 `fullBackupReady`、磁盘、备份目录；external 模式另查公网暴露与 HTTPS） |
+| `./lumirss doctor` | PASS/WARN/FAIL 诊断（docker、compose、.env.prod、DNS、容器与健康、**OOM/重启计数**、备份就绪 `fullBackupReady`、磁盘、备份目录；external 模式另查公网暴露与 HTTPS；session 模式另查密码已初始化） |
 | `./lumirss rollback` | 回到上一镜像 tag + 恢复上一份 `.env.prod` 快照 |
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
+| `./lumirss set-password` | 安装/轮换浏览器登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进 BFF 数据库，明文任何地方不落盘** |
+| `./lumirss freshrss-init` | 安装/启用内部 FreshRSS 与 BFF 用户（幂等） |
 
 镜像默认取 GHCR：`ghcr.io/paidethon/lumirss-web` /
 `ghcr.io/paidethon/lumirss-bff`，tag 由 `LUMIRSS_IMAGE_TAG` 控制
@@ -100,6 +102,11 @@ docker compose -f docker-compose.prod.yml up -d --build
   访问；外部监控走经反代的 `/api/v1/operations/status`。
 - FreshRSS / RSSHub 镜像按 digest/版本 pin（不随系统升级漂移）。
 - 最低资源：2 vCPU / 2 GB RAM / 10 GB 磁盘（RSSHub 峰值内存最高）。
+  小内存 VPS（~1.6 GB、与其它容器共处）用 `./lumirss deploy --low-memory`
+  写入单用户资源预设（web 96m / bff 256m / freshrss 320m / rsshub 448m
+  + RSSHub memory cache 64 MB + V8 堆 256 MB）。改完用
+  `./lumirss doctor` 验证：任何 OOMKilled = limit 过低，调大对应
+  `LUMIRSS_*_MEM_LIMIT`，绝不把 OOM 交付为"更低占用"。
 
 就绪检查（与镜像 HEALTHCHECK 同一手法，从容器内执行）：
 
@@ -113,11 +120,42 @@ HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
 
 ## 5. 访问控制与边缘安全
 
+两种模式（`LUMIRSS_AUTH_MODE`，`./lumirss deploy --auth-mode=…` 切换）：
+
+### 5a. session 模式（推荐：一次登录，长期会话）
+
+```bash
+sudo ./lumirss deploy --auth-mode=session
+sudo ./lumirss set-password          # 交互输入；或 stdin / LUMIRSS_NEW_PASSWORD
+```
+
+- **登录流**：浏览器只输一次密码 → BFF bcrypt 校验（哈希只存
+  `lumi.sqlite`，明文任何地方不落盘）→ 签发 256-bit 随机 opaque
+  session（数据库只存其 SHA-256）→ `__Host-lumirss_session` Cookie
+  （`Secure; HttpOnly; SameSite=Strict; Path=/`，无 `Domain`）。
+- **长期有效**：默认 180 天不活跃窗口（`LUMIRSS_SESSION_MAX_AGE_DAYS`），
+  活跃使用自动滑动续期——经常使用基本不需要重新登录。改密 → 撤销
+  全部会话（本设备自动换发新会话）；登出/所有设备登出在
+  「设置 → 账户与服务」。
+- **防护**：登录失败限流（5 次失败/分钟 → 429，成功即重置，不锁账户）；
+  不安全方法（POST/PATCH/…）做 Origin 同源校验（CSRF）；
+  会话表有界（过期行登录时清理 + 最多 20 个活跃会话）。
+- **边界**：静态资源与 `/api/v1/auth/*`、`/health/*`、`/api/v1/version`
+  公开；其余 `/api/*` 需要会话。internal token 层照常生效（会话不替代
+  internal token——后者防的是绕过 Caddy 直连 BFF）。
+- 从 basic 模式切换：重新 deploy 时带 `--auth-mode=session` 并执行
+  `set-password`；回退同理（`--auth-mode=basic` + 原 USER/HASH 仍在）。
+
+### 5b. basic 模式（默认/兼容）
+
 - **Caddy auth / noauth**：`LUMIRSS_AUTH_USER` + `LUMIRSS_AUTH_HASH`
   都设置 → 渲染 `Caddyfile.auth`（basic_auth，bcrypt）；都为空 →
   `Caddyfile.noauth`（受信内网/已有外层认证）。**只设一个容器拒绝启动**
   （防止半配置静默关闭访问控制）。Tailscale / Cloudflare Access 等外层
   方案可替换内置 basic auth，但不要无意叠加多套认证。
+
+### 通用
+
 - **TLS 三态**：真实域名 → Let's Encrypt；`localhost` → 自签 + 强制
   HTTPS；`http://:80` 形式 → 纯 HTTP（仅内网调试）。
 - **BFF internal token（可选但推荐）**：`.env.prod` 设置
