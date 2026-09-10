@@ -1,0 +1,70 @@
+<!-- Local Chrome Translator API PoC harness (served over https/localhost).
+User gesture button calls Translator.create() — satisfying the user-activation
+requirement — then translates fixed en→zh / en→ja / zh→en samples and reports
+timings + download progress. Research-only. -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Translator PoC</title></head>
+<body>
+<button id="go">run poc</button>
+<pre id="out"></pre>
+<script>
+const out = (m) => (document.getElementById("out").textContent += m + "\n");
+document.getElementById("go").onclick = async () => {
+  const w = window;
+  out("hasTranslator=" + (typeof w.Translator !== "undefined"));
+  if (typeof w.Translator === "undefined") return;
+
+  for (const [src, tgt] of [["en", "zh"], ["en", "ja"], ["zh", "en"]]) {
+    const t0 = performance.now();
+    try {
+      const avail = await w.Translator.availability({ sourceLanguage: src, targetLanguage: tgt });
+      out(`[${src}->${tgt}] availability=${avail} (+${Math.round(performance.now() - t0)}ms)`);
+      if (avail === "unavailable") continue;
+      const t1 = performance.now();
+      let lastPct = -1;
+      const translator = await w.Translator.create({
+        sourceLanguage: src,
+        targetLanguage: tgt,
+        monitor(m) {
+          m.addEventListener("downloadprogress", (e) => {
+            const pct = Math.round(e.loaded * 100);
+            if (pct !== lastPct && pct % 10 === 0) { lastPct = pct; out(`  download ${pct}%`); }
+          });
+        },
+      });
+      out(`[${src}->${tgt}] create() done in ${Math.round(performance.now() - t1)}ms`);
+      const samples = {
+        "en-zh": ["The model was trained on a large corpus of text.",
+                  "Retrieval-augmented generation grounds answers in retrieved documents.",
+                  "Quantization reduces memory usage at a small accuracy cost."],
+        "en-ja": ["The model was trained on a large corpus of text.",
+                  "Inference latency matters for interactive applications."],
+        "zh-en": ["大语言模型正在改变软件的构建方式。",
+                  "检索增强生成把答案锚定在检索到的文档上。"],
+      }[`${src}-${tgt}`] || ["Hello world."];
+      const t2 = performance.now();
+      const first = await translator.translate(samples[0]);
+      const coldMs = Math.round(performance.now() - t2);
+      const t3 = performance.now();
+      const warm = await translator.translate(samples[0]);
+      const warmMs = Math.round(performance.now() - t3);
+      out(`[${src}->${tgt}] cold=${coldMs}ms warm=${warmMs}ms`);
+      out(`  IN : ${samples[0]}`);
+      out(`  OUT: ${first} (repeat-match=${first === warm})`);
+      for (const s of samples.slice(1)) {
+        out(`  IN : ${s}`);
+        out(`  OUT: ${await translator.translate(s)}`);
+      }
+      translator.destroy();
+    } catch (e) {
+      out(`[${src}->${tgt}] ERROR ${e.name}: ${e.message}`);
+    }
+  }
+  if (w.performance?.memory) {
+    out(`heapUsedMB=${Math.round(w.performance.memory.usedJSHeapSize / 1048576)}`);
+  }
+};
+</script>
+</body>
+</html>
