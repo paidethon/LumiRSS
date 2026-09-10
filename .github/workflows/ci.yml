@@ -168,6 +168,13 @@ jobs:
           docker compose -f docker-compose.prod.yml config > /dev/null \
             && echo "compose config OK"
 
+      - name: Validate external-Caddy compose override
+        run: |
+          LUMIRSS_EXTERNAL_CADDY=1 docker compose \
+            -f docker-compose.prod.yml -f docker-compose.external-caddy.yml \
+            config > /dev/null \
+            && echo "external-caddy compose config OK"
+
   docker-build:
     name: Production image build (no push)
     runs-on: ubuntu-latest

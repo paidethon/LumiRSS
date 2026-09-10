@@ -1,7 +1,7 @@
 # Caddyfile — no authentication (trusted LAN / behind an external reverse
 # proxy). Selected by docker-entrypoint.sh when LUMIRSS_AUTH_* is empty.
 
-{$DOMAIN:localhost} {
+__SITE_ADDR__ {
 	encode gzip
 
 	header {

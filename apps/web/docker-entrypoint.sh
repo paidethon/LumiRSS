@@ -9,7 +9,17 @@
 #   directive so every /api/* request forwarded to the BFF carries
 #   X-Lumi-Token; the BFF (with the same token configured) rejects direct
 #   in-network callers that bypass Caddy. Recommended: URL-safe charset.
+# - LUMIRSS_EXTERNAL_CADDY set (non-empty)            -> site address ":80":
+#   a reverse proxy on the host already owns 80/443, so this Caddy serves
+#   plain HTTP for ANY Host header on its loopback-published port — no
+#   ACME, no TLS, no http->https redirect inside the container.
 set -eu
+
+if [ -n "${LUMIRSS_EXTERNAL_CADDY:-}" ]; then
+  SITE_ADDR=":80"
+else
+  SITE_ADDR="${DOMAIN:-localhost}"
+fi
 
 if [ -n "${LUMIRSS_AUTH_USER:-}" ] && [ -n "${LUMIRSS_AUTH_HASH:-}" ]; then
   TEMPLATE=/etc/caddy/Caddyfile.auth
@@ -31,7 +41,8 @@ if [ -n "${LUMIRSS_INTERNAL_TOKEN:-}" ]; then
   TOKEN_DIRECTIVE="header_up X-Lumi-Token ${LUMIRSS_INTERNAL_TOKEN}"
 fi
 
-sed "s|__AUTH_USER__|${LUMIRSS_AUTH_USER:-}|g; \
+sed "s|__SITE_ADDR__|${SITE_ADDR}|g; \
+     s|__AUTH_USER__|${LUMIRSS_AUTH_USER:-}|g; \
      s|__AUTH_HASH__|${LUMIRSS_AUTH_HASH:-}|g; \
      s|__INTERNAL_TOKEN_DIRECTIVE__|${TOKEN_DIRECTIVE}|g" \
   "$TEMPLATE" > /etc/caddy/Caddyfile

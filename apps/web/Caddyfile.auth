@@ -3,7 +3,7 @@
 # __AUTH_HASH__ placeholders are substituted at container start (never
 # committed as real values).
 
-{$DOMAIN:localhost} {
+__SITE_ADDR__ {
 	encode gzip
 
 	header {

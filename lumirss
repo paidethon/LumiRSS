@@ -12,10 +12,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.prod"
 BACKUP_DIR="${LUMIRSS_BACKUP_DIR:-./backups}"
-DC() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+# Deploy mode: 0 = full stack (this stack's Caddy owns 80/443),
+# 1 = external host Caddy (web publishes 127.0.0.1:$UPSTREAM_PORT only).
+# `deploy --external-caddy` sets it and persists LUMIRSS_EXTERNAL_CADDY=1
+# in $ENV_FILE, so update/status/doctor/rollback reuse the same topology.
+EXTERNAL_MODE=0
+COMPOSE_ARGS=(-f docker-compose.prod.yml)
+UPSTREAM_PORT="18080"
+
+DC_D() { # compose via docker_cmd; export the port so compose interpolation
+         # always matches the persisted .env.prod value
+  LUMIRSS_UPSTREAM_PORT="$UPSTREAM_PORT" docker_cmd compose \
+    "${COMPOSE_ARGS[@]}" "$@"
+}
 
 log()  { printf '\033[1;34m[lumirss]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[lumirss]\033[0m %s\n' "$*" >&2; }
@@ -32,7 +44,6 @@ docker_cmd() {
     docker "$@"
   fi
 }
-DC_D() { docker_cmd compose -f "$COMPOSE_FILE" "$@"; }
 
 # ---------------------------------------------------------------------------
 usage() {
@@ -40,6 +51,8 @@ usage() {
 LumiRSS — self-hosted reader lifecycle
 
   sudo ./lumirss deploy [--build] [--dry-run]   first-time / re-run install
+  sudo ./lumirss deploy --external-caddy        … behind an existing host
+                                  Caddy / reverse proxy (loopback-only web)
   ./lumirss update  [--build]                   backup → pull → up → health
   ./lumirss status                              containers, health, versions
   ./lumirss logs [service] [-f]                 stack or single-service logs
@@ -47,9 +60,14 @@ LumiRSS — self-hosted reader lifecycle
   ./lumirss restore <backup.tar.gz> [--yes]     stop → restore → start → health
   ./lumirss doctor                              PASS/WARN/FAIL diagnostics
   ./lumirss rollback                            previous images + config
+  ./lumirss caddy-config                        print the managed host-Caddy
+                                  site block (BEGIN/END LUMIRSS markers)
+  ./lumirss freshrss-init                       install/enable the internal
+                                  FreshRSS + user for the BFF (idempotent)
 
 Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
-LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH (non-interactive deploys).
+LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH,
+LUMIRSS_AUTH_PASSWORD, LUMIRSS_UPSTREAM_PORT (non-interactive deploys).
 USAGE
 }
 
@@ -69,14 +87,14 @@ env_value() { # env_value KEY [FILE]
 git_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
 
 # ---------------------------------------------------------------------------
-hash_password() { # bcrypt for Caddy basic_auth; $ escaped for compose env
-  local plain="$1" h
-  if h="$(docker_cmd run --rm caddy:2-alpine caddy hash-password --plaintext "$plain" 2>/dev/null)"; then
+hash_password() { # bcrypt for Caddy basic_auth; $ escaped for compose env.
+  local plain="$1" h  # plaintext is piped via stdin, never an argv (ps-safe)
+  if h="$(printf '%s' "$plain" | docker_cmd run --rm -i caddy:2-alpine caddy hash-password 2>/dev/null)"; then
     :
   elif docker_cmd image inspect freshrss/freshrss:1.29.1 >/dev/null 2>&1; then
-    h="$(docker_cmd run --rm freshrss/freshrss:1.29.1 php -r 'echo password_hash($argv[1], PASSWORD_BCRYPT);' "$plain" 2>/dev/null)"
+    h="$(printf '%s' "$plain" | docker_cmd run --rm -i freshrss/freshrss:1.29.1 php -r 'echo password_hash(stream_get_contents(STDIN), PASSWORD_BCRYPT);' 2>/dev/null)"
   elif command -v python3 >/dev/null && python3 -c 'import bcrypt' 2>/dev/null; then
-    h="$(python3 -c 'import bcrypt,sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())' "$plain")"
+    h="$(printf '%s' "$plain" | python3 -c 'import bcrypt,sys; print(bcrypt.hashpw(sys.stdin.buffer.read(), bcrypt.gensalt()).decode())')"
   fi
   if [[ -n "${h:-}" ]]; then printf '%s' "$h" | sed 's/\$/\$\$/g'; fi
 }
@@ -96,12 +114,23 @@ preflight() {
     if command -v getent >/dev/null && ! getent hosts "$domain" >/dev/null; then
       warn "DNS: '$domain' does not resolve yet — Let's Encrypt TLS will fail until it does."
     fi
-    if command -v ss >/dev/null; then
+    if ((EXTERNAL_MODE == 0)) && command -v ss >/dev/null; then
       for port in 80 443; do
         if ss -tln 2>/dev/null | grep -qE "[:.]$port\b"; then
           warn "port $port is already in use — stop the conflicting service or change the published ports."
         fi
       done
+    fi
+  fi
+  if ((EXTERNAL_MODE == 1)) && command -v ss >/dev/null; then
+    # The host proxy owns 80/443; this stack's only host footprint is the
+    # loopback port. Occupied is fine when it is our own running web.
+    if ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE ":${UPSTREAM_PORT}$"; then
+      if ! docker_cmd ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+          | grep -E "^lumirss-web .*127\.0\.0\.1:${UPSTREAM_PORT}->" >/dev/null; then
+        err "loopback port $UPSTREAM_PORT is used by another service — set LUMIRSS_UPSTREAM_PORT in $ENV_FILE to a free high port."
+        exit 1
+      fi
     fi
   fi
   local avail
@@ -159,19 +188,47 @@ configure() { # interactive when values are missing; env vars win
     sed -i "s|^LUMIRSS_AUTH_USER=.*|LUMIRSS_AUTH_USER=$user|" "$ENV_FILE"
     if [[ -n "$hash" ]]; then sed -i "s|^LUMIRSS_AUTH_HASH=.*|LUMIRSS_AUTH_HASH=$hash|" "$ENV_FILE"; fi
   fi
-  log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user})"
+  if ((EXTERNAL_MODE == 1)); then
+    # Idempotent: rewriting the same values keeps re-runs from regenerating
+    # the token or moving the upstream port.
+    sed -i "s|^LUMIRSS_EXTERNAL_CADDY=.*|LUMIRSS_EXTERNAL_CADDY=1|" "$ENV_FILE"
+    sed -i "s|^LUMIRSS_UPSTREAM_PORT=.*|LUMIRSS_UPSTREAM_PORT=$UPSTREAM_PORT|" "$ENV_FILE"
+  fi
+  # Persist the deployed image tag so update/rollback reuse the exact same
+  # immutable reference without needing the env var again (env still wins).
+  # .env.prod files copied from older examples lack the key — append it.
+  local tag_now="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
+  tag_now="${tag_now:-latest}"
+  if grep -qE '^LUMIRSS_IMAGE_TAG=' "$ENV_FILE"; then
+    sed -i "s|^LUMIRSS_IMAGE_TAG=.*|LUMIRSS_IMAGE_TAG=$tag_now|" "$ENV_FILE"
+  else
+    printf 'LUMIRSS_IMAGE_TAG=%s\n' "$tag_now" >> "$ENV_FILE"
+  fi
+  local mode_note=""
+  if ((EXTERNAL_MODE == 1)); then mode_note=", external-caddy"; fi
+  log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user}$mode_note)"
 }
 
 # ---------------------------------------------------------------------------
 images_pull_or_build() { # $1 = "--build" optional
   local mode="${1:-}"
+  local tag="${IMAGE_TAG:-latest}"
   if [[ "$mode" == "--build" ]]; then
     log "building images locally (LUMIRSS_BUILD_COMMIT=$(git_commit))"
     LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
     return 0
   fi
-  log "pulling prebuilt images (tag: ${LUMIRSS_IMAGE_TAG:-latest})"
+  log "pulling prebuilt images (tag: $tag)"
   if LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D pull --ignore-buildable 2>&1 | grep -qE " Pulled| up to date"; then
+    return 0
+  fi
+  # Pull output varies across compose versions; when the images are already
+  # present locally, use them instead of rebuilding — a rebuild would
+  # silently overwrite working images with one built from whatever base a
+  # registry mirror hands out (stale mirrors have caused real incidents).
+  if docker_cmd image inspect "ghcr.io/paidethon/lumirss-web:$tag" >/dev/null 2>&1 \
+      && docker_cmd image inspect "ghcr.io/paidethon/lumirss-bff:$tag" >/dev/null 2>&1; then
+    warn "pull output not confirmed — using existing local images (tag: $tag)"
     return 0
   fi
   warn "pull failed — building locally instead (this takes a few minutes)"
@@ -194,9 +251,7 @@ wait_health() { # wait_health <timeout_seconds>
 snapshot_for_rollback() {
   mkdir -p "$BACKUP_DIR"
   cp -f "$ENV_FILE" "$BACKUP_DIR/.env.prod.previous"
-  local tag
-  tag="$(env_value LUMIRSS_IMAGE_TAG)"
-  echo "${tag:-latest}" > "$BACKUP_DIR/.image-tag.previous"
+  echo "${IMAGE_TAG:-latest}" > "$BACKUP_DIR/.image-tag.previous"
 }
 
 # ---------------------------------------------------------------------------
@@ -213,7 +268,13 @@ cmd_deploy() {
   export LUMIRSS_BUILD_COMMIT="$(git_commit)"
   DC_D up -d --remove-orphans
   if wait_health 180; then
-    log "deploy complete. Open: http://localhost/ (or https://$(env_value DOMAIN)/)"
+    if ((EXTERNAL_MODE == 1)); then
+      log "deploy complete (external host Caddy mode). Host Caddy site block — add to the host Caddyfile and reload:"
+      cmd_caddy_config || true
+    else
+      log "deploy complete. Open: http://localhost/ (or https://$(env_value DOMAIN)/)"
+    fi
+    cmd_freshrss_init || warn "FreshRSS init failed — run './lumirss freshrss-init' and check './lumirss logs freshrss'"
     ./lumirss status || true
   else
     err "deploy failed health check — run './lumirss logs bff' or './lumirss rollback'."
@@ -245,11 +306,17 @@ cmd_status() {
   echo
   if DC_D ps --status running 2>/dev/null | grep -q lumirss-web; then
     local commit port suffix
-    port="${LUMIRSS_HTTP_PORT:-80}"
-    if [[ "$port" != "80" ]]; then suffix=":$port"; else suffix=""; fi
     local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
     commit="$(DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/version', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(urllib.request.urlopen(req, timeout=5).read().decode())" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "?")' 2>/dev/null || echo "?")"
-    log "web: http://localhost${suffix}/ (domain: $(env_value DOMAIN) | bff commit: $commit | image tag: $(env_value LUMIRSS_IMAGE_TAG || echo latest))"
+    local meta
+    meta="(domain: $(env_value DOMAIN) | bff commit: $commit | image tag: $(env_value LUMIRSS_IMAGE_TAG || echo latest))"
+    if ((EXTERNAL_MODE == 1)); then
+      log "web: https://$(env_value DOMAIN)/ via host Caddy → 127.0.0.1:${UPSTREAM_PORT} $meta"
+    else
+      port="${LUMIRSS_HTTP_PORT:-80}"
+      if [[ "$port" != "80" ]]; then suffix=":$port"; else suffix=""; fi
+      log "web: http://localhost${suffix}/ $meta"
+    fi
   else
     warn "stack is not running — './lumirss deploy' to start."
   fi
@@ -339,9 +406,36 @@ cmd_doctor() {
           check WARN "$svc health: $state"
         fi
       done
+      local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
+      if DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/backups/capabilities', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(json.load(urllib.request.urlopen(req, timeout=10)).get('fullBackupReady'))" 2>/dev/null | grep -q True; then
+        check PASS "backup readiness (fullBackupReady)"
+      else
+        check WARN "fullBackupReady not OK (see /api/v1/backups/capabilities)"
+      fi
+      if ((EXTERNAL_MODE == 1)); then
+        local pub
+        pub="$(docker_cmd ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep '^lumirss-web ' || true)"
+        if echo "$pub" | grep -E '(0\.0\.0\.0|\[::\]):(80|443)->' >/dev/null; then
+          check FAIL "web publishes public 80/443 in external-caddy mode"
+        else
+          check PASS "web not published on public 80/443"
+        fi
+        if command -v ss >/dev/null && ss -lnt 2>/dev/null | awk '{print $4}' | grep -qE "(127\.0\.0\.1|\[::1\]):${UPSTREAM_PORT}$"; then
+          check PASS "upstream loopback-only (127.0.0.1:${UPSTREAM_PORT})"
+        else
+          check WARN "upstream 127.0.0.1:${UPSTREAM_PORT} not listening"
+        fi
+      fi
     fi
   else
     check WARN "no docker daemon access"
+  fi
+  if ((EXTERNAL_MODE == 1)) && [[ -n "${domain:-}" && "$domain" != localhost ]]; then
+    if curl -fsS -o /dev/null --max-time 10 "https://$domain/" 2>/dev/null; then
+      check PASS "public HTTPS https://$domain/"
+    else
+      check WARN "public HTTPS https://$domain/ not reachable"
+    fi
   fi
   local avail; avail="$(df -P . | awk 'NR==2{print $4}')"
   [[ "$avail" -ge 2097152 ]] && check PASS "disk >= 2 GiB" || check WARN "disk < 2 GiB"
@@ -360,21 +454,113 @@ cmd_rollback() {
   wait_health 180 && log "rollback complete (tag: $prev_tag)." || { err "rollback health check failed."; exit 1; }
 }
 
+cmd_caddy_config() { # print the managed host-Caddy site block
+  require_env_file
+  local domain; domain="$(env_value DOMAIN)"
+  if [[ -z "$domain" || "$domain" == "localhost" || "$domain" == "127.0.0.1" ]]; then
+    err "DOMAIN in $ENV_FILE must be a real FQDN to render the host-Caddy site block."
+    exit 1
+  fi
+  cat <<EOF
+# BEGIN LUMIRSS — generated by './lumirss caddy-config'; managed block.
+# Anything between the BEGIN/END markers is replaced on regeneration.
+${domain} {
+	reverse_proxy 127.0.0.1:${UPSTREAM_PORT}
+}
+# END LUMIRSS
+EOF
+}
+
+cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
+  require_env_file    # FreshRSS is network-isolated by design, so its web
+  local user pw       # installer cannot be reached; everything happens CLI-side.
+  user="$(env_value FRESHRSS_USERNAME)"
+  user="${user:-admin}"
+  pw="$(env_value FRESHRSS_API_PASSWORD)"
+  local pw_changed=0
+  if [[ -z "$pw" ]]; then
+    pw="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    [[ ${#pw} -ge 16 ]] || pw="${pw}0lumirss"
+    sed -i "s|^FRESHRSS_API_PASSWORD=.*|FRESHRSS_API_PASSWORD=$pw|" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    pw_changed=1
+    log "generated FRESHRSS_API_PASSWORD in $ENV_FILE"
+  fi
+
+  local installed
+  installed="$(docker_cmd exec lumirss-freshrss sh -c \
+    'test -s /var/www/FreshRSS/data/config.php && echo yes || echo no' 2>/dev/null || echo unknown)"
+  if [[ "$installed" != "yes" ]]; then
+    log "installing FreshRSS (sqlite, default user '$user', greader API enabled)…"
+    docker_cmd exec lumirss-freshrss php ./cli/do-install.php \
+      --default-user "$user" \
+      --environment production \
+      --base-url "$(env_value FRESHRSS_BASE_URL || echo http://freshrss)" \
+      --language en \
+      --auth-type form \
+      --api-enabled \
+      --db-type sqlite >/dev/null
+  fi
+
+  # idempotent on already-installed instances: the greader API must be on,
+  # and the BFF user must exist with a greader API password.
+  docker_cmd exec lumirss-freshrss php ./cli/reconfigure.php --api-enabled >/dev/null 2>&1 || \
+    warn "could not run FreshRSS reconfigure --api-enabled (installed via do-install is already enabled)"
+
+  if ! docker_cmd exec lumirss-freshrss php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
+    log "creating FreshRSS user '$user'…"
+    docker_cmd exec lumirss-freshrss php ./cli/create-user.php \
+      --user "$user" \
+      --password "$pw" \
+      --api-password "$pw" \
+      --no-default-feeds >/dev/null
+  fi
+
+  if [[ "$pw_changed" == 1 ]]; then
+    log "recreating bff to pick up FRESHRSS_API_PASSWORD…"
+    DC_D up -d bff
+  fi
+  log "FreshRSS ready: user '$user' (web + greader API share the password stored hashed in FreshRSS; only FRESHRSS_API_PASSWORD lives in $ENV_FILE)"
+}
+
 # ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
+  local a
+  local extra=()
+  for a in "$@"; do
+    case "$a" in
+      --external-caddy) EXTERNAL_MODE=1;;
+      *) extra+=("$a");;
+    esac
+  done
+  # Subsequent invocations reuse the persisted mode.
+  if [[ "$(env_value LUMIRSS_EXTERNAL_CADDY)" == "1" ]]; then
+    EXTERNAL_MODE=1
+  fi
+  # precedence: explicit env var > .env.prod > default
+  UPSTREAM_PORT="${LUMIRSS_UPSTREAM_PORT:-$(env_value LUMIRSS_UPSTREAM_PORT)}"
+  UPSTREAM_PORT="${UPSTREAM_PORT:-18080}"
+  IMAGE_TAG="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
+  IMAGE_TAG="${IMAGE_TAG:-latest}"
+  export LUMIRSS_IMAGE_TAG="$IMAGE_TAG"
+  if ((EXTERNAL_MODE == 1)); then
+    COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
+  fi
   case "$cmd" in
     deploy)
-      local extra=()
-      for a in "$@"; do [[ "$a" == "--dry-run" ]] && export DRY_RUN=1 || extra+=("$a"); done
-      cmd_deploy "${extra:-}";;
-    update)   cmd_update "$@";;
+      local dextra=()
+      for a in "${extra[@]}"; do [[ "$a" == "--dry-run" ]] && export DRY_RUN=1 || dextra+=("$a"); done
+      cmd_deploy "${dextra[@]}";;
+    update)   cmd_update "${extra[@]}";;
     status)   cmd_status;;
-    logs)     cmd_logs "$@";;
+    logs)     cmd_logs "${extra[@]}";;
     backup)   cmd_backup;;
-    restore)  cmd_restore "$@";;
+    restore)  cmd_restore "${extra[@]}";;
     doctor)   cmd_doctor;;
     rollback) cmd_rollback;;
+    caddy-config) cmd_caddy_config;;
+    freshrss-init) cmd_freshrss_init;;
     -h|--help|help|"") usage;;
     *) err "unknown command: $cmd"; usage; exit 1;;
   esac
