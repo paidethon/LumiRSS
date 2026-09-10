@@ -235,7 +235,42 @@ update_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" ./lumirss update 2>&1)"
 rc=$?
 assert_eq "update completes against stub docker" "0" "$rc"
 assert_contains "update reports completion" "update complete" "$update_out"
-rm -rf "$sb" "$stub_dir"
+
+echo "== 8. ambiguous pull output must not silently rebuild images =="
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker that logs invocations; compose pull output is ambiguous
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  inspect) exit 0;;   # images exist locally
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo "Image lumirss-web:latest Skipped"; exit 0;;  # no " Pulled"
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+rebuild_log="$(mktemp)"
+update2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$rebuild_log" ./lumirss update 2>&1)"
+assert_contains "ambiguous pull falls back to existing local images" \
+  "using existing local images" "$update2_out"
+assert_not_contains "ambiguous pull does not trigger a rebuild" \
+  "building locally instead" "$update2_out"
+if grep -qE "^docker compose build" "$rebuild_log"; then
+  bad "stub log shows a compose build ran"
+else
+  ok "no compose build was invoked"
+fi
+rm -rf "$sb" "$stub_dir" "$rebuild_log"
 
 # ---------------------------------------------------------------------------
 echo

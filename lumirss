@@ -200,13 +200,23 @@ configure() { # interactive when values are missing; env vars win
 # ---------------------------------------------------------------------------
 images_pull_or_build() { # $1 = "--build" optional
   local mode="${1:-}"
+  local tag="${LUMIRSS_IMAGE_TAG:-latest}"
   if [[ "$mode" == "--build" ]]; then
     log "building images locally (LUMIRSS_BUILD_COMMIT=$(git_commit))"
     LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
     return 0
   fi
-  log "pulling prebuilt images (tag: ${LUMIRSS_IMAGE_TAG:-latest})"
+  log "pulling prebuilt images (tag: $tag)"
   if LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D pull --ignore-buildable 2>&1 | grep -qE " Pulled| up to date"; then
+    return 0
+  fi
+  # Pull output varies across compose versions; when the images are already
+  # present locally, use them instead of rebuilding — a rebuild would
+  # silently overwrite working images with one built from whatever base a
+  # registry mirror hands out (stale mirrors have caused real incidents).
+  if docker_cmd image inspect "ghcr.io/paidethon/lumirss-web:$tag" >/dev/null 2>&1 \
+      && docker_cmd image inspect "ghcr.io/paidethon/lumirss-bff:$tag" >/dev/null 2>&1; then
+    warn "pull output not confirmed — using existing local images (tag: $tag)"
     return 0
   fi
   warn "pull failed — building locally instead (this takes a few minutes)"
