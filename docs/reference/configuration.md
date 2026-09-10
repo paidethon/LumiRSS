@@ -17,7 +17,11 @@
 
 | 键 | 说明 |
 |---|---|
-| `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | Caddy basic_auth 单用户访问控制。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证） |
+| `LUMIRSS_AUTH_MODE` | `basic`（默认，历史行为：Caddy basic_auth）或 `session`（持久会话登录：bcrypt 密码 + 长效 Cookie，见下）。`./lumirss deploy --auth-mode=session` 自动写入 |
+| `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 单用户访问控制。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
+| `LUMIRSS_SESSION_MAX_AGE_DAYS` | `180`（天）。session 模式的绝对不活跃窗口；活跃使用会滑动续期（临近过期自动延长），经常使用基本不需要重新登录 |
+| `LUMIRSS_SESSION_SECURE_COOKIES` | `1`。`__Host-` 前缀 + `Secure`（要求 HTTPS，所有生产部署都应保持 1）；仅纯 HTTP 本地调试才设 0（此时 cookie 名退化为 `lumirss_session`） |
+| `LUMIRSS_PUBLIC_ORIGIN` | （空）。CSRF Origin 校验的精确公共源（如 `https://rss.example.com`），供会改写 Host 头的反代使用；空 = 与转发的 Host 头比对（本栈两级 Caddy 都保留 Host，默认即可） |
 | `DOMAIN` | 公网站点地址。真实 FQDN → Caddy 自动 Let's Encrypt（80+443）；`localhost`/空 → 自签本地证书并强制 HTTPS；`http://:80` 形式 → 纯 HTTP（仅内网调试） |
 | `FRESHRSS_BASE_URL` | BFF 访问 FreshRSS 的**内部**地址（默认 `http://freshrss:80`，Docker 服务名，永不是公网 URL） |
 | `FRESHRSS_USERNAME` / `FRESHRSS_API_PASSWORD` | FreshRSS API 凭据（服务端秘密；API Password 在 FreshRSS 用户设置里生成） |
@@ -49,6 +53,12 @@
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
+| `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入单用户预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |
+| `LUMIRSS_BFF_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | BFF 容器（low-memory 预设 256m/96m） |
+| `LUMIRSS_FRESHRSS_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | FreshRSS 容器（low-memory 预设 320m/96m） |
+| `LUMIRSS_RSSHUB_MEM_LIMIT` / `_RESERVATION` | `1g` / `256m` | RSSHub 容器（low-memory 预设 448m/192m） |
+| `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——单用户足够） |
+| `LUMIRSS_RSSHUB_NODE_OPTIONS` | （空 = V8 默认） | RSSHub Node 堆上限（如 `--max-old-space-size=256`）。**容器 limit 必须明显高于 V8 堆**，给 native memory 留余量（low-memory 预设 = 256 堆 + 448 容器） |
 | `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录 |
 | `LUMIRSS_BACKUP_IMAGE` | `alpine:3.20` | 卷备份用的临时容器镜像 |
 | `LUMIRSS_DOMAIN` / `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` / `LUMIRSS_AUTH_PASSWORD` / `LUMIRSS_UPSTREAM_PORT` | — | 仅 `./lumirss deploy` 的非交互覆盖（环境变量，非文件键） |

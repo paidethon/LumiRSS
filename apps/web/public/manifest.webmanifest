@@ -3,9 +3,11 @@
   "name": "LumiRSS",
   "short_name": "LumiRSS",
   "description": "流光阅源 — 单用户自托管的 RSS 阅读器",
+  "lang": "zh-CN",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "icons": [

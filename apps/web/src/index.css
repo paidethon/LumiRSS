@@ -312,3 +312,14 @@ html[data-reader-images='hidden'] .article-content img {
     padding-inline: max(0.75rem, min(var(--lumi-reader-page-margin, 2rem), 1.25rem));
   }
 }
+
+/* ---- Phase H/I：列表行渲染预算 ----
+ * 长列表（无限滚动累计几百行）时，视口外的行跳过 layout/paint：
+ * content-visibility: auto + contain-intrinsic-size 估算占位高度
+ * （auto 前缀让浏览器记住实际高度，滚动条不抖）。这是虚拟化的
+ * 轻量前置手段 —— DOM 仍在（滚动恢复/键盘导航不受影响），只是
+ * 渲染成本与视口成正比。 */
+.lumi-row-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}

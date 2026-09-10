@@ -64,6 +64,36 @@ pnpm exec playwright test --project=desktop-1440            # 单视口
 | 里程碑 Gate | Web 全量（test/lint/build）+ BFF 全量（pytest/ruff）+ 相关 E2E |
 | 改 `apps/web/index.html` 内联脚本 | 同步更新两个 Caddyfile 的 CSP sha256（测试会在漂移时报错） |
 
+## 性能与内存防回归
+
+CI 内自动（稳定、非计时型）：
+
+- **Bundle 上限**：`pnpm build` 末尾跑 `apps/web/scripts/check-bundle-size.mjs`
+  ——首屏 JS（entry + modulepreload）硬上限 780 kB raw / 235 kB gzip，
+  并钉死懒加载契约（设置/移动页 chunk 不得回到 index.html 引用）。
+- **查询内存契约**：`apps/web/src/__tests__/query-memory.test.tsx` ——
+  无限分页 maxPages 保险丝、read/star 精确缓存补丁（零列表重拉）。
+- **认证/会话契约**：BFF `tests/test_auth_sessions.py` + Web
+  `src/__tests__/auth-session.test.tsx`（cookie 语义、限流、CSRF、撤销、
+  401 门控、离线语义）。
+- **PWA 契约**：`src/__tests__/pwa.test.tsx`（manifest/viewport/meta/
+  Service-Worker 边界/safe-area/安装引导纪律）。
+
+发布前手动（真实数字，不进 CI）：
+
+```bash
+cd apps/web
+pnpm build
+node scripts/soak-memory.mjs        # 浏览器内存 soak（M0–M6 阶段采样
+                                    # JSHeap/DOMNodes/listeners；--quick 冒烟，
+                                    # --desktop/--mobile 单视口）
+node e2e/perf-measure.mjs           # LCP/CLS/资源体积（对运行中的栈）
+```
+
+Soak 判定：warm-up 后 heap 趋于平台期即可；逐阶段线性增长（如每轮
++5MB 持续）才视为泄漏。服务器侧（docker stats、OOM 检查）由
+`./lumirss doctor` 与 `./lumirss status` 承担。
+
 ## CI jobs（.github/workflows/ci.yml）
 
 | Job | 内容 |

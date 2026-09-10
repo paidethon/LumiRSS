@@ -23,9 +23,11 @@ from lumirss.middleware import (
     InternalTokenMiddleware,
     RateLimitMiddleware,
     RequestSizeLimitMiddleware,
+    SessionAuthMiddleware,
 )
 from lumirss.routers import (
     ai_settings,
+    auth,
     backup,
     discovery,
     entries,
@@ -128,14 +130,19 @@ app = FastAPI(
 )
 
 # 0021 hardening stack (order = onion: last added runs first):
-# body ceiling, rate limits, internal token.
+# body ceiling, rate limits, internal token, cookie session gate.
+# SessionAuthMiddleware is outermost on purpose: it owns the browser-facing
+# 401 (session_required) and the unsafe-method Origin check, while the
+# internal-token layer still gates every non-Caddy caller beneath it.
 app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(InternalTokenMiddleware)
+app.add_middleware(SessionAuthMiddleware)
 
 # Routers are included in the original route-declaration order (matches the
 # historical main.py; URL spaces are disjoint but ordering stays explicit).
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(feeds.router)
 app.include_router(entries.router)
 app.include_router(subscriptions.router)

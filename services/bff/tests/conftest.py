@@ -27,7 +27,9 @@ def _disable_search_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _reset_rate_limit_windows() -> None:
     """0021 rate limits are process-global fixed windows; tests must not
-    inherit (or leak into) each other's counters."""
+    inherit (or leak into) each other's counters. The login brute-force
+    counters (session auth) are isolated the same way."""
     import lumirss.middleware as middleware
 
     middleware._rate_windows.clear()
+    middleware._login_failures.clear()

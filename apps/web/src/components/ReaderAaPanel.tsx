@@ -18,8 +18,7 @@ import {
   type ReaderFontFamily,
 } from '../store/app-settings'
 import { useIsMobile } from '../lib/use-is-mobile'
-import SettingsModal from './settings/SettingsModal'
-import MobileSettingsScreen from './MobileSettingsScreen'
+import SettingsShell from './SettingsShell'
 import { Popover } from './ui/Popover'
 import { Sheet } from './ui/Sheet'
 import { Select } from './ui/Select'
@@ -223,13 +222,8 @@ export default function ReaderAaPanel() {
         </Popover>
       )}
 
-      {/* 完整设置入口（响应式壳，与 SettingsButton 同模式） */}
-      <div className="hidden max-md:contents">
-        <MobileSettingsScreen open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      </div>
-      <div className="contents max-md:hidden">
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      </div>
+      {/* 完整设置入口（响应式懒加载壳，与 SettingsButton 同模式） */}
+      <SettingsShell open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }

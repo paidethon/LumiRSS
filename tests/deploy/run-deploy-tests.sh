@@ -314,6 +314,107 @@ assert_not_contains "second freshrss-init is idempotent (no regen)" \
 rm -rf "$sb" "$stub_dir"
 
 # ---------------------------------------------------------------------------
+echo "== 10. session auth mode: entrypoint + deploy persistence =="
+sb="$(new_sandbox)"
+# entrypoint: session mode must pick the NOAUTH template even when stale
+# basic-auth values are still present in .env.prod.
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/caddy" <<'STUB'
+#!/bin/sh
+[ "$1" = "run" ] && exec cat "$3"
+exit 0
+STUB
+chmod +x "$stub_dir/caddy"
+if docker image inspect caddy:2-alpine >/dev/null 2>&1; then
+  etc="$(mktemp -d)"
+  out="$(docker run --rm \
+    -v "$sb/web":/web:ro \
+    -v "$sb/web/Caddyfile.auth":/etc/caddy/Caddyfile.auth:ro \
+    -v "$sb/web/Caddyfile.noauth":/etc/caddy/Caddyfile.noauth:ro \
+    -v "$etc":/etc/caddy -v "$stub_dir":/stub:ro \
+    -e PATH="/stub:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    -e LUMIRSS_AUTH_MODE=session -e LUMIRSS_AUTH_USER=stale -e 'LUMIRSS_AUTH_HASH=$$2b$$12$$x' \
+    --entrypoint /bin/sh caddy:2-alpine /web/docker-entrypoint.sh 2>/dev/null)"
+  assert_not_contains "entrypoint: session mode drops basic_auth" "basic_auth" "$out"
+  assert_contains "entrypoint: session mode keeps internal token / api proxying" "/api/*" "$out"
+  rm -rf "$etc"
+fi
+session_out="$(cd "$sb" && env LUMIRSS_DOMAIN=reader.example.com \
+  ./lumirss deploy --auth-mode=session --dry-run 2>&1)"
+rc=$?
+assert_eq "dry-run session deploy succeeds" "0" "$rc"
+assert_contains ".env.prod persisted session mode" "LUMIRSS_AUTH_MODE=session" "$(cat "$sb/.env.prod")"
+assert_contains ".env.prod persisted secure cookies" "LUMIRSS_SESSION_SECURE_COOKIES=1" "$(cat "$sb/.env.prod")"
+assert_contains "dry-run tells the operator to set a password" "set-password" "$session_out"
+rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
+echo "== 11. low-memory preset writes a complete, consistent budget =="
+sb="$(new_sandbox)"
+lm_out="$(cd "$sb" && env LUMIRSS_DOMAIN=reader.example.com \
+  ./lumirss deploy --low-memory --dry-run 2>&1)"
+rc=$?
+assert_eq "dry-run low-memory deploy succeeds" "0" "$rc"
+for key in LUMIRSS_WEB_MEM_LIMIT LUMIRSS_BFF_MEM_LIMIT LUMIRSS_FRESHRSS_MEM_LIMIT \
+           LUMIRSS_RSSHUB_MEM_LIMIT LUMIRSS_RSSHUB_MEMORY_MAX LUMIRSS_RSSHUB_NODE_OPTIONS; do
+  val="$(cd "$sb" && grep "^$key=" .env.prod | cut -d= -f2-)"
+  if [[ -n "$val" ]]; then ok "preset sets $key"; else bad "preset missing $key"; fi
+done
+rsshub_limit="$(cd "$sb" && grep '^LUMIRSS_RSSHUB_MEM_LIMIT=' .env.prod | cut -d= -f2-)"
+rsshub_heap="$(cd "$sb" && grep '^LUMIRSS_RSSHUB_NODE_OPTIONS=' .env.prod | cut -d= -f2-)"
+assert_contains "preset caps the V8 heap" "max-old-space-size=256" "$rsshub_heap"
+assert_contains "rsshub container limit (448m) stays above the V8 heap cap" "448m" "$rsshub_limit"
+if docker compose version >/dev/null 2>&1; then
+  (cd "$sb" && LUMIRSS_EXTERNAL_CADDY=1 docker compose \
+     -f docker-compose.prod.yml -f docker-compose.external-caddy.yml config >/dev/null 2>&1)
+  assert_eq "low-memory .env.prod renders a valid compose config" "0" "$?"
+fi
+rm -rf "$sb"
+
+# ---------------------------------------------------------------------------
+echo "== 12. set-password: runtime secret only, compose-run one-shot =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+sp_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      run) cat >/dev/null; exit 0;;   # consume piped stdin like compose run -T
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+cd "$sb" && cp -f .env.prod.example .env.prod
+# dynamic fake credential (convention: no credential-shaped literals)
+sp_pw="pw-$(head -c 9 /dev/urandom | base64 | tr -d '=+/')"
+sp_out="$(printf '%s' "$sp_pw" | env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$sp_log" \
+  ./lumirss set-password 2>&1)"
+assert_contains "set-password runs the one-shot container script" \
+  "scripts/set_password.py" "$(cat "$sp_log")"
+assert_not_contains "set-password log never shows the plaintext" \
+  "$sp_pw" "$(cat "$sp_log")"
+assert_not_contains "set-password output never shows the plaintext" \
+  "$sp_pw" "$sp_out"
+assert_contains "set-password reports hash-only persistence" \
+  "plaintext not stored" "$sp_out"
+no_pw="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$sp_log" ./lumirss set-password </dev/null 2>&1)"
+rc=$?
+assert_eq "set-password refuses to run without a password source" "1" "$rc"
+assert_contains "refusal explains the sources" "LUMIRSS_NEW_PASSWORD" "$no_pw"
+cd - >/dev/null
+rm -rf "$sb" "$stub_dir" "$sp_log"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi

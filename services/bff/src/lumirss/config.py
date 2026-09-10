@@ -2,6 +2,7 @@
 
 import urllib.parse
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -144,6 +145,29 @@ class LumiSettings(BaseSettings):
     # Search projection sync cadence (0022); 0 disables the background sync
     # (tests set this to stay hermetic from the developer's FreshRSS).
     LUMIRSS_SEARCH_SYNC_INTERVAL: float = 60.0
+    # --- Persistent single-user session auth ---
+    # "basic" (default) keeps the historical proxy-level Basic Auth contract;
+    # "session" activates BFF-side login: bcrypt password check, long-lived
+    # random session cookies, sliding renewal (see auth_store.py).
+    LUMIRSS_AUTH_MODE: Literal["basic", "session"] = "basic"
+    # Absolute inactivity window for a session; regular use slides it forward
+    # so an actively-used device effectively never re-prompts.
+    LUMIRSS_SESSION_MAX_AGE_DAYS: int = 180
+    # Secure cookies (__Host- prefix + Secure attribute) whenever the site is
+    # served over HTTPS (every production deployment). Plain-HTTP dev (vite
+    # proxy on localhost) opts out via .env / docker-compose.yml.
+    LUMIRSS_SESSION_SECURE_COOKIES: bool = True
+    # Optional exact public origin ("https://rss.example.com") used by the
+    # CSRF Origin check behind reverse proxies; blank = compare against the
+    # forwarded Host header (both Caddys preserve it in this stack).
+    LUMIRSS_PUBLIC_ORIGIN: str = ""
+
+    @field_validator("LUMIRSS_SESSION_MAX_AGE_DAYS")
+    @classmethod
+    def _sane_session_age(cls, value: int) -> int:
+        if not 1 <= value <= 3650:
+            raise ValueError("must be between 1 and 3650 days")
+        return value
 
     @property
     def ai_configured(self) -> bool:

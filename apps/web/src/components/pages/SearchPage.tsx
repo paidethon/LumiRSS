@@ -56,7 +56,8 @@ function ResultRow({ item }: { item: SearchItem }) {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const selected = selectedEntryRef === item.entryRef
   return (
-    <li>
+    // Phase H/I：视口外行跳过 layout/paint（与 EntryList 同一策略）。
+    <li className="lumi-row-cv">
       <button
         type="button"
         data-entry-ref={item.entryRef}

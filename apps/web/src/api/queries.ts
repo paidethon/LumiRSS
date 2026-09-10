@@ -74,6 +74,7 @@ import {
 import type { AiProfileInput, RssHubCredentialInput, TranslationSegmentBlockInput } from './client'
 import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
+import type { EntryDetail, EntryListItem } from './types'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
 
 export function useFeeds() {
@@ -103,7 +104,15 @@ export function useSubscriptions() {
 
 /** entries：NavigationTarget（scope + view）→ query（§18/§19 唯一映射）。
  * Query key 含 scope：不同 scope 不同 cache，切换不闪旧数据；cursor
- * 透传由 BFF scope envelope 保证不错乱。 */
+ * 透传由 BFF scope envelope 保证不错乱。
+ *
+ * 内存有界（Phase H）：maxPages = 50（每页 20 条 → 缓存上限 1000 条
+ * 列表 DTO，无正文）。刻意不取更小值：裁剪发生在「滚动加载下一页」
+ * 的瞬间，Safari/iOS 没有浏览器 scroll anchoring，激进裁剪会让视口
+ * 内容向前跳约一整页 —— 正常阅读深度（<1000 条）永远不触发裁剪，
+ * 1000 条只是病态增长的内存保险丝。DOM 成本由列表行的
+ * content-visibility 处理（见 EntryList）。staleTime 30s：scope/view
+ * 来回切换不重复请求（数据仍由写路径的精确补丁保持精确）。 */
 export function useEntries(scope: ContentScope, view: UiView) {
   const entryQuery = buildEntryQuery(scope, view)
   return useInfiniteQuery({
@@ -121,12 +130,16 @@ export function useEntries(scope: ContentScope, view: UiView) {
         signal,
       ),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    maxPages: 50,
+    staleTime: 30_000,
   })
 }
 
 /** 0022 全局搜索：q 已在页面侧防抖（300ms）；这里只负责无限分页。
  * staleTime 0：搜索期望每次输入都触发新请求；q 变化 = 换 key，
- * 旧请求由 AbortSignal 自动取消。enabled：空查询不发请求。 */
+ * 旧请求由 AbortSignal 自动取消。enabled：空查询不发请求。
+ * maxPages 50：与 entries 同一保险丝（正常搜索深度不触发裁剪，
+ * 防病态增长；旧搜索 query 由 gcTime 正常回收）。 */
 export function useSearch(
   q: string,
   filters: {
@@ -155,6 +168,7 @@ export function useSearch(
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: trimmed.length > 0,
     placeholderData: keepPreviousData,
+    maxPages: 50,
   })
 }
 
@@ -172,9 +186,40 @@ export function useEntryDetail(entryRef: string | null) {
   })
 }
 
+/** Phase H 工具：读取 query key 中的 view / 搜索过滤条件。 */
+function entriesViewOf(key: readonly unknown[]): UiView {
+  const second = key[1]
+  if (second instanceof Object && 'view' in second) {
+    return (second as { view: UiView }).view
+  }
+  return 'all'
+}
+
+function searchFiltersOf(
+  key: readonly unknown[],
+): { state: 'unread' | null; favorite: boolean | null } | null {
+  const second = key[1]
+  if (second instanceof Object && 'state' in second) {
+    return second as { state: 'unread' | null; favorite: boolean | null }
+  }
+  return null
+}
+
+type EntriesPages = { items: EntryListItem[]; nextCursor: string | null }
+
 /** 状态写入（set 语义）。onSuccess 的 entryRef 必须取本次 mutation
  * 的 variables.entryRef——mutation 完成前 selection 可能已切到另一篇，
- * 读 Zustand selectedEntryRef 会 invalidate 错误的 key。 */
+ * 读 Zustand selectedEntryRef 会写错缓存。
+ *
+ * Phase H：写后不再全量 invalidate ['entries']（那会把所有 scope×view
+ * 的已加载页全部重拉，滚动标记已读时每篇文章都触发一轮 —— 既是
+ * CPU/网络浪费，也会与 maxPages 裁剪互相把页数放大回来）。改为精确
+ * 缓存补丁：
+ * - detail（['entry', ref]）：原地翻转标志（contentHtml 不动，零重拉）；
+ * - 列表（['entries', …]）：all 视图翻转；unread 视图标记已读=移除；
+ *   starred 视图取消收藏=移除；反向操作（需要重新插入列表的）只失效
+ *   对应 view 的查询（罕见路径，下次挂载自然重拉）。
+ * - 搜索缓存（['search', …]）：同样翻转/按过滤语义移除。 */
 export function useEntryStateMutation() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -183,14 +228,78 @@ export function useEntryStateMutation() {
       patch: { read: boolean } | { starred: boolean }
     }) => setEntryState(vars.entryRef, vars.patch),
     onSuccess: async (_data, variables) => {
-      await Promise.all([
-        // Detail 精确失效（用本次 mutation 的 entryRef，不是当前 selection）
-        queryClient.invalidateQueries({
-          queryKey: ['entry', variables.entryRef],
-        }),
-        // Entries 前缀失效：覆盖 all/unread/starred × 全部 feedUrl scope
-        queryClient.invalidateQueries({ queryKey: ['entries'] }),
-      ])
+      const { entryRef, patch } = variables
+
+      // 1) Detail：原地翻转（不重拉正文）。
+      queryClient.setQueryData<EntryDetail>(['entry', entryRef], (detail) =>
+        detail
+          ? {
+              ...detail,
+              read: 'read' in patch ? patch.read : detail.read,
+              starred: 'starred' in patch ? patch.starred : detail.starred,
+            }
+          : detail,
+      )
+
+      // 2) 列表：逐 key 按 view 精确补丁。
+      for (const [key, data] of queryClient.getQueriesData<{ pages: EntriesPages[] }>({
+        queryKey: ['entries'],
+      })) {
+        if (!data) continue
+        const view = entriesViewOf(key)
+        queryClient.setQueryData(key, {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.flatMap((item) => {
+              if (item.entryRef !== entryRef) return [item]
+              const next = {
+                ...item,
+                read: 'read' in patch ? patch.read : item.read,
+                starred: 'starred' in patch ? patch.starred : item.starred,
+              }
+              // 服务端语义：unread 流里的已读条目、starred 流里的
+              // 取消收藏条目，重拉后都会消失——补丁直接同步移除。
+              if (view === 'unread' && next.read) return []
+              if (view === 'starred' && !next.starred) return []
+              return [next]
+            }),
+          })),
+        })
+      }
+
+      // 3) 反向插入（unread 视图标记未读 / starred 视图加收藏）：无法
+      // 精确插位，只失效对应 view（下次挂载重拉，staleTime 已覆盖
+      // 常规切换）。只在对应方向发生时才失效，最小化重拉范围。
+      if ('read' in patch ? !patch.read : patch.starred) {
+        await queryClient.invalidateQueries({ queryKey: ['entries'] })
+      }
+
+      // 4) 搜索缓存：同样精确翻转/移除（unread/favorite 过滤的结果集
+      // 语义同上）。
+      for (const [key, data] of queryClient.getQueriesData<{
+        pages: { items: EntryListItem[]; nextCursor: string | null }[]
+      }>({ queryKey: ['search'] })) {
+        if (!data) continue
+        const filters = searchFiltersOf(key)
+        queryClient.setQueryData(key, {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.flatMap((item) => {
+              if (item.entryRef !== entryRef) return [item]
+              const next = {
+                ...item,
+                read: 'read' in patch ? patch.read : item.read,
+                starred: 'starred' in patch ? patch.starred : item.starred,
+              }
+              if (filters?.state === 'unread' && next.read) return []
+              if (filters?.favorite === true && !next.starred) return []
+              return [next]
+            }),
+          })),
+        })
+      }
     },
   })
 }

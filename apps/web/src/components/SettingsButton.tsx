@@ -6,15 +6,12 @@
 
 import { Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import SettingsModal from './settings/SettingsModal'
-import MobileSettingsScreen from './MobileSettingsScreen'
+import SettingsShell from './SettingsShell'
 import { onCloseSettingsRequest } from './settings/settings-bridge'
-import { useIsMobile } from '../lib/use-is-mobile'
 import { cx } from './ui/cx'
 
 export default function SettingsButton({ collapsed }: { collapsed?: boolean }) {
   const [open, setOpen] = useState(false)
-  const isMobile = useIsMobile()
 
   // 设置页内容可请求关闭设置壳（跳转订阅中心等主界面动作）
   useEffect(() => onCloseSettingsRequest(() => setOpen(false)), [])
@@ -42,11 +39,7 @@ export default function SettingsButton({ collapsed }: { collapsed?: boolean }) {
       {/* 响应式设置壳：桌面 Modal / 移动全屏页。两者都 portal 到 body
        * （Base UI），CSS 无法再切换挂载——按断点 JS 择一渲染，避免
        * 隐藏壳与可见壳争抢焦点/滚动锁。 */}
-      {isMobile ? (
-        <MobileSettingsScreen open={open} onClose={() => setOpen(false)} />
-      ) : (
-        <SettingsModal open={open} onClose={() => setOpen(false)} />
-      )}
+      <SettingsShell open={open} onClose={() => setOpen(false)} />
     </>
   )
 }

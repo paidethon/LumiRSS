@@ -51,6 +51,11 @@ from lumirss.app_settings import (
     AppSettingsConflict,
     InvalidAppSettings,
 )
+from lumirss.auth_store import (
+    InvalidCredentials,
+    PasswordNotInitialized,
+    WeakPassword,
+)
 from lumirss.backup import (
     BackupBusy,
     BackupChecksumMismatch,
@@ -177,6 +182,10 @@ _ERROR_RESPONSES = {
     RequestBodyTooLarge: (413, "request_too_large"),
     # 0022 global search
     SearchQueryError: (400, "invalid_search_query"),
+    # session authentication (LUMIRSS_AUTH_MODE=session)
+    InvalidCredentials: (401, "invalid_credentials"),
+    PasswordNotInitialized: (503, "auth_not_initialized"),
+    WeakPassword: (400, "weak_password"),
 }
 
 
@@ -242,6 +251,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SecretsStoreError)
     @app.exception_handler(RequestBodyTooLarge)
     @app.exception_handler(SearchQueryError)
+    @app.exception_handler(InvalidCredentials)
+    @app.exception_handler(PasswordNotInitialized)
+    @app.exception_handler(WeakPassword)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

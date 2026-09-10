@@ -45,12 +45,23 @@ export function writeStoredMode(storage: Storage | null, mode: ThemeMode): void 
   }
 }
 
-/** 把实际主题挂到 <html data-theme>（themes.css 的选择器）。 */
+/** 主题对应的 PWA 状态栏/标题栏颜色（= themes.css 的 --lumi-canvas；
+ * 移动端 standalone 模式下浏览器 chrome 颜色跟随该 meta）。 */
+const THEME_COLORS: Record<Theme, string> = {
+  light: '#ffffff',
+  dark: '#18181a',
+}
+
+/** 把实际主题挂到 <html data-theme>（themes.css 的选择器），并同步
+ * <meta name="theme-color">（PWA 状态栏随主题着色；值与 --lumi-canvas
+ * 保持一致——改画布色时同步更新这里）。 */
 export function applyTheme(
   element: HTMLElement,
   theme: Theme,
 ): void {
   element.setAttribute('data-theme', theme)
+  const meta = element.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', THEME_COLORS[theme])
 }
 
 /** 浏览器环境的 matchMedia（jsdom / SSR 安全包装）。 */
