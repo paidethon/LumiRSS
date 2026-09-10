@@ -196,8 +196,14 @@ configure() { # interactive when values are missing; env vars win
   fi
   # Persist the deployed image tag so update/rollback reuse the exact same
   # immutable reference without needing the env var again (env still wins).
+  # .env.prod files copied from older examples lack the key — append it.
   local tag_now="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
-  sed -i "s|^LUMIRSS_IMAGE_TAG=.*|LUMIRSS_IMAGE_TAG=${tag_now:-latest}|" "$ENV_FILE"
+  tag_now="${tag_now:-latest}"
+  if grep -qE '^LUMIRSS_IMAGE_TAG=' "$ENV_FILE"; then
+    sed -i "s|^LUMIRSS_IMAGE_TAG=.*|LUMIRSS_IMAGE_TAG=$tag_now|" "$ENV_FILE"
+  else
+    printf 'LUMIRSS_IMAGE_TAG=%s\n' "$tag_now" >> "$ENV_FILE"
+  fi
   local mode_note=""
   if ((EXTERNAL_MODE == 1)); then mode_note=", external-caddy"; fi
   log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user}$mode_note)"
