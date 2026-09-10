@@ -43,7 +43,7 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `LUMIRSS_IMAGE_TAG` | `latest` | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss-web` / `-bff`） |
+| `LUMIRSS_IMAGE_TAG` | `latest` | GHCR 镜像 tag（`ghcr.io/paidethon/lumirss-web` / `-bff`）。`./lumirss deploy` 会把它实际部署的值持久化进 `.env.prod`，`update` / `rollback` 复用同一不可变引用；显式环境变量仍优先生效 |
 | `LUMIRSS_BUILD_COMMIT` | （空） | 部署/构建时注入的 git commit → Web `VITE_GIT_COMMIT` 与 BFF `LUMIRSS_COMMIT` 两个 build-arg，「关于」页与 `/api/v1/version` 展示，用于版本偏斜诊断 |
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |

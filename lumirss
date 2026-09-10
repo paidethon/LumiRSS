@@ -194,6 +194,10 @@ configure() { # interactive when values are missing; env vars win
     sed -i "s|^LUMIRSS_EXTERNAL_CADDY=.*|LUMIRSS_EXTERNAL_CADDY=1|" "$ENV_FILE"
     sed -i "s|^LUMIRSS_UPSTREAM_PORT=.*|LUMIRSS_UPSTREAM_PORT=$UPSTREAM_PORT|" "$ENV_FILE"
   fi
+  # Persist the deployed image tag so update/rollback reuse the exact same
+  # immutable reference without needing the env var again (env still wins).
+  local tag_now="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
+  sed -i "s|^LUMIRSS_IMAGE_TAG=.*|LUMIRSS_IMAGE_TAG=${tag_now:-latest}|" "$ENV_FILE"
   local mode_note=""
   if ((EXTERNAL_MODE == 1)); then mode_note=", external-caddy"; fi
   log "config: $ENV_FILE (DOMAIN=$domain${user:+, auth user=$user}$mode_note)"
@@ -202,7 +206,7 @@ configure() { # interactive when values are missing; env vars win
 # ---------------------------------------------------------------------------
 images_pull_or_build() { # $1 = "--build" optional
   local mode="${1:-}"
-  local tag="${LUMIRSS_IMAGE_TAG:-latest}"
+  local tag="${IMAGE_TAG:-latest}"
   if [[ "$mode" == "--build" ]]; then
     log "building images locally (LUMIRSS_BUILD_COMMIT=$(git_commit))"
     LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
@@ -241,9 +245,7 @@ wait_health() { # wait_health <timeout_seconds>
 snapshot_for_rollback() {
   mkdir -p "$BACKUP_DIR"
   cp -f "$ENV_FILE" "$BACKUP_DIR/.env.prod.previous"
-  local tag
-  tag="$(env_value LUMIRSS_IMAGE_TAG)"
-  echo "${tag:-latest}" > "$BACKUP_DIR/.image-tag.previous"
+  echo "${IMAGE_TAG:-latest}" > "$BACKUP_DIR/.image-tag.previous"
 }
 
 # ---------------------------------------------------------------------------
@@ -533,6 +535,9 @@ main() {
   # precedence: explicit env var > .env.prod > default
   UPSTREAM_PORT="${LUMIRSS_UPSTREAM_PORT:-$(env_value LUMIRSS_UPSTREAM_PORT)}"
   UPSTREAM_PORT="${UPSTREAM_PORT:-18080}"
+  IMAGE_TAG="${LUMIRSS_IMAGE_TAG:-$(env_value LUMIRSS_IMAGE_TAG)}"
+  IMAGE_TAG="${IMAGE_TAG:-latest}"
+  export LUMIRSS_IMAGE_TAG="$IMAGE_TAG"
   if ((EXTERNAL_MODE == 1)); then
     COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
   fi

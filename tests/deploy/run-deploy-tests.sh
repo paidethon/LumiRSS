@@ -175,13 +175,14 @@ rm -rf "$stub_dir"
 # ---------------------------------------------------------------------------
 echo "== 5. dry-run deploy (external) + caddy-config snippet =="
 sb="$(new_sandbox)"
-dry_out="$(cd "$sb" && env LUMIRSS_DOMAIN=reader.example.com LUMIRSS_AUTH_USER=op \
+dry_out="$(cd "$sb" && env LUMIRSS_DOMAIN=reader.example.com LUMIRSS_AUTH_USER=op LUMIRSS_IMAGE_TAG=cc627f48ca4e \
   ./lumirss deploy --external-caddy --dry-run 2>&1)"
 rc=$?
 assert_eq "dry-run external deploy succeeds" "0" "$rc"
 assert_contains "dry-run renders compose config" "compose config renders OK" "$dry_out"
 assert_contains ".env.prod persisted external mode" "LUMIRSS_EXTERNAL_CADDY=1" "$(cat "$sb/.env.prod")"
 assert_contains ".env.prod persisted upstream port" "LUMIRSS_UPSTREAM_PORT=18080" "$(cat "$sb/.env.prod")"
+assert_contains ".env.prod persisted deployed image tag" "LUMIRSS_IMAGE_TAG=cc627f48ca4e" "$(cat "$sb/.env.prod")"
 snippet="$(cd "$sb" && ./lumirss caddy-config 2>&1)"
 assert_contains "snippet has BEGIN marker" "# BEGIN LUMIRSS" "$snippet"
 assert_contains "snippet has END marker" "# END LUMIRSS" "$snippet"
@@ -192,10 +193,12 @@ assert_contains "snippet targets loopback port" "reverse_proxy 127.0.0.1:18080" 
 echo "== 6. deploy idempotency (second run keeps secrets/port) =="
 token_1="$(grep '^LUMIRSS_INTERNAL_TOKEN=' "$sb/.env.prod")"
 user_1="$(grep '^LUMIRSS_AUTH_USER=' "$sb/.env.prod")"
+tag_1="$(grep '^LUMIRSS_IMAGE_TAG=' "$sb/.env.prod")"
 (cd "$sb" && env LUMIRSS_DOMAIN=reader.example.com LUMIRSS_AUTH_USER=op \
   ./lumirss deploy --external-caddy --dry-run >/dev/null 2>&1)
 assert_eq "token unchanged after second deploy" "$token_1" "$(grep '^LUMIRSS_INTERNAL_TOKEN=' "$sb/.env.prod")"
 assert_eq "auth user unchanged" "$user_1" "$(grep '^LUMIRSS_AUTH_USER=' "$sb/.env.prod")"
+assert_eq "image tag unchanged (no env on re-run)" "$tag_1" "$(grep '^LUMIRSS_IMAGE_TAG=' "$sb/.env.prod")"
 assert_contains "port unchanged" "LUMIRSS_UPSTREAM_PORT=18080" "$(cat "$sb/.env.prod")"
 rm -rf "$sb"
 
