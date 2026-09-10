@@ -35,6 +35,8 @@ EXPECTED_KEYS: dict[str, tuple[str, ...]] = {
         "RSSHUB_BASE_URL",
         "RSSHUB_FRESHRSS_BASE_URL",
         "AI_API_KEY",
+        "LUMIRSS_EXTERNAL_CADDY",
+        "LUMIRSS_UPSTREAM_PORT",
         "LUMIRSS_INTERNAL_TOKEN",
     ),
 }

@@ -1,0 +1,29 @@
+# External Host Caddy mode — LumiRSS behind a reverse proxy that already
+# owns public 80/443 on this host (systemd Caddy, nginx, …).
+#
+#   ./lumirss deploy --external-caddy
+#   # manual equivalent:
+#   LUMIRSS_EXTERNAL_CADDY=1 docker compose \
+#     -f docker-compose.prod.yml -f docker-compose.external-caddy.yml up -d
+#
+# Effects:
+# - web publishes ONLY 127.0.0.1:${LUMIRSS_UPSTREAM_PORT:-18080} -> 80
+#   (plain HTTP, loopback-only; the host proxy terminates TLS);
+# - the container-side Caddy serves ":80" for any Host header (no ACME,
+#   no 443) and keeps SPA static serving, /api -> bff and app-level
+#   security headers; HSTS/CSP are still set once, by this container;
+# - BFF / FreshRSS / RSSHub stay on the internal network, nothing else is
+#   published.
+#
+# Render the matching host-Caddy site block (BEGIN/END LUMIRSS managed
+# markers) with: ./lumirss caddy-config
+# Invariants: update/rollback reuse the same compose file set via
+# LUMIRSS_EXTERNAL_CADDY=1 persisted in .env.prod; a second deploy must
+# not change the port or regenerate secrets.
+
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:${LUMIRSS_UPSTREAM_PORT:-18080}:80"
+    environment:
+      LUMIRSS_EXTERNAL_CADDY: "1"
