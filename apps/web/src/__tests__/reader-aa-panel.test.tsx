@@ -62,11 +62,12 @@ describe('ReaderAaPanel — 桌面 Popover（0017 连续 Slider）', () => {
     expect(useAppSettings.getState().settings.readerChineseConversion).toBe('tw')
   })
 
-  it('「更多阅读设置」打开完整设置（同一 settings store）', () => {
+  it('「更多阅读设置」打开完整设置（同一 settings store）', async () => {
     render(withQueryClient(<ReaderAaPanel />))
     fireEvent.click(screen.getByRole('button', { name: '阅读样式' }))
     fireEvent.click(screen.getByRole('button', { name: '更多阅读设置…' }))
-    expect(screen.getAllByText('设置').length).toBeGreaterThanOrEqual(1)
+    // Phase K：设置壳懒加载——等待异步 chunk 解析后内容出现。
+    expect((await screen.findAllByText('设置')).length).toBeGreaterThanOrEqual(1)
   })
 
   it('Escape 关闭面板并还焦到触发按钮', () => {

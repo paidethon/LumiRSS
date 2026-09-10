@@ -31,12 +31,12 @@ describe('SidebarHeader 设置入口（AC2）', () => {
     expect(buttons.find((b) => b.textContent?.trim() === '设置')).toBeUndefined()
   })
 
-  it('点「打开设置」→ 设置面板打开（同一入口承载桌面 Modal 与移动全屏页）', () => {
+  it('点「打开设置」→ 设置面板打开（同一入口承载桌面 Modal 与移动全屏页）', async () => {
     render(withProviders(<Sidebar />))
     fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
-    // 两种响应式壳至少其一渲染（jsdom 不算 CSS，两者都会挂载；
-    // open 状态由同一 state 控制——语义上同一入口）
-    const modal = screen.queryByRole('dialog', { name: '设置' })
+    // Phase K：设置壳懒加载——等待异步 chunk 解析后 dialog 出现。
+    // open 状态由同一 state 控制——语义上同一入口
+    const modal = await screen.findByRole('dialog', { name: '设置' })
     expect(modal).not.toBeNull()
     // 两种响应式壳同时挂载（jsdom 不算 CSS）——逐个关闭后两者都退出
     const closeButtons = screen.getAllByRole('button', { name: '关闭设置' })

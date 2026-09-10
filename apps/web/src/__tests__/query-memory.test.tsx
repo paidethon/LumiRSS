@@ -144,7 +144,8 @@ describe('精确缓存补丁 — read/star 写入零重拉', () => {
 
     // 唯一的网络调用就是那一次 PATCH —— 列表/detail 全部零重拉。
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0]![0])).toContain('/state')
+    const calls = fetchMock.mock.calls as unknown as [string][]
+    expect(String(calls[0]![0])).toContain('/state')
     client.clear()
   })
 
@@ -180,9 +181,7 @@ describe('精确缓存补丁 — read/star 写入零重拉', () => {
 
 describe('回访路径 — 打开文章/返回不打扰列表缓存', () => {
   it('选择切换（模拟打开文章）后，列表缓存引用保持稳定（无重拉/无重置）', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) =>
-      Promise.resolve(jsonResponse(page(0, 20, false))),
-    )
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(page(0, 20, false))))
     vi.stubGlobal('fetch', fetchMock)
     const { client, Wrapper } = wrapper()
     const { result, rerender } = renderHook(() => useEntries({ kind: 'all' } as ContentScope, 'all'), {

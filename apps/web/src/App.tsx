@@ -1,5 +1,5 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
@@ -10,10 +10,25 @@ import MobileTabBar from './components/MobileTabBar'
 import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
 import SidebarCollapsedRail from './components/SidebarCollapsedRail'
-import FavoritesPage from './components/pages/FavoritesPage'
-import SearchPage from './components/pages/SearchPage'
-import SubscriptionsPage from './components/pages/SubscriptionsPage'
 import { PaneSeparator } from './components/ui/PaneSeparator'
+import { Skeleton } from './components/ui/Skeleton'
+
+// Phase K bundle 分割：一级移动页（订阅中心/搜索/收藏）按 tab 首访懒
+// 加载——PWA 启动只拉时间线 + Reader 所需代码；桌面切换 section 时
+// 同样受益（chunk 局域网/HTTP 缓存下亚秒，Skeleton 占位不闪空）。
+const FavoritesPage = lazy(() => import('./components/pages/FavoritesPage'))
+const SearchPage = lazy(() => import('./components/pages/SearchPage'))
+const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPage'))
+
+function PageSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-4" aria-label="页面加载中">
+      {Array.from({ length: 5 }, (_, i) => (
+        <Skeleton key={i} className="h-16 w-full" />
+      ))}
+    </div>
+  )
+}
 
 /** 分栏约束（Spec §设计规格，借鉴 OrigRead 约束模型） */
 const SIDEBAR_MIN = 220
@@ -111,9 +126,21 @@ export default function App() {
             }`}
             aria-label={section === 'subscriptions' ? '订阅' : section === 'search' ? '搜索' : '收藏'}
           >
-            {section === 'subscriptions' && <SubscriptionsPage />}
-            {section === 'search' && <SearchPage />}
-            {section === 'favorites' && <FavoritesPage />}
+            {section === 'subscriptions' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SubscriptionsPage />
+              </Suspense>
+            )}
+            {section === 'search' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SearchPage />
+              </Suspense>
+            )}
+            {section === 'favorites' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <FavoritesPage />
+              </Suspense>
+            )}
           </section>
         )}
 
@@ -136,7 +163,9 @@ export default function App() {
               hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。 */}
           {section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <SearchPage />
+              <Suspense fallback={<PageSkeleton />}>
+                <SearchPage />
+              </Suspense>
             </div>
           ) : (
             <EntryList />
