@@ -45,7 +45,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    mem_limit: 128m
+    # Resource budgets are operator-tunable (small-VPS friendly) via
+    # LUMIRSS_*_MEM_LIMIT / _MEM_RESERVATION; './lumirss deploy
+    # --low-memory' writes a measured single-user preset into .env.prod.
+    mem_limit: ${LUMIRSS_WEB_MEM_LIMIT:-128m}
+    mem_reservation: ${LUMIRSS_WEB_MEM_RESERVATION:-64m}
     cpus: 0.5
 
   bff:
@@ -85,7 +89,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    mem_limit: 512m
+    mem_limit: ${LUMIRSS_BFF_MEM_LIMIT:-512m}
+    mem_reservation: ${LUMIRSS_BFF_MEM_RESERVATION:-128m}
     cpus: 1.0
 
   freshrss:
@@ -110,7 +115,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    mem_limit: 512m
+    mem_limit: ${LUMIRSS_FRESHRSS_MEM_LIMIT:-512m}
+    mem_reservation: ${LUMIRSS_FRESHRSS_MEM_RESERVATION:-128m}
     cpus: 1.0
 
   rsshub:
@@ -120,6 +126,15 @@ services:
     environment:
       NODE_ENV: production
       CACHE_TYPE: memory
+      # In-process LRU cache budget (MB). 256 matches the pinned image's
+      # own default; the low-memory profile lowers it to 64 — plenty for
+      # a single-user instance (verified schema in rsshub_control.py).
+      MEMORY_MAX: ${LUMIRSS_RSSHUB_MEMORY_MAX:-256}
+      # V8 old-space cap. The container limit MUST stay clearly above it
+      # (Node needs native memory on top of the JS heap). Empty = the
+      # V8 default (NOT set here); the low-memory profile pins 256M with
+      # a 448M container limit.
+      NODE_OPTIONS: ${LUMIRSS_RSSHUB_NODE_OPTIONS:-}
     # Internal only — never published publicly.
     healthcheck:
       test:
@@ -136,7 +151,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    mem_limit: 1g
+    mem_limit: ${LUMIRSS_RSSHUB_MEM_LIMIT:-1g}
+    mem_reservation: ${LUMIRSS_RSSHUB_MEM_RESERVATION:-256m}
     cpus: 1.0
 
 volumes:

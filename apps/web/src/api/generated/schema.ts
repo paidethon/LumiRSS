@@ -4,6 +4,115 @@
  */
 
 export interface paths {
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Verify the password, mint a session, set the cookie.
+         *
+         *     Failures only count toward the brute-force budget (see middleware);
+         *     a correct password resets it, so honest retries never lock the user
+         *     out. The wrong-password and not-initialized replies deliberately
+         *     share the generic shape — no oracle for an attacker.
+         */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Revoke the current session and expire the cookie.
+         */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout All
+         * @description Revoke every session (all devices), including this one.
+         */
+        post: operations["logout_all_api_v1_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Change the password: verify current, replace hash, revoke ALL
+         *     sessions, then immediately mint a fresh session for THIS device so
+         *     the operator is not bounced to the login screen mid-action.
+         */
+        post: operations["change_password_api_v1_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Session Status
+         * @description Public probe: which auth layer is active, and is this browser
+         *     holding a live session? (basic mode: authenticated reflects the
+         *     proxy — the app never gates on it.)
+         */
+        get: operations["session_status_api_v1_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups": {
         parameters: {
             query?: never;
@@ -1647,6 +1756,26 @@ export interface components {
             uiFontStack: "default" | "sans" | "serif" | "mono";
         };
         /**
+         * AuthStatus
+         * @description Login / session-status payload; expiresAt is an ISO-8601 instant.
+         *
+         *     mode tells the web app WHICH auth layer is active: "basic" = proxy
+         *     Basic Auth (the app must not render its own login gate), "session" =
+         *     BFF sessions (gate on ``authenticated``).
+         */
+        AuthStatus: {
+            /** Authenticated */
+            authenticated: boolean;
+            /** Expiresat */
+            expiresAt?: string | null;
+            /**
+             * Mode
+             * @default session
+             * @enum {string}
+             */
+            mode: "basic" | "session";
+        };
+        /**
          * BackupCapabilities
          * @description GET /api/v1/backups/capabilities — what a full backup can honestly
          *     include right now, shown to the user BEFORE they click.
@@ -2048,6 +2177,14 @@ export interface components {
             status: "ok" | "failed";
         };
         /**
+         * LoginRequest
+         * @description POST /api/v1/auth/login — single user, password only.
+         */
+        LoginRequest: {
+            /** Password */
+            password: string;
+        };
+        /**
          * OperationsBackupStatus
          * @description Backup capability summary for the operations view.
          */
@@ -2201,6 +2338,16 @@ export interface components {
             duplicates: components["schemas"]["OpmlImportDuplicate"][];
             /** Failed */
             failed: components["schemas"]["OpmlImportFailed"][];
+        };
+        /**
+         * PasswordChangeRequest
+         * @description POST /api/v1/auth/password — current + new password.
+         */
+        PasswordChangeRequest: {
+            /** Currentpassword */
+            currentPassword: string;
+            /** Newpassword */
+            newPassword: string;
         };
         /**
          * ReadinessComponentDetail
@@ -2851,6 +2998,132 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    logout_all_api_v1_auth_logout_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_auth_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_status_api_v1_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
     list_backups_api_v1_backups_get: {
         parameters: {
             query?: never;

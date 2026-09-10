@@ -2,6 +2,7 @@
  * 读：getFeeds / getEntries / getEntry；写：setEntryState（set 语义）。 */
 
 import { toApiView, type UiView } from '../lib/read-later'
+import { sessionExpired } from '../store/auth'
 import type {
   AiProfile,
   AiPurposeKey,
@@ -10,6 +11,7 @@ import type {
   AiSettingsUpdate,
   ApiErrorResponse,
   ApiVersion,
+  AuthStatusView,
   BackupCapabilities,
   BackupJob,
   TranslationSegmentsView,
@@ -121,7 +123,14 @@ async function rawRequest(
     throw new ApiError(0, 'network_error', '无法连接到服务器，请稍后重试。')
   }
   if (!response.ok) {
-    throw await toApiError(response)
+    const error = await toApiError(response)
+    // 会话过期/缺失：翻转全局登录门（幂等；basic 模式的 401 没有
+    // 这个 type，不会误触发）。离线/网络错误在上面已另行处理，
+    // 绝不把「连不上」当成「未登录」。
+    if (error.status === 401 && error.type === 'session_required') {
+      sessionExpired()
+    }
+    throw error
   }
   return response
 }
@@ -146,6 +155,48 @@ export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
 /** 0013 Gate 3：管理视角订阅列表（含 opaque subscriptionRef，前端只透传）。 */
 export async function getSubscriptions(signal?: AbortSignal): Promise<Subscription[]> {
   return request<Subscription[]>(`${API_BASE}/subscriptions`, signal)
+}
+
+// ---- 会话认证（LUMIRSS_AUTH_MODE=session） ----
+// Cookie 由浏览器自动携带（HttpOnly），客户端代码永远接触不到 token。
+
+/** 启动探测：当前认证模式 + 是否已登录（公开端点）。 */
+export async function getAuthSession(): Promise<AuthStatusView> {
+  return request<AuthStatusView>(`${API_BASE}/auth/session`)
+}
+
+/** 登录（单用户：只输密码）。成功 = Set-Cookie 由浏览器保存。 */
+export async function loginPassword(password: string): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+/** 登出当前设备（服务端撤销本 session + 过期 Cookie）。 */
+export async function logoutCurrent(): Promise<void> {
+  await rawRequest(`${API_BASE}/auth/logout`, { method: 'POST' })
+}
+
+/** 所有设备登出（撤销全部 session，含当前）。 */
+export async function logoutEverywhere(): Promise<void> {
+  await rawRequest(`${API_BASE}/auth/logout-all`, { method: 'POST' })
+}
+
+/** 修改密码：验证当前密码 → 全部 session 失效 → 本设备自动换发新
+ * session（不会立刻弹回登录页）。 */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/password`, {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
 }
 
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——

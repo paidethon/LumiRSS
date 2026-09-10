@@ -32,6 +32,10 @@ export interface ApiErrorResponse {
   error: { type: string; message: string }
 }
 
+// ---- 会话认证（LUMIRSS_AUTH_MODE=session） ----
+
+export type AuthStatusView = Schemas['AuthStatus']
+
 // ---- 0013 订阅管理 / 预览 / OPML ----
 
 export type FeedPreviewMetadata = Schemas['FeedPreviewResult']

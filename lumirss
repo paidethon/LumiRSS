@@ -20,6 +20,13 @@ BACKUP_DIR="${LUMIRSS_BACKUP_DIR:-./backups}"
 # `deploy --external-caddy` sets it and persists LUMIRSS_EXTERNAL_CADDY=1
 # in $ENV_FILE, so update/status/doctor/rollback reuse the same topology.
 EXTERNAL_MODE=0
+# Auth mode: "" = whatever $ENV_FILE says; `deploy --auth-mode=basic|session`
+# persists LUMIRSS_AUTH_MODE there. session = BFF login + long-lived
+# cookies (Caddy adds no Basic Auth in that mode).
+AUTH_MODE_ARG=""
+# `deploy --low-memory` writes the single-user resource preset into
+# $ENV_FILE (container limits + RSSHub cache/heap caps for ~1.6 GB hosts).
+LOW_MEMORY=0
 COMPOSE_ARGS=(-f docker-compose.prod.yml)
 UPSTREAM_PORT="18080"
 
@@ -53,6 +60,11 @@ LumiRSS — self-hosted reader lifecycle
   sudo ./lumirss deploy [--build] [--dry-run]   first-time / re-run install
   sudo ./lumirss deploy --external-caddy        … behind an existing host
                                   Caddy / reverse proxy (loopback-only web)
+  sudo ./lumirss deploy --auth-mode=session     persistent session login
+                                  (BFF bcrypt + cookies; no more Basic-Auth
+                                  prompts) — then './lumirss set-password'
+  sudo ./lumirss deploy --low-memory            single-user resource preset
+                                  (tighter container limits + RSSHub caps)
   ./lumirss update  [--build]                   backup → pull → up → health
   ./lumirss status                              containers, health, versions
   ./lumirss logs [service] [-f]                 stack or single-service logs
@@ -64,6 +76,9 @@ LumiRSS — self-hosted reader lifecycle
                                   site block (BEGIN/END LUMIRSS markers)
   ./lumirss freshrss-init                       install/enable the internal
                                   FreshRSS + user for the BFF (idempotent)
+  ./lumirss set-password                        install/rotate the browser
+                                  login password (session auth mode); asks
+                                  interactively or takes LUMIRSS_NEW_PASSWORD
 
 Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
 LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH,
@@ -85,6 +100,47 @@ env_value() { # env_value KEY [FILE]
 }
 
 git_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
+
+# Set (or append) KEY=VALUE in $ENV_FILE idempotently.
+env_set() { # env_set KEY VALUE
+  if grep -qE "^$1=" "$ENV_FILE"; then
+    sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+  fi
+}
+
+# Single-user resource preset for ~1.6 GB hosts sharing RAM with other
+# containers. Values stay inside the benchmarked-safe ranges (web 64–96,
+# bff 192–256, freshrss 256–320, rsshub 384–512 MB); RSSHub's V8 heap is
+# capped below its container limit so native memory has headroom. Verify
+# with './lumirss doctor' (no OOMKilled) and docker stats after applying,
+# and tune per host — these are defaults, not laws.
+apply_low_memory_preset() {
+  log "applying low-memory preset to $ENV_FILE"
+  env_set LUMIRSS_PROFILE "low-memory"
+  env_set LUMIRSS_WEB_MEM_LIMIT "96m"
+  env_set LUMIRSS_WEB_MEM_RESERVATION "48m"
+  env_set LUMIRSS_BFF_MEM_LIMIT "256m"
+  env_set LUMIRSS_BFF_MEM_RESERVATION "96m"
+  env_set LUMIRSS_FRESHRSS_MEM_LIMIT "320m"
+  env_set LUMIRSS_FRESHRSS_MEM_RESERVATION "96m"
+  env_set LUMIRSS_RSSHUB_MEM_LIMIT "448m"
+  env_set LUMIRSS_RSSHUB_MEM_RESERVATION "192m"
+  env_set LUMIRSS_RSSHUB_MEMORY_MAX "64"
+  env_set LUMIRSS_RSSHUB_NODE_OPTIONS "--max-old-space-size=256"
+}
+
+# Persist the requested auth mode (basic keeps the historical Caddy
+# Basic Auth; session moves login into the BFF with long-lived cookies).
+apply_auth_mode() { # apply_auth_mode basic|session
+  env_set LUMIRSS_AUTH_MODE "$1"
+  if [[ "$1" == "session" ]]; then
+    # __Host- cookies + Secure need the public site to be HTTPS (it is,
+    # behind the host Caddy); dev/HTTP-only operators may set 0 manually.
+    env_set LUMIRSS_SESSION_SECURE_COOKIES "1"
+  fi
+}
 
 # ---------------------------------------------------------------------------
 hash_password() { # bcrypt for Caddy basic_auth; $ escaped for compose env.
@@ -168,11 +224,11 @@ configure() { # interactive when values are missing; env vars win
       read -r -p "Domain (empty = localhost/HTTP only): " domain
       sed -i "s|^DOMAIN=.*|DOMAIN=$domain|" "$ENV_FILE"
     fi
-    if [[ -z "$user" ]]; then
+    if [[ "$(env_value LUMIRSS_AUTH_MODE)" != "session" && -z "$user" ]]; then
       read -r -p "Admin username for browser login (empty = no auth): " user
       sed -i "s|^LUMIRSS_AUTH_USER=.*|LUMIRSS_AUTH_USER=$user|" "$ENV_FILE"
     fi
-    if [[ -z "$hash" && -n "$user" ]]; then
+    if [[ "$(env_value LUMIRSS_AUTH_MODE)" != "session" && -z "$hash" && -n "$user" ]]; then
       log "Set the browser password (input hidden)."
       hash="$(docker_cmd run --rm caddy:2-alpine caddy hash-password 2>/dev/null | sed 's/\$/$$/g' || true)"
       if [[ -z "$hash" ]]; then
@@ -257,10 +313,15 @@ snapshot_for_rollback() {
 # ---------------------------------------------------------------------------
 cmd_deploy() {
   preflight
+  if ((LOW_MEMORY == 1)); then apply_low_memory_preset; fi
+  if [[ -n "$AUTH_MODE_ARG" ]]; then apply_auth_mode "$AUTH_MODE_ARG"; fi
   configure
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
     log "dry-run: validated configuration and preflight only."
     DC_D config >/dev/null && log "compose config renders OK."
+    if [[ "$(env_value LUMIRSS_AUTH_MODE)" == "session" ]]; then
+      log "session auth enabled — after the real deploy, set the browser password: './lumirss set-password'"
+    fi
     return 0
   fi
   snapshot_for_rollback
@@ -273,6 +334,21 @@ cmd_deploy() {
       cmd_caddy_config || true
     else
       log "deploy complete. Open: http://localhost/ (or https://$(env_value DOMAIN)/)"
+    fi
+    if [[ "$(env_value LUMIRSS_AUTH_MODE)" == "session" ]]; then
+      if [[ -n "${LUMIRSS_AUTH_PASSWORD:-}" ]]; then
+        # One-shot runtime secret: hash lands in the BFF DB, plaintext is
+        # never written to disk/env-files/logs (consumed and dropped here).
+        if LUMIRSS_NEW_PASSWORD="${LUMIRSS_AUTH_PASSWORD}" DC_D run --rm -T --no-deps \
+            -e LUMIRSS_NEW_PASSWORD bff python scripts/set_password.py; then
+          log "session password bootstrapped from LUMIRSS_AUTH_PASSWORD (hash only)."
+          unset LUMIRSS_AUTH_PASSWORD
+        else
+          warn "password bootstrap failed — run './lumirss set-password' manually."
+        fi
+      else
+        log "session auth enabled — set the browser password: './lumirss set-password'"
+      fi
     fi
     cmd_freshrss_init || warn "FreshRSS init failed — run './lumirss freshrss-init' and check './lumirss logs freshrss'"
     ./lumirss status || true
@@ -406,6 +482,34 @@ cmd_doctor() {
           check WARN "$svc health: $state"
         fi
       done
+      # Resource-budget guard: a killed container means the limit is too
+      # low for real traffic, never a successful "lower number".
+      for svc in lumirss-web lumirss-bff lumirss-freshrss lumirss-rsshub; do
+        oom="$(docker_cmd inspect --format '{{.State.OOMKilled}}' "$svc" 2>/dev/null || echo missing)"
+        if [[ "$oom" == "true" ]]; then
+          check FAIL "$svc was OOMKilled — raise its LUMIRSS_*_MEM_LIMIT"
+        elif [[ "$oom" == "false" ]]; then
+          check PASS "$svc not OOMKilled"
+        fi
+        restarts="$(docker_cmd inspect --format '{{.RestartCount}}' "$svc" 2>/dev/null || echo 0)"
+        if [[ "$restarts" =~ ^[0-9]+$ ]] && ((restarts > 0)); then
+          check WARN "$svc restarted ${restarts}x (see './lumirss logs')"
+        fi
+      done
+      if [[ "$(env_value LUMIRSS_AUTH_MODE)" == "session" ]]; then
+        initialized="$(DC_D exec bff python -c "import sqlite3
+try:
+    c = sqlite3.connect('/data/lumi.sqlite')
+    n = c.execute('SELECT COUNT(*) FROM auth_password').fetchone()[0]
+except Exception:
+    n = 0
+print(n)" 2>/dev/null || echo 0)"
+        if [[ "$initialized" == "1" ]]; then
+          check PASS "session password initialized"
+        else
+          check WARN "session auth on but no password — run './lumirss set-password'"
+        fi
+      fi
       local token; token="$(env_value LUMIRSS_INTERNAL_TOKEN)"
       if DC_D exec -e LT="$token" bff python -c "import urllib.request,json,os; req=urllib.request.Request('http://127.0.0.1:8000/api/v1/backups/capabilities', headers={'X-Lumi-Token': os.environ.get('LT','')}); print(json.load(urllib.request.urlopen(req, timeout=10)).get('fullBackupReady'))" 2>/dev/null | grep -q True; then
         check PASS "backup readiness (fullBackupReady)"
@@ -471,6 +575,33 @@ ${domain} {
 EOF
 }
 
+cmd_set_password() { # install/rotate the session-login password (hash only)
+  require_env_file
+  local pw
+  if [[ -n "${LUMIRSS_NEW_PASSWORD:-}" ]]; then
+    # Runtime secret via environment; never persisted, never echoed.
+    LUMIRSS_NEW_PASSWORD="${LUMIRSS_NEW_PASSWORD}" DC_D run --rm -T --no-deps \
+      -e LUMIRSS_NEW_PASSWORD bff python scripts/set_password.py
+  elif [[ ! -t 0 ]]; then
+    # Piped stdin (non-interactive automation): read here, pipe onward —
+    # the value never becomes an argument or an env-file line.
+    pw="$(cat)"
+    if [[ -z "$pw" ]]; then
+      err "empty password on stdin — export LUMIRSS_NEW_PASSWORD or pipe a password."
+      exit 1
+    fi
+    printf '%s' "$pw" | DC_D run --rm -T --no-deps bff python scripts/set_password.py
+  elif [[ -t 0 ]]; then
+    read -r -s -p "New LumiRSS browser password: " pw; echo
+    [[ -n "$pw" ]] || { err "empty password — aborted."; exit 1; }
+    printf '%s' "$pw" | DC_D run --rm -T --no-deps bff python scripts/set_password.py
+  else
+    err "no password source — pipe it on stdin or export LUMIRSS_NEW_PASSWORD"
+    exit 1
+  fi
+  log "password hash installed in the BFF database (plaintext not stored anywhere)."
+}
+
 cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
   require_env_file    # FreshRSS is network-isolated by design, so its web
   local user pw       # installer cannot be reached; everything happens CLI-side.
@@ -531,9 +662,15 @@ main() {
   for a in "$@"; do
     case "$a" in
       --external-caddy) EXTERNAL_MODE=1;;
+      --low-memory) LOW_MEMORY=1;;
+      --auth-mode=*) AUTH_MODE_ARG="${a#--auth-mode=}";;
       *) extra+=("$a");;
     esac
   done
+  if [[ -n "$AUTH_MODE_ARG" ]] && [[ "$AUTH_MODE_ARG" != "basic" && "$AUTH_MODE_ARG" != "session" ]]; then
+    err "invalid --auth-mode '$AUTH_MODE_ARG' (expected basic|session)"
+    exit 1
+  fi
   # Subsequent invocations reuse the persisted mode.
   if [[ "$(env_value LUMIRSS_EXTERNAL_CADDY)" == "1" ]]; then
     EXTERNAL_MODE=1
@@ -561,6 +698,7 @@ main() {
     rollback) cmd_rollback;;
     caddy-config) cmd_caddy_config;;
     freshrss-init) cmd_freshrss_init;;
+    set-password) cmd_set_password;;
     -h|--help|help|"") usage;;
     *) err "unknown command: $cmd"; usage; exit 1;;
   esac

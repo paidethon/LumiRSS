@@ -653,6 +653,40 @@
     "title": "AppSettingsView",
     "type": "object"
    },
+   "AuthStatus": {
+    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``).",
+    "properties": {
+     "authenticated": {
+      "title": "Authenticated",
+      "type": "boolean"
+     },
+     "expiresAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expiresat"
+     },
+     "mode": {
+      "default": "session",
+      "enum": [
+       "basic",
+       "session"
+      ],
+      "title": "Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "authenticated"
+    ],
+    "title": "AuthStatus",
+    "type": "object"
+   },
    "BackupCapabilities": {
     "description": "GET /api/v1/backups/capabilities — what a full backup can honestly\ninclude right now, shown to the user BEFORE they click.",
     "properties": {
@@ -1749,6 +1783,22 @@
     "title": "LibreTranslateTestResult",
     "type": "object"
    },
+   "LoginRequest": {
+    "description": "POST /api/v1/auth/login — single user, password only.",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "LoginRequest",
+    "type": "object"
+   },
    "OperationsBackupStatus": {
     "description": "Backup capability summary for the operations view.",
     "properties": {
@@ -2163,6 +2213,29 @@
      "categoriesCreated"
     ],
     "title": "OpmlImportResult",
+    "type": "object"
+   },
+   "PasswordChangeRequest": {
+    "description": "POST /api/v1/auth/password — current + new password.",
+    "properties": {
+     "currentPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Currentpassword",
+      "type": "string"
+     },
+     "newPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Newpassword",
+      "type": "string"
+     }
+    },
+    "required": [
+     "currentPassword",
+     "newPassword"
+    ],
+    "title": "PasswordChangeRequest",
     "type": "object"
    },
    "ReadinessComponentDetail": {
@@ -3662,6 +3735,141 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/v1/auth/login": {
+   "post": {
+    "description": "Verify the password, mint a session, set the cookie.\n\nFailures only count toward the brute-force budget (see middleware);\na correct password resets it, so honest retries never lock the user\nout. The wrong-password and not-initialized replies deliberately\nshare the generic shape — no oracle for an attacker.",
+    "operationId": "login_api_v1_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Login"
+   }
+  },
+  "/api/v1/auth/logout": {
+   "post": {
+    "description": "Revoke the current session and expire the cookie.",
+    "operationId": "logout_api_v1_auth_logout_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout"
+   }
+  },
+  "/api/v1/auth/logout-all": {
+   "post": {
+    "description": "Revoke every session (all devices), including this one.",
+    "operationId": "logout_all_api_v1_auth_logout_all_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout All"
+   }
+  },
+  "/api/v1/auth/password": {
+   "post": {
+    "description": "Change the password: verify current, replace hash, revoke ALL\nsessions, then immediately mint a fresh session for THIS device so\nthe operator is not bounced to the login screen mid-action.",
+    "operationId": "change_password_api_v1_auth_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordChangeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Change Password"
+   }
+  },
+  "/api/v1/auth/session": {
+   "get": {
+    "description": "Public probe: which auth layer is active, and is this browser\nholding a live session? (basic mode: authenticated reflects the\nproxy — the app never gates on it.)",
+    "operationId": "session_status_api_v1_auth_session_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Session Status"
+   }
+  },
   "/api/v1/backups": {
    "get": {
     "operationId": "list_backups_api_v1_backups_get",

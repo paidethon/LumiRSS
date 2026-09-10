@@ -53,6 +53,8 @@ import { DataBackupSection } from './DataControlPage'
 import { AiSettingsSection } from './AiSettingsPage'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/高级入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
+// 会话认证（LUMIRSS_AUTH_MODE=session）：改密 + 登出（basic 模式自隐藏）
+import { AccountSecuritySection } from './AccountSecuritySection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
 import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
@@ -359,8 +361,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <DataBackupSection /> },
       ]
     case 'services':
-      // 0018 Gate 9：账户与服务 —— 真实依赖状态（不再 plannedFor 0018）
-      return [{ type: 'custom', node: <OperationsSettingsSection /> }]
+      // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实
+      // 依赖状态（不再 plannedFor 0018）
+      return [
+        { type: 'custom', node: <AccountSecuritySection /> },
+        { type: 'custom', node: <OperationsSettingsSection /> },
+      ]
     case 'workspace':
       return [
         {
