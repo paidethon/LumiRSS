@@ -62,6 +62,8 @@ LumiRSS — self-hosted reader lifecycle
   ./lumirss rollback                            previous images + config
   ./lumirss caddy-config                        print the managed host-Caddy
                                   site block (BEGIN/END LUMIRSS markers)
+  ./lumirss freshrss-init                       install/enable the internal
+                                  FreshRSS + user for the BFF (idempotent)
 
 Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
 LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH,
@@ -264,6 +266,7 @@ cmd_deploy() {
     else
       log "deploy complete. Open: http://localhost/ (or https://$(env_value DOMAIN)/)"
     fi
+    cmd_freshrss_init || warn "FreshRSS init failed — run './lumirss freshrss-init' and check './lumirss logs freshrss'"
     ./lumirss status || true
   else
     err "deploy failed health check — run './lumirss logs bff' or './lumirss rollback'."
@@ -460,6 +463,58 @@ ${domain} {
 EOF
 }
 
+cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
+  require_env_file    # FreshRSS is network-isolated by design, so its web
+  local user pw       # installer cannot be reached; everything happens CLI-side.
+  user="$(env_value FRESHRSS_USERNAME)"
+  user="${user:-admin}"
+  pw="$(env_value FRESHRSS_API_PASSWORD)"
+  local pw_changed=0
+  if [[ -z "$pw" ]]; then
+    pw="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    [[ ${#pw} -ge 16 ]] || pw="${pw}0lumirss"
+    sed -i "s|^FRESHRSS_API_PASSWORD=.*|FRESHRSS_API_PASSWORD=$pw|" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    pw_changed=1
+    log "generated FRESHRSS_API_PASSWORD in $ENV_FILE"
+  fi
+
+  local installed
+  installed="$(docker_cmd exec lumirss-freshrss sh -c \
+    'test -s /var/www/FreshRSS/data/config.php && echo yes || echo no' 2>/dev/null || echo unknown)"
+  if [[ "$installed" != "yes" ]]; then
+    log "installing FreshRSS (sqlite, default user '$user', greader API enabled)…"
+    docker_cmd exec lumirss-freshrss php ./cli/do-install.php \
+      --default-user "$user" \
+      --environment production \
+      --base-url "$(env_value FRESHRSS_BASE_URL || echo http://freshrss)" \
+      --language en \
+      --auth-type form \
+      --api-enabled \
+      --db-type sqlite >/dev/null
+  fi
+
+  # idempotent on already-installed instances: the greader API must be on,
+  # and the BFF user must exist with a greader API password.
+  docker_cmd exec lumirss-freshrss php ./cli/reconfigure.php --api-enabled >/dev/null 2>&1 || \
+    warn "could not run FreshRSS reconfigure --api-enabled (installed via do-install is already enabled)"
+
+  if ! docker_cmd exec lumirss-freshrss php ./cli/list-users.php 2>/dev/null | grep -qx "$user"; then
+    log "creating FreshRSS user '$user'…"
+    docker_cmd exec lumirss-freshrss php ./cli/create-user.php \
+      --user "$user" \
+      --password "$pw" \
+      --api-password "$pw" \
+      --no-default-feeds >/dev/null
+  fi
+
+  if [[ "$pw_changed" == 1 ]]; then
+    log "recreating bff to pick up FRESHRSS_API_PASSWORD…"
+    DC_D up -d bff
+  fi
+  log "FreshRSS ready: user '$user' (web + greader API share the password stored hashed in FreshRSS; only FRESHRSS_API_PASSWORD lives in $ENV_FILE)"
+}
+
 # ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
@@ -494,6 +549,7 @@ main() {
     doctor)   cmd_doctor;;
     rollback) cmd_rollback;;
     caddy-config) cmd_caddy_config;;
+    freshrss-init) cmd_freshrss_init;;
     -h|--help|help|"") usage;;
     *) err "unknown command: $cmd"; usage; exit 1;;
   esac

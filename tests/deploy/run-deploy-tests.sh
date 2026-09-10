@@ -273,6 +273,44 @@ fi
 rm -rf "$sb" "$stub_dir" "$rebuild_log"
 
 # ---------------------------------------------------------------------------
+echo "== 9. freshrss-init lifecycle (stub execs) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: execs succeed with empty output (FreshRSS CLI)
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+init_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+rc=$?
+assert_eq "freshrss-init exits 0" "0" "$rc"
+assert_contains "freshrss-init installs FreshRSS" "installing FreshRSS" "$init_out"
+assert_contains "freshrss-init generates the API password" "generated FRESHRSS_API_PASSWORD" "$init_out"
+assert_contains "freshrss-init creates the BFF user" "creating FreshRSS user" "$init_out"
+assert_contains "freshrss-init reports readiness" "FreshRSS ready" "$init_out"
+assert_not_contains "freshrss-init never prints the generated password" \
+  "$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)" "$init_out"
+pw_val="$(grep '^FRESHRSS_API_PASSWORD=' "$sb/.env.prod" | cut -d= -f2-)"
+assert_eq "freshrss-init persists a usable FRESHRSS_API_PASSWORD" "32" "${#pw_val}"
+init2_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" ./lumirss freshrss-init 2>&1)"
+assert_not_contains "second freshrss-init is idempotent (no regen)" \
+  "generated FRESHRSS_API_PASSWORD" "$init2_out"
+rm -rf "$sb" "$stub_dir"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi
