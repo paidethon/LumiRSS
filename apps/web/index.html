@@ -7,6 +7,13 @@
          env(safe-area-inset-*) 留出安全区（0007） -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
+    <!-- PWA（Phase M）：manifest 之外的 iOS 专属元数据。standalone 与
+         manifest 的 display 一致（不冲突）；black-translucent = 沉浸式
+         边到边状态栏，内容延伸由 env(safe-area-inset-top) 的既有处理
+         负责清让。 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="LumiRSS" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>LumiRSS — 流光阅源</title>

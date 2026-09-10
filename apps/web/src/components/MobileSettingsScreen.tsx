@@ -45,7 +45,10 @@ export default function MobileSettingsScreen({
       {page === null ? (
         /* ---- 首页：分组列表（Folo mobile SettingsList 模式） ---- */
         <>
-          <header className="flex items-center justify-between border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-4 py-3.5">
+          <header
+            className="flex items-center justify-between border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-4 py-3.5"
+            style={{ paddingTop: 'max(0.875rem, var(--safe-top))' }}
+          >
             <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">设置</h2>
             <IconButton
               size="lg"
@@ -54,7 +57,10 @@ export default function MobileSettingsScreen({
               onClick={onClose}
             />
           </header>
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div
+            className="flex-1 overflow-y-auto px-4 py-4"
+            style={{ paddingBottom: 'max(1rem, var(--safe-bottom))' }}
+          >
             {CATEGORY_GROUPS.map((group) => (
               <section key={group.label} className="mb-5">
                 <h3 className="mb-1.5 px-1 text-xs font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
@@ -99,7 +105,10 @@ function SubPage({ id, onBack }: { id: CategoryId; onBack: () => void }) {
   const items = useCategoryItems(id)
   return (
     <>
-      <header className="sticky top-0 flex items-center gap-2 border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-2 py-2.5">
+      <header
+        className="sticky top-0 flex items-center gap-2 border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-2 py-2.5"
+        style={{ paddingTop: 'max(0.625rem, var(--safe-top))' }}
+      >
         <IconButton
           size="lg"
           icon={<ChevronLeft aria-hidden className="size-5" />}
@@ -108,7 +117,10 @@ function SubPage({ id, onBack }: { id: CategoryId; onBack: () => void }) {
         />
         <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">{categoryLabel(id)}</h2>
       </header>
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div
+        className="flex-1 overflow-y-auto px-4 py-3"
+        style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
+      >
         <SettingItemList items={items} />
       </div>
     </>

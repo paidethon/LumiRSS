@@ -42,6 +42,17 @@ void restoreLocalFonts().then(() => {
   }
 })
 
+// Phase M：注册 App Shell service worker（仅生产构建；dev 的 HMR 与
+// SW 缓存互相干扰）。失败静默——SW 是启动加速与离线 shell 的增强，
+// 不是功能依赖；认证/API 永不经过缓存（见 public/sw.js 边界）。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* 注册失败（如隐私模式）：正常网页体验不受影响 */
+    })
+  })
+}
+
 const queryClient = new QueryClient()
 
 /** 会话认证门（Phase N）：启动时探测认证模式与登录态。

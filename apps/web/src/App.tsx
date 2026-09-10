@@ -7,6 +7,7 @@ import EntryList from './components/EntryList'
 import MobileHeader from './components/MobileHeader'
 import MobileNavigationDrawer from './components/MobileNavigationDrawer'
 import MobileTabBar from './components/MobileTabBar'
+import InstallHint from './components/InstallHint'
 import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
 import SidebarCollapsedRail from './components/SidebarCollapsedRail'
@@ -217,6 +218,9 @@ export default function App() {
 
       {/* 0011 Gate 1：<768 底部导航岛（首页/订阅/搜索/收藏）；Reader 打开时隐藏 */}
       <MobileTabBar />
+
+      {/* Phase M：克制的安装引导（standalone / 已关闭时零渲染） */}
+      <InstallHint />
     </div>
   )
 }
