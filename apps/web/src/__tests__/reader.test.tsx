@@ -305,8 +305,8 @@ describe('Read / Star mutation（set 语义）', () => {
   })
 })
 
-describe('Mutation cache invalidation', () => {
-  it('PATCH 204 → invalidate ["entry", entryRef] 与 ["entries"] prefix', async () => {
+describe('Mutation cache patching (Phase H 精确补丁)', () => {
+  it('PATCH 204 → detail 缓存精确翻转，常规路径不触发 invalidate', async () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([
       detailRoute('e1.a', detail()),
@@ -317,13 +317,14 @@ describe('Mutation cache invalidation', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '标记为已读' }))
 
-    await waitFor(() => expect(spy).toHaveBeenCalled())
-    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
-    expect(keys).toContain(JSON.stringify(['entry', 'e1.a']))
-    expect(keys).toContain(JSON.stringify(['entries']))
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['entry', 'e1.a'])).toMatchObject({ read: true })
+    })
+    // read=true 是常规路径：精确补丁，零 invalidate、零重拉。
+    expect(spy).not.toHaveBeenCalled()
   })
 
-  it('invalidation race：对 A 发 mutation，完成前切到 B → 只 invalidate ["entry", A]', async () => {
+  it('补丁竞态：对 A 发 mutation，完成前切到 B → 只补丁 A 的缓存', async () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     let resolvePatch: (r: Response) => void = () => {}
     const patchPromise = new Promise<Response>((resolve) => {
@@ -335,7 +336,6 @@ describe('Mutation cache invalidation', () => {
       patchRoute(() => patchPromise),
     ]))
     const { queryClient } = renderReader()
-    const spy = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('button', { name: '标记为已读' }))
     // mutation 完成前 selection 切到 B
@@ -343,11 +343,11 @@ describe('Mutation cache invalidation', () => {
     await screen.findByText('文章 B')
     resolvePatch(noContent())
 
-    await waitFor(() => expect(spy).toHaveBeenCalled())
-    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))
-    expect(keys).toContain(JSON.stringify(['entry', 'e1.a']))
-    expect(keys).not.toContain(JSON.stringify(['entry', 'e1.b']))
-    expect(keys).toContain(JSON.stringify(['entries']))
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['entry', 'e1.a'])).toMatchObject({ read: true })
+    })
+    // B 的 detail 缓存未被 A 的补丁污染（read 仍是初始 false）。
+    expect(queryClient.getQueryData(['entry', 'e1.b'])).toMatchObject({ read: false })
   })
 })
 
