@@ -7,9 +7,10 @@
  *   一次成功缓存的 shell（此时 API 层会诚实显示「网络不可用」，
  *   绝不冒充会话过期/密码错误）。
  * - 无后台同步、无 push、无 precache 清单：安装零下载。
- * - 更新策略：字节差异触发 install → 默认等待旧标签页关闭后 activate
- *   （不打断正在阅读的会话，也不影响 HttpOnly session cookie）；
- *   activate 清理旧版本缓存。
+ * - 更新策略：字节差异触发 install；不 skipWaiting——旧标签页继续由
+ *   旧 SW + 旧缓存服务（部署后旧哈希资源已从源站消失，旧页面的懒
+ *   加载 chunk 只能来自旧缓存），新 SW 等所有旧客户端关闭后自然接管；
+ *   activate 时清理旧版本缓存。
  */
 
 const VERSION = 'v1'
