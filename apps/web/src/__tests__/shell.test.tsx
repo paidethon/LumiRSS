@@ -222,11 +222,14 @@ describe('Test J — Feed 切换', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: /全部信息源/ }))
+    // Phase H：entries 列表有 30s staleTime——回到 all scope 命中缓存，
+    // 不再为同一次往返重复请求；列表内容恢复为 all scope（e1.a 仍显示）。
     await waitFor(() => {
-      const calls = fetchMock.mock.calls.map((c) => String(c[0]))
-      const allFeedsCalls = calls.filter((u) => u.startsWith('/api/v1/entries') && !u.includes('feedUrl='))
-      expect(allFeedsCalls.length).toBeGreaterThanOrEqual(2)
+      expect(screen.getAllByText('文章 e1.a').length).toBeGreaterThan(0)
     })
+    const calls = fetchMock.mock.calls.map((c) => String(c[0]))
+    const allFeedsCalls = calls.filter((u) => u.startsWith('/api/v1/entries') && !u.includes('feedUrl='))
+    expect(allFeedsCalls.length).toBe(1)
   })
 })
 

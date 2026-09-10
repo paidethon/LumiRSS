@@ -10,7 +10,7 @@ adapter and returned by the routes, so there is no second mapping layer.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from lumirss.app_settings import PortableSettings
 
@@ -342,6 +342,36 @@ class FreshRssUiInfo(BaseModel):
     """GET /api/v1/freshrss-ui (null url = not configured, UI hides it)."""
 
     url: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Session authentication (LUMIRSS_AUTH_MODE=session)
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    """POST /api/v1/auth/login — single user, password only."""
+
+    password: str = Field(min_length=1, max_length=256)
+
+
+class PasswordChangeRequest(BaseModel):
+    """POST /api/v1/auth/password — current + new password."""
+
+    currentPassword: str = Field(min_length=1, max_length=256)
+    newPassword: str = Field(min_length=1, max_length=256)
+
+
+class AuthStatus(BaseModel):
+    """Login / session-status payload; expiresAt is an ISO-8601 instant.
+
+    mode tells the web app WHICH auth layer is active: "basic" = proxy
+    Basic Auth (the app must not render its own login gate), "session" =
+    BFF sessions (gate on ``authenticated``)."""
+
+    authenticated: bool
+    mode: Literal["basic", "session"] = "session"
+    expiresAt: str | None = None
 
 
 class ApiVersionInfo(BaseModel):

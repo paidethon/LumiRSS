@@ -1,5 +1,9 @@
 #!/bin/sh
 # Render the Caddyfile at container start:
+# - LUMIRSS_AUTH_MODE=session                  -> NO proxy-level auth; the
+#   BFF owns login (bcrypt + long-lived session cookies). Static assets
+#   and /api/v1/auth/* must be reachable pre-login, so Caddy adds nothing
+#   here. LUMIRSS_AUTH_USER/HASH stay ignored in this mode.
 # - both LUMIRSS_AUTH_USER and LUMIRSS_AUTH_HASH set  -> basic_auth enabled
 # - neither set                                       -> no auth (trusted LAN)
 # - exactly one set                                   -> FAIL LOUDLY (a half
@@ -21,7 +25,9 @@ else
   SITE_ADDR="${DOMAIN:-localhost}"
 fi
 
-if [ -n "${LUMIRSS_AUTH_USER:-}" ] && [ -n "${LUMIRSS_AUTH_HASH:-}" ]; then
+if [ "${LUMIRSS_AUTH_MODE:-basic}" = "session" ]; then
+  TEMPLATE=/etc/caddy/Caddyfile.noauth
+elif [ -n "${LUMIRSS_AUTH_USER:-}" ] && [ -n "${LUMIRSS_AUTH_HASH:-}" ]; then
   TEMPLATE=/etc/caddy/Caddyfile.auth
 elif [ -z "${LUMIRSS_AUTH_USER:-}" ] && [ -z "${LUMIRSS_AUTH_HASH:-}" ]; then
   TEMPLATE=/etc/caddy/Caddyfile.noauth

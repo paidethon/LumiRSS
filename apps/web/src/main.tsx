@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import LoginScreen from './components/LoginScreen.tsx'
+import { getAuthSession } from './api/client'
+import { useAuthStore } from './store/auth.ts'
 import { initAppSettings, useAppSettings, watchSystemTheme } from './store/app-settings.ts'
 import { initSettingsSync } from './store/settings-sync.ts'
 import { useReaderUi } from './store/reader-ui.ts'
@@ -39,7 +42,64 @@ void restoreLocalFonts().then(() => {
   }
 })
 
+// Phase M：注册 App Shell service worker（仅生产构建；dev 的 HMR 与
+// SW 缓存互相干扰）。失败静默——SW 是启动加速与离线 shell 的增强，
+// 不是功能依赖；认证/API 永不经过缓存（见 public/sw.js 边界）。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* 注册失败（如隐私模式）：正常网页体验不受影响 */
+    })
+  })
+}
+
 const queryClient = new QueryClient()
+
+/** 会话认证门（Phase N）：启动时探测认证模式与登录态。
+ *
+ * - mode=basic（代理层 Basic Auth）→ 永远放行，Web 不建登录 UI；
+ * - mode=session → 未登录渲染 LoginScreen，登录后挂 App；
+ * - 探测失败（离线 / BFF 暂不可用）→ 放行：数据层会诚实展示网络
+ *   错误，「连不上」绝不冒充「未登录」把用户送去登录页。
+ * 登录态翻转后清空 query 缓存（登出/过期后不留旧文章数据）。 */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const status = useAuthStore((s) => s.status)
+  const setStatus = useAuthStore((s) => s.setStatus)
+
+  useEffect(() => {
+    let cancelled = false
+    getAuthSession()
+      .then((probe) => {
+        if (cancelled) return
+        const auth = useAuthStore.getState()
+        auth.setMode(probe.mode)
+        setStatus(probe.mode === 'basic' || probe.authenticated ? 'authenticated' : 'unauthenticated')
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('authenticated')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [setStatus])
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      void queryClient.cancelQueries()
+      queryClient.clear()
+    }
+  }, [status])
+
+  if (status === 'checking') {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--lumi-canvas)]">
+        <img src="/icons/lumirss-icon.svg" alt="LumiRSS" className="size-14" decoding="async" />
+      </div>
+    )
+  }
+  if (status === 'unauthenticated') return <LoginScreen />
+  return children
+}
 
 // 0009 Gate 1：dev-only playground（AC17）。静态 import 会进入生产
 // bundle，用条件动态 import 保证生产完全不包含它；路由用 hash 判断，
@@ -60,12 +120,14 @@ if (import.meta.env.DEV && location.hash === '#/playground') {
       <Playground />
     </StrictMode>,
   )
-} else {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </StrictMode>,
-  )
-}
+  } else {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <AuthGate>
+            <App />
+          </AuthGate>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+  }

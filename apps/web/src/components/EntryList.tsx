@@ -282,6 +282,9 @@ export default function EntryList() {
                     <li
                       key={item.entryRef}
                       data-entry-row-ref={item.entryRef}
+                      // Phase H/I：视口外行跳过 layout/paint（渲染成本
+                      // 与视口成正比；DOM 保留，滚动恢复不受影响）。
+                      className="lumi-row-cv"
                       ref={(el) => {
                         if (el) rowRefs.current.set(item.entryRef, el)
                         else rowRefs.current.delete(item.entryRef)
