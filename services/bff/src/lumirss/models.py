@@ -766,13 +766,16 @@ class SearchIndexInfo(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Envelope for GET /api/v1/search."""
+    """Envelope for GET /api/v1/search (phase2 G6: + optional library
+    leg — additive fields, wire-compatible with older clients)."""
 
     items: list[SearchItem]
     nextCursor: str | None
     hasMore: bool
     elapsedMs: int
     index: SearchIndexInfo
+    library: list["LibrarySearchItem"] | None = None
+    libraryError: str | None = None
 
 
 class SearchRebuildResult(BaseModel):
@@ -1174,6 +1177,94 @@ class DigestSendNowRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     entryRefs: list[dict[str, str]]
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G6) — Obsidian projection + unified views
+# ---------------------------------------------------------------------------
+
+
+class ObsidianNoteSetting(BaseModel):
+    """PUT /api/v1/obsidian/settings."""
+
+    model_config = {"extra": "forbid"}
+
+    vaultPath: str
+
+
+class ObsidianSettings(BaseModel):
+    """Vault root (canonicalized) + honest note count."""
+
+    vaultPath: str
+    noteCount: int
+
+
+class ObsidianStatus(BaseModel):
+    """Honest scanner status (error keeps the old index visible)."""
+
+    vaultPath: str
+    lastScanAt: str | None = None
+    lastError: str | None = None
+    noteCount: int = 0
+
+
+class ObsidianRescanResult(BaseModel):
+    """Bounded scan report with rename detection."""
+
+    added: int
+    changed: int
+    removed: int
+    renames: int
+    unchanged: int
+    skipped: int
+    elapsedMs: int
+    vaultPath: str = ""
+
+
+class NoteView(BaseModel):
+    """One projected note; contentHtml only on detail (client sanitizes)."""
+
+    ref: str
+    relPath: str
+    title: str
+    tags: list[str] = []
+    indexedAt: str
+    wikilinks: list[str] | None = None
+    contentHtml: str | None = None
+
+
+class NoteListResponse(BaseModel):
+    """Envelope for GET /api/v1/obsidian/notes."""
+
+    items: list[NoteView]
+
+
+class LibrarySearchItem(BaseModel):
+    """Library leg of unified search (same shape philosophy as SearchItem)."""
+
+    ref: str
+    kind: str
+    title: str
+    url: str | None = None
+    snippet: str = ""
+    updatedAt: str
+
+
+class FavoritesResponse(BaseModel):
+    """Federated favorites: rss star + library favorite, merged for
+    display only — each stays owned by its own domain."""
+
+    rss: list[SearchItem]
+    library: list[LibrarySearchItem]
+    libraryError: str | None = None
+
+
+class LibraryFavoriteRequest(BaseModel):
+    """POST/DELETE /api/v1/favorites/library — one ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    ref: str
 
 
 class SnapshotListResponse(BaseModel):

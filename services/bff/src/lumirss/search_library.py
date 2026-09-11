@@ -72,6 +72,39 @@ class LibrarySearchWriter:
         )
         return [dict(row) for row in rows]
 
+    async def get_by_ref(self, ref: str) -> dict[str, Any] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT ref, kind, title, body, url, updated_at FROM search_library WHERE ref = ?",
+            (ref,),
+        )
+        return dict(row) if row is not None else None
+
+    async def starred_entries(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """RSS-domain starred entries from the RSS projection (FreshRSS
+        star remains the truth; this reads its derived projection)."""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT item_id, entry_ref, title, feed_title, feed_url, author, url, published_at, read, starred, content_text FROM search_entries WHERE starred = 1 ORDER BY published_at DESC LIMIT ?",
+            (max(1, min(limit, 100)),),
+        )
+        return [
+            {
+                "entryRef": row["entry_ref"],
+                "title": row["title"],
+                "feedTitle": row["feed_title"],
+                "feedUrl": row["feed_url"],
+                "author": row["author"],
+                "url": row["url"],
+                "publishedAt": row["published_at"] or "",
+                "read": bool(row["read"]),
+                "starred": bool(row["starred"]),
+                "snippet": (row["content_text"] or "")[:160],
+                "matchedFields": [],
+            }
+            for row in rows
+        ]
+
     async def count(self) -> int:
         await self._db.migrate()
         row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM search_library")

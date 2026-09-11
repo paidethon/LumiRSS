@@ -97,6 +97,7 @@ from lumirss.mail_digest import (
 )
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
+from lumirss.obsidian import VaultPermissionDenied, VaultUnreachable
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
@@ -245,6 +246,9 @@ _ERROR_RESPONSES = {
     SmtpNotConfigured: (503, "smtp_not_configured"),
     SmtpSendFailed: (502, "smtp_send_failed"),
     ImapNotConfigured: (503, "imap_not_configured"),
+    # phase2 G6 obsidian
+    VaultUnreachable: (503, "vault_unreachable"),
+    VaultPermissionDenied: (403, "vault_permission_denied"),
 }
 
 
@@ -338,6 +342,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SmtpNotConfigured)
     @app.exception_handler(SmtpSendFailed)
     @app.exception_handler(ImapNotConfigured)
+    @app.exception_handler(VaultUnreachable)
+    @app.exception_handler(VaultPermissionDenied)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

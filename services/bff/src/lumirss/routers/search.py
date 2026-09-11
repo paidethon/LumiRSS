@@ -91,12 +91,37 @@ async def search(
     if result["hasMore"] and result["nextKeyset"] is not None:
         next_cursor = encode_search_cursor(*result["nextKeyset"])
     index = await service.index_info()
+    # phase2 G6 unified view: the library leg runs beside the RSS leg and
+    # fails independently (partial failure stays honest, never silent).
+    library_items = None
+    library_error = None
+    try:
+        from lumirss.deps import _get_library_search_writer
+        from lumirss.models import LibrarySearchItem
+
+        writer = _get_library_search_writer(request)
+        hits = await writer.search(query, limit=_MAX_LIMIT)
+        library_items = [
+            LibrarySearchItem(
+                ref=str(hit["ref"]),
+                kind=str(hit["kind"]),
+                title=str(hit["title"]),
+                url=hit["url"],
+                snippet=str(hit["body"])[:160],
+                updatedAt=str(hit["updated_at"]),
+            )
+            for hit in hits
+        ]
+    except Exception:  # noqa: BLE001 — leg failure must not kill RSS
+        library_error = "库搜索暂不可用，RSS 结果不受影响。"
     return SearchResponse(
         items=result["rows"],
         nextCursor=next_cursor,
         hasMore=result["hasMore"],
         elapsedMs=int((time.time() - started) * 1000),
         index=index,
+        library=library_items,
+        libraryError=library_error,
     )
 
 

@@ -21,6 +21,7 @@ from lumirss.itemref import (
     parse_item_ref,
 )
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
+from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -73,6 +74,7 @@ class LibraryStore:
 
     def __init__(self, db: Database) -> None:
         self._db = db
+        self._search = LibrarySearchWriter(db)
 
     # -- bookmarks ---------------------------------------------------------
 
@@ -105,7 +107,7 @@ class LibraryStore:
             if existing is None:
                 raise
             return existing, False
-        return BookmarkView(
+        view = BookmarkView(
             ref=f"{LIBRARY_DOMAIN}:{item_uuid}",
             item_type="url",
             url=clean_url,
@@ -113,7 +115,12 @@ class LibraryStore:
             title=clean_title,
             note=clean_note,
             created_at=now,
-        ), True
+        )
+        await self._search.upsert(
+            ref=view.ref, kind="bookmark", title=view.title,
+            body=view.note[:4000], url=view.url,
+        )
+        return view, True
 
     async def create_rss_bookmark(
         self, rss_item_ref: str, title: str, note: str = ""
@@ -135,7 +142,7 @@ class LibraryStore:
         now = utc_now()
         await self._db.execute("INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'bookmark', ?)", (item_uuid, now))
         await self._db.execute("INSERT INTO library_bookmarks (item_uuid, item_type, url, rss_item_ref, title, note, created_at) VALUES (?, 'rss', NULL, ?, ?, ?, ?)", (item_uuid, parsed.format(), clean_title, clean_note, now))
-        return BookmarkView(
+        view = BookmarkView(
             ref=f"{LIBRARY_DOMAIN}:{item_uuid}",
             item_type="rss",
             url=None,
@@ -143,7 +150,12 @@ class LibraryStore:
             title=clean_title,
             note=clean_note,
             created_at=now,
-        ), True
+        )
+        await self._search.upsert(
+            ref=view.ref, kind="bookmark", title=view.title,
+            body=view.note[:4000], url=None,
+        )
+        return view, True
 
     async def get_bookmark(self, item_uuid: str) -> BookmarkView | None:
         await self._db.migrate()
@@ -159,6 +171,7 @@ class LibraryStore:
             return False
         # library_items is the identity root; bookmarks cascade via FK.
         await self._db.execute("DELETE FROM library_items WHERE uuid = ?", (item_uuid,))
+        await self._search.delete(f"{LIBRARY_DOMAIN}:{item_uuid}")
         return True
 
     async def update_bookmark(
@@ -176,6 +189,10 @@ class LibraryStore:
         await self._db.execute("UPDATE library_bookmarks SET title = ?, note = ? WHERE item_uuid = ?", (new_title, new_note, item_uuid))
         updated = await self.get_bookmark(item_uuid)
         assert updated is not None  # row existed one statement ago
+        await self._search.upsert(
+            ref=updated.ref, kind="bookmark", title=updated.title,
+            body=updated.note[:4000], url=updated.url,
+        )
         return updated
 
     async def list_bookmarks(

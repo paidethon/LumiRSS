@@ -42,6 +42,7 @@ from lumirss.backup import (
 )
 from lumirss.config import FreshRSSSettings, LumiSettings
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+from lumirss.favorites import FavoritesService
 from lumirss.feed_preview import (
     FeedPreviewService,
 )
@@ -49,6 +50,7 @@ from lumirss.library import LibraryStore
 from lumirss.library_assets import AssetStore
 from lumirss.library_clips import ClipStore
 from lumirss.mail_bridge import MailBridgeStore
+from lumirss.obsidian import ObsidianService
 from lumirss.operations import OperationsService
 from lumirss.restore import (
     RestoreService,
@@ -61,6 +63,7 @@ from lumirss.rsshub_control import (
     RssHubCustomCredentialStore,
 )
 from lumirss.search_index import SearchIndexService
+from lumirss.search_library import LibrarySearchWriter
 from lumirss.secrets_store import SecretsStore
 from lumirss.snapshots import SnapshotJobRunner
 from lumirss.source_discovery import (
@@ -413,6 +416,35 @@ def _get_api_source_store(request: Request) -> ApiSourceStore:
         request,
         "api_source_store",
         lambda: ApiSourceStore(request.app.state.db),
+    )
+
+
+def _get_library_search_writer(request: Request) -> LibrarySearchWriter:
+    """Library search projection writer (phase2 G6 unified view)."""
+    return _cached_on_app_state(
+        request,
+        "library_search_writer",
+        lambda: LibrarySearchWriter(request.app.state.db),
+    )
+
+
+def _get_obsidian_service(request: Request) -> ObsidianService:
+    """Read-only vault projection service (phase2 G6)."""
+    return _cached_on_app_state(
+        request,
+        "obsidian_service",
+        lambda: ObsidianService(request.app.state.db),
+    )
+
+
+def _get_favorites_service(request: Request) -> FavoritesService:
+    """Federated favorites (rss star + library favorite) service."""
+    return _cached_on_app_state(
+        request,
+        "favorites_service",
+        lambda: FavoritesService(
+            request.app.state.db, _get_library_search_writer(request)
+        ),
     )
 
 

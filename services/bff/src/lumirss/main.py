@@ -38,6 +38,7 @@ from lumirss.routers import (
     health,
     library,
     mail,
+    obsidian,
     operations,
     opml,
     rsshub,
@@ -97,6 +98,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.snapshot_runner = None
     app.state.api_source_store = None
     app.state.mail_bridge_store = None
+    app.state.obsidian_service = None
+    app.state.favorites_service = None
+    app.state.library_search_writer = None
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -175,5 +179,6 @@ app.include_router(clips.router)
 app.include_router(snapshots.router)
 app.include_router(api_sources.router)
 app.include_router(mail.router)
+app.include_router(obsidian.router)
 
 register_error_handlers(app)
