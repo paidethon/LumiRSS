@@ -28,6 +28,8 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
+from lumirss.agent import AgentProviderUnavailable
+from lumirss.agent_store import ApprovalInvalid, ToolDenied
 from lumirss.ai_profiles import (
     AiProfileNotFound,
 )
@@ -47,6 +49,12 @@ from lumirss.ai_summary import AiContentUnavailable
 from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
+from lumirss.api_sources import (
+    ApiSourceExpressionError,
+    ApiSourceFetchFailed,
+    ApiSourceInvalid,
+    ApiSourceNotFound,
+)
 from lumirss.app_settings import (
     AppSettingsConflict,
     InvalidAppSettings,
@@ -64,6 +72,8 @@ from lumirss.backup import (
     BackupNotFound,
     BackupUnsupportedVersion,
 )
+from lumirss.bookmarks_io import NetscapeParseError
+from lumirss.clip_fetch import ClipFetchError, ClipForbidden
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
 from lumirss.feed_preview import (
@@ -72,12 +82,30 @@ from lumirss.feed_preview import (
     NotAFeedError,
     UnsafeFeedUrl,
 )
+from lumirss.itemref import InvalidItemRef
+from lumirss.library import (
+    BookmarkInvalid,
+    BookmarkNotFound,
+)
+from lumirss.library_assets import AssetNotFound, AssetQuotaExceeded, AssetTooLarge
+from lumirss.library_clips import ClipInvalid, ClipNotFound
+from lumirss.mail_bridge import (
+    MailBridgeInvalid,
+    MailBridgeNotFound,
+)
+from lumirss.mail_digest import (
+    SmtpNotConfigured,
+    SmtpSendFailed,
+)
+from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
+from lumirss.obsidian import VaultPermissionDenied, VaultUnreachable
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.rag import RagModelUnavailable, RagRebuildBusy
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
@@ -97,6 +125,7 @@ from lumirss.rsshub_control import (
 )
 from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
+from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
@@ -104,7 +133,13 @@ from lumirss.source_discovery import (
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
+from lumirss.tags import TagInvalid, TagNotFound
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
+from lumirss.workspaces import (
+    ReservedWorkspaceError,
+    WorkspaceInvalid,
+    WorkspaceNotFound,
+)
 
 _ERROR_RESPONSES = {
     ConfigError: (503, "configuration_error"),
@@ -186,6 +221,47 @@ _ERROR_RESPONSES = {
     InvalidCredentials: (401, "invalid_credentials"),
     PasswordNotInitialized: (503, "auth_not_initialized"),
     WeakPassword: (400, "weak_password"),
+    # phase2 M1 library domain
+    NetscapeParseError: (400, "bookmarks_import_invalid"),
+    BookmarkInvalid: (400, "invalid_bookmark"),
+    BookmarkNotFound: (404, "bookmark_not_found"),
+    InvalidItemRef: (400, "invalid_item_ref"),
+    WorkspaceInvalid: (400, "invalid_workspace"),
+    WorkspaceNotFound: (404, "workspace_not_found"),
+    ReservedWorkspaceError: (409, "reserved_workspace"),
+    # phase2 M2 clips + snapshots
+    ClipFetchError: (502, "clip_fetch_failed"),
+    ClipForbidden: (400, "clip_fetch_forbidden"),
+    ClipInvalid: (400, "invalid_clip"),
+    ClipNotFound: (404, "clip_not_found"),
+    AssetNotFound: (404, "asset_not_found"),
+    AssetQuotaExceeded: (413, "quota_exceeded"),
+    AssetTooLarge: (413, "snapshot_too_large"),
+    MonolithUnavailable: (503, "monolith_unavailable"),
+    SnapshotFailed: (502, "snapshot_failed"),
+    # phase2 M3 api sources
+    ApiSourceInvalid: (400, "invalid_api_source"),
+    ApiSourceNotFound: (404, "api_source_not_found"),
+    ApiSourceExpressionError: (400, "invalid_expression"),
+    ApiSourceFetchFailed: (502, "fetch_failed"),
+    # phase2 G5 mail
+    MailBridgeInvalid: (400, "invalid_mail_payload"),
+    MailBridgeNotFound: (404, "mail_list_not_found"),
+    SmtpNotConfigured: (503, "smtp_not_configured"),
+    SmtpSendFailed: (502, "smtp_send_failed"),
+    ImapNotConfigured: (503, "imap_not_configured"),
+    # phase2 G6 obsidian
+    VaultUnreachable: (503, "vault_unreachable"),
+    VaultPermissionDenied: (403, "vault_permission_denied"),
+    # phase2 G7 rag + agent
+    RagModelUnavailable: (503, "model_unavailable"),
+    RagRebuildBusy: (409, "rebuild_in_progress"),
+    AgentProviderUnavailable: (503, "provider_unavailable"),
+    ToolDenied: (403, "tool_denied"),
+    ApprovalInvalid: (409, "approval_invalid"),
+    # phase2 G8 tags
+    TagInvalid: (400, "invalid_tag"),
+    TagNotFound: (404, "tag_not_found"),
 }
 
 
@@ -254,6 +330,40 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(InvalidCredentials)
     @app.exception_handler(PasswordNotInitialized)
     @app.exception_handler(WeakPassword)
+    @app.exception_handler(NetscapeParseError)
+    @app.exception_handler(BookmarkInvalid)
+    @app.exception_handler(BookmarkNotFound)
+    @app.exception_handler(InvalidItemRef)
+    @app.exception_handler(WorkspaceInvalid)
+    @app.exception_handler(WorkspaceNotFound)
+    @app.exception_handler(ReservedWorkspaceError)
+    @app.exception_handler(ClipFetchError)
+    @app.exception_handler(ClipForbidden)
+    @app.exception_handler(ClipInvalid)
+    @app.exception_handler(ClipNotFound)
+    @app.exception_handler(AssetNotFound)
+    @app.exception_handler(AssetQuotaExceeded)
+    @app.exception_handler(AssetTooLarge)
+    @app.exception_handler(MonolithUnavailable)
+    @app.exception_handler(SnapshotFailed)
+    @app.exception_handler(ApiSourceInvalid)
+    @app.exception_handler(ApiSourceNotFound)
+    @app.exception_handler(ApiSourceExpressionError)
+    @app.exception_handler(ApiSourceFetchFailed)
+    @app.exception_handler(MailBridgeInvalid)
+    @app.exception_handler(MailBridgeNotFound)
+    @app.exception_handler(SmtpNotConfigured)
+    @app.exception_handler(SmtpSendFailed)
+    @app.exception_handler(ImapNotConfigured)
+    @app.exception_handler(VaultUnreachable)
+    @app.exception_handler(VaultPermissionDenied)
+    @app.exception_handler(RagModelUnavailable)
+    @app.exception_handler(RagRebuildBusy)
+    @app.exception_handler(AgentProviderUnavailable)
+    @app.exception_handler(ToolDenied)
+    @app.exception_handler(ApprovalInvalid)
+    @app.exception_handler(TagInvalid)
+    @app.exception_handler(TagNotFound)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

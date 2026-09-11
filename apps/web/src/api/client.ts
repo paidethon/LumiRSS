@@ -14,6 +14,12 @@ import type {
   AuthStatusView,
   BackupCapabilities,
   BackupJob,
+  Bookmark,
+  BookmarkImportResult,
+  BookmarkListResponse,
+  ClipDetail,
+  ClipFetchResult,
+  ClipListResponse,
   TranslationSegmentsView,
   Category,
   EntryConversation,
@@ -34,10 +40,17 @@ import type {
   RssHubRoutesResponse,
   SearchResponse,
   ServerSettings,
+  SnapshotListResponse,
+  SnapshotView,
   SourceDiscoveryResponse,
   Subscription,
   WebDavSettings,
   WebDavTestResult,
+  Workspace,
+  WorkspaceItem,
+  WorkspaceItemsResolvedResponse,
+  WorkspaceItemsResponse,
+  WorkspaceListResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -875,4 +888,784 @@ export async function executeRestore(restoreSessionId: string, confirmation: str
     contentType: 'application/json',
   })
   return (await response.json()) as RestoreResult
+}
+
+// ---- phase2 M1：稍后读 = 服务端保留工作区（read-later）的成员同步 ----
+// Primary 拥有这三个契约函数（read-later 双写依赖）；书签/工作区完整
+// API 面由 library 域各函数另行补充。
+
+export async function listWorkspaceItems(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceItemsResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    { method: 'GET', signal },
+  )
+  return (await response.json()) as WorkspaceItemsResponse
+}
+
+export async function addWorkspaceItem(workspaceId: string, itemRef: string): Promise<WorkspaceItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ itemRef }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItem
+}
+
+export async function removeWorkspaceItem(workspaceId: string, itemRef: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---- phase2 M1：书签（library/bookmarks）——GET 分页 / POST 幂等创建 /
+// PATCH 编辑 / DELETE / Netscape HTML 导入导出。ref 形如 `library:<uuid>`，
+// 路径参数取 uuid 部分（本模块负责剥离，UI 只透传 ref）。 ----
+
+/** `library:<uuid>` → `<uuid>`（容错裸 uuid，原样返回）。 */
+function toBookmarkId(bookmarkRef: string): string {
+  return bookmarkRef.startsWith('library:') ? bookmarkRef.slice('library:'.length) : bookmarkRef
+}
+
+export async function listBookmarks(
+  params: { cursor?: string | null; limit?: number; q?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<BookmarkListResponse> {
+  const query = new URLSearchParams()
+  // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
+  if (params.cursor != null) {
+    query.set('cursor', params.cursor)
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.q != null && params.q !== '') {
+    query.set('q', params.q)
+  }
+  const qs = query.toString()
+  return request<BookmarkListResponse>(`${API_BASE}/library/bookmarks?${qs}`, signal)
+}
+
+/** 创建书签（url | rssItemRef 二选一）；重复 url/rssItemRef 幂等返回同一
+ * ref。不接 AbortSignal——与其它 mutation 语义一致，发出后允许完成。 */
+export async function createBookmark(body: {
+  url?: string | null
+  rssItemRef?: string | null
+  title: string
+  note?: string | null
+}): Promise<Bookmark> {
+  const response = await rawRequest(`${API_BASE}/library/bookmarks`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Bookmark
+}
+
+export async function updateBookmark(
+  bookmarkRef: string,
+  patch: { title?: string | null; note?: string | null },
+): Promise<Bookmark> {
+  const response = await rawRequest(
+    `${API_BASE}/library/bookmarks/${encodeURIComponent(toBookmarkId(bookmarkRef))}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as Bookmark
+}
+
+export async function deleteBookmark(bookmarkRef: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/bookmarks/${encodeURIComponent(toBookmarkId(bookmarkRef))}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Netscape 书签 HTML 导入（原始文件上传；BFF 负责解析与逐条结果）。
+ * Content-Type 固定 text/html（Netscape 格式即 HTML）。 */
+export async function importBookmarks(file: File): Promise<BookmarkImportResult> {
+  const response = await rawRequest(`${API_BASE}/library/bookmarks/import`, {
+    method: 'POST',
+    body: file,
+    contentType: 'text/html',
+  })
+  return (await response.json()) as BookmarkImportResult
+}
+
+// ---- phase2 M1：工作区（workspaces）——列表 / 创建 / contents 解析 /
+// 重排序。read-later 为保留工作区（reserved=true，BFF 拒绝删除/重排）。 ----
+
+export async function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceListResponse> {
+  return request<WorkspaceListResponse>(`${API_BASE}/workspaces`, signal)
+}
+
+export async function createWorkspace(name: string): Promise<Workspace> {
+  const response = await rawRequest(`${API_BASE}/workspaces`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Workspace
+}
+
+/** 工作区内容（ResolvedItem 统一视图：rss + library 解析后的卡片数据）。 */
+export async function getWorkspaceContents(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceItemsResolvedResponse> {
+  return request<WorkspaceItemsResolvedResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/contents`,
+    signal,
+  )
+}
+
+/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。 */
+export async function reorderWorkspaceItems(
+  workspaceId: string,
+  itemRefs: string[],
+): Promise<WorkspaceItemsResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ itemRefs }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItemsResponse
+}
+
+// ---- phase2 Gate 3：网页剪藏（library/clips） ----
+// 抓取（SSRF 受限）→ 本地提取 → 存储三步由页面编排；ref 形如
+// `library:<uuid>`，路径参数取 uuid 部分（本模块负责剥离，UI 只透传
+// ref，与书签同一模式）。
+
+/** `library:<uuid>` → `<uuid>`（容错裸 uuid，原样返回）。 */
+function toClipId(clipRef: string): string {
+  return clipRef.startsWith('library:') ? clipRef.slice('library:'.length) : clipRef
+}
+
+/** 服务端匿名抓取目标页 HTML（SSRF 守卫：只放行公网 http/https、
+ * MIME 白名单、5MB / 20s 上限；400 clip_fetch_forbidden /
+ * 502 clip_fetch_failed 由 UI 原样展示 message）。无副作用 mutation
+ * 语义：不接 AbortSignal，发出后允许完成。 */
+export async function fetchClipHtml(url: string): Promise<ClipFetchResult> {
+  const response = await rawRequest(`${API_BASE}/library/clips/fetch`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ClipFetchResult
+}
+
+export interface ClipInput {
+  url: string
+  title: string
+  byline?: string | null
+  contentHtml: string
+  contentText: string
+  fetchedAt?: string
+}
+
+/** 保存剪藏（contentHtml 必须已过 DOMPurify——见 lib/clip-extract.ts；
+ * 重复 url 幂等返回同一 ref）。不接 AbortSignal，与其它 mutation 一致。 */
+export async function createClip(body: ClipInput): Promise<ClipDetail> {
+  const response = await rawRequest(`${API_BASE}/library/clips`, {
+    method: 'POST',
+    body: JSON.stringify({
+      url: body.url,
+      title: body.title,
+      byline: body.byline ?? null,
+      contentHtml: body.contentHtml,
+      contentText: body.contentText,
+      fetchedAt: body.fetchedAt ?? new Date().toISOString(),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ClipDetail
+}
+
+/** 剪藏列表（cursor opaque 透传）。 */
+export async function listClips(
+  cursor?: string | null,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ClipListResponse> {
+  const query = new URLSearchParams()
+  if (cursor != null) {
+    query.set('cursor', cursor)
+  }
+  if (limit != null) {
+    query.set('limit', String(limit))
+  }
+  const qs = query.toString()
+  return request<ClipListResponse>(`${API_BASE}/library/clips?${qs}`, signal)
+}
+
+/** 读单条剪藏 Detail（含 contentHtml/contentText）。 */
+export async function getClip(uuid: string, signal?: AbortSignal): Promise<ClipDetail> {
+  return request<ClipDetail>(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}`,
+    signal,
+  )
+}
+
+/** 删除剪藏（破坏性；DELETE 204，无响应体）。 */
+export async function deleteClip(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---- phase2 Gate 3：网页快照（library/snapshots，monolith） ----
+// 服务端依赖外部 monolith 二进制；未配置时 503 monolith_unavailable，
+// UI 原样透出 message。生成是长任务（10–90s）。
+
+/** 生成离线快照（长任务；成功返回 SnapshotView，deduplicated 标记
+ * 内容去重）。不接 AbortSignal，与其它 mutation 一致。 */
+export async function createSnapshot(url: string): Promise<SnapshotView> {
+  const response = await rawRequest(`${API_BASE}/library/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SnapshotView
+}
+
+/** 快照列表 + 用量（count / bytes / quotaBytes）。 */
+export async function listSnapshots(signal?: AbortSignal): Promise<SnapshotListResponse> {
+  return request<SnapshotListResponse>(`${API_BASE}/library/snapshots`, signal)
+}
+
+/** 删除快照（DELETE 204，无响应体）。 */
+export async function deleteSnapshot(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---- phase2 G6：API 来源 / 邮件简报 / Obsidian 库 / 联合收藏 ----
+// 契约别名：与 types.ts 同一策略（派生自 generated/schema）。本批别名
+// 尚未收录进 types.ts，按任务约定在本模块内补齐（additive，不改既有导出）。
+
+import type { components } from './generated/schema'
+
+type G6Schemas = components['schemas']
+
+export type ApiSource = G6Schemas['ApiSource']
+export type ApiSourceListResponse = G6Schemas['ApiSourceListResponse']
+export type ApiSourcePreviewResult = G6Schemas['ApiSourcePreviewResult']
+export type MailBridgeList = G6Schemas['MailBridgeList']
+export type MailBridgeListCreated = G6Schemas['MailBridgeListCreated']
+export type MailBridgeListResponse = G6Schemas['MailBridgeListResponse']
+export type MailIngestResult = G6Schemas['MailIngestResult']
+export type DigestSettings = G6Schemas['DigestSettings']
+export type DigestSettingsUpdate = G6Schemas['DigestSettingsUpdate']
+export type ObsidianStatus = G6Schemas['ObsidianStatus']
+export type ObsidianSettings = G6Schemas['ObsidianSettings']
+export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
+export type NoteView = G6Schemas['NoteView']
+export type NoteListResponse = G6Schemas['NoteListResponse']
+export type FavoritesResponse = G6Schemas['FavoritesResponse']
+export type LibrarySearchItem = G6Schemas['LibrarySearchItem']
+
+/** 共享剪藏/书签/Obsidian 笔记的 ref 约定：`library:<uuid>` → `<uuid>`。 */
+function toLibraryItemId(ref: string): string {
+  return ref.startsWith('library:') ? ref.slice('library:'.length) : ref
+}
+
+// ---- phase2 G6：API 来源（api-sources） ----
+
+/** fieldMap 五字段 → JMESPath 表达式（契约是 Record<string,string>，
+ * 这里收窄为固定五键，UI 构造时保证键齐全；空串 = 未映射）。 */
+export interface ApiSourceFieldMapInput {
+  id: string
+  title: string
+  url: string
+  published: string
+  body: string
+}
+
+export interface ApiSourceCreateInput {
+  name: string
+  endpoint: string
+  itemsExpr: string
+  fieldMap: ApiSourceFieldMapInput
+  subscribe?: boolean
+}
+
+export interface ApiSourcePreviewInput {
+  endpoint: string
+  itemsExpr: string
+  fieldMap: ApiSourceFieldMapInput
+}
+
+export interface ApiSourceUpdateInput {
+  name?: string | null
+  endpoint?: string | null
+  itemsExpr?: string | null
+  fieldMap?: ApiSourceFieldMapInput | null
+  enabled?: boolean | null
+}
+
+/** API 来源列表（GET 语义）。 */
+export async function listApiSources(signal?: AbortSignal): Promise<ApiSourceListResponse> {
+  return request<ApiSourceListResponse>(`${API_BASE}/api-sources`, signal)
+}
+
+/** 创建 API 来源。成功响应是唯一一次包含 secret / atomPath 的机会；
+ * 失败（如自动订阅失败）仍返回 201 + subscribeError，由 UI 诚实展示。 */
+export async function createApiSource(input: ApiSourceCreateInput): Promise<ApiSource> {
+  const response = await rawRequest(`${API_BASE}/api-sources`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ApiSource
+}
+
+/** 更新 API 来源（PATCH，部分字段；enabled 开关走这里）。 */
+export async function updateApiSource(
+  uuid: string,
+  patch: ApiSourceUpdateInput,
+): Promise<ApiSource> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ApiSource
+}
+
+/** 删除 API 来源（破坏性；DELETE 204；服务端自动退订对应 FreshRSS 订阅）。 */
+export async function deleteApiSource(uuid: string): Promise<void> {
+  await rawRequest(`${API_BASE}/api-sources/${encodeURIComponent(uuid)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 无副作用预览：按 endpoint + itemsExpr + fieldMap 实抓 ≤5 条映射结果。
+ * 400 invalid_expression / invalid_api_source、502 fetch_failed 的
+ * error.message 由 UI 原样透出。 */
+export async function previewApiSource(
+  input: ApiSourcePreviewInput,
+): Promise<ApiSourcePreviewResult> {
+  const response = await rawRequest(`${API_BASE}/api-sources/preview`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ApiSourcePreviewResult
+}
+
+// ---- phase2 G6：邮件（收信地址 + 每日摘要） ----
+
+/** 收信地址列表（secret 绝不回显）。 */
+export async function listMailBridgeLists(
+  signal?: AbortSignal,
+): Promise<MailBridgeListResponse> {
+  return request<MailBridgeListResponse>(`${API_BASE}/mail/bridge-lists`, signal)
+}
+
+/** 创建收信地址。成功响应是唯一一次返回 bearer secret 的机会。 */
+export async function createMailBridgeList(name: string): Promise<MailBridgeListCreated> {
+  const response = await rawRequest(`${API_BASE}/mail/bridge-lists`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as MailBridgeListCreated
+}
+
+/** 删除收信地址（破坏性；DELETE 204）。 */
+export async function deleteMailBridgeList(uuid: string): Promise<void> {
+  await rawRequest(`${API_BASE}/mail/bridge-lists/${encodeURIComponent(uuid)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 每日摘要设置（password 只报告 passwordConfigured 布尔，绝不回显）。 */
+export async function getDigestSettings(signal?: AbortSignal): Promise<DigestSettings> {
+  return request<DigestSettings>(`${API_BASE}/digest/settings`, signal)
+}
+
+/** 部分更新摘要设置；smtpPassword write-only（留空 = 不改动）。 */
+export async function updateDigestSettings(
+  patch: DigestSettingsUpdate,
+): Promise<DigestSettings> {
+  const response = await rawRequest(`${API_BASE}/digest/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as DigestSettings
+}
+
+export interface DigestEntryRefInput {
+  title: string
+  url: string
+  source: string
+}
+
+/** 立即发送摘要（显式条目选择；503 smtp_not_configured /
+ * 502 smtp_send_failed 的 error.message 由 UI 原样透出）。 */
+export async function sendDigestNow(
+  entryRefs: DigestEntryRefInput[],
+): Promise<MailIngestResult> {
+  const response = await rawRequest(`${API_BASE}/digest/send-now`, {
+    method: 'POST',
+    body: JSON.stringify({ entryRefs }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as MailIngestResult
+}
+
+// ---- phase2 G6：Obsidian 库（只读投影） ----
+
+/** Obsidian 扫描状态（错误时保留旧索引可见）。 */
+export async function getObsidianStatus(signal?: AbortSignal): Promise<ObsidianStatus> {
+  return request<ObsidianStatus>(`${API_BASE}/obsidian/status`, signal)
+}
+
+/** 连接 Vault（canonicalize 在服务端；503 vault_unreachable /
+ * 403 vault_permission_denied 的 error.message 由 UI 原样透出）。 */
+export async function updateObsidianSettings(vaultPath: string): Promise<ObsidianSettings> {
+  const response = await rawRequest(`${API_BASE}/obsidian/settings`, {
+    method: 'PUT',
+    body: JSON.stringify({ vaultPath }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianSettings
+}
+
+/** 重新扫描（有界扫描 + 改名检测；长任务语义，不接 AbortSignal）。 */
+export async function rescanObsidian(): Promise<ObsidianRescanResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/rescan`, { method: 'POST' })
+  return (await response.json()) as ObsidianRescanResult
+}
+
+/** 笔记列表（q 可选服务端过滤；limit 由页面界定）。 */
+export async function listObsidianNotes(
+  params: { q?: string | null; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<NoteListResponse> {
+  const query = new URLSearchParams()
+  if (params.q != null && params.q !== '') {
+    query.set('q', params.q)
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  const qs = query.toString()
+  return request<NoteListResponse>(`${API_BASE}/obsidian/notes?${qs}`, signal)
+}
+
+/** 单条笔记 Detail（含原始 markdown 渲染的 contentHtml —— 不可信输入，
+ * 渲染前必须过 lib/sanitize-article-html.ts；ref 为 `library:<uuid>`，
+ * 路径参数取 uuid 部分，与书签/剪藏同一模式）。 */
+export async function getObsidianNote(
+  noteRef: string,
+  signal?: AbortSignal,
+): Promise<NoteView> {
+  return request<NoteView>(
+    `${API_BASE}/obsidian/notes/${encodeURIComponent(toLibraryItemId(noteRef))}`,
+    signal,
+  )
+}
+
+// ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----
+
+/** 联合收藏视图（两个域各自保有所有权，BFF 只做展示合并）。 */
+export async function getFavorites(signal?: AbortSignal): Promise<FavoritesResponse> {
+  return request<FavoritesResponse>(`${API_BASE}/favorites`, signal)
+}
+
+/** 添加库收藏（幂等；POST 204）。 */
+export async function addLibraryFavorite(ref: string): Promise<void> {
+  await rawRequest(`${API_BASE}/favorites/library`, {
+    method: 'POST',
+    body: JSON.stringify({ ref }),
+    contentType: 'application/json',
+  })
+}
+
+/** 移除库收藏（DELETE 204；契约带 JSON body）。 */
+export async function removeLibraryFavorite(ref: string): Promise<void> {
+  await rawRequest(`${API_BASE}/favorites/library`, {
+    method: 'DELETE',
+    body: JSON.stringify({ ref }),
+    contentType: 'application/json',
+  })
+}
+
+// ---- phase2 G7/G8：Agent 工作台 / 标签 / 关系图谱 / RAG ----
+// 契约类型：generated schema 快照尚未收录本批端点（agent/tags/graph/rag
+// 不在 components['schemas'] 内，openapi 未再生成），按任务约定在本模块
+// 内以本地 interface 补齐（additive，不改既有导出）；字段与 BFF
+// models.py / routers 逐一对照（AgentThread / AgentMessage / TagBinding /
+// GraphResponse / Rag*）。
+
+export interface AgentThread {
+  id: string
+  title: string
+  createdAt: string
+}
+
+export interface AgentThreadListResponse {
+  items: AgentThread[]
+}
+
+export type AgentMessageRole = 'user' | 'assistant' | 'tool' | 'system' | 'approval'
+
+/** approval 消息 content：{approvalId, callId, tool, args, status, expiresInMinutes}。 */
+export interface AgentApprovalContent {
+  approvalId: string
+  callId: string
+  tool: string
+  args: Record<string, unknown>
+  status: string
+  expiresInMinutes?: number
+}
+
+export interface AgentMessage {
+  id: string
+  threadId: string
+  seq: number
+  role: AgentMessageRole
+  content: Record<string, unknown>
+  citations: string[]
+  createdAt: string
+}
+
+export interface AgentMessageListResponse {
+  items: AgentMessage[]
+}
+
+export type AgentApprovalDecision = 'approve' | 'reject'
+
+/** 会话列表（GET 语义）。 */
+export async function listAgentThreads(signal?: AbortSignal): Promise<AgentThreadListResponse> {
+  return request<AgentThreadListResponse>(`${API_BASE}/agent/threads`, signal)
+}
+
+/** 新建会话（POST 201，返回服务端确认的新线程）。 */
+export async function createAgentThread(): Promise<AgentThread> {
+  const response = await rawRequest(`${API_BASE}/agent/threads`, { method: 'POST' })
+  return (await response.json()) as AgentThread
+}
+
+/** 删除会话（破坏性；DELETE 204）。 */
+export async function deleteAgentThread(threadId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/agent/threads/${encodeURIComponent(threadId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 读回消息（after=N 增量；本页取全量 after=0，由 TanStack 缓存持有）。 */
+export async function listAgentMessages(
+  threadId: string,
+  after: number,
+  signal?: AbortSignal,
+): Promise<AgentMessageListResponse> {
+  return request<AgentMessageListResponse>(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/messages?after=${after}`,
+    signal,
+  )
+}
+
+/** 发送一轮用户输入（202 {status:'processing'}）；循环在服务端异步执行，
+ * 结果经 /messages 轮询（或 SSE）读回。 */
+export async function sendAgentMessage(threadId: string, text: string): Promise<{ status: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as { status: string }
+}
+
+/** 写操作批准/拒绝（服务端绑定 thread+call+args hash 后才执行真实写入）。 */
+export async function decideAgentApproval(
+  threadId: string,
+  approvalId: string,
+  decision: AgentApprovalDecision,
+): Promise<{ status: string; message: AgentMessage | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/approvals`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ approvalId, decision }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as { status: string; message: AgentMessage | null }
+}
+
+// ---- phase2 G8：标签（tags） ----
+
+export interface TagSummary {
+  id: number
+  name: string
+  count: number
+}
+
+export interface TagListResponse {
+  items: TagSummary[]
+}
+
+export interface TagAssignInput {
+  itemRef: string
+  name: string
+  origin?: string
+}
+
+/** 标签列表（q 可选服务端过滤；建议行不出现）。 */
+export async function listTags(q: string | null, signal?: AbortSignal): Promise<TagListResponse> {
+  const query = new URLSearchParams()
+  if (q != null && q !== '') {
+    query.set('q', q)
+  }
+  const qs = query.toString()
+  return request<TagListResponse>(`${API_BASE}/tags?${qs}`, signal)
+}
+
+/** 重命名标签（PATCH 200，返回更新后的 binding 视图）。 */
+export async function renameTag(tagId: number, name: string): Promise<unknown> {
+  const response = await rawRequest(`${API_BASE}/tags/${encodeURIComponent(String(tagId))}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as unknown
+}
+
+/** 删除标签（破坏性；DELETE 204）。 */
+export async function deleteTag(tagId: number): Promise<void> {
+  await rawRequest(`${API_BASE}/tags/${encodeURIComponent(String(tagId))}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 绑定标签（POST 201 TagBinding）。 */
+export async function assignTag(input: TagAssignInput): Promise<unknown> {
+  const response = await rawRequest(`${API_BASE}/tags/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ itemRef: input.itemRef, name: input.name, origin: input.origin ?? 'manual' }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as unknown
+}
+
+/** 解绑标签（DELETE 204，契约带 JSON body）。 */
+export async function unassignTag(input: TagAssignInput): Promise<void> {
+  await rawRequest(`${API_BASE}/tags/assign`, {
+    method: 'DELETE',
+    body: JSON.stringify({ itemRef: input.itemRef, name: input.name, origin: input.origin ?? 'manual' }),
+    contentType: 'application/json',
+  })
+}
+
+// ---- phase2 G8：关系图谱（graph，只读派生视图） ----
+
+export interface GraphNode {
+  ref: string
+  label: string
+  kind: string
+  degree: number
+}
+
+export interface GraphEdge {
+  src: string
+  dst: string
+  kind: string
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  truncated: boolean
+  totalNodes: number
+}
+
+/** 关系图谱（scope=all|workspace:<id>；max 上限由 BFF 钳制）。 */
+export async function getGraph(
+  scope: string,
+  max: number,
+  signal?: AbortSignal,
+): Promise<GraphResponse> {
+  const query = new URLSearchParams()
+  query.set('scope', scope)
+  query.set('max', String(max))
+  return request<GraphResponse>(`${API_BASE}/graph?${query}`, signal)
+}
+
+// ---- phase2 G7：RAG（显式启用 / 重建 / 混合检索；状态仅展示） ----
+
+export interface RagStatus {
+  enabled: boolean
+  chunks: number
+  model: string
+  vecTable: string | boolean
+  lastRebuildAt: string | null
+  lastError: string | null
+  fastembedAvailable: boolean
+}
+
+export interface RagSearchItem {
+  ref: string
+  kind: string
+  text: string
+  score: number
+}
+
+export interface RagSearchResponse {
+  items: RagSearchItem[]
+  semanticUsed: boolean
+  semanticError: string | null
+}
+
+/** RAG 状态（GET 语义，零成本；Agent 页状态 chip 用）。 */
+export async function getRagStatus(signal?: AbortSignal): Promise<RagStatus> {
+  return request<RagStatus>(`${API_BASE}/rag/status`, signal)
+}
+
+/** 显式启用语义索引（用户授权下载/加载嵌入模型）。 */
+export async function enableRag(): Promise<{ enabled: boolean }> {
+  const response = await rawRequest(`${API_BASE}/rag/enable`, { method: 'POST' })
+  return (await response.json()) as { enabled: boolean }
+}
+
+/** 重建索引（长任务语义；报告 chunks / elapsedMs）。 */
+export async function rebuildRag(): Promise<{ chunks: number; elapsedMs: number }> {
+  const response = await rawRequest(`${API_BASE}/rag/rebuild`, { method: 'POST' })
+  return (await response.json()) as { chunks: number; elapsedMs: number }
+}
+
+/** 混合检索（语义 + 关键词；honest degradation flags）。 */
+export async function searchRag(
+  q: string,
+  k: number,
+  signal?: AbortSignal,
+): Promise<RagSearchResponse> {
+  const query = new URLSearchParams()
+  query.set('q', q)
+  query.set('k', String(k))
+  return request<RagSearchResponse>(`${API_BASE}/rag/search?${query}`, signal)
 }

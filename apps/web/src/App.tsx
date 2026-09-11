@@ -1,8 +1,35 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
+import { useReadLaterServerSync } from './lib/read-later'
+
+/** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
+ * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */
+function handleShareTarget(): void {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('share') !== '1') return
+    const shared = params.get('url') ?? params.get('text') ?? ''
+    if (shared.startsWith('http://') || shared.startsWith('https://')) {
+      sessionStorage.setItem('lumirss-share-url', shared)
+      useReaderUi.getState().selectSection('clips')
+    }
+    params.delete('share')
+    params.delete('url')
+    params.delete('text')
+    params.delete('title')
+    const rest = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (rest ? `?${rest}` : ''),
+    )
+  } catch {
+    // share 处理绝不影响应用启动
+  }
+}
 import EntryList from './components/EntryList'
 import MobileHeader from './components/MobileHeader'
 import MobileNavigationDrawer from './components/MobileNavigationDrawer'
@@ -20,6 +47,17 @@ import { Skeleton } from './components/ui/Skeleton'
 const FavoritesPage = lazy(() => import('./components/pages/FavoritesPage'))
 const SearchPage = lazy(() => import('./components/pages/SearchPage'))
 const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPage'))
+// phase2 M1：书签 / 工作区列表页（与 Search 同模式：桌面 Timeline 列位）
+const BookmarksPage = lazy(() => import('./components/pages/BookmarksPage'))
+const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
+// phase2 M2：网页剪藏 / 网页快照列表页
+const ClipsPage = lazy(() => import('./components/pages/ClipsPage'))
+const SnapshotsPage = lazy(() => import('./components/pages/SnapshotsPage'))
+// phase2 G6：Obsidian 只读库
+const ObsidianPage = lazy(() => import('./components/pages/ObsidianPage'))
+// phase2 G7/G8：Agent 工作台 / 标签与图谱
+const AgentWorkbenchPage = lazy(() => import('./components/pages/AgentWorkbenchPage'))
+const GraphPage = lazy(() => import('./components/pages/GraphPage'))
 
 function PageSkeleton() {
   return (
@@ -50,12 +88,34 @@ export default function App() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   // 0010 Gate B：全局键盘快捷键（j/k/u/s；输入框聚焦时不劫持）
   useKeyboardShortcuts()
+  // phase2 M1：稍后读服务端同步（一次性迁移 + 缓存对账，挂载一次）
+  useReadLaterServerSync()
+  // phase2 M2：PWA Share Target 落地（挂载一次）
+  useEffect(handleShareTarget, [])
 
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
 
   const sidebarCollapsed = settings.sidebarCollapsed
   const timelineCollapsed = settings.timelineCollapsed
+
+  // phase2 修复：移动一级 section 区此前仅靠 lg:hidden 视觉隐藏，DOM 里
+  // 始终存在第二份 SearchPage/收藏页实例（live E2E 的 strict mode 抓到
+  // 重复文本）。JS 层判定 <1024 才挂载；matchMedia 不可用（jsdom）时
+  // 保持原渲染行为。
+  const [mobileViewport, setMobileViewport] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return true
+    }
+    return window.matchMedia('(max-width: 63.99rem)').matches
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(max-width: 63.99rem)')
+    const onChange = () => setMobileViewport(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   // §28：selection 从非空 → 空且 Timeline 当前隐藏 → 自动恢复（避免
   // “侧栏 + 巨大空白 Reader + 文章列表被藏”的状态）。基于 prev ref
@@ -120,12 +180,26 @@ export default function App() {
             页面必须让位——Reader 全屏（与首页 Timeline 相同的
             hidden-layout 契约），back 后返回原列表（section/view/scope
             不变）。桌面 lg 恒隐藏本区（用时间线三栏）。 */}
-        {section !== 'home' && (
+        {mobileViewport && section !== 'home' && (
           <section
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--lumi-surface)] lg:hidden ${
               selectedEntryRef !== null ? 'max-lg:hidden' : ''
             }`}
-            aria-label={section === 'subscriptions' ? '订阅' : section === 'search' ? '搜索' : '收藏'}
+            aria-label={
+              section === 'subscriptions'
+                ? '订阅'
+                : section === 'search'
+                  ? '搜索'
+                  : section === 'bookmarks'
+                    ? '书签'
+                    : section === 'workspaces'
+                      ? '工作区'
+                      : section === 'clips'
+                        ? '网页剪藏'
+                        : section === 'snapshots'
+                          ? '网页快照'
+                          : '收藏'
+            }
           >
             {section === 'subscriptions' && (
               <Suspense fallback={<PageSkeleton />}>
@@ -140,6 +214,41 @@ export default function App() {
             {section === 'favorites' && (
               <Suspense fallback={<PageSkeleton />}>
                 <FavoritesPage />
+              </Suspense>
+            )}
+            {section === 'bookmarks' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <BookmarksPage />
+              </Suspense>
+            )}
+            {section === 'workspaces' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <WorkspacesPage />
+              </Suspense>
+            )}
+            {section === 'clips' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <ClipsPage />
+              </Suspense>
+            )}
+            {section === 'snapshots' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SnapshotsPage />
+              </Suspense>
+            )}
+            {section === 'obsidian' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <ObsidianPage />
+              </Suspense>
+            )}
+            {section === 'agent' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <AgentWorkbenchPage />
+              </Suspense>
+            )}
+            {section === 'graph' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <GraphPage />
               </Suspense>
             )}
           </section>
@@ -161,11 +270,48 @@ export default function App() {
           style={{ '--lumi-timeline-width': `${settings.timelineWidth}px` } as React.CSSProperties}
         >
           {/* 0022：桌面（lg）搜索 = Timeline 列位；移动端走上方 section 区。
+              phase2 M1：书签/工作区列表同模式（桌面 Timeline 列位）。
               hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。 */}
           {section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <SearchPage />
+              </Suspense>
+            </div>
+          ) : section === 'bookmarks' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <BookmarksPage />
+              </Suspense>
+            </div>
+          ) : section === 'workspaces' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <WorkspacesPage />
+              </Suspense>
+            </div>
+          ) : section === 'clips' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <ClipsPage />
+              </Suspense>
+            </div>
+          ) : section === 'snapshots' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <SnapshotsPage />
+              </Suspense>
+            </div>
+          ) : section === 'obsidian' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <ObsidianPage />
+              </Suspense>
+            </div>
+          ) : section === 'agent' || section === 'graph' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
               </Suspense>
             </div>
           ) : (

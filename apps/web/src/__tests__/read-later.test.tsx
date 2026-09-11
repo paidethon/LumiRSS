@@ -190,9 +190,9 @@ describe('read-later 视图客户端过滤（§26/§41）', () => {
 })
 
 describe('EntryRow 动作按钮行为（§41）', () => {
-  it('点击稍后读按钮 → aria-pressed 切换（乐观，无网络请求）', async () => {
+  it('点击稍后读按钮 → aria-pressed 切换（乐观本地 + 服务端工作区双写）', async () => {
     const EntryRow = (await import('../components/EntryRow')).default
-    const fetchMock = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
     vi.stubGlobal('fetch', fetchMock)
     render(withProviders(<EntryRow item={item('e1.a')} selected={false} />))
 
@@ -200,8 +200,14 @@ describe('EntryRow 动作按钮行为（§41）', () => {
     expect(clock).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(clock)
     expect(screen.getByRole('button', { name: '从稍后读移除' })).toHaveAttribute('aria-pressed', 'true')
-    // 本地 marker：零网络请求（§36 最小数据层）
-    expect(fetchMock).not.toHaveBeenCalled()
+    // phase2 M1：真源是服务端保留工作区 read-later——乐观更新之外必须发起
+    // 幂等 add（服务端按 (workspace, ref) 去重）。
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/workspaces/read-later/items',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
   })
 })
 

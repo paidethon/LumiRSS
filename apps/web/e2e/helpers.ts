@@ -50,9 +50,15 @@ export async function closeMobileSettings(page: Page) {
   await expect(nav).toHaveAttribute('aria-expanded', 'false')
 }
 
-/** 等待应用完成首次数据加载（侧栏出现订阅区）。 */
+/** 等待应用完成首次数据加载（桌面：设置入口出现；移动：导航入口出现——
+ * 打开设置本身在抽屉内，要等打开导航后二次点击）。 */
 export async function waitForAppReady(page: Page) {
-  await expect(page.getByRole('button', { name: '打开设置' })).toBeVisible()
+  await expect(
+    page
+      .getByRole('button', { name: '打开设置' })
+      .or(page.getByRole('button', { name: '打开导航' }))
+      .first(),
+  ).toBeVisible()
 }
 
 /** 确保 BFF 侧存在 default AI key——AI journeys 自建前置（幂等）。

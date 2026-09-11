@@ -18,11 +18,11 @@ function renderModal() {
 }
 
 describe('SettingsModal — AC3（结构）', () => {
-  it('左导航渲染 13 个分类（备份与恢复已并入数据控制）', () => {
+  it('左导航渲染 15 个分类（G4/G5 新增 API 来源/邮件简报）', () => {
     renderModal()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     const items = nav.querySelectorAll('button')
-    expect(items).toHaveLength(13)
+    expect(items).toHaveLength(15)
     expect(screen.getByRole('button', { name: /通用/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /外观/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^阅读$/ })).toBeInTheDocument()

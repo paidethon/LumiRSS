@@ -766,13 +766,16 @@ class SearchIndexInfo(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Envelope for GET /api/v1/search."""
+    """Envelope for GET /api/v1/search (phase2 G6: + optional library
+    leg — additive fields, wire-compatible with older clients)."""
 
     items: list[SearchItem]
     nextCursor: str | None
     hasMore: bool
     elapsedMs: int
     index: SearchIndexInfo
+    library: list["LibrarySearchItem"] | None = None
+    libraryError: str | None = None
 
 
 class SearchRebuildResult(BaseModel):
@@ -782,3 +785,628 @@ class SearchRebuildResult(BaseModel):
     pages: int
     partial: bool
     elapsedMs: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M1) — bookmarks + workspaces + unified resolve
+# ---------------------------------------------------------------------------
+
+
+class BookmarkCreate(BaseModel):
+    """POST /api/v1/library/bookmarks — exactly one of url | rssItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str | None = None
+    rssItemRef: str | None = None
+    title: str
+    note: str = ""
+
+
+class BookmarkUpdate(BaseModel):
+    """PATCH /api/v1/library/bookmarks/{uuid} — both fields optional."""
+
+    model_config = {"extra": "forbid"}
+
+    title: str | None = None
+    note: str | None = None
+
+
+class Bookmark(BaseModel):
+    """One bookmark in the library domain (never carries RSS bodies)."""
+
+    ref: str
+    itemType: str
+    url: str | None = None
+    rssItemRef: str | None = None
+    title: str
+    note: str
+    createdAt: str
+
+
+class BookmarkListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/bookmarks."""
+
+    items: list[Bookmark]
+    nextCursor: str | None
+
+
+class BookmarkImportFailedItem(BaseModel):
+    """One per-item import failure: index, reason, and the offending URL."""
+
+    index: int
+    url: str
+    reason: str
+
+
+class BookmarkImportResult(BaseModel):
+    """Envelope for POST /api/v1/library/bookmarks/import."""
+
+    imported: int
+    skipped: int
+    failed: list[BookmarkImportFailedItem]
+
+
+class WorkspaceCreate(BaseModel):
+    """POST /api/v1/workspaces."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class WorkspaceRename(BaseModel):
+    """PATCH /api/v1/workspaces/{id}."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class Workspace(BaseModel):
+    """One workspace summary (read-later reports reserved=true)."""
+
+    id: str
+    name: str
+    position: int
+    itemCount: int
+    reserved: bool
+
+
+class WorkspaceListResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces."""
+
+    items: list[Workspace]
+
+
+class WorkspaceItemAddRequest(BaseModel):
+    """POST /api/v1/workspaces/{id}/items — one typed ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceItem(BaseModel):
+    """One workspace member (ref + ordering; content resolves separately)."""
+
+    itemRef: str
+    position: int
+    addedAt: str
+
+
+class WorkspaceItemsResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/items."""
+
+    items: list[WorkspaceItem]
+
+
+class WorkspaceReorderRequest(BaseModel):
+    """PATCH /api/v1/workspaces/{id}/items — refs in their new order."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRefs: list[str]
+
+
+class ResolvedItem(BaseModel):
+    """Unified ViewModel for UnifiedContentCard (report 12 §3)."""
+
+    ref: str
+    domain: str
+    kind: str
+    title: str
+    source: str
+    datetime: str | None = None
+    excerpt: str | None = None
+    url: str | None = None
+    stale: bool = False
+    payload: dict[str, object] = {}
+
+
+class WorkspaceItemsResolvedResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/contents (resolved views)."""
+
+    items: list[ResolvedItem]
+
+
+class ResolveRequest(BaseModel):
+    """POST /api/v1/resolve — resolve one or more ItemRefs."""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M2) — web clips + offline snapshots
+# ---------------------------------------------------------------------------
+
+
+class ClipFetchRequest(BaseModel):
+    """POST /api/v1/library/clips/fetch — server-side bounded fetch."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+
+
+class ClipFetchResult(BaseModel):
+    """Raw fetched page handed to the browser extractor."""
+
+    url: str
+    finalUrl: str
+    html: str
+
+
+class ClipCreate(BaseModel):
+    """POST /api/v1/library/clips — extracted content from the client."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+    title: str
+    byline: str | None = None
+    contentHtml: str
+    contentText: str
+    fetchedAt: str | None = None
+
+
+class Clip(BaseModel):
+    """One clip in the library domain."""
+
+    ref: str
+    url: str
+    title: str
+    byline: str | None = None
+    fetchedAt: str
+    createdAt: str
+
+
+class ClipDetail(Clip):
+    """Clip with its (sanitized-at-origin) content."""
+
+    contentHtml: str
+    contentText: str
+
+
+class ClipListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/clips."""
+
+    items: list[Clip]
+    nextCursor: str | None
+
+
+class SnapshotCreate(BaseModel):
+    """POST /api/v1/library/snapshots."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+
+
+class SnapshotView(BaseModel):
+    """One stored snapshot asset."""
+
+    uuid: str
+    itemRef: str
+    url: str
+    bytes: int
+    sha256: str
+    deduplicated: bool = False
+    createdAt: str
+
+
+class SnapshotUsage(BaseModel):
+    """Honest quota accounting for saved snapshots."""
+
+    count: int
+    bytes: int
+    quotaBytes: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M3) — API sources v1
+# ---------------------------------------------------------------------------
+
+
+class ApiSourceCreate(BaseModel):
+    """POST /api/v1/api-sources."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+    subscribe: bool = True
+
+
+class ApiSourceUpdate(BaseModel):
+    """PATCH /api/v1/api-sources/{uuid} — all fields optional."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str | None = None
+    endpoint: str | None = None
+    itemsExpr: str | None = None
+    fieldMap: dict[str, str] | None = None
+    enabled: bool | None = None
+
+
+class ApiSource(BaseModel):
+    """One API source config (secret/atomPath only on create)."""
+
+    uuid: str
+    name: str
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+    enabled: bool
+    lastStatus: str | None = None
+    lastSuccessAt: str | None = None
+    lastError: str | None = None
+    createdAt: str
+    secret: str | None = None
+    atomPath: str | None = None
+    subscribeError: str | None = None
+
+
+class ApiSourceListResponse(BaseModel):
+    """Envelope for GET /api/v1/api-sources."""
+
+    items: list[ApiSource]
+
+
+class ApiSourcePreviewRequest(BaseModel):
+    """POST /api/v1/api-sources/preview — nothing is saved."""
+
+    model_config = {"extra": "forbid"}
+
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+
+
+class ApiSourcePreviewResult(BaseModel):
+    """Bounded preview (≤5 mapped items)."""
+
+    items: list[dict[str, object]]
+    totalAvailable: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G5) — mail bridge + digest
+# ---------------------------------------------------------------------------
+
+
+class MailBridgeList(BaseModel):
+    """One bridge list (secret never echoed after creation)."""
+
+    uuid: str
+    name: str
+    createdAt: str
+
+
+class MailBridgeListCreated(MailBridgeList):
+    """Creation response — the only time the bearer secret is visible."""
+
+    secret: str
+
+
+class MailBridgeListCreate(BaseModel):
+    """POST /api/v1/mail/bridge-lists."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class MailBridgeListResponse(BaseModel):
+    """Envelope for GET /api/v1/mail/bridge-lists."""
+
+    items: list[MailBridgeList]
+
+
+class MailIngestResult(BaseModel):
+    """Honest ingest/send report."""
+
+    status: str
+    messageId: str = ""
+    subject: str | None = None
+    attachments: int = 0
+
+
+class DigestSettings(BaseModel):
+    """Outbound digest configuration (password never returned)."""
+
+    enabled: bool
+    hour: int
+    source: str
+    limitCount: int
+    smtpHost: str
+    smtpPort: int
+    smtpUser: str
+    fromAddr: str
+    toAddr: str
+    lastSentAt: str | None = None
+    lastError: str | None = None
+    passwordConfigured: bool = False
+
+
+class DigestSettingsUpdate(BaseModel):
+    """PUT /api/v1/digest/settings — partial; password write-only."""
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool | None = None
+    hour: int | None = None
+    source: str | None = None
+    limitCount: int | None = None
+    smtpHost: str | None = None
+    smtpPort: int | None = None
+    smtpUser: str | None = None
+    fromAddr: str | None = None
+    toAddr: str | None = None
+    smtpPassword: str | None = None
+
+
+class DigestSendNowRequest(BaseModel):
+    """POST /api/v1/digest/send-now — explicit item selection."""
+
+    model_config = {"extra": "forbid"}
+
+    entryRefs: list[dict[str, str]]
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G6) — Obsidian projection + unified views
+# ---------------------------------------------------------------------------
+
+
+class ObsidianNoteSetting(BaseModel):
+    """PUT /api/v1/obsidian/settings."""
+
+    model_config = {"extra": "forbid"}
+
+    vaultPath: str
+
+
+class ObsidianSettings(BaseModel):
+    """Vault root (canonicalized) + honest note count."""
+
+    vaultPath: str
+    noteCount: int
+
+
+class ObsidianStatus(BaseModel):
+    """Honest scanner status (error keeps the old index visible)."""
+
+    vaultPath: str
+    lastScanAt: str | None = None
+    lastError: str | None = None
+    noteCount: int = 0
+
+
+class ObsidianRescanResult(BaseModel):
+    """Bounded scan report with rename detection."""
+
+    added: int
+    changed: int
+    removed: int
+    renames: int
+    unchanged: int
+    skipped: int
+    elapsedMs: int
+    vaultPath: str = ""
+
+
+class NoteView(BaseModel):
+    """One projected note; contentHtml only on detail (client sanitizes)."""
+
+    ref: str
+    relPath: str
+    title: str
+    tags: list[str] = []
+    indexedAt: str
+    wikilinks: list[str] | None = None
+    contentHtml: str | None = None
+
+
+class NoteListResponse(BaseModel):
+    """Envelope for GET /api/v1/obsidian/notes."""
+
+    items: list[NoteView]
+
+
+class LibrarySearchItem(BaseModel):
+    """Library leg of unified search (same shape philosophy as SearchItem)."""
+
+    ref: str
+    kind: str
+    title: str
+    url: str | None = None
+    snippet: str = ""
+    updatedAt: str
+
+
+class FavoritesResponse(BaseModel):
+    """Federated favorites: rss star + library favorite, merged for
+    display only — each stays owned by its own domain."""
+
+    rss: list[SearchItem]
+    library: list[LibrarySearchItem]
+    libraryError: str | None = None
+
+
+class LibraryFavoriteRequest(BaseModel):
+    """POST/DELETE /api/v1/favorites/library — one ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    ref: str
+
+
+class SnapshotListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/snapshots."""
+
+    items: list[SnapshotView]
+    usage: SnapshotUsage
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G7/G8) — RAG + Agent workbench
+# ---------------------------------------------------------------------------
+
+
+class AgentThread(BaseModel):
+    """One conversation thread."""
+
+    id: str
+    title: str
+    createdAt: str
+
+
+class AgentThreadListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads."""
+
+    items: list[AgentThread]
+
+
+class AgentMessageCreate(BaseModel):
+    """POST /api/v1/agent/threads/{id}/messages."""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+
+
+class AgentApprovalDecision(BaseModel):
+    """POST /api/v1/agent/threads/{id}/approvals."""
+
+    model_config = {"extra": "forbid"}
+
+    approvalId: str
+    decision: str
+
+
+class RagSearchItem(BaseModel):
+    """One fused retrieval hit (ref resolves to real content)."""
+
+    ref: str
+    kind: str
+    text: str
+    score: float
+
+
+class RagSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/rag/search (honest degradation flags)."""
+
+    items: list[RagSearchItem]
+    semanticUsed: bool
+    semanticError: str | None = None
+
+
+class RagRebuildResult(BaseModel):
+    """Bounded rebuild report."""
+
+    chunks: int
+    elapsedMs: int
+
+
+class RagEnableResult(BaseModel):
+    """Explicit model-enable acknowledgement."""
+
+    enabled: bool
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G8) — tags + derived graph
+# ---------------------------------------------------------------------------
+
+
+class TagBinding(BaseModel):
+    """One tag or binding view."""
+
+    id: int | None = None
+    name: str
+    count: int = 0
+    ref: str | None = None
+    origin: str | None = None
+    status: str | None = None
+
+
+class TagListResponse(BaseModel):
+    """Envelope for GET /api/v1/tags (suggested rows never appear)."""
+
+    items: list[TagBinding]
+
+
+class TagAssignRequest(BaseModel):
+    """POST /api/v1/tags/assign — attach one tag to one ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+    name: str
+    origin: str = "manual"
+
+
+class TagRenameRequest(BaseModel):
+    """PATCH /api/v1/tags/{id}."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class TagSuggestionsResponse(BaseModel):
+    """AI suggestions — computed only, never stored until accepted."""
+
+    suggestions: list[str]
+
+
+class GraphNode(BaseModel):
+    """One derived graph node (item | tag | workspace | wikilink)."""
+
+    ref: str
+    label: str
+    kind: str
+    degree: int = 0
+
+
+class GraphEdge(BaseModel):
+    """One derived edge."""
+
+    src: str
+    dst: str
+    kind: str
+
+
+class GraphResponse(BaseModel):
+    """Envelope for GET /api/v1/graph (truncation reported honestly)."""
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    truncated: bool
+    totalNodes: int

@@ -6,6 +6,8 @@ request handler never constructs upstream clients directly.
 
 
 
+from pathlib import Path
+
 from fastapi import Request
 from pydantic import ValidationError
 
@@ -16,6 +18,9 @@ from lumirss.adapters.freshrss import (
 from lumirss.adapters.freshrss_control import (
     FreshRSSControlAdapter,
 )
+from lumirss.agent import AgentLoop
+from lumirss.agent_store import AgentStore
+from lumirss.agent_tools import build_registry
 from lumirss.ai_conversation import ConversationService
 from lumirss.ai_profiles import (
     AiProfileStore,
@@ -29,6 +34,7 @@ from lumirss.ai_translation import TranslationService
 from lumirss.ai_translation_segments import (
     SegmentTranslationService,
 )
+from lumirss.api_source_store import ApiSourceStore
 from lumirss.app_settings import (
     AppSettingsStore,
 )
@@ -38,10 +44,18 @@ from lumirss.backup import (
     WebDavSettingsStore,
 )
 from lumirss.config import FreshRSSSettings, LumiSettings
+from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+from lumirss.favorites import FavoritesService
 from lumirss.feed_preview import (
     FeedPreviewService,
 )
+from lumirss.library import LibraryStore
+from lumirss.library_assets import AssetStore
+from lumirss.library_clips import ClipStore
+from lumirss.mail_bridge import MailBridgeStore
+from lumirss.obsidian import ObsidianService
 from lumirss.operations import OperationsService
+from lumirss.rag import RagService
 from lumirss.restore import (
     RestoreService,
 )
@@ -53,10 +67,14 @@ from lumirss.rsshub_control import (
     RssHubCustomCredentialStore,
 )
 from lumirss.search_index import SearchIndexService
+from lumirss.search_library import LibrarySearchWriter
 from lumirss.secrets_store import SecretsStore
+from lumirss.snapshots import SnapshotJobRunner
 from lumirss.source_discovery import (
     SourceDiscoveryService,
 )
+from lumirss.tags import TagStore
+from lumirss.workspaces import WorkspaceStore
 
 
 def _cached_on_app_state(request: Request, attr: str, build):
@@ -364,5 +382,268 @@ def _get_search_service(request: Request) -> SearchIndexService:
         return SearchIndexService(request.app.state.db, adapter)
 
     return _cached_on_app_state(request, "search_service", build)
+
+
+def _get_library_store(request: Request) -> LibraryStore:
+    """Library domain store (phase2 M1) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "library_store",
+        lambda: LibraryStore(request.app.state.db),
+    )
+
+
+def _get_clip_store(request: Request) -> ClipStore:
+    """Web clip store (phase2 M2) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "clip_store",
+        lambda: ClipStore(request.app.state.db),
+    )
+
+
+def _get_snapshot_store(request: Request) -> AssetStore:
+    """Snapshot asset store (phase2 M2) under the Lumi data directory."""
+
+    def build() -> AssetStore:
+        settings = LumiSettings()
+        return AssetStore(
+            request.app.state.db,
+            Path(settings.data_dir) / "library" / "assets",
+        )
+
+    return _cached_on_app_state(request, "asset_store", build)
+
+
+def _get_api_source_store(request: Request) -> ApiSourceStore:
+    """API source config store (phase2 M3) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "api_source_store",
+        lambda: ApiSourceStore(request.app.state.db),
+    )
+
+
+def _get_library_search_writer(request: Request) -> LibrarySearchWriter:
+    """Library search projection writer (phase2 G6 unified view)."""
+    return _cached_on_app_state(
+        request,
+        "library_search_writer",
+        lambda: LibrarySearchWriter(request.app.state.db),
+    )
+
+
+def _get_obsidian_service(request: Request) -> ObsidianService:
+    """Read-only vault projection service (phase2 G6)."""
+    return _cached_on_app_state(
+        request,
+        "obsidian_service",
+        lambda: ObsidianService(request.app.state.db),
+    )
+
+
+def _get_favorites_service(request: Request) -> FavoritesService:
+    """Federated favorites (rss star + library favorite) service."""
+    return _cached_on_app_state(
+        request,
+        "favorites_service",
+        lambda: FavoritesService(
+            request.app.state.db, _get_library_search_writer(request)
+        ),
+    )
+
+
+def _get_mail_bridge_store(request: Request) -> MailBridgeStore:
+    """Newsletter bridge store (phase2 G5) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "mail_bridge_store",
+        lambda: MailBridgeStore(request.app.state.db),
+    )
+
+
+def _get_tag_store(request: Request) -> TagStore:
+    """Unified tag store (phase2 G8) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "tag_store",
+        lambda: TagStore(request.app.state.db),
+    )
+
+
+def _get_rag_service(request: Request) -> RagService:
+    """RAG projection service (phase2 G7) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "rag_service",
+        lambda: RagService(request.app.state.db),
+    )
+
+
+def _get_agent_store(request: Request) -> AgentStore:
+    """Agent threads/messages/approvals store (phase2 G7)."""
+    return _cached_on_app_state(
+        request,
+        "agent_store",
+        lambda: AgentStore(request.app.state.db),
+    )
+
+
+def _get_agent_loop(request: Request) -> AgentLoop:
+    """Agent loop with the hardcoded tool whitelist on real services."""
+
+    def build() -> AgentLoop:
+        from lumirss.adapters.freshrss import FreshRSSAdapter
+
+        try:
+            adapter = FreshRSSAdapter(
+                request.app.state.http_client, FreshRSSSettings()
+            )
+        except (ConfigError, ValidationError):
+            adapter = None
+        from lumirss.search_library import rss_keyword_search
+
+        async def rss_search(query: str, limit: int = 5):
+            return await rss_keyword_search(request.app.state.db, query, limit)
+
+        registry = build_registry(
+            rss_search=rss_search,
+            library_search=_get_library_search_writer(request),
+            rag=_get_rag_service(request),
+            adapter=adapter,
+            library=_get_library_store(request),
+            workspaces=_get_workspace_store(request),
+            tags=_get_tag_store(request),
+            obsidian=_get_obsidian_service(request)
+            if request.app.state.obsidian_service is not None
+            else None,
+        )
+        return AgentLoop(
+            _get_agent_store(request),
+            registry,
+            lambda: _provider_or_none(request),
+        )
+
+    return _cached_on_app_state(request, "agent_loop", build)
+
+
+async def _provider_or_none(request: Request):
+    """Agent provider factory: None when AI is unconfigured (honest)."""
+    try:
+        provider_factory = _provider_factory_for(request, "chat")
+        effective = await _get_ai_profile_store(request).effective_config(
+            "chat", await _get_ai_settings_store(request).load(), ""
+        )
+        if not effective.base_url or not effective.model:
+            return None
+        from lumirss.ai_provider import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider(
+            request.app.state.http_client,
+            base_url=effective.base_url,
+            model=effective.model,
+            api_key=effective.api_key or "",
+        )
+    except Exception:  # noqa: BLE001 — unconfigured → honest unavailable
+        return None
+    _ = provider_factory
+
+
+def _get_snapshot_runner(request: Request) -> SnapshotJobRunner:
+    """Serial monolith job runner over the snapshot asset store."""
+    return _cached_on_app_state(
+        request,
+        "snapshot_runner",
+        lambda: SnapshotJobRunner(_get_snapshot_store(request)),
+    )
+
+
+def _get_workspace_store(request: Request) -> WorkspaceStore:
+    """Workspace store (phase2 M1) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "workspace_store",
+        lambda: WorkspaceStore(request.app.state.db),
+    )
+
+
+def _get_source_registry(request: Request) -> dict:
+    """Source Registry (phase2 M1): domain → async resolver.
+
+    The rss resolver wraps the shared FreshRSSAdapter read path; the
+    library resolver reads Lumi-owned rows. A missing FreshRSS config
+    degrades rss resolves to stale views instead of failing workspaces.
+    """
+
+    def build() -> dict:
+        from lumirss.sources import ResolvedItem, excerpt_of, register_resolver
+
+        registry: dict = {}
+
+        async def resolve_rss(entry_ref: str) -> ResolvedItem | None:
+            from lumirss.adapters.freshrss import EntryNotFound
+
+            adapter = request.app.state.freshrss_adapter
+            if adapter is None:
+                try:
+                    adapter = FreshRSSAdapter(
+                        request.app.state.http_client, FreshRSSSettings()
+                    )
+                    request.app.state.freshrss_adapter = adapter
+                except (ConfigError, ValidationError):
+                    adapter = None
+            if adapter is None:
+                return ResolvedItem(
+                    ref=f"rss:{entry_ref}",
+                    domain="rss",
+                    kind="rss",
+                    title="RSS 未配置",
+                    source="rss",
+                    stale=True,
+                )
+            try:
+                # The adapter speaks upstream item ids; refs arrive as
+                # entryRef envelopes (same contract as GET /entries/{ref}).
+                item_id = decode_entry_ref(entry_ref)
+                detail = await adapter.get_entry(item_id)
+            except (EntryNotFound, InvalidEntryReference):
+                return None
+            return ResolvedItem(
+                ref=f"rss:{entry_ref}",
+                domain="rss",
+                kind="rss",
+                title=detail.title,
+                source=detail.feedTitle,
+                datetime=detail.publishedAt,
+                excerpt=excerpt_of(detail.contentText),
+                url=detail.url,
+                payload={"entryRef": entry_ref},
+            )
+
+        async def resolve_library(item_uuid: str) -> ResolvedItem | None:
+            view = await _get_library_store(request).get_library_item(item_uuid)
+            if view is None:
+                return None
+            return ResolvedItem(
+                ref=view.ref,
+                domain="library",
+                kind="bookmark",
+                title=view.title,
+                source="库",
+                datetime=view.created_at,
+                excerpt=excerpt_of(view.note or view.url),
+                url=view.url,
+                payload=(
+                    {"itemType": view.item_type, "rssItemRef": view.rss_item_ref}
+                    if view.item_type == "rss"
+                    else {"itemType": view.item_type}
+                ),
+            )
+
+        register_resolver(registry, "rss", resolve_rss)
+        register_resolver(registry, "library", resolve_library)
+        return registry
+
+    return _cached_on_app_state(request, "source_registry", build)
 
 

@@ -26,6 +26,8 @@ async function searchFor(page: Page, box: ReturnType<Page['getByRole']>, query: 
 }
 
 test.describe('搜索 — 桌面（1440）', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'desktop-only')
+
   test.beforeEach(async ({ context }) => {
     // 隔离 localStorage（搜索历史跨运行残留会改变空态形态）
     await context.addInitScript(() => localStorage.clear())
@@ -45,10 +47,12 @@ test.describe('搜索 — 桌面（1440）', () => {
     const snippet = page.locator('ul[aria-label="搜索结果"] span').filter({ hasText: /…|。|，/ }).first()
     await expect(snippet).not.toContainText('<')
 
-    // 打开 → Reader；返回 → 查询与结果保持
+    // 打开 → Reader（桌面三栏：Reader 出现在右栏；「返回文章列表」是
+    // <1024 的移动头部控件，1440 下不存在）。Escape 清空选择 → 查询与
+    // 结果保持。
     await firstResult.click()
-    await expect(page.getByRole('button', { name: '返回文章列表' })).toBeVisible({ timeout: 10_000 })
-    await page.getByRole('button', { name: '返回文章列表' }).click()
+    await expect(page.locator('article').first()).toBeVisible({ timeout: 10_000 })
+    await page.keyboard.press('Escape')
     await expect(page.getByRole('searchbox', { name: '搜索' }).first()).toBeVisible()
     await expect(page.getByRole('button', { name: /科技爱好者周刊/ }).first()).toBeVisible()
   })
@@ -68,9 +72,10 @@ test.describe('搜索 — 桌面（1440）', () => {
     await searchFor(page, box, '周刊')
     await expect(page.locator('ul[aria-label="搜索结果"] li').first()).toBeVisible({ timeout: 15_000 })
 
-    await page.getByRole('button', { name: '未读', exact: true }).click()
+    // 搜索结果列表内的过滤 chip（侧栏信息来源区也有同名 chip，必须限定作用域）
+    await page.getByLabel('搜索范围').getByRole('button', { name: '未读', exact: true }).click()
     await page.waitForTimeout(600) // 防抖 + 查询
-    await page.getByRole('button', { name: '收藏', exact: true }).click()
+    await page.getByLabel('搜索范围').getByRole('button', { name: '收藏', exact: true }).click()
     await page.waitForTimeout(600)
     await page.getByRole('combobox', { name: '按分类过滤' }).selectOption({ index: 1 })
     await page.waitForTimeout(600)

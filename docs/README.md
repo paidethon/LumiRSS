@@ -4,8 +4,9 @@ LumiRSS 是一个单用户、自托管、source-first 的信息阅读器：Fresh
 RSS 域引擎与真源，RSSHub 生成非 RSS 来源，项目自有的 FastAPI BFF 与
 React Web / PWA 客户端。
 
-项目阶段：**MVP 稳定化**（已完成 0000–0020 与安全/搜索/部署生命周期等
-后续合并）。下一步计划见 [ROADMAP.md](ROADMAP.md)；已完成工作见
+项目阶段：**Phase 2 知识工作台**（MVP 0000–0020 已完成；phase2
+integration 分支按 [ROADMAP.md](ROADMAP.md) 与
+[research/phase2/](research/phase2/README.md) 推进）。已完成工作见
 [history/milestones.md](history/milestones.md)。
 
 首次接触本项目：先读根目录 [README](../README.md)，再按

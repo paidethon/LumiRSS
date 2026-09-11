@@ -19,9 +19,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Search, X } from 'lucide-react'
 import { useFeeds, useSearch } from '../../api/queries'
+import type { LibrarySearchItem } from '../../api/client'
 import type { SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
-import { formatPublishedAt } from '../../lib/date-format'
+import { dateTimeFormatter, formatPublishedAt } from '../../lib/date-format'
 import {
   clearSearchHistory,
   pushSearchHistory,
@@ -49,6 +50,84 @@ function useDebouncedValue(value: string, delayMs = 300): string {
     return () => clearTimeout(timer)
   }, [value, delayMs])
   return debounced
+}
+
+// ---- 库分组（phase2 G6：/search 响应的 additive library 腿） ----
+
+const LIBRARY_KIND_LABELS: Record<string, string> = {
+  bookmark: '书签',
+  clip: '剪藏',
+  obsidian_note: '笔记',
+  snapshot: '快照',
+}
+
+function libraryKindLabel(kind: string): string {
+  return LIBRARY_KIND_LABELS[kind] ?? kind
+}
+
+/** ISO 时间戳 → 相对时间（库结果行的 updatedAt）；无效回退绝对时间。 */
+function formatRelative(iso: string | null | undefined): string {
+  if (iso === null || iso === undefined || iso === '') return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} 天前`
+  return dateTimeFormatter.format(date)
+}
+
+/** 库搜索结果分组：标题行 / kind 徽标 / snippet（纯文本，不进 HTML）/
+ * updatedAt 相对时间；libraryError 时小字诚实提示（库腿失败不影响
+ * RSS 结果展示）。items 为空且无 error → 不渲染。 */
+function LibraryGroup({
+  items,
+  error,
+}: {
+  items: LibrarySearchItem[]
+  error: string | null
+}) {
+  if (items.length === 0 && error === null) return null
+  return (
+    <section className="mt-5" aria-label="库搜索结果">
+      <h3 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+        库
+      </h3>
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {items.map((item) => (
+            <li
+              key={item.ref}
+              className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] px-3.5 py-3"
+            >
+              <span className="flex min-w-0 items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+                <span className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px]">
+                  {libraryKindLabel(item.kind)}
+                </span>
+                <span className="ml-auto shrink-0">{formatRelative(item.updatedAt)}</span>
+              </span>
+              <span className="line-clamp-2 text-sm font-medium text-[var(--lumi-text-primary)]">
+                {item.title}
+              </span>
+              {item.snippet !== '' && (
+                <span className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                  {item.snippet}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error !== null && (
+        <p role="status" className="px-1 pt-1 text-xs text-[var(--lumi-text-secondary)]">
+          库搜索暂不可用：{error}
+        </p>
+      )}
+    </section>
+  )
 }
 
 function ResultRow({ item }: { item: SearchItem }) {
@@ -141,6 +220,16 @@ export default function SearchPage() {
     [data],
   )
   const indexInfo = data?.pages.at(-1)?.index
+  // phase2 G6：库腿（additive 字段）——多页合并；libraryError 取第一个
+  // 非 null 页错误（诚实小字展示，不阻塞 RSS 结果）。
+  const libraryHits = useMemo(
+    () => data?.pages.flatMap((page) => page.library ?? []) ?? [],
+    [data],
+  )
+  const libraryError = useMemo(
+    () => data?.pages.map((page) => page.libraryError ?? null).find((m) => m !== null) ?? null,
+    [data],
+  )
 
   // 无限滚动（与 EntryList / FavoritesPage 同一模式）
   const sentinelRef = useRef<HTMLLIElement>(null)
@@ -295,7 +384,7 @@ export default function SearchPage() {
           </section>
         )}
 
-        {/* 结果 / 诚实状态 */}
+        {/* 结果 / 诚实状态（库分组在 RSS 结果之后追加，不影响既有行为） */}
         {hasQuery ? (
           isPending ? (
             <ul className="mt-4 flex flex-col gap-2" aria-label="搜索中">
@@ -320,7 +409,7 @@ export default function SearchPage() {
             </div>
           ) : results.length === 0 ? (
             <div className="mt-6">
-              {(indexInfo?.entryCount ?? 0) === 0 ? (
+              {(indexInfo?.entryCount ?? 0) === 0 && libraryHits.length === 0 ? (
                 <EmptyState
                   icon={<Search aria-hidden className="size-8" />}
                   title="搜索索引还没有内容"
@@ -333,6 +422,7 @@ export default function SearchPage() {
                   description="试试更短的关键词，或放宽过滤器。"
                 />
               )}
+              <LibraryGroup items={libraryHits} error={libraryError} />
             </div>
           ) : (
             <>
@@ -353,6 +443,7 @@ export default function SearchPage() {
                   {hasNextPage ? '+ 条结果' : ' 条结果'}
                 </p>
               )}
+              <LibraryGroup items={libraryHits} error={libraryError} />
             </>
           )
         ) : history.length === 0 ? (

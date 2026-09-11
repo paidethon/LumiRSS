@@ -106,6 +106,76 @@ class AIProvider(Protocol):
         """Return a plain-text summary of ``text`` in ``language``."""
         ...
 
+    async def chat_completion(
+        self,
+        *,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> dict:
+        """One chat/completions call with optional tool definitions.
+
+        Returns the raw assistant message dict (content and/or tool_calls
+        as the provider shaped them); error mapping identical to
+        ``complete``. Used by the agent loop (phase2 G7) only.
+        """
+        if not self._config.is_complete():
+            raise AiNotConfigured(
+                "AI is not configured. Set the API key on the server and "
+                "configure a base URL and model in AI settings."
+            )
+        payload: dict = {
+            "model": self._config.model,
+            "messages": messages,
+            "temperature": 0.3,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+        headers = {
+            "Authorization": f"Bearer {self._config.api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{self._config.base_url}/chat/completions"
+        try:
+            response = await self._client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=httpx.Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT),
+            )
+        except httpx.TimeoutException as exc:
+            raise AiTimeout(
+                "The AI provider did not respond in time. Please retry."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise AiUpstreamError(
+                "Could not reach the AI provider. Check the base URL."
+            ) from exc
+        if response.status_code in (401, 403):
+            raise AiAuthError(
+                "The AI provider rejected the API key (server-side)."
+            )
+        if response.status_code == 404:
+            raise AiModelError(
+                "The configured model or endpoint was not found."
+            )
+        if response.status_code == 429:
+            raise AiRateLimited(
+                "The AI provider rate-limited this server. Please retry later."
+            )
+        if response.status_code >= 400:
+            raise AiUpstreamError(
+                f"The AI provider returned HTTP {response.status_code}."
+            )
+        try:
+            body = response.json()
+            message = body["choices"][0]["message"]
+        except Exception as exc:
+            raise AiInvalidResponse(
+                "The AI provider returned an unexpected response shape."
+            ) from exc
+        return message
+
     async def complete(self, *, messages: list[dict[str, str]]) -> str:
         """One chat/completions call over the given message list.
 

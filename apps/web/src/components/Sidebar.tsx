@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Clock,
   FileText,
+  FolderOpen,
   Globe,
   Inbox,
   Link2,
@@ -512,14 +513,53 @@ function Sidebar({
           onAddSource={isDesktop ? () => setAddSourceOpen(true) : undefined}
         />
 
-        {/* Phase 2 信息来源项（可见禁用） */}
+        {/* phase2 M1：书签（library 域）已可用——section 导航，替代原
+            Phase 2 禁用占位（保持同位置，信息来源组内）。
+            phase2 Gate 3：网页剪藏 / 网页快照同样激活为 section 导航。 */}
         <div className="mt-1 flex flex-col gap-0.5">
-          <PlannedItem icon={<Globe aria-hidden className={icon16} />} label="网页剪藏" />
-          <PlannedItem icon={<Link2 aria-hidden className={icon16} />} label="网页快照" />
+          <NavItem
+            active={section === 'bookmarks'}
+            onClick={() => {
+              selectSection('bookmarks')
+              onNavigate?.()
+            }}
+          >
+            <Bookmark aria-hidden className={icon16} />
+            书签
+          </NavItem>
+          <NavItem
+            active={section === 'clips'}
+            onClick={() => {
+              selectSection('clips')
+              onNavigate?.()
+            }}
+          >
+            <Globe aria-hidden className={icon16} />
+            网页剪藏
+          </NavItem>
+          <NavItem
+            active={section === 'snapshots'}
+            onClick={() => {
+              selectSection('snapshots')
+              onNavigate?.()
+            }}
+          >
+            <Link2 aria-hidden className={icon16} />
+            网页快照
+          </NavItem>
           <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
           <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
-          <PlannedItem icon={<Bookmark aria-hidden className={icon16} />} label="书签" />
-          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="Obsidian 库" />
+          {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
+          <NavItem
+            active={section === 'obsidian'}
+            onClick={() => {
+              selectSection('obsidian')
+              onNavigate?.()
+            }}
+          >
+            <FileText aria-hidden className={icon16} />
+            Obsidian 库
+          </NavItem>
         </div>
       </div>
 
@@ -565,10 +605,42 @@ function Sidebar({
           搜索
         </NavItem>
 
+        {/* phase2 M1：工作区列表页（section=workspaces；桌面 Timeline 列位） */}
+        <NavItem
+          active={section === 'workspaces'}
+          onClick={() => {
+            selectSection('workspaces')
+            onNavigate?.()
+          }}
+        >
+          <FolderOpen aria-hidden className={icon16} />
+          工作区
+        </NavItem>
+
         <div className="mt-1 flex flex-col gap-0.5">
-          <PlannedItem icon={<Bot aria-hidden className={icon16} />} label="Agent 工作台" />
+          {/* phase2 G7：Agent 工作台已可用——section 导航。 */}
+          <NavItem
+            active={section === 'agent'}
+            onClick={() => {
+              selectSection('agent')
+              onNavigate?.()
+            }}
+          >
+            <Bot aria-hidden className={icon16} />
+            Agent 工作台
+          </NavItem>
           <PlannedItem icon={<Zap aria-hidden className={icon16} />} label="RAG 索引" />
-          <PlannedItem icon={<Tags aria-hidden className={icon16} />} label="标签 / 图谱" />
+          {/* phase2 G8：标签 / 图谱已可用——section 导航。 */}
+          <NavItem
+            active={section === 'graph'}
+            onClick={() => {
+              selectSection('graph')
+              onNavigate?.()
+            }}
+          >
+            <Tags aria-hidden className={icon16} />
+            标签 / 图谱
+          </NavItem>
         </div>
       </div>
     </nav>

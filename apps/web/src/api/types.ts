@@ -110,3 +110,25 @@ export type SearchItem = Schemas['SearchItem']
 export type SearchIndexInfo = Schemas['SearchIndexInfo']
 export type SearchResponse = Schemas['SearchResponse']
 export type SearchRebuildResult = Schemas['SearchRebuildResult']
+
+// ---- phase2 M1 Library domain ----
+
+export type Bookmark = Schemas['Bookmark']
+export type BookmarkListResponse = Schemas['BookmarkListResponse']
+export type BookmarkImportResult = Schemas['BookmarkImportResult']
+export type Workspace = Schemas['Workspace']
+export type WorkspaceListResponse = Schemas['WorkspaceListResponse']
+export type WorkspaceItem = Schemas['WorkspaceItem']
+export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
+export type ResolvedItem = Schemas['ResolvedItem']
+export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
+
+// ---- phase2 M2 web clips + offline snapshots ----
+
+export type Clip = Schemas['Clip']
+export type ClipDetail = Schemas['ClipDetail']
+export type ClipListResponse = Schemas['ClipListResponse']
+export type ClipFetchResult = Schemas['ClipFetchResult']
+export type SnapshotView = Schemas['SnapshotView']
+export type SnapshotListResponse = Schemas['SnapshotListResponse']
+export type SnapshotUsage = Schemas['SnapshotUsage']

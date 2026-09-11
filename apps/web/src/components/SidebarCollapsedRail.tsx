@@ -74,6 +74,7 @@ function RailItem({
 export default function SidebarCollapsedRail() {
   const view = useReaderUi((s) => s.view)
   const scope = useReaderUi((s) => s.scope)
+  const section = useReaderUi((s) => s.section)
   const selectView = useReaderUi((s) => s.selectView)
   const selectScope = useReaderUi((s) => s.selectScope)
   const selectSection = useReaderUi((s) => s.selectSection)
@@ -121,12 +122,35 @@ export default function SidebarCollapsedRail() {
             selectView('all')
           }}
         />
-        <RailItem icon={<Globe aria-hidden className={iconCls} />} label="网页剪藏" disabled />
-        <RailItem icon={<Link2 aria-hidden className={iconCls} />} label="网页快照" disabled />
+        {/* phase2 Gate 3：网页剪藏 / 网页快照（library 域）已可用 */}
+        <RailItem
+          icon={<Globe aria-hidden className={iconCls} />}
+          label="网页剪藏"
+          active={section === 'clips'}
+          onClick={() => selectSection('clips')}
+        />
+        <RailItem
+          icon={<Link2 aria-hidden className={iconCls} />}
+          label="网页快照"
+          active={section === 'snapshots'}
+          onClick={() => selectSection('snapshots')}
+        />
         <RailItem icon={<FileText aria-hidden className={iconCls} />} label="API 来源" disabled />
         <RailItem icon={<Mail aria-hidden className={iconCls} />} label="邮件简报" disabled />
-        <RailItem icon={<Bookmark aria-hidden className={iconCls} />} label="书签" disabled />
-        <RailItem icon={<FileText aria-hidden className={iconCls} />} label="Obsidian 库" disabled />
+        {/* phase2 M1：书签（library 域）已可用 */}
+        <RailItem
+          icon={<Bookmark aria-hidden className={iconCls} />}
+          label="书签"
+          active={section === 'bookmarks'}
+          onClick={() => selectSection('bookmarks')}
+        />
+        {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
+        <RailItem
+          icon={<FileText aria-hidden className={iconCls} />}
+          label="Obsidian 库"
+          active={section === 'obsidian'}
+          onClick={() => selectSection('obsidian')}
+        />
       </div>
 
       {/* 工作区 */}
@@ -143,9 +167,21 @@ export default function SidebarCollapsedRail() {
           active={view === 'starred'}
           onClick={goHome('starred')}
         />
-        <RailItem icon={<Bot aria-hidden className={iconCls} />} label="Agent 工作台" disabled />
+        {/* phase2 G7：Agent 工作台已可用。 */}
+        <RailItem
+          icon={<Bot aria-hidden className={iconCls} />}
+          label="Agent 工作台"
+          active={section === 'agent'}
+          onClick={() => selectSection('agent')}
+        />
         <RailItem icon={<Zap aria-hidden className={iconCls} />} label="RAG 索引" disabled />
-        <RailItem icon={<Tags aria-hidden className={iconCls} />} label="标签 / 图谱" disabled />
+        {/* phase2 G8：标签 / 图谱已可用。 */}
+        <RailItem
+          icon={<Tags aria-hidden className={iconCls} />}
+          label="标签 / 图谱"
+          active={section === 'graph'}
+          onClick={() => selectSection('graph')}
+        />
       </div>
 
       {/* 设置（§6：折叠态保留设置 icon，同一语义位置） */}

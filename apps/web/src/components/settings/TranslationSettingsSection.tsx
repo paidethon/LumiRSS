@@ -256,10 +256,39 @@ export function TranslationSettingsSection() {
         <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
           <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">本地翻译（此浏览器）</h3>
           <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            使用浏览器内置 Translator API（Chrome 138+ 桌面版支持）。正文不出设备、不经过
-            BFF、不消耗任何 API 额度；首次使用某语言对时浏览器可能需要下载语言包。
-            不支持的浏览器（Safari / Firefox / 旧版 Chrome）会如实提示，不会假装可用。
+            使用浏览器内置 Translator API。正文不出设备、不经过 BFF、不消耗任何 API
+            额度；首次使用某语言对时浏览器可能需要下载语言包（下载进度在阅读器状态条显示）。
+            源语言由浏览器自动探测，探测失败时按英语处理。
           </p>
+          <table className="mt-2 w-full text-xs text-[var(--lumi-text-secondary)]">
+            <caption className="sr-only">本地翻译平台支持矩阵</caption>
+            <thead>
+              <tr className="text-left text-[var(--lumi-text-tertiary)]">
+                <th scope="col" className="py-1 pr-2 font-normal">平台</th>
+                <th scope="col" className="py-1 font-normal">支持情况</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="py-1 pr-2">Windows / macOS / ChromeOS 桌面 Chrome 138+</td>
+                <td className="py-1">支持</td>
+              </tr>
+              <tr>
+                <td className="py-1 pr-2">Linux 桌面 Chrome 138+</td>
+                <td className="py-1">
+                  支持，但翻译组件可能未自动下发——组件未就绪时打开 chrome://components 更新 TranslateKit
+                </td>
+              </tr>
+              <tr>
+                <td className="py-1 pr-2">Android / iOS / iPadOS 任何浏览器</td>
+                <td className="py-1">不支持（如实提示，不假装可用）</td>
+              </tr>
+              <tr>
+                <td className="py-1 pr-2">Firefox / Safari 桌面</td>
+                <td className="py-1">不支持</td>
+              </tr>
+            </tbody>
+          </table>
         </section>
       )}
 

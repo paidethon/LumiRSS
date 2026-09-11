@@ -1,6 +1,82 @@
 {
  "components": {
   "schemas": {
+   "AgentApprovalDecision": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/agent/threads/{id}/approvals.",
+    "properties": {
+     "approvalId": {
+      "title": "Approvalid",
+      "type": "string"
+     },
+     "decision": {
+      "title": "Decision",
+      "type": "string"
+     }
+    },
+    "required": [
+     "approvalId",
+     "decision"
+    ],
+    "title": "AgentApprovalDecision",
+    "type": "object"
+   },
+   "AgentMessageCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/agent/threads/{id}/messages.",
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "AgentMessageCreate",
+    "type": "object"
+   },
+   "AgentThread": {
+    "description": "One conversation thread.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "createdAt"
+    ],
+    "title": "AgentThread",
+    "type": "object"
+   },
+   "AgentThreadListResponse": {
+    "description": "Envelope for GET /api/v1/agent/threads.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AgentThread"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "AgentThreadListResponse",
+    "type": "object"
+   },
    "AiProfile": {
     "description": "One AI profile (keys surface only as ``keyConfigured``).",
     "properties": {
@@ -433,6 +509,291 @@
      "purposeStatus"
     ],
     "title": "AiSettingsView",
+    "type": "object"
+   },
+   "ApiSource": {
+    "description": "One API source config (secret/atomPath only on create).",
+    "properties": {
+     "atomPath": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Atompath"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "endpoint": {
+      "title": "Endpoint",
+      "type": "string"
+     },
+     "fieldMap": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Fieldmap",
+      "type": "object"
+     },
+     "itemsExpr": {
+      "title": "Itemsexpr",
+      "type": "string"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastStatus": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Laststatus"
+     },
+     "lastSuccessAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsuccessat"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "secret": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Secret"
+     },
+     "subscribeError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subscribeerror"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "name",
+     "endpoint",
+     "itemsExpr",
+     "fieldMap",
+     "enabled",
+     "createdAt"
+    ],
+    "title": "ApiSource",
+    "type": "object"
+   },
+   "ApiSourceCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/api-sources.",
+    "properties": {
+     "endpoint": {
+      "title": "Endpoint",
+      "type": "string"
+     },
+     "fieldMap": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Fieldmap",
+      "type": "object"
+     },
+     "itemsExpr": {
+      "title": "Itemsexpr",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "subscribe": {
+      "default": true,
+      "title": "Subscribe",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "name",
+     "endpoint",
+     "itemsExpr",
+     "fieldMap"
+    ],
+    "title": "ApiSourceCreate",
+    "type": "object"
+   },
+   "ApiSourceListResponse": {
+    "description": "Envelope for GET /api/v1/api-sources.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ApiSource"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "ApiSourceListResponse",
+    "type": "object"
+   },
+   "ApiSourcePreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/api-sources/preview — nothing is saved.",
+    "properties": {
+     "endpoint": {
+      "title": "Endpoint",
+      "type": "string"
+     },
+     "fieldMap": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Fieldmap",
+      "type": "object"
+     },
+     "itemsExpr": {
+      "title": "Itemsexpr",
+      "type": "string"
+     }
+    },
+    "required": [
+     "endpoint",
+     "itemsExpr",
+     "fieldMap"
+    ],
+    "title": "ApiSourcePreviewRequest",
+    "type": "object"
+   },
+   "ApiSourcePreviewResult": {
+    "description": "Bounded preview (≤5 mapped items).",
+    "properties": {
+     "items": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "totalAvailable": {
+      "title": "Totalavailable",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "totalAvailable"
+    ],
+    "title": "ApiSourcePreviewResult",
+    "type": "object"
+   },
+   "ApiSourceUpdate": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/api-sources/{uuid} — all fields optional.",
+    "properties": {
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "endpoint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Endpoint"
+     },
+     "fieldMap": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fieldmap"
+     },
+     "itemsExpr": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Itemsexpr"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "title": "ApiSourceUpdate",
     "type": "object"
    },
    "ApiVersionInfo": {
@@ -927,6 +1288,214 @@
     "title": "BackupJobSummary",
     "type": "object"
    },
+   "Bookmark": {
+    "description": "One bookmark in the library domain (never carries RSS bodies).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "itemType": {
+      "title": "Itemtype",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "rssItemRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rssitemref"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "itemType",
+     "title",
+     "note",
+     "createdAt"
+    ],
+    "title": "Bookmark",
+    "type": "object"
+   },
+   "BookmarkCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/bookmarks — exactly one of url | rssItemRef.",
+    "properties": {
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "rssItemRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rssitemref"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "BookmarkCreate",
+    "type": "object"
+   },
+   "BookmarkImportFailedItem": {
+    "description": "One per-item import failure: index, reason, and the offending URL.",
+    "properties": {
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "url",
+     "reason"
+    ],
+    "title": "BookmarkImportFailedItem",
+    "type": "object"
+   },
+   "BookmarkImportResult": {
+    "description": "Envelope for POST /api/v1/library/bookmarks/import.",
+    "properties": {
+     "failed": {
+      "items": {
+       "$ref": "#/components/schemas/BookmarkImportFailedItem"
+      },
+      "title": "Failed",
+      "type": "array"
+     },
+     "imported": {
+      "title": "Imported",
+      "type": "integer"
+     },
+     "skipped": {
+      "title": "Skipped",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "imported",
+     "skipped",
+     "failed"
+    ],
+    "title": "BookmarkImportResult",
+    "type": "object"
+   },
+   "BookmarkListResponse": {
+    "description": "Envelope for GET /api/v1/library/bookmarks.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Bookmark"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor"
+    ],
+    "title": "BookmarkListResponse",
+    "type": "object"
+   },
+   "BookmarkUpdate": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/library/bookmarks/{uuid} — both fields optional.",
+    "properties": {
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "title": "BookmarkUpdate",
+    "type": "object"
+   },
    "Category": {
     "description": "One item of GET /api/v1/categories (includes empty categories).",
     "properties": {
@@ -959,6 +1528,226 @@
      "label"
     ],
     "title": "CategoryPatch",
+    "type": "object"
+   },
+   "Clip": {
+    "description": "One clip in the library domain.",
+    "properties": {
+     "byline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Byline"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "fetchedAt": {
+      "title": "Fetchedat",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "url",
+     "title",
+     "fetchedAt",
+     "createdAt"
+    ],
+    "title": "Clip",
+    "type": "object"
+   },
+   "ClipCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/clips — extracted content from the client.",
+    "properties": {
+     "byline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Byline"
+     },
+     "contentHtml": {
+      "title": "Contenthtml",
+      "type": "string"
+     },
+     "contentText": {
+      "title": "Contenttext",
+      "type": "string"
+     },
+     "fetchedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fetchedat"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "title",
+     "contentHtml",
+     "contentText"
+    ],
+    "title": "ClipCreate",
+    "type": "object"
+   },
+   "ClipDetail": {
+    "description": "Clip with its (sanitized-at-origin) content.",
+    "properties": {
+     "byline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Byline"
+     },
+     "contentHtml": {
+      "title": "Contenthtml",
+      "type": "string"
+     },
+     "contentText": {
+      "title": "Contenttext",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "fetchedAt": {
+      "title": "Fetchedat",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "url",
+     "title",
+     "fetchedAt",
+     "createdAt",
+     "contentHtml",
+     "contentText"
+    ],
+    "title": "ClipDetail",
+    "type": "object"
+   },
+   "ClipFetchRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/clips/fetch — server-side bounded fetch.",
+    "properties": {
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "ClipFetchRequest",
+    "type": "object"
+   },
+   "ClipFetchResult": {
+    "description": "Raw fetched page handed to the browser extractor.",
+    "properties": {
+     "finalUrl": {
+      "title": "Finalurl",
+      "type": "string"
+     },
+     "html": {
+      "title": "Html",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "finalUrl",
+     "html"
+    ],
+    "title": "ClipFetchResult",
+    "type": "object"
+   },
+   "ClipListResponse": {
+    "description": "Envelope for GET /api/v1/library/clips.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Clip"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor"
+    ],
+    "title": "ClipListResponse",
     "type": "object"
    },
    "ComponentError": {
@@ -1022,6 +1811,226 @@
      "question"
     ],
     "title": "ConversationQuestion",
+    "type": "object"
+   },
+   "DigestSendNowRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/digest/send-now — explicit item selection.",
+    "properties": {
+     "entryRefs": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Entryrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRefs"
+    ],
+    "title": "DigestSendNowRequest",
+    "type": "object"
+   },
+   "DigestSettings": {
+    "description": "Outbound digest configuration (password never returned).",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "fromAddr": {
+      "title": "Fromaddr",
+      "type": "string"
+     },
+     "hour": {
+      "title": "Hour",
+      "type": "integer"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastSentAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsentat"
+     },
+     "limitCount": {
+      "title": "Limitcount",
+      "type": "integer"
+     },
+     "passwordConfigured": {
+      "default": false,
+      "title": "Passwordconfigured",
+      "type": "boolean"
+     },
+     "smtpHost": {
+      "title": "Smtphost",
+      "type": "string"
+     },
+     "smtpPort": {
+      "title": "Smtpport",
+      "type": "integer"
+     },
+     "smtpUser": {
+      "title": "Smtpuser",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "toAddr": {
+      "title": "Toaddr",
+      "type": "string"
+     }
+    },
+    "required": [
+     "enabled",
+     "hour",
+     "source",
+     "limitCount",
+     "smtpHost",
+     "smtpPort",
+     "smtpUser",
+     "fromAddr",
+     "toAddr"
+    ],
+    "title": "DigestSettings",
+    "type": "object"
+   },
+   "DigestSettingsUpdate": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/digest/settings — partial; password write-only.",
+    "properties": {
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "fromAddr": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fromaddr"
+     },
+     "hour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hour"
+     },
+     "limitCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limitcount"
+     },
+     "smtpHost": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Smtphost"
+     },
+     "smtpPassword": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Smtppassword"
+     },
+     "smtpPort": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Smtpport"
+     },
+     "smtpUser": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Smtpuser"
+     },
+     "source": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source"
+     },
+     "toAddr": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Toaddr"
+     }
+    },
+    "title": "DigestSettingsUpdate",
     "type": "object"
    },
    "DiscoveryCandidate": {
@@ -1522,6 +2531,42 @@
     "title": "EntryTranslation",
     "type": "object"
    },
+   "FavoritesResponse": {
+    "description": "Federated favorites: rss star + library favorite, merged for\ndisplay only — each stays owned by its own domain.",
+    "properties": {
+     "library": {
+      "items": {
+       "$ref": "#/components/schemas/LibrarySearchItem"
+      },
+      "title": "Library",
+      "type": "array"
+     },
+     "libraryError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Libraryerror"
+     },
+     "rss": {
+      "items": {
+       "$ref": "#/components/schemas/SearchItem"
+      },
+      "title": "Rss",
+      "type": "array"
+     }
+    },
+    "required": [
+     "rss",
+     "library"
+    ],
+    "title": "FavoritesResponse",
+    "type": "object"
+   },
    "Feed": {
     "description": "One item of GET /api/v1/feeds (read path; uncategorized → null).",
     "properties": {
@@ -1727,6 +2772,94 @@
     "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
+   "GraphEdge": {
+    "description": "One derived edge.",
+    "properties": {
+     "dst": {
+      "title": "Dst",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "src": {
+      "title": "Src",
+      "type": "string"
+     }
+    },
+    "required": [
+     "src",
+     "dst",
+     "kind"
+    ],
+    "title": "GraphEdge",
+    "type": "object"
+   },
+   "GraphNode": {
+    "description": "One derived graph node (item | tag | workspace | wikilink).",
+    "properties": {
+     "degree": {
+      "default": 0,
+      "title": "Degree",
+      "type": "integer"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "label",
+     "kind"
+    ],
+    "title": "GraphNode",
+    "type": "object"
+   },
+   "GraphResponse": {
+    "description": "Envelope for GET /api/v1/graph (truncation reported honestly).",
+    "properties": {
+     "edges": {
+      "items": {
+       "$ref": "#/components/schemas/GraphEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+     },
+     "nodes": {
+      "items": {
+       "$ref": "#/components/schemas/GraphNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+     },
+     "totalNodes": {
+      "title": "Totalnodes",
+      "type": "integer"
+     },
+     "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "nodes",
+     "edges",
+     "truncated",
+     "totalNodes"
+    ],
+    "title": "GraphResponse",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -1752,6 +2885,66 @@
      "status"
     ],
     "title": "HealthStatus",
+    "type": "object"
+   },
+   "LibraryFavoriteRequest": {
+    "additionalProperties": false,
+    "description": "POST/DELETE /api/v1/favorites/library — one ItemRef.",
+    "properties": {
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "LibraryFavoriteRequest",
+    "type": "object"
+   },
+   "LibrarySearchItem": {
+    "description": "Library leg of unified search (same shape philosophy as SearchItem).",
+    "properties": {
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "snippet": {
+      "default": "",
+      "title": "Snippet",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "kind",
+     "title",
+     "updatedAt"
+    ],
+    "title": "LibrarySearchItem",
     "type": "object"
    },
    "LibreTranslateTestResult": {
@@ -1797,6 +2990,329 @@
      "password"
     ],
     "title": "LoginRequest",
+    "type": "object"
+   },
+   "MailBridgeList": {
+    "description": "One bridge list (secret never echoed after creation).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "name",
+     "createdAt"
+    ],
+    "title": "MailBridgeList",
+    "type": "object"
+   },
+   "MailBridgeListCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/mail/bridge-lists.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "MailBridgeListCreate",
+    "type": "object"
+   },
+   "MailBridgeListCreated": {
+    "description": "Creation response — the only time the bearer secret is visible.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "secret": {
+      "title": "Secret",
+      "type": "string"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "name",
+     "createdAt",
+     "secret"
+    ],
+    "title": "MailBridgeListCreated",
+    "type": "object"
+   },
+   "MailBridgeListResponse": {
+    "description": "Envelope for GET /api/v1/mail/bridge-lists.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/MailBridgeList"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "MailBridgeListResponse",
+    "type": "object"
+   },
+   "MailIngestResult": {
+    "description": "Honest ingest/send report.",
+    "properties": {
+     "attachments": {
+      "default": 0,
+      "title": "Attachments",
+      "type": "integer"
+     },
+     "messageId": {
+      "default": "",
+      "title": "Messageid",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "subject": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subject"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "MailIngestResult",
+    "type": "object"
+   },
+   "NoteListResponse": {
+    "description": "Envelope for GET /api/v1/obsidian/notes.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/NoteView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "NoteListResponse",
+    "type": "object"
+   },
+   "NoteView": {
+    "description": "One projected note; contentHtml only on detail (client sanitizes).",
+    "properties": {
+     "contentHtml": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
+     },
+     "indexedAt": {
+      "title": "Indexedat",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "relPath": {
+      "title": "Relpath",
+      "type": "string"
+     },
+     "tags": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "wikilinks": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Wikilinks"
+     }
+    },
+    "required": [
+     "ref",
+     "relPath",
+     "title",
+     "indexedAt"
+    ],
+    "title": "NoteView",
+    "type": "object"
+   },
+   "ObsidianNoteSetting": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/obsidian/settings.",
+    "properties": {
+     "vaultPath": {
+      "title": "Vaultpath",
+      "type": "string"
+     }
+    },
+    "required": [
+     "vaultPath"
+    ],
+    "title": "ObsidianNoteSetting",
+    "type": "object"
+   },
+   "ObsidianRescanResult": {
+    "description": "Bounded scan report with rename detection.",
+    "properties": {
+     "added": {
+      "title": "Added",
+      "type": "integer"
+     },
+     "changed": {
+      "title": "Changed",
+      "type": "integer"
+     },
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     },
+     "removed": {
+      "title": "Removed",
+      "type": "integer"
+     },
+     "renames": {
+      "title": "Renames",
+      "type": "integer"
+     },
+     "skipped": {
+      "title": "Skipped",
+      "type": "integer"
+     },
+     "unchanged": {
+      "title": "Unchanged",
+      "type": "integer"
+     },
+     "vaultPath": {
+      "default": "",
+      "title": "Vaultpath",
+      "type": "string"
+     }
+    },
+    "required": [
+     "added",
+     "changed",
+     "removed",
+     "renames",
+     "unchanged",
+     "skipped",
+     "elapsedMs"
+    ],
+    "title": "ObsidianRescanResult",
+    "type": "object"
+   },
+   "ObsidianSettings": {
+    "description": "Vault root (canonicalized) + honest note count.",
+    "properties": {
+     "noteCount": {
+      "title": "Notecount",
+      "type": "integer"
+     },
+     "vaultPath": {
+      "title": "Vaultpath",
+      "type": "string"
+     }
+    },
+    "required": [
+     "vaultPath",
+     "noteCount"
+    ],
+    "title": "ObsidianSettings",
+    "type": "object"
+   },
+   "ObsidianStatus": {
+    "description": "Honest scanner status (error keeps the old index visible).",
+    "properties": {
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastScanAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastscanat"
+     },
+     "noteCount": {
+      "default": 0,
+      "title": "Notecount",
+      "type": "integer"
+     },
+     "vaultPath": {
+      "title": "Vaultpath",
+      "type": "string"
+     }
+    },
+    "required": [
+     "vaultPath"
+    ],
+    "title": "ObsidianStatus",
     "type": "object"
    },
    "OperationsBackupStatus": {
@@ -2238,6 +3754,101 @@
     "title": "PasswordChangeRequest",
     "type": "object"
    },
+   "RagEnableResult": {
+    "description": "Explicit model-enable acknowledgement.",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled"
+    ],
+    "title": "RagEnableResult",
+    "type": "object"
+   },
+   "RagRebuildResult": {
+    "description": "Bounded rebuild report.",
+    "properties": {
+     "chunks": {
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "chunks",
+     "elapsedMs"
+    ],
+    "title": "RagRebuildResult",
+    "type": "object"
+   },
+   "RagSearchItem": {
+    "description": "One fused retrieval hit (ref resolves to real content).",
+    "properties": {
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "score": {
+      "title": "Score",
+      "type": "number"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "kind",
+     "text",
+     "score"
+    ],
+    "title": "RagSearchItem",
+    "type": "object"
+   },
+   "RagSearchResponse": {
+    "description": "Envelope for GET /api/v1/rag/search (honest degradation flags).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RagSearchItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "semanticError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Semanticerror"
+     },
+     "semanticUsed": {
+      "title": "Semanticused",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "items",
+     "semanticUsed"
+    ],
+    "title": "RagSearchResponse",
+    "type": "object"
+   },
    "ReadinessComponentDetail": {
     "description": "One probed component in the readiness payload.\n\nSuperset of the two real shapes (the full status entry with\nlatency/error, or the compact healthy SQLite entry with\nschemaVersion) — every optional key stays optional so both shapes\nvalidate.",
     "properties": {
@@ -2392,6 +4003,102 @@
      "backups"
     ],
     "title": "RemoteBackupsResponse",
+    "type": "object"
+   },
+   "ResolveRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/resolve — resolve one or more ItemRefs.",
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "ResolveRequest",
+    "type": "object"
+   },
+   "ResolvedItem": {
+    "description": "Unified ViewModel for UnifiedContentCard (report 12 §3).",
+    "properties": {
+     "datetime": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Datetime"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excerpt"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Payload",
+      "type": "object"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "domain",
+     "kind",
+     "title",
+     "source"
+    ],
+    "title": "ResolvedItem",
     "type": "object"
    },
    "RestoreExecuteBody": {
@@ -3240,7 +4947,7 @@
     "type": "object"
    },
    "SearchResponse": {
-    "description": "Envelope for GET /api/v1/search.",
+    "description": "Envelope for GET /api/v1/search (phase2 G6: + optional library\nleg — additive fields, wire-compatible with older clients).",
     "properties": {
      "elapsedMs": {
       "title": "Elapsedms",
@@ -3259,6 +4966,31 @@
       },
       "title": "Items",
       "type": "array"
+     },
+     "library": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/LibrarySearchItem"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Library"
+     },
+     "libraryError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Libraryerror"
      },
      "nextCursor": {
       "anyOf": [
@@ -3296,6 +5028,110 @@
      "value"
     ],
     "title": "SecretValuePut",
+    "type": "object"
+   },
+   "SnapshotCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/snapshots.",
+    "properties": {
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "SnapshotCreate",
+    "type": "object"
+   },
+   "SnapshotListResponse": {
+    "description": "Envelope for GET /api/v1/library/snapshots.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SnapshotView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "usage": {
+      "$ref": "#/components/schemas/SnapshotUsage"
+     }
+    },
+    "required": [
+     "items",
+     "usage"
+    ],
+    "title": "SnapshotListResponse",
+    "type": "object"
+   },
+   "SnapshotUsage": {
+    "description": "Honest quota accounting for saved snapshots.",
+    "properties": {
+     "bytes": {
+      "title": "Bytes",
+      "type": "integer"
+     },
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "quotaBytes": {
+      "title": "Quotabytes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "count",
+     "bytes",
+     "quotaBytes"
+    ],
+    "title": "SnapshotUsage",
+    "type": "object"
+   },
+   "SnapshotView": {
+    "description": "One stored snapshot asset.",
+    "properties": {
+     "bytes": {
+      "title": "Bytes",
+      "type": "integer"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "deduplicated": {
+      "default": false,
+      "title": "Deduplicated",
+      "type": "boolean"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "sha256": {
+      "title": "Sha256",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "itemRef",
+     "url",
+     "bytes",
+     "sha256",
+     "createdAt"
+    ],
+    "title": "SnapshotView",
     "type": "object"
    },
    "SourceDiscoveryRequest": {
@@ -3430,6 +5266,143 @@
      }
     },
     "title": "SubscriptionPatch",
+    "type": "object"
+   },
+   "TagAssignRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/tags/assign — attach one tag to one ItemRef.",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "origin": {
+      "default": "manual",
+      "title": "Origin",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "name"
+    ],
+    "title": "TagAssignRequest",
+    "type": "object"
+   },
+   "TagBinding": {
+    "description": "One tag or binding view.",
+    "properties": {
+     "count": {
+      "default": 0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Id"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "origin": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Origin"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "TagBinding",
+    "type": "object"
+   },
+   "TagListResponse": {
+    "description": "Envelope for GET /api/v1/tags (suggested rows never appear).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/TagBinding"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "TagListResponse",
+    "type": "object"
+   },
+   "TagRenameRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/tags/{id}.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "TagRenameRequest",
+    "type": "object"
+   },
+   "TagSuggestionsResponse": {
+    "description": "AI suggestions — computed only, never stored until accepted.",
+    "properties": {
+     "suggestions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Suggestions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "suggestions"
+    ],
+    "title": "TagSuggestionsResponse",
     "type": "object"
    },
    "TranslationSegmentBlockIn": {
@@ -3726,6 +5699,178 @@
     ],
     "title": "WebDavTestResult",
     "type": "object"
+   },
+   "Workspace": {
+    "description": "One workspace summary (read-later reports reserved=true).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "reserved": {
+      "title": "Reserved",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "position",
+     "itemCount",
+     "reserved"
+    ],
+    "title": "Workspace",
+    "type": "object"
+   },
+   "WorkspaceCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/workspaces.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceCreate",
+    "type": "object"
+   },
+   "WorkspaceItem": {
+    "description": "One workspace member (ref + ordering; content resolves separately).",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "itemRef",
+     "position",
+     "addedAt"
+    ],
+    "title": "WorkspaceItem",
+    "type": "object"
+   },
+   "WorkspaceItemAddRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceItemAddRequest",
+    "type": "object"
+   },
+   "WorkspaceItemsResolvedResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/contents (resolved views).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ResolvedItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceItemsResolvedResponse",
+    "type": "object"
+   },
+   "WorkspaceItemsResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/items.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceItemsResponse",
+    "type": "object"
+   },
+   "WorkspaceListResponse": {
+    "description": "Envelope for GET /api/v1/workspaces.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Workspace"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceListResponse",
+    "type": "object"
+   },
+   "WorkspaceRename": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceRename",
+    "type": "object"
+   },
+   "WorkspaceReorderRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}/items — refs in their new order.",
+    "properties": {
+     "itemRefs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Itemrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "itemRefs"
+    ],
+    "title": "WorkspaceReorderRequest",
+    "type": "object"
    }
   }
  },
@@ -3735,6 +5880,472 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/mail/ingest/{list_uuid}": {
+   "post": {
+    "description": "Authenticated thin bridge: bearer secret + raw MIME body.\n\nLives at /api/mail/* (not /api/v1/*): it is machine-to-machine and\nstill passes through the same security middlewares by path prefix.",
+    "operationId": "ingest_mail_api_mail_ingest__list_uuid__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailIngestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Ingest Mail"
+   }
+  },
+  "/api/v1/agent/threads": {
+   "get": {
+    "operationId": "list_threads_api_v1_agent_threads_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Threads"
+   },
+   "post": {
+    "operationId": "create_thread_api_v1_agent_threads_post",
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThread"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Create Thread"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}": {
+   "delete": {
+    "operationId": "delete_thread_api_v1_agent_threads__thread_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Thread"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/approvals": {
+   "post": {
+    "operationId": "decide_approval_api_v1_agent_threads__thread_id__approvals_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentApprovalDecision"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Decide Approval"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/events": {
+   "get": {
+    "description": "SSE replay: streams all messages after `after` then closes — the\nclient re-subscribes while a turn is processing (simple, reconnect\nsafe, no server-side push state).",
+    "operationId": "stream_events_api_v1_agent_threads__thread_id__events_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "After",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Stream Events"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/messages": {
+   "get": {
+    "operationId": "get_messages_api_v1_agent_threads__thread_id__messages_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "After",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Messages"
+   },
+   "post": {
+    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (replay-friendly).",
+    "operationId": "post_message_api_v1_agent_threads__thread_id__messages_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentMessageCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Post Message"
+   }
+  },
+  "/api/v1/api-sources": {
+   "get": {
+    "operationId": "list_sources_api_v1_api_sources_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourceListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Sources"
+   },
+   "post": {
+    "operationId": "create_source_api_v1_api_sources_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSource"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Source"
+   }
+  },
+  "/api/v1/api-sources/preview": {
+   "post": {
+    "description": "Fetch + map WITHOUT saving anything; ≤5 items, honest errors.",
+    "operationId": "preview_source_api_v1_api_sources_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourcePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourcePreviewResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Source"
+   }
+  },
+  "/api/v1/api-sources/{source_uuid}": {
+   "delete": {
+    "operationId": "delete_source_api_v1_api_sources__source_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Source"
+   },
+   "patch": {
+    "operationId": "update_source_api_v1_api_sources__source_uuid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSource"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Source"
+   }
+  },
   "/api/v1/auth/login": {
    "post": {
     "description": "Verify the password, mint a session, set the cookie.\n\nFailures only count toward the brute-force budget (see middleware);\na correct password resets it, so honest retries never lock the user\nout. The wrong-password and not-initialized replies deliberately\nshare the generic shape — no oracle for an attacker.",
@@ -4144,6 +6755,99 @@
      }
     },
     "summary": "Rename Category"
+   }
+  },
+  "/api/v1/digest/send-now": {
+   "post": {
+    "description": "Immediate send with the configured relay (never a test to real\nthird parties — tests use local sinks only).",
+    "operationId": "digest_send_now_api_v1_digest_send_now_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DigestSendNowRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailIngestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Digest Send Now"
+   }
+  },
+  "/api/v1/digest/settings": {
+   "get": {
+    "operationId": "get_digest_settings_api_v1_digest_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DigestSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Digest Settings"
+   },
+   "put": {
+    "operationId": "update_digest_settings_api_v1_digest_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DigestSettingsUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DigestSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Digest Settings"
    }
   },
   "/api/v1/entries": {
@@ -4691,6 +7395,85 @@
     "summary": "Lookup Translation Segments"
    }
   },
+  "/api/v1/favorites": {
+   "get": {
+    "description": "RSS star (FreshRSS truth) + library favorites (Lumi truth) merged\nfor display — never copied across domains.",
+    "operationId": "federated_favorites_api_v1_favorites_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FavoritesResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Federated Favorites"
+   }
+  },
+  "/api/v1/favorites/library": {
+   "delete": {
+    "operationId": "remove_library_favorite_api_v1_favorites_library_delete",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LibraryFavoriteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Library Favorite"
+   },
+   "post": {
+    "operationId": "add_library_favorite_api_v1_favorites_library_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LibraryFavoriteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Library Favorite"
+   }
+  },
   "/api/v1/feed-preview": {
    "post": {
     "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
@@ -4772,6 +7555,862 @@
     "summary": "Freshrss Ui"
    }
   },
+  "/api/v1/graph": {
+   "get": {
+    "description": "Pure derived, read-only graph; truncation reported honestly.",
+    "operationId": "relationship_graph_api_v1_graph_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "default": "all",
+       "title": "Scope",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "max",
+      "required": false,
+      "schema": {
+       "default": 2000,
+       "title": "Max",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GraphResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Relationship Graph"
+   }
+  },
+  "/api/v1/library/assets/{asset_uuid}/page.html": {
+   "get": {
+    "description": "Sandboxed artifact read-out. The CSP `sandbox` directive strips\nscripts, forms, same-origin access and top navigation — the snapshot\ncan never reach Lumi's origin, cookies or /api endpoints.",
+    "operationId": "serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Serve Snapshot"
+   }
+  },
+  "/api/v1/library/bookmarks": {
+   "get": {
+    "description": "Keyset-paged bookmark list, newest first.",
+    "operationId": "list_bookmarks_api_v1_library_bookmarks_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BookmarkListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Bookmarks"
+   },
+   "post": {
+    "description": "Create a url bookmark or an rss-ref bookmark (idempotent on url/ref).",
+    "operationId": "create_bookmark_api_v1_library_bookmarks_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BookmarkCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bookmark"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Bookmark"
+   }
+  },
+  "/api/v1/library/bookmarks/export.html": {
+   "get": {
+    "description": "Export all url bookmarks as a Netscape bookmarks.html download.",
+    "operationId": "export_bookmarks_api_v1_library_bookmarks_export_html_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Bookmarks"
+   }
+  },
+  "/api/v1/library/bookmarks/import": {
+   "post": {
+    "description": "Merge-import a Netscape bookmarks.html (merge-only, per-item errors).\n\nExisting urls converge on the unique index (counted as skipped);\ninvalid entries (scheme, length) are reported item by item and never\nabort the whole import.",
+    "operationId": "import_bookmarks_api_v1_library_bookmarks_import_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BookmarkImportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Import Bookmarks"
+   }
+  },
+  "/api/v1/library/bookmarks/{item_uuid}": {
+   "delete": {
+    "operationId": "delete_bookmark_api_v1_library_bookmarks__item_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Bookmark"
+   },
+   "patch": {
+    "operationId": "update_bookmark_api_v1_library_bookmarks__item_uuid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BookmarkUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bookmark"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Bookmark"
+   }
+  },
+  "/api/v1/library/clips": {
+   "get": {
+    "operationId": "list_clips_api_v1_library_clips_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClipListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Clips"
+   },
+   "post": {
+    "operationId": "create_clip_api_v1_library_clips_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ClipCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClipDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Clip"
+   }
+  },
+  "/api/v1/library/clips/fetch": {
+   "post": {
+    "description": "One bounded anonymous SSRF-guarded server fetch (no cookies).",
+    "operationId": "fetch_for_clip_api_v1_library_clips_fetch_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ClipFetchRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClipFetchResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Fetch For Clip"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}": {
+   "delete": {
+    "operationId": "delete_clip_api_v1_library_clips__item_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Clip"
+   },
+   "get": {
+    "operationId": "get_clip_api_v1_library_clips__item_uuid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ClipDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Clip"
+   }
+  },
+  "/api/v1/library/snapshots": {
+   "get": {
+    "operationId": "list_snapshots_api_v1_library_snapshots_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Snapshots"
+   },
+   "post": {
+    "operationId": "create_snapshot_api_v1_library_snapshots_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SnapshotCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SnapshotView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Snapshot"
+   }
+  },
+  "/api/v1/library/snapshots/{asset_uuid}": {
+   "delete": {
+    "operationId": "delete_snapshot_api_v1_library_snapshots__asset_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Snapshot"
+   }
+  },
+  "/api/v1/mail/bridge-lists": {
+   "get": {
+    "operationId": "list_bridge_lists_api_v1_mail_bridge_lists_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailBridgeListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Bridge Lists"
+   },
+   "post": {
+    "operationId": "create_bridge_list_api_v1_mail_bridge_lists_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MailBridgeListCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailBridgeListCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Bridge List"
+   }
+  },
+  "/api/v1/mail/bridge-lists/{list_uuid}": {
+   "delete": {
+    "operationId": "delete_bridge_list_api_v1_mail_bridge_lists__list_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Bridge List"
+   }
+  },
+  "/api/v1/obsidian/notes": {
+   "get": {
+    "operationId": "list_notes_api_v1_obsidian_notes_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NoteListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Notes"
+   }
+  },
+  "/api/v1/obsidian/notes/{note_uuid}": {
+   "get": {
+    "operationId": "get_note_api_v1_obsidian_notes__note_uuid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "note_uuid",
+      "required": true,
+      "schema": {
+       "title": "Note Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NoteView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Note"
+   }
+  },
+  "/api/v1/obsidian/rescan": {
+   "post": {
+    "operationId": "rescan_obsidian_api_v1_obsidian_rescan_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianRescanResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rescan Obsidian"
+   }
+  },
+  "/api/v1/obsidian/settings": {
+   "put": {
+    "description": "Configure the vault root (canonicalized, validated, read-only).",
+    "operationId": "set_obsidian_settings_api_v1_obsidian_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianNoteSetting"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Obsidian Settings"
+   }
+  },
+  "/api/v1/obsidian/status": {
+   "get": {
+    "operationId": "obsidian_status_api_v1_obsidian_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Obsidian Status"
+   }
+  },
   "/api/v1/operations/status": {
    "get": {
     "description": "Redacted, real dependency status for the operations UI (no fake metrics).",
@@ -4844,6 +8483,167 @@
      }
     },
     "summary": "Opml Import Preview"
+   }
+  },
+  "/api/v1/rag/enable": {
+   "post": {
+    "description": "Explicit user consent to download/load the embedding model.",
+    "operationId": "rag_enable_api_v1_rag_enable_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEnableResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Enable"
+   }
+  },
+  "/api/v1/rag/rebuild": {
+   "post": {
+    "operationId": "rag_rebuild_api_v1_rag_rebuild_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Rebuild"
+   }
+  },
+  "/api/v1/rag/search": {
+   "get": {
+    "operationId": "rag_search_api_v1_rag_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "k",
+      "required": false,
+      "schema": {
+       "default": 8,
+       "title": "K",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagSearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Search"
+   }
+  },
+  "/api/v1/rag/status": {
+   "get": {
+    "operationId": "rag_status_api_v1_rag_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Rag Status Api V1 Rag Status Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Status"
+   }
+  },
+  "/api/v1/resolve": {
+   "post": {
+    "description": "Resolve one batch of ItemRefs to unified ViewModels (≤100 refs).",
+    "operationId": "resolve_refs_api_v1_resolve_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResolveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResolvedResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Resolve Refs"
    }
   },
   "/api/v1/restore": {
@@ -6203,6 +10003,378 @@
     "summary": "Update Subscription"
    }
   },
+  "/api/v1/tags": {
+   "get": {
+    "operationId": "list_tags_api_v1_tags_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Tags"
+   }
+  },
+  "/api/v1/tags/assign": {
+   "delete": {
+    "operationId": "detach_tag_api_v1_tags_assign_delete",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Detach Tag"
+   },
+   "post": {
+    "operationId": "assign_tag_api_v1_tags_assign_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Assign Tag"
+   }
+  },
+  "/api/v1/tags/item/{item_ref}": {
+   "get": {
+    "operationId": "item_tags_api_v1_tags_item__item_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Item Tags Api V1 Tags Item  Item Ref  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Item Tags"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}": {
+   "get": {
+    "description": "AI suggestions are computed, NEVER stored here (assign-with-ai or\naccept endpoints persist only after explicit user action).",
+    "operationId": "tag_suggestions_api_v1_tags_suggestions__item_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagSuggestionsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tag Suggestions"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}/accept": {
+   "post": {
+    "operationId": "accept_suggestion_api_v1_tags_suggestions__item_ref__accept_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Accept Suggestion"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}/attach": {
+   "post": {
+    "description": "Persist an accepted suggestion as suggested; caller then accepts.",
+    "operationId": "attach_suggestion_api_v1_tags_suggestions__item_ref__attach_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Attach Suggestion"
+   }
+  },
+  "/api/v1/tags/{tag_id}": {
+   "delete": {
+    "operationId": "delete_tag_api_v1_tags__tag_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "tag_id",
+      "required": true,
+      "schema": {
+       "title": "Tag Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Tag"
+   },
+   "patch": {
+    "operationId": "rename_tag_api_v1_tags__tag_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "tag_id",
+      "required": true,
+      "schema": {
+       "title": "Tag Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagRenameRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Tag"
+   }
+  },
   "/api/v1/version": {
    "get": {
     "description": "Build provenance for Web/BFF skew diagnosis.\n\nDeliberately minimal: no env dump, no paths, no secrets — just the\nrunning BFF's version/commit so a stale deployment is diagnosable\nfrom the browser (see also the web build commit on the About page).",
@@ -6220,6 +10392,505 @@
      }
     },
     "summary": "Version"
+   }
+  },
+  "/api/v1/workspaces": {
+   "get": {
+    "operationId": "list_workspaces_api_v1_workspaces_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Workspaces"
+   },
+   "post": {
+    "operationId": "create_workspace_api_v1_workspaces_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Workspace"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}": {
+   "delete": {
+    "operationId": "delete_workspace_api_v1_workspaces__workspace_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Workspace"
+   },
+   "get": {
+    "operationId": "get_workspace_api_v1_workspaces__workspace_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Workspace"
+   },
+   "patch": {
+    "operationId": "rename_workspace_api_v1_workspaces__workspace_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceRename"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Workspace"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/contents": {
+   "get": {
+    "description": "Ordered membership with each ref resolved to a unified ViewModel.\n\nStale rss refs (entry gone from FreshRSS) resolve to ``stale=True``\nviews — rows are never auto-deleted.",
+    "operationId": "workspace_contents_api_v1_workspaces__workspace_id__contents_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResolvedResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Contents"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items": {
+   "get": {
+    "operationId": "list_workspace_items_api_v1_workspaces__workspace_id__items_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Workspace Items"
+   },
+   "patch": {
+    "operationId": "reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceReorderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Workspace Items"
+   },
+   "post": {
+    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).",
+    "operationId": "add_workspace_item_api_v1_workspaces__workspace_id__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Workspace Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}": {
+   "delete": {
+    "operationId": "remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Workspace Item"
+   }
+  },
+  "/feeds/mail/{list_uuid}.{secret}.atom": {
+   "get": {
+    "description": "Per-list Atom for FreshRSS (constant-time secret check).",
+    "operationId": "serve_mail_atom_feeds_mail__list_uuid___secret__atom_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "secret",
+      "required": true,
+      "schema": {
+       "title": "Secret",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Serve Mail Atom"
+   }
+  },
+  "/feeds/{source_uuid}.{secret}.atom": {
+   "get": {
+    "description": "The FreshRSS-facing feed. Constant-time secret check, ETag/304,\nbounded fetch + mapping on every pull, honest error status marking.",
+    "operationId": "serve_atom_feeds__source_uuid___secret__atom_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "secret",
+      "required": true,
+      "schema": {
+       "title": "Secret",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Serve Atom"
    }
   },
   "/health/live": {

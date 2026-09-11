@@ -26,20 +26,30 @@ from lumirss.middleware import (
     SessionAuthMiddleware,
 )
 from lumirss.routers import (
+    agent,
     ai_settings,
+    api_sources,
     auth,
     backup,
+    clips,
     discovery,
     entries,
     entry_ai,
     feeds,
     health,
+    library,
+    mail,
+    obsidian,
     operations,
     opml,
+    rag,
     rsshub,
     search,
     settings,
+    snapshots,
     subscriptions,
+    tags,
+    workspaces,
 )
 from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
@@ -83,6 +93,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.backup_engine = None
     app.state.restore_service = None
     app.state.search_service = None
+    app.state.library_store = None
+    app.state.workspace_store = None
+    app.state.source_registry = None
+    app.state.clip_store = None
+    app.state.asset_store = None
+    app.state.snapshot_runner = None
+    app.state.api_source_store = None
+    app.state.mail_bridge_store = None
+    app.state.obsidian_service = None
+    app.state.favorites_service = None
+    app.state.library_search_writer = None
+    app.state.rag_service = None
+    app.state.agent_store = None
+    app.state.agent_loop = None
+    app.state.agent_tasks = set()
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -155,5 +180,15 @@ app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
 app.include_router(search.router)
+app.include_router(library.router)
+app.include_router(workspaces.router)
+app.include_router(clips.router)
+app.include_router(snapshots.router)
+app.include_router(api_sources.router)
+app.include_router(mail.router)
+app.include_router(obsidian.router)
+app.include_router(rag.router)
+app.include_router(agent.router)
+app.include_router(tags.router)
 
 register_error_handlers(app)

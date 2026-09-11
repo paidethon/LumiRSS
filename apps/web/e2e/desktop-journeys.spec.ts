@@ -215,4 +215,43 @@ test('J5 — 设置与运维：刷新后持久化', async ({ page }) => {
   await visibleDialog(page).getByLabel('主题模式').selectOption('light')
 })
 
+// J7 — 本地翻译（engine=browser）诚实降级：headless/CI Chromium 无
+// window.Translator（真机证据见 docs/research/local-translation.md §2），
+// UI 必须如实提示不支持，绝不假装可用。还原引擎为 ai，不影响其他 journey。
+test('J7 — 本地翻译：headless 下 unsupported 诚实提示（不假装可用）', async ({ page }) => {
+  await page.goto('/')
+  await openSettingsCategory(page, '翻译')
+  const dialog = visibleDialog(page)
+  await dialog.getByLabel('翻译引擎').selectOption('browser')
+  await dialog.getByRole('button', { name: /保存/ }).click()
+  // 该分区保存为静默式（无成功文案）：重载后以控件值验证持久化。
+  await page.waitForTimeout(800)
+  await page.reload()
+  await openSettingsCategory(page, '翻译')
+  await expect(visibleDialog(page).getByLabel('翻译引擎')).toHaveValue('browser')
+  await page.keyboard.press('Escape')
+
+  // headless 环境探测器：window.Translator 必须真的不存在，否则断言无意义
+  const hasTranslator = await page.evaluate(
+    () => typeof (window as { Translator?: unknown }).Translator !== 'undefined',
+  )
+  test.skip(hasTranslator, '环境暴露了 Translator API，不在本测试覆盖范围')
+
+  // 打开文章 → 切双语 = 显式翻译请求 → 诚实 unsupported 文案
+  const entryTitle = page.getByRole('button', { name: /文章 beta/ }).first()
+  await entryTitle.click()
+  const reader = page.locator('article').first()
+  await reader.getByRole('radiogroup', { name: '语言视图' }).waitFor()
+  await reader.getByRole('radio', { name: /双语/ }).click()
+  await expect(page.getByText(/此浏览器不支持本地翻译/)).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // 还原引擎为 ai（串行 journey 的卫生）
+  await openSettingsCategory(page, '翻译')
+  await visibleDialog(page).getByLabel('翻译引擎').selectOption('ai')
+  await visibleDialog(page).getByRole('button', { name: /保存/ }).click()
+  await page.keyboard.press('Escape')
+})
+
 // J6（搜索页诚实边界）在移动端入口验证，见 mobile-journeys.spec.ts
