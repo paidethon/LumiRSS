@@ -15,11 +15,16 @@
 - 稍后读（read-later）跨设备同步——落地时应迁到 Lumi SQLite 而非第三方
   存储（见 [explanation/reuse-policy.md](explanation/reuse-policy.md)）。
 
-## Later
+## Phase 2 — Knowledge Workbench（integration 分支进行中，2026-09）
 
-- **Phase 2 — Knowledge Workbench**：web clipping、结构化 JSON/API 来源、
-  邮件 newsletter、Obsidian library connector、统一来源注册表、
-  agent workspace。
+- 已落地（见 [research/phase2/](research/phase2/README.md) 实施规格）：
+  Library 域（书签/工作区/剪藏/快照资产）、本地翻译加固、
+  API 来源（JMESPath→Atom→FreshRSS）、邮件桥+摘要、
+  Obsidian 只读投影、统一搜索双腿+联邦收藏、低内存 RAG
+  （sqlite-vec + fastembed，显式启用+空闲卸载）、Agent 工作台
+  （服务端强制审批）、统一标签+派生图谱。
+- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、
+  多用户形态、向量库服务（sqlite-vec 单文件已够）。
 
 ## Explicitly deferred / rejected
 
