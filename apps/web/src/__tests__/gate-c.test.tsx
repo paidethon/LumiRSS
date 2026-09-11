@@ -64,10 +64,10 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
   })
 
-  it('Phase 2 项可见但禁用（phase2 M1 后：书签已点亮，剩余 8 项 + Phase 2 徽标）', () => {
+  it('Phase 2 项可见但禁用（phase2 M2 后：书签/剪藏/快照已点亮，剩余 6 项）', () => {
     renderSidebar()
     const planned = [
-      '网页剪藏', '网页快照', 'API 来源', '邮件简报', 'Obsidian 库',
+      'API 来源', '邮件简报', 'Obsidian 库',
       'Agent 工作台', 'RAG 索引', '标签 / 图谱',
     ]
     for (const label of planned) {
@@ -75,9 +75,11 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
       expect(el).not.toBeNull()
     }
     const badges = screen.getAllByText('Phase 2')
-    expect(badges.length).toBe(8)
-    // phase2 M1：书签从占位变为真实入口（button，可点）
+    expect(badges.length).toBe(6)
+    // phase2 M1/M2：书签、网页剪藏、网页快照已是真实入口
     expect(screen.getByRole('button', { name: '书签' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '网页剪藏' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '网页快照' })).toBeEnabled()
   })
 
   it('Phase 2 项不可点击（无 button 语义）', () => {

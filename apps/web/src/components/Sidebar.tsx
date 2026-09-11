@@ -514,7 +514,8 @@ function Sidebar({
         />
 
         {/* phase2 M1：书签（library 域）已可用——section 导航，替代原
-            Phase 2 禁用占位（保持同位置，信息来源组内） */}
+            Phase 2 禁用占位（保持同位置，信息来源组内）。
+            phase2 Gate 3：网页剪藏 / 网页快照同样激活为 section 导航。 */}
         <div className="mt-1 flex flex-col gap-0.5">
           <NavItem
             active={section === 'bookmarks'}
@@ -526,8 +527,26 @@ function Sidebar({
             <Bookmark aria-hidden className={icon16} />
             书签
           </NavItem>
-          <PlannedItem icon={<Globe aria-hidden className={icon16} />} label="网页剪藏" />
-          <PlannedItem icon={<Link2 aria-hidden className={icon16} />} label="网页快照" />
+          <NavItem
+            active={section === 'clips'}
+            onClick={() => {
+              selectSection('clips')
+              onNavigate?.()
+            }}
+          >
+            <Globe aria-hidden className={icon16} />
+            网页剪藏
+          </NavItem>
+          <NavItem
+            active={section === 'snapshots'}
+            onClick={() => {
+              selectSection('snapshots')
+              onNavigate?.()
+            }}
+          >
+            <Link2 aria-hidden className={icon16} />
+            网页快照
+          </NavItem>
           <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
           <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
           <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="Obsidian 库" />

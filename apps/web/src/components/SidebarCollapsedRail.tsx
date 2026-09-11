@@ -122,8 +122,19 @@ export default function SidebarCollapsedRail() {
             selectView('all')
           }}
         />
-        <RailItem icon={<Globe aria-hidden className={iconCls} />} label="网页剪藏" disabled />
-        <RailItem icon={<Link2 aria-hidden className={iconCls} />} label="网页快照" disabled />
+        {/* phase2 Gate 3：网页剪藏 / 网页快照（library 域）已可用 */}
+        <RailItem
+          icon={<Globe aria-hidden className={iconCls} />}
+          label="网页剪藏"
+          active={section === 'clips'}
+          onClick={() => selectSection('clips')}
+        />
+        <RailItem
+          icon={<Link2 aria-hidden className={iconCls} />}
+          label="网页快照"
+          active={section === 'snapshots'}
+          onClick={() => selectSection('snapshots')}
+        />
         <RailItem icon={<FileText aria-hidden className={iconCls} />} label="API 来源" disabled />
         <RailItem icon={<Mail aria-hidden className={iconCls} />} label="邮件简报" disabled />
         {/* phase2 M1：书签（library 域）已可用 */}

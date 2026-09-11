@@ -4,6 +4,32 @@ import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
 import { useReadLaterServerSync } from './lib/read-later'
+
+/** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
+ * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */
+function handleShareTarget(): void {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('share') !== '1') return
+    const shared = params.get('url') ?? params.get('text') ?? ''
+    if (shared.startsWith('http://') || shared.startsWith('https://')) {
+      sessionStorage.setItem('lumirss-share-url', shared)
+      useReaderUi.getState().selectSection('clips')
+    }
+    params.delete('share')
+    params.delete('url')
+    params.delete('text')
+    params.delete('title')
+    const rest = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (rest ? `?${rest}` : ''),
+    )
+  } catch {
+    // share 处理绝不影响应用启动
+  }
+}
 import EntryList from './components/EntryList'
 import MobileHeader from './components/MobileHeader'
 import MobileNavigationDrawer from './components/MobileNavigationDrawer'
@@ -24,6 +50,9 @@ const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPag
 // phase2 M1：书签 / 工作区列表页（与 Search 同模式：桌面 Timeline 列位）
 const BookmarksPage = lazy(() => import('./components/pages/BookmarksPage'))
 const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
+// phase2 M2：网页剪藏 / 网页快照列表页
+const ClipsPage = lazy(() => import('./components/pages/ClipsPage'))
+const SnapshotsPage = lazy(() => import('./components/pages/SnapshotsPage'))
 
 function PageSkeleton() {
   return (
@@ -56,6 +85,8 @@ export default function App() {
   useKeyboardShortcuts()
   // phase2 M1：稍后读服务端同步（一次性迁移 + 缓存对账，挂载一次）
   useReadLaterServerSync()
+  // phase2 M2：PWA Share Target 落地（挂载一次）
+  useEffect(handleShareTarget, [])
 
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
@@ -140,7 +171,11 @@ export default function App() {
                     ? '书签'
                     : section === 'workspaces'
                       ? '工作区'
-                      : '收藏'
+                      : section === 'clips'
+                        ? '网页剪藏'
+                        : section === 'snapshots'
+                          ? '网页快照'
+                          : '收藏'
             }
           >
             {section === 'subscriptions' && (
@@ -166,6 +201,16 @@ export default function App() {
             {section === 'workspaces' && (
               <Suspense fallback={<PageSkeleton />}>
                 <WorkspacesPage />
+              </Suspense>
+            )}
+            {section === 'clips' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <ClipsPage />
+              </Suspense>
+            )}
+            {section === 'snapshots' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SnapshotsPage />
               </Suspense>
             )}
           </section>
@@ -205,6 +250,18 @@ export default function App() {
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <WorkspacesPage />
+              </Suspense>
+            </div>
+          ) : section === 'clips' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <ClipsPage />
+              </Suspense>
+            </div>
+          ) : section === 'snapshots' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <SnapshotsPage />
               </Suspense>
             </div>
           ) : (

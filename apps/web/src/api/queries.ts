@@ -14,31 +14,33 @@ import {
   applyRssHubConfig,
   clearAiProfileSecret,
   clearDefaultAiSecret,
+  clearLibreTranslateKey,
   clearRssHubSecret,
   createAiProfile,
   createBackup,
   createBookmark,
+  createClip,
+  createRssHubCredential,
+  createSnapshot,
   createWorkspace,
   deleteAiProfile,
   deleteBookmark,
+  deleteClip,
+  deleteRssHubCredential,
+  deleteSnapshot,
+  detectRssHub,
   discoverFeeds,
   executeRestore,
+  fetchClipHtml,
   generateEntrySummary,
   generateEntryTranslation,
+  generateTranslationSegments,
   getAiProfiles,
   getAiSettings,
   getBackupCapabilities,
   getBackupJob,
-  generateTranslationSegments,
-  lookupTranslationSegments,
-  saveLibreTranslateKey,
-  clearLibreTranslateKey,
-  testLibreTranslate,
-  listRssHubCredentials,
-  createRssHubCredential,
-  deleteRssHubCredential,
-  detectRssHub,
   getCategories,
+  getClip,
   getEntries,
   getEntry,
   getEntryConversation,
@@ -56,8 +58,12 @@ import {
   importOpml,
   listBackups,
   listBookmarks,
+  listClips,
   listRemoteBackups,
+  listRssHubCredentials,
+  listSnapshots,
   listWorkspaces,
+  lookupTranslationSegments,
   moveSubscription,
   patchRssHubConfig,
   previewFeed,
@@ -67,6 +73,7 @@ import {
   removeWorkspaceItem,
   renameCategory,
   reorderWorkspaceItems,
+  saveLibreTranslateKey,
   searchEntries,
   sendConversationMessage,
   setAiProfileSecret,
@@ -74,6 +81,7 @@ import {
   setEntryState,
   setRssHubSecret,
   subscribeFeed,
+  testLibreTranslate,
   testWebDav,
   unsubscribeFeed,
   updateAiProfile,
@@ -82,7 +90,12 @@ import {
   updateBookmark,
   updateWebDavSettings,
 } from './client'
-import type { AiProfileInput, RssHubCredentialInput, TranslationSegmentBlockInput } from './client'
+import type {
+  AiProfileInput,
+  ClipInput,
+  RssHubCredentialInput,
+  TranslationSegmentBlockInput,
+} from './client'
 import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
@@ -1041,5 +1054,94 @@ export function useReorderWorkspaceItemsMutation() {
     mutationFn: (vars: { workspaceId: string; itemRefs: string[] }) =>
       reorderWorkspaceItems(vars.workspaceId, vars.itemRefs),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+// ---- phase2 Gate 3：网页剪藏（library/clips） ----
+
+/** 剪藏列表（cursor 分页；与 bookmarks 同一无限分页模式，maxPages
+ * 保险丝一致）。 */
+export function useClips() {
+  return useInfiniteQuery({
+    queryKey: ['library', 'clips'],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => listClips(pageParam, undefined, signal),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    placeholderData: keepPreviousData,
+    maxPages: 50,
+  })
+}
+
+/** 单条剪藏 Detail（含 contentHtml/contentText；Dialog 打开时才发
+ * 请求——enabled=false 时零流量）。 */
+export function useClipDetail(clipRef: string | null) {
+  return useQuery({
+    queryKey: ['library', 'clips', 'detail', clipRef],
+    queryFn: ({ signal }) => getClip(clipRef!, signal),
+    enabled: clipRef !== null,
+  })
+}
+
+/** 服务端抓取目标页 HTML（无副作用 mutation——复用 pending/error
+ * 语义与双击防重；不 invalidate 任何 query，结果由调用方进入提取
+ * 流程后经 createClip 落库）。 */
+export function useClipFetchMutation() {
+  return useMutation({
+    mutationFn: (url: string) => fetchClipHtml(url),
+  })
+}
+
+/** 保存剪藏（幂等创建）；成功后失效剪藏列表与 detail 前缀。 */
+export function useCreateClipMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ClipInput) => createClip(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** 删除剪藏（破坏性；调用方决定是否二次确认——本页与书签一致：
+ * 行内立即删除）。 */
+export function useDeleteClipMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (clipRef: string) => deleteClip(clipRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+// ---- phase2 Gate 3：网页快照（library/snapshots） ----
+
+/** 快照列表 + 用量（count / bytes / quotaBytes）。 */
+export function useSnapshots() {
+  return useQuery({
+    queryKey: ['library', 'snapshots'],
+    queryFn: ({ signal }) => listSnapshots(signal),
+  })
+}
+
+/** 生成快照（长任务 10–90s；server-confirmed 后失效快照列表）。 */
+export function useCreateSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (url: string) => createSnapshot(url),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'snapshots'] })
+    },
+  })
+}
+
+/** 删除快照（破坏性）。 */
+export function useDeleteSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (uuid: string) => deleteSnapshot(uuid),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'snapshots'] })
+    },
   })
 }

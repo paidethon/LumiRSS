@@ -122,3 +122,13 @@ export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
+
+// ---- phase2 M2 web clips + offline snapshots ----
+
+export type Clip = Schemas['Clip']
+export type ClipDetail = Schemas['ClipDetail']
+export type ClipListResponse = Schemas['ClipListResponse']
+export type ClipFetchResult = Schemas['ClipFetchResult']
+export type SnapshotView = Schemas['SnapshotView']
+export type SnapshotListResponse = Schemas['SnapshotListResponse']
+export type SnapshotUsage = Schemas['SnapshotUsage']

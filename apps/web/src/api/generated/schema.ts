@@ -4,6 +4,85 @@
  */
 
 export interface paths {
+    "/api/mail/ingest/{list_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Mail
+         * @description Authenticated thin bridge: bearer secret + raw MIME body.
+         *
+         *     Lives at /api/mail/* (not /api/v1/*): it is machine-to-machine and
+         *     still passes through the same security middlewares by path prefix.
+         */
+        post: operations["ingest_mail_api_mail_ingest__list_uuid__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_v1_api_sources_get"];
+        put?: never;
+        /** Create Source */
+        post: operations["create_source_api_v1_api_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Source
+         * @description Fetch + map WITHOUT saving anything; ≤5 items, honest errors.
+         */
+        post: operations["preview_source_api_v1_api_sources_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Source */
+        delete: operations["delete_source_api_v1_api_sources__source_uuid__delete"];
+        options?: never;
+        head?: never;
+        /** Update Source */
+        patch: operations["update_source_api_v1_api_sources__source_uuid__patch"];
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -284,6 +363,45 @@ export interface paths {
         patch: operations["rename_category_api_v1_categories__category_id__patch"];
         trace?: never;
     };
+    "/api/v1/digest/send-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Digest Send Now
+         * @description Immediate send with the configured relay (never a test to real
+         *     third parties — tests use local sinks only).
+         */
+        post: operations["digest_send_now_api_v1_digest_send_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/digest/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Digest Settings */
+        get: operations["get_digest_settings_api_v1_digest_settings_get"];
+        /** Update Digest Settings */
+        put: operations["update_digest_settings_api_v1_digest_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries": {
         parameters: {
             query?: never;
@@ -500,6 +618,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Federated Favorites
+         * @description RSS star (FreshRSS truth) + library favorites (Lumi truth) merged
+         *     for display — never copied across domains.
+         */
+        get: operations["federated_favorites_api_v1_favorites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/favorites/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Library Favorite */
+        post: operations["add_library_favorite_api_v1_favorites_library_post"];
+        /** Remove Library Favorite */
+        delete: operations["remove_library_favorite_api_v1_favorites_library_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feed-preview": {
         parameters: {
             query?: never;
@@ -569,6 +726,28 @@ export interface paths {
          *     never exposed to the browser, and no URL ever carries credentials.
          */
         get: operations["freshrss_ui_api_v1_freshrss_ui_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/assets/{asset_uuid}/page.html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Snapshot
+         * @description Sandboxed artifact read-out. The CSP `sandbox` directive strips
+         *     scripts, forms, same-origin access and top navigation — the snapshot
+         *     can never reach Lumi's origin, cookies or /api endpoints.
+         */
+        get: operations["serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -661,6 +840,220 @@ export interface paths {
         head?: never;
         /** Update Bookmark */
         patch: operations["update_bookmark_api_v1_library_bookmarks__item_uuid__patch"];
+        trace?: never;
+    };
+    "/api/v1/library/clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clips */
+        get: operations["list_clips_api_v1_library_clips_get"];
+        put?: never;
+        /** Create Clip */
+        post: operations["create_clip_api_v1_library_clips_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch For Clip
+         * @description One bounded anonymous SSRF-guarded server fetch (no cookies).
+         */
+        post: operations["fetch_for_clip_api_v1_library_clips_fetch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Clip */
+        get: operations["get_clip_api_v1_library_clips__item_uuid__get"];
+        put?: never;
+        post?: never;
+        /** Delete Clip */
+        delete: operations["delete_clip_api_v1_library_clips__item_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Snapshots */
+        get: operations["list_snapshots_api_v1_library_snapshots_get"];
+        put?: never;
+        /** Create Snapshot */
+        post: operations["create_snapshot_api_v1_library_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Snapshot */
+        delete: operations["delete_snapshot_api_v1_library_snapshots__asset_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/bridge-lists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Bridge Lists */
+        get: operations["list_bridge_lists_api_v1_mail_bridge_lists_get"];
+        put?: never;
+        /** Create Bridge List */
+        post: operations["create_bridge_list_api_v1_mail_bridge_lists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/bridge-lists/{list_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Bridge List */
+        delete: operations["delete_bridge_list_api_v1_mail_bridge_lists__list_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Notes */
+        get: operations["list_notes_api_v1_obsidian_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/notes/{note_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Note */
+        get: operations["get_note_api_v1_obsidian_notes__note_uuid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rescan Obsidian */
+        post: operations["rescan_obsidian_api_v1_obsidian_rescan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Obsidian Settings
+         * @description Configure the vault root (canonicalized, validated, read-only).
+         */
+        put: operations["set_obsidian_settings_api_v1_obsidian_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obsidian Status */
+        get: operations["obsidian_status_api_v1_obsidian_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/operations/status": {
@@ -1577,6 +1970,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feeds/mail/{list_uuid}.{secret}.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Mail Atom
+         * @description Per-list Atom for FreshRSS (constant-time secret check).
+         */
+        get: operations["serve_mail_atom_feeds_mail__list_uuid___secret__atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feeds/{source_uuid}.{secret}.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Atom
+         * @description The FreshRSS-facing feed. Constant-time secret check, ETag/304,
+         *     bounded fetch + mapping on every pull, honest error status marking.
+         */
+        get: operations["serve_atom_feeds__source_uuid___secret__atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -1804,6 +2238,113 @@ export interface components {
              * @enum {string}
              */
             translationLanguage: "zh-CN" | "en";
+        };
+        /**
+         * ApiSource
+         * @description One API source config (secret/atomPath only on create).
+         */
+        ApiSource: {
+            /** Atompath */
+            atomPath?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint */
+            endpoint: string;
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Laststatus */
+            lastStatus?: string | null;
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Name */
+            name: string;
+            /** Secret */
+            secret?: string | null;
+            /** Subscribeerror */
+            subscribeError?: string | null;
+            /** Uuid */
+            uuid: string;
+        };
+        /**
+         * ApiSourceCreate
+         * @description POST /api/v1/api-sources.
+         */
+        ApiSourceCreate: {
+            /** Endpoint */
+            endpoint: string;
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+            /** Name */
+            name: string;
+            /**
+             * Subscribe
+             * @default true
+             */
+            subscribe: boolean;
+        };
+        /**
+         * ApiSourceListResponse
+         * @description Envelope for GET /api/v1/api-sources.
+         */
+        ApiSourceListResponse: {
+            /** Items */
+            items: components["schemas"]["ApiSource"][];
+        };
+        /**
+         * ApiSourcePreviewRequest
+         * @description POST /api/v1/api-sources/preview — nothing is saved.
+         */
+        ApiSourcePreviewRequest: {
+            /** Endpoint */
+            endpoint: string;
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+        };
+        /**
+         * ApiSourcePreviewResult
+         * @description Bounded preview (≤5 mapped items).
+         */
+        ApiSourcePreviewResult: {
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+            /** Totalavailable */
+            totalAvailable: number;
+        };
+        /**
+         * ApiSourceUpdate
+         * @description PATCH /api/v1/api-sources/{uuid} — all fields optional.
+         */
+        ApiSourceUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Endpoint */
+            endpoint?: string | null;
+            /** Fieldmap */
+            fieldMap?: {
+                [key: string]: string;
+            } | null;
+            /** Itemsexpr */
+            itemsExpr?: string | null;
+            /** Name */
+            name?: string | null;
         };
         /**
          * ApiVersionInfo
@@ -2160,6 +2701,94 @@ export interface components {
             label: string;
         };
         /**
+         * Clip
+         * @description One clip in the library domain.
+         */
+        Clip: {
+            /** Byline */
+            byline?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Fetchedat */
+            fetchedAt: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * ClipCreate
+         * @description POST /api/v1/library/clips — extracted content from the client.
+         */
+        ClipCreate: {
+            /** Byline */
+            byline?: string | null;
+            /** Contenthtml */
+            contentHtml: string;
+            /** Contenttext */
+            contentText: string;
+            /** Fetchedat */
+            fetchedAt?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * ClipDetail
+         * @description Clip with its (sanitized-at-origin) content.
+         */
+        ClipDetail: {
+            /** Byline */
+            byline?: string | null;
+            /** Contenthtml */
+            contentHtml: string;
+            /** Contenttext */
+            contentText: string;
+            /** Createdat */
+            createdAt: string;
+            /** Fetchedat */
+            fetchedAt: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * ClipFetchRequest
+         * @description POST /api/v1/library/clips/fetch — server-side bounded fetch.
+         */
+        ClipFetchRequest: {
+            /** Url */
+            url: string;
+        };
+        /**
+         * ClipFetchResult
+         * @description Raw fetched page handed to the browser extractor.
+         */
+        ClipFetchResult: {
+            /** Finalurl */
+            finalUrl: string;
+            /** Html */
+            html: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * ClipListResponse
+         * @description Envelope for GET /api/v1/library/clips.
+         */
+        ClipListResponse: {
+            /** Items */
+            items: components["schemas"]["Clip"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
          * ComponentError
          * @description Redacted component error detail (only ``type`` ever leaves the BFF).
          */
@@ -2194,6 +2823,75 @@ export interface components {
         ConversationQuestion: {
             /** Question */
             question: string;
+        };
+        /**
+         * DigestSendNowRequest
+         * @description POST /api/v1/digest/send-now — explicit item selection.
+         */
+        DigestSendNowRequest: {
+            /** Entryrefs */
+            entryRefs: {
+                [key: string]: string;
+            }[];
+        };
+        /**
+         * DigestSettings
+         * @description Outbound digest configuration (password never returned).
+         */
+        DigestSettings: {
+            /** Enabled */
+            enabled: boolean;
+            /** Fromaddr */
+            fromAddr: string;
+            /** Hour */
+            hour: number;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastsentat */
+            lastSentAt?: string | null;
+            /** Limitcount */
+            limitCount: number;
+            /**
+             * Passwordconfigured
+             * @default false
+             */
+            passwordConfigured: boolean;
+            /** Smtphost */
+            smtpHost: string;
+            /** Smtpport */
+            smtpPort: number;
+            /** Smtpuser */
+            smtpUser: string;
+            /** Source */
+            source: string;
+            /** Toaddr */
+            toAddr: string;
+        };
+        /**
+         * DigestSettingsUpdate
+         * @description PUT /api/v1/digest/settings — partial; password write-only.
+         */
+        DigestSettingsUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Fromaddr */
+            fromAddr?: string | null;
+            /** Hour */
+            hour?: number | null;
+            /** Limitcount */
+            limitCount?: number | null;
+            /** Smtphost */
+            smtpHost?: string | null;
+            /** Smtppassword */
+            smtpPassword?: string | null;
+            /** Smtpport */
+            smtpPort?: number | null;
+            /** Smtpuser */
+            smtpUser?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Toaddr */
+            toAddr?: string | null;
         };
         /**
          * DiscoveryCandidate
@@ -2358,6 +3056,19 @@ export interface components {
             translatedTitle?: string | null;
         };
         /**
+         * FavoritesResponse
+         * @description Federated favorites: rss star + library favorite, merged for
+         *     display only — each stays owned by its own domain.
+         */
+        FavoritesResponse: {
+            /** Library */
+            library: components["schemas"]["LibrarySearchItem"][];
+            /** Libraryerror */
+            libraryError?: string | null;
+            /** Rss */
+            rss: components["schemas"]["SearchItem"][];
+        };
+        /**
          * Feed
          * @description One item of GET /api/v1/feeds (read path; uncategorized → null).
          */
@@ -2450,6 +3161,35 @@ export interface components {
             status: string;
         };
         /**
+         * LibraryFavoriteRequest
+         * @description POST/DELETE /api/v1/favorites/library — one ItemRef.
+         */
+        LibraryFavoriteRequest: {
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * LibrarySearchItem
+         * @description Library leg of unified search (same shape philosophy as SearchItem).
+         */
+        LibrarySearchItem: {
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Snippet
+             * @default
+             */
+            snippet: string;
+            /** Title */
+            title: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
          * LibreTranslateTestResult
          * @description POST /api/v1/settings/translation/libretranslate-test.
          */
@@ -2469,6 +3209,159 @@ export interface components {
         LoginRequest: {
             /** Password */
             password: string;
+        };
+        /**
+         * MailBridgeList
+         * @description One bridge list (secret never echoed after creation).
+         */
+        MailBridgeList: {
+            /** Createdat */
+            createdAt: string;
+            /** Name */
+            name: string;
+            /** Uuid */
+            uuid: string;
+        };
+        /**
+         * MailBridgeListCreate
+         * @description POST /api/v1/mail/bridge-lists.
+         */
+        MailBridgeListCreate: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * MailBridgeListCreated
+         * @description Creation response — the only time the bearer secret is visible.
+         */
+        MailBridgeListCreated: {
+            /** Createdat */
+            createdAt: string;
+            /** Name */
+            name: string;
+            /** Secret */
+            secret: string;
+            /** Uuid */
+            uuid: string;
+        };
+        /**
+         * MailBridgeListResponse
+         * @description Envelope for GET /api/v1/mail/bridge-lists.
+         */
+        MailBridgeListResponse: {
+            /** Items */
+            items: components["schemas"]["MailBridgeList"][];
+        };
+        /**
+         * MailIngestResult
+         * @description Honest ingest/send report.
+         */
+        MailIngestResult: {
+            /**
+             * Attachments
+             * @default 0
+             */
+            attachments: number;
+            /**
+             * Messageid
+             * @default
+             */
+            messageId: string;
+            /** Status */
+            status: string;
+            /** Subject */
+            subject?: string | null;
+        };
+        /**
+         * NoteListResponse
+         * @description Envelope for GET /api/v1/obsidian/notes.
+         */
+        NoteListResponse: {
+            /** Items */
+            items: components["schemas"]["NoteView"][];
+        };
+        /**
+         * NoteView
+         * @description One projected note; contentHtml only on detail (client sanitizes).
+         */
+        NoteView: {
+            /** Contenthtml */
+            contentHtml?: string | null;
+            /** Indexedat */
+            indexedAt: string;
+            /** Ref */
+            ref: string;
+            /** Relpath */
+            relPath: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /** Title */
+            title: string;
+            /** Wikilinks */
+            wikilinks?: string[] | null;
+        };
+        /**
+         * ObsidianNoteSetting
+         * @description PUT /api/v1/obsidian/settings.
+         */
+        ObsidianNoteSetting: {
+            /** Vaultpath */
+            vaultPath: string;
+        };
+        /**
+         * ObsidianRescanResult
+         * @description Bounded scan report with rename detection.
+         */
+        ObsidianRescanResult: {
+            /** Added */
+            added: number;
+            /** Changed */
+            changed: number;
+            /** Elapsedms */
+            elapsedMs: number;
+            /** Removed */
+            removed: number;
+            /** Renames */
+            renames: number;
+            /** Skipped */
+            skipped: number;
+            /** Unchanged */
+            unchanged: number;
+            /**
+             * Vaultpath
+             * @default
+             */
+            vaultPath: string;
+        };
+        /**
+         * ObsidianSettings
+         * @description Vault root (canonicalized) + honest note count.
+         */
+        ObsidianSettings: {
+            /** Notecount */
+            noteCount: number;
+            /** Vaultpath */
+            vaultPath: string;
+        };
+        /**
+         * ObsidianStatus
+         * @description Honest scanner status (error keeps the old index visible).
+         */
+        ObsidianStatus: {
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastscanat */
+            lastScanAt?: string | null;
+            /**
+             * Notecount
+             * @default 0
+             */
+            noteCount: number;
+            /** Vaultpath */
+            vaultPath: string;
         };
         /**
          * OperationsBackupStatus
@@ -3105,7 +3998,8 @@ export interface components {
         };
         /**
          * SearchResponse
-         * @description Envelope for GET /api/v1/search.
+         * @description Envelope for GET /api/v1/search (phase2 G6: + optional library
+         *     leg — additive fields, wire-compatible with older clients).
          */
         SearchResponse: {
             /** Elapsedms */
@@ -3115,6 +4009,10 @@ export interface components {
             index: components["schemas"]["SearchIndexInfo"];
             /** Items */
             items: components["schemas"]["SearchItem"][];
+            /** Library */
+            library?: components["schemas"]["LibrarySearchItem"][] | null;
+            /** Libraryerror */
+            libraryError?: string | null;
             /** Nextcursor */
             nextCursor: string | null;
         };
@@ -3131,6 +4029,58 @@ export interface components {
         SecretValuePut: {
             /** Value */
             value: string;
+        };
+        /**
+         * SnapshotCreate
+         * @description POST /api/v1/library/snapshots.
+         */
+        SnapshotCreate: {
+            /** Url */
+            url: string;
+        };
+        /**
+         * SnapshotListResponse
+         * @description Envelope for GET /api/v1/library/snapshots.
+         */
+        SnapshotListResponse: {
+            /** Items */
+            items: components["schemas"]["SnapshotView"][];
+            usage: components["schemas"]["SnapshotUsage"];
+        };
+        /**
+         * SnapshotUsage
+         * @description Honest quota accounting for saved snapshots.
+         */
+        SnapshotUsage: {
+            /** Bytes */
+            bytes: number;
+            /** Count */
+            count: number;
+            /** Quotabytes */
+            quotaBytes: number;
+        };
+        /**
+         * SnapshotView
+         * @description One stored snapshot asset.
+         */
+        SnapshotView: {
+            /** Bytes */
+            bytes: number;
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Deduplicated
+             * @default false
+             */
+            deduplicated: boolean;
+            /** Itemref */
+            itemRef: string;
+            /** Sha256 */
+            sha256: string;
+            /** Url */
+            url: string;
+            /** Uuid */
+            uuid: string;
         };
         /**
          * SourceDiscoveryRequest
@@ -3410,6 +4360,187 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    ingest_mail_api_mail_ingest__list_uuid__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailIngestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_v1_api_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceListResponse"];
+                };
+            };
+        };
+    };
+    create_source_api_v1_api_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSource"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_source_api_v1_api_sources_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourcePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourcePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_v1_api_sources__source_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_api_v1_api_sources__source_uuid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSource"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -3786,6 +4917,92 @@ export interface operations {
             };
         };
     };
+    digest_send_now_api_v1_digest_send_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestSendNowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailIngestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_digest_settings_api_v1_digest_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestSettings"];
+                };
+            };
+        };
+    };
+    update_digest_settings_api_v1_digest_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     entries_api_v1_entries_get: {
         parameters: {
             query?: {
@@ -4145,6 +5362,88 @@ export interface operations {
             };
         };
     };
+    federated_favorites_api_v1_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoritesResponse"];
+                };
+            };
+        };
+    };
+    add_library_favorite_api_v1_favorites_library_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryFavoriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_library_favorite_api_v1_favorites_library_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryFavoriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_feed_api_v1_feed_preview_post: {
         parameters: {
             query?: never;
@@ -4214,6 +5513,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreshRssUiInfo"];
+                };
+            };
+        };
+    };
+    serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4384,6 +5714,464 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clips_api_v1_library_clips_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_clip_api_v1_library_clips_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_for_clip_api_v1_library_clips_fetch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipFetchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipFetchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clip_api_v1_library_clips__item_uuid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_clip_api_v1_library_clips__item_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_snapshots_api_v1_library_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotListResponse"];
+                };
+            };
+        };
+    };
+    create_snapshot_api_v1_library_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_snapshot_api_v1_library_snapshots__asset_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bridge_lists_api_v1_mail_bridge_lists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailBridgeListResponse"];
+                };
+            };
+        };
+    };
+    create_bridge_list_api_v1_mail_bridge_lists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailBridgeListCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailBridgeListCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bridge_list_api_v1_mail_bridge_lists__list_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notes_api_v1_obsidian_notes_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_note_api_v1_obsidian_notes__note_uuid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rescan_obsidian_api_v1_obsidian_rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianRescanResult"];
+                };
+            };
+        };
+    };
+    set_obsidian_settings_api_v1_obsidian_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianNoteSetting"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obsidian_status_api_v1_obsidian_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianStatus"];
                 };
             };
         };
@@ -5965,6 +7753,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_mail_atom_feeds_mail__list_uuid___secret__atom_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+                secret: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_atom_feeds__source_uuid___secret__atom_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+                secret: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

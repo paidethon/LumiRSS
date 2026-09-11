@@ -17,6 +17,9 @@ import type {
   Bookmark,
   BookmarkImportResult,
   BookmarkListResponse,
+  ClipDetail,
+  ClipFetchResult,
+  ClipListResponse,
   TranslationSegmentsView,
   Category,
   EntryConversation,
@@ -37,6 +40,8 @@ import type {
   RssHubRoutesResponse,
   SearchResponse,
   ServerSettings,
+  SnapshotListResponse,
+  SnapshotView,
   SourceDiscoveryResponse,
   Subscription,
   WebDavSettings,
@@ -944,10 +949,7 @@ export async function listBookmarks(
     query.set('q', params.q)
   }
   const qs = query.toString()
-  return request<BookmarkListResponse>(
-    `${API_BASE}/library/bookmarks${qs !== '' ? `?${qs}` : ''}`,
-    signal,
-  )
+  return request<BookmarkListResponse>(`${API_BASE}/library/bookmarks?${qs}`, signal)
 }
 
 /** 创建书签（url | rssItemRef 二选一）；重复 url/rssItemRef 幂等返回同一
@@ -1040,4 +1042,115 @@ export async function reorderWorkspaceItems(
     },
   )
   return (await response.json()) as WorkspaceItemsResponse
+}
+
+// ---- phase2 Gate 3：网页剪藏（library/clips） ----
+// 抓取（SSRF 受限）→ 本地提取 → 存储三步由页面编排；ref 形如
+// `library:<uuid>`，路径参数取 uuid 部分（本模块负责剥离，UI 只透传
+// ref，与书签同一模式）。
+
+/** `library:<uuid>` → `<uuid>`（容错裸 uuid，原样返回）。 */
+function toClipId(clipRef: string): string {
+  return clipRef.startsWith('library:') ? clipRef.slice('library:'.length) : clipRef
+}
+
+/** 服务端匿名抓取目标页 HTML（SSRF 守卫：只放行公网 http/https、
+ * MIME 白名单、5MB / 20s 上限；400 clip_fetch_forbidden /
+ * 502 clip_fetch_failed 由 UI 原样展示 message）。无副作用 mutation
+ * 语义：不接 AbortSignal，发出后允许完成。 */
+export async function fetchClipHtml(url: string): Promise<ClipFetchResult> {
+  const response = await rawRequest(`${API_BASE}/library/clips/fetch`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ClipFetchResult
+}
+
+export interface ClipInput {
+  url: string
+  title: string
+  byline?: string | null
+  contentHtml: string
+  contentText: string
+  fetchedAt?: string
+}
+
+/** 保存剪藏（contentHtml 必须已过 DOMPurify——见 lib/clip-extract.ts；
+ * 重复 url 幂等返回同一 ref）。不接 AbortSignal，与其它 mutation 一致。 */
+export async function createClip(body: ClipInput): Promise<ClipDetail> {
+  const response = await rawRequest(`${API_BASE}/library/clips`, {
+    method: 'POST',
+    body: JSON.stringify({
+      url: body.url,
+      title: body.title,
+      byline: body.byline ?? null,
+      contentHtml: body.contentHtml,
+      contentText: body.contentText,
+      fetchedAt: body.fetchedAt ?? new Date().toISOString(),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ClipDetail
+}
+
+/** 剪藏列表（cursor opaque 透传）。 */
+export async function listClips(
+  cursor?: string | null,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ClipListResponse> {
+  const query = new URLSearchParams()
+  if (cursor != null) {
+    query.set('cursor', cursor)
+  }
+  if (limit != null) {
+    query.set('limit', String(limit))
+  }
+  const qs = query.toString()
+  return request<ClipListResponse>(`${API_BASE}/library/clips?${qs}`, signal)
+}
+
+/** 读单条剪藏 Detail（含 contentHtml/contentText）。 */
+export async function getClip(uuid: string, signal?: AbortSignal): Promise<ClipDetail> {
+  return request<ClipDetail>(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}`,
+    signal,
+  )
+}
+
+/** 删除剪藏（破坏性；DELETE 204，无响应体）。 */
+export async function deleteClip(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---- phase2 Gate 3：网页快照（library/snapshots，monolith） ----
+// 服务端依赖外部 monolith 二进制；未配置时 503 monolith_unavailable，
+// UI 原样透出 message。生成是长任务（10–90s）。
+
+/** 生成离线快照（长任务；成功返回 SnapshotView，deduplicated 标记
+ * 内容去重）。不接 AbortSignal，与其它 mutation 一致。 */
+export async function createSnapshot(url: string): Promise<SnapshotView> {
+  const response = await rawRequest(`${API_BASE}/library/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SnapshotView
+}
+
+/** 快照列表 + 用量（count / bytes / quotaBytes）。 */
+export async function listSnapshots(signal?: AbortSignal): Promise<SnapshotListResponse> {
+  return request<SnapshotListResponse>(`${API_BASE}/library/snapshots`, signal)
+}
+
+/** 删除快照（DELETE 204，无响应体）。 */
+export async function deleteSnapshot(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}`,
+    { method: 'DELETE' },
+  )
 }

@@ -1,6 +1,7 @@
-import { Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
+import { useState } from 'react'
+import { Camera, Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
-import { useEntryStateMutation } from '../api/queries'
+import { useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { formatReadingTime, textFromHtml } from '../lib/reading-time'
@@ -19,6 +20,53 @@ function formatPublishedAt(value: string | null | undefined): string {
   }
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : dateFormatter.format(date)
+}
+
+/** phase2 Gate 3：保存快照（monolith 离线快照；仅绝对 http/https 原文
+ * 可保存——由父级以 safeExternalHttpUrl 过滤后条件渲染）。
+ * 成功短暂显示「快照已保存」；失败原样透出 BFF message
+ *（monolith_unavailable / 配额超限等，诚实语义）。 */
+function SaveSnapshotButton({ url }: { url: string }) {
+  const [savedRecently, setSavedRecently] = useState(false)
+  const createSnapshot = useCreateSnapshotMutation()
+
+  const failure =
+    createSnapshot.isError && createSnapshot.error instanceof Error
+      ? createSnapshot.error.message
+      : createSnapshot.isError
+        ? '快照保存失败，请稍后重试。'
+        : null
+  const tooltip = failure ?? (savedRecently ? '快照已保存' : '保存快照')
+
+  return (
+    <Tooltip content={tooltip}>
+      <IconButton
+        icon={
+          createSnapshot.isPending ? (
+            <Loader2 aria-hidden className="animate-spin" />
+          ) : (
+            <Camera
+              aria-hidden
+              className={cx(
+                savedRecently && 'text-[var(--lumi-accent-text)]',
+              )}
+            />
+          )
+        }
+        label="保存快照"
+        touch
+        disabled={createSnapshot.isPending}
+        onClick={() =>
+          createSnapshot.mutate(url, {
+            onSuccess: () => {
+              setSavedRecently(true)
+              window.setTimeout(() => setSavedRecently(false), 3000)
+            },
+          })
+        }
+      />
+    </Tooltip>
+  )
 }
 
 /** ReaderHeader — 标题 / 元信息 / 工具栏（0009 Gate 3 视觉重建）。
@@ -254,6 +302,10 @@ export default function ReaderHeader({
             打开原文
           </a>
         )}
+
+        {/* phase2 Gate 3：保存快照——只在原文是绝对 http/https 时出现
+            （articleUrl 已过 safeExternalHttpUrl）。 */}
+        {articleUrl !== null && <SaveSnapshotButton url={articleUrl} />}
 
         {/* 0016：文章限定 AI 对话入口（右侧面板；Reader 持有开关） */}
         {onOpenAiConversation !== undefined && (

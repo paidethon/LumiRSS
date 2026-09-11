@@ -45,6 +45,8 @@ export default function MobileHeader() {
     favorites: '收藏',
     bookmarks: '书签',
     workspaces: '工作区',
+    clips: '网页剪藏',
+    snapshots: '网页快照',
   }
 
   return (
