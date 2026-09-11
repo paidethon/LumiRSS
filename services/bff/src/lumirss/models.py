@@ -933,3 +933,251 @@ class ResolveRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     refs: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M2) — web clips + offline snapshots
+# ---------------------------------------------------------------------------
+
+
+class ClipFetchRequest(BaseModel):
+    """POST /api/v1/library/clips/fetch — server-side bounded fetch."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+
+
+class ClipFetchResult(BaseModel):
+    """Raw fetched page handed to the browser extractor."""
+
+    url: str
+    finalUrl: str
+    html: str
+
+
+class ClipCreate(BaseModel):
+    """POST /api/v1/library/clips — extracted content from the client."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+    title: str
+    byline: str | None = None
+    contentHtml: str
+    contentText: str
+    fetchedAt: str | None = None
+
+
+class Clip(BaseModel):
+    """One clip in the library domain."""
+
+    ref: str
+    url: str
+    title: str
+    byline: str | None = None
+    fetchedAt: str
+    createdAt: str
+
+
+class ClipDetail(Clip):
+    """Clip with its (sanitized-at-origin) content."""
+
+    contentHtml: str
+    contentText: str
+
+
+class ClipListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/clips."""
+
+    items: list[Clip]
+    nextCursor: str | None
+
+
+class SnapshotCreate(BaseModel):
+    """POST /api/v1/library/snapshots."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+
+
+class SnapshotView(BaseModel):
+    """One stored snapshot asset."""
+
+    uuid: str
+    itemRef: str
+    url: str
+    bytes: int
+    sha256: str
+    deduplicated: bool = False
+    createdAt: str
+
+
+class SnapshotUsage(BaseModel):
+    """Honest quota accounting for saved snapshots."""
+
+    count: int
+    bytes: int
+    quotaBytes: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M3) — API sources v1
+# ---------------------------------------------------------------------------
+
+
+class ApiSourceCreate(BaseModel):
+    """POST /api/v1/api-sources."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+    subscribe: bool = True
+
+
+class ApiSourceUpdate(BaseModel):
+    """PATCH /api/v1/api-sources/{uuid} — all fields optional."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str | None = None
+    endpoint: str | None = None
+    itemsExpr: str | None = None
+    fieldMap: dict[str, str] | None = None
+    enabled: bool | None = None
+
+
+class ApiSource(BaseModel):
+    """One API source config (secret/atomPath only on create)."""
+
+    uuid: str
+    name: str
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+    enabled: bool
+    lastStatus: str | None = None
+    lastSuccessAt: str | None = None
+    lastError: str | None = None
+    createdAt: str
+    secret: str | None = None
+    atomPath: str | None = None
+    subscribeError: str | None = None
+
+
+class ApiSourceListResponse(BaseModel):
+    """Envelope for GET /api/v1/api-sources."""
+
+    items: list[ApiSource]
+
+
+class ApiSourcePreviewRequest(BaseModel):
+    """POST /api/v1/api-sources/preview — nothing is saved."""
+
+    model_config = {"extra": "forbid"}
+
+    endpoint: str
+    itemsExpr: str
+    fieldMap: dict[str, str]
+
+
+class ApiSourcePreviewResult(BaseModel):
+    """Bounded preview (≤5 mapped items)."""
+
+    items: list[dict[str, object]]
+    totalAvailable: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G5) — mail bridge + digest
+# ---------------------------------------------------------------------------
+
+
+class MailBridgeList(BaseModel):
+    """One bridge list (secret never echoed after creation)."""
+
+    uuid: str
+    name: str
+    createdAt: str
+
+
+class MailBridgeListCreated(MailBridgeList):
+    """Creation response — the only time the bearer secret is visible."""
+
+    secret: str
+
+
+class MailBridgeListCreate(BaseModel):
+    """POST /api/v1/mail/bridge-lists."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class MailBridgeListResponse(BaseModel):
+    """Envelope for GET /api/v1/mail/bridge-lists."""
+
+    items: list[MailBridgeList]
+
+
+class MailIngestResult(BaseModel):
+    """Honest ingest/send report."""
+
+    status: str
+    messageId: str = ""
+    subject: str | None = None
+    attachments: int = 0
+
+
+class DigestSettings(BaseModel):
+    """Outbound digest configuration (password never returned)."""
+
+    enabled: bool
+    hour: int
+    source: str
+    limitCount: int
+    smtpHost: str
+    smtpPort: int
+    smtpUser: str
+    fromAddr: str
+    toAddr: str
+    lastSentAt: str | None = None
+    lastError: str | None = None
+    passwordConfigured: bool = False
+
+
+class DigestSettingsUpdate(BaseModel):
+    """PUT /api/v1/digest/settings — partial; password write-only."""
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool | None = None
+    hour: int | None = None
+    source: str | None = None
+    limitCount: int | None = None
+    smtpHost: str | None = None
+    smtpPort: int | None = None
+    smtpUser: str | None = None
+    fromAddr: str | None = None
+    toAddr: str | None = None
+    smtpPassword: str | None = None
+
+
+class DigestSendNowRequest(BaseModel):
+    """POST /api/v1/digest/send-now — explicit item selection."""
+
+    model_config = {"extra": "forbid"}
+
+    entryRefs: list[dict[str, str]]
+
+
+class SnapshotListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/snapshots."""
+
+    items: list[SnapshotView]
+    usage: SnapshotUsage

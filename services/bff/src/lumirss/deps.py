@@ -6,6 +6,8 @@ request handler never constructs upstream clients directly.
 
 
 
+from pathlib import Path
+
 from fastapi import Request
 from pydantic import ValidationError
 
@@ -29,6 +31,7 @@ from lumirss.ai_translation import TranslationService
 from lumirss.ai_translation_segments import (
     SegmentTranslationService,
 )
+from lumirss.api_source_store import ApiSourceStore
 from lumirss.app_settings import (
     AppSettingsStore,
 )
@@ -43,6 +46,9 @@ from lumirss.feed_preview import (
     FeedPreviewService,
 )
 from lumirss.library import LibraryStore
+from lumirss.library_assets import AssetStore
+from lumirss.library_clips import ClipStore
+from lumirss.mail_bridge import MailBridgeStore
 from lumirss.operations import OperationsService
 from lumirss.restore import (
     RestoreService,
@@ -56,6 +62,7 @@ from lumirss.rsshub_control import (
 )
 from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
+from lumirss.snapshots import SnapshotJobRunner
 from lumirss.source_discovery import (
     SourceDiscoveryService,
 )
@@ -375,6 +382,55 @@ def _get_library_store(request: Request) -> LibraryStore:
         request,
         "library_store",
         lambda: LibraryStore(request.app.state.db),
+    )
+
+
+def _get_clip_store(request: Request) -> ClipStore:
+    """Web clip store (phase2 M2) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "clip_store",
+        lambda: ClipStore(request.app.state.db),
+    )
+
+
+def _get_snapshot_store(request: Request) -> AssetStore:
+    """Snapshot asset store (phase2 M2) under the Lumi data directory."""
+
+    def build() -> AssetStore:
+        settings = LumiSettings()
+        return AssetStore(
+            request.app.state.db,
+            Path(settings.data_dir) / "library" / "assets",
+        )
+
+    return _cached_on_app_state(request, "asset_store", build)
+
+
+def _get_api_source_store(request: Request) -> ApiSourceStore:
+    """API source config store (phase2 M3) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "api_source_store",
+        lambda: ApiSourceStore(request.app.state.db),
+    )
+
+
+def _get_mail_bridge_store(request: Request) -> MailBridgeStore:
+    """Newsletter bridge store (phase2 G5) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "mail_bridge_store",
+        lambda: MailBridgeStore(request.app.state.db),
+    )
+
+
+def _get_snapshot_runner(request: Request) -> SnapshotJobRunner:
+    """Serial monolith job runner over the snapshot asset store."""
+    return _cached_on_app_state(
+        request,
+        "snapshot_runner",
+        lambda: SnapshotJobRunner(_get_snapshot_store(request)),
     )
 
 
