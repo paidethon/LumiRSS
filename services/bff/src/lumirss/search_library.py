@@ -14,6 +14,17 @@ from lumirss.storage import Database
 from lumirss.util import utc_now
 
 
+async def rss_keyword_search(db: Database, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Bounded keyword search over the RSS projection (agent tool path)."""
+    await db.migrate()
+    needle = f"%{_escape_like(query.strip())}%"
+    rows = await db.fetch_all(
+        "SELECT entry_ref, title, feed_title, content_text FROM search_entries WHERE (title LIKE ? ESCAPE '\\' OR content_text LIKE ? ESCAPE '\\') ORDER BY published_at DESC LIMIT ?",
+        (needle, needle, max(1, min(limit, 20))),
+    )
+    return [dict(row) for row in rows]
+
+
 class LibrarySearchWriter:
     """Projection writer for library-domain content."""
 

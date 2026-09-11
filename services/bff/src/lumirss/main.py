@@ -26,6 +26,7 @@ from lumirss.middleware import (
     SessionAuthMiddleware,
 )
 from lumirss.routers import (
+    agent,
     ai_settings,
     api_sources,
     auth,
@@ -41,6 +42,7 @@ from lumirss.routers import (
     obsidian,
     operations,
     opml,
+    rag,
     rsshub,
     search,
     settings,
@@ -101,6 +103,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.obsidian_service = None
     app.state.favorites_service = None
     app.state.library_search_writer = None
+    app.state.rag_service = None
+    app.state.agent_store = None
+    app.state.agent_loop = None
+    app.state.agent_tasks = set()
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -180,5 +186,7 @@ app.include_router(snapshots.router)
 app.include_router(api_sources.router)
 app.include_router(mail.router)
 app.include_router(obsidian.router)
+app.include_router(rag.router)
+app.include_router(agent.router)
 
 register_error_handlers(app)

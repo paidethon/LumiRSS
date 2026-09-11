@@ -13,7 +13,15 @@ dependencies = [
     "mistune>=3.3.4",
     "pydantic-settings>=2.0",
     "python-frontmatter>=1.3.0",
+    "sqlite-vec>=0.1.9",
     "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+# RAG stack (phase2 G7): optional because the embedding runtime is
+# heavy (onnxruntime); the app degrades to lexical search without it.
+rag = [
+    "fastembed>=0.7",
 ]
 
 [dependency-groups]

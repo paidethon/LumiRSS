@@ -18,6 +18,9 @@ from lumirss.adapters.freshrss import (
 from lumirss.adapters.freshrss_control import (
     FreshRSSControlAdapter,
 )
+from lumirss.agent import AgentLoop
+from lumirss.agent_store import AgentStore
+from lumirss.agent_tools import build_registry
 from lumirss.ai_conversation import ConversationService
 from lumirss.ai_profiles import (
     AiProfileStore,
@@ -52,6 +55,7 @@ from lumirss.library_clips import ClipStore
 from lumirss.mail_bridge import MailBridgeStore
 from lumirss.obsidian import ObsidianService
 from lumirss.operations import OperationsService
+from lumirss.rag import RagService
 from lumirss.restore import (
     RestoreService,
 )
@@ -455,6 +459,83 @@ def _get_mail_bridge_store(request: Request) -> MailBridgeStore:
         "mail_bridge_store",
         lambda: MailBridgeStore(request.app.state.db),
     )
+
+
+def _get_rag_service(request: Request) -> RagService:
+    """RAG projection service (phase2 G7) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "rag_service",
+        lambda: RagService(request.app.state.db),
+    )
+
+
+def _get_agent_store(request: Request) -> AgentStore:
+    """Agent threads/messages/approvals store (phase2 G7)."""
+    return _cached_on_app_state(
+        request,
+        "agent_store",
+        lambda: AgentStore(request.app.state.db),
+    )
+
+
+def _get_agent_loop(request: Request) -> AgentLoop:
+    """Agent loop with the hardcoded tool whitelist on real services."""
+
+    def build() -> AgentLoop:
+        from lumirss.adapters.freshrss import FreshRSSAdapter
+
+        try:
+            adapter = FreshRSSAdapter(
+                request.app.state.http_client, FreshRSSSettings()
+            )
+        except (ConfigError, ValidationError):
+            adapter = None
+        from lumirss.search_library import rss_keyword_search
+
+        async def rss_search(query: str, limit: int = 5):
+            return await rss_keyword_search(request.app.state.db, query, limit)
+
+        registry = build_registry(
+            rss_search=rss_search,
+            library_search=_get_library_search_writer(request),
+            rag=_get_rag_service(request),
+            adapter=adapter,
+            library=_get_library_store(request),
+            workspaces=_get_workspace_store(request),
+            obsidian=_get_obsidian_service(request)
+            if request.app.state.obsidian_service is not None
+            else None,
+        )
+        return AgentLoop(
+            _get_agent_store(request),
+            registry,
+            lambda: _provider_or_none(request),
+        )
+
+    return _cached_on_app_state(request, "agent_loop", build)
+
+
+async def _provider_or_none(request: Request):
+    """Agent provider factory: None when AI is unconfigured (honest)."""
+    try:
+        provider_factory = _provider_factory_for(request, "chat")
+        effective = await _get_ai_profile_store(request).effective_config(
+            "chat", await _get_ai_settings_store(request).load(), ""
+        )
+        if not effective.base_url or not effective.model:
+            return None
+        from lumirss.ai_provider import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider(
+            request.app.state.http_client,
+            base_url=effective.base_url,
+            model=effective.model,
+            api_key=effective.api_key or "",
+        )
+    except Exception:  # noqa: BLE001 — unconfigured → honest unavailable
+        return None
+    _ = provider_factory
 
 
 def _get_snapshot_runner(request: Request) -> SnapshotJobRunner:

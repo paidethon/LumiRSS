@@ -1272,3 +1272,69 @@ class SnapshotListResponse(BaseModel):
 
     items: list[SnapshotView]
     usage: SnapshotUsage
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G7/G8) — RAG + Agent workbench
+# ---------------------------------------------------------------------------
+
+
+class AgentThread(BaseModel):
+    """One conversation thread."""
+
+    id: str
+    title: str
+    createdAt: str
+
+
+class AgentThreadListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads."""
+
+    items: list[AgentThread]
+
+
+class AgentMessageCreate(BaseModel):
+    """POST /api/v1/agent/threads/{id}/messages."""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+
+
+class AgentApprovalDecision(BaseModel):
+    """POST /api/v1/agent/threads/{id}/approvals."""
+
+    model_config = {"extra": "forbid"}
+
+    approvalId: str
+    decision: str
+
+
+class RagSearchItem(BaseModel):
+    """One fused retrieval hit (ref resolves to real content)."""
+
+    ref: str
+    kind: str
+    text: str
+    score: float
+
+
+class RagSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/rag/search (honest degradation flags)."""
+
+    items: list[RagSearchItem]
+    semanticUsed: bool
+    semanticError: str | None = None
+
+
+class RagRebuildResult(BaseModel):
+    """Bounded rebuild report."""
+
+    chunks: int
+    elapsedMs: int
+
+
+class RagEnableResult(BaseModel):
+    """Explicit model-enable acknowledgement."""
+
+    enabled: bool

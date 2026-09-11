@@ -28,6 +28,8 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionConflict,
     SubscriptionNotFound,
 )
+from lumirss.agent import AgentProviderUnavailable
+from lumirss.agent_store import ApprovalInvalid, ToolDenied
 from lumirss.ai_profiles import (
     AiProfileNotFound,
 )
@@ -103,6 +105,7 @@ from lumirss.opml import (
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.rag import RagModelUnavailable, RagRebuildBusy
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
@@ -249,6 +252,12 @@ _ERROR_RESPONSES = {
     # phase2 G6 obsidian
     VaultUnreachable: (503, "vault_unreachable"),
     VaultPermissionDenied: (403, "vault_permission_denied"),
+    # phase2 G7 rag + agent
+    RagModelUnavailable: (503, "model_unavailable"),
+    RagRebuildBusy: (409, "rebuild_in_progress"),
+    AgentProviderUnavailable: (503, "provider_unavailable"),
+    ToolDenied: (403, "tool_denied"),
+    ApprovalInvalid: (409, "approval_invalid"),
 }
 
 
@@ -344,6 +353,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ImapNotConfigured)
     @app.exception_handler(VaultUnreachable)
     @app.exception_handler(VaultPermissionDenied)
+    @app.exception_handler(RagModelUnavailable)
+    @app.exception_handler(RagRebuildBusy)
+    @app.exception_handler(AgentProviderUnavailable)
+    @app.exception_handler(ToolDenied)
+    @app.exception_handler(ApprovalInvalid)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(
