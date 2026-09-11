@@ -2,7 +2,7 @@ import { ChevronLeft } from 'lucide-react'
 import { useFeeds } from '../api/queries'
 import type { UiView } from '../lib/read-later'
 import { scopeTitle } from '../lib/navigation'
-import { useReaderUi } from '../store/reader-ui'
+import { useReaderUi, type AppSection } from '../store/reader-ui'
 import MobilePageHeader from './MobilePageHeader'
 
 const VIEW_LABELS: Record<UiView, string> = {
@@ -38,12 +38,14 @@ export default function MobileHeader() {
   // scope 标题：feed 名 > scope 名（§23 示例：FreshRSS releases / 技术 / RSS 订阅）
   const scopeLabel = feedTitle ?? scopeTitle(scope)
   const homeTitle = view === 'all' || view === 'unread' ? scopeLabel : VIEW_LABELS[view]
-  const SECTION_TITLES = {
+  const SECTION_TITLES: Record<AppSection, string> = {
     home: homeTitle,
     subscriptions: '订阅',
     search: '搜索',
     favorites: '收藏',
-  } as const
+    bookmarks: '书签',
+    workspaces: '工作区',
+  }
 
   return (
     <MobilePageHeader

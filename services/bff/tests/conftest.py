@@ -33,3 +33,19 @@ def _reset_rate_limit_windows() -> None:
 
     middleware._rate_windows.clear()
     middleware._login_failures.clear()
+
+
+@pytest.fixture()
+def client():
+    """A TestClient with a fresh temp Lumi database (phase2 M1 suites)."""
+    import tempfile
+
+    from fastapi.testclient import TestClient
+
+    from lumirss.main import app
+    from lumirss.storage import Database
+
+    with TestClient(app) as test_client:
+        with tempfile.TemporaryDirectory() as tmp:
+            app.state.db = Database(f"{tmp}/lumi.sqlite")
+            yield test_client

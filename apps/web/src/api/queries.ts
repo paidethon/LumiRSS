@@ -10,13 +10,17 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
+  addWorkspaceItem,
   applyRssHubConfig,
   clearAiProfileSecret,
   clearDefaultAiSecret,
   clearRssHubSecret,
   createAiProfile,
   createBackup,
+  createBookmark,
+  createWorkspace,
   deleteAiProfile,
+  deleteBookmark,
   discoverFeeds,
   executeRestore,
   generateEntrySummary,
@@ -47,16 +51,22 @@ import {
   getRssHubRoutes,
   getSubscriptions,
   getWebDavSettings,
+  getWorkspaceContents,
+  importBookmarks,
   importOpml,
   listBackups,
+  listBookmarks,
   listRemoteBackups,
+  listWorkspaces,
   moveSubscription,
   patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  removeWorkspaceItem,
   renameCategory,
+  reorderWorkspaceItems,
   searchEntries,
   sendConversationMessage,
   setAiProfileSecret,
@@ -69,6 +79,7 @@ import {
   updateAiProfile,
   updateAiPurposes,
   updateAiSettings,
+  updateBookmark,
   updateWebDavSettings,
 } from './client'
 import type { AiProfileInput, RssHubCredentialInput, TranslationSegmentBlockInput } from './client'
@@ -887,5 +898,148 @@ export function useRestoreExecuteMutation() {
       // 重拉恢复后的数据。（客户端设置在 RestoreWizard 中经 reload 重置。）
       await queryClient.invalidateQueries()
     },
+  })
+}
+
+// ---- phase2 M1：书签（library/bookmarks） ----
+
+/** 书签列表（q 已在页面侧防抖；cursor opaque 透传；与 search 同一
+ * 无限分页模式，maxPages 保险丝一致）。 */
+export function useBookmarks(q: string) {
+  const trimmed = q.trim()
+  return useInfiniteQuery({
+    queryKey: ['library', 'bookmarks', { q: trimmed }],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      listBookmarks({ q: trimmed || null, cursor: pageParam }, signal),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    placeholderData: keepPreviousData,
+    maxPages: 50,
+  })
+}
+
+/** 时间线「存书签」激活态依据：首页书签的 rssItemRef 集合（v1 取前
+ * 500 条；created/delete 后由各 mutation 的前缀 invalidate 保持精确）。
+ * staleTime 30s：时间线每行都调用本 hook（同 key 只发一次请求）。 */
+export function useBookmarkRssRefs() {
+  return useQuery({
+    queryKey: ['library', 'bookmarks', 'rss-refs'],
+    queryFn: ({ signal }) => listBookmarks({ limit: 500 }, signal),
+    staleTime: 30_000,
+  })
+}
+
+/** 创建书签（幂等）；成功后失效书签列表与 rss-refs 集合。 */
+export function useCreateBookmarkMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: {
+      url?: string | null
+      rssItemRef?: string | null
+      title: string
+      note?: string | null
+    }) => createBookmark(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'bookmarks'] })
+    },
+  })
+}
+
+export function useUpdateBookmarkMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      bookmarkRef: string
+      patch: { title?: string | null; note?: string | null }
+    }) => updateBookmark(vars.bookmarkRef, vars.patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'bookmarks'] })
+    },
+  })
+}
+
+export function useDeleteBookmarkMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (bookmarkRef: string) => deleteBookmark(bookmarkRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'bookmarks'] })
+    },
+  })
+}
+
+/** Netscape HTML 导入（结果由调用方展示；成功后失效书签列表）。 */
+export function useImportBookmarksMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => importBookmarks(file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'bookmarks'] })
+    },
+  })
+}
+
+// ---- phase2 M1：工作区（workspaces） ----
+
+export function useWorkspaces() {
+  return useQuery({
+    queryKey: ['workspaces'],
+    queryFn: ({ signal }) => listWorkspaces(signal),
+  })
+}
+
+export function useCreateWorkspaceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => createWorkspace(name),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+  })
+}
+
+/** 工作区内容（ResolvedItem 解析视图）。enabled：未选中工作区不发请求。 */
+export function useWorkspaceContents(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'contents'],
+    queryFn: ({ signal }) => getWorkspaceContents(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+async function invalidateWorkspaceState(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    // 前缀覆盖：['workspace', id, 'items']（read-later 本地同步）与
+    // ['workspace', id, 'contents']（本页解析视图）。
+    queryClient.invalidateQueries({ queryKey: ['workspace'] }),
+    // itemCount 徽标。
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+  ])
+}
+
+export function useAddWorkspaceItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
+      addWorkspaceItem(vars.workspaceId, vars.itemRef),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+export function useRemoveWorkspaceItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
+      removeWorkspaceItem(vars.workspaceId, vars.itemRef),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+export function useReorderWorkspaceItemsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRefs: string[] }) =>
+      reorderWorkspaceItems(vars.workspaceId, vars.itemRefs),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
   })
 }

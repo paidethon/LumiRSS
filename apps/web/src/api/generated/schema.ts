@@ -577,6 +577,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/bookmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bookmarks
+         * @description Keyset-paged bookmark list, newest first.
+         */
+        get: operations["list_bookmarks_api_v1_library_bookmarks_get"];
+        put?: never;
+        /**
+         * Create Bookmark
+         * @description Create a url bookmark or an rss-ref bookmark (idempotent on url/ref).
+         */
+        post: operations["create_bookmark_api_v1_library_bookmarks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/bookmarks/export.html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Bookmarks
+         * @description Export all url bookmarks as a Netscape bookmarks.html download.
+         */
+        get: operations["export_bookmarks_api_v1_library_bookmarks_export_html_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/bookmarks/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Bookmarks
+         * @description Merge-import a Netscape bookmarks.html (merge-only, per-item errors).
+         *
+         *     Existing urls converge on the unique index (counted as skipped);
+         *     invalid entries (scheme, length) are reported item by item and never
+         *     abort the whole import.
+         */
+        post: operations["import_bookmarks_api_v1_library_bookmarks_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/bookmarks/{item_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Bookmark */
+        delete: operations["delete_bookmark_api_v1_library_bookmarks__item_uuid__delete"];
+        options?: never;
+        head?: never;
+        /** Update Bookmark */
+        patch: operations["update_bookmark_api_v1_library_bookmarks__item_uuid__patch"];
+        trace?: never;
+    };
     "/api/v1/operations/status": {
         parameters: {
             query?: never;
@@ -669,6 +755,26 @@ export interface paths {
          *     POST /api/v1/opml/import.
          */
         post: operations["opml_import_preview_api_v1_opml_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Refs
+         * @description Resolve one batch of ItemRefs to unified ViewModels (≤100 refs).
+         */
+        post: operations["resolve_refs_api_v1_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1372,6 +1478,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspaces */
+        get: operations["list_workspaces_api_v1_workspaces_get"];
+        put?: never;
+        /** Create Workspace */
+        post: operations["create_workspace_api_v1_workspaces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace */
+        get: operations["get_workspace_api_v1_workspaces__workspace_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Workspace */
+        delete: operations["delete_workspace_api_v1_workspaces__workspace_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Workspace */
+        patch: operations["rename_workspace_api_v1_workspaces__workspace_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Contents
+         * @description Ordered membership with each ref resolved to a unified ViewModel.
+         *
+         *     Stale rss refs (entry gone from FreshRSS) resolve to ``stale=True``
+         *     views — rows are never auto-deleted.
+         */
+        get: operations["workspace_contents_api_v1_workspaces__workspace_id__contents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspace Items */
+        get: operations["list_workspace_items_api_v1_workspaces__workspace_id__items_get"];
+        put?: never;
+        /**
+         * Add Workspace Item
+         * @description Idempotent add of one typed ItemRef (returns 201 with current slot).
+         */
+        post: operations["add_workspace_item_api_v1_workspaces__workspace_id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Workspace Items */
+        patch: operations["reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Workspace Item */
+        delete: operations["remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -1854,6 +2059,87 @@ export interface components {
             target?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * Bookmark
+         * @description One bookmark in the library domain (never carries RSS bodies).
+         */
+        Bookmark: {
+            /** Createdat */
+            createdAt: string;
+            /** Itemtype */
+            itemType: string;
+            /** Note */
+            note: string;
+            /** Ref */
+            ref: string;
+            /** Rssitemref */
+            rssItemRef?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * BookmarkCreate
+         * @description POST /api/v1/library/bookmarks — exactly one of url | rssItemRef.
+         */
+        BookmarkCreate: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Rssitemref */
+            rssItemRef?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * BookmarkImportFailedItem
+         * @description One per-item import failure: index, reason, and the offending URL.
+         */
+        BookmarkImportFailedItem: {
+            /** Index */
+            index: number;
+            /** Reason */
+            reason: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * BookmarkImportResult
+         * @description Envelope for POST /api/v1/library/bookmarks/import.
+         */
+        BookmarkImportResult: {
+            /** Failed */
+            failed: components["schemas"]["BookmarkImportFailedItem"][];
+            /** Imported */
+            imported: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /**
+         * BookmarkListResponse
+         * @description Envelope for GET /api/v1/library/bookmarks.
+         */
+        BookmarkListResponse: {
+            /** Items */
+            items: components["schemas"]["Bookmark"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
+         * BookmarkUpdate
+         * @description PATCH /api/v1/library/bookmarks/{uuid} — both fields optional.
+         */
+        BookmarkUpdate: {
+            /** Note */
+            note?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /**
          * Category
@@ -2418,6 +2704,48 @@ export interface components {
         RemoteBackupsResponse: {
             /** Backups */
             backups: components["schemas"]["RemoteBackup"][];
+        };
+        /**
+         * ResolveRequest
+         * @description POST /api/v1/resolve — resolve one or more ItemRefs.
+         */
+        ResolveRequest: {
+            /** Refs */
+            refs: string[];
+        };
+        /**
+         * ResolvedItem
+         * @description Unified ViewModel for UnifiedContentCard (report 12 §3).
+         */
+        ResolvedItem: {
+            /** Datetime */
+            datetime?: string | null;
+            /** Domain */
+            domain: string;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Payload
+             * @default {}
+             */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Ref */
+            ref: string;
+            /** Source */
+            source: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
         };
         /** RestoreExecuteBody */
         RestoreExecuteBody: {
@@ -2988,6 +3316,90 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "failed";
+        };
+        /**
+         * Workspace
+         * @description One workspace summary (read-later reports reserved=true).
+         */
+        Workspace: {
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+            /** Reserved */
+            reserved: boolean;
+        };
+        /**
+         * WorkspaceCreate
+         * @description POST /api/v1/workspaces.
+         */
+        WorkspaceCreate: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkspaceItem
+         * @description One workspace member (ref + ordering; content resolves separately).
+         */
+        WorkspaceItem: {
+            /** Addedat */
+            addedAt: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+        };
+        /**
+         * WorkspaceItemAddRequest
+         * @description POST /api/v1/workspaces/{id}/items — one typed ItemRef.
+         */
+        WorkspaceItemAddRequest: {
+            /** Itemref */
+            itemRef: string;
+        };
+        /**
+         * WorkspaceItemsResolvedResponse
+         * @description Envelope for GET /api/v1/workspaces/{id}/contents (resolved views).
+         */
+        WorkspaceItemsResolvedResponse: {
+            /** Items */
+            items: components["schemas"]["ResolvedItem"][];
+        };
+        /**
+         * WorkspaceItemsResponse
+         * @description Envelope for GET /api/v1/workspaces/{id}/items.
+         */
+        WorkspaceItemsResponse: {
+            /** Items */
+            items: components["schemas"]["WorkspaceItem"][];
+        };
+        /**
+         * WorkspaceListResponse
+         * @description Envelope for GET /api/v1/workspaces.
+         */
+        WorkspaceListResponse: {
+            /** Items */
+            items: components["schemas"]["Workspace"][];
+        };
+        /**
+         * WorkspaceRename
+         * @description PATCH /api/v1/workspaces/{id}.
+         */
+        WorkspaceRename: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkspaceReorderRequest
+         * @description PATCH /api/v1/workspaces/{id}/items — refs in their new order.
+         */
+        WorkspaceReorderRequest: {
+            /** Itemrefs */
+            itemRefs: string[];
         };
     };
     responses: never;
@@ -3806,6 +4218,176 @@ export interface operations {
             };
         };
     };
+    list_bookmarks_api_v1_library_bookmarks_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_bookmark_api_v1_library_bookmarks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookmarkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bookmark"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_bookmarks_api_v1_library_bookmarks_export_html_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    import_bookmarks_api_v1_library_bookmarks_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkImportResult"];
+                };
+            };
+        };
+    };
+    delete_bookmark_api_v1_library_bookmarks__item_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_bookmark_api_v1_library_bookmarks__item_uuid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookmarkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bookmark"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     operations_status_api_v1_operations_status_get: {
         parameters: {
             query?: never;
@@ -3882,6 +4464,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    resolve_refs_api_v1_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItemsResolvedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5044,6 +5659,320 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiVersionInfo"];
+                };
+            };
+        };
+    };
+    list_workspaces_api_v1_workspaces_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListResponse"];
+                };
+            };
+        };
+    };
+    create_workspace_api_v1_workspaces_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_api_v1_workspaces__workspace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_api_v1_workspaces__workspace_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_workspace_api_v1_workspaces__workspace_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_contents_api_v1_workspaces__workspace_id__contents_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItemsResolvedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_items_api_v1_workspaces__workspace_id__items_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_workspace_item_api_v1_workspaces__workspace_id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

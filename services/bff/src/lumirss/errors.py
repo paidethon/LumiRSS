@@ -64,6 +64,7 @@ from lumirss.backup import (
     BackupNotFound,
     BackupUnsupportedVersion,
 )
+from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
 from lumirss.feed_preview import (
@@ -71,6 +72,11 @@ from lumirss.feed_preview import (
     FeedTooLarge,
     NotAFeedError,
     UnsafeFeedUrl,
+)
+from lumirss.itemref import InvalidItemRef
+from lumirss.library import (
+    BookmarkInvalid,
+    BookmarkNotFound,
 )
 from lumirss.middleware import RequestBodyTooLarge
 from lumirss.opml import (
@@ -105,6 +111,11 @@ from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
+from lumirss.workspaces import (
+    ReservedWorkspaceError,
+    WorkspaceInvalid,
+    WorkspaceNotFound,
+)
 
 _ERROR_RESPONSES = {
     ConfigError: (503, "configuration_error"),
@@ -186,6 +197,14 @@ _ERROR_RESPONSES = {
     InvalidCredentials: (401, "invalid_credentials"),
     PasswordNotInitialized: (503, "auth_not_initialized"),
     WeakPassword: (400, "weak_password"),
+    # phase2 M1 library domain
+    NetscapeParseError: (400, "bookmarks_import_invalid"),
+    BookmarkInvalid: (400, "invalid_bookmark"),
+    BookmarkNotFound: (404, "bookmark_not_found"),
+    InvalidItemRef: (400, "invalid_item_ref"),
+    WorkspaceInvalid: (400, "invalid_workspace"),
+    WorkspaceNotFound: (404, "workspace_not_found"),
+    ReservedWorkspaceError: (409, "reserved_workspace"),
 }
 
 
@@ -254,6 +273,13 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(InvalidCredentials)
     @app.exception_handler(PasswordNotInitialized)
     @app.exception_handler(WeakPassword)
+    @app.exception_handler(NetscapeParseError)
+    @app.exception_handler(BookmarkInvalid)
+    @app.exception_handler(BookmarkNotFound)
+    @app.exception_handler(InvalidItemRef)
+    @app.exception_handler(WorkspaceInvalid)
+    @app.exception_handler(WorkspaceNotFound)
+    @app.exception_handler(ReservedWorkspaceError)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

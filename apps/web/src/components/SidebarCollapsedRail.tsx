@@ -74,6 +74,7 @@ function RailItem({
 export default function SidebarCollapsedRail() {
   const view = useReaderUi((s) => s.view)
   const scope = useReaderUi((s) => s.scope)
+  const section = useReaderUi((s) => s.section)
   const selectView = useReaderUi((s) => s.selectView)
   const selectScope = useReaderUi((s) => s.selectScope)
   const selectSection = useReaderUi((s) => s.selectSection)
@@ -125,7 +126,13 @@ export default function SidebarCollapsedRail() {
         <RailItem icon={<Link2 aria-hidden className={iconCls} />} label="网页快照" disabled />
         <RailItem icon={<FileText aria-hidden className={iconCls} />} label="API 来源" disabled />
         <RailItem icon={<Mail aria-hidden className={iconCls} />} label="邮件简报" disabled />
-        <RailItem icon={<Bookmark aria-hidden className={iconCls} />} label="书签" disabled />
+        {/* phase2 M1：书签（library 域）已可用 */}
+        <RailItem
+          icon={<Bookmark aria-hidden className={iconCls} />}
+          label="书签"
+          active={section === 'bookmarks'}
+          onClick={() => selectSection('bookmarks')}
+        />
         <RailItem icon={<FileText aria-hidden className={iconCls} />} label="Obsidian 库" disabled />
       </div>
 

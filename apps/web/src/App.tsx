@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useRef } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
+import { useReadLaterServerSync } from './lib/read-later'
 import EntryList from './components/EntryList'
 import MobileHeader from './components/MobileHeader'
 import MobileNavigationDrawer from './components/MobileNavigationDrawer'
@@ -20,6 +21,9 @@ import { Skeleton } from './components/ui/Skeleton'
 const FavoritesPage = lazy(() => import('./components/pages/FavoritesPage'))
 const SearchPage = lazy(() => import('./components/pages/SearchPage'))
 const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPage'))
+// phase2 M1：书签 / 工作区列表页（与 Search 同模式：桌面 Timeline 列位）
+const BookmarksPage = lazy(() => import('./components/pages/BookmarksPage'))
+const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
 
 function PageSkeleton() {
   return (
@@ -50,6 +54,8 @@ export default function App() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   // 0010 Gate B：全局键盘快捷键（j/k/u/s；输入框聚焦时不劫持）
   useKeyboardShortcuts()
+  // phase2 M1：稍后读服务端同步（一次性迁移 + 缓存对账，挂载一次）
+  useReadLaterServerSync()
 
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
@@ -125,7 +131,17 @@ export default function App() {
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--lumi-surface)] lg:hidden ${
               selectedEntryRef !== null ? 'max-lg:hidden' : ''
             }`}
-            aria-label={section === 'subscriptions' ? '订阅' : section === 'search' ? '搜索' : '收藏'}
+            aria-label={
+              section === 'subscriptions'
+                ? '订阅'
+                : section === 'search'
+                  ? '搜索'
+                  : section === 'bookmarks'
+                    ? '书签'
+                    : section === 'workspaces'
+                      ? '工作区'
+                      : '收藏'
+            }
           >
             {section === 'subscriptions' && (
               <Suspense fallback={<PageSkeleton />}>
@@ -140,6 +156,16 @@ export default function App() {
             {section === 'favorites' && (
               <Suspense fallback={<PageSkeleton />}>
                 <FavoritesPage />
+              </Suspense>
+            )}
+            {section === 'bookmarks' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <BookmarksPage />
+              </Suspense>
+            )}
+            {section === 'workspaces' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <WorkspacesPage />
               </Suspense>
             )}
           </section>
@@ -161,11 +187,24 @@ export default function App() {
           style={{ '--lumi-timeline-width': `${settings.timelineWidth}px` } as React.CSSProperties}
         >
           {/* 0022：桌面（lg）搜索 = Timeline 列位；移动端走上方 section 区。
+              phase2 M1：书签/工作区列表同模式（桌面 Timeline 列位）。
               hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。 */}
           {section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <SearchPage />
+              </Suspense>
+            </div>
+          ) : section === 'bookmarks' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <BookmarksPage />
+              </Suspense>
+            </div>
+          ) : section === 'workspaces' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <WorkspacesPage />
               </Suspense>
             </div>
           ) : (

@@ -927,6 +927,214 @@
     "title": "BackupJobSummary",
     "type": "object"
    },
+   "Bookmark": {
+    "description": "One bookmark in the library domain (never carries RSS bodies).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "itemType": {
+      "title": "Itemtype",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "rssItemRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rssitemref"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "itemType",
+     "title",
+     "note",
+     "createdAt"
+    ],
+    "title": "Bookmark",
+    "type": "object"
+   },
+   "BookmarkCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/bookmarks — exactly one of url | rssItemRef.",
+    "properties": {
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "rssItemRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rssitemref"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "BookmarkCreate",
+    "type": "object"
+   },
+   "BookmarkImportFailedItem": {
+    "description": "One per-item import failure: index, reason, and the offending URL.",
+    "properties": {
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "url",
+     "reason"
+    ],
+    "title": "BookmarkImportFailedItem",
+    "type": "object"
+   },
+   "BookmarkImportResult": {
+    "description": "Envelope for POST /api/v1/library/bookmarks/import.",
+    "properties": {
+     "failed": {
+      "items": {
+       "$ref": "#/components/schemas/BookmarkImportFailedItem"
+      },
+      "title": "Failed",
+      "type": "array"
+     },
+     "imported": {
+      "title": "Imported",
+      "type": "integer"
+     },
+     "skipped": {
+      "title": "Skipped",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "imported",
+     "skipped",
+     "failed"
+    ],
+    "title": "BookmarkImportResult",
+    "type": "object"
+   },
+   "BookmarkListResponse": {
+    "description": "Envelope for GET /api/v1/library/bookmarks.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Bookmark"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "nextCursor"
+    ],
+    "title": "BookmarkListResponse",
+    "type": "object"
+   },
+   "BookmarkUpdate": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/library/bookmarks/{uuid} — both fields optional.",
+    "properties": {
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "title": "BookmarkUpdate",
+    "type": "object"
+   },
    "Category": {
     "description": "One item of GET /api/v1/categories (includes empty categories).",
     "properties": {
@@ -2394,6 +2602,102 @@
     "title": "RemoteBackupsResponse",
     "type": "object"
    },
+   "ResolveRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/resolve — resolve one or more ItemRefs.",
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "ResolveRequest",
+    "type": "object"
+   },
+   "ResolvedItem": {
+    "description": "Unified ViewModel for UnifiedContentCard (report 12 §3).",
+    "properties": {
+     "datetime": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Datetime"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excerpt"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Payload",
+      "type": "object"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "domain",
+     "kind",
+     "title",
+     "source"
+    ],
+    "title": "ResolvedItem",
+    "type": "object"
+   },
    "RestoreExecuteBody": {
     "properties": {
      "confirmation": {
@@ -3726,6 +4030,178 @@
     ],
     "title": "WebDavTestResult",
     "type": "object"
+   },
+   "Workspace": {
+    "description": "One workspace summary (read-later reports reserved=true).",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "reserved": {
+      "title": "Reserved",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "position",
+     "itemCount",
+     "reserved"
+    ],
+    "title": "Workspace",
+    "type": "object"
+   },
+   "WorkspaceCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/workspaces.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceCreate",
+    "type": "object"
+   },
+   "WorkspaceItem": {
+    "description": "One workspace member (ref + ordering; content resolves separately).",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "itemRef",
+     "position",
+     "addedAt"
+    ],
+    "title": "WorkspaceItem",
+    "type": "object"
+   },
+   "WorkspaceItemAddRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceItemAddRequest",
+    "type": "object"
+   },
+   "WorkspaceItemsResolvedResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/contents (resolved views).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ResolvedItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceItemsResolvedResponse",
+    "type": "object"
+   },
+   "WorkspaceItemsResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/items.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceItemsResponse",
+    "type": "object"
+   },
+   "WorkspaceListResponse": {
+    "description": "Envelope for GET /api/v1/workspaces.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/Workspace"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceListResponse",
+    "type": "object"
+   },
+   "WorkspaceRename": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceRename",
+    "type": "object"
+   },
+   "WorkspaceReorderRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}/items — refs in their new order.",
+    "properties": {
+     "itemRefs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Itemrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "itemRefs"
+    ],
+    "title": "WorkspaceReorderRequest",
+    "type": "object"
    }
   }
  },
@@ -4772,6 +5248,231 @@
     "summary": "Freshrss Ui"
    }
   },
+  "/api/v1/library/bookmarks": {
+   "get": {
+    "description": "Keyset-paged bookmark list, newest first.",
+    "operationId": "list_bookmarks_api_v1_library_bookmarks_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BookmarkListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Bookmarks"
+   },
+   "post": {
+    "description": "Create a url bookmark or an rss-ref bookmark (idempotent on url/ref).",
+    "operationId": "create_bookmark_api_v1_library_bookmarks_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BookmarkCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bookmark"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Bookmark"
+   }
+  },
+  "/api/v1/library/bookmarks/export.html": {
+   "get": {
+    "description": "Export all url bookmarks as a Netscape bookmarks.html download.",
+    "operationId": "export_bookmarks_api_v1_library_bookmarks_export_html_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Bookmarks"
+   }
+  },
+  "/api/v1/library/bookmarks/import": {
+   "post": {
+    "description": "Merge-import a Netscape bookmarks.html (merge-only, per-item errors).\n\nExisting urls converge on the unique index (counted as skipped);\ninvalid entries (scheme, length) are reported item by item and never\nabort the whole import.",
+    "operationId": "import_bookmarks_api_v1_library_bookmarks_import_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BookmarkImportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Import Bookmarks"
+   }
+  },
+  "/api/v1/library/bookmarks/{item_uuid}": {
+   "delete": {
+    "operationId": "delete_bookmark_api_v1_library_bookmarks__item_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Bookmark"
+   },
+   "patch": {
+    "operationId": "update_bookmark_api_v1_library_bookmarks__item_uuid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BookmarkUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Bookmark"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Bookmark"
+   }
+  },
   "/api/v1/operations/status": {
    "get": {
     "description": "Redacted, real dependency status for the operations UI (no fake metrics).",
@@ -4844,6 +5545,45 @@
      }
     },
     "summary": "Opml Import Preview"
+   }
+  },
+  "/api/v1/resolve": {
+   "post": {
+    "description": "Resolve one batch of ItemRefs to unified ViewModels (≤100 refs).",
+    "operationId": "resolve_refs_api_v1_resolve_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResolveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResolvedResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Resolve Refs"
    }
   },
   "/api/v1/restore": {
@@ -6220,6 +6960,411 @@
      }
     },
     "summary": "Version"
+   }
+  },
+  "/api/v1/workspaces": {
+   "get": {
+    "operationId": "list_workspaces_api_v1_workspaces_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Workspaces"
+   },
+   "post": {
+    "operationId": "create_workspace_api_v1_workspaces_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Workspace"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}": {
+   "delete": {
+    "operationId": "delete_workspace_api_v1_workspaces__workspace_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Workspace"
+   },
+   "get": {
+    "operationId": "get_workspace_api_v1_workspaces__workspace_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Workspace"
+   },
+   "patch": {
+    "operationId": "rename_workspace_api_v1_workspaces__workspace_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceRename"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Workspace"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/contents": {
+   "get": {
+    "description": "Ordered membership with each ref resolved to a unified ViewModel.\n\nStale rss refs (entry gone from FreshRSS) resolve to ``stale=True``\nviews — rows are never auto-deleted.",
+    "operationId": "workspace_contents_api_v1_workspaces__workspace_id__contents_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResolvedResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Contents"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items": {
+   "get": {
+    "operationId": "list_workspace_items_api_v1_workspaces__workspace_id__items_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Workspace Items"
+   },
+   "patch": {
+    "operationId": "reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceReorderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Workspace Items"
+   },
+   "post": {
+    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).",
+    "operationId": "add_workspace_item_api_v1_workspaces__workspace_id__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Workspace Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}": {
+   "delete": {
+    "operationId": "remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Workspace Item"
    }
   },
   "/health/live": {

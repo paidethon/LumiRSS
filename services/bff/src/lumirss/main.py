@@ -34,12 +34,14 @@ from lumirss.routers import (
     entry_ai,
     feeds,
     health,
+    library,
     operations,
     opml,
     rsshub,
     search,
     settings,
     subscriptions,
+    workspaces,
 )
 from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
@@ -83,6 +85,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.backup_engine = None
     app.state.restore_service = None
     app.state.search_service = None
+    app.state.library_store = None
+    app.state.workspace_store = None
+    app.state.source_registry = None
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -155,5 +160,7 @@ app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
 app.include_router(search.router)
+app.include_router(library.router)
+app.include_router(workspaces.router)
 
 register_error_handlers(app)

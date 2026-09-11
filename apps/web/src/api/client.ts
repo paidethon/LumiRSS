@@ -14,6 +14,9 @@ import type {
   AuthStatusView,
   BackupCapabilities,
   BackupJob,
+  Bookmark,
+  BookmarkImportResult,
+  BookmarkListResponse,
   TranslationSegmentsView,
   Category,
   EntryConversation,
@@ -38,6 +41,11 @@ import type {
   Subscription,
   WebDavSettings,
   WebDavTestResult,
+  Workspace,
+  WorkspaceItem,
+  WorkspaceItemsResolvedResponse,
+  WorkspaceItemsResponse,
+  WorkspaceListResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -875,4 +883,161 @@ export async function executeRestore(restoreSessionId: string, confirmation: str
     contentType: 'application/json',
   })
   return (await response.json()) as RestoreResult
+}
+
+// ---- phase2 M1：稍后读 = 服务端保留工作区（read-later）的成员同步 ----
+// Primary 拥有这三个契约函数（read-later 双写依赖）；书签/工作区完整
+// API 面由 library 域各函数另行补充。
+
+export async function listWorkspaceItems(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceItemsResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    { method: 'GET', signal },
+  )
+  return (await response.json()) as WorkspaceItemsResponse
+}
+
+export async function addWorkspaceItem(workspaceId: string, itemRef: string): Promise<WorkspaceItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ itemRef }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItem
+}
+
+export async function removeWorkspaceItem(workspaceId: string, itemRef: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}`,
+    { method: 'DELETE' },
+  )
+}
+
+// ---- phase2 M1：书签（library/bookmarks）——GET 分页 / POST 幂等创建 /
+// PATCH 编辑 / DELETE / Netscape HTML 导入导出。ref 形如 `library:<uuid>`，
+// 路径参数取 uuid 部分（本模块负责剥离，UI 只透传 ref）。 ----
+
+/** `library:<uuid>` → `<uuid>`（容错裸 uuid，原样返回）。 */
+function toBookmarkId(bookmarkRef: string): string {
+  return bookmarkRef.startsWith('library:') ? bookmarkRef.slice('library:'.length) : bookmarkRef
+}
+
+export async function listBookmarks(
+  params: { cursor?: string | null; limit?: number; q?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<BookmarkListResponse> {
+  const query = new URLSearchParams()
+  // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
+  if (params.cursor != null) {
+    query.set('cursor', params.cursor)
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.q != null && params.q !== '') {
+    query.set('q', params.q)
+  }
+  const qs = query.toString()
+  return request<BookmarkListResponse>(
+    `${API_BASE}/library/bookmarks${qs !== '' ? `?${qs}` : ''}`,
+    signal,
+  )
+}
+
+/** 创建书签（url | rssItemRef 二选一）；重复 url/rssItemRef 幂等返回同一
+ * ref。不接 AbortSignal——与其它 mutation 语义一致，发出后允许完成。 */
+export async function createBookmark(body: {
+  url?: string | null
+  rssItemRef?: string | null
+  title: string
+  note?: string | null
+}): Promise<Bookmark> {
+  const response = await rawRequest(`${API_BASE}/library/bookmarks`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Bookmark
+}
+
+export async function updateBookmark(
+  bookmarkRef: string,
+  patch: { title?: string | null; note?: string | null },
+): Promise<Bookmark> {
+  const response = await rawRequest(
+    `${API_BASE}/library/bookmarks/${encodeURIComponent(toBookmarkId(bookmarkRef))}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as Bookmark
+}
+
+export async function deleteBookmark(bookmarkRef: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/bookmarks/${encodeURIComponent(toBookmarkId(bookmarkRef))}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Netscape 书签 HTML 导入（原始文件上传；BFF 负责解析与逐条结果）。
+ * Content-Type 固定 text/html（Netscape 格式即 HTML）。 */
+export async function importBookmarks(file: File): Promise<BookmarkImportResult> {
+  const response = await rawRequest(`${API_BASE}/library/bookmarks/import`, {
+    method: 'POST',
+    body: file,
+    contentType: 'text/html',
+  })
+  return (await response.json()) as BookmarkImportResult
+}
+
+// ---- phase2 M1：工作区（workspaces）——列表 / 创建 / contents 解析 /
+// 重排序。read-later 为保留工作区（reserved=true，BFF 拒绝删除/重排）。 ----
+
+export async function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceListResponse> {
+  return request<WorkspaceListResponse>(`${API_BASE}/workspaces`, signal)
+}
+
+export async function createWorkspace(name: string): Promise<Workspace> {
+  const response = await rawRequest(`${API_BASE}/workspaces`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Workspace
+}
+
+/** 工作区内容（ResolvedItem 统一视图：rss + library 解析后的卡片数据）。 */
+export async function getWorkspaceContents(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceItemsResolvedResponse> {
+  return request<WorkspaceItemsResolvedResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/contents`,
+    signal,
+  )
+}
+
+/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。 */
+export async function reorderWorkspaceItems(
+  workspaceId: string,
+  itemRefs: string[],
+): Promise<WorkspaceItemsResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ itemRefs }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItemsResponse
 }

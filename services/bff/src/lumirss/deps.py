@@ -38,9 +38,11 @@ from lumirss.backup import (
     WebDavSettingsStore,
 )
 from lumirss.config import FreshRSSSettings, LumiSettings
+from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.feed_preview import (
     FeedPreviewService,
 )
+from lumirss.library import LibraryStore
 from lumirss.operations import OperationsService
 from lumirss.restore import (
     RestoreService,
@@ -57,6 +59,7 @@ from lumirss.secrets_store import SecretsStore
 from lumirss.source_discovery import (
     SourceDiscoveryService,
 )
+from lumirss.workspaces import WorkspaceStore
 
 
 def _cached_on_app_state(request: Request, attr: str, build):
@@ -364,5 +367,103 @@ def _get_search_service(request: Request) -> SearchIndexService:
         return SearchIndexService(request.app.state.db, adapter)
 
     return _cached_on_app_state(request, "search_service", build)
+
+
+def _get_library_store(request: Request) -> LibraryStore:
+    """Library domain store (phase2 M1) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "library_store",
+        lambda: LibraryStore(request.app.state.db),
+    )
+
+
+def _get_workspace_store(request: Request) -> WorkspaceStore:
+    """Workspace store (phase2 M1) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "workspace_store",
+        lambda: WorkspaceStore(request.app.state.db),
+    )
+
+
+def _get_source_registry(request: Request) -> dict:
+    """Source Registry (phase2 M1): domain → async resolver.
+
+    The rss resolver wraps the shared FreshRSSAdapter read path; the
+    library resolver reads Lumi-owned rows. A missing FreshRSS config
+    degrades rss resolves to stale views instead of failing workspaces.
+    """
+
+    def build() -> dict:
+        from lumirss.sources import ResolvedItem, excerpt_of, register_resolver
+
+        registry: dict = {}
+
+        async def resolve_rss(entry_ref: str) -> ResolvedItem | None:
+            from lumirss.adapters.freshrss import EntryNotFound
+
+            adapter = request.app.state.freshrss_adapter
+            if adapter is None:
+                try:
+                    adapter = FreshRSSAdapter(
+                        request.app.state.http_client, FreshRSSSettings()
+                    )
+                    request.app.state.freshrss_adapter = adapter
+                except (ConfigError, ValidationError):
+                    adapter = None
+            if adapter is None:
+                return ResolvedItem(
+                    ref=f"rss:{entry_ref}",
+                    domain="rss",
+                    kind="rss",
+                    title="RSS 未配置",
+                    source="rss",
+                    stale=True,
+                )
+            try:
+                # The adapter speaks upstream item ids; refs arrive as
+                # entryRef envelopes (same contract as GET /entries/{ref}).
+                item_id = decode_entry_ref(entry_ref)
+                detail = await adapter.get_entry(item_id)
+            except (EntryNotFound, InvalidEntryReference):
+                return None
+            return ResolvedItem(
+                ref=f"rss:{entry_ref}",
+                domain="rss",
+                kind="rss",
+                title=detail.title,
+                source=detail.feedTitle,
+                datetime=detail.publishedAt,
+                excerpt=excerpt_of(detail.contentText),
+                url=detail.url,
+                payload={"entryRef": entry_ref},
+            )
+
+        async def resolve_library(item_uuid: str) -> ResolvedItem | None:
+            view = await _get_library_store(request).get_library_item(item_uuid)
+            if view is None:
+                return None
+            return ResolvedItem(
+                ref=view.ref,
+                domain="library",
+                kind="bookmark",
+                title=view.title,
+                source="库",
+                datetime=view.created_at,
+                excerpt=excerpt_of(view.note or view.url),
+                url=view.url,
+                payload=(
+                    {"itemType": view.item_type, "rssItemRef": view.rss_item_ref}
+                    if view.item_type == "rss"
+                    else {"itemType": view.item_type}
+                ),
+            )
+
+        register_resolver(registry, "rss", resolve_rss)
+        register_resolver(registry, "library", resolve_library)
+        return registry
+
+    return _cached_on_app_state(request, "source_registry", build)
 
 

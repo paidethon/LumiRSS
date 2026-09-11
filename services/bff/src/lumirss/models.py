@@ -782,3 +782,154 @@ class SearchRebuildResult(BaseModel):
     pages: int
     partial: bool
     elapsedMs: int
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 M1) — bookmarks + workspaces + unified resolve
+# ---------------------------------------------------------------------------
+
+
+class BookmarkCreate(BaseModel):
+    """POST /api/v1/library/bookmarks — exactly one of url | rssItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str | None = None
+    rssItemRef: str | None = None
+    title: str
+    note: str = ""
+
+
+class BookmarkUpdate(BaseModel):
+    """PATCH /api/v1/library/bookmarks/{uuid} — both fields optional."""
+
+    model_config = {"extra": "forbid"}
+
+    title: str | None = None
+    note: str | None = None
+
+
+class Bookmark(BaseModel):
+    """One bookmark in the library domain (never carries RSS bodies)."""
+
+    ref: str
+    itemType: str
+    url: str | None = None
+    rssItemRef: str | None = None
+    title: str
+    note: str
+    createdAt: str
+
+
+class BookmarkListResponse(BaseModel):
+    """Envelope for GET /api/v1/library/bookmarks."""
+
+    items: list[Bookmark]
+    nextCursor: str | None
+
+
+class BookmarkImportFailedItem(BaseModel):
+    """One per-item import failure: index, reason, and the offending URL."""
+
+    index: int
+    url: str
+    reason: str
+
+
+class BookmarkImportResult(BaseModel):
+    """Envelope for POST /api/v1/library/bookmarks/import."""
+
+    imported: int
+    skipped: int
+    failed: list[BookmarkImportFailedItem]
+
+
+class WorkspaceCreate(BaseModel):
+    """POST /api/v1/workspaces."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class WorkspaceRename(BaseModel):
+    """PATCH /api/v1/workspaces/{id}."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class Workspace(BaseModel):
+    """One workspace summary (read-later reports reserved=true)."""
+
+    id: str
+    name: str
+    position: int
+    itemCount: int
+    reserved: bool
+
+
+class WorkspaceListResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces."""
+
+    items: list[Workspace]
+
+
+class WorkspaceItemAddRequest(BaseModel):
+    """POST /api/v1/workspaces/{id}/items — one typed ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceItem(BaseModel):
+    """One workspace member (ref + ordering; content resolves separately)."""
+
+    itemRef: str
+    position: int
+    addedAt: str
+
+
+class WorkspaceItemsResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/items."""
+
+    items: list[WorkspaceItem]
+
+
+class WorkspaceReorderRequest(BaseModel):
+    """PATCH /api/v1/workspaces/{id}/items — refs in their new order."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRefs: list[str]
+
+
+class ResolvedItem(BaseModel):
+    """Unified ViewModel for UnifiedContentCard (report 12 §3)."""
+
+    ref: str
+    domain: str
+    kind: str
+    title: str
+    source: str
+    datetime: str | None = None
+    excerpt: str | None = None
+    url: str | None = None
+    stale: bool = False
+    payload: dict[str, object] = {}
+
+
+class WorkspaceItemsResolvedResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/contents (resolved views)."""
+
+    items: list[ResolvedItem]
+
+
+class ResolveRequest(BaseModel):
+    """POST /api/v1/resolve — resolve one or more ItemRefs."""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str]

@@ -15,6 +15,7 @@
 import { create } from 'zustand'
 
 const STORAGE_KEY = 'lumirss-read-later'
+const MIGRATED_KEY = 'lumirss-read-later-server-migrated'
 /** 加入时间有序 entryRef 列表（新加入的在头部，同 store 数据排序）。 */
 interface ReadLaterState {
   /** 有序列表：[entryRef, addedAtMs][]，新加入 unshift 头部 */
@@ -23,6 +24,40 @@ interface ReadLaterState {
   /** set 语义：value=true 加入 / false 移除（§12 非 toggle 语义由调用方决定目标值） */
   setReadLater: (entryRef: string, value: boolean) => void
   toggleReadLater: (entryRef: string) => boolean
+  /** 服务端真源同步（phase2 M1）：整体替换本地缓存，不发 localStorage 写。 */
+  hydrate: (items: { entryRef: string; addedAt: number }[]) => void
+}
+
+/** 标记 localStorage 遗留条目已完成一次性服务端迁移（幂等）。 */
+export function markServerMigrated(): void {
+  try {
+    localStorage.setItem(MIGRATED_KEY, '1')
+  } catch {
+    // 不可持久化时退化为每次会话可能重试一次迁移，行为仍正确
+  }
+}
+
+export function isServerMigrated(): boolean {
+  try {
+    return localStorage.getItem(MIGRATED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** mutation 在途计数：hydration 对账时跳过，避免覆盖乐观更新。 */
+let inFlightMutations = 0
+
+export function beginReadLaterMutation(): void {
+  inFlightMutations += 1
+}
+
+export function endReadLaterMutation(): void {
+  inFlightMutations = Math.max(0, inFlightMutations - 1)
+}
+
+export function hasInFlightReadLaterMutation(): boolean {
+  return inFlightMutations > 0
 }
 
 function load(): { entryRef: string; addedAt: number }[] {
@@ -74,4 +109,5 @@ export const useReadLater = create<ReadLaterState>((set, get) => ({
     get().setReadLater(entryRef, next)
     return next
   },
+  hydrate: (items) => set({ items }),
 }))

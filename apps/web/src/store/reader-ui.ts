@@ -11,8 +11,16 @@ import { create } from 'zustand'
 import type { UiView } from '../lib/read-later'
 import type { ContentScope } from '../lib/navigation'
 
-/** 一级页面（0011 Spec §设计规格）：与视图/内容范围语义正交。 */
-export type AppSection = 'home' | 'subscriptions' | 'search' | 'favorites'
+/** 一级页面（0011 Spec §设计规格）：与视图/内容范围语义正交。
+ * phase2 M1：+ bookmarks（书签）/ workspaces（工作区）——桌面渲染在
+ * Timeline 列位（与 search 同模式），移动端走顶部 section 区。 */
+export type AppSection =
+  | 'home'
+  | 'subscriptions'
+  | 'search'
+  | 'favorites'
+  | 'bookmarks'
+  | 'workspaces'
 
 export const ALL_SCOPE: ContentScope = { kind: 'all' }
 
