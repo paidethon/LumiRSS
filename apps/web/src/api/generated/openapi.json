@@ -1,6 +1,82 @@
 {
  "components": {
   "schemas": {
+   "AgentApprovalDecision": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/agent/threads/{id}/approvals.",
+    "properties": {
+     "approvalId": {
+      "title": "Approvalid",
+      "type": "string"
+     },
+     "decision": {
+      "title": "Decision",
+      "type": "string"
+     }
+    },
+    "required": [
+     "approvalId",
+     "decision"
+    ],
+    "title": "AgentApprovalDecision",
+    "type": "object"
+   },
+   "AgentMessageCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/agent/threads/{id}/messages.",
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "AgentMessageCreate",
+    "type": "object"
+   },
+   "AgentThread": {
+    "description": "One conversation thread.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "createdAt"
+    ],
+    "title": "AgentThread",
+    "type": "object"
+   },
+   "AgentThreadListResponse": {
+    "description": "Envelope for GET /api/v1/agent/threads.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AgentThread"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "AgentThreadListResponse",
+    "type": "object"
+   },
    "AiProfile": {
     "description": "One AI profile (keys surface only as ``keyConfigured``).",
     "properties": {
@@ -2696,6 +2772,94 @@
     "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
+   "GraphEdge": {
+    "description": "One derived edge.",
+    "properties": {
+     "dst": {
+      "title": "Dst",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "src": {
+      "title": "Src",
+      "type": "string"
+     }
+    },
+    "required": [
+     "src",
+     "dst",
+     "kind"
+    ],
+    "title": "GraphEdge",
+    "type": "object"
+   },
+   "GraphNode": {
+    "description": "One derived graph node (item | tag | workspace | wikilink).",
+    "properties": {
+     "degree": {
+      "default": 0,
+      "title": "Degree",
+      "type": "integer"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "label",
+     "kind"
+    ],
+    "title": "GraphNode",
+    "type": "object"
+   },
+   "GraphResponse": {
+    "description": "Envelope for GET /api/v1/graph (truncation reported honestly).",
+    "properties": {
+     "edges": {
+      "items": {
+       "$ref": "#/components/schemas/GraphEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+     },
+     "nodes": {
+      "items": {
+       "$ref": "#/components/schemas/GraphNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+     },
+     "totalNodes": {
+      "title": "Totalnodes",
+      "type": "integer"
+     },
+     "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "nodes",
+     "edges",
+     "truncated",
+     "totalNodes"
+    ],
+    "title": "GraphResponse",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -3588,6 +3752,101 @@
      "newPassword"
     ],
     "title": "PasswordChangeRequest",
+    "type": "object"
+   },
+   "RagEnableResult": {
+    "description": "Explicit model-enable acknowledgement.",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled"
+    ],
+    "title": "RagEnableResult",
+    "type": "object"
+   },
+   "RagRebuildResult": {
+    "description": "Bounded rebuild report.",
+    "properties": {
+     "chunks": {
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "elapsedMs": {
+      "title": "Elapsedms",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "chunks",
+     "elapsedMs"
+    ],
+    "title": "RagRebuildResult",
+    "type": "object"
+   },
+   "RagSearchItem": {
+    "description": "One fused retrieval hit (ref resolves to real content).",
+    "properties": {
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "score": {
+      "title": "Score",
+      "type": "number"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "kind",
+     "text",
+     "score"
+    ],
+    "title": "RagSearchItem",
+    "type": "object"
+   },
+   "RagSearchResponse": {
+    "description": "Envelope for GET /api/v1/rag/search (honest degradation flags).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RagSearchItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "semanticError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Semanticerror"
+     },
+     "semanticUsed": {
+      "title": "Semanticused",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "items",
+     "semanticUsed"
+    ],
+    "title": "RagSearchResponse",
     "type": "object"
    },
    "ReadinessComponentDetail": {
@@ -5009,6 +5268,143 @@
     "title": "SubscriptionPatch",
     "type": "object"
    },
+   "TagAssignRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/tags/assign — attach one tag to one ItemRef.",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "origin": {
+      "default": "manual",
+      "title": "Origin",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "name"
+    ],
+    "title": "TagAssignRequest",
+    "type": "object"
+   },
+   "TagBinding": {
+    "description": "One tag or binding view.",
+    "properties": {
+     "count": {
+      "default": 0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Id"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "origin": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Origin"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "TagBinding",
+    "type": "object"
+   },
+   "TagListResponse": {
+    "description": "Envelope for GET /api/v1/tags (suggested rows never appear).",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/TagBinding"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "TagListResponse",
+    "type": "object"
+   },
+   "TagRenameRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/tags/{id}.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "TagRenameRequest",
+    "type": "object"
+   },
+   "TagSuggestionsResponse": {
+    "description": "AI suggestions — computed only, never stored until accepted.",
+    "properties": {
+     "suggestions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Suggestions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "suggestions"
+    ],
+    "title": "TagSuggestionsResponse",
+    "type": "object"
+   },
    "TranslationSegmentBlockIn": {
     "description": "One client-segmented content block.",
     "properties": {
@@ -5522,6 +5918,260 @@
      }
     },
     "summary": "Ingest Mail"
+   }
+  },
+  "/api/v1/agent/threads": {
+   "get": {
+    "operationId": "list_threads_api_v1_agent_threads_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Threads"
+   },
+   "post": {
+    "operationId": "create_thread_api_v1_agent_threads_post",
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThread"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Create Thread"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}": {
+   "delete": {
+    "operationId": "delete_thread_api_v1_agent_threads__thread_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Thread"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/approvals": {
+   "post": {
+    "operationId": "decide_approval_api_v1_agent_threads__thread_id__approvals_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentApprovalDecision"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Decide Approval"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/events": {
+   "get": {
+    "description": "SSE replay: streams all messages after `after` then closes — the\nclient re-subscribes while a turn is processing (simple, reconnect\nsafe, no server-side push state).",
+    "operationId": "stream_events_api_v1_agent_threads__thread_id__events_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "After",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Stream Events"
+   }
+  },
+  "/api/v1/agent/threads/{thread_id}/messages": {
+   "get": {
+    "operationId": "get_messages_api_v1_agent_threads__thread_id__messages_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "title": "After",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Messages"
+   },
+   "post": {
+    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (replay-friendly).",
+    "operationId": "post_message_api_v1_agent_threads__thread_id__messages_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentMessageCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Post Message"
    }
   },
   "/api/v1/api-sources": {
@@ -6905,6 +7555,57 @@
     "summary": "Freshrss Ui"
    }
   },
+  "/api/v1/graph": {
+   "get": {
+    "description": "Pure derived, read-only graph; truncation reported honestly.",
+    "operationId": "relationship_graph_api_v1_graph_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "default": "all",
+       "title": "Scope",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "max",
+      "required": false,
+      "schema": {
+       "default": 2000,
+       "title": "Max",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GraphResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Relationship Graph"
+   }
+  },
   "/api/v1/library/assets/{asset_uuid}/page.html": {
    "get": {
     "description": "Sandboxed artifact read-out. The CSP `sandbox` directive strips\nscripts, forms, same-origin access and top navigation — the snapshot\ncan never reach Lumi's origin, cookies or /api endpoints.",
@@ -7782,6 +8483,128 @@
      }
     },
     "summary": "Opml Import Preview"
+   }
+  },
+  "/api/v1/rag/enable": {
+   "post": {
+    "description": "Explicit user consent to download/load the embedding model.",
+    "operationId": "rag_enable_api_v1_rag_enable_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEnableResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Enable"
+   }
+  },
+  "/api/v1/rag/rebuild": {
+   "post": {
+    "operationId": "rag_rebuild_api_v1_rag_rebuild_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Rebuild"
+   }
+  },
+  "/api/v1/rag/search": {
+   "get": {
+    "operationId": "rag_search_api_v1_rag_search_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "k",
+      "required": false,
+      "schema": {
+       "default": 8,
+       "title": "K",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Kind"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagSearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Search"
+   }
+  },
+  "/api/v1/rag/status": {
+   "get": {
+    "operationId": "rag_status_api_v1_rag_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Rag Status Api V1 Rag Status Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Status"
    }
   },
   "/api/v1/resolve": {
@@ -9178,6 +10001,378 @@
      }
     },
     "summary": "Update Subscription"
+   }
+  },
+  "/api/v1/tags": {
+   "get": {
+    "operationId": "list_tags_api_v1_tags_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Tags"
+   }
+  },
+  "/api/v1/tags/assign": {
+   "delete": {
+    "operationId": "detach_tag_api_v1_tags_assign_delete",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Detach Tag"
+   },
+   "post": {
+    "operationId": "assign_tag_api_v1_tags_assign_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Assign Tag"
+   }
+  },
+  "/api/v1/tags/item/{item_ref}": {
+   "get": {
+    "operationId": "item_tags_api_v1_tags_item__item_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Item Tags Api V1 Tags Item  Item Ref  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Item Tags"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}": {
+   "get": {
+    "description": "AI suggestions are computed, NEVER stored here (assign-with-ai or\naccept endpoints persist only after explicit user action).",
+    "operationId": "tag_suggestions_api_v1_tags_suggestions__item_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagSuggestionsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tag Suggestions"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}/accept": {
+   "post": {
+    "operationId": "accept_suggestion_api_v1_tags_suggestions__item_ref__accept_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Accept Suggestion"
+   }
+  },
+  "/api/v1/tags/suggestions/{item_ref}/attach": {
+   "post": {
+    "description": "Persist an accepted suggestion as suggested; caller then accepts.",
+    "operationId": "attach_suggestion_api_v1_tags_suggestions__item_ref__attach_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagAssignRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Attach Suggestion"
+   }
+  },
+  "/api/v1/tags/{tag_id}": {
+   "delete": {
+    "operationId": "delete_tag_api_v1_tags__tag_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "tag_id",
+      "required": true,
+      "schema": {
+       "title": "Tag Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Tag"
+   },
+   "patch": {
+    "operationId": "rename_tag_api_v1_tags__tag_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "tag_id",
+      "required": true,
+      "schema": {
+       "title": "Tag Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagRenameRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagBinding"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Tag"
    }
   },
   "/api/v1/version": {

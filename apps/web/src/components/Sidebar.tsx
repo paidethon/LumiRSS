@@ -549,7 +549,17 @@ function Sidebar({
           </NavItem>
           <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
           <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
-          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="Obsidian 库" />
+          {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
+          <NavItem
+            active={section === 'obsidian'}
+            onClick={() => {
+              selectSection('obsidian')
+              onNavigate?.()
+            }}
+          >
+            <FileText aria-hidden className={icon16} />
+            Obsidian 库
+          </NavItem>
         </div>
       </div>
 
@@ -608,9 +618,29 @@ function Sidebar({
         </NavItem>
 
         <div className="mt-1 flex flex-col gap-0.5">
-          <PlannedItem icon={<Bot aria-hidden className={icon16} />} label="Agent 工作台" />
+          {/* phase2 G7：Agent 工作台已可用——section 导航。 */}
+          <NavItem
+            active={section === 'agent'}
+            onClick={() => {
+              selectSection('agent')
+              onNavigate?.()
+            }}
+          >
+            <Bot aria-hidden className={icon16} />
+            Agent 工作台
+          </NavItem>
           <PlannedItem icon={<Zap aria-hidden className={icon16} />} label="RAG 索引" />
-          <PlannedItem icon={<Tags aria-hidden className={icon16} />} label="标签 / 图谱" />
+          {/* phase2 G8：标签 / 图谱已可用——section 导航。 */}
+          <NavItem
+            active={section === 'graph'}
+            onClick={() => {
+              selectSection('graph')
+              onNavigate?.()
+            }}
+          >
+            <Tags aria-hidden className={icon16} />
+            标签 / 图谱
+          </NavItem>
         </div>
       </div>
     </nav>

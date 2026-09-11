@@ -144,7 +144,13 @@ export default function SidebarCollapsedRail() {
           active={section === 'bookmarks'}
           onClick={() => selectSection('bookmarks')}
         />
-        <RailItem icon={<FileText aria-hidden className={iconCls} />} label="Obsidian 库" disabled />
+        {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
+        <RailItem
+          icon={<FileText aria-hidden className={iconCls} />}
+          label="Obsidian 库"
+          active={section === 'obsidian'}
+          onClick={() => selectSection('obsidian')}
+        />
       </div>
 
       {/* 工作区 */}
@@ -161,9 +167,21 @@ export default function SidebarCollapsedRail() {
           active={view === 'starred'}
           onClick={goHome('starred')}
         />
-        <RailItem icon={<Bot aria-hidden className={iconCls} />} label="Agent 工作台" disabled />
+        {/* phase2 G7：Agent 工作台已可用。 */}
+        <RailItem
+          icon={<Bot aria-hidden className={iconCls} />}
+          label="Agent 工作台"
+          active={section === 'agent'}
+          onClick={() => selectSection('agent')}
+        />
         <RailItem icon={<Zap aria-hidden className={iconCls} />} label="RAG 索引" disabled />
-        <RailItem icon={<Tags aria-hidden className={iconCls} />} label="标签 / 图谱" disabled />
+        {/* phase2 G8：标签 / 图谱已可用。 */}
+        <RailItem
+          icon={<Tags aria-hidden className={iconCls} />}
+          label="标签 / 图谱"
+          active={section === 'graph'}
+          onClick={() => selectSection('graph')}
+        />
       </div>
 
       {/* 设置（§6：折叠态保留设置 icon，同一语义位置） */}

@@ -64,28 +64,28 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
   })
 
-  it('Phase 2 项可见但禁用（phase2 M2 后：书签/剪藏/快照已点亮，剩余 6 项）', () => {
+  it('Phase 2 项可见但禁用（G7/G8 后：Agent 工作台与标签图谱已点亮，剩余 3 项）', () => {
     renderSidebar()
-    const planned = [
-      'API 来源', '邮件简报', 'Obsidian 库',
-      'Agent 工作台', 'RAG 索引', '标签 / 图谱',
-    ]
+    const planned = ['API 来源', '邮件简报', 'RAG 索引']
     for (const label of planned) {
       const el = screen.getByText(label).closest('[aria-disabled="true"]')
       expect(el).not.toBeNull()
     }
     const badges = screen.getAllByText('Phase 2')
-    expect(badges.length).toBe(6)
-    // phase2 M1/M2：书签、网页剪藏、网页快照已是真实入口
+    expect(badges.length).toBe(3)
+    // phase2 M1→G8：已点亮的一级入口
     expect(screen.getByRole('button', { name: '书签' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '网页剪藏' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '网页快照' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Obsidian 库' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Agent 工作台' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '标签 / 图谱' })).toBeEnabled()
   })
 
   it('Phase 2 项不可点击（无 button 语义）', () => {
     renderSidebar()
-    // Agent 工作台等不是 button（div + aria-disabled）
-    expect(screen.queryByRole('button', { name: /Agent 工作台/ })).toBeNull()
+    // RAG 索引等仍是 PlannedItem（div + aria-disabled），不是 button
+    expect(screen.queryByRole('button', { name: /RAG 索引/ })).toBeNull()
   })
 
   it('未读过滤子项点击 → view=unread + selection 清空', () => {

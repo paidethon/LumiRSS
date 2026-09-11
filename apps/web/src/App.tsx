@@ -1,5 +1,5 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
@@ -53,6 +53,11 @@ const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
 // phase2 M2：网页剪藏 / 网页快照列表页
 const ClipsPage = lazy(() => import('./components/pages/ClipsPage'))
 const SnapshotsPage = lazy(() => import('./components/pages/SnapshotsPage'))
+// phase2 G6：Obsidian 只读库
+const ObsidianPage = lazy(() => import('./components/pages/ObsidianPage'))
+// phase2 G7/G8：Agent 工作台 / 标签与图谱
+const AgentWorkbenchPage = lazy(() => import('./components/pages/AgentWorkbenchPage'))
+const GraphPage = lazy(() => import('./components/pages/GraphPage'))
 
 function PageSkeleton() {
   return (
@@ -93,6 +98,24 @@ export default function App() {
 
   const sidebarCollapsed = settings.sidebarCollapsed
   const timelineCollapsed = settings.timelineCollapsed
+
+  // phase2 修复：移动一级 section 区此前仅靠 lg:hidden 视觉隐藏，DOM 里
+  // 始终存在第二份 SearchPage/收藏页实例（live E2E 的 strict mode 抓到
+  // 重复文本）。JS 层判定 <1024 才挂载；matchMedia 不可用（jsdom）时
+  // 保持原渲染行为。
+  const [mobileViewport, setMobileViewport] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return true
+    }
+    return window.matchMedia('(max-width: 63.99rem)').matches
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(max-width: 63.99rem)')
+    const onChange = () => setMobileViewport(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   // §28：selection 从非空 → 空且 Timeline 当前隐藏 → 自动恢复（避免
   // “侧栏 + 巨大空白 Reader + 文章列表被藏”的状态）。基于 prev ref
@@ -157,7 +180,7 @@ export default function App() {
             页面必须让位——Reader 全屏（与首页 Timeline 相同的
             hidden-layout 契约），back 后返回原列表（section/view/scope
             不变）。桌面 lg 恒隐藏本区（用时间线三栏）。 */}
-        {section !== 'home' && (
+        {mobileViewport && section !== 'home' && (
           <section
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--lumi-surface)] lg:hidden ${
               selectedEntryRef !== null ? 'max-lg:hidden' : ''
@@ -213,6 +236,21 @@ export default function App() {
                 <SnapshotsPage />
               </Suspense>
             )}
+            {section === 'obsidian' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <ObsidianPage />
+              </Suspense>
+            )}
+            {section === 'agent' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <AgentWorkbenchPage />
+              </Suspense>
+            )}
+            {section === 'graph' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <GraphPage />
+              </Suspense>
+            )}
           </section>
         )}
 
@@ -262,6 +300,18 @@ export default function App() {
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <SnapshotsPage />
+              </Suspense>
+            </div>
+          ) : section === 'obsidian' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <ObsidianPage />
+              </Suspense>
+            </div>
+          ) : section === 'agent' || section === 'graph' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
               </Suspense>
             </div>
           ) : (

@@ -27,6 +27,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Threads */
+        get: operations["list_threads_api_v1_agent_threads_get"];
+        put?: never;
+        /** Create Thread */
+        post: operations["create_thread_api_v1_agent_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Thread */
+        delete: operations["delete_thread_api_v1_agent_threads__thread_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Approval */
+        post: operations["decide_approval_api_v1_agent_threads__thread_id__approvals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description SSE replay: streams all messages after `after` then closes — the
+         *     client re-subscribes while a turn is processing (simple, reconnect
+         *     safe, no server-side push state).
+         */
+        get: operations["stream_events_api_v1_agent_threads__thread_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Messages */
+        get: operations["get_messages_api_v1_agent_threads__thread_id__messages_get"];
+        put?: never;
+        /**
+         * Post Message
+         * @description Queue one user turn; the loop runs to completion or to the first
+         *     approval suspension. Result/messages are read back via /messages or
+         *     the SSE stream (replay-friendly).
+         */
+        post: operations["post_message_api_v1_agent_threads__thread_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-sources": {
         parameters: {
             query?: never;
@@ -734,6 +831,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Relationship Graph
+         * @description Pure derived, read-only graph; truncation reported honestly.
+         */
+        get: operations["relationship_graph_api_v1_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/assets/{asset_uuid}/page.html": {
         parameters: {
             query?: never;
@@ -1148,6 +1265,77 @@ export interface paths {
          *     POST /api/v1/opml/import.
          */
         post: operations["opml_import_preview_api_v1_opml_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Enable
+         * @description Explicit user consent to download/load the embedding model.
+         */
+        post: operations["rag_enable_api_v1_rag_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rag Rebuild */
+        post: operations["rag_rebuild_api_v1_rag_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rag Search */
+        get: operations["rag_search_api_v1_rag_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rag Status */
+        get: operations["rag_status_api_v1_rag_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1847,6 +2035,134 @@ export interface paths {
         patch: operations["update_subscription_api_v1_subscriptions__subscription_ref__patch"];
         trace?: never;
     };
+    "/api/v1/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tags */
+        get: operations["list_tags_api_v1_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Tag */
+        post: operations["assign_tag_api_v1_tags_assign_post"];
+        /** Detach Tag */
+        delete: operations["detach_tag_api_v1_tags_assign_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/item/{item_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Item Tags */
+        get: operations["item_tags_api_v1_tags_item__item_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/suggestions/{item_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tag Suggestions
+         * @description AI suggestions are computed, NEVER stored here (assign-with-ai or
+         *     accept endpoints persist only after explicit user action).
+         */
+        get: operations["tag_suggestions_api_v1_tags_suggestions__item_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/suggestions/{item_ref}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Suggestion */
+        post: operations["accept_suggestion_api_v1_tags_suggestions__item_ref__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/suggestions/{item_ref}/attach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach Suggestion
+         * @description Persist an accepted suggestion as suggested; caller then accepts.
+         */
+        post: operations["attach_suggestion_api_v1_tags_suggestions__item_ref__attach_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/{tag_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Tag */
+        delete: operations["delete_tag_api_v1_tags__tag_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Tag */
+        patch: operations["rename_tag_api_v1_tags__tag_id__patch"];
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -2059,6 +2375,44 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AgentApprovalDecision
+         * @description POST /api/v1/agent/threads/{id}/approvals.
+         */
+        AgentApprovalDecision: {
+            /** Approvalid */
+            approvalId: string;
+            /** Decision */
+            decision: string;
+        };
+        /**
+         * AgentMessageCreate
+         * @description POST /api/v1/agent/threads/{id}/messages.
+         */
+        AgentMessageCreate: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * AgentThread
+         * @description One conversation thread.
+         */
+        AgentThread: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * AgentThreadListResponse
+         * @description Envelope for GET /api/v1/agent/threads.
+         */
+        AgentThreadListResponse: {
+            /** Items */
+            items: components["schemas"]["AgentThread"][];
+        };
         /**
          * AiProfile
          * @description One AI profile (keys surface only as ``keyConfigured``).
@@ -3147,6 +3501,49 @@ export interface components {
             /** Sqlitefilecount */
             sqliteFileCount?: number | null;
         };
+        /**
+         * GraphEdge
+         * @description One derived edge.
+         */
+        GraphEdge: {
+            /** Dst */
+            dst: string;
+            /** Kind */
+            kind: string;
+            /** Src */
+            src: string;
+        };
+        /**
+         * GraphNode
+         * @description One derived graph node (item | tag | workspace | wikilink).
+         */
+        GraphNode: {
+            /**
+             * Degree
+             * @default 0
+             */
+            degree: number;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * GraphResponse
+         * @description Envelope for GET /api/v1/graph (truncation reported honestly).
+         */
+        GraphResponse: {
+            /** Edges */
+            edges: components["schemas"]["GraphEdge"][];
+            /** Nodes */
+            nodes: components["schemas"]["GraphNode"][];
+            /** Totalnodes */
+            totalNodes: number;
+            /** Truncated */
+            truncated: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3527,6 +3924,50 @@ export interface components {
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+        };
+        /**
+         * RagEnableResult
+         * @description Explicit model-enable acknowledgement.
+         */
+        RagEnableResult: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
+         * RagRebuildResult
+         * @description Bounded rebuild report.
+         */
+        RagRebuildResult: {
+            /** Chunks */
+            chunks: number;
+            /** Elapsedms */
+            elapsedMs: number;
+        };
+        /**
+         * RagSearchItem
+         * @description One fused retrieval hit (ref resolves to real content).
+         */
+        RagSearchItem: {
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            /** Score */
+            score: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * RagSearchResponse
+         * @description Envelope for GET /api/v1/rag/search (honest degradation flags).
+         */
+        RagSearchResponse: {
+            /** Items */
+            items: components["schemas"]["RagSearchItem"][];
+            /** Semanticerror */
+            semanticError?: string | null;
+            /** Semanticused */
+            semanticUsed: boolean;
         };
         /**
          * ReadinessComponentDetail
@@ -4145,6 +4586,66 @@ export interface components {
             newCategoryLabel?: string | null;
         };
         /**
+         * TagAssignRequest
+         * @description POST /api/v1/tags/assign — attach one tag to one ItemRef.
+         */
+        TagAssignRequest: {
+            /** Itemref */
+            itemRef: string;
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @default manual
+             */
+            origin: string;
+        };
+        /**
+         * TagBinding
+         * @description One tag or binding view.
+         */
+        TagBinding: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Id */
+            id?: number | null;
+            /** Name */
+            name: string;
+            /** Origin */
+            origin?: string | null;
+            /** Ref */
+            ref?: string | null;
+            /** Status */
+            status?: string | null;
+        };
+        /**
+         * TagListResponse
+         * @description Envelope for GET /api/v1/tags (suggested rows never appear).
+         */
+        TagListResponse: {
+            /** Items */
+            items: components["schemas"]["TagBinding"][];
+        };
+        /**
+         * TagRenameRequest
+         * @description PATCH /api/v1/tags/{id}.
+         */
+        TagRenameRequest: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * TagSuggestionsResponse
+         * @description AI suggestions — computed only, never stored until accepted.
+         */
+        TagSuggestionsResponse: {
+            /** Suggestions */
+            suggestions: string[];
+        };
+        /**
          * TranslationSegmentBlockIn
          * @description One client-segmented content block.
          */
@@ -4378,6 +4879,211 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MailIngestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_threads_api_v1_agent_threads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentThreadListResponse"];
+                };
+            };
+        };
+    };
+    create_thread_api_v1_agent_threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentThread"];
+                };
+            };
+        };
+    };
+    delete_thread_api_v1_agent_threads__thread_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_approval_api_v1_agent_threads__thread_id__approvals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentApprovalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_events_api_v1_agent_threads__thread_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_messages_api_v1_agent_threads__thread_id__messages_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_message_api_v1_agent_threads__thread_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5517,6 +6223,38 @@ export interface operations {
             };
         };
     };
+    relationship_graph_api_v1_graph_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+                max?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get: {
         parameters: {
             query?: never;
@@ -6252,6 +6990,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    rag_enable_api_v1_rag_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagEnableResult"];
+                };
+            };
+        };
+    };
+    rag_rebuild_api_v1_rag_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRebuildResult"];
+                };
+            };
+        };
+    };
+    rag_search_api_v1_rag_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                k?: number;
+                kind?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_status_api_v1_rag_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -7419,6 +8252,299 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tags_api_v1_tags_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_tag_api_v1_tags_assign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detach_tag_api_v1_tags_assign_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    item_tags_api_v1_tags_item__item_ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tag_suggestions_api_v1_tags_suggestions__item_ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagSuggestionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_suggestion_api_v1_tags_suggestions__item_ref__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_suggestion_api_v1_tags_suggestions__item_ref__attach_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tag_api_v1_tags__tag_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_tag_api_v1_tags__tag_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagBinding"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -224,7 +224,11 @@ test('J7 — 本地翻译：headless 下 unsupported 诚实提示（不假装可
   const dialog = visibleDialog(page)
   await dialog.getByLabel('翻译引擎').selectOption('browser')
   await dialog.getByRole('button', { name: /保存/ }).click()
-  await expect(dialog.getByText(/已保存|保存成功/).first()).toBeVisible()
+  // 该分区保存为静默式（无成功文案）：重载后以控件值验证持久化。
+  await page.waitForTimeout(800)
+  await page.reload()
+  await openSettingsCategory(page, '翻译')
+  await expect(visibleDialog(page).getByLabel('翻译引擎')).toHaveValue('browser')
   await page.keyboard.press('Escape')
 
   // headless 环境探测器：window.Translator 必须真的不存在，否则断言无意义

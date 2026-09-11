@@ -20,12 +20,14 @@ import {
   Keyboard,
   Languages,
   LayoutGrid,
+  Mail,
   Palette,
   Rss,
   Satellite,
   Settings2,
   Sparkles,
   UserCog,
+  Webhook,
 } from 'lucide-react'
 import { useAppSettings } from '../../store/app-settings'
 import type {
@@ -53,6 +55,9 @@ import { DataBackupSection } from './DataControlPage'
 import { AiSettingsSection } from './AiSettingsPage'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/高级入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
+// phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
+import { ApiSourcesSection } from './ApiSourcesSection'
+import { MailSection } from './MailSection'
 // 会话认证（LUMIRSS_AUTH_MODE=session）：改密 + 登出（basic 模式自隐藏）
 import { AccountSecuritySection } from './AccountSecuritySection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
@@ -78,6 +83,8 @@ export type CategoryId =
   | 'filters'
   | 'rsshub'
   | 'sources'
+  | 'api-sources'
+  | 'mail'
   | 'ai'
   | 'data'
   | 'services'
@@ -93,6 +100,8 @@ export const CATEGORIES: { id: CategoryId; label: string; icon: React.ReactNode 
   { id: 'filters', label: '文章过滤', icon: <Filter aria-hidden className="size-4 shrink-0" /> },
   { id: 'rsshub', label: 'RSSHub', icon: <Satellite aria-hidden className="size-4 shrink-0" /> },
   { id: 'sources', label: '订阅与来源', icon: <Rss aria-hidden className="size-4 shrink-0" /> },
+  { id: 'api-sources', label: 'API 来源', icon: <Webhook aria-hidden className="size-4 shrink-0" /> },
+  { id: 'mail', label: '邮件简报', icon: <Mail aria-hidden className="size-4 shrink-0" /> },
   { id: 'ai', label: 'AI', icon: <Bot aria-hidden className="size-4 shrink-0" /> },
   { id: 'data', label: '数据控制', icon: <Database aria-hidden className="size-4 shrink-0" /> },
   { id: 'services', label: '账户与服务', icon: <UserCog aria-hidden className="size-4 shrink-0" /> },
@@ -110,7 +119,7 @@ export function normalizeCategoryId(id: string): CategoryId {
 export const CATEGORY_GROUPS: { label: string; ids: CategoryId[] }[] = [
   { label: '主设置', ids: ['general', 'appearance', 'reading', 'shortcuts', 'translation', 'filters', 'rsshub'] },
   { label: '数据', ids: ['data'] },
-  { label: '订阅与增强', ids: ['sources', 'ai', 'workspace'] },
+  { label: '订阅与增强', ids: ['sources', 'api-sources', 'mail', 'ai', 'workspace'] },
   { label: '其他', ids: ['services', 'about'] },
 ]
 
@@ -330,6 +339,18 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // OPML 导入/导出 + FreshRSS 状态/高级入口（真实可用）
         { type: 'custom', node: <SourcesSettingsSection /> },
       ]
+    case 'api-sources':
+      // phase2 G6：API 来源（JSON API → JMESPath → Atom → FreshRSS 订阅）
+      return [
+        { type: 'title', value: 'API 来源' },
+        { type: 'custom', node: <ApiSourcesSection /> },
+      ]
+    case 'mail':
+      // phase2 G6：邮件简报（收信地址 + 每日摘要）
+      return [
+        { type: 'title', value: '邮件简报' },
+        { type: 'custom', node: <MailSection /> },
+      ]
     case 'ai':
       return [
         { type: 'title', value: 'AI 配置' },
@@ -383,8 +404,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                 </span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                网页剪藏、API 来源、邮件简报、Obsidian 库与 Agent
-                工作台将按真实需求逐项设计。本页为占位，无可用功能。
+                网页剪藏、API 来源、邮件简报与 Obsidian 库已按各自入口独立可用；
+                Agent 工作台将按真实需求逐项设计。本页为占位，无可用功能。
               </p>
             </div>
           ),
