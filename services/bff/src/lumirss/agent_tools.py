@@ -192,5 +192,26 @@ def build_registry(**services) -> ToolRegistry:
         },
         tool_save_bookmark,
     )
+    async def tool_add_tag(args: dict) -> dict:
+        tag_store = services["tags"]
+        item_ref = parse_item_ref(str(args.get("itemRef") or "")).format()
+        binding = await tag_store.attach(
+            item_ref, str(args.get("name") or ""), origin="manual"
+        )
+        return {"tagged": True, "name": binding["name"], "ref": binding["ref"]}
+
+    registry.register_write(
+        "add_tag",
+        "给一个条目（ItemRef）打一个手动标签",
+        {
+            "type": "object",
+            "properties": {
+                "itemRef": {"type": "string"},
+                "name": {"type": "string"},
+            },
+            "required": ["itemRef", "name"],
+        },
+        tool_add_tag,
+    )
     _ = excerpt_of  # reserved for future excerpt tools
     return registry

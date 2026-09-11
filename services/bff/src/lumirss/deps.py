@@ -73,6 +73,7 @@ from lumirss.snapshots import SnapshotJobRunner
 from lumirss.source_discovery import (
     SourceDiscoveryService,
 )
+from lumirss.tags import TagStore
 from lumirss.workspaces import WorkspaceStore
 
 
@@ -461,6 +462,15 @@ def _get_mail_bridge_store(request: Request) -> MailBridgeStore:
     )
 
 
+def _get_tag_store(request: Request) -> TagStore:
+    """Unified tag store (phase2 G8) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "tag_store",
+        lambda: TagStore(request.app.state.db),
+    )
+
+
 def _get_rag_service(request: Request) -> RagService:
     """RAG projection service (phase2 G7) over the shared Lumi database."""
     return _cached_on_app_state(
@@ -503,6 +513,7 @@ def _get_agent_loop(request: Request) -> AgentLoop:
             adapter=adapter,
             library=_get_library_store(request),
             workspaces=_get_workspace_store(request),
+            tags=_get_tag_store(request),
             obsidian=_get_obsidian_service(request)
             if request.app.state.obsidian_service is not None
             else None,

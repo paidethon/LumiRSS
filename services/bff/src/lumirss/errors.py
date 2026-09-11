@@ -133,6 +133,7 @@ from lumirss.source_discovery import (
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
+from lumirss.tags import TagInvalid, TagNotFound
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 from lumirss.workspaces import (
     ReservedWorkspaceError,
@@ -258,6 +259,9 @@ _ERROR_RESPONSES = {
     AgentProviderUnavailable: (503, "provider_unavailable"),
     ToolDenied: (403, "tool_denied"),
     ApprovalInvalid: (409, "approval_invalid"),
+    # phase2 G8 tags
+    TagInvalid: (400, "invalid_tag"),
+    TagNotFound: (404, "tag_not_found"),
 }
 
 
@@ -358,6 +362,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(AgentProviderUnavailable)
     @app.exception_handler(ToolDenied)
     @app.exception_handler(ApprovalInvalid)
+    @app.exception_handler(TagInvalid)
+    @app.exception_handler(TagNotFound)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

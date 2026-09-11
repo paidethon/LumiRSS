@@ -48,6 +48,7 @@ from lumirss.routers import (
     settings,
     snapshots,
     subscriptions,
+    tags,
     workspaces,
 )
 from lumirss.search_index import SearchIndexService
@@ -188,5 +189,6 @@ app.include_router(mail.router)
 app.include_router(obsidian.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
+app.include_router(tags.router)
 
 register_error_handlers(app)

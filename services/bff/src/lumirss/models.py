@@ -1338,3 +1338,75 @@ class RagEnableResult(BaseModel):
     """Explicit model-enable acknowledgement."""
 
     enabled: bool
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 G8) — tags + derived graph
+# ---------------------------------------------------------------------------
+
+
+class TagBinding(BaseModel):
+    """One tag or binding view."""
+
+    id: int | None = None
+    name: str
+    count: int = 0
+    ref: str | None = None
+    origin: str | None = None
+    status: str | None = None
+
+
+class TagListResponse(BaseModel):
+    """Envelope for GET /api/v1/tags (suggested rows never appear)."""
+
+    items: list[TagBinding]
+
+
+class TagAssignRequest(BaseModel):
+    """POST /api/v1/tags/assign — attach one tag to one ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+    name: str
+    origin: str = "manual"
+
+
+class TagRenameRequest(BaseModel):
+    """PATCH /api/v1/tags/{id}."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class TagSuggestionsResponse(BaseModel):
+    """AI suggestions — computed only, never stored until accepted."""
+
+    suggestions: list[str]
+
+
+class GraphNode(BaseModel):
+    """One derived graph node (item | tag | workspace | wikilink)."""
+
+    ref: str
+    label: str
+    kind: str
+    degree: int = 0
+
+
+class GraphEdge(BaseModel):
+    """One derived edge."""
+
+    src: str
+    dst: str
+    kind: str
+
+
+class GraphResponse(BaseModel):
+    """Envelope for GET /api/v1/graph (truncation reported honestly)."""
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    truncated: bool
+    totalNodes: int
