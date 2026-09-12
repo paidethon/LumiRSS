@@ -53,14 +53,26 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 其他共享文件变更以 diff 形式报给主 Agent 落地。
 
 
-### BLOCKER-E1 — 生产直接核验不可用
+### BLOCKER-E1 — 生产直接核验（已解除只读部分；部署仍受发布门槛约束）
 
-- 症状：本会话 SSH（root@47.100.64.202）publickey denied；无法读取生产 SHA/迁移版本/表行数。
-- 已知替代证据：2026-09-13 部署会话记录（生产=7d1191b、migration v15、备份 20260913-012436、
-  回滚快照 872035a）。
-- 影响范围：production_verified 状态判定；生产 smoke；生产数据审计。
-- 解除条件：用户提供 SSH 密钥，或用户在生产执行核验命令并回传输出。
-- 当前处置：本地完成全部实现/测试/release candidate；不执行任何生产写操作。
+- 2026-09-13 用户提供 SSH 密钥（仅本会话使用，不入库不落盘他处）。
+- **只读核验结果（2026-09-13）**：
+  - 生产运行 `7d1191b7b603`（BFF 自报 commit 一致），BFF healthy；external-caddy 模式
+    （宿主 Caddy → 127.0.0.1:18080），**basic 认证模式**（无 LUMIRSS_AUTH_MODE）。
+  - **schema_version = 15**（迁移升级演练 v15→v20 与生产直接对应）。
+  - Phase 2 数据量：library_items 1（clip）、agent_threads 1、workspaces 1（read-later）；
+    api_sources/mail/obsidian/rag/tags 全部 0 —— 升级数据风险极低。
+  - 备份：20260913-012436 存在（部署前备份）+ LATEST 指针；回滚快照 `.image-tag.previous`
+    = `872035ab0ac5` ✓。
+  - 资源：磁盘 24G 可用；**内存 1.6GB 总量 / ~770MB 可用** —— 生产部署必须沿用低内存
+    预算（RAG 显式启用+空闲卸载是硬要求）。
+  - `.env.prod` 无 OBSIDIAN/ATOM_BASE_URL 变量（缺省值可用）；`LUMIRSS_INTERNAL_TOKEN`
+    已设置 → bearer-defer 中间件修复对该部署直接生效。
+- 部署条件仍按指令 §10：全 P0 关闭 + required checks 绿 + Compose E2E 绿 + 演练通过后才执行；
+  执行方式 `./lumirss update`（GHCR 私有 → 服务器本地构建）。
+- **部署配置注意事项**：宿主 Caddy basic auth 会拦 `/api/mail/ingest/*` 的机器投递——
+  生产启用邮件桥前需在宿主 Caddy 豁免该路径（或中继带上 basic 凭据）；当前生产无邮件
+  列表，非本次部署阻塞。
 
 ## P0 Issues
 
@@ -242,6 +254,10 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 
 ### 修复进度（按 Gate）
 
+- **迁移升级演练** ✓：以 7d1191b 的迁移集构建真实 v15 库（种入书签数据）→ 当前代码升级 →
+  0016–0020 全部应用，schema_version 20，数据存活，`ix_tags_name_nocase` 就位。UPGRADE OK。
+- **生产镜像 monolith** ✓：`docker build` 成功（arch 探测改 uname -m 以兼容 legacy builder，
+  `28021fd`）；镜像内 `monolith --version` = 2.10.1，非 root 可执行。
 - **P0-13** ✓ `6600c33`：interval=0 不再创建任务；负值被 config 拒绝；3 个回归测试。locally_verified。
 - **Gate 1 后端（主 Agent）** ✓ `83e5066`：
   - P0-02：resolve_library 按 kind 分派（bookmark/clip/snapshot/obsidian_note）+ 打开 payload + 并发 batch resolve；20 个回归测试（test_gate1_foundations.py）。locally_verified。
