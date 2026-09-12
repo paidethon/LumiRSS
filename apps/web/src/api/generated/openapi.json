@@ -7974,7 +7974,7 @@
   },
   "/api/v1/graph": {
    "get": {
-    "description": "Pure derived, read-only graph; truncation reported honestly.",
+    "description": "Pure derived, read-only graph; truncation reported honestly.\n\nThe wire query parameter stays ``max`` (Query alias); the local name\nmust not shadow the builtin ``max`` used for clamping.",
     "operationId": "relationship_graph_api_v1_graph_get",
     "parameters": [
      {

@@ -373,6 +373,16 @@ def test_graph_wikilink_to_missing_note_is_explicitly_unresolved(
     assert unresolved[0]["label"] == "ghost-note"
 
 
+def test_graph_route_default_call_does_not_shadow_builtin(client):
+    """HTTP-level regression: the /graph route clamps with max() — the
+    old `max` parameter name shadowed the builtin and 500'd every
+    default-parameter call (production smoke catch)."""
+    resp = client.get("/api/v1/graph")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["returnedNodes"] == body["totalNodes"]
+
+
 def test_tag_items_endpoint_returns_resolved_cards(client):
     ref = _bookmark(client, 300)
     client.post("/api/v1/tags/assign", json={"itemRef": ref, "name": "items"})

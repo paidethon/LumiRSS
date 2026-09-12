@@ -2,7 +2,7 @@
 
 import json
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from lumirss.graph import build_graph
 from lumirss.models import (
@@ -184,9 +184,15 @@ async def accept_suggestion(
 
 @router.get("/api/v1/graph", response_model=GraphResponse)
 async def relationship_graph(
-    request: Request, scope: str = "all", max: int = 2000
+    request: Request,
+    scope: str = "all",
+    max_nodes: int = Query(2000, alias="max"),
 ) -> GraphResponse:
-    """Pure derived, read-only graph; truncation reported honestly."""
+    """Pure derived, read-only graph; truncation reported honestly.
+
+    The wire query parameter stays ``max`` (Query alias); the local name
+    must not shadow the builtin ``max`` used for clamping."""
     db = request.app.state.db
-    result = await build_graph(db, scope=scope, max_nodes=max(10, min(max, 2000)))
+    limit = max(10, min(max_nodes, 2000))
+    result = await build_graph(db, scope=scope, max_nodes=limit)
     return GraphResponse(**result)
