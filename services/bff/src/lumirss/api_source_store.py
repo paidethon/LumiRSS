@@ -55,12 +55,12 @@ class ApiSourceStore:
 
     async def get(self, source_uuid: str) -> ApiSourceRecord | None:
         await self._db.migrate()
-        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at FROM api_sources WHERE uuid = ?", (source_uuid,))
+        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated FROM api_sources WHERE uuid = ?", (source_uuid,))
         return _record_from_row(row) if row is not None else None
 
     async def list_sources(self) -> list[ApiSourceRecord]:
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at FROM api_sources ORDER BY created_at ASC, uuid ASC")
+        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated FROM api_sources ORDER BY created_at ASC, uuid ASC")
         return [_record_from_row(row) for row in rows if row is not None]
 
     async def update(
@@ -91,9 +91,11 @@ class ApiSourceStore:
             else current.field_map
         )
         new_enabled = current.enabled if enabled is None else (1 if enabled else 0)
-        # Config change invalidates cache identity and prior status.
+        # Config change invalidates cache identity and prior status —
+        # including the last-known-good body and its content timestamp
+        # (the old feed no longer describes the new configuration).
         await self._db.execute(
-            "UPDATE api_sources SET name = ?, endpoint = ?, items_expr = ?, field_map = ?, enabled = ?, etag = NULL, last_status = NULL, last_error = NULL WHERE uuid = ?",
+            "UPDATE api_sources SET name = ?, endpoint = ?, items_expr = ?, field_map = ?, enabled = ?, etag = NULL, atom_body = NULL, feed_updated = NULL, last_status = NULL, last_error = NULL WHERE uuid = ?",
             (
                 new_name,
                 new_endpoint,
@@ -116,10 +118,13 @@ class ApiSourceStore:
         )
         return True
 
-    async def mark_success(self, source_uuid: str, etag: str) -> None:
+    async def mark_success(
+        self, source_uuid: str, etag: str, atom_body: str, feed_updated: str
+    ) -> None:
+        """Persist the last-known-good Atom atomically with its status."""
         await self._db.execute(
-            "UPDATE api_sources SET last_status = 'ok', etag = ?, last_success_at = ?, last_error = NULL WHERE uuid = ?",
-            (etag, utc_now(), source_uuid),
+            "UPDATE api_sources SET last_status = 'ok', etag = ?, atom_body = ?, feed_updated = ?, last_success_at = ?, last_error = NULL WHERE uuid = ?",
+            (etag, atom_body, feed_updated, utc_now(), source_uuid),
         )
 
     async def mark_error(self, source_uuid: str, status: str, error: str) -> None:
@@ -162,6 +167,8 @@ def _record_from_row(row: sqlite3.Row) -> ApiSourceRecord:
         last_success_at=row["last_success_at"],
         last_error=row["last_error"],
         created_at=str(row["created_at"]),
+        atom_body=row["atom_body"],
+        feed_updated=row["feed_updated"],
     )
 
 

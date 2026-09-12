@@ -1,15 +1,22 @@
-"""Newsletter inbound bridge (phase2 G5).
+"""Newsletter inbound bridge (phase2 G5, recovery P0-06).
 
 Chain: email → authenticated thin webhook → parse/sanitize → per-list
 Atom → FreshRSS (same main chain as API sources; no second article
 database). Lists live in Lumi with a high-entropy per-list bearer
-secret; seen Message-IDs and content fingerprints give replay/dedupe
-protection; attachments are counted (name+size) but their bodies are
-NEVER stored. The per-list Atom reuses the api_sources feed URL pattern
-(outside /api/*, secret constant-time compared) and is auto-subscribed
-into FreshRSS best-effort.
+secret; seen identities are PER-LIST (mail_seen PK (list_uuid, identity)
+since migration 0018 — the same Message-ID to two lists must store
+twice) and the fallback identity is a stable content fingerprint (list
++ from + to + subject + body digest — never wall-clock, so re-delivery
+dedupes deterministically). Seen rows and the entry body commit in ONE
+transaction: a crash in between must not lose the mail forever (the
+entry table doubles as the bounded delivery spool per ADR 0004).
+Attachments are counted (name+size) but their bodies are NEVER stored.
+The per-list Atom reuses the api_sources feed URL pattern (outside
+/api/*, secret constant-time compared) and is auto-subscribed into
+FreshRSS best-effort.
 """
 
+import asyncio
 import email
 import email.header
 import email.policy
@@ -17,6 +24,7 @@ import hashlib
 import hmac
 import json
 import secrets as _secrets
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +37,7 @@ _MAX_PARTS = 40
 _MAX_ATTACHMENT_META = 20
 _MAX_ENTRIES_PER_LIST = 50
 _MAX_LISTS = 20
+_MAX_DIGEST_REFS = 50
 
 
 class MailBridgeInvalid(ValueError):
@@ -61,17 +70,51 @@ def new_list_secret() -> str:
     return _secrets.token_hex(20)
 
 
-def _fingerprint(list_uuid: str, message_id: str, body: str) -> str:
-    return hashlib.sha256(
-        f"{list_uuid}\n{message_id}\n{body}".encode()
-    ).hexdigest()
+def _content_fingerprint(
+    list_uuid: str, sender: str, recipient: str, subject: str, body_text: str
+) -> str:
+    """Stable content identity (P0-06e): list-scoped, never wall-clock.
+
+    The same content re-delivered to the same list dedupes at any time;
+    the same content to ANOTHER list hashes differently (list_uuid in the
+    digest) and is stored independently."""
+    digest = hashlib.sha256()
+    for part in (list_uuid, sender, recipient, subject, body_text):
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 class MailBridgeStore:
-    """Lists + seen ledger + per-list entry ring (for the Atom)."""
+    """Lists + seen ledger + per-list entry ring (for the Atom).
+
+    The store also owns the domain's only multi-statement transaction
+    helper: storage.Database commits per execute site by design, but the
+    ingest path must not lose mail when it crashes between the dedupe
+    row and the entry body (P0-06f)."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
+
+    async def _transaction(
+        self, statements: list[tuple[str, tuple[Any, ...]]]
+    ) -> None:
+        """Commit every statement or none of them.
+
+        Local helper over the same connection primitives storage.Database
+        uses (mirrors migrations.py, which shares the private connector
+        for the same reason: one file, one transaction boundary)."""
+
+        def _run() -> None:
+            connection = self._db._connect()  # noqa: SLF001 — same module family
+            try:
+                for sql, params in statements:
+                    connection.execute(sql, params)
+                connection.commit()
+            finally:
+                connection.close()
+
+        await asyncio.to_thread(_run)
 
     # -- lists -------------------------------------------------------------
 
@@ -108,19 +151,19 @@ class MailBridgeStore:
         return BridgeList(str(row["uuid"]), str(row["name"]), str(row["secret"]), str(row["created_at"]))
 
     async def delete_list(self, list_uuid: str) -> bool:
+        """Remove a list and ALL its bridge state in one transaction."""
+        await self._db.migrate()
         row = await self._db.fetch_one(
             "SELECT uuid FROM mail_bridge_lists WHERE uuid = ?", (list_uuid,)
         )
         if row is None:
             return False
-        await self._db.execute(
-            "DELETE FROM mail_seen WHERE list_uuid = ?", (list_uuid,)
-        )
-        await self._db.execute(
-            "DELETE FROM mail_bridge_entries WHERE list_uuid = ?", (list_uuid,)
-        )
-        await self._db.execute(
-            "DELETE FROM mail_bridge_lists WHERE uuid = ?", (list_uuid,)
+        await self._transaction(
+            [
+                ("DELETE FROM mail_seen WHERE list_uuid = ?", (list_uuid,)),
+                ("DELETE FROM mail_bridge_entries WHERE list_uuid = ?", (list_uuid,)),
+                ("DELETE FROM mail_bridge_lists WHERE uuid = ?", (list_uuid,)),
+            ]
         )
         return True
 
@@ -134,64 +177,74 @@ class MailBridgeStore:
     ) -> dict[str, Any]:
         """Parse a raw MIME message, sanitize, dedupe, store the entry.
 
-        Returns an honest per-message report; duplicate messages are
-        reported (never fatal) so upstream retries converge.
-        """
+        Dedupe identities are PER-LIST (P0-06e): the Message-ID when the
+        mail carries one, plus a stable content fingerprint as the
+        same-content-different-id guard. Seen rows + the entry body are
+        written in ONE transaction (P0-06f) — a crash between them rolls
+        back together, so delivery can be retried without losing the
+        mail. Concurrent duplicate inserts are rejected by the composite
+        primary key and reported as an honest duplicate. Returns an
+        honest per-message report; duplicates are never fatal so
+        upstream retries converge."""
         if len(raw_bytes) > _MAX_RAW_BYTES:
             raise MailBridgeInvalid("Message exceeds the 10MB limit.")
         message = email.message_from_bytes(
             raw_bytes, policy=email.policy.default
         )
-        message_id = _decode_header(message.get("Message-ID", "")) or _fingerprint(
-            lst.uuid, utc_now(), str(message.get("Subject", ""))
-        )[:32]
-        seen = await self._db.fetch_one(
-            "SELECT message_id FROM mail_seen WHERE message_id = ?",
-            (message_id,),
-        )
-        if seen is not None:
-            return {"status": "duplicate", "messageId": message_id}
         subject = _decode_header(message.get("Subject", "")) or "(无主题)"
         sender = _decode_header(message.get("From", ""))
+        recipient = _decode_header(message.get("To", ""))
         html_part, text_part = _extract_bodies(message)
         body_source = html_part if html_part else (text_part or "")
         clean_html = sanitize_email_html(body_source)
         clean_text = html_to_text(body_source) if html_part else (text_part or "")
         attachments = _attachment_metadata(message)
-        fingerprint = _fingerprint(lst.uuid, message_id, clean_text)
-        fingerprint_seen = await self._db.fetch_one(
-            "SELECT message_id FROM mail_seen WHERE message_id = ?",
-            (fingerprint,),
+        message_id = _decode_header(message.get("Message-ID", ""))
+        fingerprint = _content_fingerprint(
+            lst.uuid, sender, recipient, subject, clean_text
         )
-        if fingerprint_seen is not None:
-            return {"status": "duplicate", "messageId": fingerprint[:32]}
+        identities = ([message_id] if message_id else []) + [fingerprint]
+        for identity in identities:
+            seen = await self._db.fetch_one(
+                "SELECT identity FROM mail_seen WHERE list_uuid = ? AND identity = ?",
+                (lst.uuid, identity),
+            )
+            if seen is not None:
+                return {"status": "duplicate", "messageId": identity[:64]}
         now = utc_now()
-        await self._db.execute(
-            "INSERT INTO mail_seen (message_id, list_uuid, seen_at) VALUES (?, ?, ?)",
-            (message_id, lst.uuid, now),
-        )
-        await self._db.execute(
-            "INSERT INTO mail_seen (message_id, list_uuid, seen_at) VALUES (?, ?, ?)",
-            (fingerprint, lst.uuid, now),
-        )
-        await self._db.execute(
-            "INSERT INTO mail_bridge_entries (list_uuid, message_id, subject, sender, html, text, attachment_count, attachment_meta, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        statements: list[tuple[str, tuple[Any, ...]]] = [
             (
-                lst.uuid,
-                message_id,
-                subject[:500],
-                sender[:200],
-                clean_html[:200_000],
-                clean_text[:100_000],
-                len(attachments),
-                json.dumps(attachments, ensure_ascii=False),
-                now,
-            ),
+                "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
+                (lst.uuid, identity, now),
+            )
+            for identity in identities
+        ]
+        statements.append(
+            (
+                "INSERT INTO mail_bridge_entries (list_uuid, message_id, subject, sender, html, text, attachment_count, attachment_meta, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    lst.uuid,
+                    message_id or fingerprint[:32],
+                    subject[:500],
+                    sender[:200],
+                    clean_html[:200_000],
+                    clean_text[:100_000],
+                    len(attachments),
+                    json.dumps(attachments, ensure_ascii=False),
+                    now,
+                ),
+            )
         )
+        try:
+            await self._transaction(statements)
+        except sqlite3.IntegrityError:
+            # A concurrent delivery of the same mail won the race; the
+            # transaction rolled back — report honestly, store nothing twice.
+            return {"status": "duplicate", "messageId": identities[0][:64]}
         await self._trim_ring(lst.uuid)
         return {
             "status": "accepted",
-            "messageId": message_id,
+            "messageId": message_id or fingerprint[:32],
             "subject": subject,
             "attachments": len(attachments),
         }
@@ -203,6 +256,36 @@ class MailBridgeStore:
             (list_uuid, _MAX_ENTRIES_PER_LIST),
         )
         return [dict(row) for row in rows]
+
+    async def recent_digest_items(self, limit: int) -> list[dict[str, Any]]:
+        """Server-derived digest pool (P0-06b/k): newest entries across
+        ALL bridge lists, bounded — the digest is built from what the
+        bridge actually received, never from client-supplied text."""
+        await self._db.migrate()
+        bounded = max(1, min(int(limit), _MAX_DIGEST_REFS))
+        rows = await self._db.fetch_all(
+            "SELECT e.message_id, e.subject, e.sender, e.received_at, l.name AS list_name FROM mail_bridge_entries e JOIN mail_bridge_lists l ON l.uuid = e.list_uuid ORDER BY e.received_at DESC LIMIT ?",
+            (bounded,),
+        )
+        return [dict(row) for row in rows]
+
+    async def entries_by_ids(self, message_ids: list[str]) -> list[dict[str, Any]]:
+        """Resolve explicit digest references against stored entries only.
+
+        Unknown ids are skipped (never invented); lookups are per-id
+        bounded queries (SQL stays a single-line literal at each site)."""
+        await self._db.migrate()
+        found: list[dict[str, Any]] = []
+        for message_id in message_ids[:_MAX_DIGEST_REFS]:
+            if not message_id:
+                continue
+            row = await self._db.fetch_one(
+                "SELECT e.message_id, e.subject, e.sender, e.received_at, l.name AS list_name FROM mail_bridge_entries e JOIN mail_bridge_lists l ON l.uuid = e.list_uuid WHERE e.message_id = ?",
+                (message_id,),
+            )
+            if row is not None:
+                found.append(dict(row))
+        return found
 
     async def _trim_ring(self, list_uuid: str) -> None:
         row = await self._db.fetch_one(

@@ -1,24 +1,43 @@
-"""Outbound digest (phase2 G5): selected articles → text+HTML email →
-the user's own SMTP relay → the single configured address.
+"""Outbound digest (phase2 G5, recovery P0-06a/b/j).
+
+Selected items → text+HTML email → the user's own SMTP relay → the
+single configured address. Content is ALWAYS server-derived (bridge
+lists' recent entries — P0-06b): the client can reference stored
+entries but never inject arbitrary title/url text, so the relay cannot
+be abused as an open sender.
 
 SMTP credentials live in the secrets store (never SQLite, never logs);
-sending happens only when explicitly configured and enabled (disabled by
-default). Errors are typed for honest UI (unreachable / auth failed /
-TLS). Tests use a local in-process SMTP sink (aiosmtpd-style) — real
+sending happens only when explicitly configured (disabled by default).
+``send-now`` is an explicit user action and ignores ``enabled``; the
+scheduled path only sends when ``enabled`` is true (P0-06j). Scheduling
+is timezone-aware in the documented sense that ``hour`` is interpreted
+in the SERVER's local timezone (no tz setting exists in the schema;
+documented behavior — an IANA-tz setting is a later-wave addition).
+Errors are typed for honest UI (unreachable / auth failed / TLS).
+Tests use a local in-process SMTP sink (aiosmtpd-style) — real
 third-party mail is never touched.
 """
 
+import asyncio
+import logging
 import smtplib
 import ssl
+from datetime import datetime
 from email.message import EmailMessage
 from typing import Any
 
+from lumirss.mail_bridge import MailBridgeStore
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
 _DEFAULT_LIMIT = 10
 _MAX_LIMIT = 50
+_DIGEST_TITLE = "LumiRSS 文章摘要"
+# Background scheduler cadence (seconds). One tick per 5 minutes is
+# plenty for hour-boundary scheduling and keeps restart catch-up tight.
+_SCHEDULE_TICK_SECONDS = 300
+_VALID_SOURCES = ("read_later", "starred", "mail")
 
 
 class SmtpNotConfigured(Exception):
@@ -92,7 +111,7 @@ class DigestStore:
         to_addr = update.get("toAddr", current["toAddr"])
         if not isinstance(hour, int) or not 0 <= hour <= 23:
             hour = current["hour"]
-        if source not in ("read_later", "starred"):
+        if source not in _VALID_SOURCES:
             source = current["source"]
         if not isinstance(limit, int) or not 1 <= limit <= _MAX_LIMIT:
             limit = min(max(limit, 1), _MAX_LIMIT) if isinstance(limit, int) else _DEFAULT_LIMIT
@@ -206,9 +225,11 @@ def send_digest_smtp(
 class DigestScheduler:
     """Hourly check inside the BFF's shared background loop.
 
-    Idempotent across restarts: a digest is sent at most once per hour
-    boundary (last_sent_at recorded in SQLite); concurrency-safe via a
-    process-local flag.
+    ``hour`` is interpreted in the SERVER's local timezone (documented
+    behavior — no timezone column exists in the schema yet); the
+    once-per-boundary marker compares the persisted UTC ``last_sent_at``
+    converted to local time, so restarts stay idempotent across
+    timezones. Concurrency-safe via a process-local flag.
     """
 
     def __init__(self, db: Database) -> None:
@@ -223,14 +244,121 @@ class DigestScheduler:
         )
         if row is None or not row["enabled"]:
             return
-        now = utc_now()
-        hour_now = int(now[11:13])
-        if hour_now != int(row["hour"]):
+        local_now = datetime.now().astimezone()
+        if local_now.hour != int(row["hour"]):
             return
-        if row["last_sent_at"] and str(row["last_sent_at"])[:13] == now[:13]:
-            return
+        last_sent_at = str(row["last_sent_at"] or "")
+        if last_sent_at:
+            try:
+                last_local = datetime.fromisoformat(
+                    last_sent_at.replace("Z", "+00:00")
+                ).astimezone()
+            except ValueError:
+                last_local = None
+            if last_local is not None and (
+                last_local.strftime("%Y-%m-%dT%H")
+                == local_now.strftime("%Y-%m-%dT%H")
+            ):
+                return
         self._busy = True
         try:
             await send_fn()
         finally:
             self._busy = False
+
+
+# -- Server-derived digest content + background scheduling (P0-06a/b/j) -----
+
+
+async def build_bridge_digest_items(
+    bridge: MailBridgeStore, limit: int
+) -> list[dict[str, Any]]:
+    """Digest items from the bridge's OWN recent entries (bounded)."""
+    entries = await bridge.recent_digest_items(limit)
+    return [
+        {
+            "title": str(entry["subject"]),
+            "url": "",
+            "source": str(entry.get("list_name") or ""),
+        }
+        for entry in entries
+    ]
+
+
+async def deliver_digest(
+    db: Database,
+    secrets: SecretsStore,
+    settings: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> None:
+    """Compose + send via the configured relay, then record the outcome.
+
+    Shared by the send-now route and the scheduler so both paths send
+    exactly the same server-derived shape."""
+    text, html = compose_digest(_DIGEST_TITLE, items)
+    store = DigestStore(db, secrets)
+    password = secrets.get("digest_smtp_password") or ""
+    try:
+        send_digest_smtp(
+            host=settings["smtpHost"],
+            port=settings["smtpPort"],
+            user=settings["smtpUser"],
+            password=password,
+            from_addr=settings["fromAddr"] or settings["smtpUser"],
+            to_addr=settings["toAddr"],
+            subject=_DIGEST_TITLE,
+            text=text,
+            html=html,
+        )
+    except SmtpSendFailed as exc:
+        await store.mark_error(str(exc))
+        raise
+    await store.mark_sent()
+
+
+async def _send_scheduled_digest(app_state: Any) -> None:
+    """The scheduler's send: enabled+hour already gated by maybe_send.
+
+    Honest failure modes (never an empty email): a non-mail source is
+    reported (read_later/starred server-side aggregation is not built
+    yet), and an empty bridge simply records the reason."""
+    db, secrets = app_state.db, app_state.secrets_store
+    store = DigestStore(db, secrets)
+    settings = await store.load()
+    if not settings["smtpHost"] or not settings["toAddr"]:
+        await store.mark_error("SMTP 未配置完成（服务器或收件地址缺失）。")
+        return
+    if settings["source"] != "mail":
+        await store.mark_error(
+            "定时摘要当前仅支持 source=mail（bridge 列表）；"
+            "read_later/starred 的服务端聚合尚未实现。"
+        )
+        return
+    items = await build_bridge_digest_items(
+        MailBridgeStore(db), settings["limitCount"]
+    )
+    if not items:
+        await store.mark_error("没有可发送的摘要条目（bridge 列表暂无邮件）。")
+        return
+    await deliver_digest(db, secrets, settings, items)
+
+
+async def digest_scheduler_loop(app_state: Any) -> None:
+    """Background digest check; failures are logged, never fatal."""
+    logger = logging.getLogger("lumirss.mail_digest")
+    scheduler = DigestScheduler(app_state.db)
+    while True:
+        await asyncio.sleep(_SCHEDULE_TICK_SECONDS)
+        try:
+            await scheduler.maybe_send(
+                lambda: _send_scheduled_digest(app_state)
+            )
+        except Exception:  # noqa: BLE001 — scheduling must never kill the app
+            logger.exception("scheduled digest failed; will retry next tick")
+
+
+def build_digest_scheduler_task(app_state: Any) -> asyncio.Task:
+    """Lifespan wiring factory — main.py creates the task in TWO lines
+    (see the phase2 recovery report for the exact diff); disabling is
+    implicit: enabled=False or a missed hour makes every tick a no-op."""
+    return asyncio.create_task(digest_scheduler_loop(app_state))

@@ -1,14 +1,24 @@
-"""API source routes (phase2 M3).
+"""API source routes (phase2 M3, recovery P0-05).
 
 Config CRUD + unsaved preview + the Atom feed endpoint. The Atom URL
 lives OUTSIDE /api/* on purpose: FreshRSS dials it directly over the
 docker network, where browser-session and internal-token middlewares do
 not apply; the per-source secret in the path (constant-time compared)
 is the credential. Auto-subscribe is best-effort with honest status —
-FreshRSS being unconfigured never blocks config management.
+FreshRSS being unconfigured never blocks config management. Unsubscribe,
+however, is part of DELETE (P0-05e): a failed unsubscribe blocks the
+delete with a stable 409 (unsubscribe_failed) so no dead subscription
+keeps polling; FreshRSS-unconfigured and already-absent feeds pass
+(idempotent retries converge). No force escape hatch on purpose.
+
+Serving (P0-05b/d): every successful fetch persists the rendered Atom
+plus a content-derived monotonic feed updated + ETag (migration 0019).
+Upstream failures serve the last-good body with ``X-Lumi-Stale: 1`` and
+the honest lastStatus in the model; 502 only when no last-good exists.
 """
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 
 from lumirss.api_source_store import ApiSourceStore
 from lumirss.api_sources import (
@@ -16,14 +26,15 @@ from lumirss.api_sources import (
     ApiSourceFetchFailed,
     ApiSourceInvalid,
     ApiSourceNotFound,
+    atom_base,
     atom_path,
+    compute_feed_updated,
     feed_etag,
     fetch_json,
     generate_atom,
     map_items,
     secrets_match,
 )
-from lumirss.config import LumiSettings
 from lumirss.models import (
     ApiSource,
     ApiSourceCreate,
@@ -76,10 +87,16 @@ async def _subscribe_best_effort(request: Request, record, atom_url: str) -> str
         return f"自动订阅失败：{exc}"
 
 
-async def _unsubscribe_best_effort(request: Request, record) -> str | None:
+async def _unsubscribe_required(request: Request, record) -> str | None:
+    """Unsubscribe is part of delete (P0-05e), not best-effort.
+
+    Returns None when the FreshRSS subscription is gone (unsubscribed,
+    already absent, or FreshRSS unconfigured so none can exist — delete
+    retries stay idempotent); otherwise an honest error text that BLOCKS
+    the delete, keeping the source alive so the operator can retry."""
     try:
         adapter = _get_control_adapter(request)
-    except Exception:
+    except Exception:  # FreshRSS not configured — no subscription can exist
         return None
     try:
         atom_path_value = atom_path(record.uuid, record.secret)
@@ -87,8 +104,8 @@ async def _unsubscribe_best_effort(request: Request, record) -> str | None:
             if subscription.feed_url.endswith(atom_path_value):
                 await adapter.unsubscribe(subscription.stream_id)
                 return None
-        return None
-    except Exception as exc:  # noqa: BLE001
+        return None  # already absent → idempotent success
+    except Exception as exc:  # noqa: BLE001 — honest blocking error
         return f"取消订阅失败：{exc}"
 
 
@@ -101,7 +118,7 @@ async def create_source(payload: ApiSourceCreate, request: Request) -> ApiSource
         items_expr=payload.itemsExpr,
         field_map=payload.fieldMap,
     )
-    base = LumiSettings().LUMIRSS_ATOM_BASE_URL or "http://127.0.0.1:8000"
+    base = atom_base()
     atom_url = base + atom_path(record.uuid, record.secret)
     subscribe_error = None
     if payload.subscribe:
@@ -140,11 +157,28 @@ async def update_source(
 
 @router.delete("/api/v1/api-sources/{source_uuid}", status_code=204)
 async def delete_source(source_uuid: str, request: Request) -> Response:
+    """Delete requires a successful FreshRSS unsubscribe first (P0-05e).
+
+    A failed unsubscribe returns the stable 409 ``unsubscribe_failed``
+    envelope and keeps the source, so no dead subscription keeps polling
+    a removed URL. No ``force`` param by design: FreshRSS-unconfigured
+    and already-absent feeds already pass (idempotent), and decommissioning
+    FreshRSS (unsetting its env) re-enables deletion."""
     store: ApiSourceStore = _get_api_source_store(request)
     record = await store.get(source_uuid)
     if record is None:
         raise ApiSourceNotFound(source_uuid)
-    await _unsubscribe_best_effort(request, record)
+    unsubscribe_error = await _unsubscribe_required(request, record)
+    if unsubscribe_error is not None:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "unsubscribe_failed",
+                    "message": unsubscribe_error,
+                }
+            },
+        )
     await store.delete(source_uuid)
     return Response(status_code=204)
 
@@ -174,7 +208,13 @@ async def preview_source(
 @router.get("/feeds/{source_uuid}.{secret}.atom")
 async def serve_atom(source_uuid: str, secret: str, request: Request) -> Response:
     """The FreshRSS-facing feed. Constant-time secret check, ETag/304,
-    bounded fetch + mapping on every pull, honest error status marking."""
+    bounded fetch + mapping on every pull, honest error status marking.
+
+    Last-known-good (P0-05d): success persists the rendered Atom, a
+    content-derived monotonic feed updated and the matching ETag; an
+    upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
+    keeps its cached copy functional) and only a source with no last-good
+    body falls back to the 502 stub."""
     store: ApiSourceStore = _get_api_source_store(request)
     record = await store.get(source_uuid)
     if record is None or not secrets_match(secret, record):
@@ -186,6 +226,8 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
         items = map_items(data, record.items_expr, record.field_map)
     except ApiSourceFetchFailed as exc:
         await store.mark_error(record.uuid, "fetch_failed", str(exc))
+        if record.atom_body:
+            return _stale_atom_response(record, request)
         return Response(
             status_code=502,
             media_type="application/xml",
@@ -193,14 +235,19 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
         )
     except ApiSourceExpressionError as exc:
         await store.mark_error(record.uuid, "bad_expression", str(exc))
+        if record.atom_body:
+            return _stale_atom_response(record, request)
         return Response(
             status_code=502,
             media_type="application/xml",
             content="<error>bad expression</error>",
         )
-    atom = generate_atom(record, items, self_base="")
+    feed_updated = compute_feed_updated(
+        items, record.feed_updated, record.created_at
+    )
+    atom = generate_atom(record, items, feed_updated, atom_base())
     etag = feed_etag(atom)
-    await store.mark_success(record.uuid, etag)
+    await store.mark_success(record.uuid, etag, atom, feed_updated)
     if_none_match = request.headers.get("if-none-match")
     if if_none_match is not None and if_none_match.strip() == etag:
         return Response(status_code=304, headers={"ETag": etag})
@@ -208,6 +255,20 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
         content=atom,
         media_type="application/atom+xml; charset=utf-8",
         headers={"ETag": etag},
+    )
+
+
+def _stale_atom_response(record, request: Request) -> Response:
+    """Serve the persisted last-good body with honest stale marking
+    (conditional GET honored against the persisted ETag)."""
+    etag = record.etag or feed_etag(record.atom_body)
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match is not None and if_none_match.strip() == etag:
+        return Response(status_code=304, headers={"ETag": etag, "X-Lumi-Stale": "1"})
+    return Response(
+        content=record.atom_body,
+        media_type="application/atom+xml; charset=utf-8",
+        headers={"ETag": etag, "X-Lumi-Stale": "1"},
     )
 
 

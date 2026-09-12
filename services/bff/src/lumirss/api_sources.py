@@ -10,8 +10,13 @@ Guardrails (03-report §13/§14):
   response capped at 2MB.
 - JMESPath expressions: length-capped, compiled once, no eval surface;
   items result capped (100) and per-item strings truncated.
-- Atom: generated with stdlib escaping; entry IDs are stable
-  (deterministic from the mapped id field + source uuid); ETag/304.
+- Atom: rendered via the shared RFC 4287 renderer (atom_render) with
+  stdlib escaping; entry IDs are stable (deterministic from the mapped
+  id field + source uuid); feed updated is content-derived, persisted
+  and monotonic; ETag/304 are therefore stable across fetches.
+- Last-known-good: every successful fetch persists the rendered Atom
+  (migration 0019); upstream failures serve it stale (X-Lumi-Stale: 1)
+  and only a source with no last-good body gets the 502 stub.
 - Feed URL carries a per-source high-entropy secret compared in constant
   time (it is the credential — the endpoint lives OUTSIDE /api/* so the
   browser middlewares don't apply, FreshRSS dials it directly).
@@ -22,13 +27,13 @@ import hmac
 import json
 import secrets as _secrets
 import urllib.parse
-import xml.sax.saxutils as _xml
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 import jmespath
 
+from lumirss.atom_render import AtomEntry, newest_rfc3339, render_feed, rfc3339
 from lumirss.clip_fetch import (
     ClipFetchError,
     ClipForbidden,
@@ -78,6 +83,8 @@ class ApiSourceRecord:
     last_success_at: str | None
     last_error: str | None
     created_at: str
+    atom_body: str | None = None
+    feed_updated: str | None = None
 
     def to_dict(self, *, with_secret: bool = False) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -96,6 +103,24 @@ class ApiSourceRecord:
             payload["secret"] = self.secret
             payload["atomPath"] = atom_path(self.uuid, self.secret)
         return payload
+
+
+def atom_base(settings=None) -> str:
+    """Docker-internal base URL FreshRSS uses to dial Lumi's Atom feeds.
+
+    Dual-base contract (P0-05a): ``LUMIRSS_ATOM_BASE_URL`` is the address
+    INSIDE the docker network (compose service name ``bff`` →
+    ``http://bff:8000``); browser-facing clients keep using the relative
+    ``atomPath`` through Caddy. An empty setting falls back to the compose
+    default instead of the historical loopback address, which is
+    unreachable from the FreshRSS container.
+    """
+    if settings is None:
+        from lumirss.config import LumiSettings
+
+        settings = LumiSettings()
+    value = settings.LUMIRSS_ATOM_BASE_URL.strip()
+    return value or "http://bff:8000"
 
 
 def atom_path(source_uuid: str, secret: str) -> str:
@@ -194,30 +219,44 @@ def map_items(payload: Any, items_expr: str, field_map_raw: str) -> list[dict[st
 
 
 async def fetch_json(http_client: httpx.AsyncClient, endpoint: str) -> Any:
-    """SSRF-checked, size-capped, JSON-only fetch of the endpoint."""
+    """SSRF-checked, size-capped (streamed), JSON-only fetch of the endpoint.
+
+    The response body is streamed with a hard cap instead of being read
+    whole first (P0-05f): buffering the full body before the size check
+    let an oversized endpoint OOM the BFF."""
     await validate_hop(endpoint)
+    # TODO(P0-05 SSRF follow-up): when the pinned-IP transport lands in
+    # http_fetch.py, build the request client from it HERE — validate_hop's
+    # getaddrinfo check is TOCTOU-racy (DNS may re-resolve between check
+    # and connect). Wiring spot: the send() call below.
+    request = http_client.build_request(
+        "GET",
+        endpoint,
+        headers={"accept": "application/json"},
+        timeout=_FETCH_TIMEOUT_SECONDS,
+    )
     try:
-        response = await http_client.get(
-            endpoint,
-            follow_redirects=False,
-            headers={"accept": "application/json"},
-            timeout=_FETCH_TIMEOUT_SECONDS,
-        )
+        response = await http_client.send(request, stream=True, follow_redirects=False)
     except httpx.HTTPError as exc:
         raise ApiSourceFetchFailed("API 端点连接失败。") from exc
     try:
         if response.status_code != 200:
             raise ApiSourceFetchFailed(f"API 端点返回 HTTP {response.status_code}。")
         content_type = response.headers.get("content-type", "").lower()
-        body = await response.aread()
+        if "json" not in content_type:
+            raise ApiSourceFetchFailed("API 端点未返回 JSON。")
+        body = bytearray()
+        try:
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > _MAX_JSON_BYTES:
+                    raise ApiSourceFetchFailed("API 响应超过 2MB 上限。")
+        except httpx.HTTPError as exc:
+            raise ApiSourceFetchFailed("API 响应读取失败。") from exc
     finally:
         await response.aclose()
-    if "json" not in content_type:
-        raise ApiSourceFetchFailed("API 端点未返回 JSON。")
-    if len(body) > _MAX_JSON_BYTES:
-        raise ApiSourceFetchFailed("API 响应超过 2MB 上限。")
     try:
-        return json.loads(body.decode("utf-8"))
+        return json.loads(bytes(body).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ApiSourceFetchFailed("API 响应不是有效 JSON。") from exc
 
@@ -231,44 +270,53 @@ def _entry_id(source_uuid: str, item: dict[str, Any]) -> str:
     return f"urn:lumirss:apisource:{source_uuid}:{digest}"
 
 
-def _atom_escape(text: str) -> str:
-    return _xml.escape(text)
+def compute_feed_updated(
+    items: list[dict[str, Any]], prior: str | None, fallback: str
+) -> str:
+    """Monotonic, content-derived feed timestamp (canonical RFC 3339 UTC).
+
+    Newest entry ``published`` (when it parses), clamped against the
+    persisted prior value so ``updated`` never moves backwards when items
+    age out. Falls back to the source's creation time — never wall-clock —
+    so identical content always renders a byte-identical feed (stable
+    ETag, reliable 304)."""
+    candidates = [rfc3339(item.get("published")) for item in items]
+    candidates.append(rfc3339(prior))
+    return newest_rfc3339(candidates) or rfc3339(fallback) or utc_now()
 
 
 def generate_atom(
-    source: ApiSourceRecord, items: list[dict[str, Any]], self_base: str
+    source: ApiSourceRecord,
+    items: list[dict[str, Any]],
+    feed_updated: str,
+    self_base: str,
 ) -> str:
-    """Deterministic Atom 2.0 feed with stable entry ids and stdlib escaping."""
+    """RFC 4287 feed via the shared renderer (stable ids, stdlib escaping).
+
+    Entries get a REQUIRED <updated>: the mapped published timestamp when
+    valid, else the stable feed fallback. Authorship is satisfied at feed
+    level (the source name); rel=self is an absolute IRI under the
+    docker-internal base."""
     feed_self = f"{self_base}{atom_path(source.uuid, source.secret)}"
-    lines = [
-        '<?xml version="1.0" encoding="utf-8"?>',
-        '<feed xmlns="http://www.w3.org/2005/Atom">',
-        f"  <title>{_atom_escape(source.name)}</title>",
-        f"  <id>urn:lumirss:apisource:{source.uuid}</id>",
-        f'  <updated>{_atom_escape(utc_now())}</updated>',
-        f'  <link rel="self" href="{_atom_escape(feed_self)}"/>',
-    ]
-    for item in items[:_MAX_ITEMS]:
-        entry_id = _entry_id(source.uuid, item)
-        title = str(item.get("title") or "(无标题)")
-        url = item.get("url")
-        published = item.get("published")
-        body = item.get("body") or ""
-        lines.append("  <entry>")
-        lines.append(f"    <id>{_atom_escape(entry_id)}</id>")
-        lines.append(f"    <title>{_atom_escape(title)}</title>")
-        if url:
-            lines.append(f'    <link href="{_atom_escape(str(url))}"/>')
-        if published:
-            lines.append(
-                f'    <published>{_atom_escape(str(published))}</published>'
-            )
-        lines.append(
-            f'    <content type="html">{_atom_escape(str(body))}</content>'
+    entries = [
+        AtomEntry(
+            entry_id=_entry_id(source.uuid, item),
+            title=str(item.get("title") or "(无标题)"),
+            updated=rfc3339(item.get("published")) or feed_updated,
+            link=str(item["url"]) if item.get("url") else None,
+            published=rfc3339(item.get("published")),
+            content_html=str(item.get("body") or ""),
         )
-        lines.append("  </entry>")
-    lines.append("</feed>")
-    return "\n".join(lines) + "\n"
+        for item in items[:_MAX_ITEMS]
+    ]
+    return render_feed(
+        feed_id=f"urn:lumirss:apisource:{source.uuid}",
+        title=source.name,
+        updated=feed_updated,
+        self_href=feed_self,
+        entries=entries,
+        feed_author=source.name,
+    )
 
 
 def feed_etag(atom_xml: str) -> str:
