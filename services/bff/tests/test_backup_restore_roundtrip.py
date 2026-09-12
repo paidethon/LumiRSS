@@ -175,8 +175,6 @@ def test_backup_includes_library_assets_and_restore_stages_them(
             assert archive.read(member) == b"<html>asset</html>"
 
         # The restore half: staged asset files land under data_dir/library.
-        settings = LumiSettings()
-        service = RestoreService(Database(settings.LUMIRSS_DB_PATH), settings, None)
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
         (extract_dir / member).parent.mkdir(parents=True, exist_ok=True)

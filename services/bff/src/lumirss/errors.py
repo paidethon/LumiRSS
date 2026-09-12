@@ -29,7 +29,13 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionNotFound,
 )
 from lumirss.agent import AgentProviderUnavailable
-from lumirss.agent_store import ApprovalInvalid, ToolDenied
+from lumirss.agent_store import (
+    ApprovalInvalid,
+    NoActiveRun,
+    PendingApprovalBlocked,
+    ThreadNotFound,
+    ToolDenied,
+)
 from lumirss.ai_profiles import (
     AiProfileNotFound,
 )
@@ -273,6 +279,10 @@ _ERROR_RESPONSES = {
     # phase2 G8 tags
     TagInvalid: (400, "invalid_tag"),
     TagNotFound: (404, "tag_not_found"),
+    # phase2 recovery P0-08 (agent run lifecycle)
+    ThreadNotFound: (404, "thread_not_found"),
+    PendingApprovalBlocked: (409, "pending_approval"),
+    NoActiveRun: (409, "no_active_run"),
 }
 
 
@@ -379,6 +389,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApprovalInvalid)
     @app.exception_handler(TagInvalid)
     @app.exception_handler(TagNotFound)
+    @app.exception_handler(ThreadNotFound)
+    @app.exception_handler(PendingApprovalBlocked)
+    @app.exception_handler(NoActiveRun)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

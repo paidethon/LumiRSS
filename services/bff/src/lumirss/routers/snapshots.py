@@ -105,9 +105,14 @@ async def serve_snapshot(asset_uuid: str, request: Request) -> Response:
 @router.delete("/api/v1/library/snapshots/{asset_uuid}", status_code=204)
 async def delete_snapshot(asset_uuid: str, request: Request) -> Response:
     store: AssetStore = _get_snapshot_store(request)
+    record = await store.get_asset(asset_uuid)
     deleted = await store.delete_asset(asset_uuid)
     if not deleted:
         raise AssetNotFound(asset_uuid)
+    from ..deps import _rag_mark_stale
+
+    if record is not None:
+        await _rag_mark_stale(request, [f"library:{record.item_uuid}"])
     return Response(status_code=204)
 
 

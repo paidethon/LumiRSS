@@ -491,6 +491,20 @@ def _get_rag_service(request: Request) -> RagService:
     )
 
 
+async def _rag_mark_stale(request: Request, refs: list[str]) -> None:
+    """Best-effort RAG index invalidation after owned-content deletes
+    (P0-07e). Only acts when a RAG service instance already exists —
+    users who never touch RAG never pay for it; failures never mask the
+    delete that triggered them."""
+    import contextlib
+
+    rag: RagService | None = getattr(request.app.state, "rag_service", None)
+    if rag is None:
+        return
+    with contextlib.suppress(Exception):
+        await rag.mark_stale(refs)
+
+
 def _get_agent_store(request: Request) -> AgentStore:
     """Agent threads/messages/approvals store (phase2 G7)."""
     return _cached_on_app_state(

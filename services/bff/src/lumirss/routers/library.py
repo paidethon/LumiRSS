@@ -118,6 +118,9 @@ async def delete_bookmark(item_uuid: str, request: Request) -> Response:
     deleted = await store.delete_bookmark(item_uuid)
     if not deleted:
         raise BookmarkNotFound(item_uuid)
+    from ..deps import _rag_mark_stale
+
+    await _rag_mark_stale(request, [f"library:{item_uuid}"])
     return Response(status_code=204)
 
 

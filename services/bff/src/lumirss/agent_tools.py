@@ -9,6 +9,7 @@ same service path the UI uses, so persistence is real and restart-safe.
 from lumirss.agent_store import ToolRegistry
 from lumirss.itemref import parse_item_ref
 from lumirss.sources import excerpt_of
+from lumirss.workspaces import RESERVED_WORKSPACE_ID
 
 
 def build_registry(**services) -> ToolRegistry:
@@ -94,6 +95,24 @@ def build_registry(**services) -> ToolRegistry:
             ]
         }
 
+    async def tool_list_workspace_items(args: dict) -> dict:
+        # Read-only enumeration (P0-08g): the model can see what a
+        # workspace already contains before suggesting add_to_workspace.
+        workspace_id = str(args.get("workspaceId") or RESERVED_WORKSPACE_ID)
+        summary = await workspaces.get_workspace(workspace_id)
+        if summary is None:
+            return {"error": "workspace_not_found", "workspaceId": workspace_id}
+        items = await workspaces.list_items(workspace_id, limit=50)
+        return {
+            "workspaceId": workspace_id,
+            "name": summary.name,
+            "items": [
+                {"itemRef": item.item_ref, "position": item.position}
+                for item in items
+            ],
+            "citations": [item.item_ref for item in items],
+        }
+
     async def tool_add_to_workspace(args: dict) -> dict:
         workspace_id = str(args.get("workspaceId") or "read-later")
         item_ref = parse_item_ref(str(args.get("itemRef") or "")).format()
@@ -165,6 +184,15 @@ def build_registry(**services) -> ToolRegistry:
             "properties": {"query": {"type": "string"}},
         },
         tool_list_notes,
+    )
+    registry.register_read(
+        "list_workspace_items",
+        "列出一个工作区内的条目（默认稍后读），返回 ItemRef 列表",
+        {
+            "type": "object",
+            "properties": {"workspaceId": {"type": "string"}},
+        },
+        tool_list_workspace_items,
     )
     registry.register_write(
         "add_to_workspace",

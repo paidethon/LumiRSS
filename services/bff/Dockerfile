@@ -32,7 +32,9 @@ COPY src ./src
 # --frozen: install EXACTLY the tested lockfile (never re-resolve);
 # --no-dev: skip dev/test dependencies; --no-editable: build a real wheel for
 # lumirss so the venv is self-contained (the runtime stage does not copy src).
-RUN uv sync --frozen --no-dev --no-editable
+# --extra rag: the production image must carry the embedder extra — without
+# it RAG enable() fails closed (P0-07a).
+RUN uv sync --frozen --no-dev --no-editable --extra rag
 
 # ---- runtime: minimal image carrying only the resolved venv ----
 FROM python:3.12-slim

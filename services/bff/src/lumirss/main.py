@@ -117,6 +117,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.digest_scheduler_task = build_digest_scheduler_task(app.state)
     app.state.mail_imap_task = build_mail_imap_task(app.state)
+    # P0-07d: the RAG idle-unload loop (no-op until the RAG service is
+    # first built) keeps the low-memory budget honest in production.
+    from lumirss.rag import build_rag_idle_task
+
+    app.state.rag_idle_task = build_rag_idle_task(app.state)
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
@@ -183,7 +188,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         obsidian_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await obsidian_task
-    for task_name in ("digest_scheduler_task", "mail_imap_task"):
+    for task_name in ("digest_scheduler_task", "mail_imap_task", "rag_idle_task"):
         task = getattr(app.state, task_name, None)
         if task is not None:
             task.cancel()
