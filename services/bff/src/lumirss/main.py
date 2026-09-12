@@ -108,6 +108,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agent_store = None
     app.state.agent_loop = None
     app.state.agent_tasks = set()
+    app.state.tag_store = None
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL

@@ -76,6 +76,7 @@ from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
+from lumirss.favorites import FavoriteInvalid
 from lumirss.feed_preview import (
     FeedFetchError,
     FeedTooLarge,
@@ -130,6 +131,7 @@ from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
 )
+from lumirss.sources import ItemRefUnresolvable
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
@@ -226,6 +228,8 @@ _ERROR_RESPONSES = {
     BookmarkInvalid: (400, "invalid_bookmark"),
     BookmarkNotFound: (404, "bookmark_not_found"),
     InvalidItemRef: (400, "invalid_item_ref"),
+    ItemRefUnresolvable: (422, "item_ref_unresolvable"),
+    FavoriteInvalid: (400, "invalid_favorite"),
     WorkspaceInvalid: (400, "invalid_workspace"),
     WorkspaceNotFound: (404, "workspace_not_found"),
     ReservedWorkspaceError: (409, "reserved_workspace"),
@@ -334,6 +338,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(BookmarkInvalid)
     @app.exception_handler(BookmarkNotFound)
     @app.exception_handler(InvalidItemRef)
+    @app.exception_handler(ItemRefUnresolvable)
+    @app.exception_handler(FavoriteInvalid)
     @app.exception_handler(WorkspaceInvalid)
     @app.exception_handler(WorkspaceNotFound)
     @app.exception_handler(ReservedWorkspaceError)

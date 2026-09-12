@@ -232,6 +232,14 @@ class LibraryStore:
         row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM library_bookmarks")
         return int(row["n"]) if row is not None else 0
 
+    async def get_kind(self, item_uuid: str) -> str | None:
+        """Kind of a library identity row, or None when absent."""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT kind FROM library_items WHERE uuid = ?", (item_uuid,)
+        )
+        return str(row["kind"]) if row is not None else None
+
     async def get_library_item(self, item_uuid: str) -> BookmarkView | None:
         """Resolve a library:<uuid> ref to its view (bookmark kinds today)."""
         await self._db.migrate()

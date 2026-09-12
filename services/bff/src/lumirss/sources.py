@@ -98,6 +98,25 @@ async def resolve_item(
     return resolved
 
 
+class ItemRefUnresolvable(Exception):
+    """A write tried to reference content that does not resolve (ADR 0004)."""
+
+
+async def ensure_resolvable(
+    registry: dict[str, Resolver], ref: str
+) -> ResolvedItem:
+    """Validate a ref for attach-style writes (tags, favorites, workspaces).
+
+    Only genuinely unresolvable refs are rejected — a known domain that
+    currently degrades to a stale view (FreshRSS unconfigured) still
+    passes, so degraded operation never bricks metadata writes.
+    """
+    resolved = await resolve_item(registry, ref)
+    if resolved.kind == "unknown":
+        raise ItemRefUnresolvable(ref)
+    return resolved
+
+
 def excerpt_of(text: str | None, limit: int = _MAX_EXCERPT_LENGTH) -> str | None:
     """Plain-text excerpt bound for the unified card (never HTML)."""
     if not text:

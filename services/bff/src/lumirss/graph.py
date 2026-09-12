@@ -2,10 +2,15 @@
 
 Nodes/edges are DERIVED on request from real relations — item_tags,
 workspace_items, and vault wikilinks — there is no second graph store.
-Response is capped (default 2000 nodes); when the candidate set exceeds
-the cap, nodes are truncated by degree (connection count) and the
-response says so. The graph is never the only access path: the tag list
-and workspace views carry the same information as text.
+A workspace scope applies to EVERY edge type: only workspace members,
+their tags, and wikilinks touching member notes are included (P0-10c).
+Wikilinks resolve to the real target note's identity when exactly one
+indexed note matches (by path, then by unique title); otherwise the
+target stays an explicitly ``unresolved`` node — never a silent fake
+content node. The response is capped (default 2000 nodes) and reports
+both the pre-truncation candidate total and the returned count
+(P0-10d). The graph is never the only access path: the tag list and
+workspace views carry the same information as text.
 """
 
 import json
@@ -21,7 +26,8 @@ def _truncate(
     edges: list[dict[str, Any]],
     max_nodes: int,
 ) -> dict[str, Any]:
-    truncated = len(nodes) > max_nodes
+    total = len(nodes)
+    truncated = total > max_nodes
     if truncated:
         ranked = sorted(nodes.values(), key=lambda n: (-n["degree"], n["ref"]))
         keep = {n["ref"] for n in ranked[:max_nodes]}
@@ -31,7 +37,8 @@ def _truncate(
         "nodes": list(nodes.values()),
         "edges": edges,
         "truncated": truncated,
-        "totalNodes": len(nodes),
+        "totalNodes": total,
+        "returnedNodes": len(nodes),
     }
 
 
@@ -39,6 +46,14 @@ async def build_graph(db: Database, *, scope: str, max_nodes: int = _MAX_NODES) 
     """Derive nodes/edges for a scope: all | workspace:<id>."""
     await db.migrate()
     workspace_scope = scope[10:] if scope.startswith("workspace:") else None
+
+    members: set[str] | None = None
+    if workspace_scope is not None:
+        member_rows = await db.fetch_all(
+            "SELECT item_ref FROM workspace_items WHERE workspace_id = ?",
+            (workspace_scope,),
+        )
+        members = {str(row["item_ref"]) for row in member_rows}
 
     nodes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
@@ -54,12 +69,33 @@ async def build_graph(db: Database, *, scope: str, max_nodes: int = _MAX_NODES) 
         if dst in nodes:
             nodes[dst]["degree"] += 1
 
-    # item→tag edges (active bindings only).
+    # note identity maps for wikilink resolution (path first, then unique
+    # title); ambiguity deliberately resolves to explicit-unresolved.
+    note_rows = await db.fetch_all(
+        "SELECT item_uuid, rel_path, title, wikilinks FROM obsidian_notes"
+    )
+    uuid_by_path: dict[str, str] = {}
+    title_hits: dict[str, list[str]] = {}
+    for row in note_rows:
+        uuid_by_path.setdefault(str(row["rel_path"]), str(row["item_uuid"]))
+        title_hits.setdefault(str(row["title"]), []).append(str(row["item_uuid"]))
+
+    def resolve_wikilink(target: str) -> str | None:
+        clean = target.strip().lstrip("#")
+        direct = uuid_by_path.get(clean)
+        if direct is not None:
+            return direct
+        hits = title_hits.get(clean, [])
+        return hits[0] if len(hits) == 1 else None
+
+    # item→tag edges (active bindings only; scope = members' bindings).
     tag_rows = await db.fetch_all(
         "SELECT it.item_ref AS ref, t.name AS name FROM item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.status = 'active'"
     )
     for row in tag_rows:
         ref = str(row["ref"])
+        if members is not None and ref not in members:
+            continue
         tag_ref = f"tag:{row['name']}"
         add_node(ref, ref, _kind_of(ref))
         add_node(str(tag_ref), f"#{row['name']}", "tag")
@@ -83,21 +119,28 @@ async def build_graph(db: Database, *, scope: str, max_nodes: int = _MAX_NODES) 
         add_node(str(ws_ref), str(row["workspace_name"]), "workspace")
         add_edge(ref, str(ws_ref), "in-workspace")
 
-    # note→note wikilink edges (derived from the vault projection).
-    wiki_rows = await db.fetch_all(
-        "SELECT item_uuid, rel_path, wikilinks FROM obsidian_notes"
-    )
-    for row in wiki_rows:
+    # note→note wikilink edges (only notes in scope emit edges).
+    for row in note_rows:
         ref = f"library:{row['item_uuid']}"
-        add_node(ref, str(row["rel_path"]), "obsidian_note")
+        if members is not None and ref not in members:
+            continue
+        rel_path = str(row["rel_path"])
+        add_node(ref, rel_path, "obsidian_note")
         try:
             targets = json.loads(str(row["wikilinks"]))
         except ValueError:
             targets = []
         for target in targets if isinstance(targets, list) else []:
-            target_ref = f"wiki:{row['rel_path']}:{target}"
-            add_node(ref, str(row["rel_path"]), "obsidian_note")
-            add_node(target_ref, str(target), "wikilink")
+            target_text = str(target)
+            resolved_uuid = resolve_wikilink(target_text)
+            if resolved_uuid is None:
+                target_ref = f"wiki:{rel_path}:{target_text}"
+                add_node(target_ref, target_text, "unresolved")
+            elif resolved_uuid == str(row["item_uuid"]):
+                continue  # self-link: no node, no edge
+            else:
+                target_ref = f"library:{resolved_uuid}"
+                add_node(target_ref, target_text, "obsidian_note")
             add_edge(ref, target_ref, "wikilink")
 
     # Human labels for item nodes (best effort; refs stay honest labels).

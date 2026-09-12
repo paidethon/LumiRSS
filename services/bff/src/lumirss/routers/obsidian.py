@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, Response
 
+from lumirss.favorites import FavoriteInvalid
 from lumirss.models import (
     FavoritesResponse,
     LibraryFavoriteRequest,
@@ -97,7 +98,23 @@ async def federated_favorites(request: Request) -> FavoritesResponse:
 async def add_library_favorite(
     payload: LibraryFavoriteRequest, request: Request
 ) -> Response:
+    """Favorite one library ItemRef (existence-validated, ADR 0004)."""
     service = _get_favorites_service(request)
+    # rss content uses FreshRSS star; favorites are library-domain only.
+    from lumirss.itemref import parse_item_ref
+
+    if parse_item_ref(payload.ref).domain == "rss":
+        raise FavoriteInvalid(
+            "RSS 内容使用星标（star），库收藏仅用于 library 内容。"
+        )
+    from lumirss.sources import ItemRefUnresolvable, ensure_resolvable
+
+    from ..deps import _get_source_registry
+
+    try:
+        await ensure_resolvable(_get_source_registry(request), payload.ref)
+    except ItemRefUnresolvable as exc:
+        raise FavoriteInvalid("引用的内容不存在，无法收藏。") from exc
     await service.add_favorite(payload.ref)
     return Response(status_code=204)
 

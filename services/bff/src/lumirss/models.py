@@ -1239,6 +1239,33 @@ class NoteListResponse(BaseModel):
     items: list[NoteView]
 
 
+class TagItemsResponse(BaseModel):
+    """GET /api/v1/tags/{id}/items — one tag's refs, resolved server-side."""
+
+    items: list[ResolvedItem]
+
+
+class ReadLaterItem(BaseModel):
+    """One read-later timeline row (P0-01: server-driven list).
+
+    ``entry`` is the RSS card from the projection (or a live adapter
+    fallback); a dangling member surfaces as ``stale=True`` with no card
+    instead of disappearing from the list.
+    """
+
+    itemRef: str
+    addedAt: str
+    stale: bool = False
+    entry: SearchItem | None = None
+
+
+class ReadLaterTimelineResponse(BaseModel):
+    """GET /api/v1/workspaces/read-later/timeline."""
+
+    items: list[ReadLaterItem]
+    nextCursor: str | None = None
+
+
 class LibrarySearchItem(BaseModel):
     """Library leg of unified search (same shape philosophy as SearchItem)."""
 
@@ -1247,7 +1274,8 @@ class LibrarySearchItem(BaseModel):
     title: str
     url: str | None = None
     snippet: str = ""
-    updatedAt: str
+    updatedAt: str = ""
+    stale: bool = False
 
 
 class FavoritesResponse(BaseModel):
@@ -1257,6 +1285,7 @@ class FavoritesResponse(BaseModel):
     rss: list[SearchItem]
     library: list[LibrarySearchItem]
     libraryError: str | None = None
+    libraryTotal: int = 0
 
 
 class LibraryFavoriteRequest(BaseModel):
@@ -1404,9 +1433,122 @@ class GraphEdge(BaseModel):
 
 
 class GraphResponse(BaseModel):
-    """Envelope for GET /api/v1/graph (truncation reported honestly)."""
+    """Envelope for GET /api/v1/graph (truncation reported honestly).
+
+    ``totalNodes`` is the pre-truncation candidate count; ``returnedNodes``
+    is what the payload carries (P0-10d — the truncated count never
+    masquerades as the total).
+    """
 
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     truncated: bool
     totalNodes: int
+    returnedNodes: int = 0
+
+
+# ---------------------------------------------------------------------------
+# phase2 recovery (IMPL-BE-2) — Mail additions (append-only block; the
+# G5 Mail models above are untouched)
+# ---------------------------------------------------------------------------
+
+
+class MailBridgeListCreatedV2(MailBridgeListCreated):
+    """Creation response + honest FreshRSS auto-subscribe status
+    (P0-06i). Extends the G5 shape; ``subscribeFailed``/``atomPath`` are
+    omitted from wire responses when unset
+    (response_model_exclude_none), keeping the historical payload
+    byte-compatible on success."""
+
+    subscribeFailed: str | None = None
+    atomPath: str | None = None
+
+
+class MailImapSettings(BaseModel):
+    """GET /api/v1/mail/imap/settings — password never returned."""
+
+    configured: bool = False
+    host: str = ""
+    port: int = 993
+    user: str = ""
+    folder: str = "INBOX"
+    ssl: bool = True
+    listUuid: str = ""
+    intervalSeconds: int = 300
+    passwordConfigured: bool = False
+
+
+class MailImapSettingsUpdate(BaseModel):
+    """PUT /api/v1/mail/imap/settings — partial; password write-only."""
+
+    model_config = {"extra": "forbid"}
+
+    host: str | None = None
+    port: int | None = None
+    user: str | None = None
+    folder: str | None = None
+    ssl: bool | None = None
+    listUuid: str | None = None
+    intervalSeconds: int | None = None
+    password: str | None = None
+
+
+class MailImapTestResult(BaseModel):
+    """POST /api/v1/mail/imap/test — honest connectivity report."""
+
+    ok: bool
+    error: str | None = None
+
+
+class MailImapPollResult(BaseModel):
+    """POST /api/v1/mail/imap/poll — one bounded manual poll."""
+
+    fetched: int
+    ingested: list[MailIngestResult]
+
+
+# ---------------------------------------------------------------------------
+# Library domain (phase2 recovery P0-03) — server-side clip pipeline.
+# Appended by IMPL-BE-1; the pre-recovery Clip models above are kept in
+# place untouched (append-only policy). routers/clips.py binds the ACTIVE
+# contracts for /api/v1/library/clips* to the models below: all clip
+# content is derived server-side, client-submitted HTML is never stored.
+# ---------------------------------------------------------------------------
+
+
+class ClipCreateRequest(BaseModel):
+    """POST /api/v1/library/clips — URL confirmation only.
+
+    ``url`` is required; ``finalUrl`` (from the /fetch preview) is
+    fetched instead when present. ``title``/``byline``/``contentHtml``/
+    ``contentText``/``fetchedAt`` are deprecated client-derived fields:
+    accepted for wire-shape compatibility with the pre-recovery client,
+    NEVER trusted or stored (server re-derives everything).
+    """
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+    finalUrl: str | None = None
+    title: str | None = None
+    byline: str | None = None
+    contentHtml: str | None = None
+    contentText: str | None = None
+    fetchedAt: str | None = None
+
+
+class ClipFetchArticleResult(BaseModel):
+    """POST /api/v1/library/clips/fetch — the server-produced article.
+
+    ``url`` echoes the requested URL; ``finalUrl`` is where the fetch
+    actually landed (redirects followed). ``contentHtml`` is already
+    server-sanitized (allow-list); the browser DOMPurify pass remains
+    the final render boundary.
+    """
+
+    url: str
+    finalUrl: str
+    title: str
+    byline: str | None = None
+    contentHtml: str
+    contentText: str
