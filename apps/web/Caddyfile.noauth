@@ -20,6 +20,15 @@ __INTERNAL_TOKEN_DIRECTIVE__
 		}
 	}
 
+	# Generated feeds (API sources, mail bridge): FreshRSS subscribes over
+	# the docker network directly; browsers can verify the feed through
+	# Caddy too (secret-in-URL still applies).
+	handle /feeds/* {
+		reverse_proxy bff:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
+	}
+
 	# Same-origin API: browser talks only to the BFF.
 	handle {
 		root * /srv

@@ -1206,6 +1206,7 @@ class ObsidianStatus(BaseModel):
     lastScanAt: str | None = None
     lastError: str | None = None
     noteCount: int = 0
+    envRootConfigured: bool = False
 
 
 class ObsidianRescanResult(BaseModel):
@@ -1217,12 +1218,16 @@ class ObsidianRescanResult(BaseModel):
     renames: int
     unchanged: int
     skipped: int
+    truncatedNotes: int = 0
     elapsedMs: int
     vaultPath: str = ""
 
 
 class NoteView(BaseModel):
-    """One projected note; contentHtml only on detail (client sanitizes)."""
+    """One projected note; contentHtml only on detail (client sanitizes).
+
+    ``truncated`` marks notes that exceeded the bounded-projection caps
+    — never silently shortened (P0-09d)."""
 
     ref: str
     relPath: str
@@ -1231,6 +1236,7 @@ class NoteView(BaseModel):
     indexedAt: str
     wikilinks: list[str] | None = None
     contentHtml: str | None = None
+    truncated: bool = False
 
 
 class NoteListResponse(BaseModel):

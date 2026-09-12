@@ -100,7 +100,12 @@ from lumirss.mail_digest import (
 )
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
-from lumirss.obsidian import VaultPermissionDenied, VaultUnreachable
+from lumirss.obsidian import (
+    NoteNotFound,
+    VaultPermissionDenied,
+    VaultRootLocked,
+    VaultUnreachable,
+)
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
@@ -257,6 +262,8 @@ _ERROR_RESPONSES = {
     # phase2 G6 obsidian
     VaultUnreachable: (503, "vault_unreachable"),
     VaultPermissionDenied: (403, "vault_permission_denied"),
+    NoteNotFound: (404, "note_not_found"),
+    VaultRootLocked: (409, "vault_root_locked"),
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
@@ -363,6 +370,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ImapNotConfigured)
     @app.exception_handler(VaultUnreachable)
     @app.exception_handler(VaultPermissionDenied)
+    @app.exception_handler(NoteNotFound)
+    @app.exception_handler(VaultRootLocked)
     @app.exception_handler(RagModelUnavailable)
     @app.exception_handler(RagRebuildBusy)
     @app.exception_handler(AgentProviderUnavailable)

@@ -714,6 +714,41 @@ def _collect_freshrss_files(
 WebDavClientFactory = Callable[[], Awaitable[Any]]
 
 
+def _collect_library_assets(
+    assets_dir: Path, staging: Path
+) -> list[dict[str, Any]]:
+    """Snapshot the Lumi-owned library assets (offline snapshot files)
+    into staging; returns file list. ADR 0004: assets are owned data, so
+    they ride in every full backup — metadata rows without their bytes
+    would restore into dead snapshot entries."""
+    files: list[dict[str, Any]] = []
+    if not assets_dir.is_dir():
+        return files
+    total = 0
+    for source in sorted(assets_dir.rglob("*")):
+        if source.is_symlink() or not source.is_file():
+            continue
+        size = source.stat().st_size
+        total += size
+        if total > MAX_TOTAL_BYTES:
+            raise BackupInvalid("Backup exceeds the maximum total size.")
+        if size > MAX_MEMBER_BYTES:
+            raise BackupInvalid("Backup contains an oversized file.")
+        rel = source.relative_to(assets_dir).as_posix()
+        dest = staging / "library-assets" / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest)
+        files.append(
+            {
+                "path": f"library-assets/{rel}",
+                "size": dest.stat().st_size,
+                "sha256": _sha256_file(dest),
+                "component": "library-assets",
+            }
+        )
+    return files
+
+
 class BackupEngine:
     """Creates full backups and runs them as bounded background jobs."""
 
@@ -827,6 +862,14 @@ class BackupEngine:
                     "component": "lumi.sqlite",
                 }
             ]
+
+            await self._jobs.update_stage(job_id, "backing-up-library-assets")
+            # Gate 4: the owned asset bytes ride with every full backup
+            # (ADR 0004) — an absent directory simply contributes nothing.
+            assets_dir = Path(settings.data_dir) / "library" / "assets"
+            files.extend(
+                await asyncio.to_thread(_collect_library_assets, assets_dir, workdir)
+            )
 
             await self._jobs.update_stage(job_id, "backing-up-freshrss")
             freshrss_dir = settings.FRESHRSS_DATA_DIR.strip()

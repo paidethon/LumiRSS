@@ -1,0 +1,27 @@
+# Obsidian read-only vault mount (Gate 4 / P0-09) — OPTIONAL overlay.
+#
+# Mounts a host-side vault directory into the BFF at a FIXED container
+# path, read-only. The BFF reads LUMIRSS_OBSIDIAN_VAULT_DIR=/vault and
+# never sees host paths; the UI explains the relationship.
+#
+#   # .env.prod:
+#   LUMIRSS_OBSIDIAN_VAULT_HOST_DIR=/srv/obsidian/MyVault   # host path
+#   LUMIRSS_OBSIDIAN_VAULT_DIR=/vault                       # container path
+#   LUMIRSS_OBSIDIAN_SCAN_INTERVAL=300                      # seconds, 0=off
+#
+#   # manual equivalent (the ./lumirss script adds this file automatically
+#   # when LUMIRSS_OBSIDIAN_VAULT_HOST_DIR is set in .env.prod):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.obsidian.yml up -d
+#
+# The mount is READ-ONLY by contract: Lumi never writes back to the
+# vault (ADR 0004 — the vault is the source of truth, Lumi keeps only a
+# rebuildable projection).
+
+services:
+  bff:
+    volumes: !override
+      - lumi-data:/data
+      - freshrss-data:/freshrss-data:ro
+      - "${LUMIRSS_OBSIDIAN_VAULT_HOST_DIR:?set LUMIRSS_OBSIDIAN_VAULT_HOST_DIR in .env.prod}:/vault:ro"
+    environment:
+      LUMIRSS_OBSIDIAN_VAULT_DIR: /vault

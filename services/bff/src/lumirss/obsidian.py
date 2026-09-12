@@ -1,9 +1,13 @@
-"""Obsidian read-only vault projection (phase2 G6).
+"""Obsidian read-only vault projection (phase2 G6 + recovery Gate 4).
 
 The user's vault is the source of truth; this module only READS it and
 maintains a derived, rebuildable projection (obsidian_notes rows +
 search_library). Hard guarantees:
 
+- deployment contract: under production Compose the vault arrives as a
+  read-only bind mount at a FIXED container path (``LUMIRSS_OBSIDIAN_
+  VAULT_DIR``); host paths never reach the BFF. When the env root is
+  set, the DB-configured path is ignored and cannot be changed via API.
 - containment: the vault root is canonicalized once per scan (realpath);
   EVERY file access re-resolves and refuses anything outside the root —
   symlinks/junctions/bind-mounts to outside paths are excluded, not
@@ -12,7 +16,15 @@ search_library). Hard guarantees:
 - bounded: .md only, files >1MB skipped, null-byte binary sniff, depth
   and file-count caps, per-file parse errors degrade to "unparsable"
   rows instead of failing the scan;
-- rename detection: content-hash matching (move = same hash, new path).
+- rename detection: a rename is adopted ONLY when exactly one removed
+  path carries the new file's content hash — two files with identical
+  content are two notes, never a rename (P0-09g);
+- one scan batch = one transaction (library_items + obsidian_notes +
+  search projection commit or roll back together, P0-09h);
+- truncation is explicit: notes over the bounded-projection caps carry
+  ``truncated=1`` and the report counts them (P0-09d);
+- note views render the INDEXED snapshot, so body, tags, wikilinks and
+  html can never disagree with each other (P0-09f).
 """
 
 import hashlib
@@ -25,7 +37,6 @@ from typing import Any
 import frontmatter as fm_module
 
 from lumirss.itemref import new_library_uuid
-from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -33,6 +44,9 @@ _MAX_FILE_BYTES = 1024 * 1024
 _MAX_FILES = 20000
 _MAX_DEPTH = 12
 _MAX_TAG_LENGTH = 50
+_MAX_TITLE_LENGTH = 500
+_MAX_WIKILINKS = 100
+_MAX_BODY_LENGTH = 20000
 
 _logger = logging.getLogger("lumirss.obsidian")
 
@@ -45,6 +59,15 @@ class VaultPermissionDenied(Exception):
     """The vault path cannot be read (OS permission)."""
 
 
+class VaultRootLocked(Exception):
+    """The API cannot change the vault root while the env fixes it."""
+
+
+class NoteNotFound(Exception):
+    """No projected note exists under the requested uuid (404, not a
+    vault problem — the indexed snapshot renders without the vault)."""
+
+
 @dataclass(frozen=True)
 class ScanReport:
     added: int
@@ -53,6 +76,7 @@ class ScanReport:
     renames: int
     unchanged: int
     skipped: int
+    truncated_notes: int
     elapsed_ms: int
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +87,7 @@ class ScanReport:
             "renames": self.renames,
             "unchanged": self.unchanged,
             "skipped": self.skipped,
+            "truncatedNotes": self.truncated_notes,
             "elapsedMs": self.elapsed_ms,
         }
 
@@ -176,25 +201,35 @@ def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
             tags.append(candidate)
     text = " ".join(body.split())
     title = str(post.get("title") or resolved_path.stem)
+    truncated = (
+        len(text) > _MAX_BODY_LENGTH
+        or len(tags) > 30
+        or len(wikilinks) > _MAX_WIKILINKS
+        or len(title) > _MAX_TITLE_LENGTH
+    )
     return {
         "rel_path": rel_path,
         "fingerprint": fingerprint,
         "content_hash": content_hash,
-        "title": title[:500],
+        "title": title[:_MAX_TITLE_LENGTH],
         "tags": tags[:30],
-        "wikilinks": wikilinks[:100],
-        "body_text": text[:20000],
+        "wikilinks": wikilinks[:_MAX_WIKILINKS],
+        "body_text": text[:_MAX_BODY_LENGTH],
+        "truncated": 1 if truncated else 0,
     }
 
 
 class ObsidianService:
     """Scan orchestration + projection maintenance (read-only)."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, env_root: str = "") -> None:
         self._db = db
-        self._search = LibrarySearchWriter(db)
+        self._env_root = (env_root or "").strip()
 
     async def get_vault_path(self) -> str:
+        """The EFFECTIVE vault root (env wins over the DB setting)."""
+        if self._env_root:
+            return self._env_root
         await self._db.migrate()
         row = await self._db.fetch_one(
             "SELECT vault_path FROM obsidian_settings WHERE id = 1"
@@ -202,6 +237,11 @@ class ObsidianService:
         return str(row["vault_path"]) if row is not None else ""
 
     async def set_vault_path(self, vault_path: str) -> Path:
+        if self._env_root:
+            raise VaultRootLocked(
+                "Vault 根目录由部署环境固定（LUMIRSS_OBSIDIAN_VAULT_DIR），"
+                "无法通过 API 修改。"
+            )
         canonical = canonical_vault_root(vault_path)
         await self._db.migrate()
         await self._db.execute(
@@ -209,6 +249,9 @@ class ObsidianService:
             (str(canonical),),
         )
         return canonical
+
+    async def env_root_configured(self) -> bool:
+        return bool(self._env_root)
 
     async def get_status(self) -> dict[str, Any]:
         await self._db.migrate()
@@ -223,6 +266,7 @@ class ObsidianService:
             "lastScanAt": row["last_scan_at"] if row is not None else None,
             "lastError": row["last_error"] if row is not None else None,
             "noteCount": int(count_row["n"]) if count_row is not None else 0,
+            "envRootConfigured": bool(self._env_root),
         }
 
     async def note_count(self) -> int:
@@ -232,9 +276,27 @@ class ObsidianService:
         )
         return int(row["n"]) if row is not None else 0
 
+    async def scan_if_configured(self) -> dict[str, Any] | None:
+        """One incremental scan when a vault root is usable; else None.
+
+        Used by the background poll loop — an unconfigured vault is a
+        no-op, never an error storm.
+        """
+        vault_path = await self.get_vault_path()
+        if not vault_path:
+            return None
+        try:
+            return await self.rescan()
+        except (VaultUnreachable, VaultPermissionDenied):
+            # Recorded on the settings row by rescan(); the loop keeps
+            # polling so a late mount self-heals.
+            return None
+
     async def rescan(self) -> dict[str, Any]:
-        """Full scan with incremental fingerprint short-circuit + rename
-        detection by content hash. Honest errors keep the old index."""
+        """Full scan: incremental fingerprint short-circuit; renames
+        adopted only when unambiguous; one transaction per batch."""
+        from lumirss.db_tx import transaction
+
         vault_path = await self.get_vault_path()
         started = utc_now()
         try:
@@ -257,49 +319,129 @@ class ObsidianService:
                 "SELECT rel_path, fingerprint, content_hash, item_uuid FROM obsidian_notes"
             )
         }
-        hash_to_uuid = {
-            info["content_hash"]: info["item_uuid"]
-            for info in known.values()
-        }
-        added = changed = removed = renames = unchanged = 0
+        # Parse everything on the worker thread first; the mutation phase
+        # below is one atomic batch.
+        parsed: dict[str, dict[str, Any]] = {}
         seen_paths: set[str] = set()
-        adopted_uuids: set[str] = set()
         for resolved in loop_files:
             note = parse_note(resolved, root)
             if note is None:
                 skipped += 1
                 continue
-            rel = note["rel_path"]
-            seen_paths.add(rel)
+            seen_paths.add(note["rel_path"])
+            parsed[note["rel_path"]] = note
+        removed_paths = set(known) - seen_paths
+        # Donor pool: removed paths by content hash. A rename is adopted
+        # only when ONE removed path and ONE new path share a hash —
+        # several candidates on either side make ownership ambiguous.
+        donors_by_hash: dict[str, list[str]] = {}
+        for rel in removed_paths:
+            donors_by_hash.setdefault(known[rel]["content_hash"], []).append(rel)
+        claimants_by_hash: dict[str, int] = {}
+        for rel, note in parsed.items():
+            if rel not in known:
+                claimants_by_hash[note["content_hash"]] = (
+                    claimants_by_hash.get(note["content_hash"], 0) + 1
+                )
+
+        def _donor_for(note: dict[str, Any]) -> str | None:
+            if claimants_by_hash.get(note["content_hash"], 0) != 1:
+                return None
+            candidates = donors_by_hash.get(note["content_hash"], [])
+            return candidates[0] if len(candidates) == 1 else None
+
+        added = changed = removed = renames = unchanged = 0
+        truncated_notes = 0
+        new_uuids: list[tuple[str, dict[str, Any]]] = []
+        updates: list[tuple[str, dict[str, Any], str]] = []  # (uuid, note, kind)
+        for rel, note in parsed.items():
             existing = known.get(rel)
             if existing is None:
-                # Possible rename: same content hash, different path.
-                donor = hash_to_uuid.get(note["content_hash"])
-                if donor is not None:
-                    await self._adopt_renamed(donor, note)
+                donor_rel = _donor_for(note)
+                if donor_rel is not None:
+                    removed_paths.discard(donor_rel)
+                    updates.append((known[donor_rel]["item_uuid"], note, "rename"))
                     renames += 1
-                    adopted_uuids.add(donor)
                 else:
-                    await self._insert_note(note)
+                    new_uuids.append((new_library_uuid(), note))
                     added += 1
+                truncated_notes += int(note["truncated"])
                 continue
             if existing["fingerprint"] == note["fingerprint"]:
                 unchanged += 1
+                truncated_notes += int(note["truncated"])
                 continue
-            await self._update_note(existing["item_uuid"], note)
+            updates.append((existing["item_uuid"], note, "change"))
             changed += 1
-        removed_paths = set(known) - seen_paths
-        for rel in removed_paths:
-            info = known[rel]
-            if info["item_uuid"] in adopted_uuids:
-                # The row was re-pointed to its new path (a rename), not lost.
-                continue
-            await self._db.execute(
-                "DELETE FROM library_items WHERE uuid = ?",
-                (info["item_uuid"],),
+            truncated_notes += int(note["truncated"])
+        removed_uuids = [known[rel]["item_uuid"] for rel in removed_paths]
+        removed += len(removed_uuids)
+
+        def apply(connection) -> None:  # noqa: ANN001 — raw sqlite3 connection
+            now = utc_now()
+            for item_uuid, note in new_uuids:
+                connection.execute(
+                    "INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'obsidian_note', ?)",
+                    (item_uuid, now),
+                )
+                connection.execute(
+                    "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, body_text, truncated, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        item_uuid,
+                        note["rel_path"],
+                        note["fingerprint"],
+                        note["content_hash"],
+                        note["title"],
+                        json.dumps(note["tags"], ensure_ascii=False),
+                        json.dumps(note["wikilinks"], ensure_ascii=False),
+                        note["body_text"],
+                        note["truncated"],
+                        now,
+                    ),
+                )
+                _search_upsert(
+                    connection,
+                    ref=f"library:{item_uuid}",
+                    kind="obsidian_note",
+                    title=note["title"],
+                    body=note["body_text"][:4000],
+                )
+            for item_uuid, note, _kind in updates:
+                connection.execute(
+                    "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, body_text = ?, truncated = ?, indexed_at = ? WHERE item_uuid = ?",
+                    (
+                        note["rel_path"],
+                        note["fingerprint"],
+                        note["content_hash"],
+                        note["title"],
+                        json.dumps(note["tags"], ensure_ascii=False),
+                        json.dumps(note["wikilinks"], ensure_ascii=False),
+                        note["body_text"],
+                        note["truncated"],
+                        now,
+                        item_uuid,
+                    ),
+                )
+                _search_upsert(
+                    connection,
+                    ref=f"library:{item_uuid}",
+                    kind="obsidian_note",
+                    title=note["title"],
+                    body=note["body_text"][:4000],
+                )
+            for item_uuid in removed_uuids:
+                connection.execute(
+                    "DELETE FROM library_items WHERE uuid = ?", (item_uuid,)
+                )
+                connection.execute(
+                    "DELETE FROM search_library WHERE ref = ?", (f"library:{item_uuid}",)
+                )
+            connection.execute(
+                "UPDATE obsidian_settings SET last_scan_at = ?, last_error = NULL WHERE id = 1",
+                (utc_now(),),
             )
-            await self._search.delete(f"library:{info['item_uuid']}")
-            removed += 1
+
+        await transaction(self._db, apply)
         elapsed_ms = _elapsed_ms(started)
         report = ScanReport(
             added=added,
@@ -308,69 +450,12 @@ class ObsidianService:
             renames=renames,
             unchanged=unchanged,
             skipped=skipped,
+            truncated_notes=truncated_notes,
             elapsed_ms=elapsed_ms,
-        )
-        await self._db.execute(
-            "UPDATE obsidian_settings SET last_scan_at = ?, last_error = NULL WHERE id = 1",
-            (utc_now(),),
         )
         result = report.to_dict()
         result["vaultPath"] = str(root)
         return result
-
-    async def _insert_note(self, note: dict[str, Any]) -> None:
-        item_uuid = new_library_uuid()
-        await self._db.execute(
-            "INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'obsidian_note', ?)",
-            (item_uuid, utc_now()),
-        )
-        await self._db.execute(
-            "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, body_text, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                item_uuid,
-                note["rel_path"],
-                note["fingerprint"],
-                note["content_hash"],
-                note["title"],
-                json.dumps(note["tags"], ensure_ascii=False),
-                json.dumps(note["wikilinks"], ensure_ascii=False),
-                note["body_text"],
-                utc_now(),
-            ),
-        )
-        await self._search.upsert(
-            ref=f"library:{item_uuid}",
-            kind="obsidian_note",
-            title=note["title"],
-            body=note["body_text"][:4000],
-            url=None,
-        )
-
-    async def _update_note(self, item_uuid: str, note: dict[str, Any]) -> None:
-        await self._db.execute(
-            "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, body_text = ?, indexed_at = ? WHERE item_uuid = ?",
-            (
-                note["rel_path"],
-                note["fingerprint"],
-                note["content_hash"],
-                note["title"],
-                json.dumps(note["tags"], ensure_ascii=False),
-                json.dumps(note["wikilinks"], ensure_ascii=False),
-                note["body_text"],
-                utc_now(),
-                item_uuid,
-            ),
-        )
-        await self._search.upsert(
-            ref=f"library:{item_uuid}",
-            kind="obsidian_note",
-            title=note["title"],
-            body=note["body_text"][:4000],
-            url=None,
-        )
-
-    async def _adopt_renamed(self, item_uuid: str, note: dict[str, Any]) -> None:
-        await self._update_note(item_uuid, note)
 
     async def list_notes(
         self, *, q: str | None = None, limit: int = 50, cursor: str | None = None
@@ -396,36 +481,56 @@ class ObsidianService:
         ]
 
     async def get_note(self, item_uuid: str) -> dict[str, Any] | None:
+        """The indexed snapshot of one note, rendered consistently.
+
+        Body, tags, wikilinks and html all come from the same indexed row
+        (P0-09f); the live file may be ahead until the next scan. No
+        vault access happens here, so a temporarily unmounted vault
+        cannot make indexed content unreadable.
+        """
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT item_uuid, rel_path, title, tags, wikilinks, body_text, indexed_at FROM obsidian_notes WHERE item_uuid = ?",
+            "SELECT item_uuid, rel_path, title, tags, wikilinks, body_text, truncated, indexed_at FROM obsidian_notes WHERE item_uuid = ?",
             (item_uuid,),
         )
         if row is None:
             return None
-        # Containment is re-checked against the CURRENT vault setting.
-        vault = await self.get_vault_path()
-        try:
-            root = canonical_vault_root(vault)
-        except (VaultUnreachable, VaultPermissionDenied):
-            return None
-        candidate = root / str(row["rel_path"])
-        if _contained(root, candidate) is None:
-            return None
         import mistune
 
-        markdown = candidate.read_text(encoding="utf-8", errors="replace")
-        html = mistune.html(markdown)
+        body_text = str(row["body_text"] or "")
+        html = mistune.html(body_text) if body_text else ""
         return {
             "ref": f"library:{row['item_uuid']}",
             "relPath": str(row["rel_path"]),
             "title": str(row["title"]),
             "tags": json.loads(str(row["tags"])),
             "wikilinks": json.loads(str(row["wikilinks"])),
-            "bodyText": str(row["body_text"]),
+            "bodyText": body_text,
             "contentHtml": html,
+            "truncated": bool(row["truncated"]),
             "indexedAt": str(row["indexed_at"]),
         }
+
+
+def _search_upsert(
+    connection, *, ref: str, kind: str, title: str, body: str
+) -> None:  # noqa: ANN001 — raw sqlite3 connection
+    """search_library projection write on the SCAN'S connection (the
+    LibrarySearchWriter commits per statement — wrong inside a batch)."""
+    existing = connection.execute(
+        "SELECT ref FROM search_library WHERE ref = ?", (ref,)
+    ).fetchone()
+    now = utc_now()
+    if existing is None:
+        connection.execute(
+            "INSERT INTO search_library (ref, kind, title, body, url, updated_at) VALUES (?, ?, ?, ?, NULL, ?)",
+            (ref, kind, title, body, now),
+        )
+    else:
+        connection.execute(
+            "UPDATE search_library SET kind = ?, title = ?, body = ?, url = NULL, updated_at = ? WHERE ref = ?",
+            (kind, title, body, now, ref),
+        )
 
 
 async def _to_thread(func, *args):

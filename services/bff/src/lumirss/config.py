@@ -179,6 +179,23 @@ class LumiSettings(BaseSettings):
             raise ValueError("must be 0 (disabled) or a positive number of seconds")
         return value
 
+    # --- Obsidian projection (Gate 4) ---
+    # Fixed CONTAINER path of the read-only vault bind mount (production
+    # contract). When set, the API cannot change the vault root and the
+    # UI shows the mount instead of asking for host paths. Empty = dev
+    # mode with a DB-configured path.
+    LUMIRSS_OBSIDIAN_VAULT_DIR: str = ""
+    # Background incremental scan cadence in seconds; 0 disables the
+    # poll loop (tests, explicit-rescan-only deployments).
+    LUMIRSS_OBSIDIAN_SCAN_INTERVAL: float = 0.0
+
+    @field_validator("LUMIRSS_OBSIDIAN_SCAN_INTERVAL")
+    @classmethod
+    def _sane_obsidian_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must be 0 (disabled) or a positive number of seconds")
+        return value
+
     @property
     def ai_configured(self) -> bool:
         return bool(self.AI_API_KEY.get_secret_value().strip())

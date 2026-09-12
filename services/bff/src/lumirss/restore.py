@@ -367,11 +367,23 @@ class RestoreService:
             result: dict[str, Any] = {
                 "lumiRestored": False,
                 "freshrss": "not_included",
+                "libraryAssets": "not_included",
                 "safetyBackupId": safety_job["id"] if safety_job else None,
             }
             if "lumi.sqlite" in extracted:
                 await self._restore_lumi(extracted["lumi.sqlite"])
                 result["lumiRestored"] = True
+
+            # 4b. Library assets are Lumi-owned bytes (ADR 0004): restore
+            # them in place — unlike FreshRSS data they need no offline
+            # staging, the app owns this directory exclusively.
+            assets_files = [p for p in extracted if p.startswith("library-assets/")]
+            if assets_files:
+                assets_target = Path(self._settings.data_dir) / "library" / "assets"
+                await asyncio.to_thread(
+                    self._restore_library_assets, assets_files, extracted, assets_target
+                )
+                result["libraryAssets"] = len(assets_files)
 
             # 5. FreshRSS: stage for offline restore (never write live).
             freshrss_files = [p for p in extracted if p.startswith("freshrss-data/")]
@@ -399,6 +411,21 @@ class RestoreService:
                 "Restore failed. The current state was backed up and the "
                 "original backup was kept; review the backup history."
             ) from exc
+
+    @staticmethod
+    def _restore_library_assets(
+        assets_files: list[str],
+        extracted: dict[str, Path],
+        target_root: Path,
+    ) -> None:
+        """Copy archived asset bytes back into the live assets directory
+        (runs in a thread). Existing files with the same relative path
+        are replaced; the manifest sha256 was verified during extraction."""
+        for rel in assets_files:
+            source = extracted[rel]
+            target = target_root / Path(rel).relative_to("library-assets")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
 
     @staticmethod
     def _stage_freshrss_offline(

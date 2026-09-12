@@ -15,6 +15,12 @@ from lumirss.config import LumiSettings
 
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 
+# phase2 recovery (P0-06g): the mail ingest webhook accepts raw MIME up
+# to 10MB (routers/mail.py enforces the same cap). The global 4MB
+# ceiling would otherwise reject large mails before the route sees them.
+MAIL_INGEST_BODY_LIMIT = 10 * 1024 * 1024
+_MAIL_INGEST_PREFIX = "/api/mail/ingest/"
+
 
 class RequestBodyTooLarge(Exception):
     """Raised by the streamed body guard; mapped to the stable 413
@@ -58,10 +64,16 @@ class RequestSizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
         headers = dict(scope.get("headers") or [])
+        path = scope.get("path", "")
+        limit = (
+            MAIL_INGEST_BODY_LIMIT
+            if path.startswith(_MAIL_INGEST_PREFIX)
+            else self.max_bytes
+        )
         content_length = headers.get(b"content-length")
         if content_length is not None:
             try:
-                if int(content_length) > self.max_bytes:
+                if int(content_length) > limit:
                     await _reject_too_large(send)
                     return
             except ValueError:
@@ -73,7 +85,7 @@ class RequestSizeLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
+                if received > limit:
                     raise RequestBodyTooLarge()
             return message
 
@@ -175,6 +187,16 @@ class InternalTokenMiddleware:
         if scope["type"] == "http" and scope["method"] != "OPTIONS":
             path = scope.get("path", "")
             if path.startswith("/api/"):
+                # phase2 recovery (P0-06d): the mail ingest webhook is
+                # machine-to-machine — external relays carry the per-list
+                # bearer secret (validated constant-time by the route),
+                # never the internal token. Defer only bearer-bearing
+                # requests; everything else stays token-gated.
+                if path.startswith("/api/mail/ingest/") and any(
+                    key == b"authorization" for key, _ in scope.get("headers") or []
+                ):
+                    await self.app(scope, receive, send)
+                    return
                 token = LumiSettings().LUMIRSS_INTERNAL_TOKEN.get_secret_value()
                 if token:
                     supplied = ""
@@ -308,6 +330,15 @@ class SessionAuthMiddleware:
             return
         path = scope.get("path", "")
         if not path.startswith("/api/") or path in SESSION_PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
+        # phase2 recovery (P0-06d): bearer-authenticated machine ingest —
+        # defer to the route (constant-time secret check; the secret is
+        # never logged). Browsers without a bearer still require a
+        # session below.
+        if path.startswith("/api/mail/ingest/") and any(
+            key == b"authorization" for key, _ in scope.get("headers") or []
+        ):
             await self.app(scope, receive, send)
             return
         headers = scope.get("headers") or []

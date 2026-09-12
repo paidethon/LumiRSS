@@ -434,11 +434,18 @@ def _get_library_search_writer(request: Request) -> LibrarySearchWriter:
 
 
 def _get_obsidian_service(request: Request) -> ObsidianService:
-    """Read-only vault projection service (phase2 G6)."""
+    """Read-only vault projection service (phase2 G6, Gate 4 wiring).
+
+    The env-configured container root (production bind-mount contract)
+    is fixed at construction; the DB path is the dev-mode fallback.
+    """
     return _cached_on_app_state(
         request,
         "obsidian_service",
-        lambda: ObsidianService(request.app.state.db),
+        lambda: ObsidianService(
+            request.app.state.db,
+            env_root=LumiSettings().LUMIRSS_OBSIDIAN_VAULT_DIR,
+        ),
     )
 
 
