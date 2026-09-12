@@ -45,57 +45,63 @@
 
 ### P0-01 — Read-later 是加载后本地过滤，不是服务端列表 — `confirmed`
 
-- 症状：`view=read-later` 实际请求普通 `view=all` 只过滤当前已加载 timeline；旧稍后读项在翻到对应页前不出现；跨设备同步只做一次；服务端失败后乐观状态不回滚。
-- 根因：客户端本地过滤实现（`apps/web/src/lib/read-later.ts`、`apps/web/src/store/read-later.ts`、`apps/web/src/components/EntryList.tsx`），服务端无 reserved workspace 列表。
-- 复现：保存首屏外旧文章为 read-later → 刷新/换客户端 → 不出现。
-- 受影响文件：上述 + `services/bff/src/lumirss/routers/workspaces.py`。
-- 数据风险：用户以为已存的稍后读丢失（实际存在 FreshRSS starred/标记，但列表不可见）。
-- 修复方案：服务端驱动、可分页/排序的 read-later 查询；客户端删除本地过滤；乐观失败回滚+错误 UI。
-- 回归测试：旧稍后读超过首屏、跨设备刷新、服务端失败回滚。
-- 修复 commit / 状态：（待填）
-- Owner：主 Agent（Gate 1）。
+- 审计结论（BE-3 审计，4/4 证实）：
+  - (a) `lib/read-later.ts:39-41` `toApiView()` 把 read-later 映射成 `all`；`navigation.ts:42-47` 同样；`EntryList.tsx:58-65` 对已加载页本地过滤——未翻到的页不可见。
+  - (b) `routers/entries.py:43` view 只有 all/unread/starred；服务端唯一事实是保留工作区 `read-later`（`workspaces.py:19`，migration 0008 种子）但其端点返回 refs/ViewModel，不是 entries 查询。
+  - (c) `read-later.ts:70-71,80` `syncedRef` 只在首次成功 fetch 对账一次；toggle 直接调 client 绕过 mutation → 无 invalidateQueries → 他端变更只在整页重挂载后可见。
+  - (d) `read-later.ts:58-60` `.catch` 吞掉失败注释"本地缓存保留"→ 乐观状态不回滚；remove 400 也静默。
+  - 新问题：`EntryList.tsx:186-196` read-later 视图的 filteredCount 把被隐藏项算进"规则过滤"；`read-later.ts:113-117` hydration 用 `Date.now()` 盖掉真实 addedAt 顺序。
+  - 测试：`read-later.test.tsx:150,193` 把客户端过滤/双写设计固化进断言（修时要改）。
+- 修复方案（Gate 1）：服务端 read-later 时间线（entries 查询按保留工作区成员过滤，可分页可排序：`view=read-later` 由 BFF 直查 FreshRSS starred/read-later 成员交集或直接列 workspace members 的 rss refs 解析）；客户端删除本地过滤、toggle 走 mutation+invalidate、失败回滚+错误 toast；同步去掉 once-guard。
+- Owner：主 Agent（Gate 1，后端）+ IMPL-FE（客户端）。
 
 ### P0-02 — ItemRef / Source Registry 只真正解析 bookmark — `confirmed`
 
-- 症状：clip、snapshot、Obsidian 等 ItemRef 不能统一解析 → workspace、tag、Agent、统一视图“内容不存在/未知类型/不可打开”。
-- 根因：`services/bff/src/lumirss/library.py`、`deps.py` 只实现 bookmark resolve；`apps/web/src/components/UnifiedContentCard.tsx` 无对应打开目标。
-- 复现：把 clip/snapshot/obsidian note 加入 workspace/tag → 打开失败。
-- 受影响文件：`library.py`、`deps.py`、`itemref.py`、`UnifiedContentCard.tsx`。
-- 数据风险：引用悬挂；tag/graph 引用不存在内容。
-- 修复方案：唯一 ItemRef parser/normalizer/resolver registry，覆盖 RSS/bookmark/clip/snapshot/obsidian；existence validation + batch resolve + 打开目标（ADR-0021）。
-- 回归测试：各 kind resolve、失效引用、batch、打开目标一致性。
+- 审计结论（BE-3 审计，证实；措辞修正：ref 无 per-kind 编码，kind 在 `library_items.kind`）：
+  - 唯二 resolver：`rss`（`deps.py:583-621`）、`library`（`:623-641`）；后者走 `LibraryStore.get_library_item`，非 bookmark 一律 None（`library.py:235-245`）→ `sources.py:88-97` 变 `kind=unknown/title=内容不存在/stale=True`。
+  - clip（`library_clips.py:98`）、snapshot（`library_assets.py:98,127`）、obsidian_note（`obsidian.py:324`）都写 `library_items`——全部解析失败。
+  - resolve 的调用方只有 `routers/workspaces.py:186,202`（workspace contents + 批量 resolve）；tags/search/graph/agent 直接存/渲染原始 refs；agent 的 `get_library_item` 工具（`agent_tools.py:75`）同样 bookmark-only。
+  - 测试盲区：`test_workspaces.py:161-189` 只测 rss+bookmark；无任何测试解析过 clip/snapshot/obsidian ref。
+- 修复方案（Gate 1 基础）：`resolve_library` 按 kind 分派到 owning store 的视图构造（bookmark/clip/snapshot/obsidian_note；api_item/newsletter_item 按 ADR 0004 说明其可解析性），附统一 `openTarget`（reader/外部 URL/沙箱快照页/obsidian note 页）；existence validation 供 tags/favorites/agent 复用；batch resolve 并发化（审计新问题 #4：串行 N 次 FreshRSS 往返）。
 - Owner：主 Agent（Gate 1 基础）。
 
 ### P0-03 — Clipping 信任浏览器提交的 HTML — `confirmed`
 
-- 症状：服务端抓原始 HTML 后，浏览器提取/清理并把客户端控制的 `contentHtml` 写回；服务端只查非空+大小；多步写入无完整事务。
-- 根因：信任边界放在客户端。
-- 复现：直接 POST 任意 `<script>` HTML 到 clip API → 被存储。
-- 受影响文件：`clip_fetch.py`、`library_clips.py`、`routers/clips.py`、`http_fetch.py`。
-- 数据风险：存储型 XSS 绕过 DOMPurify 前置假设；孤儿数据。
-- 修复方案：`URL → 服务端安全抓取 → 服务端提取 → 服务端 sanitize → 持久化 → 安全展示`；事务化写入。
-- 回归测试：恶意 HTML/script/event handler/危险 URL/CSS；事务补偿。
+- 审计结论（BE-1 审计，3/3 证实）：
+  - 服务端抓原始 HTML 返回浏览器（`routers/clips.py:48-52`）→ 浏览器 DOMPurify 提取（`clip-extract.ts:61-126`）→ 客户端 `contentHtml` 原样 POST 回（`client.ts:1082-1091`）→ 服务端 `_validate_html` 只查非空+2MB（`library_clips.py:230-235`）原文入库（`:87,108`）。docstring 自认信任边界在客户端（`library_clips.py:4-9`）。
+  - 多步写入无事务：`library_clips.py:96-118` 三条独立 execute（`storage.py` 每条自动提交；`execute_many` 未用）→ 孤儿 `library_items`/不可搜索 clip；delete 同样（:141-142）。
+  - SSRF 防线盘点（已有，较强）：http/https+端口+长度（`feed_preview.py:124-135`）；每跳 getaddrinfo 全地址检查含 IPv4/IPv6 私网/环回/链路本地/CGNAT/NAT64（`clip_fetch.py:63-85`、`feed_preview.py:138-155`）；手动重定向 ≤5 跳；MIME html/xml；5MB 流式上限（压缩炸弹有界）；20s/请求；`trust_env=False`。
+  - **未缓解**：DNS rebinding TOCTOU（校验后 httpx 二次解析，未钉住地址）；每请求 20s 非每链路（5 跳可占 worker ~2 分钟）；`validate_hop` 只捕 `socket.gaierror`（OSError 变 500）。
+  - 新问题：`fetch_for_clip` 返回原始 URL 而客户端存原始 URL（重定向后 dedupe/展示错位，`routers/clips.py:52`）；`fetchedAt` 客户端任意字符串未验证。
+- 修复方案：服务端提取+sanitize 管线（readability 类算法在 BFF 内实现），浏览器只提交 URL；钉住已校验地址（自研 resolver 或连接前校验）；每链路总时限；事务化写入。
 - Owner：IMPL-BE-1（Gate 2）。
 
 ### P0-04 — Snapshot 在生产镜像中不可用且命令错误 — `confirmed`
 
-- 症状：生产镜像无 Monolith；调用缺正确输出参数；`-C 1` 被当超时（实为 cookie 文件）；原始 URL 未持久化；dedupe 布尔语义反转；引用计费重复；删除留孤儿 item；文件/DB 不原子；子资源 SSRF 未受控。
-- 受影响文件：`services/bff/Dockerfile`、`docker-compose.prod.yml`、`snapshots.py`、`library_assets.py`。
-- 复现：生产镜像内运行 snapshot 创建 → monolith: command not found / 文件为空。
-- 数据风险：配额计费错误、孤儿文件、快照不可离线打开。
-- 修复方案：固定版本+checksum 安装 Monolith；按真实 `--help` 构造命令；真实离线打开验证；原子写入；引用计数删除；子资源 SSRF 策略（无法安全约束则禁用远程 snapshot 并如实标注）。
-- 回归测试：生产镜像内真实命令测试 + 恶意子资源测试。
+- 审计结论（BE-1 审计，8/8 证实）：
+  - (a) `Dockerfile:16-64` 无任何 monolith 安装/复制；compose/deploy 脚本也无 → `shutil.which` None → 503 `monolith_unavailable`，生产即死功能。
+  - (b) `snapshots.py:64-75` argv：`binary, url, str(out_path), "-t","60","-I","-C","1"`——out_path 作第二个位置参数（正确是 `-o <file>`）；`-C 1` 是 cookie 文件（`_SNAPSHOT_PROMPT` 变量名坐实误读）。
+  - (c) `library_assets` 无 url 列（`0009:21-30`）；列表端点硬编码 `url=""`（`routers/snapshots.py:64`）→ UI 原文 URL 恒空。
+  - (d) dedupe 布尔反转：`library_assets.py:115` 已去重返回 False、`:136` 新写入返回 True → "已去重"徽章显示在全新内容上；`test_library_snapshots.py:42,56` 把反转语义断言进测试。
+  - (e) 配额按行数计费：`_bytes_on_disk`=SUM(行字节数)（`:185-189`）→ 去重行携带全额字节数重复计费；UI 显示虚高值。
+  - (f) `delete_asset` 只删 assets 行（`:165-183`）→ `library_items` 永久孤儿。
+  - (g) 文件先落盘后两条独立 insert（`:119-133`）；删除先删行后删文件——两方向都不原子。
+  - (h) monolith 子资源抓取无任何约束（docstring 自认 fail-closed 只在顶层 URL）→ 公网页面可引用内网资源嵌入产物，经同源 `/api/v1/library/assets/{uuid}/page.html` 提供（服务端外泄通道）。
+  - 新问题：列表响应永远 `deduplicated=False`（模型默认值，路由漏字段）。
+- 修复方案：固定版本+checksum 安装 monolith 进生产镜像；`monolith <url> -o <file> -I -t 60` 按真实 CLI；持久化原始 URL+创建时间+物理大小（forward migration 或复用列）；去重语义修正+测试反转断言修正；配额按物理唯一字节；引用计数删除+事务；**子资源 SSRF：monolith 无内建代理/白名单能力 → 默认禁用远程子资源（`-i` 本地图片？需按固定版本 `--help` 核实）或网络级隔离；无法安全约束则如实禁用远程 snapshot**。
 - Owner：IMPL-BE-1（Gate 2）。
 
 ### P0-05 — API Source 的 feed 地址、Atom 与缓存逻辑不成立 — `confirmed`
 
-- 症状：默认 Atom base 为 BFF 容器本机地址（FreshRSS 容器不可达）；Caddy 不代理 `/feeds/*`；`updated` 每请求取当前时间 → ETag 每次变化；entry 缺 `updated` 等 Atom 元数据；上游失败无 last-known-success；删除 source 忽略退订失败留死订阅。
-- 受影响文件：`routers/api_sources.py`、`api_sources.py`、`docker-compose.prod.yml`、`.env.prod.example`、Caddy 配置。
-- 复现：创建 API source → FreshRSS 订阅失败；连续 GET 观察变化；断上游观察无 stale。
-- 数据风险：死订阅、缓存永远失效、数据不新鲜不可知。
-- 修复方案：双 base URL 契约（容器内/公网）+ Compose/Caddy/env 同步；Atom 合规（RFC 4287）；稳定 ETag/304；last-known-success + stale/error 状态；幂等 subscribe/unsubscribe/delete。
-- 回归测试：RFC 4287 结构验证、ETag 稳定性、stale fallback、退订失败保留配置。
-- Owner：IMPL-BE-1（Gate 3）。
+- 审计结论（BE-1 审计，6/6 证实）：
+  - (a) `routers/api_sources.py:104` 默认 base `http://127.0.0.1:8000`（FreshRSS 容器里指向自身）；`LUMIRSS_ATOM_BASE_URL` 默认空且**不在 `.env.prod.example`**、prod compose 不设置。
+  - (b) `Caddyfile.auth:19-23`/`noauth:17-21` 只代理 `/api/*`，`/feeds/*` 落 SPA fallback 返回 index.html。设计意图是 FreshRSS 走 docker 网内直连 BFF（故 Caddy 不代理是刻意的）——但 (a) 使网内地址也不可用；且 config 注释示例 `http://lumirss-bff:8000` 与 compose 服务名 `bff` 不一致（容器名恰好可解析）。
+  - (c) `api_sources.py:248` feed `updated`=每请求 `utc_now()`；ETag=body sha256 → 每秒变化；持久化 `etag` 列是只写死代码（`api_source_store.py:119-123`）。`test_api_sources.py:133-136` 的 304 断言靠两次 GET 落同一秒才过——flaky 且掩盖此缺陷。
+  - (d) entry 无 `<updated>`（RFC 4287 §4.2.2 必填）、无 author；`rel=self` 是相对 URI（`self_base=""`）。
+  - (e) 上游失败返回 502 `<error>` stub，Atom 正文从不持久化 → 无 last-known-good 可服务。
+  - (f) `routers/api_sources.py:141-149` 删除时丢弃 `_unsubscribe_best_effort` 错误 → 死订阅继续轮询已 404 的 URL。
+- 修复方案：明确双 base URL 契约（容器内 `LUMIRSS_ATOM_BASE_URL` 必填进 env 样例+compose；浏览器/Caddy 路径按需）；`updated` 取内容/last-success 状态（持久化+单调）；entry 补 updated/author；ETag 稳定+304 可靠（修 flaky 测试）；持久化 last-known-good Atom 服务 stale+`X-Lumi-Stale`/lastStatus 暴露；退订失败阻止删除并报错；RFC 4287 全结构验证测试。
+- Owner：IMPL-BE-2（Gate 3）。
 
 ### P0-06 — Mail/Newsletter/Digest 多条主链路只是外壳 — `confirmed`
 
@@ -147,23 +153,35 @@
 
 ### P0-09 — Obsidian 在标准生产 Compose 下不可用 — `confirmed`
 
-- 症状：无 vault 只读 bind mount 契约；用户填宿主机路径但容器内不可访问；只有手动重扫；正文静默截断；解析器粗糙；实时正文与旧索引元数据可不一致；相同内容两文件被误判 rename 复用同一 UUID；扫描写入无整体事务。
-- 受影响文件：`obsidian.py`、`routers/obsidian.py`、`apps/web/src/pages/ObsidianPage.tsx`、`docker-compose.prod.yml`。
-- 复现：prod compose 下配置宿主 vault 路径 → 扫描 0 文件。
-- 数据风险：projection 与 vault 不一致；rename 误判造成引用漂移。
-- 修复方案：只读 bind mount 到容器固定根目录（env 模板/UI/文档解释宿主↔容器路径）；traversal/symlink escape/设备/超大文件拒绝；增量扫描；事务化批次+checkpoint；rename 判定不用单一 content hash；显式截断状态；wikilink 解析真实 identity 或显式 unresolved；ItemRef 统一打开；远程浏览器不拿服务器绝对路径当本地 URI。
-- 回归测试：100 代表性文件、同内容异路径、rename chain、symlink、中文文件名、frontmatter、wikilink 边界。
+- 审计结论（BE-3 审计，8/8 证实）：
+  - (a) prod compose bff 卷只有 lumi-data + freshrss-data:ro（`docker-compose.prod.yml:69-71`）；config/env 均无 vault 变量。
+  - (b) UI 让用户填"服务器本机绝对路径"（`ObsidianPage.tsx:90,102`），BFF 在容器内 `resolve(strict=True)`（`obsidian.py:70-82`）→ 503 vault_unreachable；即使手工挂载，存储的容器路径又与 `obsidian://` 深链的宿主路径分叉。
+  - (c) 唯一触发是手动 `POST /obsidian/rescan`；无 watcher/polling。
+  - (d) 静默截断：body 20000（`:186`）、search body 4000、title 500/tags 30/wikilinks 100；ScanReport 不报告。
+  - (e) 解析器粗糙：naive `split("[[")`（代码块内 wikilink/`![[embed]]` 误捕）；行内 tag=任意 `#` 开头 token；frontmatter 失败整篇进 skipped。
+  - (f) `get_note` 渲染实时文件 HTML 但 tags/wikilinks/bodyText 取自索引行（`:398-428`）→ 重扫前不一致。
+  - (g) `hash_to_uuid`（`:260-263`）+ adopt 逻辑（`:274-284`）：同内容第二文件偷走 UUID、原路径行被当 removed 删除——两个 vault 文件共享一个 identity。
+  - (h) 每 note 3 条独立 execute + 删除循环无事务（`_insert_note:321-347`）→ 半更新 projection（library_items 行无子行 → 永久"内容不存在"）。
+  - 新问题：不存在的 note 报 503 而非 404（`routers/obsidian.py:69-76`）；parse_note 同步读文件阻塞事件循环（`:268`）；favorites 里 search_library 缺失的 ref 永不清理。
+- 修复方案（Gate 4，主 Agent）：`OBSIDIAN_VAULT_DIR` 容器固定根 + prod compose 只读 bind mount + env 模板/UI/文档解释宿主↔容器路径；traversal/symlink escape/设备/超大拒绝；增量扫描（mtime+size checkpoint）；批次事务；rename 判定（path+content hash 组合，不做单一 hash adopt）；显式截断状态字段；wikilink 解析真实 identity 或显式 unresolved；`obsidian://` 深链只用宿主配置路径（不泄漏容器内路径）。
 - Owner：主 Agent（Gate 4）。
 
 ### P0-10 — Tags/Graph、Favorites、Unified Search 的 UI 和语义未闭环 — `confirmed`
 
-- 症状：后端 tag CRUD/attach 存在但前端基本没调用；Library favorite 无正常 UI 调用；workspace scope graph 混入全局 tag+全部 Obsidian；graph 截断数伪装总数；wikilink 生成虚假 synthetic node；tag 大小写敏感与“大小写不敏感去重”声明冲突；attach 先查上限后判幂等；不验证 ItemRef 存在；Unified Search/Favorites 的 Library 结果大量不可点、不可取消收藏；starred 搜索只过滤 RSS 却保留全部 Library 结果。
-- 受影响文件：`tags.py`、`graph.py`、`favorites.py`、`search_library.py`、`routers/tags.py`、相关 Web 组件。
-- 复现：UI 中尝试给内容打 tag → 无入口；workspace graph 出现非本 workspace 数据。
-- 数据风险：tag 引用悬挂；graph 误导。
-- 修复方案：完整 UI；幂等 API（先幂等后上限）；大小写一致约束（NORMALIZE 声明与实现一致）；ItemRef 存在性验证；graph scope 隔离+原始总数与截断数分离；全部结果可打开/可操作。
-- 回归测试：30-tag 边界幂等、大小写重复、并发写入、scope 隔离。
-- Owner：IMPL-FE + 主 Agent（Gate 1/7）。
+- 审计结论（BE-3+UI 审计，10/10 证实）：
+  - (a) 后端 CRUD/attach 全在（`routers/tags.py:25-125`）；web 的 assign/unassign/rename/deleteTag 零 UI 调用者；唯一消费者是 GraphPage 只读图例。
+  - (b) `addLibraryFavorite/removeLibraryFavorite`（`client.ts:1398-1412`）零调用；FavoritesPage 只读、无取消收藏。
+  - (c) graph workspace scope 只过滤 workspace 边（`graph.py:69-78`）；tag 边（:58-66）与全部 Obsidian wikilink（:87-89）永远全局。
+  - (d) `_truncate` 截断后 `totalNodes=len(截断集)`（`graph.py:34`）——真总数丢失；web 恰好没显示 totalNodes（显示 nodes.length+truncated 提示）。
+  - (e) wikilink 目标 = `wiki:<relPath>:<target>` 合成节点（:97-101），从不解析到真实 note。
+  - (f) docstring 声称 case-insensitive dedupe，`normalize_tag_name`（`tags.py:43-51`）无 casefold；`0015_tags.sql:5-8` UNIQUE BINARY 大小写敏感。rename 的 dupe 检查同样精确匹配（可造出大小写变体重复）。
+  - (g) `attach` 先查 30 上限（:123-128）后判幂等（:129-140）→ 满上限时重复 attach 报错而非幂等返回。
+  - (h) attach 只验证格式不验证目标存在（:105）。
+  - (i) SearchPage LibraryGroup 行是惰性 `<li>`（`SearchPage.tsx:100-121`）；FavoritesPage LibraryRow 只有外链——obsidian/clip `url=None` 永远不可打开；workspace contents 又因 P0-02 变”内容不存在”。
+  - (j) `routers/search.py:79-89` starred/unread 等过滤只作用 RSS 腿，library 腿无过滤透传。
+  - 新问题：search library 腿分页重复行（每页重跑无游标查询+flatMap）；favorites `rss:` ref 可收藏但库腿永不显示且不清理；AI tag suggestion 用裸 ref 做 prompt 且 `existing` 计算后丢弃；`test_tags_graph.py:131` 死代码；FavoritesPage 重复 DateGroup 接口声明。
+- 修复方案（Gate 1 后端 + Gate 7 UI）：attach 幂等优先+existence validation（走统一 resolver）；大小写策略落地（决定：NFC+casefold 唯一性，forward-compatible——同名不同 case 归并为已有 tag，迁移脚本合并既有 case 变体）；graph scope 作用于全部边类型+返回 raw total 与返回数两个数字；wikilink 解析真实 note/显式 unresolved；UI 全闭环（见 IMPL-FE）。
+- Owner：主 Agent（后端语义）+ IMPL-FE（UI）。
 
 ### P0-11 — Translation 的 user activation 仍可能被异步链消耗 — `confirmed`
 
