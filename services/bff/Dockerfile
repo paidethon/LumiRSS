@@ -32,7 +32,9 @@ COPY src ./src
 # --frozen: install EXACTLY the tested lockfile (never re-resolve);
 # --no-dev: skip dev/test dependencies; --no-editable: build a real wheel for
 # lumirss so the venv is self-contained (the runtime stage does not copy src).
-RUN uv sync --frozen --no-dev --no-editable
+# --extra rag: the production image must carry the embedder extra — without
+# it RAG enable() fails closed (P0-07a).
+RUN uv sync --frozen --no-dev --no-editable --extra rag
 
 # ---- runtime: minimal image carrying only the resolved venv ----
 FROM python:3.12-slim
@@ -51,6 +53,20 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+
+# P0-04: monolith (web snapshots) — pinned release binary, checksum-verified
+# against the v2.10.1 release artifacts (argv verified via `monolith --help`).
+# Arch comes from uname -m so both BuildKit and legacy builders work.
+RUN set -eu; \
+    case "$(uname -m)" in \
+      x86_64) MONOLITH_URL=https://github.com/Y2Z/monolith/releases/download/v2.10.1/monolith-gnu-linux-x86_64; MONOLITH_SHA256=663ca914b078e91d5a854b4a07e913c613bbbcfe8fb11a24da1a6ab23c9205df ;; \
+      aarch64) MONOLITH_URL=https://github.com/Y2Z/monolith/releases/download/v2.10.1/monolith-gnu-linux-aarch64; MONOLITH_SHA256=7f8cac6291b4015b24b964fcdf115a196abecc59e9149f7aa485175943f99997 ;; \
+      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    python -c "import urllib.request, sys; urllib.request.urlretrieve(sys.argv[1], '/tmp/monolith')" "$MONOLITH_URL"; \
+    echo "$MONOLITH_SHA256  /tmp/monolith" | sha256sum -c -; \
+    install -m 0755 /tmp/monolith /usr/local/bin/monolith; \
+    rm /tmp/monolith
 
 # Run as a non-root user with a writable /data volume (mounted at runtime).
 RUN useradd --create-home --uid 10001 lumirss && mkdir -p /data && chown lumirss:lumirss /data

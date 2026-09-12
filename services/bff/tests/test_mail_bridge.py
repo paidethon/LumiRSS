@@ -11,6 +11,7 @@ import socket
 
 import pytest
 from aiosmtpd.controller import Controller
+from defusedxml import ElementTree as SafeET
 
 from lumirss.mail_bridge import (
     MailBridgeInvalid,
@@ -234,11 +235,139 @@ def test_send_now_requires_configuration(client):
     assert response.json()["error"]["type"] == "smtp_not_configured"
 
 
-def test_digest_scheduler_idempotent(tmp_path):
+# -- Recovery P0-06 ----------------------------------------------------------
+
+
+def test_same_message_id_to_two_lists_both_stored(bridge_db):
+    """Per-list dedupe (P0-06e): the same Message-ID delivered to two
+    bridge lists must be stored TWICE (the old global PK silently
+    dropped the second list's copy)."""
+    list_a = _run(bridge_db.create_list("列表 A"))
+    list_b = _run(bridge_db.create_list("列表 B"))
+    first = _run(bridge_db.ingest(list_a, RAW_MAIL.encode()))
+    second = _run(bridge_db.ingest(list_b, RAW_MAIL.encode()))
+    assert first["status"] == "accepted"
+    assert second["status"] == "accepted"
+    assert len(_run(bridge_db.list_entries(list_a.uuid))) == 1
+    assert len(_run(bridge_db.list_entries(list_b.uuid))) == 1
+
+
+def test_fingerprint_stable_across_second_boundaries(bridge_db, monkeypatch):
+    """The fallback identity is content-derived, never wall-clock: a
+    re-delivery far in the future still dedupes deterministically (the
+    old fingerprint mixed in second-resolution utc_now and only passed
+    when both ingests landed in the same second)."""
+    import lumirss.mail_bridge as bridge_module
+
+    created = _run(bridge_db.create_list("无名邮件"))
+    raw = RAW_MAIL.replace("Message-ID: <issue-42@example.com>\r\n", "")
+    first = _run(bridge_db.ingest(created, raw.encode()))
+    assert first["status"] == "accepted"
+    # Move the persisted clock far forward — identity must not move.
+    monkeypatch.setattr(
+        bridge_module, "utc_now", lambda: "2030-06-01T00:00:00+00:00"
+    )
+    replay = _run(bridge_db.ingest(created, raw.encode()))
+    assert replay["status"] == "duplicate"
+    assert len(_run(bridge_db.list_entries(created.uuid))) == 1
+
+
+def test_ingest_transaction_all_or_nothing(bridge_db):
+    """Seen rows and the entry body commit together (P0-06f): a failure
+    between statements rolls back the whole batch — no orphan dedupe row
+    that would silently swallow the retried mail forever."""
+    import sqlite3
+
+    created = _run(bridge_db.create_list("原子性"))
+    statements = [
+        (
+            "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
+            (created.uuid, "<mid@x>", "2026-01-01T00:00:00+00:00"),
+        ),
+        # Malformed on purpose: crashes mid-transaction.
+        (
+            "INSERT INTO mail_bridge_entries (list_uuid, message_id) VALUES (?, ?)",
+            (created.uuid,),
+        ),
+    ]
+    with pytest.raises(sqlite3.ProgrammingError):
+        _run(bridge_db._transaction(statements))
+    row = _run(
+        bridge_db._db.fetch_one(
+            "SELECT identity FROM mail_seen WHERE list_uuid = ? AND identity = ?",
+            (created.uuid, "<mid@x>"),
+        )
+    )
+    assert row is None  # rolled back together
+
+
+def test_delete_list_removes_all_state(bridge_db):
+    created = _run(bridge_db.create_list("待删列表"))
+    _run(bridge_db.ingest(created, RAW_MAIL.encode()))
+    assert _run(bridge_db.delete_list(created.uuid)) is True
+    assert _run(bridge_db.get_list(created.uuid)) is None
+    assert _run(bridge_db.list_entries(created.uuid)) == []
+    row = _run(
+        bridge_db._db.fetch_one(
+            "SELECT identity FROM mail_seen WHERE list_uuid = ?",
+            (created.uuid,),
+        )
+    )
+    assert row is None
+    # Unknown uuid → honest False.
+    assert _run(bridge_db.delete_list("no-such-uuid")) is False
+
+
+def test_migration_0018_copies_legacy_seen_rows(tmp_path):
+    """Forward-only 0018: legacy global-PK mail_seen rows are copied
+    into the per-list (list_uuid, identity) table, so Message-ID dedupe
+    survives the upgrade (dropping the old table is safe — dedupe cache
+    only, entries live in mail_bridge_entries)."""
+    db = Database(tmp_path / "lumi.sqlite")
+    _run(db.migrate())
+    # Recreate the LEGACY shape with legacy rows, then re-run 0018.
+    _run(db.execute("DROP TABLE mail_seen"))
+    _run(
+        db.execute(
+            "CREATE TABLE mail_seen (message_id TEXT PRIMARY KEY, list_uuid TEXT NOT NULL, seen_at TEXT NOT NULL)"
+        )
+    )
+    _run(
+        db.execute(
+            "INSERT INTO mail_seen (message_id, list_uuid, seen_at) VALUES (?, ?, ?)",
+            ("<legacy@example.com>", "list-1", "2026-01-01T00:00:00+00:00"),
+        )
+    )
+    _run(
+        db.execute(
+            "DELETE FROM schema_migrations WHERE version = 18"
+        )
+    )
+    db.invalidate_migration_cache()
+    applied = _run(db.migrate())
+    assert 18 in applied
+    row = _run(
+        db.fetch_one(
+            "SELECT list_uuid, identity FROM mail_seen WHERE identity = ?",
+            ("<legacy@example.com>",),
+        )
+    )
+    assert row is not None and str(row["list_uuid"]) == "list-1"
+    # Composite PK: same identity under another list is allowed now.
+    _run(
+        db.execute(
+            "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
+            ("list-2", "<legacy@example.com>", "2026-01-01T00:00:00+00:00"),
+        )
+    )
+
+
+def test_digest_scheduler_respects_enabled_and_hour(tmp_path):
+    from datetime import datetime
+
     db = Database(tmp_path / "lumi.sqlite")
     _run(db.migrate())
     store = DigestStore(db, SecretsStore(tmp_path / "secrets.json"))
-    _run(store.save({"enabled": True, "hour": _current_utc_hour()}))
     sends: list[int] = []
 
     async def send_fn():
@@ -246,13 +375,229 @@ def test_digest_scheduler_idempotent(tmp_path):
         await store.mark_sent()
 
     scheduler = DigestScheduler(db)
-    # Same hour boundary twice → second call is a no-op (restart-safe).
+    local_hour = datetime.now().hour
+
+    # Disabled → never sends (scheduled path respects `enabled`).
+    _run(store.save({"enabled": False, "hour": local_hour}))
+    _run(scheduler.maybe_send(send_fn))
+    assert sends == []
+
+    # Wrong hour → no send.
+    _run(store.save({"enabled": True, "hour": (local_hour + 1) % 24}))
+    _run(scheduler.maybe_send(send_fn))
+    assert sends == []
+
+    # Enabled + matching hour → exactly one send (idempotent restart).
+    _run(store.save({"enabled": True, "hour": local_hour}))
     _run(scheduler.maybe_send(send_fn))
     _run(scheduler.maybe_send(send_fn))
     assert len(sends) == 1
 
 
-def _current_utc_hour() -> int:
-    from lumirss.util import utc_now
+def test_scheduled_digest_source_and_limit_drive_behavior(tmp_path, monkeypatch):
+    """`source` gates the scheduled send (only `mail` is server-derived
+    today — honest error, never an empty email); `limitCount` bounds the
+    item pool; items come from stored bridge entries, never client text."""
+    from types import SimpleNamespace
 
-    return int(utc_now()[11:13])
+    import lumirss.mail_digest as digest_module
+
+    db = Database(tmp_path / "lumi.sqlite")
+    _run(db.migrate())
+    secrets = SecretsStore(tmp_path / "secrets.json")
+    store = DigestStore(db, secrets)
+    _run(
+        store.save(
+            {
+                "enabled": True,
+                "source": "mail",
+                "limitCount": 2,
+                "smtpHost": "127.0.0.1",
+                "toAddr": "reader@local",
+            }
+        )
+    )
+    bridge = MailBridgeStore(db)
+    for name in ("列表一", "列表二"):
+        lst = _run(bridge.create_list(name))
+        _run(bridge.ingest(lst, RAW_MAIL.replace("issue-42", name).encode()))
+    items = _run(digest_module.build_bridge_digest_items(bridge, 2))
+    assert len(items) == 2  # limitCount bounds the pool
+    assert {item["title"] for item in items} == {"每周精选"}
+    assert all(item["url"] == "" for item in items)  # server-derived only
+
+    sent: list[dict] = []
+
+    def fake_send(**kwargs):
+        sent.append(kwargs)
+
+    monkeypatch.setattr(digest_module, "send_digest_smtp", fake_send)
+    app_state = SimpleNamespace(db=db, secrets_store=secrets)
+    _run(digest_module._send_scheduled_digest(app_state))
+    assert len(sent) == 1
+    assert "每周精选" in sent[0]["text"]
+
+    # Non-mail source → honest lastError, nothing sent.
+    _run(store.save({"source": "read_later"}))
+    _run(digest_module._send_scheduled_digest(app_state))
+    assert len(sent) == 1  # unchanged
+    settings = _run(store.load())
+    assert "read_later" in (settings["lastError"] or "")
+
+
+def test_digest_send_now_server_derived(client, monkeypatch):
+    """send-now builds content ONLY from stored bridge entries (P0-06b/j):
+    empty selection with no bridge mail → 422 no_digest_items; with mail
+    → real subjects; client-supplied title/url text is never trusted."""
+    import lumirss.mail_digest as digest_module
+    import lumirss.routers.mail as mail_routes
+
+    class _Adapter:
+        async def subscribe(self, url, title=""):
+            return None
+
+    monkeypatch.setattr(
+        mail_routes, "_get_control_adapter", lambda request: _Adapter()
+    )
+    created = client.post(
+        "/api/v1/mail/bridge-lists", json={"name": "快报"}
+    ).json()
+    secret = created["secret"]
+
+    # No bridge mail yet → honest 422, never an empty email.
+    config = client.put(
+        "/api/v1/digest/settings",
+        json={"smtpHost": "127.0.0.1", "toAddr": "reader@local"},
+    )
+    assert config.status_code == 200
+    empty = client.post("/api/v1/digest/send-now", json={"entryRefs": []})
+    assert empty.status_code == 422
+    assert empty.json()["error"]["type"] == "no_digest_items"
+
+    # A junk ref (client-supplied title/url) is NOT a resolvable entry.
+    junk = client.post(
+        "/api/v1/digest/send-now",
+        json={"entryRefs": [{"title": "假文章", "url": "https://attacker.example"}]},
+    )
+    assert junk.status_code == 422
+
+    # Real mail arrives → send-now derives the item from the stored row.
+    ingest = client.post(
+        f"/api/mail/ingest/{created['uuid']}",
+        content=RAW_MAIL.encode(),
+        headers={"Authorization": f"Bearer {secret}"},
+    )
+    assert ingest.status_code == 200
+
+    sent: list[dict] = []
+
+    def fake_send(**kwargs):
+        sent.append(kwargs)
+
+    monkeypatch.setattr(digest_module, "send_digest_smtp", fake_send)
+    ok = client.post("/api/v1/digest/send-now", json={"entryRefs": []})
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "sent"
+    assert len(sent) == 1
+    assert "每周精选" in sent[0]["text"]
+    assert "假文章" not in sent[0]["html"]
+    assert "attacker.example" not in sent[0]["html"]
+
+    # Explicit entryRefs resolve against stored entries by messageId.
+    message_id = ingest.json()["messageId"]
+    explicit = client.post(
+        "/api/v1/digest/send-now",
+        json={"entryRefs": [{"messageId": message_id}]},
+    )
+    assert explicit.status_code == 200
+    assert "每周精选" in sent[1]["text"]
+
+    # An explicit ref matching nothing → 422 (honest).
+    missing = client.post(
+        "/api/v1/digest/send-now",
+        json={"entryRefs": [{"messageId": "<ghost@nowhere>"}]},
+    )
+    assert missing.status_code == 422
+
+
+def test_bridge_list_auto_subscribe_reports_failure(client, monkeypatch):
+    """FreshRSS auto-subscribe (P0-06i): success → no subscribeFailed;
+    failure → honest subscribeFailed text, create still succeeds."""
+    import lumirss.routers.mail as mail_routes
+
+    class _FailingAdapter:
+        async def subscribe(self, url, title=""):
+            raise RuntimeError("FreshRSS 不可达")
+
+    monkeypatch.setattr(
+        mail_routes, "_get_control_adapter", lambda request: _FailingAdapter()
+    )
+    created = client.post("/api/v1/mail/bridge-lists", json={"name": "失败订阅"})
+    assert created.status_code == 201
+    body = created.json()
+    assert "自动订阅失败" in body["subscribeFailed"]
+    assert body["atomPath"].startswith("/feeds/mail/")
+
+    # Unconfigured FreshRSS → honest status, create still succeeds.
+    def raise_config(request):
+        from lumirss.adapters.freshrss import ConfigError
+
+        raise ConfigError("FreshRSS not configured")
+
+    monkeypatch.setattr(mail_routes, "_get_control_adapter", raise_config)
+    second = client.post("/api/v1/mail/bridge-lists", json={"name": "未配置"})
+    assert second.status_code == 201
+    assert "FreshRSS 未配置" in second.json()["subscribeFailed"]
+
+
+def test_mail_atom_rfc4287_shape(client, monkeypatch):
+    """Per-list Atom (P0-06h): feed id/title/updated (never empty)/
+    link rel=self (absolute)/author; entries carry updated + author."""
+    import lumirss.routers.mail as mail_routes
+
+    class _Adapter:
+        async def subscribe(self, url, title=""):
+            return None
+
+    monkeypatch.setenv("LUMIRSS_ATOM_BASE_URL", "http://bff:8000")
+    monkeypatch.setattr(
+        mail_routes, "_get_control_adapter", lambda request: _Adapter()
+    )
+    created = client.post("/api/v1/mail/bridge-lists", json={"name": "周报 <A&>"})
+    body = created.json()
+    ingest = client.post(
+        f"/api/mail/ingest/{body['uuid']}",
+        content=RAW_MAIL.encode(),
+        headers={"Authorization": f"Bearer {body['secret']}"},
+    )
+    assert ingest.status_code == 200
+
+    atom = client.get(body["atomPath"])
+    assert atom.status_code == 200
+    assert "atom+xml" in atom.headers["content-type"]
+    root = SafeET.fromstring(atom.text)
+    ns = "{http://www.w3.org/2005/Atom}"
+    assert root.tag == f"{ns}feed"
+    assert root.find(f"{ns}title").text == "周报 <A&>"
+    assert root.find(f"{ns}id").text.startswith("urn:lumirss:mailbridge:")
+    feed_updated = root.find(f"{ns}updated").text
+    assert feed_updated  # never empty, even before entries
+    self_link = [
+        link for link in root.findall(f"{ns}link") if link.get("rel") == "self"
+    ]
+    assert self_link[0].get("href").startswith("http://bff:8000/feeds/mail/")
+    assert root.find(f"{ns}author/{ns}name") is not None
+    entries = root.findall(f"{ns}entry")
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.find(f"{ns}id").text.startswith("urn:lumirss:mailentry:")
+    assert entry.find(f"{ns}title").text == "每周精选"
+    assert entry.find(f"{ns}updated") is not None and entry.find(f"{ns}updated").text
+    assert "Newsletter" in entry.find(f"{ns}author/{ns}name").text  # From header
+    assert entry.find(f"{ns}content") is not None
+    assert "<script>" not in atom.text  # sanitized, not executable markup
+
+    # Empty list → feed updated falls back to the list creation time.
+    empty = client.post("/api/v1/mail/bridge-lists", json={"name": "空列表"})
+    empty_atom = SafeET.fromstring(client.get(empty.json()["atomPath"]).text)
+    assert empty_atom.find(f"{ns}updated").text == empty.json()["createdAt"]

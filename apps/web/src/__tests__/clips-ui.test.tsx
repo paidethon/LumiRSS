@@ -1,17 +1,17 @@
 /** phase2 Gate 3 — 网页剪藏 + 网页快照 Web UI 测试。
  *
  * - ClipsPage：列表行渲染（安全外链）/ 立即删除（行消失 + 正确 ref）；
- * - 剪藏流程：抓取 → 提取（mock extractArticle）→ createClip 收到
- *   提取 payload（提取时已过 DOMPurify）；成功文案「已保存「…」」；
- * - 提取失败：固定文案 +「只保存链接」以 url-only payload 落库；
+ * - 剪藏流程（P0-03 服务端可信管线）：POST /clips/fetch → 页面展示
+ *   服务端文章确认 → 保存只提交 {url, finalUrl}（客户端派生字段
+ *   永不提交）；成功文案「已保存「…」」；
+ * - 抓取失败：BFF message 原样透出 + 重试；确认面板可取消；
  * - SnapshotsPage：配额行（role=status，人类可读）+
  *   monolith_unavailable 错误原样透出 message；
  * - Share Target：sessionStorage 'lumirss-share-url' 预填输入框并清除；
  * - Sidebar / 折叠 Rail：网页剪藏 / 网页快照 section 导航激活；
  * - ReaderHeader：保存快照仅绝对 http(s) 原文渲染 + createSnapshot 调用。
  *
- * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）+
- * vi.mock('../lib/clip-extract')（避免测试加载 defuddle/readability）。 */
+ * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）。 */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -34,7 +34,7 @@ import { useReaderUi } from '../store/reader-ui'
 
 const mocks = vi.hoisted(() => ({
   getFeeds: vi.fn(),
-  fetchClipHtml: vi.fn(),
+  fetchClipArticle: vi.fn(),
   createClip: vi.fn(),
   listClips: vi.fn(),
   getClip: vi.fn(),
@@ -42,7 +42,6 @@ const mocks = vi.hoisted(() => ({
   listSnapshots: vi.fn(),
   createSnapshot: vi.fn(),
   deleteSnapshot: vi.fn(),
-  extractArticle: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -50,7 +49,7 @@ vi.mock('../api/client', async (importOriginal) => {
   return {
     ...actual,
     getFeeds: mocks.getFeeds,
-    fetchClipHtml: mocks.fetchClipHtml,
+    fetchClipArticle: mocks.fetchClipArticle,
     createClip: mocks.createClip,
     listClips: mocks.listClips,
     getClip: mocks.getClip,
@@ -60,10 +59,6 @@ vi.mock('../api/client', async (importOriginal) => {
     deleteSnapshot: mocks.deleteSnapshot,
   }
 })
-
-vi.mock('../lib/clip-extract', () => ({
-  extractArticle: mocks.extractArticle,
-}))
 
 function clipFixture(ref: string, over: Partial<Clip> = {}): Clip {
   return {
@@ -162,25 +157,23 @@ describe('ClipsPage', () => {
     expect(mocks.deleteClip).toHaveBeenCalledWith('library:c2')
   })
 
-  it('剪藏流程：抓取 → 提取 → createClip 收到提取 payload + 成功文案', async () => {
-    mocks.fetchClipHtml.mockResolvedValue({
+  it('剪藏流程：服务端抓取 → 确认面板 → createClip 只收到 {url, finalUrl}', async () => {
+    // 服务端可信管线：fetch 返回服务端提取+清洗的文章（P0-03 契约）。
+    mocks.fetchClipArticle.mockResolvedValue({
       url: 'https://example.com/a',
-      finalUrl: 'https://example.com/a',
-      html: '<html><body><article>正文</article></body></html>',
-    })
-    mocks.extractArticle.mockResolvedValue({
-      title: '提取标题',
-      byline: '作者',
-      contentHtml: '<p>正文段落</p>',
-      contentText: '正文段落',
+      finalUrl: 'https://example.com/a?redirected=1',
+      title: '服务端提取标题',
+      byline: '服务端署名',
+      contentHtml: '<p>服务端清洗后的正文段落</p>',
+      contentText: '服务端清洗后的正文段落',
     })
     mocks.createClip.mockResolvedValue(
       clipDetailFixture('library:n1', {
         url: 'https://example.com/a',
-        title: '提取标题',
-        byline: '作者',
-        contentHtml: '<p>正文段落</p>',
-        contentText: '正文段落',
+        title: '服务端提取标题',
+        byline: '服务端署名',
+        contentHtml: '<p>服务端清洗后的正文段落</p>',
+        contentText: '服务端清洗后的正文段落',
       }),
     )
     render(withProviders(<ClipsPage />))
@@ -188,50 +181,65 @@ describe('ClipsPage', () => {
       target: { value: 'https://example.com/a' },
     })
     fireEvent.click(screen.getByRole('button', { name: '剪藏' }))
-    expect(await screen.findByText('已保存「提取标题」')).toBeInTheDocument()
-    expect(mocks.fetchClipHtml).toHaveBeenCalledWith('https://example.com/a')
-    expect(mocks.createClip).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: 'https://example.com/a',
-        title: '提取标题',
-        byline: '作者',
-        contentHtml: '<p>正文段落</p>',
-        contentText: '正文段落',
-      }),
-    )
+
+    // 确认面板展示服务端文章（不再有客户端提取阶段）。
+    expect(await screen.findByRole('region', { name: '确认剪藏内容' })).toBeInTheDocument()
+    expect(screen.getByText('服务端提取标题')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '保存剪藏' }))
+    expect(await screen.findByText('已保存「服务端提取标题」')).toBeInTheDocument()
+    expect(mocks.fetchClipArticle).toHaveBeenCalledWith('https://example.com/a')
+    // 保存契约：只提交 {url, finalUrl}——任何客户端派生字段都不再提交。
+    expect(mocks.createClip).toHaveBeenCalledWith({
+      url: 'https://example.com/a',
+      finalUrl: 'https://example.com/a?redirected=1',
+    })
   })
 
-  it('提取失败：固定文案 + 「只保存链接」以 url-only payload 落库', async () => {
-    mocks.fetchClipHtml.mockResolvedValue({
-      url: 'https://example.com/b',
-      finalUrl: 'https://example.com/b',
-      html: '<html></html>',
+  it('确认面板取消：不调用 createClip', async () => {
+    mocks.fetchClipArticle.mockResolvedValue({
+      url: 'https://example.com/c',
+      finalUrl: 'https://example.com/c',
+      title: '标题 c',
+      byline: null,
+      contentHtml: '<p>正文 c</p>',
+      contentText: '正文 c',
     })
-    mocks.extractArticle.mockRejectedValue(new Error('boom'))
-    mocks.createClip.mockResolvedValue(
-      clipDetailFixture('library:n2', {
-        url: 'https://example.com/b',
-        title: 'https://example.com/b',
-        contentHtml: '<p>https://example.com/b</p>',
-        contentText: 'https://example.com/b',
-      }),
+    render(withProviders(<ClipsPage />))
+    fireEvent.change(screen.getByLabelText('粘贴链接'), {
+      target: { value: 'https://example.com/c' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '剪藏' }))
+    expect(await screen.findByRole('button', { name: '保存剪藏' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(mocks.createClip).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '保存剪藏' })).toBeNull()
+  })
+
+  it('抓取失败：BFF message 原样透出 + 重试', async () => {
+    mocks.fetchClipArticle.mockRejectedValue(
+      new ApiError(400, 'clip_fetch_forbidden', '目标地址不允许抓取'),
     )
     render(withProviders(<ClipsPage />))
     fireEvent.change(screen.getByLabelText('粘贴链接'), {
       target: { value: 'https://example.com/b' },
     })
     fireEvent.click(screen.getByRole('button', { name: '剪藏' }))
-    expect(await screen.findByText('正文提取失败：可重试或只保存链接。')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '只保存链接' }))
-    expect(await screen.findByText('已保存「https://example.com/b」')).toBeInTheDocument()
-    expect(mocks.createClip).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        url: 'https://example.com/b',
-        title: 'https://example.com/b',
-        contentHtml: '<p>https://example.com/b</p>',
-        contentText: 'https://example.com/b',
-      }),
-    )
+    expect(await screen.findByText('目标地址不允许抓取')).toBeInTheDocument()
+    expect(mocks.createClip).not.toHaveBeenCalled()
+
+    // 重试成功走完整流程
+    mocks.fetchClipArticle.mockResolvedValue({
+      url: 'https://example.com/b',
+      finalUrl: 'https://example.com/b',
+      title: '重试标题',
+      byline: null,
+      contentHtml: '<p>正文</p>',
+      contentText: '正文',
+    })
+    mocks.createClip.mockResolvedValue(clipDetailFixture('library:n2'))
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByRole('button', { name: '保存剪藏' })).toBeInTheDocument()
   })
 
   it('Share Target：sessionStorage lumirss-share-url 预填输入框并清除', () => {

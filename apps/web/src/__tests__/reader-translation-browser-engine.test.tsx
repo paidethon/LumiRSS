@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ReaderTranslation from '../components/ReaderTranslation'
+import { resetLocalTranslatorCache } from '../lib/local-translator'
 import type { EntryDetail } from '../api/types'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 
@@ -107,6 +108,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
   delete (window as unknown as { Translator?: unknown }).Translator
   delete (window as unknown as { LanguageDetector?: unknown }).LanguageDetector
+  // P0-11：availability 模块级缓存随用例重置（前一个用例的 fake 环境
+  // 不得泄漏到下一个——例如 unsupported 缓存会让后续 fake 全部短路）。
+  resetLocalTranslatorCache()
 })
 
 describe('ReaderTranslation 本地引擎', () => {

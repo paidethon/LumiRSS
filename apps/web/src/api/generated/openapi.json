@@ -1575,9 +1575,9 @@
     "title": "Clip",
     "type": "object"
    },
-   "ClipCreate": {
+   "ClipCreateRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/library/clips — extracted content from the client.",
+    "description": "POST /api/v1/library/clips — URL confirmation only.\n\n``url`` is required; ``finalUrl`` (from the /fetch preview) is\nfetched instead when present. ``title``/``byline``/``contentHtml``/\n``contentText``/``fetchedAt`` are deprecated client-derived fields:\naccepted for wire-shape compatibility with the pre-recovery client,\nNEVER trusted or stored (server re-derives everything).",
     "properties": {
      "byline": {
       "anyOf": [
@@ -1591,12 +1591,26 @@
       "title": "Byline"
      },
      "contentHtml": {
-      "title": "Contenthtml",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
      },
      "contentText": {
-      "title": "Contenttext",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenttext"
      },
      "fetchedAt": {
       "anyOf": [
@@ -1609,9 +1623,27 @@
       ],
       "title": "Fetchedat"
      },
+     "finalUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finalurl"
+     },
      "title": {
-      "title": "Title",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
      },
      "url": {
       "title": "Url",
@@ -1619,12 +1651,9 @@
      }
     },
     "required": [
-     "url",
-     "title",
-     "contentHtml",
-     "contentText"
+     "url"
     ],
-    "title": "ClipCreate",
+    "title": "ClipCreateRequest",
     "type": "object"
    },
    "ClipDetail": {
@@ -1682,6 +1711,51 @@
     "title": "ClipDetail",
     "type": "object"
    },
+   "ClipFetchArticleResult": {
+    "description": "POST /api/v1/library/clips/fetch — the server-produced article.\n\n``url`` echoes the requested URL; ``finalUrl`` is where the fetch\nactually landed (redirects followed). ``contentHtml`` is already\nserver-sanitized (allow-list); the browser DOMPurify pass remains\nthe final render boundary.",
+    "properties": {
+     "byline": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Byline"
+     },
+     "contentHtml": {
+      "title": "Contenthtml",
+      "type": "string"
+     },
+     "contentText": {
+      "title": "Contenttext",
+      "type": "string"
+     },
+     "finalUrl": {
+      "title": "Finalurl",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "finalUrl",
+     "title",
+     "contentHtml",
+     "contentText"
+    ],
+    "title": "ClipFetchArticleResult",
+    "type": "object"
+   },
    "ClipFetchRequest": {
     "additionalProperties": false,
     "description": "POST /api/v1/library/clips/fetch — server-side bounded fetch.",
@@ -1695,30 +1769,6 @@
      "url"
     ],
     "title": "ClipFetchRequest",
-    "type": "object"
-   },
-   "ClipFetchResult": {
-    "description": "Raw fetched page handed to the browser extractor.",
-    "properties": {
-     "finalUrl": {
-      "title": "Finalurl",
-      "type": "string"
-     },
-     "html": {
-      "title": "Html",
-      "type": "string"
-     },
-     "url": {
-      "title": "Url",
-      "type": "string"
-     }
-    },
-    "required": [
-     "url",
-     "finalUrl",
-     "html"
-    ],
-    "title": "ClipFetchResult",
     "type": "object"
    },
    "ClipListResponse": {
@@ -2552,6 +2602,11 @@
       ],
       "title": "Libraryerror"
      },
+     "libraryTotal": {
+      "default": 0,
+      "title": "Librarytotal",
+      "type": "integer"
+     },
      "rss": {
       "items": {
        "$ref": "#/components/schemas/SearchItem"
@@ -2826,7 +2881,7 @@
     "type": "object"
    },
    "GraphResponse": {
-    "description": "Envelope for GET /api/v1/graph (truncation reported honestly).",
+    "description": "Envelope for GET /api/v1/graph (truncation reported honestly).\n\n``totalNodes`` is the pre-truncation candidate count; ``returnedNodes``\nis what the payload carries (P0-10d — the truncated count never\nmasquerades as the total).",
     "properties": {
      "edges": {
       "items": {
@@ -2841,6 +2896,11 @@
       },
       "title": "Nodes",
       "type": "array"
+     },
+     "returnedNodes": {
+      "default": 0,
+      "title": "Returnednodes",
+      "type": "integer"
      },
      "totalNodes": {
       "title": "Totalnodes",
@@ -2918,11 +2978,17 @@
       "title": "Snippet",
       "type": "string"
      },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     },
      "title": {
       "title": "Title",
       "type": "string"
      },
      "updatedAt": {
+      "default": "",
       "title": "Updatedat",
       "type": "string"
      },
@@ -2941,8 +3007,7 @@
     "required": [
      "ref",
      "kind",
-     "title",
-     "updatedAt"
+     "title"
     ],
     "title": "LibrarySearchItem",
     "type": "object"
@@ -3031,9 +3096,20 @@
     "title": "MailBridgeListCreate",
     "type": "object"
    },
-   "MailBridgeListCreated": {
-    "description": "Creation response — the only time the bearer secret is visible.",
+   "MailBridgeListCreatedV2": {
+    "description": "Creation response + honest FreshRSS auto-subscribe status\n(P0-06i). Extends the G5 shape; ``subscribeFailed``/``atomPath`` are\nomitted from wire responses when unset\n(response_model_exclude_none), keeping the historical payload\nbyte-compatible on success.",
     "properties": {
+     "atomPath": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Atompath"
+     },
      "createdAt": {
       "title": "Createdat",
       "type": "string"
@@ -3046,6 +3122,17 @@
       "title": "Secret",
       "type": "string"
      },
+     "subscribeFailed": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subscribefailed"
+     },
      "uuid": {
       "title": "Uuid",
       "type": "string"
@@ -3057,7 +3144,7 @@
      "createdAt",
      "secret"
     ],
-    "title": "MailBridgeListCreated",
+    "title": "MailBridgeListCreatedV2",
     "type": "object"
    },
    "MailBridgeListResponse": {
@@ -3075,6 +3162,201 @@
      "items"
     ],
     "title": "MailBridgeListResponse",
+    "type": "object"
+   },
+   "MailImapPollResult": {
+    "description": "POST /api/v1/mail/imap/poll — one bounded manual poll.",
+    "properties": {
+     "fetched": {
+      "title": "Fetched",
+      "type": "integer"
+     },
+     "ingested": {
+      "items": {
+       "$ref": "#/components/schemas/MailIngestResult"
+      },
+      "title": "Ingested",
+      "type": "array"
+     }
+    },
+    "required": [
+     "fetched",
+     "ingested"
+    ],
+    "title": "MailImapPollResult",
+    "type": "object"
+   },
+   "MailImapSettings": {
+    "description": "GET /api/v1/mail/imap/settings — password never returned.",
+    "properties": {
+     "configured": {
+      "default": false,
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "folder": {
+      "default": "INBOX",
+      "title": "Folder",
+      "type": "string"
+     },
+     "host": {
+      "default": "",
+      "title": "Host",
+      "type": "string"
+     },
+     "intervalSeconds": {
+      "default": 300,
+      "title": "Intervalseconds",
+      "type": "integer"
+     },
+     "listUuid": {
+      "default": "",
+      "title": "Listuuid",
+      "type": "string"
+     },
+     "passwordConfigured": {
+      "default": false,
+      "title": "Passwordconfigured",
+      "type": "boolean"
+     },
+     "port": {
+      "default": 993,
+      "title": "Port",
+      "type": "integer"
+     },
+     "ssl": {
+      "default": true,
+      "title": "Ssl",
+      "type": "boolean"
+     },
+     "user": {
+      "default": "",
+      "title": "User",
+      "type": "string"
+     }
+    },
+    "title": "MailImapSettings",
+    "type": "object"
+   },
+   "MailImapSettingsUpdate": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/mail/imap/settings — partial; password write-only.",
+    "properties": {
+     "folder": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Folder"
+     },
+     "host": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Host"
+     },
+     "intervalSeconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Intervalseconds"
+     },
+     "listUuid": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Listuuid"
+     },
+     "password": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     },
+     "port": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Port"
+     },
+     "ssl": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ssl"
+     },
+     "user": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User"
+     }
+    },
+    "title": "MailImapSettingsUpdate",
+    "type": "object"
+   },
+   "MailImapTestResult": {
+    "description": "POST /api/v1/mail/imap/test — honest connectivity report.",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ok"
+    ],
+    "title": "MailImapTestResult",
     "type": "object"
    },
    "MailIngestResult": {
@@ -3130,7 +3412,7 @@
     "type": "object"
    },
    "NoteView": {
-    "description": "One projected note; contentHtml only on detail (client sanitizes).",
+    "description": "One projected note; contentHtml only on detail (client sanitizes).\n\n``truncated`` marks notes that exceeded the bounded-projection caps\n— never silently shortened (P0-09d).",
     "properties": {
      "contentHtml": {
       "anyOf": [
@@ -3166,6 +3448,11 @@
      "title": {
       "title": "Title",
       "type": "string"
+     },
+     "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
      },
      "wikilinks": {
       "anyOf": [
@@ -3233,6 +3520,11 @@
       "title": "Skipped",
       "type": "integer"
      },
+     "truncatedNotes": {
+      "default": 0,
+      "title": "Truncatednotes",
+      "type": "integer"
+     },
      "unchanged": {
       "title": "Unchanged",
       "type": "integer"
@@ -3277,6 +3569,11 @@
    "ObsidianStatus": {
     "description": "Honest scanner status (error keeps the old index visible).",
     "properties": {
+     "envRootConfigured": {
+      "default": false,
+      "title": "Envrootconfigured",
+      "type": "boolean"
+     },
      "lastError": {
       "anyOf": [
        {
@@ -3847,6 +4144,68 @@
      "semanticUsed"
     ],
     "title": "RagSearchResponse",
+    "type": "object"
+   },
+   "ReadLaterItem": {
+    "description": "One read-later timeline row (P0-01: server-driven list).\n\n``entry`` is the RSS card from the projection (or a live adapter\nfallback); a dangling member surfaces as ``stale=True`` with no card\ninstead of disappearing from the list.",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "entry": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SearchItem"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "itemRef",
+     "addedAt"
+    ],
+    "title": "ReadLaterItem",
+    "type": "object"
+   },
+   "ReadLaterTimelineResponse": {
+    "description": "GET /api/v1/workspaces/read-later/timeline.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ReadLaterItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "ReadLaterTimelineResponse",
     "type": "object"
    },
    "ReadinessComponentDetail": {
@@ -5356,6 +5715,23 @@
     "title": "TagBinding",
     "type": "object"
    },
+   "TagItemsResponse": {
+    "description": "GET /api/v1/tags/{id}/items — one tag's refs, resolved server-side.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ResolvedItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "TagItemsResponse",
+    "type": "object"
+   },
    "TagListResponse": {
     "description": "Envelope for GET /api/v1/tags (suggested rows never appear).",
     "properties": {
@@ -5882,7 +6258,7 @@
  "paths": {
   "/api/mail/ingest/{list_uuid}": {
    "post": {
-    "description": "Authenticated thin bridge: bearer secret + raw MIME body.\n\nLives at /api/mail/* (not /api/v1/*): it is machine-to-machine and\nstill passes through the same security middlewares by path prefix.",
+    "description": "Authenticated thin bridge: bearer secret + raw MIME body.\n\nLives at /api/mail/* (not /api/v1/*): it is machine-to-machine. The\nroute IS the auth boundary — the bearer secret is compared in\nconstant time and NEVER logged (no auth header or secret value is\never logged on this path). The per-list rate budget is consumed\nbefore authentication so guessing cannot out-retry the window.",
     "operationId": "ingest_mail_api_mail_ingest__list_uuid__post",
     "parameters": [
      {
@@ -6033,9 +6409,47 @@
     "summary": "Decide Approval"
    }
   },
+  "/api/v1/agent/threads/{thread_id}/cancel": {
+   "post": {
+    "description": "Server-side cancel: the loop finalizes a partial ``cancelled``\nstate in storage (never stuck ``processing``).",
+    "operationId": "cancel_turn_api_v1_agent_threads__thread_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Turn"
+   }
+  },
   "/api/v1/agent/threads/{thread_id}/events": {
    "get": {
-    "description": "SSE replay: streams all messages after `after` then closes — the\nclient re-subscribes while a turn is processing (simple, reconnect\nsafe, no server-side push state).",
+    "description": "Real-time SSE: storage replay after `after`, then live deltas from\nthe running turn until it reaches a terminal state. Disconnects never\nabort the server-side run — clients reconnect with `after` and get the\npersisted rows.",
     "operationId": "stream_events_api_v1_agent_threads__thread_id__events_get",
     "parameters": [
      {
@@ -6083,6 +6497,7 @@
   },
   "/api/v1/agent/threads/{thread_id}/messages": {
    "get": {
+    "description": "REST read path (polling fallback) + resolved citation details.",
     "operationId": "get_messages_api_v1_agent_threads__thread_id__messages_get",
     "parameters": [
      {
@@ -6128,7 +6543,7 @@
     "summary": "Get Messages"
    },
    "post": {
-    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (replay-friendly).",
+    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (real deltas; replay on reconnect).",
     "operationId": "post_message_api_v1_agent_threads__thread_id__messages_post",
     "parameters": [
      {
@@ -6269,6 +6684,7 @@
   },
   "/api/v1/api-sources/{source_uuid}": {
    "delete": {
+    "description": "Delete requires a successful FreshRSS unsubscribe first (P0-05e).\n\nA failed unsubscribe returns the stable 409 ``unsubscribe_failed``\nenvelope and keeps the source, so no dead subscription keeps polling\na removed URL. No ``force`` param by design: FreshRSS-unconfigured\nand already-absent feeds already pass (idempotent), and decommissioning\nFreshRSS (unsetting its env) re-enables deletion.",
     "operationId": "delete_source_api_v1_api_sources__source_uuid__delete",
     "parameters": [
      {
@@ -6759,7 +7175,7 @@
   },
   "/api/v1/digest/send-now": {
    "post": {
-    "description": "Immediate send with the configured relay (never a test to real\nthird parties — tests use local sinks only).",
+    "description": "Immediate send with the configured relay (never a test to real\nthird parties — tests use local sinks only).\n\nServer-derived content only (P0-06b/j): ``entryRefs`` entries are\nRESOLVED against stored bridge entries by their ``messageId`` (any\nother keys are ignored — client title/url text is never trusted);\nno refs → the newest bridge entries bounded by ``limitCount``. An\nempty resolved selection is the stable 422 ``no_digest_items``\nerror — an empty email is never sent. ``enabled`` is intentionally\nNOT consulted here (explicit user action); only the scheduled path\nrespects it.",
     "operationId": "digest_send_now_api_v1_digest_send_now_post",
     "requestBody": {
      "content": {
@@ -7445,6 +7861,7 @@
     "summary": "Remove Library Favorite"
    },
    "post": {
+    "description": "Favorite one library ItemRef (existence-validated, ADR 0004).",
     "operationId": "add_library_favorite_api_v1_favorites_library_post",
     "requestBody": {
      "content": {
@@ -7925,12 +8342,13 @@
     "summary": "List Clips"
    },
    "post": {
+    "description": "Create a clip from a URL confirmation.\n\nSecurity contract (P0-03): ALL content is re-derived server-side by\nfetching ``finalUrl`` (the page the user confirmed in the preview)\nor ``url``. Client-supplied title/byline/contentHtml/contentText/\nfetchedAt are ignored by design; what gets stored comes only from\nthe server's own fetch → extract → sanitize pipeline, and the URL\nrecorded is the FINAL url after redirects.",
     "operationId": "create_clip_api_v1_library_clips_post",
     "requestBody": {
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/ClipCreate"
+        "$ref": "#/components/schemas/ClipCreateRequest"
        }
       }
      },
@@ -7963,7 +8381,7 @@
   },
   "/api/v1/library/clips/fetch": {
    "post": {
-    "description": "One bounded anonymous SSRF-guarded server fetch (no cookies).",
+    "description": "Server fetch (SSRF-pinned) + extraction + sanitization preview.",
     "operationId": "fetch_for_clip_api_v1_library_clips_fetch_post",
     "requestBody": {
      "content": {
@@ -7980,7 +8398,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ClipFetchResult"
+         "$ref": "#/components/schemas/ClipFetchArticleResult"
         }
        }
       },
@@ -8189,7 +8607,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/MailBridgeListCreated"
+         "$ref": "#/components/schemas/MailBridgeListCreatedV2"
         }
        }
       },
@@ -8239,6 +8657,98 @@
      }
     },
     "summary": "Delete Bridge List"
+   }
+  },
+  "/api/v1/mail/imap/poll": {
+   "post": {
+    "description": "Manual one-shot poll of the configured mailbox into its bound\nbridge list (the background task runs the same adapter).",
+    "operationId": "poll_mail_imap_api_v1_mail_imap_poll_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailImapPollResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Poll Mail Imap"
+   }
+  },
+  "/api/v1/mail/imap/settings": {
+   "get": {
+    "operationId": "get_mail_imap_settings_api_v1_mail_imap_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailImapSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Mail Imap Settings"
+   },
+   "put": {
+    "operationId": "update_mail_imap_settings_api_v1_mail_imap_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MailImapSettingsUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailImapSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Mail Imap Settings"
+   }
+  },
+  "/api/v1/mail/imap/test": {
+   "post": {
+    "description": "Connectivity + auth probe (downloads nothing). Honest ok/error\nreport — error text carries the failure kind, never credentials.",
+    "operationId": "test_mail_imap_api_v1_mail_imap_test_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MailImapTestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Test Mail Imap"
    }
   },
   "/api/v1/obsidian/notes": {
@@ -8356,7 +8866,7 @@
   },
   "/api/v1/obsidian/settings": {
    "put": {
-    "description": "Configure the vault root (canonicalized, validated, read-only).",
+    "description": "Configure the vault root (canonicalized, validated, read-only).\n\nRejected while the deployment fixes the root via\nLUMIRSS_OBSIDIAN_VAULT_DIR — the bind mount owns the path then.",
     "operationId": "set_obsidian_settings_api_v1_obsidian_settings_put",
     "requestBody": {
      "content": {
@@ -8485,9 +8995,28 @@
     "summary": "Opml Import Preview"
    }
   },
+  "/api/v1/rag/disable": {
+   "post": {
+    "description": "Disable the semantic leg and release the model resources.",
+    "operationId": "rag_disable_api_v1_rag_disable_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEnableResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Disable"
+   }
+  },
   "/api/v1/rag/enable": {
    "post": {
-    "description": "Explicit user consent to download/load the embedding model.",
+    "description": "Explicit user consent to download/load the embedding model.\n\nFailure is honest: a 503 ``model_unavailable`` envelope with the\nreason also recorded in status.lastError; ``enabled`` stays false.",
     "operationId": "rag_enable_api_v1_rag_enable_post",
     "responses": {
      "200": {
@@ -8589,6 +9118,7 @@
   },
   "/api/v1/rag/status": {
    "get": {
+    "description": "Everything the enable/rebuild UI needs: index counts, model\ninfo, resource state, last error.",
     "operationId": "rag_status_api_v1_rag_status_get",
     "responses": {
      "200": {
@@ -10375,6 +10905,56 @@
     "summary": "Rename Tag"
    }
   },
+  "/api/v1/tags/{tag_id}/items": {
+   "get": {
+    "description": "Server-driven list of one tag's items, each resolved (P0-10i):\nthe client never filters a partially loaded timeline to show a tag.",
+    "operationId": "tag_items_api_v1_tags__tag_id__items_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "tag_id",
+      "required": true,
+      "schema": {
+       "title": "Tag Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 100,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagItemsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tag Items"
+   }
+  },
   "/api/v1/version": {
    "get": {
     "description": "Build provenance for Web/BFF skew diagnosis.\n\nDeliberately minimal: no env dump, no paths, no secrets — just the\nrunning BFF's version/commit so a stale deployment is diagnosable\nfrom the browser (see also the web build commit on the About page).",
@@ -10446,6 +11026,63 @@
      }
     },
     "summary": "Create Workspace"
+   }
+  },
+  "/api/v1/workspaces/read-later/timeline": {
+   "get": {
+    "description": "Server-driven read-later timeline (P0-01): newest-added-first,\nkeyset-paged over the reserved workspace's rss members. Cards come\nfrom the derived projection; a projection miss falls back to the\nFreshRSS adapter; a ref that resolves nowhere stays visible as\n``stale`` instead of vanishing (ADR 0004).",
+    "operationId": "read_later_timeline_api_v1_workspaces_read_later_timeline_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadLaterTimelineResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Read Later Timeline"
    }
   },
   "/api/v1/workspaces/{workspace_id}": {
@@ -10710,7 +11347,7 @@
     "summary": "Reorder Workspace Items"
    },
    "post": {
-    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).",
+    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).\n\nThe ref must resolve (ADR 0004): writes never create dangling\nmembership. A known-but-stale domain (FreshRSS unconfigured) passes.",
     "operationId": "add_workspace_item_api_v1_workspaces__workspace_id__items_post",
     "parameters": [
      {
@@ -10801,7 +11438,7 @@
   },
   "/feeds/mail/{list_uuid}.{secret}.atom": {
    "get": {
-    "description": "Per-list Atom for FreshRSS (constant-time secret check).",
+    "description": "Per-list Atom for FreshRSS (constant-time secret check).\n\nRFC 4287 via the shared renderer (P0-06h): feed id/title/updated\n(never empty — falls back to the list creation time)/link rel=self\n(absolute IRI)/author; entries carry updated (received_at) and\nauthor (From header).",
     "operationId": "serve_mail_atom_feeds_mail__list_uuid___secret__atom_get",
     "parameters": [
      {
@@ -10848,7 +11485,7 @@
   },
   "/feeds/{source_uuid}.{secret}.atom": {
    "get": {
-    "description": "The FreshRSS-facing feed. Constant-time secret check, ETag/304,\nbounded fetch + mapping on every pull, honest error status marking.",
+    "description": "The FreshRSS-facing feed. Constant-time secret check, ETag/304,\nbounded fetch + mapping on every pull, honest error status marking.\n\nLast-known-good (P0-05d): success persists the rendered Atom, a\ncontent-derived monotonic feed updated and the matching ETag; an\nupstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS\nkeeps its cached copy functional) and only a source with no last-good\nbody falls back to the 502 stub.",
     "operationId": "serve_atom_feeds__source_uuid___secret__atom_get",
     "parameters": [
      {

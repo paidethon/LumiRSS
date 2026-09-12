@@ -93,6 +93,8 @@ async def search(
     index = await service.index_info()
     # phase2 G6 unified view: the library leg runs beside the RSS leg and
     # fails independently (partial failure stays honest, never silent).
+    # A starred (favorite) filter applies to BOTH legs (P0-10j): library
+    # hits are then limited to favorited refs instead of everything.
     library_items = None
     library_error = None
     try:
@@ -100,6 +102,13 @@ async def search(
         from lumirss.models import LibrarySearchItem
 
         writer = _get_library_search_writer(request)
+        favorite_refs: set[str] | None = None
+        if favorite:
+            from lumirss.deps import _get_favorites_service
+
+            favorite_refs = set(
+                await _get_favorites_service(request).list_refs()
+            )
         hits = await writer.search(query, limit=_MAX_LIMIT)
         library_items = [
             LibrarySearchItem(
@@ -111,6 +120,7 @@ async def search(
                 updatedAt=str(hit["updated_at"]),
             )
             for hit in hits
+            if favorite_refs is None or str(hit["ref"]) in favorite_refs
         ]
     except Exception:  # noqa: BLE001 — leg failure must not kill RSS
         library_error = "库搜索暂不可用，RSS 结果不受影响。"

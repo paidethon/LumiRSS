@@ -25,9 +25,11 @@ import {
   useCreateAgentThreadMutation,
   useDeleteAgentThreadMutation,
   useRagStatus,
+  useResolveRefs,
   useSendAgentMessageMutation,
 } from '../../api/queries'
 import type { AgentApprovalContent, AgentMessage } from '../../api/client'
+import { openResolvedItem } from '../../lib/open-item'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
@@ -100,6 +102,52 @@ function RagStatusChip() {
   )
 }
 
+/** P0-08h（wave 2）：assistant 引用可点击——citations 是 ItemRef，
+ * 批量经 POST /api/v1/resolve 解析为卡片后按统一 kind 路由打开
+ * （lib/open-item.ts）。解析失败/目标失效 → 纯文本「已失效」，
+ * 绝不渲染假按钮。 */
+function CitationList({ refs }: { refs: string[] }) {
+  const resolved = useResolveRefs(refs)
+  const byRef = new Map((resolved.data?.items ?? []).map((item) => [item.ref, item]))
+
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-[var(--lumi-text-tertiary)]">引用：</span>
+      {refs.map((ref) => {
+        const item = byRef.get(ref)
+        if (resolved.isPending) {
+          return (
+            <span key={ref} className="text-[11px] text-[var(--lumi-text-tertiary)]">
+              {ref}
+            </span>
+          )
+        }
+        if (item === undefined || item.stale) {
+          return (
+            <span
+              key={ref}
+              className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]"
+              title="引用目标已失效或不存在"
+            >
+              {item?.title ?? ref}（已失效）
+            </span>
+          )
+        }
+        return (
+          <button
+            key={ref}
+            type="button"
+            onClick={() => openResolvedItem(item)}
+            className="rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)] underline-offset-2 transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            {item.title}
+          </button>
+        )
+      })}
+    </span>
+  )
+}
+
 /** 单条消息：按 role 分派渲染。 */
 function MessageRow({ message }: { message: AgentMessage }) {
   if (message.role === 'user') {
@@ -145,11 +193,7 @@ function MessageRow({ message }: { message: AgentMessage }) {
       <p className="text-sm leading-relaxed whitespace-pre-wrap text-[var(--lumi-text-primary)]">
         {textOf(message.content)}
       </p>
-      {message.citations.length > 0 && (
-        <p className="mt-1 text-[11px] break-all text-[var(--lumi-text-tertiary)]">
-          引用：{message.citations.join('、')}
-        </p>
-      )}
+      {message.citations.length > 0 && <CitationList refs={message.citations} />}
     </div>
   )
 }

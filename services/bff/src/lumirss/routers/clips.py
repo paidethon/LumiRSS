@@ -1,16 +1,20 @@
-"""Web clip routes (phase2 M2).
+"""Web clip routes (phase2 M2, recovery P0-03) — server-side pipeline.
 
-POST /fetch performs the ONLY network hop — a bounded, anonymous,
-SSRF-guarded server fetch. Extraction (Defuddle primary, Readability
-fallback) and sanitization (DOMPurify — the architecture's final
-boundary) run in the browser; POST / then stores the payload with
-server-side structural/length validation. The search projection updates
-synchronously on every write.
+POST /fetch performs the ONLY network hop (bounded, anonymous,
+SSRF-pinned) AND derives the article server-side: extract
+(readability-style) + sanitize (allow-list). The browser no longer
+extracts or cleans anything; POST / re-derives content from the URL
+itself, so client-supplied HTML is never trusted and never stored —
+deprecated client fields (title/byline/contentHtml/contentText/
+fetchedAt) are accepted for wire-shape compatibility and IGNORED. The
+browser DOMPurify pass remains the final render boundary, but the
+stored bytes are already server-sanitized. The search projection
+updates in the same transaction as the clip rows.
 """
 
 from fastapi import APIRouter, Request, Response
 
-from lumirss.clip_fetch import ClipFetchError, fetch_page
+from lumirss.clip_fetch import ClipFetchError, fetch_extract_sanitize
 from lumirss.library_clips import (
     ClipInvalid,
     ClipNotFound,
@@ -19,10 +23,10 @@ from lumirss.library_clips import (
 )
 from lumirss.models import (
     Clip,
-    ClipCreate,
+    ClipCreateRequest,
     ClipDetail,
+    ClipFetchArticleResult,
     ClipFetchRequest,
-    ClipFetchResult,
     ClipListResponse,
 )
 
@@ -34,7 +38,7 @@ _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
 
 
-def _clip_model(view: ClipView) -> Clip:
+def _clip_model(view: ClipView):
     return Clip(
         ref=view.ref,
         url=view.url,
@@ -45,23 +49,41 @@ def _clip_model(view: ClipView) -> Clip:
     )
 
 
-@router.post("/api/v1/library/clips/fetch", response_model=ClipFetchResult)
-async def fetch_for_clip(payload: ClipFetchRequest, request: Request) -> ClipFetchResult:
-    """One bounded anonymous SSRF-guarded server fetch (no cookies)."""
-    page = await fetch_page(request.app.state.http_client, payload.url)
-    return ClipFetchResult(url=payload.url, finalUrl=page.final_url, html=page.html)
+@router.post("/api/v1/library/clips/fetch", response_model=ClipFetchArticleResult)
+async def fetch_for_clip(payload: ClipFetchRequest) -> ClipFetchArticleResult:
+    """Server fetch (SSRF-pinned) + extraction + sanitization preview."""
+    article = await fetch_extract_sanitize(payload.url)
+    return ClipFetchArticleResult(
+        url=payload.url,
+        finalUrl=article.final_url,
+        title=article.title,
+        byline=article.byline,
+        contentHtml=article.content_html,
+        contentText=article.content_text,
+    )
 
 
 @router.post("/api/v1/library/clips", response_model=ClipDetail, status_code=201)
-async def create_clip(payload: ClipCreate, request: Request) -> ClipDetail:
+async def create_clip(payload: ClipCreateRequest, request: Request) -> ClipDetail:
+    """Create a clip from a URL confirmation.
+
+    Security contract (P0-03): ALL content is re-derived server-side by
+    fetching ``finalUrl`` (the page the user confirmed in the preview)
+    or ``url``. Client-supplied title/byline/contentHtml/contentText/
+    fetchedAt are ignored by design; what gets stored comes only from
+    the server's own fetch → extract → sanitize pipeline, and the URL
+    recorded is the FINAL url after redirects.
+    """
     store: ClipStore = _get_clip_store(request)
+    target = payload.finalUrl or payload.url
+    article = await fetch_extract_sanitize(target)
     view, _created = await store.create_clip(
-        url=payload.url,
-        title=payload.title,
-        content_html=payload.contentHtml,
-        content_text=payload.contentText,
-        byline=payload.byline,
-        fetched_at=payload.fetchedAt,
+        url=article.final_url,
+        title=article.title,
+        content_html=article.content_html,
+        content_text=article.content_text,
+        byline=article.byline,
+        fetched_at=None,
     )
     return ClipDetail(
         ref=view.ref,
@@ -115,6 +137,9 @@ async def delete_clip(item_uuid: str, request: Request) -> Response:
     deleted = await store.delete_clip(item_uuid)
     if not deleted:
         raise ClipNotFound(item_uuid)
+    from ..deps import _rag_mark_stale
+
+    await _rag_mark_stale(request, [f"library:{item_uuid}"])
     return Response(status_code=204)
 
 

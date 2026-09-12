@@ -22,6 +22,16 @@ __INTERNAL_TOKEN_DIRECTIVE__
 		}
 	}
 
+	# Generated feeds (API sources, mail bridge). FreshRSS subscribes over
+	# the docker network directly; this route lets a BROWSER verify the
+	# feed through Caddy too (secret-in-URL still applies; site auth
+	# protects it in this mode).
+	handle /feeds/* {
+		reverse_proxy bff:8000 {
+__INTERNAL_TOKEN_DIRECTIVE__
+		}
+	}
+
 	# Single-user access control. The hash must be a bcrypt hash generated
 	# with `docker run --rm caddy:2-alpine caddy hash-password`.
 	basic_auth {

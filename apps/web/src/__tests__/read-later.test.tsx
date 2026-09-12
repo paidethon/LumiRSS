@@ -1,33 +1,44 @@
-/** Read Later 专项测试 — 0011 修正补充（§12/§26/§41）。
+/** Read Later 专项测试 — P0-01 服务端时间线版（wave 2 重写）。
  *
- * - store：set/toggle 语义、幂等、持久化、损坏 JSON 降级；
- * - useToggleReadLater：三入口共享同一状态（List/Reader/卡片）；
- * - EntryList read-later 视图：客户端过滤（加入不移除/移除立即消失）；
- * - Sidebar：稍后读入口 active 态；EntryRow/ReaderHeader 动作按钮。 */
+ * 旧行为（客户端 view=all 拉全量 + 本地过滤 + localStorage 双写 +
+ * once-only 对账）已删除；本文件断言新契约：
+ * - 稍后读视图 = GET /workspaces/read-later/timeline（server-driven、
+ *   cursor 分页、悬挂成员 stale 行可见而非消失）；
+ * - toggle = POST/DELETE /workspaces/read-later/items（mutation 承载：
+ *   乐观更新 + 失败回滚 + 诚实错误）；
+ * - Clock 激活态真源 = GET /workspaces/read-later/items（服务端成员
+ *   清单 + 在途 mutation 乐观覆盖）；localStorage 不再参与。 */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EntryListResponse, EntryListItem } from '../api/types'
-import { useReaderUi } from '../store/reader-ui'
-import { useReadLater } from '../store/read-later'
+import type { ReactNode } from 'react'
 import EntryList from '../components/EntryList'
+import EntryRow from '../components/EntryRow'
 import ReaderHeader from '../components/ReaderHeader'
+import { useReaderUi } from '../store/reader-ui'
 
 const FEEDS = [{ title: '示例源 A', feedUrl: 'https://a.example.com/feed.xml', category: null }]
 
-function item(ref: string, over: Partial<EntryListItem> = {}): EntryListItem {
+function entryCard(ref: string) {
   return {
     entryRef: ref,
     title: `文章 ${ref}`,
     feedTitle: '示例源 A',
+    feedUrl: 'https://a.example.com/feed.xml',
     author: null,
     url: null,
     publishedAt: '2026-08-30T00:00:00Z',
     read: false,
     starred: false,
-    ...over,
+    snippet: '',
+    matchedFields: [],
   }
+}
+
+/** 时间线行：entry 卡片或 stale（悬挂成员）。 */
+function timelineRow(itemRef: string, over: Record<string, unknown> = {}) {
+  return { itemRef, addedAt: '2026-09-01T08:00:00Z', stale: false, entry: entryCard(itemRef.slice(4)), ...over }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -37,32 +48,61 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-/** entries mock：两页（page1 两篇 + cursor，page2 两篇） */
-function mockApi() {
-  let call = 0
-  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+/** fetch mock 路由：时间线 / 成员清单 / 增删。通过闭包 state 控制
+ * 服务端「真值」，mutation 成功时同步更新（模拟服务端提交）。 */
+function mockApi(initial: { refs: string[] }) {
+  const state = { refs: [...initial.refs] }
+  const impl = (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url.startsWith('/api/v1/feeds')) return jsonResponse(FEEDS)
-    if (url.startsWith('/api/v1/entries')) {
-      call += 1
-      const body: EntryListResponse =
-        call === 1
-          ? { items: [item('e1.a'), item('e1.b')], nextCursor: 'c1.next' }
-          : { items: [item('e1.c'), item('e1.d')], nextCursor: null }
-      return jsonResponse(body)
+    const method = init?.method ?? 'GET'
+    if (url.startsWith('/api/v1/feeds')) return Promise.resolve(jsonResponse(FEEDS))
+    if (url.startsWith('/api/v1/workspaces/read-later/timeline')) {
+      return Promise.resolve(
+        jsonResponse({
+          items: state.refs.map((ref) =>
+            timelineRow(ref, ref === 'rss:e1.stale' ? { stale: true, entry: null } : {}),
+          ),
+          nextCursor: null,
+        }),
+      )
     }
-    throw new Error(`unexpected fetch: ${url}`)
-  })
+    if (url.startsWith('/api/v1/workspaces/read-later/items')) {
+      // DELETE 走路径参数：/items/rss%3Ae1.a（removeWorkspaceItem 契约）
+      const pathMatch = url.match(/^\/api\/v1\/workspaces\/read-later\/items\/(.+)$/)
+      if (pathMatch !== null && method === 'DELETE') {
+        const removed = decodeURIComponent(pathMatch[1])
+        state.refs = state.refs.filter((r) => r !== removed)
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (method === 'GET') {
+        return Promise.resolve(
+          jsonResponse({
+            items: state.refs.map((itemRef, index) => ({
+              itemRef,
+              addedAt: '2026-09-01T08:00:00Z',
+              position: index,
+            })),
+          }),
+        )
+      }
+      if (method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { itemRef?: string }
+        if (body.itemRef !== undefined) state.refs.push(body.itemRef)
+        return Promise.resolve(jsonResponse({ itemRef: body.itemRef, addedAt: '', position: 0 }, 201))
+      }
+    }
+    return Promise.reject(new Error(`unexpected fetch: ${method} ${url}`))
+  }
+  return Object.assign(vi.fn().mockImplementation(impl), { state })
 }
 
-function withProviders(ui: React.ReactNode) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function withProviders(ui: ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
 }
 
 beforeEach(() => {
   localStorage.clear()
-  useReadLater.setState({ items: [] })
   useReaderUi.setState({ section: 'home', view: 'read-later', scope: { kind: 'all' }, selectedEntryRef: null, mobileSidebarOpen: false })
   // jsdom 无 IntersectionObserver：stub 为空实现（无限滚动哨兵不触发自动拉页）
   vi.stubGlobal(
@@ -80,139 +120,161 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('read-later store（§12/§36）', () => {
-  it('setReadLater：加入（头部）/移除/幂等；toggleReadLater 切换', () => {
-    const s = useReadLater.getState()
-    s.setReadLater('e1.a', true)
-    s.setReadLater('e1.b', true)
-    expect(useReadLater.getState().items.map((i) => i.entryRef)).toEqual(['e1.b', 'e1.a'])
-    // 幂等：重复 set true 不重复
-    s.setReadLater('e1.a', true)
-    expect(useReadLater.getState().items).toHaveLength(2)
-    // 移除
-    s.setReadLater('e1.b', false)
-    expect(useReadLater.getState().items.map((i) => i.entryRef)).toEqual(['e1.a'])
-    // toggle
-    expect(useReadLater.getState().toggleReadLater('e1.a')).toBe(false)
-    expect(useReadLater.getState().items).toHaveLength(0)
-  })
-
-  it('持久化 localStorage + 损坏 JSON 安全降级', () => {
-    useReadLater.getState().setReadLater('e1.persist', true)
-    expect(localStorage.getItem('lumirss-read-later')).toContain('e1.persist')
-    // 损坏数据：重新初始化模块级 load 不在此覆盖——用 setState 验证隔离
-    localStorage.setItem('lumirss-read-later', '{bad json')
-    expect(useReadLater.getState().isReadLater('e1.persist')).toBe(true) // 内存态不受影响
-  })
-
-  it('与 starred 独立：加入稍后读不改 starred（§28 由 API 字段分离承载）', () => {
-    useReadLater.getState().setReadLater('e1.a', true)
-    // starred 是服务端字段，本地 store 只存 readLater marker——无互斥逻辑
-    expect(useReadLater.getState().items).toHaveLength(1)
-  })
-})
-
-describe('useToggleReadLater 三入口共享（§24/§41）', () => {
-  it('EntryList 加入稍后读 → 列表过滤出现（同一 store 驱动）', async () => {
-    vi.stubGlobal('fetch', mockApi())
+describe('稍后读视图 = 服务端时间线（P0-01）', () => {
+  it('渲染 timeline 端点的行（不是 view=all 本地过滤）；列表头计数', async () => {
+    const api = mockApi({ refs: ['rss:e1.a', 'rss:e1.b'] })
+    vi.stubGlobal('fetch', api)
     render(withProviders(<EntryList />))
-    // read-later 视图初始为空（未加入任何条目）
-    expect(await screen.findByText('还没有稍后读的文章')).toBeInTheDocument()
-
-    // 组件外直接驱动 store（与共享 hook 同源；hook 版本在组件内验证）。
-    // act：让 zustand 订阅的组件在断言前完成重渲染
-    await act(async () => {
-      useReadLater.getState().setReadLater('e1.a', true)
-    })
-
-    // read-later 视图过滤出已加入条目（客户端过滤 §26；双渲染取多份）
+    // 行标题在桌面行 + 移动卡两份 DOM（CSS 分发）——用 getAllByText
     await waitFor(() => {
       expect(screen.getAllByText('文章 e1.a').length).toBeGreaterThan(0)
     })
-    expect(screen.queryByText('文章 e1.b')).toBeNull()
+    expect(screen.getAllByText('文章 e1.b').length).toBeGreaterThan(0)
+    // 列表头 h2：全部信息源 · 稍后读；计数 = 服务端返回行数
+    await screen.findByRole('heading', { name: /稍后读/ })
+    expect(screen.getByText(/已加载 2 条/)).toBeInTheDocument()
+    // 服务端时间线视图不再对 entries 全量端点发起请求
+    for (const call of api.mock.calls) {
+      expect(String(call[0])).not.toContain('/api/v1/entries')
+    }
   })
 
-  it('ReaderHeader Clock：未加入→「加入稍后读」；加入后→「从稍后读移除」', () => {
+  it('悬挂成员（stale）显式渲染为失效行 + 移除出口，不静默隐藏', async () => {
+    const api = mockApi({ refs: ['rss:e1.a', 'rss:e1.stale'] })
+    vi.stubGlobal('fetch', api)
+    render(withProviders(<EntryList />))
+    expect(await screen.findByText('条目已失效或不存在')).toBeInTheDocument()
+    expect(screen.getByText(/rss:e1.stale/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '从稍后读移除失效条目' })).toBeInTheDocument()
+  })
+
+  it('空时间线 → 稍后读空态', async () => {
+    const api = mockApi({ refs: [] })
+    vi.stubGlobal('fetch', api)
+    render(withProviders(<EntryList />))
+    expect(await screen.findByText('还没有稍后读的文章')).toBeInTheDocument()
+  })
+
+  it('localStorage 不再参与：toggle 后无 lumirss-read-later 双写', async () => {
+    const api = mockApi({ refs: [] })
+    vi.stubGlobal('fetch', api)
+    render(withProviders(<EntryList />))
+    await screen.findByText('还没有稍后读的文章')
+    expect(localStorage.getItem('lumirss-read-later')).toBeNull()
+  })
+})
+
+describe('稍后读 toggle（mutation：乐观 + 失败回滚 + 诚实错误）', () => {
+  it('移除：行立即消失（乐观），服务端收到 DELETE', async () => {
+    const api = mockApi({ refs: ['rss:e1.a'] })
+    vi.stubGlobal('fetch', api)
+    render(withProviders(<EntryList />))
+    await waitFor(() => {
+      expect(screen.getAllByText('文章 e1.a').length).toBeGreaterThan(0)
+    })
+    // Clock 激活态来自 refs 清单（异步到达）——等它翻到「已加入」再点击
+    const clocks = await screen.findAllByRole('button', { name: '从稍后读移除' })
+    fireEvent.click(clocks[0])
+    // 乐观：行立即从时间线消失（桌面行 + 移动卡双 DOM → 用 All 变体断言不存在）
+    await waitFor(() => expect(screen.queryAllByText('文章 e1.a')).toHaveLength(0))
+    // 服务端 DELETE 已发出（路径参数契约：/items/<encoded ref>）
+    await waitFor(() => {
+      expect(api.mock.calls.some(([u, init]) => String(u).endsWith('/read-later/items/rss%3Ae1.a') && init?.method === 'DELETE')).toBe(true)
+    })
+    // 失效重取后服务端真值一致（行保持消失）
+    expect(api.state.refs).toHaveLength(0)
+  })
+
+  it('失败：乐观移除回滚（行保留）+ 错误诚实透出', async () => {
+    const api = mockApi({ refs: ['rss:e1.a'] })
+    vi.stubGlobal('fetch', api)
+    // 让 DELETE 返回 500（移除失败）
+    const origImpl = api.getMockImplementation()
+    api.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/workspaces/read-later/items') && init?.method === 'DELETE') {
+        return Promise.resolve(
+          jsonResponse({ error: { type: 'workspace_write_failed', message: '服务端写入失败' } }, 500),
+        )
+      }
+      return origImpl?.(input, init) ?? Promise.reject(new Error('no impl'))
+    })
+    render(withProviders(<EntryList />))
+    await waitFor(() => {
+      expect(screen.getAllByText('文章 e1.a').length).toBeGreaterThan(0)
+    })
+    // Clock 激活态来自 refs 清单（异步到达）——等它翻到「已加入」再点击
+    const clocks = await screen.findAllByRole('button', { name: '从稍后读移除' })
+    fireEvent.click(clocks[0])
+    // 回滚：行重新可见（不假装成功）
+    await waitFor(() => {
+      expect(screen.getAllByText('文章 e1.a').length).toBeGreaterThan(0)
+    })
+    // 诚实错误（列表级 alert：乐观移除会卸载行组件，错误态由共享 cache 承载）
+    expect(await screen.findByText(/稍后读操作失败：服务端写入失败/)).toBeInTheDocument()
+  })
+
+  it('加入（组件外驱动同源 hook）：POST /workspaces/read-later/items', async () => {
+    const api = mockApi({ refs: [] })
+    vi.stubGlobal('fetch', api)
+    render(withProviders(<EntryRow item={{
+      entryRef: 'e1.a',
+      title: '文章 e1.a',
+      feedTitle: '示例源 A',
+      author: null,
+      url: null,
+      publishedAt: '2026-08-30T00:00:00Z',
+      read: false,
+      starred: false,
+    }} selected={false} />))
+
+    const clock = await screen.findByRole('button', { name: '加入稍后读' })
+    expect(clock).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(clock)
+    // 乐观翻转（mutation variables 覆盖，未落库前展示目标值）
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '从稍后读移除' })).toHaveAttribute('aria-pressed', 'true')
+    })
+    await waitFor(() => {
+      expect(
+        api.mock.calls.some(([u, init]) => String(u).endsWith('/read-later/items') && init?.method === 'POST'),
+      ).toBe(true)
+    })
+  })
+})
+
+describe('ReaderHeader Clock（服务端成员清单真源）', () => {
+  it('成员清单命中 → 「从稍后读移除」；未命中 → 「加入稍后读」', async () => {
+    const api = mockApi({ refs: ['rss:e1.a'] })
+    vi.stubGlobal('fetch', api)
     const detail = {
       entryRef: 'e1.a', title: '文章', feedTitle: '源', author: null,
       url: null, publishedAt: null, read: false, starred: false,
       contentText: '', contentHtml: null,
     }
-    const { rerender } = render(withProviders(<ReaderHeader detail={detail} />))
-    expect(screen.getByRole('button', { name: '加入稍后读' })).toBeInTheDocument()
+    render(withProviders(<ReaderHeader detail={detail} />))
+    // refs 清单加载完成前不假装未加入（本例 e1.a 在清单里）
+    await waitFor(
+      () => {
+        expect(screen.getAllByRole('button', { name: '从稍后读移除' }).length).toBeGreaterThan(0)
+      },
+      { timeout: 3000 },
+    )
 
-    useReadLater.getState().toggleReadLater('e1.a')
-    rerender(withProviders(<ReaderHeader detail={detail} />))
-    expect(screen.getByRole('button', { name: '从稍后读移除' })).toBeInTheDocument()
-  })
-})
-
-describe('read-later 视图客户端过滤（§26/§41）', () => {
-  it('移除稍后读 → 条目立即从列表消失；翻页后新命中条目自动出现', async () => {
-    // 预置：a、c 已加入（c 在第二页）
-    useReadLater.setState({ items: [
-      { entryRef: 'e1.c', addedAt: 2 },
-      { entryRef: 'e1.a', addedAt: 1 },
-    ] })
-    vi.stubGlobal('fetch', mockApi())
-    render(withProviders(<EntryList />))
-
-    // 第一页只有 a 命中（c 未加载；双渲染取多份）
-    expect((await screen.findAllByText('文章 e1.a')).length).toBeGreaterThan(0)
-    expect(screen.queryByText('文章 e1.b')).toBeNull()
-
-    // 移除 a → 立即消失（§26）
+    // 组件外驱动 toggle（同一 mutation 语义）：乐观翻转到未加入
     await act(async () => {
-      useReadLater.getState().toggleReadLater('e1.a')
+      fireEvent.click(screen.getByRole('button', { name: '从稍后读移除' }))
     })
     await waitFor(() => {
-      expect(screen.queryByText('文章 e1.a')).toBeNull()
-    })
-
-    // 触发翻页（无限滚动哨兵逻辑在浏览器验证；这里直接调用 fetchNextPage
-    // 等价路径——通过 mock 第二页返回后 c 出现）
-    // jsdom 无真实滚动：用 store 加入 b 验证已加载条目实时过滤
-    await act(async () => {
-      useReadLater.getState().toggleReadLater('e1.b')
-    })
-    await waitFor(() => {
-      expect(screen.getAllByText('文章 e1.b').length).toBeGreaterThan(0)
-    })
-  })
-
-  it('视图标题与计数：read-later 桌面列表头显示 scope+视图后缀', async () => {
-    vi.stubGlobal('fetch', mockApi())
-    render(withProviders(<EntryList />))
-    // 列表头 h2：全部信息源 · 稍后读（§23 桌面版；文字拆在 span 里用 heading 查）
-    await screen.findByRole('heading', { name: /稍后读/ })
-    expect(screen.getByText(/已加载 0 条/)).toBeInTheDocument()
-  })
-})
-
-describe('EntryRow 动作按钮行为（§41）', () => {
-  it('点击稍后读按钮 → aria-pressed 切换（乐观本地 + 服务端工作区双写）', async () => {
-    const EntryRow = (await import('../components/EntryRow')).default
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }))
-    vi.stubGlobal('fetch', fetchMock)
-    render(withProviders(<EntryRow item={item('e1.a')} selected={false} />))
-
-    const clock = screen.getByRole('button', { name: '加入稍后读' })
-    expect(clock).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(clock)
-    expect(screen.getByRole('button', { name: '从稍后读移除' })).toHaveAttribute('aria-pressed', 'true')
-    // phase2 M1：真源是服务端保留工作区 read-later——乐观更新之外必须发起
-    // 幂等 add（服务端按 (workspace, ref) 去重）。
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/workspaces/read-later/items',
-        expect.objectContaining({ method: 'POST' }),
-      )
+      expect(screen.getByRole('button', { name: '加入稍后读' })).toBeInTheDocument()
     })
   })
 })
 
 describe('Sidebar 稍后读入口（§30）', () => {
   it('工作区含稍后读（Clock）+ 收藏；稍后读入口 active 态', async () => {
+    const api = mockApi({ refs: [] })
+    vi.stubGlobal('fetch', api)
     const Sidebar = (await import('../components/Sidebar')).default
     render(withProviders(<Sidebar />))
     const rl = screen.getByRole('button', { name: '稍后读' })

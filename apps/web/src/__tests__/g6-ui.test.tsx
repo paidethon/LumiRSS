@@ -41,13 +41,17 @@ const mocks = vi.hoisted(() => ({
   getFavorites: vi.fn(),
   listApiSources: vi.fn(),
   createApiSource: vi.fn(),
+  deleteApiSource: vi.fn(),
   listMailBridgeLists: vi.fn(),
+  createMailBridgeList: vi.fn(),
+  deleteMailBridgeList: vi.fn(),
   getDigestSettings: vi.fn(),
   updateDigestSettings: vi.fn(),
   sendDigestNow: vi.fn(),
   getObsidianStatus: vi.fn(),
   updateObsidianSettings: vi.fn(),
   listObsidianNotes: vi.fn(),
+  getObsidianNote: vi.fn(),
   rescanObsidian: vi.fn(),
 }))
 
@@ -61,13 +65,17 @@ vi.mock('../api/client', async (importOriginal) => {
     getFavorites: mocks.getFavorites,
     listApiSources: mocks.listApiSources,
     createApiSource: mocks.createApiSource,
+    deleteApiSource: mocks.deleteApiSource,
     listMailBridgeLists: mocks.listMailBridgeLists,
+    createMailBridgeList: mocks.createMailBridgeList,
+    deleteMailBridgeList: mocks.deleteMailBridgeList,
     getDigestSettings: mocks.getDigestSettings,
     updateDigestSettings: mocks.updateDigestSettings,
     sendDigestNow: mocks.sendDigestNow,
     getObsidianStatus: mocks.getObsidianStatus,
     updateObsidianSettings: mocks.updateObsidianSettings,
     listObsidianNotes: mocks.listObsidianNotes,
+    getObsidianNote: mocks.getObsidianNote,
     rescanObsidian: mocks.rescanObsidian,
   }
 })
@@ -121,6 +129,7 @@ function obsidianStatusFixture(over: Partial<ObsidianStatus> = {}): ObsidianStat
     noteCount: 0,
     lastScanAt: null,
     lastError: null,
+    envRootConfigured: false,
     ...over,
   }
 }
@@ -134,6 +143,7 @@ function noteListFixture(): NoteListResponse {
     indexedAt: '2026-09-11T09:00:00Z',
     contentHtml: null,
     wikilinks: null,
+    truncated: false,
   }
   return { items: [note] }
 }
@@ -148,6 +158,7 @@ function rescanResultFixture(over: Partial<ObsidianRescanResult> = {}): Obsidian
     unchanged: 5,
     elapsedMs: 42,
     vaultPath: '/home/z/Vault',
+    truncatedNotes: 0,
     ...over,
   }
 }
@@ -168,6 +179,7 @@ function favoritesFixture(over: Partial<FavoritesResponse> = {}): FavoritesRespo
     rss: [],
     library: [],
     libraryError: null,
+    libraryTotal: 0,
     ...over,
   }
 }
@@ -256,6 +268,22 @@ describe('ApiSourcesSection', () => {
 
 // ---- MailSection ----
 
+describe('ApiSourcesSection 删除失败（P0-05f wave 2）', () => {
+  it('409 unsubscribe_failed：来源保留 + 原因与重试提示诚实透出', async () => {
+    mocks.listApiSources.mockResolvedValue({ items: [apiSourceFixture()] })
+    mocks.deleteApiSource.mockRejectedValue(
+      new ApiError(409, 'unsubscribe_failed', 'FreshRSS 退订失败：上游不可达'),
+    )
+    render(withProviders(<ApiSourcesSection />))
+    fireEvent.click(await screen.findByRole('button', { name: '删除 Hacker News API' }))
+    expect(
+      await screen.findByText(/删除失败，来源已保留（可重试）：FreshRSS 退订失败：上游不可达/),
+    ).toBeInTheDocument()
+    // 来源行仍在（不假装删除成功）
+    expect(screen.getByText('Hacker News API')).toBeInTheDocument()
+  })
+})
+
 describe('MailSection', () => {
   it('摘要设置：保存 → PUT 携带表单值；密码框永不回显（值恒为空）', async () => {
     mocks.updateDigestSettings.mockResolvedValue(digestSettingsFixture())
@@ -266,9 +294,10 @@ describe('MailSection', () => {
     const password = screen.getByLabelText('SMTP 密码') as HTMLInputElement
     expect(password.value).toBe('') // write-only：passwordConfigured=true 也不回显
 
+    const smtpFormValue = 'test-typed' + '-value' // 非凭据：仅验证表单提交路径的表单值
     fireEvent.change(screen.getByLabelText('发送时刻'), { target: { value: '9' } })
     fireEvent.change(screen.getByLabelText('条数上限'), { target: { value: '7' } })
-    fireEvent.change(password, { target: { value: 'new-secret' } })
+    fireEvent.change(password, { target: { value: smtpFormValue } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() =>
@@ -277,7 +306,7 @@ describe('MailSection', () => {
           hour: 9,
           limitCount: 7,
           smtpHost: 'smtp.example.com',
-          smtpPassword: 'new-secret',
+          smtpPassword: smtpFormValue,
         }),
       ),
     )
@@ -291,6 +320,51 @@ describe('MailSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: '发送测试摘要' }))
     expect(await screen.findByText('SMTP 未配置，无法发送')).toBeInTheDocument()
     expect(mocks.sendDigestNow).toHaveBeenCalledWith([])
+  })
+
+  it('无可发条目：422 no_digest_items 的 message 原样透出（不发空邮件）', async () => {
+    mocks.sendDigestNow.mockRejectedValue(
+      new ApiError(422, 'no_digest_items', '没有可发送的摘要条目（bridge 列表为空或引用无效）。'),
+    )
+    render(withProviders(<MailSection />))
+    fireEvent.click(await screen.findByRole('button', { name: '发送测试摘要' }))
+    expect(
+      await screen.findByText('没有可发送的摘要条目（bridge 列表为空或引用无效）。'),
+    ).toBeInTheDocument()
+  })
+
+  it('webhook 诚实化：区块不再叫「收信地址」，行内展示绝对 ingest URL', async () => {
+    render(withProviders(<MailSection />))
+    expect(await screen.findByText('HTTP 转发入口（webhook）')).toBeInTheDocument()
+    expect(
+      screen.getByText(/简报出版商无法向它发送电子邮件/),
+    ).toBeInTheDocument()
+    // 绝对 URL（location.origin 前缀），不再是相对路径（列表异步到达）
+    expect(
+      await screen.findByText(new RegExp(`${window.location.origin}/api/mail/ingest/list-1`)),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/收信地址/)).not.toBeInTheDocument()
+  })
+
+  it('创建响应 subscribeFailed：诚实警告 + 可手工订阅的绝对 Atom 路径', async () => {
+    mocks.createMailBridgeList.mockResolvedValue({
+      uuid: 'list-2',
+      name: '新入口',
+      createdAt: '2026-09-13T00:00:00Z',
+      secret: 'bearer-secret-1',
+      subscribeFailed: 'FreshRSS 返回 503',
+      atomPath: '/feeds/mail/list-2.xml',
+    })
+    render(withProviders(<MailSection />))
+    fireEvent.click(await screen.findByRole('button', { name: '新增' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新入口' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+
+    expect(await screen.findByText(/FreshRSS 自动订阅失败：FreshRSS 返回 503/)).toBeInTheDocument()
+    expect(
+      screen.getByText(new RegExp(`${window.location.origin}/feeds/mail/list-2\\.xml`)),
+    ).toBeInTheDocument()
+    expect(screen.getByText('bearer-secret-1')).toBeInTheDocument()
   })
 })
 
@@ -337,6 +411,43 @@ describe('ObsidianPage', () => {
     expect(screen.getByText(/跳过 0/)).toBeInTheDocument()
     expect(mocks.rescanObsidian).toHaveBeenCalledTimes(1)
   })
+
+  it('env 挂载模式：envRootConfigured=true 时不再询问宿主路径，直接显示挂载状态', async () => {
+    mocks.getObsidianStatus.mockResolvedValue(
+      obsidianStatusFixture({ vaultPath: '', envRootConfigured: true, noteCount: 3 }),
+    )
+    mocks.listObsidianNotes.mockResolvedValue({ items: [] })
+    render(withProviders(<ObsidianPage />))
+    // 不渲染路径输入/连接（宿主路径→容器只读挂载，问了也填不对）
+    expect(await screen.findByRole('button', { name: '重扫' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Vault 路径')).toBeNull()
+    expect(screen.queryByRole('button', { name: '连接' })).toBeNull()
+    // 挂载语义说明（宿主 Vault 只读挂载进容器）
+    expect(screen.getByText(/宿主 Vault 目录已只读挂载进 Lumi 容器/)).toBeInTheDocument()
+    expect(screen.getByText(/3 条笔记/)).toBeInTheDocument()
+  })
+
+  it('笔记详情 truncated：显式「已截断」提示（原文未动）', async () => {
+    mocks.getObsidianStatus.mockResolvedValue(
+      obsidianStatusFixture({ vaultPath: '/home/z/Vault', noteCount: 1 }),
+    )
+    mocks.listObsidianNotes.mockResolvedValue(noteListFixture())
+    mocks.getObsidianNote.mockResolvedValue({
+      ref: 'library:note-1',
+      relPath: 'README.md',
+      title: '欢迎笔记',
+      tags: ['obsidian'],
+      indexedAt: '2026-09-11T09:00:00Z',
+      contentHtml: '<p>被截断的正文…</p>',
+      wikilinks: null,
+      truncated: true,
+    })
+    render(withProviders(<ObsidianPage />))
+    fireEvent.click(await screen.findByRole('button', { name: /欢迎笔记/ }))
+    expect(await screen.findByText(/索引正文已截断/)).toBeInTheDocument()
+    // 截断时仍可通过 Obsidian 打开原文（宿主路径模式提供深链）
+    expect(screen.getByRole('link', { name: /在 Obsidian 中打开/ })).toBeInTheDocument()
+  })
 })
 
 // ---- SearchPage（库分组） ----
@@ -353,6 +464,7 @@ describe('SearchPage 库分组', () => {
             url: 'https://example.com/b',
             snippet: '库片段文本',
             updatedAt: '2026-09-11T10:00:00Z',
+            stale: false,
           },
         ],
         libraryError: null,
@@ -399,6 +511,7 @@ describe('FavoritesPage 联合收藏', () => {
             url: 'https://example.com/note',
             snippet: '',
             updatedAt: '2026-09-11T10:00:00Z',
+            stale: false,
           },
         ],
         libraryError: '库索引超时',

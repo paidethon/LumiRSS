@@ -29,7 +29,13 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionNotFound,
 )
 from lumirss.agent import AgentProviderUnavailable
-from lumirss.agent_store import ApprovalInvalid, ToolDenied
+from lumirss.agent_store import (
+    ApprovalInvalid,
+    NoActiveRun,
+    PendingApprovalBlocked,
+    ThreadNotFound,
+    ToolDenied,
+)
 from lumirss.ai_profiles import (
     AiProfileNotFound,
 )
@@ -76,6 +82,7 @@ from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
+from lumirss.favorites import FavoriteInvalid
 from lumirss.feed_preview import (
     FeedFetchError,
     FeedTooLarge,
@@ -99,7 +106,12 @@ from lumirss.mail_digest import (
 )
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
-from lumirss.obsidian import VaultPermissionDenied, VaultUnreachable
+from lumirss.obsidian import (
+    NoteNotFound,
+    VaultPermissionDenied,
+    VaultRootLocked,
+    VaultUnreachable,
+)
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
@@ -130,6 +142,7 @@ from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
 )
+from lumirss.sources import ItemRefUnresolvable
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
@@ -226,6 +239,8 @@ _ERROR_RESPONSES = {
     BookmarkInvalid: (400, "invalid_bookmark"),
     BookmarkNotFound: (404, "bookmark_not_found"),
     InvalidItemRef: (400, "invalid_item_ref"),
+    ItemRefUnresolvable: (422, "item_ref_unresolvable"),
+    FavoriteInvalid: (400, "invalid_favorite"),
     WorkspaceInvalid: (400, "invalid_workspace"),
     WorkspaceNotFound: (404, "workspace_not_found"),
     ReservedWorkspaceError: (409, "reserved_workspace"),
@@ -253,6 +268,8 @@ _ERROR_RESPONSES = {
     # phase2 G6 obsidian
     VaultUnreachable: (503, "vault_unreachable"),
     VaultPermissionDenied: (403, "vault_permission_denied"),
+    NoteNotFound: (404, "note_not_found"),
+    VaultRootLocked: (409, "vault_root_locked"),
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
@@ -262,6 +279,10 @@ _ERROR_RESPONSES = {
     # phase2 G8 tags
     TagInvalid: (400, "invalid_tag"),
     TagNotFound: (404, "tag_not_found"),
+    # phase2 recovery P0-08 (agent run lifecycle)
+    ThreadNotFound: (404, "thread_not_found"),
+    PendingApprovalBlocked: (409, "pending_approval"),
+    NoActiveRun: (409, "no_active_run"),
 }
 
 
@@ -334,6 +355,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(BookmarkInvalid)
     @app.exception_handler(BookmarkNotFound)
     @app.exception_handler(InvalidItemRef)
+    @app.exception_handler(ItemRefUnresolvable)
+    @app.exception_handler(FavoriteInvalid)
     @app.exception_handler(WorkspaceInvalid)
     @app.exception_handler(WorkspaceNotFound)
     @app.exception_handler(ReservedWorkspaceError)
@@ -357,6 +380,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ImapNotConfigured)
     @app.exception_handler(VaultUnreachable)
     @app.exception_handler(VaultPermissionDenied)
+    @app.exception_handler(NoteNotFound)
+    @app.exception_handler(VaultRootLocked)
     @app.exception_handler(RagModelUnavailable)
     @app.exception_handler(RagRebuildBusy)
     @app.exception_handler(AgentProviderUnavailable)
@@ -364,6 +389,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApprovalInvalid)
     @app.exception_handler(TagInvalid)
     @app.exception_handler(TagNotFound)
+    @app.exception_handler(ThreadNotFound)
+    @app.exception_handler(PendingApprovalBlocked)
+    @app.exception_handler(NoActiveRun)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

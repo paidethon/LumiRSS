@@ -1,21 +1,24 @@
-"""Web clip store (phase2 M2) — Lumi-owned extracted article content.
+"""Web clip store (phase2 M2, recovery P0-03) — server-derived content.
 
 A clip is a full LibraryItem (kind='clip'): the one kind that carries an
-article body inside Lumi SQLite. The body arrives already extracted and
-sanitized by the web client (Defuddle/Readability + DOMPurify — the
-browser DOMPurify pass is the architecture's final render boundary);
-the server re-validates structure, length and url scheme but never
-re-fetches here. Every write keeps the search_library projection in
-sync. All SQL is single-line inline literals with bound params.
+article body inside Lumi SQLite. Since the phase2 recovery the body is
+produced by the server-side pipeline (fetch → extract → sanitize, see
+clip_fetch.fetch_extract_sanitize) — the create API no longer accepts or
+stores client-submitted HTML. Every multi-row write (library_items +
+library_clips + the search_library projection) runs in ONE transaction
+(db_tx.transaction) so a crash can never leave an orphan identity row or
+an unsearchable clip. All SQL is single-line inline literals with bound
+params; no UPSERT syntax (explicit SELECT-then-INSERT/UPDATE).
 """
 
+import json
 import sqlite3
 from dataclasses import dataclass
-from typing import Any
 
 from lumirss.clip_fetch import ClipForbidden
+from lumirss.db_tx import transaction
 from lumirss.itemref import new_library_uuid
-from lumirss.search_library import LibrarySearchWriter
+from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -49,8 +52,8 @@ class ClipView:
     fetched_at: str
     created_at: str
 
-    def to_dict(self, *, with_content: bool = False) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_dict(self, *, with_content: bool = False) -> dict:
+        payload = {
             "ref": self.ref,
             "url": self.url,
             "title": self.title,
@@ -69,7 +72,6 @@ class ClipStore:
 
     def __init__(self, db: Database) -> None:
         self._db = db
-        self._search = LibrarySearchWriter(db)
 
     async def create_clip(
         self,
@@ -81,24 +83,26 @@ class ClipStore:
         byline: str | None = None,
         fetched_at: str | None = None,
     ) -> tuple[ClipView, bool]:
-        """Create a clip; duplicate urls converge on the unique index."""
+        """Store server-derived clip content; duplicate urls converge."""
+        await self._db.migrate()
         clean_url = _validate_url(url)
         clean_title = _validate_title(title)
         clean_html = _validate_html(content_html)
         clean_text = _validate_text(content_text)
         clean_byline = _validate_byline(byline)
         now = utc_now()
+        fetched = fetched_at or now
         existing = await self._find_by_url(clean_url)
         if existing is not None:
             return existing, False
         item_uuid = new_library_uuid()
-        await self._db.migrate()
-        try:
-            await self._db.execute(
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            conn.execute(
                 "INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'clip', ?)",
                 (item_uuid, now),
             )
-            await self._db.execute(
+            conn.execute(
                 "INSERT INTO library_clips (item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     item_uuid,
@@ -107,10 +111,27 @@ class ClipStore:
                     clean_byline,
                     clean_html,
                     clean_text,
-                    fetched_at or now,
+                    fetched,
                     now,
                 ),
             )
+            ref = f"library:{item_uuid}"
+            row = conn.execute(
+                "SELECT ref FROM search_library WHERE ref = ?", (ref,)
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO search_library (ref, kind, title, body, url, updated_at) VALUES (?, 'clip', ?, ?, ?, ?)",
+                    (ref, clean_title, clean_text[:4000], clean_url, now),
+                )
+            else:
+                conn.execute(
+                    "UPDATE search_library SET kind = 'clip', title = ?, body = ?, url = ?, updated_at = ? WHERE ref = ?",
+                    (clean_title, clean_text[:4000], clean_url, now, ref),
+                )
+
+        try:
+            await transaction(self._db, _tx)
         except sqlite3.IntegrityError:
             existing = await self._find_by_url(clean_url)
             if existing is None:
@@ -118,13 +139,6 @@ class ClipStore:
             return existing, False
         view = await self.get_clip(item_uuid)
         assert view is not None
-        await self._search.upsert(
-            ref=view.ref,
-            kind="clip",
-            title=view.title,
-            body=view.content_text[:4000],
-            url=view.url,
-        )
         return view, True
 
     async def get_clip(self, item_uuid: str) -> ClipView | None:
@@ -135,12 +149,23 @@ class ClipStore:
         return _clip_from_row(row)
 
     async def delete_clip(self, item_uuid: str) -> bool:
-        row = await self._db.fetch_one("SELECT uuid FROM library_items WHERE uuid = ? AND kind = 'clip'", (item_uuid,))
-        if row is None:
-            return False
-        await self._db.execute("DELETE FROM library_items WHERE uuid = ?", (item_uuid,))
-        await self._search.delete(f"library:{item_uuid}")
-        return True
+        """Delete the identity row (cascades the clip) + projection atomically."""
+        await self._db.migrate()
+
+        def _tx(conn: sqlite3.Connection) -> bool:
+            cursor = conn.execute(
+                "DELETE FROM library_items WHERE uuid = ? AND kind = 'clip'",
+                (item_uuid,),
+            )
+            if cursor.rowcount == 0:
+                return False
+            conn.execute(
+                "DELETE FROM search_library WHERE ref = ?",
+                (f"library:{item_uuid}",),
+            )
+            return True
+
+        return await transaction(self._db, _tx)
 
     async def list_clips(
         self,
@@ -228,6 +253,8 @@ def _validate_byline(byline: str | None) -> str | None:
 
 
 def _validate_html(content_html: str) -> str:
+    """Server-sanitized content only: length-checked, never re-cleaned
+    here (the sanitizer in article_sanitize is the cleaning authority)."""
     if not isinstance(content_html, str) or not content_html.strip():
         raise ClipInvalid("Clip contentHtml must not be empty.")
     if len(content_html.encode("utf-8")) > _MAX_HTML_BYTES:
@@ -241,11 +268,6 @@ def _validate_text(content_text: str) -> str:
     if len(content_text.encode("utf-8")) > _MAX_TEXT_BYTES:
         raise ClipInvalid("Clip contentText exceeds the 512KB limit.")
     return content_text
-
-
-import json  # noqa: E402  (cursor helpers, kept next to their users)
-
-from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref  # noqa: E402
 
 
 def _encode_cursor(created_at: str, item_uuid: str) -> str:

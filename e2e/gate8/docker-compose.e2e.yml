@@ -1,0 +1,121 @@
+# Gate 8 production-like E2E stack (phase2 recovery).
+#
+# Mirrors docker-compose.prod.yml topology (web/Caddy front, internal
+# bff/freshrss/rsshub) plus the local real dependencies the release gate
+# needs: Mailpit (SMTP+API), the controlled fixtures server, the
+# scripted OpenAI-compatible server, and the read-only Obsidian vault.
+#
+#   docker compose -f e2e/gate8/docker-compose.e2e.yml up -d --build
+#   e2e/gate8/run-smoke.sh up     # init + smoke
+#
+# Nothing here is published beyond 127.0.0.1. No real third parties:
+# mail goes to Mailpit, AI to the scripted server, sources to fixtures.
+
+name: lumirss-e2e
+
+services:
+  bff:
+    build:
+      context: ../../services/bff
+      args:
+        LUMIRSS_COMMIT: e2e
+    container_name: lumirss-e2e-bff
+    environment:
+      LUMIRSS_AUTH_MODE: session
+      LUMIRSS_SESSION_SECURE_COOKIES: "0"
+      LUMIRSS_INTERNAL_TOKEN: e2e-internal-token-0123456789abcdef
+      LUMIRSS_ATOM_BASE_URL: http://bff:8000
+      LUMIRSS_DB_PATH: /data/lumi.sqlite
+      LUMIRSS_DATA_DIR: /data
+      FRESHRSS_DATA_DIR: /freshrss-data
+      FRESHRSS_BASE_URL: http://freshrss
+      FRESHRSS_USERNAME: e2e
+      FRESHRSS_API_PASSWORD: e2e-api-password-123456
+      LUMIRSS_SEARCH_SYNC_INTERVAL: "5"
+      LUMIRSS_OBSIDIAN_VAULT_DIR: /vault
+      LUMIRSS_OBSIDIAN_SCAN_INTERVAL: "5"
+      # The fixtures server lives on the compose network (private by
+      # definition) — the operator allow-list is exactly the mechanism
+      # self-hosted internal sources (in-network RSSHub) use.
+      LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: fixtures
+    volumes:
+      - lumi-data:/data
+      - freshrss-data:/freshrss-data:ro
+      - ./fixtures/vault:/vault:ro
+    group_add:
+      - "33"
+    depends_on:
+      freshrss:
+        condition: service_started
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  web:
+    build: ../../apps/web
+    container_name: lumirss-e2e-web
+    environment:
+      # Plain HTTP on :80 for the E2E driver (no TLS provisioning locally).
+      DOMAIN: ":80"
+      LUMIRSS_INTERNAL_TOKEN: e2e-internal-token-0123456789abcdef
+      LUMIRSS_AUTH_MODE: session
+    ports:
+      - "127.0.0.1:8088:80"
+    depends_on:
+      bff:
+        condition: service_healthy
+
+  freshrss:
+    image: freshrss/freshrss:1.29.1
+    container_name: lumirss-e2e-freshrss
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - freshrss-data:/var/www/FreshRSS/data
+
+  rsshub:
+    image: diygod/rsshub@sha256:387fd32ee2d8789154dcf6446a52365976e768d9ede1a7c1e610cf4da9d89fbc
+    container_name: lumirss-e2e-rsshub
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+
+  mailpit:
+    # Local stdlib SMTP sink + HTTP inspector (e2e/gate8/mail_sink.py).
+    # Stands in for Mailpit so the stack stays pullable offline; same
+    # ports (SMTP 1025, HTTP API 8025).
+    image: python:3.12-slim
+    container_name: lumirss-e2e-mailpit
+    command: python /srv/mail_sink.py
+    volumes:
+      - ./mail_sink.py:/srv/mail_sink.py:ro
+    expose:
+      - "1025"
+      - "8025"
+
+  fixtures:
+    image: python:3.12-slim
+    container_name: lumirss-e2e-fixtures
+    working_dir: /srv
+    command: python -m http.server 80
+    volumes:
+      - ./fixtures:/srv:ro
+
+  ai:
+    image: python:3.12-slim
+    container_name: lumirss-e2e-ai
+    working_dir: /srv
+    command: python ai_server.py --port 8321
+    volumes:
+      - ./ai_server.py:/srv/ai_server.py:ro
+    expose:
+      - "8321"
+
+volumes:
+  freshrss-data:
+  lumi-data:

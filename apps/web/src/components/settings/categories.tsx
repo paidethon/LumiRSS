@@ -53,6 +53,8 @@ import { OperationsSettingsSection } from './OperationsSettingsSection'
 import { DataBackupSection } from './DataControlPage'
 // AI 设置（Profile + 用途分配 + 服务端密钥，真实可用）
 import { AiSettingsSection } from './AiSettingsPage'
+// P0-07/P0-12：语义检索（RAG）——启用 / 重建 / 状态（真实控制面）
+import { RagSettingsSection } from './RagSettingsSection'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/高级入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
 // phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
@@ -113,6 +115,14 @@ export const CATEGORIES: { id: CategoryId; label: string; icon: React.ReactNode 
  * 此映射供任何历史入口/书签式调用方安全降级到「数据控制」）。 */
 export function normalizeCategoryId(id: string): CategoryId {
   return id === ('backup' as CategoryId) ? 'data' : (id as CategoryId)
+}
+
+/** P0-12：字符串（导航深链/历史入口）→ 合法分类 id；未知值安全降级
+ * 为 'general'（绝不把非法 id 塞进组件 state 导致空分类页）。 */
+export function toCategoryId(id: string | undefined | null): CategoryId {
+  if (id == null) return 'general'
+  const normalized = normalizeCategoryId(id)
+  return CATEGORIES.some((c) => c.id === normalized) ? normalized : 'general'
 }
 
 /** 移动端设置首页的分组（Folo mobile SettingsList 分组模式，inspired）。 */
@@ -355,6 +365,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       return [
         { type: 'title', value: 'AI 配置' },
         { type: 'custom', node: <AiSettingsSection /> },
+        { type: 'title', value: '语义检索（RAG）' },
+        // P0-07：enableRag/rebuildRag/getRagStatus 的真实操作入口
+        // （此前只有 Agent 页只读 chip，queries.ts 注释兑现于此）。
+        { type: 'custom', node: <RagSettingsSection /> },
       ]
     case 'data':
       // 数据控制 = 缓存 / 设置 / 配置迁移 / 完整备份 / 备份历史 / WebDAV / 恢复
@@ -389,6 +403,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <OperationsSettingsSection /> },
       ]
     case 'workspace':
+      // P0-12：本分类不再是「占位」——Agent 工作台与工作区均已上线，
+      // 这里如实指路（不复制功能，只描述入口与现状）。
       return [
         {
           type: 'custom',
@@ -399,13 +415,14 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                 <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">
                   知识工作台
                 </h3>
-                <span className="ml-auto rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-                  规划中
+                <span className="ml-auto rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
+                  已上线
                 </span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                网页剪藏、API 来源、邮件简报与 Obsidian 库已按各自入口独立可用；
-                Agent 工作台将按真实需求逐项设计。本页为占位，无可用功能。
+                工作区（条目收集与整理）与 Agent 工作台（AI 会话 / 工具审批 /
+                RAG 状态）均已可用：入口在侧栏「工作区」与「Agent 工作台」。
+                网页剪藏、API 来源、邮件简报与 Obsidian 库也按各自入口独立可用。
               </p>
             </div>
           ),

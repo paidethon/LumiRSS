@@ -7,7 +7,7 @@
  * - GraphPage：节点/边摘要行 + truncated 截断提示；「显示为表格」
  *   语义 <table> 等价路径列出节点；标签 chips 渲染名称/数量；
  * - Sidebar / 折叠 Rail：Agent 工作台 / 标签 / 图谱 section 导航激活，
- *   API 来源 / 邮件简报保持 PlannedItem（aria-disabled）。
+ *   API 来源 / 邮件简报为真实入口（P0-12：设置深链，不再是 PlannedItem）。
  *
  * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）+
  * vi.mock('cytoscape')（jsdom 无 canvas；fake 只需 on/destroy）。
@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   listTags: vi.fn(),
   getGraph: vi.fn(),
   listWorkspaces: vi.fn(),
+  resolveItems: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -61,6 +62,7 @@ vi.mock('../api/client', async (importOriginal) => {
     listTags: mocks.listTags,
     getGraph: mocks.getGraph,
     listWorkspaces: mocks.listWorkspaces,
+    resolveItems: mocks.resolveItems,
   }
 })
 
@@ -138,6 +140,7 @@ function graphFixture(truncated = false): GraphResponse {
     ],
     truncated,
     totalNodes: 3,
+    returnedNodes: 3,
   }
 }
 
@@ -168,6 +171,60 @@ beforeEach(() => {
   mocks.listTags.mockResolvedValue(tagsFixture())
   mocks.getGraph.mockResolvedValue(graphFixture())
   mocks.listWorkspaces.mockResolvedValue(workspacesFixture())
+  mocks.resolveItems.mockResolvedValue({ items: [] })
+})
+
+// ---- wave 2：assistant 引用可点击（resolve → 统一打开路由） ----
+
+describe('Agent 引用可点击（wave 2）', () => {
+  it('citations 经 POST /api/v1/resolve 解析；解析命中的渲染为按钮，stale 渲染为失效纯文本', async () => {
+    mocks.listAgentThreads.mockResolvedValue({ items: [threadFixture('t1', '测试会话')] })
+    mocks.listAgentMessages.mockResolvedValue({
+      items: [{
+        ...msgFixture('assistant', { text: '回答' }, 2),
+        citations: ['rss:e1.a', 'library:gone'],
+      }],
+    })
+    mocks.resolveItems.mockResolvedValue({
+      items: [
+        {
+          ref: 'rss:e1.a',
+          domain: 'rss',
+          kind: 'rss',
+          title: '被引用的文章',
+          source: 'rss',
+          datetime: null,
+          excerpt: null,
+          url: null,
+          stale: false,
+          payload: { entryRef: 'e1.a' },
+        },
+        {
+          ref: 'library:gone',
+          domain: 'library',
+          kind: 'unknown',
+          title: '内容不存在',
+          source: 'library',
+          stale: true,
+          payload: {},
+        },
+      ],
+    })
+    render(withProviders(<AgentWorkbenchPage />))
+    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
+    expect(await screen.findByText('回答')).toBeInTheDocument()
+
+    // 批量解析一次
+    await waitFor(() => {
+      expect(mocks.resolveItems).toHaveBeenCalledWith(
+        ['rss:e1.a', 'library:gone'],
+        expect.anything(),
+      )
+    })
+    // 命中 → 可点按钮（title 来自 resolve）；stale → 失效纯文本
+    expect(await screen.findByRole('button', { name: '被引用的文章' })).toBeInTheDocument()
+    expect(screen.getByText(/（已失效）/)).toBeInTheDocument()
+  })
 })
 
 describe('AgentWorkbenchPage', () => {
@@ -188,7 +245,7 @@ describe('AgentWorkbenchPage', () => {
     render(withProviders(<AgentWorkbenchPage />))
 
     // 选中已有会话（行 = 标题 + 相对时间）
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
     fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '你好' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
 
@@ -227,7 +284,7 @@ describe('AgentWorkbenchPage', () => {
     })
 
     render(withProviders(<AgentWorkbenchPage />))
-    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /测试会话/ }, { timeout: 3000 }))
 
     expect(await screen.findByText(/需要批准的写入操作 · save_bookmark/)).toBeInTheDocument()
     // args pretty JSON 可见
@@ -243,13 +300,14 @@ describe('AgentWorkbenchPage', () => {
 
 describe('GraphPage', () => {
   it('摘要行 + truncated 截断提示；显示为表格 → 语义 table 列出节点', async () => {
-    mocks.getGraph.mockResolvedValue(graphFixture(true))
+    mocks.getGraph.mockResolvedValue({ ...graphFixture(true), totalNodes: 5, returnedNodes: 3 })
     render(withProviders(<GraphPage />))
 
-    expect(await screen.findByText(/共 3 节点 · 2 边/)).toBeInTheDocument()
-    expect(
-      screen.getByText(/节点过多，已按连接数截断显示前 2000 个/),
-    ).toBeInTheDocument()
+    // P0-10d：截断时如实区分「真实总数」与「仅返回数」，截断后的数量
+    // 绝不冒充总数。
+    expect(await screen.findByText(/真实总数 5 节点/)).toBeInTheDocument()
+    expect(screen.getByText(/因过多仅返回 3 个/)).toBeInTheDocument()
+    expect(screen.getByText(/按连接数截断，上限 2000/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '显示为表格' }))
     const table = screen.getByRole('table')
@@ -269,17 +327,27 @@ describe('GraphPage', () => {
 })
 
 describe('Sidebar / 折叠 Rail 导航激活', () => {
-  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源/邮件简报保持 PlannedItem', () => {
+  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源/邮件简报为真实入口（设置深链）', () => {
     render(withProviders(<Sidebar />))
     fireEvent.click(screen.getByRole('button', { name: 'Agent 工作台' }))
     expect(useReaderUi.getState().section).toBe('agent')
     fireEvent.click(screen.getByRole('button', { name: '标签 / 图谱' }))
     expect(useReaderUi.getState().section).toBe('graph')
 
-    const apiSource = screen.getByText('API 来源').closest('div')
-    expect(apiSource).toHaveAttribute('aria-disabled', 'true')
-    const mailDigest = screen.getByText('邮件简报').closest('div')
-    expect(mailDigest).toHaveAttribute('aria-disabled', 'true')
+    // P0-12：API 来源 / 邮件简报不再是 PlannedItem——真实按钮，点击
+    // 请求打开设置壳并直达对应分类（窗口事件桥）。
+    const openEvents: Array<{ category?: string }> = []
+    const onOpen = (event: Event) => {
+      openEvents.push((event as CustomEvent<{ category?: string }>).detail ?? {})
+    }
+    window.addEventListener('lumi:open-settings', onOpen)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /API 来源/ }))
+      fireEvent.click(screen.getByRole('button', { name: /邮件简报/ }))
+    } finally {
+      window.removeEventListener('lumi:open-settings', onOpen)
+    }
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
   })
 
   it('折叠 Rail：Agent 工作台 / 标签 / 图谱 可点击激活对应 section', () => {
@@ -288,5 +356,21 @@ describe('Sidebar / 折叠 Rail 导航激活', () => {
     expect(useReaderUi.getState().section).toBe('agent')
     fireEvent.click(screen.getByRole('button', { name: '标签 / 图谱' }))
     expect(useReaderUi.getState().section).toBe('graph')
+  })
+
+  it('折叠 Rail：API 来源 / 邮件简报点击 → 设置深链事件（P0-12）', () => {
+    render(withProviders(<SidebarCollapsedRail />))
+    const openEvents: Array<{ category?: string }> = []
+    const onOpen = (event: Event) => {
+      openEvents.push((event as CustomEvent<{ category?: string }>).detail ?? {})
+    }
+    window.addEventListener('lumi:open-settings', onOpen)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'API 来源' }))
+      fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
+    } finally {
+      window.removeEventListener('lumi:open-settings', onOpen)
+    }
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
   })
 })

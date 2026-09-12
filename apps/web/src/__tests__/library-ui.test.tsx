@@ -107,8 +107,9 @@ beforeEach(() => {
 })
 
 describe('UnifiedContentCard', () => {
+  // P0-10：库类条目内嵌收藏切换（用 hooks）→ 卡片测试需要 Query provider。
   it('rss 条目：RSS 徽标 + data-domain=rss + 安全外链（target=_blank）', () => {
-    render(<UnifiedContentCard item={resolvedItemFixture()} />)
+    render(withProviders(<UnifiedContentCard item={resolvedItemFixture()} />))
     expect(screen.getByText('RSS')).toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveAttribute('data-domain', 'rss')
     const link = screen.getByRole('link', { name: 'https://example.com/a' })
@@ -116,21 +117,98 @@ describe('UnifiedContentCard', () => {
     expect(link).toHaveAttribute('rel', 'noreferrer noopener')
   })
 
-  it('bookmark 条目：库徽标 + data-domain=library', () => {
+  it('bookmark 条目：书签徽标 + data-domain=library + 收藏切换（P0-10）', () => {
     render(
-      <UnifiedContentCard
-        item={resolvedItemFixture({ ref: 'library:u1', domain: 'library', kind: 'bookmark' })}
-      />,
+      withProviders(
+        <UnifiedContentCard
+          item={resolvedItemFixture({ ref: 'library:u1', domain: 'library', kind: 'bookmark' })}
+        />,
+      ),
     )
-    expect(screen.getByText('库')).toBeInTheDocument()
+    expect(screen.getByText('书签')).toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveAttribute('data-domain', 'library')
+    // 库类条目带收藏切换（未收藏态）
+    expect(screen.getByRole('button', { name: '加入收藏' })).toBeInTheDocument()
   })
 
   it('stale：显示「源已失效」且不渲染任何链接（不伪造可打开内容）', () => {
-    render(<UnifiedContentCard item={resolvedItemFixture({ stale: true })} />)
+    render(withProviders(<UnifiedContentCard item={resolvedItemFixture({ stale: true })} />))
     expect(screen.getByText('源已失效')).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()
     expect(screen.queryByText('RSS')).toBeNull()
+  })
+
+  // ---- wave 2：「一切皆可打开」——按 kind 路由（lib/open-item.ts） ----
+
+  it('rss 条目点击标题 → selectEntry 进 Reader', () => {
+    render(withProviders(<UnifiedContentCard item={resolvedItemFixture()} />))
+    fireEvent.click(screen.getByRole('button', { name: '文章 A' }))
+    expect(useReaderUi.getState().selectedEntryRef).toBe('e1.a')
+  })
+
+  it('clip 条目点击 → section=clips；obsidian_note → section=obsidian', () => {
+    const { unmount } = render(
+      withProviders(
+        <UnifiedContentCard item={resolvedItemFixture({ ref: 'library:c1', kind: 'clip', url: null, payload: { clipUuid: 'c1' } })} />,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '文章 A' }))
+    expect(useReaderUi.getState().section).toBe('clips')
+    unmount()
+
+    render(
+      withProviders(
+        <UnifiedContentCard
+          item={resolvedItemFixture({ ref: 'library:n1', kind: 'obsidian_note', url: null, payload: { relPath: 'a.md' } })}
+        />,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '文章 A' }))
+    expect(useReaderUi.getState().section).toBe('obsidian')
+  })
+
+  it('snapshot 条目点击 → 新标签打开服务端沙箱页（origin + pageUrl）', () => {
+    const openSpy = vi.fn()
+    const originalOpen = window.open
+    vi.stubGlobal('open', openSpy)
+    try {
+      render(
+        withProviders(
+          <UnifiedContentCard
+            item={resolvedItemFixture({
+              ref: 'library:s1',
+              kind: 'snapshot',
+              url: null,
+              payload: { assetUuid: 's1', pageUrl: '/api/v1/library/assets/s1/page.html' },
+            })}
+          />,
+        ),
+      )
+      fireEvent.click(screen.getByRole('button', { name: '文章 A' }))
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/api/v1/library/assets/s1/page.html`,
+        '_blank',
+        'noopener,noreferrer',
+      )
+    } finally {
+      vi.stubGlobal('open', originalOpen)
+    }
+  })
+
+  it('rss 型书签点击 → 解析 payload.rssItemRef 进 Reader', () => {
+    render(
+      withProviders(
+        <UnifiedContentCard
+          item={resolvedItemFixture({
+            ref: 'library:b1',
+            kind: 'bookmark',
+            payload: { itemType: 'rss', rssItemRef: 'rss:e9.z' },
+          })}
+        />,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '文章 A' }))
+    expect(useReaderUi.getState().selectedEntryRef).toBe('e9.z')
   })
 })
 

@@ -2,15 +2,21 @@
  *
  * App 已把本页接入 section='obsidian'（桌面 Timeline 列位 + 移动 section 区）。
  *
- * - 未配置（status.vaultPath 为空）：Vault 路径输入 + 连接（PUT settings；
- *   503 vault_unreachable / 403 vault_permission_denied 的 message 原样透出）。
+ * - 未配置且未由环境固定根（status.vaultPath 为空且 !envRootConfigured）：
+ *   Vault 路径输入 + 连接（PUT settings；503 vault_unreachable /
+ *   403 vault_permission_denied 的 message 原样透出）。
+ * - envRootConfigured（P0-09 wave 2）：部署已把宿主 Vault 只读挂载进
+ *   容器（LUMIRSS_OBSIDIAN_VAULT_DIR → 容器内固定根，宿主路径→容器
+ *   只读挂载）——不再询问宿主路径（问了也填不对：BFF 在容器内解析），
+ *   直接展示挂载状态 + 重扫；obsidian:// 深链在宿主上需要宿主路径，
+ *   容器路径对宿主无意义 → 该模式下不渲染深链（诚实省略）。
  * - 已配置：状态行（笔记数 / 上次扫描相对时间 / lastError 用 danger token
  *   诚实展示）+ 重扫（POST rescan，报告「新增 X · 更改 Y · 删除 Z ·
  *   改名 N · 跳过 S」）+ 搜索（300ms 防抖 → GET notes）+ 笔记列表。
  * - 笔记详情 Dialog：contentHtml 是服务端 markdown 渲染的【不可信】HTML，
  *   渲染前必须过 lib/sanitize-article-html.ts（全站唯一 DOMPurify 边界）；
- *   「在 Obsidian 中打开」仅在 vaultPath 已知时渲染，
- *   href = obsidian://open?path=encodeURIComponent(vaultPath + '/' + relPath)。
+ *   NoteView.truncated（P0-09d）= 索引正文超出有界投影上限被截断 →
+ *   显式「已截断」提示（原文未被修改，可通过 Obsidian 打开查看全文）。
  *
  * 所有 HTTP 经 src/api/client.ts；loading / empty / error 三态齐备。 */
 
@@ -131,21 +137,27 @@ function ConnectView() {
   )
 }
 
-/** 笔记详情 Dialog：contentHtml 先 sanitize 再渲染（不可信输入）。 */
+/** 笔记详情 Dialog：contentHtml 先 sanitize 再渲染（不可信输入）。
+ * truncated（索引正文被有界投影截断）→ 显式提示；deep-link 仅在
+ * 宿主自管路径模式下提供（env 挂载模式下容器路径对宿主无意义）。 */
 function NoteDetailDialog({
   note,
   vaultPath,
+  deepLinkEnabled,
   onClose,
 }: {
   note: NoteView | null
   vaultPath: string
+  /** false（env 挂载模式）时不渲染 obsidian:// 深链。 */
+  deepLinkEnabled: boolean
   onClose: () => void
 }) {
   const detail = useObsidianNoteDetail(note?.ref ?? null)
   const resolved = detail.data ?? note
   const contentHtml = resolved?.contentHtml ?? null
+  const truncated = resolved?.truncated ?? false
   const obsidianUrl =
-    vaultPath !== '' && resolved !== undefined && resolved !== null
+    deepLinkEnabled && vaultPath !== '' && resolved !== undefined && resolved !== null
       ? `obsidian://open?path=${encodeURIComponent(`${vaultPath}/${resolved.relPath}`)}`
       : null
 
@@ -187,6 +199,16 @@ function NoteDetailDialog({
       ) : resolved !== undefined && resolved !== null ? (
         <div className="flex flex-col gap-3">
           <p className="text-xs text-[var(--lumi-text-tertiary)]">{resolved.relPath}</p>
+          {truncated && (
+            <p
+              role="status"
+              className="flex items-start gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]"
+            >
+              <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+              笔记较长，索引正文已截断——这里不是全文。原文未被修改，可在 Obsidian
+              中打开原文件查看完整内容。
+            </p>
+          )}
           {resolved.tags.length > 0 && (
             <ul className="flex flex-wrap gap-1.5" aria-label="标签">
               {resolved.tags.map((tag) => (
@@ -214,13 +236,16 @@ function NoteDetailDialog({
   )
 }
 
-/** 已配置：状态 + 重扫 + 搜索 + 笔记列表。 */
+/** 已配置：状态 + 重扫 + 搜索 + 笔记列表。envRootConfigured=true 时
+ * 路径由部署环境固定（只读挂载）——显示挂载说明而非路径输入；深链
+ * 需要宿主路径，env 模式下不提供（容器路径对宿主无意义）。 */
 function ConfiguredView({ status }: { status: ObsidianStatus }) {
   const rescan = useObsidianRescanMutation()
   const [input, setInput] = useState('')
   const [openRef, setOpenRef] = useState<string | null>(null)
   const q = useDebouncedValue(input)
   const notes = useObsidianNotes(q)
+  const envRoot = status.envRootConfigured === true
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -242,6 +267,13 @@ function ConfiguredView({ status }: { status: ObsidianStatus }) {
             {rescan.isPending ? '扫描中…' : '重扫'}
           </Button>
         </div>
+        {envRoot && (
+          <p role="status" className="mt-1.5 px-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+            Vault 由部署环境固定：宿主 Vault 目录已只读挂载进 Lumi 容器
+            {status.vaultPath !== '' ? `（容器内路径 ${status.vaultPath}）` : ''}，
+            无需也不会在应用内填写宿主路径；改动笔记后在宿主机查看，这里只读投影。
+          </p>
+        )}
         {status.lastError !== null && status.lastError !== undefined && status.lastError !== '' && (
           <p
             role="alert"
@@ -352,6 +384,7 @@ function ConfiguredView({ status }: { status: ObsidianStatus }) {
       <NoteDetailDialog
         note={openRef === null ? null : (notes.data?.items.find((n) => n.ref === openRef) ?? null)}
         vaultPath={status.vaultPath}
+        deepLinkEnabled={!envRoot}
         onClose={() => setOpenRef(null)}
       />
     </div>
@@ -391,6 +424,11 @@ export default function ObsidianPage() {
     return null
   }
 
-  // 未配置 = vaultPath 为空（BFF 契约：未连接 Vault 时报告空路径）。
-  return data.vaultPath !== '' ? <ConfiguredView status={data} /> : <ConnectView />
+  // 可用 = DB 配置了路径，或部署环境固定了根（env 挂载模式——此时
+  // 不问路径，直接进入状态视图）。
+  return data.vaultPath !== '' || data.envRootConfigured === true ? (
+    <ConfiguredView status={data} />
+  ) : (
+    <ConnectView />
+  )
 }

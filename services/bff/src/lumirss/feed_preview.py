@@ -35,6 +35,7 @@ import httpx
 
 from lumirss.adapters.freshrss import AdapterError, html_to_text
 from lumirss.adapters.freshrss_control import InvalidFeedUrl
+from lumirss.config import LumiSettings
 from lumirss.http_fetch import follow_redirects
 
 # Re-exported so main.py's error table can map it next to the preview errors.
@@ -153,6 +154,26 @@ def ensure_public_address(address: str) -> None:
         or ip in _CGNAT_PREFIX
     ):
         raise UnsafeFeedUrl("Feed URL resolves to a non-public address.")
+
+
+def hostname_allowlisted(hostname: str | None) -> bool:
+    """True when the operator explicitly vouched for this hostname to be
+    dialable even though it resolves into a private network (deployment-
+    internal sources such as an in-network RSSHub or an E2E fixture
+    server). Exact, case-insensitive hostname match from the
+    comma-separated LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS env; empty by
+    default. The allow-list only skips the public-address REJECTION —
+    the fetch still resolves, validates every address, and dials the
+    pinned IP, so rebinding-class tricks stay dead."""
+    if not hostname:
+        return False
+    configured = LumiSettings().LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS
+    wanted = hostname.strip().casefold()
+    return any(
+        wanted == entry.strip().casefold()
+        for entry in configured.split(",")
+        if entry.strip()
+    )
 
 
 def parse_feed_document(raw: bytes) -> tuple[str, str | None, str | None, str]:

@@ -142,3 +142,49 @@ def test_backup_restore_roundtrip_wal_freshrss(tmp_path, monkeypatch):
         assert preview["restoreSessionId"]
     finally:
         conn.close()
+
+
+def test_backup_includes_library_assets_and_restore_stages_them(
+    tmp_path, monkeypatch
+):
+    """ADR 0004: owned asset bytes ride in every full backup, and the
+    restore side can put them back (Gate 4 / P0-04)."""
+    from lumirss.library_assets import AssetStore
+
+    freshrss, conn, _db_file = _make_wal_freshrss(tmp_path)
+    try:
+        data_dir, db, jobs, engine = _setup(tmp_path, monkeypatch, freshrss)
+        store = AssetStore(db, data_dir / "library" / "assets")
+        record, deduplicated = run(store.save_snapshot(data=b"<html>asset</html>"))
+        # Gate 2 semantics: True = content deduplicated to existing bytes.
+        assert deduplicated is False
+
+        result = run(_submit_and_wait(engine, jobs, "local"))
+        assert result["status"] == "succeeded", result.get("safe_error")
+        archive_path = Path(json.loads(result["summary"])["localPath"])
+
+        with zipfile.ZipFile(archive_path) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            asset_entries = [
+                entry
+                for entry in manifest["files"]
+                if entry["component"] == "library-assets"
+            ]
+            assert asset_entries, "expected the asset bytes in the manifest"
+            member = asset_entries[0]["path"]
+            assert archive.read(member) == b"<html>asset</html>"
+
+        # The restore half: staged asset files land under data_dir/library.
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+        (extract_dir / member).parent.mkdir(parents=True, exist_ok=True)
+        (extract_dir / member).write_bytes(b"<html>asset</html>")
+        target_root = data_dir / "restored-library" / "assets"
+        RestoreService._restore_library_assets(
+            [member], {member: extract_dir / member}, target_root
+        )
+        restored = target_root / Path(member).relative_to("library-assets")
+        assert restored.read_bytes() == b"<html>asset</html>"
+        _ = record
+    finally:
+        conn.close()

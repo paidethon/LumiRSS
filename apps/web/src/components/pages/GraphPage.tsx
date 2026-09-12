@@ -16,12 +16,22 @@
  * - loading Skeleton / empty / error+重试 三态齐备。 */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, RefreshCw, Waypoints } from 'lucide-react'
+import { AlertCircle, Loader2, MoreVertical, Pencil, RefreshCw, Trash2, Waypoints } from 'lucide-react'
 import type { Core, ElementDefinition, StylesheetJson } from 'cytoscape'
-import { useGraph, useTags, useWorkspaces } from '../../api/queries'
-import type { GraphNode } from '../../api/client'
+import {
+  useDeleteTagMutation,
+  useGraph,
+  useRenameTagMutation,
+  useTags,
+  useWorkspaces,
+} from '../../api/queries'
+import type { GraphNode, TagSummary } from '../../api/client'
+import { resolveAndOpen } from '../../lib/open-item'
 import { Button } from '../ui/Button'
+import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
+import { IconButton } from '../ui/IconButton'
+import { Menu } from '../ui/Menu'
 import { Select } from '../ui/Select'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
@@ -32,18 +42,24 @@ const CANVAS_NODE_LIMIT = 500
 /** 截断提示里的上限文案（与客户端请求的 max=2000 一致）。 */
 const GRAPH_MAX_NODES = 2000
 
-/** kind → 展示名（契约备注：library 子类经 label 体现，kind 仍是 library）。 */
+/** kind → 展示名（契约备注：library 子类经 label 体现，kind 仍是 library；
+ * P0-10e：解析不到真实笔记的 wikilink 以 kind=unresolved 显式呈现）。 */
 const KIND_LABELS: Record<string, string> = {
   tag: '标签',
   workspace: '工作区',
   wikilink: '笔记链接',
   rss: 'RSS',
   library: '库',
+  unresolved: '未解析链接',
 }
 
 function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind
 }
+
+/** 可通过「打开」路由到真实内容的节点 kind（tag/workspace 是分组节点，
+ * unresolved 没有目标——都不提供打开）。 */
+const OPENABLE_NODE_KINDS = new Set(['rss', 'library'])
 
 /** kind → CSS token（现有 --lumi-category-* 色板，不新增颜色）。 */
 const KIND_COLOR_TOKENS: Record<string, [token: string, fallback: string]> = {
@@ -177,6 +193,9 @@ export default function GraphPage() {
   const workspaces = useWorkspaces()
   const tags = useTags('')
   const graph = useGraph(scope)
+  // P0-10：标签管理（重命名/删除）目标与模式（null = 关闭）。
+  const [manageTag, setManageTag] = useState<TagSummary | null>(null)
+  const [manageMode, setManageMode] = useState<'rename' | 'delete' | null>(null)
 
   const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data])
   const nodeRefs = useMemo(() => new Set(nodes.map((n) => n.ref)), [nodes])
@@ -209,6 +228,33 @@ export default function GraphPage() {
   // 派生查找：scope/重建后 ref 消失时卡片自然不渲染，无需同步 effect。
   const selectedNode: GraphNode | null =
     selectedRef !== null ? (nodes.find((n) => n.ref === selectedRef) ?? null) : null
+
+  // P0-02 wave 2：节点详情卡「打开」——resolve → 按 kind 路由
+  // （Reader / 外链 / 剪藏 / 快照沙箱页 / Obsidian）；失败诚实透出。
+  const [openState, setOpenState] = useState<{ busy: boolean; error: string | null }>({
+    busy: false,
+    error: null,
+  })
+  const openNode = async (ref: string) => {
+    setOpenState({ busy: true, error: null })
+    try {
+      const resolved = await resolveAndOpen(ref)
+      if (resolved === null) {
+        setOpenState({ busy: false, error: '打开失败：内容解析请求未成功，请稍后重试。' })
+        return
+      }
+      if (resolved.stale) {
+        setOpenState({ busy: false, error: '内容已失效，无法打开。' })
+        return
+      }
+      setOpenState({ busy: false, error: null })
+    } catch (error) {
+      setOpenState({
+        busy: false,
+        error: error instanceof Error ? error.message : '打开失败，请稍后重试。',
+      })
+    }
+  }
 
   const scopeOptions = useMemo(
     () => [
@@ -269,7 +315,7 @@ export default function GraphPage() {
         {tags.data !== undefined && tags.data.items.length > 0 && (
           <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="标签列表">
             {tags.data.items.map((tag) => (
-              <li key={tag.id}>
+              <li key={tag.id} className="flex items-center gap-0.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -286,6 +332,42 @@ export default function GraphPage() {
                 >
                   #{tag.name} ({tag.count})
                 </button>
+                {/* P0-10：标签管理（重命名 / 删除）——最小可发现面：图谱页
+                    标签列表（唯一的真实标签清单视图）行内菜单。 */}
+                <Menu
+                  trigger={({ triggerProps }) => (
+                    <IconButton
+                      {...triggerProps}
+                      icon={<MoreVertical aria-hidden className="size-3.5" />}
+                      label={`管理标签 ${tag.name}`}
+                      size="sm"
+                    />
+                  )}
+                  items={[
+                    {
+                      key: 'rename',
+                      content: (
+                        <>
+                          <Pencil aria-hidden className="mr-2 inline size-3.5" />
+                          重命名
+                        </>
+                      ),
+                    },
+                    {
+                      key: 'delete',
+                      content: (
+                        <>
+                          <Trash2 aria-hidden className="mr-2 inline size-3.5" />
+                          删除标签
+                        </>
+                      ),
+                    },
+                  ]}
+                  onSelect={(key) => {
+                    setManageTag(tag)
+                    setManageMode(key === 'rename' ? 'rename' : 'delete')
+                  }}
+                />
               </li>
             ))}
           </ul>
@@ -322,24 +404,45 @@ export default function GraphPage() {
 
         {!graph.isPending && !graph.isError && nodes.length > 0 && (
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* 文字摘要行：始终渲染（a11y 等价路径之一） */}
+            {/* 文字摘要行（a11y 等价路径之一）：截断时如实区分真实总数
+                与返回数（P0-10d——截断后的数量绝不冒充总数）。 */}
             <p role="status" className="px-1 text-xs text-[var(--lumi-text-secondary)]">
-              共 {nodes.length} 节点 · {visibleEdges.length} 边
-              {graph.data?.truncated === true && (
-                <> · 节点过多，已按连接数截断显示前 {GRAPH_MAX_NODES} 个</>
+              {graph.data?.truncated === true ? (
+                <>
+                  真实总数 {graph.data.totalNodes} 节点 · 因过多仅返回{' '}
+                  {graph.data.returnedNodes ?? nodes.length} 个 · {visibleEdges.length} 边
+                  （按连接数截断，上限 {GRAPH_MAX_NODES}）
+                </>
+              ) : (
+                <>共 {nodes.length} 节点 · {visibleEdges.length} 边</>
               )}
             </p>
 
             {/* 选中节点详情卡片（画布 tap / 标签 chip 均可触发） */}
             {selectedNode !== null && (
               <div
-                className="mt-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-3 py-2"
+                className={cx(
+                  'mt-2 rounded-[var(--lumi-radius-lg)] border px-3 py-2',
+                  selectedNode.kind === 'unresolved'
+                    ? 'border-dashed border-[var(--lumi-border)] bg-[var(--lumi-surface)] opacity-80'
+                    : 'border-[var(--lumi-border)]',
+                )}
                 aria-live="polite"
               >
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-[var(--lumi-text-primary)]">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--lumi-text-primary)]">
                     {selectedNode.label}
                   </p>
+                  {OPENABLE_NODE_KINDS.has(selectedNode.kind) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={openState.busy}
+                      onClick={() => void openNode(selectedNode.ref)}
+                    >
+                      打开
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => setSelectedRef(null)}>
                     关闭
                   </Button>
@@ -347,9 +450,19 @@ export default function GraphPage() {
                 <p className="mt-0.5 text-xs text-[var(--lumi-text-secondary)]">
                   类型：{kindLabel(selectedNode.kind)} · 连接数：{selectedNode.degree}
                 </p>
+                {selectedNode.kind === 'unresolved' && (
+                  <p className="mt-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                    这个笔记链接在库内没有解析到真实笔记（目标不存在或尚未扫描）。
+                  </p>
+                )}
                 <p className="mt-0.5 text-[11px] break-all text-[var(--lumi-text-tertiary)]">
                   {selectedNode.ref}
                 </p>
+                {openState.error !== null && (
+                  <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+                    {openState.error}
+                  </p>
+                )}
               </div>
             )}
 
@@ -413,6 +526,165 @@ export default function GraphPage() {
           </div>
         )}
       </section>
+
+      {/* P0-10：标签管理对话框（条件挂载）。 */}
+      {manageTag !== null && manageMode === 'rename' && (
+        <TagRenameDialog
+          tag={manageTag}
+          onClose={() => {
+            setManageTag(null)
+            setManageMode(null)
+          }}
+        />
+      )}
+      {manageTag !== null && manageMode === 'delete' && (
+        <TagDeleteDialog
+          tag={manageTag}
+          onClose={() => {
+            setManageTag(null)
+            setManageMode(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** P0-10：重命名标签（条件挂载；RenameCategoryDialog 模式：预填现名 +
+ * 空名/未变更禁用提交 + 服务端错误内联）。 */
+function TagRenameDialog({ tag, onClose }: { tag: TagSummary; onClose: () => void }) {
+  const [name, setName] = useState(tag.name)
+  const rename = useRenameTagMutation()
+  const trimmed = name.trim()
+  const canSubmit = trimmed !== '' && trimmed !== tag.name && !rename.isPending
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="重命名标签"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={rename.isPending}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={() => {
+              if (!canSubmit) return
+              rename.mutate({ tagId: tag.id, name: trimmed }, { onSuccess: onClose })
+            }}
+          >
+            {rename.isPending ? '保存中…' : '保存'}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!canSubmit) return
+          rename.mutate({ tagId: tag.id, name: trimmed }, { onSuccess: onClose })
+        }}
+      >
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-[var(--lumi-text-secondary)]">标签名</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={64}
+            autoFocus
+            aria-label="标签名"
+            className={cx(
+              'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+              'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
+              'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+            )}
+          />
+        </label>
+      </form>
+      {rename.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
+          {rename.error instanceof Error ? rename.error.message : '重命名失败，请稍后重试。'}
+        </p>
+      )}
+    </Dialog>
+  )
+}
+
+/** P0-10：删除标签（破坏性：解除全部条目绑定；双重确认，不做乐观更新）。 */
+function TagDeleteDialog({ tag, onClose }: { tag: TagSummary; onClose: () => void }) {
+  const [stage, setStage] = useState<'confirm' | 'final'>('confirm')
+  const remove = useDeleteTagMutation()
+  const busy = remove.isPending
+
+  return (
+    <Dialog
+      open
+      onClose={() => {
+        if (!busy) onClose()
+      }}
+      title={stage === 'confirm' ? '删除标签' : '再次确认'}
+      footer={
+        stage === 'confirm' ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              保留标签
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setStage('final')} disabled={busy}>
+              删除标签
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setStage('confirm')} disabled={busy}>
+              返回
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy}
+              onClick={() => remove.mutate(tag.id, { onSuccess: onClose })}
+            >
+              {busy ? (
+                <>
+                  <Loader2 aria-hidden className="size-4 animate-spin" />
+                  删除中…
+                </>
+              ) : (
+                <>
+                  <Trash2 aria-hidden className="size-4" />
+                  确认删除
+                </>
+              )}
+            </Button>
+          </>
+        )
+      }
+    >
+      <p className="text-sm text-[var(--lumi-text-secondary)]">
+        将删除标签「#{tag.name}」并解除 {tag.count} 条内容上的绑定。内容本身不受影响。
+      </p>
+      {stage === 'final' && (
+        <div
+          role="alert"
+          className="mt-3 flex items-start gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-danger)]/30 bg-[var(--lumi-danger)]/10 px-3 py-2.5 text-sm text-[var(--lumi-danger)]"
+        >
+          <Trash2 aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <span className="min-w-0">
+            <span className="block font-medium">确定要删除这个标签吗？</span>
+            <span className="mt-0.5 block text-xs opacity-80">此操作无法撤销。</span>
+          </span>
+        </div>
+      )}
+      {remove.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
+          {remove.error instanceof Error ? remove.error.message : '删除失败，请稍后重试。'}
+        </p>
+      )}
+    </Dialog>
   )
 }

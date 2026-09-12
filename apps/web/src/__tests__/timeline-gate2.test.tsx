@@ -7,10 +7,9 @@
 
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { EntryListItem } from '../api/types'
 import EntryRow from '../components/EntryRow'
-import { useReadLater } from '../store/read-later'
 
 function makeItem(over: Partial<EntryListItem> = {}): EntryListItem {
   return {
@@ -35,10 +34,6 @@ function renderRow(item: EntryListItem, selected: boolean) {
     </QueryClientProvider>,
   )
 }
-
-beforeEach(() => {
-  useReadLater.setState({ items: [] })
-})
 
 describe('EntryRow — 状态语义（AC10；0011 结构适配）', () => {
   it('未读：标题 font-medium + accent 圆点存在', () => {

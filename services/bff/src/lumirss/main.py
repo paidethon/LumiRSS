@@ -25,6 +25,7 @@ from lumirss.middleware import (
     RequestSizeLimitMiddleware,
     SessionAuthMiddleware,
 )
+from lumirss.obsidian import ObsidianService
 from lumirss.routers import (
     agent,
     ai_settings,
@@ -101,16 +102,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.snapshot_runner = None
     app.state.api_source_store = None
     app.state.mail_bridge_store = None
-    app.state.obsidian_service = None
     app.state.favorites_service = None
     app.state.library_search_writer = None
     app.state.rag_service = None
     app.state.agent_store = None
     app.state.agent_loop = None
     app.state.agent_tasks = set()
+    app.state.tag_store = None
+    # P0-06: digest scheduler + IMAP poll loop. Both factories return
+    # self-disabling tasks (sleeping no-ops while unconfigured), so the
+    # tasks exist unconditionally and settings drive actual behavior.
+    from lumirss.mail_digest import build_digest_scheduler_task
+    from lumirss.mail_imap import build_mail_imap_task
+
+    app.state.digest_scheduler_task = build_digest_scheduler_task(app.state)
+    app.state.mail_imap_task = build_mail_imap_task(app.state)
+    # P0-07d: the RAG idle-unload loop (no-op until the RAG service is
+    # first built) keeps the low-memory budget honest in production.
+    from lumirss.rag import build_rag_idle_task
+
+    app.state.rag_idle_task = build_rag_idle_task(app.state)
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
+    app.state.search_sync_task = None
+    # P0-08f: the obsidian service exists for the whole process lifetime
+    # (never request-lazy) so agent tool registration cannot bake in a
+    # None based on which page was opened first.
+    app.state.obsidian_service = ObsidianService(
+        app.state.db, env_root=settings.LUMIRSS_OBSIDIAN_VAULT_DIR
+    )
+    app.state.obsidian_scan_task = None
     if interval > 0:
         # Build the projection service eagerly so the background sync runs
         # even before the first search request. Unconfigured FreshRSS
@@ -126,22 +148,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:  # noqa: BLE001 — never block startup on search
             _logger.info("search sync disabled (FreshRSS not configured)")
 
-    async def search_sync_loop() -> None:
-        while True:
-            await asyncio.sleep(interval)
-            service: SearchIndexService | None = app.state.search_service
-            if service is None:
-                continue
-            try:
-                await service.maybe_sync()
-            except Exception:  # noqa: BLE001 — sync must never kill the app
-                _logger.exception("search index sync failed; will retry")
+        async def search_sync_loop() -> None:
+            while True:
+                await asyncio.sleep(interval)
+                service: SearchIndexService | None = app.state.search_service
+                if service is None:
+                    continue
+                try:
+                    await service.maybe_sync()
+                except Exception:  # noqa: BLE001 — sync must never kill the app
+                    _logger.exception("search index sync failed; will retry")
 
-    sync_task = asyncio.create_task(search_sync_loop())
+        # P0-13: the task exists only when sync is enabled; interval=0 must
+        # not create a sleep(0) hot loop.
+        app.state.search_sync_task = asyncio.create_task(search_sync_loop())
+    obsidian_interval = settings.LUMIRSS_OBSIDIAN_SCAN_INTERVAL
+    if obsidian_interval > 0:
+
+        async def obsidian_scan_loop() -> None:
+            while True:
+                await asyncio.sleep(obsidian_interval)
+                service: ObsidianService | None = app.state.obsidian_service
+                if service is None:
+                    continue
+                try:
+                    await service.scan_if_configured()
+                except Exception:  # noqa: BLE001 — scan must never kill the app
+                    _logger.exception("obsidian scan failed; will retry")
+
+        app.state.obsidian_scan_task = asyncio.create_task(obsidian_scan_loop())
     yield
-    sync_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await sync_task
+    sync_task = app.state.search_sync_task
+    if sync_task is not None:
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sync_task
+    obsidian_task = app.state.obsidian_scan_task
+    if obsidian_task is not None:
+        obsidian_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await obsidian_task
+    for task_name in ("digest_scheduler_task", "mail_imap_task", "rag_idle_task"):
+        task = getattr(app.state, task_name, None)
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     await app.state.http_client.aclose()
 
 

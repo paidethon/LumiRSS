@@ -434,11 +434,18 @@ def _get_library_search_writer(request: Request) -> LibrarySearchWriter:
 
 
 def _get_obsidian_service(request: Request) -> ObsidianService:
-    """Read-only vault projection service (phase2 G6)."""
+    """Read-only vault projection service (phase2 G6, Gate 4 wiring).
+
+    The env-configured container root (production bind-mount contract)
+    is fixed at construction; the DB path is the dev-mode fallback.
+    """
     return _cached_on_app_state(
         request,
         "obsidian_service",
-        lambda: ObsidianService(request.app.state.db),
+        lambda: ObsidianService(
+            request.app.state.db,
+            env_root=LumiSettings().LUMIRSS_OBSIDIAN_VAULT_DIR,
+        ),
     )
 
 
@@ -448,7 +455,11 @@ def _get_favorites_service(request: Request) -> FavoritesService:
         request,
         "favorites_service",
         lambda: FavoritesService(
-            request.app.state.db, _get_library_search_writer(request)
+            request.app.state.db,
+            _get_library_search_writer(request),
+            # Late-bound Source Registry: resolves favorite refs for the
+            # merged view without a wiring cycle.
+            lambda: _get_source_registry(request),
         ),
     )
 
@@ -478,6 +489,20 @@ def _get_rag_service(request: Request) -> RagService:
         "rag_service",
         lambda: RagService(request.app.state.db),
     )
+
+
+async def _rag_mark_stale(request: Request, refs: list[str]) -> None:
+    """Best-effort RAG index invalidation after owned-content deletes
+    (P0-07e). Only acts when a RAG service instance already exists —
+    users who never touch RAG never pay for it; failures never mask the
+    delete that triggered them."""
+    import contextlib
+
+    rag: RagService | None = getattr(request.app.state, "rag_service", None)
+    if rag is None:
+        return
+    with contextlib.suppress(Exception):
+        await rag.mark_stale(refs)
 
 
 def _get_agent_store(request: Request) -> AgentStore:
@@ -621,24 +646,84 @@ def _get_source_registry(request: Request) -> dict:
             )
 
         async def resolve_library(item_uuid: str) -> ResolvedItem | None:
-            view = await _get_library_store(request).get_library_item(item_uuid)
-            if view is None:
-                return None
-            return ResolvedItem(
-                ref=view.ref,
-                domain="library",
-                kind="bookmark",
-                title=view.title,
-                source="库",
-                datetime=view.created_at,
-                excerpt=excerpt_of(view.note or view.url),
-                url=view.url,
-                payload=(
-                    {"itemType": view.item_type, "rssItemRef": view.rss_item_ref}
-                    if view.item_type == "rss"
-                    else {"itemType": view.item_type}
-                ),
-            )
+            # P0-02: dispatch by the library_items kind to the owning
+            # store (ADR 0004 — one registry, kind-aware resolution).
+            library = _get_library_store(request)
+            kind = await library.get_kind(item_uuid)
+            if kind == "bookmark":
+                view = await library.get_bookmark(item_uuid)
+                if view is None:
+                    return None
+                return ResolvedItem(
+                    ref=view.ref,
+                    domain="library",
+                    kind="bookmark",
+                    title=view.title,
+                    source="库",
+                    datetime=view.created_at,
+                    excerpt=excerpt_of(view.note or view.url),
+                    url=view.url,
+                    payload=(
+                        {"itemType": view.item_type, "rssItemRef": view.rss_item_ref}
+                        if view.item_type == "rss"
+                        else {"itemType": view.item_type}
+                    ),
+                )
+            if kind == "clip":
+                clip = await _get_clip_store(request).get_clip(item_uuid)
+                if clip is None:
+                    return None
+                return ResolvedItem(
+                    ref=clip.ref,
+                    domain="library",
+                    kind="clip",
+                    title=clip.title,
+                    source="剪藏",
+                    datetime=clip.created_at,
+                    excerpt=excerpt_of(clip.content_text),
+                    url=clip.url,
+                    payload={"clipUuid": item_uuid},
+                )
+            if kind == "snapshot":
+                row = await request.app.state.db.fetch_one(
+                    "SELECT uuid, mime, bytes, created_at FROM library_assets WHERE item_uuid = ?",
+                    (item_uuid,),
+                )
+                if row is None:
+                    return None
+                asset_uuid = str(row["uuid"])
+                return ResolvedItem(
+                    ref=f"library:{item_uuid}",
+                    domain="library",
+                    kind="snapshot",
+                    title=f"快照 · {row['mime']}",
+                    source="快照",
+                    datetime=str(row["created_at"]),
+                    url=None,
+                    payload={
+                        "assetUuid": asset_uuid,
+                        "pageUrl": f"/api/v1/library/assets/{asset_uuid}/page.html",
+                    },
+                )
+            if kind == "obsidian_note":
+                note = await _get_obsidian_service(request).get_note(item_uuid)
+                if note is None:
+                    return None
+                return ResolvedItem(
+                    ref=f"library:{item_uuid}",
+                    domain="library",
+                    kind="obsidian_note",
+                    title=str(note["title"]),
+                    source="Obsidian",
+                    datetime=str(note["indexed_at"]),
+                    excerpt=excerpt_of(str(note["body_text"] or "")),
+                    url=None,
+                    payload={"relPath": str(note["rel_path"])},
+                )
+            # api_item / newsletter_item have no library-side content:
+            # their readable entries live in FreshRSS (ADR 0004), so a
+            # dangling ref resolves honestly as missing.
+            return None
 
         register_resolver(registry, "rss", resolve_rss)
         register_resolver(registry, "library", resolve_library)

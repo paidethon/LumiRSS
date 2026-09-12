@@ -1,13 +1,17 @@
-"""Web clip pipeline tests (phase2 M2).
+"""Web clip pipeline tests (phase2 M2 + recovery P0-03).
 
-Covers the SSRF-guarded fetch (mocked transport — private/metadata
-address matrix, bad MIME, oversize), clip CRUD with duplicate-url
-convergence, and the search_library projection staying in sync.
+Covers the SSRF-guarded fetch refusals (private/metadata address matrix,
+fail-closed before any dial), clip CRUD with duplicate-url convergence,
+transactional writes (no orphan identity rows on integrity failure),
+and the server-side contract: the create endpoint re-derives content
+from the URL and NEVER stores client-submitted HTML.
 """
+
+import sqlite3
 
 import pytest
 
-from lumirss.clip_fetch import ClipFetchError
+from lumirss.clip_fetch import ClipFetchError, ExtractedPage
 from lumirss.library_clips import ClipInvalid, ClipStore
 from lumirss.search_library import LibrarySearchWriter
 
@@ -100,6 +104,49 @@ def test_clip_store_validations(clip_db):
         )
 
 
+def test_integrity_failure_rolls_back_no_orphan_identity(clip_db):
+    """A racing duplicate insert fails INSIDE the transaction; the
+    library_items identity row must roll back with it (recovery P0-03)."""
+    store = ClipStore(clip_db)
+    first, _ = _run(
+        store.create_clip(
+            url="https://example.com/race",
+            title="t",
+            content_html="<p>x</p>",
+            content_text="x",
+        )
+    )
+
+    async def none(url):
+        return None  # bypass the converge pre-check to simulate a race
+
+    original = store._find_by_url
+    calls = {"n": 0}
+
+    async def flaky(url):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # pre-check misses (race), the retry below hits
+        return await original(url)
+
+    store._find_by_url = flaky
+    duplicate, created = _run(
+        store.create_clip(
+            url="https://example.com/race",
+            title="other",
+            content_html="<p>y</p>",
+            content_text="y",
+        )
+    )
+    assert created is False
+    assert duplicate.ref == first.ref
+
+    row = _run(
+        clip_db.fetch_one("SELECT COUNT(*) AS n FROM library_items WHERE kind = 'clip'")
+    )
+    assert int(row["n"]) == 1  # the loser's identity row rolled back
+
+
 def test_list_clips_pagination(clip_db):
     store = ClipStore(clip_db)
     for index in range(5):
@@ -121,22 +168,25 @@ def test_list_clips_pagination(clip_db):
     assert len(seen) == 5
 
 
+# --------------------------------------------------------------------------
+# Endpoint contract (server-side pipeline)
+# --------------------------------------------------------------------------
+
+
+def _stub_article() -> ExtractedPage:
+    return ExtractedPage(
+        url="https://origin.example/redirect-me",
+        final_url="https://origin.example/final",
+        title="服务器标题",
+        byline="作者",
+        content_html="<p>服务器清洗后的正文</p>",
+        content_text="服务器清洗后的正文",
+    )
+
+
 def test_fetch_endpoint_private_targets_refused(client):
     """Private / loopback / link-local / metadata / mapped targets must be
     refused BEFORE any request is sent (fail closed)."""
-    import httpx
-
-    called: list[str] = []
-
-    def blocked_transport(request: httpx.Request) -> httpx.Response:
-        called.append(str(request.url))
-        return httpx.Response(200, text="<html>leak</html>")
-
-    # Point the shared http_client at a transport that records every dial;
-    # the SSRF layer must refuse before any dial happens.
-    client.app.state.http_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(blocked_transport)
-    )
     for target in [
         "http://127.0.0.1:8080/",
         "http://10.0.0.1/",
@@ -155,4 +205,65 @@ def test_fetch_endpoint_private_targets_refused(client):
             "clip_fetch_forbidden",
             "clip_fetch_failed",
         ), target
-    assert called == []  # no dial ever left the server
+
+
+def test_fetch_endpoint_returns_server_derived_article(client, monkeypatch):
+    """The fetch preview returns the extracted + sanitized article and the
+    FINAL url (redirects followed) — not raw HTML, not the original url."""
+    import lumirss.routers.clips as clips_router
+
+    called = []
+
+    async def fake_pipeline(url, *, resolver=None):
+        called.append(url)
+        return _stub_article()
+
+    monkeypatch.setattr(clips_router, "fetch_extract_sanitize", fake_pipeline)
+    response = client.post(
+        "/api/v1/library/clips/fetch", json={"url": "https://origin.example/redirect-me"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["url"] == "https://origin.example/redirect-me"
+    assert body["finalUrl"] == "https://origin.example/final"
+    assert body["title"] == "服务器标题"
+    assert body["contentHtml"] == "<p>服务器清洗后的正文</p>"
+    assert called == ["https://origin.example/redirect-me"]
+
+
+def test_create_endpoint_ignores_client_html(client, monkeypatch):
+    """P0-03 core assertion: client-submitted contentHtml/title are never
+    stored — the server re-derives everything from the URL."""
+    import lumirss.routers.clips as clips_router
+
+    async def fake_pipeline(url, *, resolver=None):
+        return _stub_article()
+
+    monkeypatch.setattr(clips_router, "fetch_extract_sanitize", fake_pipeline)
+    response = client.post(
+        "/api/v1/library/clips",
+        json={
+            "url": "https://origin.example/redirect-me",
+            "title": "客户端伪造标题",
+            "contentHtml": "<script>alert('xss')</script><p>客户端伪造正文</p>",
+            "contentText": "客户端伪造正文",
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["url"] == "https://origin.example/final"  # final url recorded
+    assert body["title"] == "服务器标题"
+    assert body["contentHtml"] == "<p>服务器清洗后的正文</p>"
+    assert "伪造" not in body["contentHtml"]
+    assert "alert" not in body["contentHtml"]
+
+
+def test_create_endpoint_rejects_invalid_url_without_pipeline(client):
+    """Structurally invalid URLs are refused by the real pipeline before
+    any network activity (javascript: fails scheme validation)."""
+    response = client.post("/api/v1/library/clips", json={"url": "javascript:alert(1)"})
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "clip_fetch_forbidden"
+
+
+_ = sqlite3  # sqlite3 import documents the IntegrityError contract

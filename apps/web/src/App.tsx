@@ -3,7 +3,6 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
-import { useReadLaterServerSync } from './lib/read-later'
 
 /** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
  * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */
@@ -88,8 +87,8 @@ export default function App() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   // 0010 Gate B：全局键盘快捷键（j/k/u/s；输入框聚焦时不劫持）
   useKeyboardShortcuts()
-  // phase2 M1：稍后读服务端同步（一次性迁移 + 缓存对账，挂载一次）
-  useReadLaterServerSync()
+  // P0-01：稍后读不再需要挂载期同步——成员状态由各消费组件的
+  // useReadLaterRefs（服务端真源）按需拉取并共享缓存。
   // phase2 M2：PWA Share Target 落地（挂载一次）
   useEffect(handleShareTarget, [])
 

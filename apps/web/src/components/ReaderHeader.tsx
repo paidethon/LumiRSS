@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Camera, Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
-import { useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
+import { useAiSettings, useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
 import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { formatReadingTime, textFromHtml } from '../lib/reading-time'
 import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
+import { localTranslatorAvailable } from '../lib/local-translator'
 import { useAppSettings } from '../store/app-settings'
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
@@ -83,13 +84,18 @@ function SaveSnapshotButton({ url }: { url: string }) {
  *   target=_blank + rel=noopener noreferrer。 */
 /** Gate：语言视图三态控件（原文/双语/仅译文）。
  * 桌面 = 三段分段按钮；窄屏 = 紧凑 Menu（不遮挡/不挤出工具栏）。
- * 两态 Switch 表达不了三态，这里用显式的选项组。 */
+ * 两态 Switch 表达不了三态，这里用显式的选项组。
+ * P0-11：engine=browser 且浏览器不支持本地 Translator API 时整组
+ * 禁用并给原因（不再让用户点开才发现不可用）；支持矩阵在设置页。 */
 function LanguageViewControl({
   value,
   onChange,
+  disabledReason,
 }: {
   value: ReaderViewMode
   onChange: (mode: ReaderViewMode) => void
+  /** 非 null = 当前引擎在此浏览器不可用（附原因），控件禁用。 */
+  disabledReason?: string | null
 }) {
   const options: { key: ReaderViewMode; label: string; short: string }[] = [
     { key: 'original', label: '原文', short: '原文' },
@@ -98,12 +104,14 @@ function LanguageViewControl({
   ]
   const base =
     'inline-flex min-h-8 items-center gap-1 rounded-[var(--lumi-radius-md)] px-2 text-sm transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
+  const gated = disabledReason != null
   return (
     <>
       {/* 桌面分段 */}
       <div
         role="group"
         aria-label="语言视图"
+        title={gated ? disabledReason : undefined}
         className="hidden items-center gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5 lg:inline-flex"
       >
         {options.map((option) => (
@@ -111,6 +119,8 @@ function LanguageViewControl({
             key={option.key}
             type="button"
             aria-pressed={value === option.key}
+            disabled={gated && option.key !== 'original'}
+            title={gated && option.key !== 'original' ? disabledReason : undefined}
             onClick={() => onChange(option.key)}
             className={cx(
               base,
@@ -118,6 +128,7 @@ function LanguageViewControl({
               value === option.key
                 ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
                 : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+              gated && option.key !== 'original' && 'opacity-50',
             )}
           >
             {option.key === 'translated' && (
@@ -131,12 +142,17 @@ function LanguageViewControl({
       <div className="lg:hidden">
         <Menu
           trigger={({ triggerProps }) => (
-            <Tooltip content="语言视图">
+            <Tooltip content={gated ? disabledReason : '语言视图'}>
               <IconButton
                 {...triggerProps}
                 icon={<Languages aria-hidden className={cx(value !== 'original' && 'text-[var(--lumi-accent-text)]')} />}
-                label={`语言视图：当前 ${options.find((o) => o.key === value)?.label ?? '原文'}`}
+                label={
+                  gated
+                    ? `语言视图不可用：${disabledReason}`
+                    : `语言视图：当前 ${options.find((o) => o.key === value)?.label ?? '原文'}`
+                }
                 touch
+                disabled={gated}
               />
             </Tooltip>
           )}
@@ -165,9 +181,18 @@ export default function ReaderHeader({
   onOpenAiConversation?: () => void
 }) {
   const mutation = useEntryStateMutation()
-  const { isReadLater, toggleReadLater } = useToggleReadLater()
+  const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
   const readLaterMarked = isReadLater(detail.entryRef)
+  const readLaterPending = pendingFor(detail.entryRef)
+  const readLaterError = errorFor(detail.entryRef)
   const showReadingTime = useAppSettings((s) => s.settings.readerShowReadingTime)
+  // P0-11：本地引擎支持门控——engine=browser 且此浏览器没有 Translator
+  // API（localTranslatorAvailable() 此前导出零调用）→ 控件禁用 + 原因。
+  const aiSettings = useAiSettings()
+  const translationDisabledReason =
+    (aiSettings.data?.translationEngine ?? 'ai') === 'browser' && !localTranslatorAvailable()
+      ? '此浏览器不支持本地翻译（需要 Chrome 内置 Translator API）；可在 设置 → 翻译 更换翻译引擎。'
+      : null
 
   // url 与 contentHtml 一样来自外部 RSS，是不可信输入：
   // 只放行绝对 http/https，其余一律不渲染「打开原文」。
@@ -238,27 +263,37 @@ export default function ReaderHeader({
           </Tooltip>
         )}
 
-        {/* 稍后读（0011 修正补充 §21–§23）：✓ ◷ ☆ 顺序——阅读处理 →
-            临时保存 → 长期收藏；本地 marker 零网络，即时切换（乐观）；
-            始终可见（不依赖 hover）；active = accent icon + subtle bg，
-            同一 Clock 图标不换形（§23）。 */}
+        {/* 稍后读（P0-01）：服务端保留工作区成员（真源）——乐观切换 +
+            失败回滚由 useReadLaterMemberMutation 承载；✓ ◷ ☆ 顺序——
+            阅读处理 → 临时保存 → 长期收藏；active = accent icon，同一
+            Clock 图标不换形（§23）；失败行内诚实提示（不假装成功）。 */}
         <Tooltip content={readLaterMarked ? '从稍后读移除' : '加入稍后读'}>
           <IconButton
             icon={
-              <Clock
-                aria-hidden
-                className={cx(
-                  readLaterMarked && 'fill-[var(--lumi-accent-soft)]',
-                )}
-              />
+              readLaterPending ? (
+                <Loader2 aria-hidden className="animate-spin" />
+              ) : (
+                <Clock
+                  aria-hidden
+                  className={cx(
+                    readLaterMarked && 'fill-[var(--lumi-accent-soft)]',
+                  )}
+                />
+              )
             }
             label={readLaterMarked ? '从稍后读移除' : '加入稍后读'}
             aria-pressed={readLaterMarked}
             touch
+            disabled={readLaterPending}
             className={readLaterMarked ? 'text-[var(--lumi-accent-text)]' : undefined}
             onClick={() => toggleReadLater(detail.entryRef)}
           />
         </Tooltip>
+        {readLaterError !== null && (
+          <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+            稍后读操作失败：{readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}
+          </span>
+        )}
 
         {pending ? (
           <IconButton
@@ -320,9 +355,14 @@ export default function ReaderHeader({
         )}
 
         {/* Gate：语言视图（原文/双语/仅译文）——与 稍后读/收藏/Aa 同一
-            工具栏；Reader 持有状态，正文区消费。 */}
+            工具栏；Reader 持有状态，正文区消费。P0-11：不支持的平台
+            禁用 + 原因，不再让用户点开才发现不可用。 */}
         {onViewModeChange !== undefined && (
-          <LanguageViewControl value={viewMode ?? 'original'} onChange={onViewModeChange} />
+          <LanguageViewControl
+            value={viewMode ?? 'original'}
+            onChange={onViewModeChange}
+            disabledReason={translationDisabledReason}
+          />
         )}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心

@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
+  addLibraryFavorite,
   addWorkspaceItem,
   applyRssHubConfig,
   clearAiProfileSecret,
@@ -28,10 +29,13 @@ import {
   deleteClip,
   deleteRssHubCredential,
   deleteSnapshot,
+  deleteTag,
+  deleteWorkspace,
   detectRssHub,
   discoverFeeds,
+  enableRag,
   executeRestore,
-  fetchClipHtml,
+  fetchClipArticle,
   generateEntrySummary,
   generateEntryTranslation,
   generateTranslationSegments,
@@ -49,6 +53,8 @@ import {
   getFeeds,
   getFreshRssUiUrl,
   getOperationsStatus,
+  getReadLaterTimeline,
+  getRagStatus,
   getRssHubConfig,
   getRssHubRoutes,
   getSubscriptions,
@@ -62,6 +68,8 @@ import {
   listRemoteBackups,
   listRssHubCredentials,
   listSnapshots,
+  listTagsForItem,
+  listWorkspaceItems,
   listWorkspaces,
   lookupTranslationSegments,
   moveSubscription,
@@ -70,9 +78,14 @@ import {
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  rebuildRag,
+  removeLibraryFavorite,
   removeWorkspaceItem,
   renameCategory,
+  renameTag,
+  renameWorkspace,
   reorderWorkspaceItems,
+  resolveItems,
   saveLibreTranslateKey,
   searchEntries,
   sendConversationMessage,
@@ -93,6 +106,7 @@ import {
 import type {
   AiProfileInput,
   ClipInput,
+  FavoritesResponse,
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
 } from './client'
@@ -100,6 +114,34 @@ import type { AiPurposeKey } from './types'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
+import { READ_LATER_WORKSPACE_ID } from '../lib/read-later'
+
+/** P0-01：稍后读时间线的 query key（toggle mutation 的乐观更新/失效
+ * 都以这个精确 key 为目标；成员失效统一走 ['workspace', 'read-later']
+ * 前缀，同时覆盖本 key 与 refs 清单 key）。 */
+const READ_LATER_TIMELINE_KEY = ['workspace', READ_LATER_WORKSPACE_ID, 'timeline'] as const
+
+/** 稍后读最近一次操作失败的信息（query cache 作最小事件通道：乐观移除
+ * 会让行组件卸载，行级 mutation 实例的错误态随之丢失——失败信息写到
+ * 这份 cache，由列表级 useReadLaterLastError 诚实展示；成功时清除。
+ * key 刻意不在 ['workspace', …] 前缀下，避免被成员失效连带清掉）。 */
+const READ_LATER_LAST_ERROR_KEY = ['read-later-last-error'] as const
+
+/** 稍后读操作失败提示（列表级；乐观回滚已恢复数据，这里只补告警）。 */
+export function useReadLaterLastError() {
+  return useQuery({
+    queryKey: READ_LATER_LAST_ERROR_KEY,
+    queryFn: () => null as string | null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+}
+
+/** 时间线缓存页形状（乐观移除用；entry 卡片字段此处不关心）。 */
+interface ReadLaterTimelinePage {
+  items: { itemRef: string }[]
+  nextCursor: string | null
+}
 
 export function useFeeds() {
   return useQuery({
@@ -155,6 +197,32 @@ export function useEntries(scope: ContentScope, view: UiView) {
       ),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     maxPages: 50,
+    staleTime: 30_000,
+    // P0-01：read-later 不再映射 view=all 客户端过滤——它走服务端时间线
+    // useReadLaterTimeline；这里对 read-later 视图禁用（零流量）。
+    enabled: view !== 'read-later',
+  })
+}
+
+/** P0-01：服务端稍后读时间线（最新加入在前；cursor opaque；悬挂成员
+ * stale 行可见）。read-later 视图的唯一数据源——服务端是真源（ADR 0004）。 */
+export function useReadLaterTimeline() {
+  return useInfiniteQuery({
+    queryKey: READ_LATER_TIMELINE_KEY,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      getReadLaterTimeline({ cursor: pageParam, limit: 25 }, signal),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    maxPages: 50,
+    staleTime: 30_000,
+  })
+}
+
+/** 稍后读成员 ref 清单（Clock 按钮激活态真源；与时间线同一失效前缀）。 */
+export function useReadLaterRefs() {
+  return useQuery({
+    queryKey: ['workspace', READ_LATER_WORKSPACE_ID, 'items'],
+    queryFn: ({ signal }) => listWorkspaceItems(READ_LATER_WORKSPACE_ID, signal),
     staleTime: 30_000,
   })
 }
@@ -1048,12 +1116,109 @@ export function useRemoveWorkspaceItemMutation() {
   })
 }
 
+/** P0-01：稍后读成员增删（set 语义；时间线乐观更新 + 失败回滚 +
+ * 诚实错误，镜像 useLibraryFavoriteMutation 模式）。
+ * - 移除：onMutate 从时间线缓存各页精确移除该行（立即消失）；
+ * - 添加：无法本地构造完整卡片（entry 由服务端投影）→ 不伪造乐观行，
+ *   onSuccess 失效时间线后新行出现在头部（时间线视图外的添加本就不
+ *   需要即时可见）；
+ * - 失败：回滚到前值（无前值则失效重取）；错误由调用方从 mutation
+ *   原样透出（变量匹配该行才显示，不串行）。 */
+export function useReadLaterMemberMutation() {
+  const queryClient = useQueryClient()
+  return useMutation<
+    void,
+    Error,
+    { entryRef: string; add: boolean },
+    { previous: { pages: ReadLaterTimelinePage[] } | undefined }
+  >({
+    mutationFn: async (vars) => {
+      if (vars.add) {
+        await addWorkspaceItem(READ_LATER_WORKSPACE_ID, `rss:${vars.entryRef}`)
+        return
+      }
+      await removeWorkspaceItem(READ_LATER_WORKSPACE_ID, `rss:${vars.entryRef}`)
+    },
+    onMutate: async (vars) => {
+      queryClient.setQueryData<string | null>(READ_LATER_LAST_ERROR_KEY, null)
+      if (vars.add) return { previous: undefined }
+      await queryClient.cancelQueries({ queryKey: READ_LATER_TIMELINE_KEY })
+      const previous = queryClient.getQueryData<{ pages: ReadLaterTimelinePage[] }>(
+        READ_LATER_TIMELINE_KEY,
+      )
+      queryClient.setQueryData<{ pages: ReadLaterTimelinePage[] }>(
+        READ_LATER_TIMELINE_KEY,
+        (old) =>
+          old === undefined
+            ? old
+            : {
+                ...old,
+                pages: old.pages.map((page) => ({
+                  ...page,
+                  items: page.items.filter(
+                    (it) => it.itemRef !== `rss:${vars.entryRef}`,
+                  ),
+                })),
+              },
+      )
+      return { previous }
+    },
+    onError: (error, _vars, context) => {
+      // 失败信息写入共享 cache：乐观移除会让行组件卸载（行级实例的错误
+      // 态丢失），列表级观察者据此诚实补告警。
+      queryClient.setQueryData<string | null>(
+        READ_LATER_LAST_ERROR_KEY,
+        error instanceof Error ? error.message : '稍后读操作失败，请稍后重试。',
+      )
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(READ_LATER_TIMELINE_KEY, context.previous)
+      } else {
+        void queryClient.invalidateQueries({ queryKey: READ_LATER_TIMELINE_KEY })
+      }
+    },
+    onSettled: () => {
+      // 前缀覆盖：时间线、refs 清单、（其它）工作区 contents。
+      void queryClient.invalidateQueries({
+        queryKey: ['workspace', READ_LATER_WORKSPACE_ID],
+      })
+    },
+  })
+}
+
 export function useReorderWorkspaceItemsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (vars: { workspaceId: string; itemRefs: string[] }) =>
       reorderWorkspaceItems(vars.workspaceId, vars.itemRefs),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** P0-10：重命名工作区（保留工作区由 BFF 拒绝；UI 不为其提供入口）。
+ * 成功后失效列表（名称/排序徽标）。 */
+export function useRenameWorkspaceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; name: string }) =>
+      renameWorkspace(vars.workspaceId, vars.name),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+  })
+}
+
+/** P0-10：删除工作区（破坏性；成员内容本身不删除，只解除归属）。
+ * 失效列表 + 全部 contents 缓存（前缀覆盖 ['workspace']）。 */
+export function useDeleteWorkspaceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (workspaceId: string) => deleteWorkspace(workspaceId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace'] }),
+      ])
+    },
   })
 }
 
@@ -1082,12 +1247,12 @@ export function useClipDetail(clipRef: string | null) {
   })
 }
 
-/** 服务端抓取目标页 HTML（无副作用 mutation——复用 pending/error
- * 语义与双击防重；不 invalidate 任何 query，结果由调用方进入提取
- * 流程后经 createClip 落库）。 */
+/** P0-03：服务端抓取并提取目标页文章（无副作用 mutation——复用
+ * pending/error 语义与双击防重；不 invalidate 任何 query，结果由调用方
+ * 进入确认流程后经 createClip({url, finalUrl}) 落库）。 */
 export function useClipFetchMutation() {
   return useMutation({
-    mutationFn: (url: string) => fetchClipHtml(url),
+    mutationFn: (url: string) => fetchClipArticle(url),
   })
 }
 
@@ -1335,20 +1500,75 @@ export function useFavorites() {
   })
 }
 
+/** P0-10：库收藏增删（addLibraryFavorite/removeLibraryFavorite 首批 UI
+ * 消费者）。乐观更新 ['favorites'] 的 library 腿：移除立即从列表消失；
+ * 失败回滚到前值并重取（诚实错误由调用方从 mutation.error 透出）。 */
+export function useLibraryFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { ref: string; favorite: boolean }) =>
+      vars.favorite ? addLibraryFavorite(vars.ref) : removeLibraryFavorite(vars.ref),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['favorites'] })
+      const previous = queryClient.getQueryData<FavoritesResponse>(['favorites'])
+      queryClient.setQueryData<FavoritesResponse>(['favorites'], (old) => {
+        if (old === undefined) return old
+        if (!vars.favorite) {
+          // 移除：行内数据可精确构造回滚前值 → 乐观过滤安全。
+          return { ...old, library: old.library.filter((item) => item.ref !== vars.ref) }
+        }
+        return old
+      })
+      return { previous }
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(['favorites'], context.previous)
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ['favorites'] })
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['favorites'] })
+    },
+  })
+}
+
+/** P0-10：单条库内容的收藏状态 + 切换（UnifiedContentCard /
+ * FavoritesPage LibraryRow 共用）。诚实语义：
+ * - favorite = 服务端列表命中 ∨ 进行中的乐观添加（未落库前不假装完成）；
+ * - pending 只在本人条目上；error 是本人条目最近一次失败（调用方原样
+ *   透出，不吞不假装成功）。 */
+export function useLibraryFavoriteToggle(ref: string) {
+  const favorites = useFavorites()
+  const mutation = useLibraryFavoriteMutation()
+  const matchesVars = mutation.variables?.ref === ref
+  const inList = favorites.data?.library.some((item) => item.ref === ref) ?? false
+  const favorite =
+    inList || (matchesVars && mutation.isPending && mutation.variables!.favorite)
+  return {
+    favorite,
+    pending: matchesVars && mutation.isPending,
+    error: matchesVars && mutation.isError ? mutation.error : null,
+    toggle: () => mutation.mutate({ ref, favorite: !favorite }),
+  }
+}
+
 // ---- phase2 G7/G8：Agent 工作台 / 标签 / 图谱 / RAG ----
 // 本节 client 函数按段引入（本文件约定 APPEND-ONLY，新增 import 只能
 // 随新节追加在尾部；ESM 顶层 import 提升，行为等价）。
 
 import {
+  assignTag,
   createAgentThread,
   decideAgentApproval,
   deleteAgentThread,
   getGraph,
-  getRagStatus,
   listAgentMessages,
   listAgentThreads,
   listTags,
   sendAgentMessage,
+  unassignTag,
 } from './client'
 
 /** 会话列表。 */
@@ -1437,6 +1657,74 @@ export function useTags(q: string = '') {
   })
 }
 
+/** P0-10：单条内容的既有标签（条目标签选择面板用；null = 不发请求）。 */
+export function useItemTags(itemRef: string | null) {
+  return useQuery({
+    queryKey: ['item-tags', itemRef],
+    queryFn: ({ signal }) => listTagsForItem(itemRef!, signal),
+    enabled: itemRef !== null,
+  })
+}
+
+/** P0-10：给条目绑定标签（POST 幂等由 BFF 承载；失效条目标签 + 全列表）。 */
+export function useAssignTagMutation(itemRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => assignTag({ itemRef, name, origin: 'manual' }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：解绑标签（DELETE；失效条目标签 + 全列表）。 */
+export function useUnassignTagMutation(itemRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => unassignTag({ itemRef, name, origin: 'manual' }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：重命名标签（图谱页标签列表的行内管理入口；图谱/列表/条目标签
+ * 全部失效）。 */
+export function useRenameTagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { tagId: number; name: string }) => renameTag(vars.tagId, vars.name),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：删除标签（破坏性：解绑全部条目；图谱/列表/条目标签全部失效）。 */
+export function useDeleteTagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (tagId: number) => deleteTag(tagId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
 // ---- 关系图谱 ----
 
 /** 派生关系图（scope=all|workspace:<id>；max 2000，BFF 钳制）。
@@ -1448,12 +1736,53 @@ export function useGraph(scope: string) {
   })
 }
 
-// ---- RAG（Agent 页状态 chip；操作入口在设置页，本页只读展示） ----
+// ---- RAG（状态 chip + 设置页操作入口：启用开关 / 重建按钮均消费本节） ----
 
 export function useRagStatus(enabled: boolean = true) {
   return useQuery({
     queryKey: ['rag', 'status'],
     queryFn: ({ signal }) => getRagStatus(signal),
     enabled,
+  })
+}
+
+/** P0-07：显式启用语义索引（用户授权下载/加载模型）。成功后失效状态
+ * （enabled / chunks 随 enable 的 warmup 结果刷新；lastError 原样透出
+ * 给调用方展示）。 */
+export function useEnableRagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => enableRag(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rag'] })
+    },
+  })
+}
+
+/** P0-07：全量重建索引（有界长任务；成功后失效状态——chunks /
+ * lastRebuildAt 刷新）。RagRebuildBusy（重建进行中）的 message 原样透出。 */
+export function useRebuildRagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => rebuildRag(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rag'] })
+    },
+  })
+}
+
+// ---- P0-02：统一 resolve（引用 → 卡片视图；批量一次往返） ----
+
+/** 批量解析 refs（引用来自 agent citations 等聚合场景；空数组不发请求）。
+ * stale/unknown 目标由服务端降级为 stale 行，本 hook 永不因单个失效 ref
+ * 失败。 */
+export function useResolveRefs(refs: string[]) {
+  const key = [...refs].sort().join('\n')
+  return useQuery({
+    queryKey: ['resolve', key],
+    queryFn: ({ signal }) => resolveItems(refs, signal),
+    enabled: refs.length > 0,
+    staleTime: 30_000,
+    retry: false,
   })
 }

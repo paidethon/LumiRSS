@@ -31,42 +31,41 @@ from ..deps import _get_snapshot_runner, _get_snapshot_store
 router = APIRouter()
 
 
-def _snapshot_view(record, url: str, deduped: bool) -> SnapshotView:
-    return SnapshotView(
-        uuid=record.uuid,
-        itemRef=f"library:{record.item_uuid}",
-        url=url,
-        bytes=record.bytes,
-        sha256=record.sha256,
-        deduplicated=deduped,
-        createdAt=record.created_at,
-    )
-
-
 @router.post("/api/v1/library/snapshots", response_model=SnapshotView, status_code=201)
 async def create_snapshot(payload: SnapshotCreate, request: Request) -> SnapshotView:
     runner: SnapshotJobRunner = _get_snapshot_runner(request)
     result = await runner.run(payload.url)
-    record = await _get_snapshot_store(request).get_asset(result["asset"]["uuid"])
-    assert record is not None
-    return _snapshot_view(record, result["url"], bool(result["deduplicated"]))
+    return _snapshot_view_from_dict(result["asset"], bool(result["deduplicated"]))
+
+
+def _snapshot_view_from_dict(record: dict, deduped: bool) -> SnapshotView:
+    return SnapshotView(
+        uuid=record["uuid"],
+        itemRef=record["itemRef"],
+        url=record.get("url", ""),
+        bytes=record["bytes"],
+        sha256=record["sha256"],
+        deduplicated=deduped,
+        createdAt=record["createdAt"],
+    )
 
 
 @router.get("/api/v1/library/snapshots", response_model=SnapshotListResponse)
 async def list_snapshots(request: Request) -> SnapshotListResponse:
     store: AssetStore = _get_snapshot_store(request)
-    records = await store.list_assets()
+    rows = await store.list_snapshots()
     usage = await store.usage()
     items = [
         SnapshotView(
-            uuid=record.uuid,
-            itemRef=f"library:{record.item_uuid}",
-            url="",
-            bytes=record.bytes,
-            sha256=record.sha256,
-            createdAt=record.created_at,
+            uuid=row.record.uuid,
+            itemRef=f"library:{row.record.item_uuid}",
+            url=row.record.url,
+            bytes=row.record.bytes,
+            sha256=row.record.sha256,
+            deduplicated=row.deduplicated,
+            createdAt=row.record.created_at,
         )
-        for record in records
+        for row in rows
     ]
     return SnapshotListResponse(
         items=items,
@@ -106,9 +105,14 @@ async def serve_snapshot(asset_uuid: str, request: Request) -> Response:
 @router.delete("/api/v1/library/snapshots/{asset_uuid}", status_code=204)
 async def delete_snapshot(asset_uuid: str, request: Request) -> Response:
     store: AssetStore = _get_snapshot_store(request)
+    record = await store.get_asset(asset_uuid)
     deleted = await store.delete_asset(asset_uuid)
     if not deleted:
         raise AssetNotFound(asset_uuid)
+    from ..deps import _rag_mark_stale
+
+    if record is not None:
+        await _rag_mark_stale(request, [f"library:{record.item_uuid}"])
     return Response(status_code=204)
 
 

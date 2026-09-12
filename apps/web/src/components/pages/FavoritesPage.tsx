@@ -15,14 +15,16 @@
  * - 无摘要/缩略图 → EntryCard 文本退化。
  */
 
-import { Fragment, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Star } from 'lucide-react'
 import { useEntries, useFavorites } from '../../api/queries'
 import type { EntryListItem } from '../../api/types'
 import type { LibrarySearchItem } from '../../api/client'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
+import { resolveAndOpen } from '../../lib/open-item'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import EntryCard from '../EntryCard'
+import { LibraryFavoriteButton } from '../UnifiedContentCard'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
@@ -42,11 +44,6 @@ const LIBRARY_KIND_LABELS: Record<string, string> = {
 
 function libraryKindLabel(kind: string): string {
   return LIBRARY_KIND_LABELS[kind] ?? kind
-}
-
-interface DateGroup {
-  label: string
-  items: EntryListItem[]
 }
 
 /** 收藏分组：今天 →「最近收藏」；更早日期/无日期 →「更早」。
@@ -239,9 +236,31 @@ export default function FavoritesPage() {
   )
 }
 
-/** 库收藏行：标题 / kind 徽标 / 安全外链（http(s) 以外协议不放行）。 */
+/** 库收藏行：标题按钮（resolve → 按 kind 打开：Reader/外链/剪藏/快照/
+ * Obsidian）+ kind 徽标 + 安全外链（http(s) 以外协议不放行）。
+ * P0-10：行尾取消收藏（库域 removeLibraryFavorite；乐观移除 +
+ * 失败回滚 + 错误原样透出）。RSS 收藏行为保持不变（FreshRSS star 真值）。
+ * wave 2（P0-02/「一切皆可打开」）：stale 行禁用打开并注明原因，
+ * 不再静默降级为纯文本。 */
 function LibraryRow({ item }: { item: LibrarySearchItem }) {
   const safeUrl = safeExternalHttpUrl(item.url)
+  const [openError, setOpenError] = useState<string | null>(null)
+  const stale = item.stale
+
+  const open = async () => {
+    setOpenError(null)
+    try {
+      const resolved = await resolveAndOpen(item.ref)
+      if (resolved === null) {
+        setOpenError('打开失败：内容解析请求未成功，请稍后重试。')
+      } else if (resolved.stale) {
+        setOpenError('内容已失效，无法打开。')
+      }
+    } catch (error) {
+      setOpenError(error instanceof Error ? error.message : '打开失败，请稍后重试。')
+    }
+  }
+
   return (
     <li
       className={cx(
@@ -249,14 +268,32 @@ function LibraryRow({ item }: { item: LibrarySearchItem }) {
         'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
       )}
     >
-      <span className="truncate text-sm font-medium text-[var(--lumi-text-primary)]">
-        {item.title}
+      <span className="flex items-start gap-2">
+        {stale ? (
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--lumi-text-secondary)]">
+            {item.title}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void open()}
+            className="min-w-0 flex-1 truncate text-left text-sm font-medium text-[var(--lumi-text-primary)] underline-offset-2 transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-accent-text)] hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            {item.title}
+          </button>
+        )}
+        <LibraryFavoriteButton itemRef={item.ref} />
       </span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--lumi-text-tertiary)]">
         <span className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px]">
           {libraryKindLabel(item.kind)}
         </span>
-        {safeUrl !== null && (
+        {stale && (
+          <span className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+            已失效
+          </span>
+        )}
+        {safeUrl !== null && !stale && (
           <a
             href={safeUrl}
             target="_blank"
@@ -267,6 +304,11 @@ function LibraryRow({ item }: { item: LibrarySearchItem }) {
           </a>
         )}
       </span>
+      {openError !== null && (
+        <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {openError}
+        </span>
+      )}
     </li>
   )
 }

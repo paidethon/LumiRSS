@@ -2,11 +2,13 @@
 
 One schema for both domains: tags attach to typed ItemRefs only
 (``rss:…`` / ``library:…``). Names are NFC-normalized, stripped of a
-leading ``#``, length-capped, and unique (case-insensitive dedupe maps
-to the canonical stored form). AI suggestions attach as
-``status='suggested'`` and are invisible to listing/filtering until
-explicitly accepted; acceptance upgrades the SAME row (origin→manual,
-status→active) — suggestions never pollute the active tag space.
+leading ``#``, length-capped, and unique case-insensitively for ASCII
+(NOCASE unique index, migration 0017; the first-created form is kept).
+AI suggestions attach as ``status='suggested'`` and are invisible to
+listing/filtering until explicitly accepted; acceptance upgrades the
+SAME row (origin→manual, status→active) — suggestions never pollute
+the active tag space. Attach validates the binding is new before the
+per-item cap applies (idempotent re-attach always succeeds).
 """
 
 import sqlite3
@@ -78,7 +80,10 @@ class TagStore:
         row = await self._db.fetch_one("SELECT id FROM tags WHERE id = ?", (tag_id,))
         if row is None:
             raise TagNotFound(str(tag_id))
-        dupe = await self._db.fetch_one("SELECT id FROM tags WHERE name = ? AND id != ?", (clean, tag_id))
+        dupe = await self._db.fetch_one(
+            "SELECT id FROM tags WHERE name = ? COLLATE NOCASE AND id != ?",
+            (clean, tag_id),
+        )
         if dupe is not None:
             raise TagInvalid("同名标签已存在。")
         await self._db.execute("UPDATE tags SET name = ? WHERE id = ?", (clean, tag_id))
@@ -101,13 +106,21 @@ class TagStore:
         origin: str = "manual",
         status: str = "active",
     ) -> dict[str, Any]:
-        """Idempotent attach; returns the binding's effective state."""
+        """Idempotent attach; returns the binding's effective state.
+
+        Order matters (P0-10g): an already-bound tag returns as-is even
+        when the item is at the per-item cap — only NEW bindings count
+        against it. Name lookup is case-insensitive (NOCASE index,
+        migration 0017); the stored form stays the first-created one.
+        """
         parsed = parse_item_ref(item_ref)
         clean = normalize_tag_name(name)
         if origin not in ("manual", "source", "ai"):
             raise TagInvalid("非法标签来源。")
         await self._db.migrate()
-        tag_row = await self._db.fetch_one("SELECT id FROM tags WHERE name = ?", (clean,))
+        tag_row = await self._db.fetch_one(
+            "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (clean,)
+        )
         if tag_row is None:
             try:
                 await self._db.execute(
@@ -117,15 +130,9 @@ class TagStore:
             except sqlite3.IntegrityError as exc:
                 raise TagInvalid("标签创建冲突。") from exc
             tag_row = await self._db.fetch_one(
-                "SELECT id FROM tags WHERE name = ?", (clean,)
+                "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (clean,)
             )
         tag_id = int(tag_row["id"])
-        count_row = await self._db.fetch_one(
-            "SELECT COUNT(*) AS n FROM item_tags WHERE item_ref = ?",
-            (parsed.format(),),
-        )
-        if int(count_row["n"]) >= _MAX_TAGS_PER_ITEM:
-            raise TagInvalid("该条目标签数量已达上限。")
         existing = await self._db.fetch_one(
             "SELECT origin, status FROM item_tags WHERE item_ref = ? AND tag_id = ? AND origin = ?",
             (parsed.format(), tag_id, origin),
@@ -138,6 +145,12 @@ class TagStore:
                 "origin": str(existing["origin"]),
                 "status": str(existing["status"]),
             }
+        count_row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM item_tags WHERE item_ref = ?",
+            (parsed.format(),),
+        )
+        if int(count_row["n"]) >= _MAX_TAGS_PER_ITEM:
+            raise TagInvalid("该条目标签数量已达上限。")
         try:
             await self._db.execute(
                 "INSERT INTO item_tags (item_ref, tag_id, origin, status, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -156,10 +169,12 @@ class TagStore:
     async def detach(self, item_ref: str, name: str, *, origin: str = "manual") -> bool:
         parsed = parse_item_ref(item_ref)
         clean = normalize_tag_name(name)
-        row = await self._db.fetch_one("SELECT id FROM tags WHERE name = ?", (clean,))
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (clean,)
+        )
         if row is None:
             return False
-        await self._db.migrate()
         before = await self._db.fetch_one(
             "SELECT rowid FROM item_tags WHERE item_ref = ? AND tag_id = ? AND origin = ?",
             (parsed.format(), int(row["id"]), origin),
@@ -177,7 +192,9 @@ class TagStore:
         parsed = parse_item_ref(item_ref)
         clean = normalize_tag_name(name)
         await self._db.migrate()
-        tag_row = await self._db.fetch_one("SELECT id FROM tags WHERE name = ?", (clean,))
+        tag_row = await self._db.fetch_one(
+            "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (clean,)
+        )
         if tag_row is None:
             raise TagNotFound(clean)
         row = await self._db.fetch_one(
@@ -191,6 +208,15 @@ class TagStore:
             (int(row["rowid"]),),
         )
         return {"ref": parsed.format(), "name": clean, "status": "active"}
+
+    async def item_refs_for_tag(self, tag_id: int, *, limit: int = 100) -> list[str]:
+        """Item refs bound to one tag (active bindings, newest first)."""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT item_ref FROM item_tags WHERE tag_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT ?",
+            (int(tag_id), max(1, min(limit, 200))),
+        )
+        return [str(row["item_ref"]) for row in rows]
 
     async def tags_for_item(
         self, item_ref: str, *, include_suggested: bool = False

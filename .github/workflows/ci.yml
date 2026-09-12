@@ -38,7 +38,9 @@ jobs:
 
       - name: Run BFF tests
         working-directory: services/bff
-        run: uv run pytest -q
+        # --extra rag mirrors the production image (Dockerfile uv sync),
+        # so the RAG tests exercise the shipped dependency set.
+        run: uv run --extra rag pytest -q
 
   generated-contracts:
     name: Generated contracts drift check

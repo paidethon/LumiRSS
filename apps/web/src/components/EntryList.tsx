@@ -1,8 +1,15 @@
-import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose } from 'lucide-react'
+import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose, Unplug } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef } from 'react'
-import { useEntries, useEntryStateMutation, useFeeds } from '../api/queries'
-import { useReadLater } from '../store/read-later'
+import {
+  useEntries,
+  useEntryStateMutation,
+  useFeeds,
+  useReadLaterLastError,
+  useReadLaterMemberMutation,
+  useReadLaterTimeline,
+} from '../api/queries'
 import type { UiView } from '../lib/read-later'
+import type { EntryListItem, ReadLaterItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
 import { scopeTitle } from '../lib/navigation'
 import { useAppSettings } from '../store/app-settings'
@@ -12,6 +19,7 @@ import EntryCard from './EntryCard'
 import EntryRow from './EntryRow'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
+import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
@@ -25,57 +33,26 @@ const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
   },
 }
 
+/** 列表分发：read-later 是服务端时间线视图（P0-01），与 entries 查询
+ * 完全分道——两个子组件各自持 hooks（避免同组件内条件 hooks）。 */
 export default function EntryList() {
   const view = useReaderUi((s) => s.view)
-  const scope = useReaderUi((s) => s.scope)
-  const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
-  // 0010 Gate C：折叠入口（桌面 lg；移动端隐藏）。0011 修正补充：
-  // 放大/缩小同一按钮双向切换（图标随状态翻转），折叠后不再在
-  // App 层弹出一个专门的展开按钮。
-  const updateSettings = useAppSettings((s) => s.update)
-  const timelineCollapsed = useAppSettings((s) => s.settings.timelineCollapsed)
-  // 0010a Gate E（AC7）：按日期分组
-  const groupByDate = useAppSettings((s) => s.settings.groupByDate)
-  // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
-  const scrollMarkUnread = useAppSettings((s) => s.settings.scrollMarkUnread)
-  // 0010a Gate F（AC24）：显示层过滤（全局规则，BFF 层 planned·0013）
-  const filterRules = useAppSettings((s) => s.settings.filterRules)
-  const filterEnabled = filterRules.some((r) => r.enabled)
+  return view === 'read-later' ? <ReadLaterList /> : <EntriesList />
+}
 
-  // read-later marker 订阅（0011 修正补充：客户端过滤 §26）
-  const readLaterItems = useReadLater((s) => s.items)
-  const readLaterRefs = useMemo(() => new Set(readLaterItems.map((it) => it.entryRef)), [readLaterItems])
-
-  // feed scope 的列表头标题：用 feeds 数据补全真实 feed 名（§9）
-  const feeds = useFeeds()
-  const feedsTitle = useEntries(scope, view)
-  const { data, isPending, isError, error, refetch } = feedsTitle
-  // useMemo：data 引用稳定时 entries 引用也稳定（避免 effect 依赖每渲染变化）
-  // 0010a F3：显示层过滤（仅标题匹配全局启用规则，feedId=null）
-  // 0011 修正补充：read-later 视图 = 全量拉取后客户端过滤（API 层已
-  // 翻译为 view=all）——加入不移除（§26）；移除立即从列表消失（store
-  // 订阅驱动重新过滤）。
-  const entries = useMemo(() => {
-    const all = data?.pages.flatMap((page) => page.items) ?? []
-    const byRules = filterEnabled
-      ? all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
-      : all
-    if (view !== 'read-later') return byRules
-    return byRules.filter((item) => readLaterRefs.has(item.entryRef))
-  }, [data, filterEnabled, filterRules, view, readLaterRefs])
-  const hasNextPage = feedsTitle.hasNextPage
-  const isFetchingNextPage = feedsTitle.isFetchingNextPage
-  const fetchNextPage = feedsTitle.fetchNextPage
-
-  // ---- 无限滚动（0011：替换「加载更多」按钮，用户指令） ----
-  // 哨兵 li 滚入视口 → 自动 fetchNextPage；IntersectionObserver 仅在
-  // hasNextPage 且未在拉取时触发（拉取完成后 entries 变化重新观察）。
+/** 无限滚动哨兵 hook：滚入视口自动 fetchNextPage（EntriesList 与
+ * ReadLaterList 共用同一模式；jsdom 测试 stub 掉 IntersectionObserver）。 */
+function useInfiniteSentinel(
+  hasNextPage: boolean,
+  isFetchingNextPage: boolean,
+  fetchNextPage: () => void,
+  depsKey: number,
+) {
   const sentinelRef = useRef<HTMLLIElement>(null)
   useEffect(() => {
     const sentinel = sentinelRef.current
     if (!sentinel || !hasNextPage || isFetchingNextPage) return
-    let observer: IntersectionObserver | null = null
-    observer = new IntersectionObserver(
+    const observer = new IntersectionObserver(
       (records) => {
         if (records.some((r) => r.isIntersecting) && !isFetchingNextPage) {
           fetchNextPage()
@@ -86,7 +63,250 @@ export default function EntryList() {
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, entries])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, depsKey])
+  return sentinelRef
+}
+
+/** 列表尾部状态（加载中 / 可加载更多 / 到底；ref 由调用方传入——
+ * IntersectionObserver 的观察目标就是本 li）。 */
+function SentinelState({
+  sentinelRef,
+  hasNextPage,
+  isFetchingNextPage,
+}: {
+  sentinelRef: React.RefObject<HTMLLIElement | null>
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+}) {
+  return (
+    <li
+      ref={sentinelRef}
+      aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
+      className="flex items-center justify-center py-4 max-lg:pb-[84px]"
+      style={{ paddingBottom: hasNextPage || isFetchingNextPage ? undefined : 'max(1rem, var(--safe-bottom))' }}
+    >
+      {isFetchingNextPage ? (
+        <Loader2
+          aria-label="加载中"
+          className="size-4 animate-spin text-[var(--lumi-text-tertiary)]"
+        />
+      ) : hasNextPage ? (
+        <span className="text-xs text-[var(--lumi-text-tertiary)]">下滑加载更多…</span>
+      ) : (
+        <span className="text-xs text-[var(--lumi-text-tertiary)]">已经到底了</span>
+      )}
+    </li>
+  )
+}
+
+/** 桌面列表头（scope 标题 + 视图后缀 + 折叠开关）。 */
+function ListHeader({ view, loadedCount }: { view: UiView; loadedCount: number }) {
+  const scope = useReaderUi((s) => s.scope)
+  const updateSettings = useAppSettings((s) => s.update)
+  const timelineCollapsed = useAppSettings((s) => s.settings.timelineCollapsed)
+  const feeds = useFeeds()
+  return (
+    <header className="hidden items-center gap-2 border-b border-[var(--lumi-separator)] px-4 py-2.5 lg:flex">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
+          {scope.kind === 'rss-feed'
+            ? (feeds.data?.find((f) => f.feedUrl === scope.feedUrl)?.title ?? '订阅源')
+            : scopeTitle(scope)}
+          {view === 'unread' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 未读</span>}
+          {view === 'read-later' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 稍后读</span>}
+        </h2>
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">已加载 {loadedCount} 条</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => updateSettings({ timelineCollapsed: !timelineCollapsed })}
+        aria-label={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
+        aria-pressed={timelineCollapsed}
+        title={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
+        className="hidden size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] lg:flex"
+      >
+        {timelineCollapsed ? (
+          <PanelLeft aria-hidden className="size-4 rotate-180" />
+        ) : (
+          <PanelLeftClose aria-hidden className="size-4 rotate-180" />
+        )}
+      </button>
+    </header>
+  )
+}
+
+/** P0-01：稍后读视图 = 服务端时间线（最新加入在前；cursor 分页；
+ * 悬挂成员以 stale 行可见而非消失——服务端是真源，ADR 0004）。
+ * 行卡片复用 EntryRow/EntryCard（Clock 按钮经 useToggleReadLater 走
+ * workspace mutation：乐观移除 + 失败回滚）；stale 行给移除出口。 */
+function ReadLaterList() {
+  const timeline = useReadLaterTimeline()
+  const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = timeline
+  // 列表级失败告警：乐观移除会让行组件卸载（行级错误态随之丢失），
+  // 失败信息由 useReadLaterMemberMutation 写入共享 cache，在此诚实展示。
+  const lastError = useReadLaterLastError()
+
+  const rows = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
+  const sentinelRef = useInfiniteSentinel(hasNextPage, isFetchingNextPage, fetchNextPage, rows.length)
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ListHeader view="read-later" loadedCount={rows.length} />
+      {lastError.data != null && (
+        <p role="alert" className="border-b border-[var(--lumi-separator)] px-4 py-1.5 text-xs text-[var(--lumi-danger)]">
+          稍后读操作失败：{lastError.data}（列表已恢复）
+        </p>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {isPending && (
+          <div className="flex flex-col gap-3 p-4" aria-label="稍后读加载中">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-4 w-4/5" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isError && (
+          <div className="p-4 text-sm text-[var(--lumi-danger)]" role="alert">
+            <p>稍后读加载失败</p>
+            <p className="mt-1 text-xs text-[var(--lumi-text-secondary)]">{error.message}</p>
+            <Button
+              size="sm"
+              onClick={() => refetch()}
+              className="mt-2 max-lg:w-full"
+            >
+              重试
+            </Button>
+          </div>
+        )}
+
+        {!isPending && !isError && rows.length === 0 && (
+          <EmptyState
+            icon={<Clock />}
+            title={EMPTY_TEXTS['read-later'].title}
+            description={EMPTY_TEXTS['read-later'].description}
+            className="h-full"
+          />
+        )}
+
+        {rows.length > 0 && (
+          <ul className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
+            {rows.map((row) => (
+              <ReadLaterRow key={row.itemRef} row={row} />
+            ))}
+            {!isPending && !isError && (
+              <SentinelState
+                sentinelRef={sentinelRef}
+                hasNextPage={hasNextPage}
+                isFetchingNextPage={isFetchingNextPage}
+              />
+            )}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** 时间线单行：entry 卡片（RSS 投影）或 stale 行（悬挂成员，诚实可见）。 */
+function ReadLaterRow({ row }: { row: ReadLaterItem }) {
+  const remove = useReadLaterMemberMutation()
+  if (row.entry !== null && row.entry !== undefined) {
+    // SearchItem 是 EntryListItem 的结构超集（entryRef/title/feedTitle/
+    // read/starred 必备），行组件直接复用；Clock 的激活态来自服务端
+    // refs 清单——点「从稍后读移除」经 mutation 乐观移除该行。
+    return (
+      <li>
+        <div className="max-lg:px-2 max-lg:py-1">
+          <div className="max-lg:hidden">
+            <EntryRow item={row.entry} selected={false} />
+          </div>
+          <div className="lg:hidden">
+            <EntryCard item={row.entry} selected={false} />
+          </div>
+        </div>
+        {remove.isError && remove.variables?.entryRef === row.entry.entryRef && (
+          <p role="alert" className="mt-1 px-4 pb-1 text-xs text-[var(--lumi-danger)]">
+            移除失败：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
+          </p>
+        )}
+      </li>
+    )
+  }
+  // 悬挂成员：卡片缺失（条目已从源删除 / ref 无效）——保留在列表并给
+  // 移除出口，绝不静默隐藏（服务端 stale 契约）。
+  return (
+    <li className="px-4 py-3" data-stale-row={row.itemRef}>
+      <div className="flex items-start gap-2">
+        <Unplug aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-text-tertiary)]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-[var(--lumi-text-secondary)]">条目已失效或不存在</p>
+          <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
+            {row.itemRef} · 加入于 {new Date(row.addedAt).toLocaleString()}
+          </p>
+          {remove.isError && remove.variables?.entryRef === refToEntryRef(row.itemRef) && (
+            <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+              移除失败：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
+            </p>
+          )}
+        </div>
+        <IconButton
+          icon={
+            remove.isPending && remove.variables?.entryRef === refToEntryRef(row.itemRef) ? (
+              <Loader2 aria-hidden className="size-4 animate-spin" />
+            ) : (
+              <Unplug aria-hidden className="size-4" />
+            )
+          }
+          label="从稍后读移除失效条目"
+          size="sm"
+          touch
+          disabled={remove.isPending}
+          onClick={() => remove.mutate({ entryRef: refToEntryRef(row.itemRef), add: false })}
+        />
+      </div>
+    </li>
+  )
+}
+
+/** `rss:<entryRef>` → `<entryRef>`（时间线 itemRef 契约）。 */
+function refToEntryRef(itemRef: string): string {
+  return itemRef.startsWith('rss:') ? itemRef.slice('rss:'.length) : itemRef
+}
+
+/** entries 视图列表（all / unread / starred；read-later 走 ReadLaterList）。 */
+function EntriesList() {
+  const view = useReaderUi((s) => s.view) as Exclude<UiView, 'read-later'>
+  const scope = useReaderUi((s) => s.scope)
+  const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
+  const scrollMarkUnread = useAppSettings((s) => s.settings.scrollMarkUnread)
+  // 0010a Gate E（AC7）：按日期分组
+  const groupByDate = useAppSettings((s) => s.settings.groupByDate)
+  // 0010a Gate F（AC24）：显示层过滤（全局规则，BFF 层 planned·0013）
+  const filterRules = useAppSettings((s) => s.settings.filterRules)
+  const filterEnabled = filterRules.some((r) => r.enabled)
+
+  // feed scope 的列表头标题：用 feeds 数据补全真实 feed 名（§9）
+  const feedsTitle = useEntries(scope, view)
+  const { data, isPending, isError, error, refetch } = feedsTitle
+  // useMemo：data 引用稳定时 entries 引用也稳定（避免 effect 依赖每渲染变化）
+  // P0-01：read-later 客户端过滤已删除——本组件只服务 entries 视图。
+  const entries = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.items) ?? []
+    return filterEnabled
+      ? all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
+      : all
+  }, [data, filterEnabled, filterRules])
+  const hasNextPage = feedsTitle.hasNextPage
+  const isFetchingNextPage = feedsTitle.isFetchingNextPage
+  const fetchNextPage = feedsTitle.fetchNextPage
+
+  const sentinelRef = useInfiniteSentinel(hasNextPage, isFetchingNextPage, fetchNextPage, entries.length)
 
   // ---- 滚动标记已读（0017 正式化）：IntersectionObserver + 保守策略 ----
   const { mutate: markReadMutate } = useEntryStateMutation()
@@ -151,8 +371,6 @@ export default function EntryList() {
               // 甩动经过的文章仍会被标记，但留出误触撤回窗口）
               const timer = settleTimers.current.get(ref)
               if (timer !== undefined) clearTimeout(timer)
-              // 0017：离开视口后短暂停顿确认，期间滚回则取消（快速
-              // 甩动经过的文章仍会被标记，但留出误触撤回窗口）
               settleTimers.current.set(
                 ref,
                 setTimeout(() => {
@@ -197,35 +415,7 @@ export default function EntryList() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 桌面列表头（0011 §22/§24：移动端整行删除——scope 已由 MobileHeader
-          承载，已加载 N 条无产品价值；仅 ≥1024 渲染）。
-          标题 = scope 标题 + 视图后缀（如「RSS 订阅 · 未读」）。 */}
-      <header className="hidden items-center gap-2 border-b border-[var(--lumi-separator)] px-4 py-2.5 lg:flex">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
-            {scope.kind === 'rss-feed'
-              ? (feeds.data?.find((f) => f.feedUrl === scope.feedUrl)?.title ?? '订阅源')
-              : scopeTitle(scope)}
-            {view === 'unread' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 未读</span>}
-            {view === 'read-later' && <span className="ml-1.5 font-normal text-[var(--lumi-text-tertiary)]">· 稍后读</span>}
-          </h2>
-          <p className="text-xs text-[var(--lumi-text-tertiary)]">已加载 {entries.length} 条</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => updateSettings({ timelineCollapsed: !timelineCollapsed })}
-          aria-label={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
-          aria-pressed={timelineCollapsed}
-          title={timelineCollapsed ? '显示文章列表' : '隐藏文章列表'}
-          className="hidden size-7 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] lg:flex"
-        >
-          {timelineCollapsed ? (
-            <PanelLeft aria-hidden className="size-4 rotate-180" />
-          ) : (
-            <PanelLeftClose aria-hidden className="size-4 rotate-180" />
-          )}
-        </button>
-      </header>
+      <ListHeader view={view} loadedCount={entries.length} />
 
       {/* 0011 修正补充：折叠态隐藏列表内容（窄栏仅 header） */}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -258,7 +448,7 @@ export default function EntryList() {
 
         {!isPending && !isError && entries.length === 0 && (
           <EmptyState
-            icon={view === 'read-later' ? <Clock /> : <Inbox />}
+            icon={<Inbox />}
             title={EMPTY_TEXTS[view].title}
             description={EMPTY_TEXTS[view].description}
             className="h-full"
@@ -278,7 +468,7 @@ export default function EntryList() {
                       {group.label}
                     </li>
                   )}
-                  {group.items.map((item) => (
+                  {group.items.map((item: EntryListItem) => (
                     <li
                       key={item.entryRef}
                       data-entry-row-ref={item.entryRef}
@@ -302,26 +492,13 @@ export default function EntryList() {
                       </div>
                     </li>
                   ))}
-                  {/* 无限滚动哨兵（0011：替换「加载更多」按钮）：滚入视口
-                      自动拉下一页；拉取中显示转圈指示；到底显示终态文案 */}
-                  {!isPending && !isError && entries.length > 0 && (
-                    <li
-                      ref={sentinelRef}
-                      aria-hidden={hasNextPage || isFetchingNextPage ? undefined : 'true'}
-                      className="flex items-center justify-center py-4 max-lg:pb-[84px]"
-                      style={{ paddingBottom: hasNextPage || isFetchingNextPage ? undefined : 'max(1rem, var(--safe-bottom))' }}
-                    >
-                      {isFetchingNextPage ? (
-                        <Loader2
-                          aria-label="加载中"
-                          className="size-4 animate-spin text-[var(--lumi-text-tertiary)]"
-                        />
-                      ) : hasNextPage ? (
-                        <span className="text-xs text-[var(--lumi-text-tertiary)]">下滑加载更多…</span>
-                      ) : (
-                        <span className="text-xs text-[var(--lumi-text-tertiary)]">已经到底了</span>
-                      )}
-                    </li>
+                  {/* 无限滚动哨兵（0011）：滚入视口自动拉下一页 */}
+                  {!isPending && !isError && (
+                    <SentinelState
+                      sentinelRef={sentinelRef}
+                      hasNextPage={hasNextPage}
+                      isFetchingNextPage={isFetchingNextPage}
+                    />
                   )}
                 </Fragment>
               ),

@@ -8,11 +8,13 @@ the API refuses to delete or rename it. All SQL is single-line inline
 literals with bound params.
 """
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
 from lumirss.itemref import parse_item_ref
+from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -248,6 +250,49 @@ class WorkspaceStore:
             for row in rows
         ]
 
+    async def list_items_desc(
+        self,
+        workspace_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 25,
+    ) -> tuple[list[WorkspaceItem], str | None]:
+        """Newest-added-first keyset page (read-later timeline, P0-01).
+
+        Cursor is an opaque envelope over (added_at, item_ref); an absent
+        workspace or an invalid cursor raises WorkspaceInvalid.
+        """
+        if limit < 1 or limit > _MAX_ITEM_LIMIT:
+            raise WorkspaceInvalid(f"limit must be between 1 and {_MAX_ITEM_LIMIT}.")
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id FROM workspaces WHERE id = ?", (workspace_id,)
+        )
+        if row is None:
+            raise WorkspaceNotFound(workspace_id)
+        key = _decode_desc_cursor(cursor) if cursor else None
+        key_added = key[0] if key else None
+        key_ref = key[1] if key else None
+        rows = await self._db.fetch_all(
+            "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?",
+            (workspace_id, key_added, key_added, key_added, key_ref, limit + 1),
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        items = [
+            WorkspaceItem(
+                item_ref=str(r["item_ref"]),
+                position=int(r["position"]),
+                added_at=str(r["added_at"]),
+            )
+            for r in rows
+        ]
+        next_cursor = None
+        if has_more and items:
+            last = items[-1]
+            next_cursor = _encode_desc_cursor(last.added_at, last.item_ref)
+        return items, next_cursor
+
     async def reorder_items(
         self, workspace_id: str, ordered_refs: list[str]
     ) -> int:
@@ -279,6 +324,32 @@ class WorkspaceStore:
 
 def utc_now_compact() -> str:
     return utc_now().replace("-", "").replace(":", "").replace("+00:00", "")
+
+
+_DESC_CURSOR_PREFIX = "c1ws."
+_MAX_DESC_CURSOR_LENGTH = 1024
+
+
+def _encode_desc_cursor(added_at: str, item_ref: str) -> str:
+    payload = json.dumps([added_at, item_ref], separators=(",", ":"))
+    return encode_opaque_ref(_DESC_CURSOR_PREFIX, payload)
+
+
+def _decode_desc_cursor(cursor: str) -> tuple[str, str]:
+    payload = decode_opaque_ref(
+        cursor,
+        prefix=_DESC_CURSOR_PREFIX,
+        max_length=_MAX_DESC_CURSOR_LENGTH,
+        error_type=WorkspaceInvalid,
+        description="workspace timeline cursor",
+    )
+    try:
+        added_at, item_ref = json.loads(payload)
+    except ValueError as exc:
+        raise WorkspaceInvalid("timeline cursor payload is not valid JSON.") from exc
+    if not isinstance(added_at, str) or not isinstance(item_ref, str):
+        raise WorkspaceInvalid("timeline cursor payload is not a key pair.")
+    return added_at, item_ref
 
 
 def _validate_name(name: str) -> str:

@@ -684,6 +684,13 @@ main() {
   if ((EXTERNAL_MODE == 1)); then
     COMPOSE_ARGS+=(-f docker-compose.external-caddy.yml)
   fi
+  # Obsidian read-only vault mount (Gate 4): when a host vault directory
+  # is configured, overlay the fixed read-only /vault mount. The BFF only
+  # ever sees the container path LUMIRSS_OBSIDIAN_VAULT_DIR.
+  if [[ -n "$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)" ]]; then
+    COMPOSE_ARGS+=(-f docker-compose.obsidian.yml)
+    export LUMIRSS_OBSIDIAN_VAULT_HOST_DIR="$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)"
+  fi
   case "$cmd" in
     deploy)
       local dextra=()

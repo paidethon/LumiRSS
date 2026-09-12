@@ -7,14 +7,29 @@
 import { Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import SettingsShell from './SettingsShell'
-import { onCloseSettingsRequest } from './settings/settings-bridge'
+import {
+  onCloseSettingsRequest,
+  onOpenSettingsRequest,
+  type SettingsOpenDetail,
+} from './settings/settings-bridge'
 import { cx } from './ui/cx'
 
 export default function SettingsButton({ collapsed }: { collapsed?: boolean }) {
   const [open, setOpen] = useState(false)
+  // P0-12：主界面导航的深链请求（打开设置并直达分类）；null = 无深链。
+  const [deepLink, setDeepLink] = useState<SettingsOpenDetail | null>(null)
 
   // 设置页内容可请求关闭设置壳（跳转订阅中心等主界面动作）
   useEffect(() => onCloseSettingsRequest(() => setOpen(false)), [])
+  // 主界面（侧栏「API 来源」「邮件简报」等）可请求打开设置并直达分类
+  useEffect(
+    () =>
+      onOpenSettingsRequest((detail) => {
+        setDeepLink(detail)
+        setOpen(true)
+      }),
+    [],
+  )
 
   return (
     <>
@@ -38,8 +53,12 @@ export default function SettingsButton({ collapsed }: { collapsed?: boolean }) {
 
       {/* 响应式设置壳：桌面 Modal / 移动全屏页。两者都 portal 到 body
        * （Base UI），CSS 无法再切换挂载——按断点 JS 择一渲染，避免
-       * 隐藏壳与可见壳争抢焦点/滚动锁。 */}
-      <SettingsShell open={open} onClose={() => setOpen(false)} />
+       * 隐藏壳与可见壳争抢焦点/滚动锁。P0-12：深链分类随请求透传。 */}
+      <SettingsShell
+        open={open}
+        onClose={() => setOpen(false)}
+        openCategory={deepLink}
+      />
     </>
   )
 }

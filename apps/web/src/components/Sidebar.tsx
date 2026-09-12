@@ -21,6 +21,7 @@ import { useFeeds } from '../api/queries'
 import type { Feed } from '../api/types'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import type { ContentScope } from '../lib/navigation'
+import { requestOpenSettings } from './settings/settings-bridge'
 import { Skeleton } from './ui/Skeleton'
 import AddSourceDialog from './AddSourceDialog'
 import SidebarHeader from './SidebarHeader'
@@ -73,18 +74,28 @@ function NavItem({
   )
 }
 
-/** Phase 2 禁用项：可见 + 徽标 + 说明（不可点击） */
+/** 不可用导航项（P0-12 a11y 修正）：真 disabled button 语义（可聚焦
+ * 浏览 + 明确的 disabled/aria-disabled 播报），title 承载真实原因——
+ * 不再用不可聚焦 div + aria-disabled（屏幕阅读器通常不播报）。 */
 function PlannedItem({
   icon,
   label,
+  note,
+  badge,
 }: {
   icon: React.ReactNode
   label: string
+  /** 不可用的真实原因（title 悬浮提示 + 语义播报素材）。 */
+  note: string
+  /** 右侧小徽标（如「Phase 2」「见工作台」）；缺省不渲染。 */
+  badge?: string
 }) {
   return (
-    <div
+    <button
+      type="button"
+      disabled
       aria-disabled="true"
-      title="Phase 2 功能（MVP 之后规划），当前不可用"
+      title={note}
       className={cx(
         'flex w-full cursor-default items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-left text-sm',
         'min-h-8 max-lg:min-h-11',
@@ -93,10 +104,12 @@ function PlannedItem({
     >
       {icon}
       <span className="truncate">{label}</span>
-      <span className="ml-auto shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] font-medium">
-        Phase 2
-      </span>
-    </div>
+      {badge !== undefined && (
+        <span className="ml-auto shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] font-medium">
+          {badge}
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -547,8 +560,29 @@ function Sidebar({
             <Link2 aria-hidden className={icon16} />
             网页快照
           </NavItem>
-          <PlannedItem icon={<FileText aria-hidden className={icon16} />} label="API 来源" />
-          <PlannedItem icon={<Mail aria-hidden className={icon16} />} label="邮件简报" />
+          {/* P0-12：API 来源 / 邮件简报已是真实可用能力（Settings 的
+              ApiSourcesSection / MailSection）——导航不再是 PlannedItem，
+              而是真实入口：打开设置壳并直达对应分类。 */}
+          <NavItem
+            active={false}
+            onClick={() => {
+              requestOpenSettings('api-sources')
+              onNavigate?.()
+            }}
+          >
+            <FileText aria-hidden className={icon16} />
+            API 来源
+          </NavItem>
+          <NavItem
+            active={false}
+            onClick={() => {
+              requestOpenSettings('mail')
+              onNavigate?.()
+            }}
+          >
+            <Mail aria-hidden className={icon16} />
+            邮件简报
+          </NavItem>
           {/* phase2 G6：Obsidian 库（只读投影）已可用——section 导航。 */}
           <NavItem
             active={section === 'obsidian'}
@@ -629,7 +663,15 @@ function Sidebar({
             <Bot aria-hidden className={icon16} />
             Agent 工作台
           </NavItem>
-          <PlannedItem icon={<Zap aria-hidden className={icon16} />} label="RAG 索引" />
+          {/* P0-12（RAG 三方矛盾修正）：RAG 索引后端已落地（docs/ROADMAP
+              与 queries 注释一致），但独立管理 UI 尚未提供（wave 2）——
+              不再说「规划中」；诚实描述现状并指向 Agent 工作台的状态 chip。 */}
+          <PlannedItem
+            icon={<Zap aria-hidden className={icon16} />}
+            label="RAG 索引"
+            note="RAG 索引已在服务端运行；当前可在 Agent 工作台查看状态，独立管理入口尚未提供。"
+            badge="见工作台"
+          />
           {/* phase2 G8：标签 / 图谱已可用——section 导航。 */}
           <NavItem
             active={section === 'graph'}

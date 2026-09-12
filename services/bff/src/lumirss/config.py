@@ -172,6 +172,38 @@ class LumiSettings(BaseSettings):
             raise ValueError("must be between 1 and 3650 days")
         return value
 
+    @field_validator("LUMIRSS_SEARCH_SYNC_INTERVAL")
+    @classmethod
+    def _sane_search_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must be 0 (disabled) or a positive number of seconds")
+        return value
+
+    # --- Obsidian projection (Gate 4) ---
+    # Fixed CONTAINER path of the read-only vault bind mount (production
+    # contract). When set, the API cannot change the vault root and the
+    # UI shows the mount instead of asking for host paths. Empty = dev
+    # mode with a DB-configured path.
+    LUMIRSS_OBSIDIAN_VAULT_DIR: str = ""
+    # Background incremental scan cadence in seconds; 0 disables the
+    # poll loop (tests, explicit-rescan-only deployments).
+    LUMIRSS_OBSIDIAN_SCAN_INTERVAL: float = 0.0
+    # --- Outbound fetch policy (Gate 2/8) ---
+    # Comma-separated exact hostnames the operator vouches for even
+    # though they resolve into a private network (deployment-internal
+    # sources: an in-network RSSHub, an E2E fixture server). Empty by
+    # default = private addresses are always refused. The dial still
+    # resolves, validates and pins the address — only the public-IP
+    # rejection is skipped for these names.
+    LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: str = ""
+
+    @field_validator("LUMIRSS_OBSIDIAN_SCAN_INTERVAL")
+    @classmethod
+    def _sane_obsidian_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must be 0 (disabled) or a positive number of seconds")
+        return value
+
     @property
     def ai_configured(self) -> bool:
         return bool(self.AI_API_KEY.get_secret_value().strip())

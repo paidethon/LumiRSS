@@ -9,6 +9,15 @@
  * - 新文章默认“原文”：打开页面绝不发起翻译；切到 双语/仅译文 就是
  *   显式的按需动作（一次），精确缓存命中零 provider 调用；仅查看原文
  *   与纯排版切换（bilingual ↔ translated）不再触发任何请求；
+ * - P0-11：浏览器引擎的翻译编排在用户点击的手势任务内直接启动
+ *   （Reader 把点击转发给本组件注册的 start 回调）——不走
+ *   effect + 120ms timer 链，`Translator.create()` 是手势内第一个
+ *   消耗 user activation 的长等待（语言包冷启动下载不再因此失败）。
+ *   effect + MutationObserver 只保留为“激活之后内容才到达”的第二
+ *   等级路径（此时手势可能已被消耗，失败就诚实给重试按钮）；
+ * - 探测结果（源语言 / 语言对 availability）按文章与语言对缓存
+ *   （模块级 + ref），点击链路在 create() 前不做可避免的等待；
+ * - 同语言短路：探测源 === 目标语言(base) → 不调用任何 translate()；
  * - 配对依据稳定内容块 ID（annotateBlocks 的文档顺序编号），不是换行
  *   猜测；失败只标失败块，重试只重试失败内容；
  * - 执行位置如实标注：ai=AI 提供者（云端/自托管）、libretranslate=
@@ -38,10 +47,13 @@ import {
 import {
   createLocalTranslator,
   detectArticleLanguage,
+  isSameLanguage,
   LocalTranslatorActivationError,
   LocalTranslatorComponentError,
   LocalTranslatorLanguagePairError,
   LocalTranslatorUnsupportedError,
+  localTranslatorPairStatus,
+  type DetectedArticleLanguage,
   type LocalTranslator,
 } from '../lib/local-translator'
 import ArticleContent from './ArticleContent'
@@ -57,6 +69,11 @@ const ENGINE_LABELS: Record<string, string> = {
 function sameBlocks(a: ArticleBlock[] | null, b: ArticleBlock[]): boolean {
   if (a === null || a.length !== b.length) return false
   return a.every((block, i) => block.index === b[i].index && block.text === b[i].text)
+}
+
+/** run 键：块集合（顺序+索引）+ 目标语言的稳定签名（第二等级 effect 去重）。 */
+function runSignature(list: ArticleBlock[], targetLanguage: string): string {
+  return `${list.length}:${list.map((b) => b.index).join(',')}|${targetLanguage}`
 }
 
 /** 本地引擎错误分型 → 诚实中文文案（docs/research/local-translation.md §2）。
@@ -89,9 +106,13 @@ function blocksToInputs(blocks: ArticleBlock[]): TranslationSegmentBlockInput[] 
 export default function ReaderTranslation({
   detail,
   viewMode,
+  registerTranslationStart,
 }: {
   detail: EntryDetail
   viewMode: ReaderViewMode
+  /** P0-11：把“从点击手势直接启动浏览器引擎翻译”的回调注册给 Reader
+   *（Reader 在 LanguageViewControl 的点击事件内同步调用）。 */
+  registerTranslationStart?: (start: () => void) => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [blocks, setBlocks] = useState<ArticleBlock[] | null>(null)
@@ -100,11 +121,19 @@ export default function ReaderTranslation({
   const [localError, setLocalError] = useState<string | null>(null)
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
   const [localRetryable, setLocalRetryable] = useState(false)
-  const [localSourceLabel, setLocalSourceLabel] = useState<string | null>(null)
+  const [localSource, setLocalSource] = useState<DetectedArticleLanguage | null>(null)
+  // P0-11(c)：同语言短路命中（原文即目标语言，零 translate() 调用）。
+  const [sameLanguage, setSameLanguage] = useState(false)
   const attemptedRef = useRef<string>('')
   const localTranslatorRef = useRef<LocalTranslator | null>(null)
   const localTranslatorLangRef = useRef<string | null>(null)
   const localAbortRef = useRef<AbortController | null>(null)
+  // P0-11：点击前预探测的源语言缓存（按正文抽样 key；点击链路命中时
+  // create() 前不再等待 LanguageDetector）。
+  const detectionCacheRef = useRef<{ key: string; value: DetectedArticleLanguage } | null>(null)
+  // 正在/已经按此输入（块集合 + 目标语言）启动过的 run 键：第二等级
+  // effect 据此不重复启动（也不 abort 手势路径的在途下载）。
+  const runKeyRef = useRef<string>('')
 
   const settings = useAiSettings()
   const engine = settings.data?.translationEngine ?? 'ai'
@@ -160,68 +189,123 @@ export default function ReaderTranslation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, serverEngine, blocks, lookup.isPending, lookup.isError, serverSegments])
 
-  // 本地引擎：整个链路只在此浏览器执行；切模式的点击即 user activation。
-  // phase2 G2：源语言不再硬编码 'en'——探测文章主语言，失败诚实回退。
-  // phase2 G3：create 的 downloadprogress 接入状态条（下载不再无反馈）。
-  // phase2 G4：runLocalTranslation 可从真实点击直接调用（新 activation）；
-  // 文章切换/目标语言变更时 abort 旧任务，cancelled 标志防旧译文回写。
-  const runLocalTranslation = useCallback(async (): Promise<void> => {
-    if (blocks === null || blocks.length === 0) return
-    localAbortRef.current?.abort()
-    const controller = new AbortController()
-    localAbortRef.current = controller
-    setLocalBusy(true)
-    setLocalError(null)
-    setLocalRetryable(false)
-    setDownloadProgress(null)
-    if (localTranslatorLangRef.current !== targetLanguage) {
-      setLocalTexts(new Map())
-      localTranslatorRef.current?.destroy()
-      localTranslatorRef.current = null
-    }
-    const cancelled = () => controller.signal.aborted
-    try {
-      if (localTranslatorRef.current === null) {
-        const sample = blocks.map((b) => b.text).join(' ')
-        const source = await detectArticleLanguage(sample)
-        setLocalSourceLabel(source)
-        localTranslatorRef.current = await createLocalTranslator(
-          source,
-          targetLanguage,
-          {
-            onDownloadProgress: (fraction) => {
-              if (!cancelled()) setDownloadProgress(fraction)
+  // 本地引擎：整个链路只在此浏览器执行。
+  // P0-11 编排契约：
+  // - 手势路径：Reader 在语言视图点击事件内同步调用 startTranslation →
+  //   DOM 块就地同步收集 → runLocalTranslation。LanguageDetector（不消耗
+  //   user activation）之后，`Translator.create()` 是第一个可消耗
+  //   activation 的调用（语言包冷启动下载在手势内存活）；
+  // - effect 路径（第二等级）：激活后内容才到达（MutationObserver）或
+  //   组件直接以非 original 模式挂载。若当时需要下载且 activation 已被
+  //   消耗 → NotAllowedError → 诚实重试按钮（重试永远带新 activation）；
+  // - 探测/availability 双层缓存：ref（按文章抽样）+ 模块级语言对缓存；
+  // - 同语言短路：source === target(base) → 零 translate() 调用；
+  // - 文章切换/目标语言变更时 abort 旧任务，cancelled 标志防旧译文回写；
+  //   detect→create 跨 await 处逐一检查 abort（不浪费下载）。
+  const runLocalTranslation = useCallback(
+    async (override?: ArticleBlock[]): Promise<void> => {
+      const list = override ?? blocks
+      if (list === null || list.length === 0) return
+      runKeyRef.current = runSignature(list, targetLanguage)
+      localAbortRef.current?.abort()
+      const controller = new AbortController()
+      localAbortRef.current = controller
+      setLocalBusy(true)
+      setLocalError(null)
+      setLocalRetryable(false)
+      setDownloadProgress(null)
+      setSameLanguage(false)
+      if (localTranslatorLangRef.current !== targetLanguage) {
+        setLocalTexts(new Map())
+        localTranslatorRef.current?.destroy()
+        localTranslatorRef.current = null
+      }
+      const cancelled = () => controller.signal.aborted
+      try {
+        if (localTranslatorRef.current === null) {
+          const sample = list.map((b) => b.text).join(' ')
+          // 源语言：命中点击前预探测缓存则零等待；未命中就地探测
+          // （探测不消耗 activation，但仍在手势任务内完成）。
+          let source =
+            detectionCacheRef.current !== null && detectionCacheRef.current.key === sample
+              ? detectionCacheRef.current.value
+              : null
+          if (source === null) {
+            source = await detectArticleLanguage(sample)
+            detectionCacheRef.current = { key: sample, value: source }
+          }
+          setLocalSource(source)
+          if (cancelled()) return
+          // P0-11(c)：同语言短路——原文即目标语言，诚实提示，零翻译。
+          if (isSameLanguage(source.lang, targetLanguage)) {
+            setSameLanguage(true)
+            setLocalTexts(new Map())
+            return
+          }
+          // availability 预热进模块级缓存（探测不触发下载、不消耗
+          // activation；后续对同一语言对零 await）。
+          void localTranslatorPairStatus(source.lang, targetLanguage)
+          localTranslatorRef.current = await createLocalTranslator(
+            source.lang,
+            targetLanguage,
+            {
+              onDownloadProgress: (fraction) => {
+                if (!cancelled()) setDownloadProgress(fraction)
+              },
             },
-          },
-        )
-        localTranslatorLangRef.current = targetLanguage
-      }
-      const translator = localTranslatorRef.current
-      const next = new Map<number, string>()
-      for (const block of blocks) {
+          )
+          if (cancelled()) return
+          localTranslatorLangRef.current = targetLanguage
+        }
+        const translator = localTranslatorRef.current
+        const next = new Map<number, string>()
+        for (const block of list) {
+          if (cancelled()) return
+          const text = await translator.translate(block.text, controller.signal)
+          next.set(block.index, text)
+        }
+        if (!cancelled()) setLocalTexts(next)
+      } catch (error) {
         if (cancelled()) return
-        const text = await translator.translate(block.text, controller.signal)
-        next.set(block.index, text)
+        const mapped = localEngineError(error)
+        setLocalError(mapped.message)
+        setLocalRetryable(mapped.retryable)
+      } finally {
+        if (!cancelled()) {
+          setLocalBusy(false)
+          setDownloadProgress(null)
+        }
       }
-      if (!cancelled()) setLocalTexts(next)
-    } catch (error) {
-      if (cancelled()) return
-      const mapped = localEngineError(error)
-      setLocalError(mapped.message)
-      setLocalRetryable(mapped.retryable)
-    } finally {
-      if (!cancelled()) {
-        setLocalBusy(false)
-        setDownloadProgress(null)
-      }
-    }
-  }, [blocks, targetLanguage])
+    },
+    [blocks, targetLanguage],
+  )
 
-  // 显式请求路径（切到 双语/仅译文 或块集合/目标语言变化）。
+  // P0-11：手势入口——同步收集当前 DOM 块（点击时刻快照）后立即编排。
+  // 注册本身在 effect（不是 activation 的一部分）；调用发生在点击事件
+  // 的同步任务里，user activation 完整保留给 Translator.create()。
+  const startTranslation = useCallback(() => {
+    if (engine !== 'browser') return
+    const root = containerRef.current
+    if (root === null) return
+    const found = annotateBlocks(root)
+    setBlocks((prev) => (sameBlocks(prev, found) ? prev : found))
+    void runLocalTranslation(found.length > 0 ? found : undefined)
+  }, [engine, runLocalTranslation])
+
+  useEffect(() => {
+    registerTranslationStart?.(startTranslation)
+    return () => registerTranslationStart?.(() => {})
+  }, [registerTranslationStart, startTranslation])
+
+  // 第二等级路径（非手势）：切到 双语/仅译文 时内容尚未到达（observer
+  // 稍后产出块）、或组件直接以非 original 挂载、或目标语言变化。
+  // 此时若语言包需要下载而 activation 已被消耗 → 诚实重试按钮。
+  // 手势路径已按同一输入启动过的 run 不重复启动/不 abort。
   useEffect(() => {
     if (!active || engine !== 'browser' || blocks === null || blocks.length === 0) {
       return
     }
+    if (runKeyRef.current === runSignature(blocks, targetLanguage)) return
     void runLocalTranslation()
     return () => {
       localAbortRef.current?.abort()
@@ -255,12 +339,14 @@ export default function ReaderTranslation({
       setLocalError(null)
       setLocalRetryable(false)
       setDownloadProgress(null)
-      setLocalSourceLabel(null)
+      setLocalSource(null)
+      setSameLanguage(false)
       attemptedRef.current = ''
       localAbortRef.current?.abort()
       localTranslatorRef.current?.destroy()
       localTranslatorRef.current = null
       localTranslatorLangRef.current = null
+      detectionCacheRef.current = null
     }
   }, [detail.entryRef])
 
@@ -295,14 +381,15 @@ export default function ReaderTranslation({
           failedCount={failedCount}
           localError={localError}
           downloadProgress={downloadProgress}
-          localSource={localSourceLabel}
+          localSource={localSource}
+          sameLanguage={sameLanguage}
           onLocalRetry={
             localError !== null &&
             localRetryable &&
             blocks !== null &&
             blocks.length > 0
               ? () => {
-                  // G4：重试 = 直接调用（真实点击带来的新 user activation）。
+                  // 重试 = 直接调用（真实点击带来的新 user activation）。
                   void runLocalTranslation()
                 }
               : undefined
@@ -325,6 +412,7 @@ function TranslationStatusBar({
   localError,
   downloadProgress,
   localSource,
+  sameLanguage,
   onLocalRetry,
   lookupError,
   cached,
@@ -335,10 +423,12 @@ function TranslationStatusBar({
   doneCount: number
   failedCount: number
   localError: string | null
-  /** 语言包下载进度 0..1（null = 不在下载中）——phase2 G3。 */
+  /** 语言包下载进度 0..1（null = 不在下载中）。 */
   downloadProgress: number | null
-  /** 探测到的源语言（base code）；'en' 回退时如实显示。 */
-  localSource: string | null
+  /** 探测到的源语言（base code）+ 来源；via='fallback' 才显示回退标注。 */
+  localSource: DetectedArticleLanguage | null
+  /** P0-11(c)：原文即目标语言（同语言短路，零 translate() 调用）。 */
+  sameLanguage: boolean
   onLocalRetry?: () => void
   lookupError: unknown
   cached: boolean
@@ -354,8 +444,15 @@ function TranslationStatusBar({
       <span>{engineLabel}</span>
       {engine === 'browser' && localSource !== null && (
         <span>
-          源语言：{localSource}
-          {localSource === 'en' && <span className="ml-1">（探测失败回退）</span>}
+          源语言：{localSource.lang}
+          {localSource.lang === 'en' && localSource.via === 'fallback' && (
+            <span className="ml-1">（探测失败回退）</span>
+          )}
+        </span>
+      )}
+      {engine === 'browser' && sameLanguage && !busy && (
+        <span className="text-[var(--lumi-text-secondary)]">
+          原文即目标语言，无需翻译。
         </span>
       )}
       {busy && (

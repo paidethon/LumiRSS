@@ -11,12 +11,14 @@ import {
   createLocalTranslator,
   detectArticleLanguage,
   detectLanguage,
+  isSameLanguage,
   LocalTranslatorActivationError,
   LocalTranslatorComponentError,
   LocalTranslatorLanguagePairError,
   LocalTranslatorUnsupportedError,
   localTranslatorPairStatus,
   normalizeBcp47,
+  resetLocalTranslatorCache,
 } from '../lib/local-translator'
 
 type MonitorCb = (event?: { loaded?: number }) => void
@@ -68,6 +70,8 @@ function fakeCtor(): { create: ReturnType<typeof vi.fn> } {
 beforeEach(() => {
   delete (window as unknown as { Translator?: unknown }).Translator
   delete (window as unknown as { LanguageDetector?: unknown }).LanguageDetector
+  // P0-11：模块级 availability 缓存随用例重置（fake 环境可重建）。
+  resetLocalTranslatorCache()
 })
 
 afterEach(() => {
@@ -176,18 +180,31 @@ describe('G2 源语言检测', () => {
     expect(normalizeBcp47(null)).toBeNull()
   })
 
-  it('LanguageDetector 存在 → 探测主语言；zh 文本回 zh', async () => {
+  it('isSameLanguage：目标语言取 base 后比较（zh-CN vs zh 短路；en 不短路）', () => {
+    expect(isSameLanguage('zh', 'zh-CN')).toBe(true)
+    expect(isSameLanguage('en', 'en-US')).toBe(true)
+    expect(isSameLanguage('en', 'zh-CN')).toBe(false)
+    expect(isSameLanguage('zh', '不是语言')).toBe(false)
+  })
+
+  it('LanguageDetector 存在 → 探测主语言（via=detected，P0-11 判别结果）', async () => {
     installFake({
       detector: { detect: async () => [{ detectedLanguage: 'zh-Hans', confidence: 0.9 }] },
     })
     expect(await detectLanguage('这是一段中文文本')).toBe('zh')
-    expect(await detectArticleLanguage('这是一段中文文本的内容抽样')).toBe('zh')
+    expect(await detectArticleLanguage('这是一段中文文本的内容抽样')).toEqual({
+      lang: 'zh',
+      via: 'detected',
+    })
   })
 
-  it('探测失败 / 无检测器 → 诚实回退 fallback（不假装检测成功）', async () => {
+  it('探测失败 / 无检测器 → 诚实回退（via=fallback，与真英语可区分）', async () => {
     installFake() // 无 LanguageDetector
     expect(await detectLanguage('hello world')).toBeNull()
-    expect(await detectArticleLanguage('hello world', 'en')).toBe('en')
+    expect(await detectArticleLanguage('hello world', 'en')).toEqual({
+      lang: 'en',
+      via: 'fallback',
+    })
 
     installFake({
       detector: {
@@ -196,23 +213,51 @@ describe('G2 源语言检测', () => {
         },
       },
     })
-    expect(await detectArticleLanguage('texto español', 'en')).toBe('en')
+    expect(await detectArticleLanguage('texto español', 'en')).toEqual({
+      lang: 'en',
+      via: 'fallback',
+    })
+  })
+
+  it('真英语探测成功 → via=detected（P0-11(b)：不再与探测失败混淆）', async () => {
+    installFake({
+      detector: { detect: async () => [{ detectedLanguage: 'en', confidence: 0.98 }] },
+    })
+    expect(await detectArticleLanguage('a genuine english article sample')).toEqual({
+      lang: 'en',
+      via: 'detected',
+    })
   })
 
   it('空抽样 → 直接回退，不调用检测器', async () => {
-    expect(await detectArticleLanguage('   ', 'en')).toBe('en')
+    expect(await detectArticleLanguage('   ', 'en')).toEqual({ lang: 'en', via: 'fallback' })
   })
 
   it('zh→en：探测 zh 后以 zh 为源语言 create', async () => {
     installFake({
       detector: { detect: async () => [{ detectedLanguage: 'zh', confidence: 0.95 }] },
     })
-    await createLocalTranslator(await detectArticleLanguage('中文文章'), 'en')
+    const detected = await detectArticleLanguage('中文文章')
+    await createLocalTranslator(detected.lang, 'en')
     const ctor = fakeCtor() as unknown as {
       create: ReturnType<typeof vi.fn>
     }
     expect(ctor.create.mock.calls[0][0]).toEqual(
       expect.objectContaining({ sourceLanguage: 'zh', targetLanguage: 'en' }),
     )
+  })
+
+  it('P0-11：availability 探测按语言对做模块级缓存（同对第二次零 ctor 调用）', async () => {
+    installFake({ availabilityResult: 'available' })
+    expect(await localTranslatorPairStatus('en', 'zh')).toBe('available')
+    expect(await localTranslatorPairStatus('en', 'zh')).toBe('available')
+    const ctor = fakeCtor() as unknown as {
+      availability: ReturnType<typeof vi.fn>
+    }
+    // 第二次命中缓存：ctor.availability 只在首次被调用。
+    expect(ctor.availability).toHaveBeenCalledTimes(1)
+    // 不同语言对不命中。
+    expect(await localTranslatorPairStatus('fr', 'zh')).toBe('available')
+    expect(ctor.availability).toHaveBeenCalledTimes(2)
   })
 })
