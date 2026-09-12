@@ -111,6 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     settings = LumiSettings()
     interval = settings.LUMIRSS_SEARCH_SYNC_INTERVAL
+    app.state.search_sync_task = None
     if interval > 0:
         # Build the projection service eagerly so the background sync runs
         # even before the first search request. Unconfigured FreshRSS
@@ -126,22 +127,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:  # noqa: BLE001 — never block startup on search
             _logger.info("search sync disabled (FreshRSS not configured)")
 
-    async def search_sync_loop() -> None:
-        while True:
-            await asyncio.sleep(interval)
-            service: SearchIndexService | None = app.state.search_service
-            if service is None:
-                continue
-            try:
-                await service.maybe_sync()
-            except Exception:  # noqa: BLE001 — sync must never kill the app
-                _logger.exception("search index sync failed; will retry")
+        async def search_sync_loop() -> None:
+            while True:
+                await asyncio.sleep(interval)
+                service: SearchIndexService | None = app.state.search_service
+                if service is None:
+                    continue
+                try:
+                    await service.maybe_sync()
+                except Exception:  # noqa: BLE001 — sync must never kill the app
+                    _logger.exception("search index sync failed; will retry")
 
-    sync_task = asyncio.create_task(search_sync_loop())
+        # P0-13: the task exists only when sync is enabled; interval=0 must
+        # not create a sleep(0) hot loop.
+        app.state.search_sync_task = asyncio.create_task(search_sync_loop())
     yield
-    sync_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await sync_task
+    sync_task = app.state.search_sync_task
+    if sync_task is not None:
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sync_task
     await app.state.http_client.aclose()
 
 

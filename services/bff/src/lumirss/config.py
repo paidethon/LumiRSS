@@ -172,6 +172,13 @@ class LumiSettings(BaseSettings):
             raise ValueError("must be between 1 and 3650 days")
         return value
 
+    @field_validator("LUMIRSS_SEARCH_SYNC_INTERVAL")
+    @classmethod
+    def _sane_search_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must be 0 (disabled) or a positive number of seconds")
+        return value
+
     @property
     def ai_configured(self) -> bool:
         return bool(self.AI_API_KEY.get_secret_value().strip())

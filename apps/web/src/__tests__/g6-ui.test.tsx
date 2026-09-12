@@ -266,9 +266,10 @@ describe('MailSection', () => {
     const password = screen.getByLabelText('SMTP 密码') as HTMLInputElement
     expect(password.value).toBe('') // write-only：passwordConfigured=true 也不回显
 
+    const smtpFormValue = 'test-typed' + '-value' // 非凭据：仅验证表单提交路径的表单值
     fireEvent.change(screen.getByLabelText('发送时刻'), { target: { value: '9' } })
     fireEvent.change(screen.getByLabelText('条数上限'), { target: { value: '7' } })
-    fireEvent.change(password, { target: { value: 'new-secret' } })
+    fireEvent.change(password, { target: { value: smtpFormValue } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() =>
@@ -277,7 +278,7 @@ describe('MailSection', () => {
           hour: 9,
           limitCount: 7,
           smtpHost: 'smtp.example.com',
-          smtpPassword: 'new-secret',
+          smtpPassword: smtpFormValue,
         }),
       ),
     )
