@@ -32,6 +32,27 @@
 
 ## 外部阻塞
 
+### 迁移编号预分配（防冲突，主 Agent 统一登记）
+
+| 编号 | 内容 | Owner |
+| --- | --- | --- |
+| 0016_asset_origin | library_assets 增 url/原始元数据列（P0-04c） | IMPL-BE-1 |
+| 0017_tag_name_nocase | tags 大小写不敏感唯一 + 既有变体合并（P0-10f） | 主 Agent |
+| 0018_mail_list_scope | mail_seen 按 list 隔离 + 稳定指纹（P0-06j/k） | IMPL-BE-2 |
+| 0019_api_source_lastgood | api_sources 持久化 last-known-good Atom + 状态（P0-05c/e） | IMPL-BE-2 |
+| 0020_obsidian_scan_state | obsidian 扫描 checkpoint/截断状态（P0-09） | 主 Agent |
+
+规则：新增迁移一律先在此登记编号；migrations 按文件名字典序发现。
+
+### 共享文件所有权（实现期）
+
+主 Agent 独占：`deps.py`、`main.py`、`itemref.py`/`sources.py`、`models.py` 的
+workspace/tags/search/graph 段、`Dockerfile`、所有 compose/Caddy/env 样例、
+`contracts/openapi.yaml` 与一切 generated 产物、迁移编号登记。
+IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己域的段）。
+其他共享文件变更以 diff 形式报给主 Agent 落地。
+
+
 ### BLOCKER-E1 — 生产直接核验不可用
 
 - 症状：本会话 SSH（root@47.100.64.202）publickey denied；无法读取生产 SHA/迁移版本/表行数。
@@ -75,6 +96,7 @@
   - 新问题：`fetch_for_clip` 返回原始 URL 而客户端存原始 URL（重定向后 dedupe/展示错位，`routers/clips.py:52`）；`fetchedAt` 客户端任意字符串未验证。
 - 修复方案：服务端提取+sanitize 管线（readability 类算法在 BFF 内实现），浏览器只提交 URL；钉住已校验地址（自研 resolver 或连接前校验）；每链路总时限；事务化写入。
 - Owner：IMPL-BE-1（Gate 2）。
+- 实现: 服务端管线落地 — `article_extract.py`（readability 式正文/标题/署名提取，纯 stdlib）+ `article_sanitize.py`（allow-list 清洗：去 script/iframe/object/embed、on* 属性、javascript:/data: URL、CSS expression，深度/体积封顶）+ `ssrf_transport.py`（resolve→全地址校验→按钉住 IP 直拨，Host/SNI 保持原身份，杀 DNS-rebinding TOCTOU）+ `clip_fetch.py`（每链路 30s 总预算、validate_hop 捕 OSError、返回 finalUrl）+ `db_tx.py` + `library_clips.py` 事务化写入（identity+clip+search 投影单事务，IntegrityError 回滚无孤儿）。POST /clips/fetch 返回服务端提取+清洗后的文章（title/byline/contentHtml/contentText/finalUrl）；POST /clips 不再信任任何客户端 HTML（deprecated 字段接受但忽略，服务端按 finalUrl 重取重导出）。测试: `test_clip_pipeline.py`（恶意 HTML 矩阵）+ `test_ssrf_transport.py`（钉住拨号/私有拒绝先于拨号/真实本地源 Host+SNI 端到端）+ `test_clip_fetch.py`（重定向 finalUrl/链路预算/MIME/全管线）+ `test_library_clips.py`，6 文件合计 59 passed。
 
 ### P0-04 — Snapshot 在生产镜像中不可用且命令错误 — `confirmed`
 
@@ -90,6 +112,7 @@
   - 新问题：列表响应永远 `deduplicated=False`（模型默认值，路由漏字段）。
 - 修复方案：固定版本+checksum 安装 monolith 进生产镜像；`monolith <url> -o <file> -I -t 60` 按真实 CLI；持久化原始 URL+创建时间+物理大小（forward migration 或复用列）；去重语义修正+测试反转断言修正；配额按物理唯一字节；引用计数删除+事务；**子资源 SSRF：monolith 无内建代理/白名单能力 → 默认禁用远程子资源（`-i` 本地图片？需按固定版本 `--help` 核实）或网络级隔离；无法安全约束则如实禁用远程 snapshot**。
 - Owner：IMPL-BE-1（Gate 2）。
+- 实现: (a) Dockerfile 安装 diff 已提交主 Agent（pin v2.10.1 + sha256）。(b) argv 实测 v2.10.1 `--help` 修正为 `<url> -o <file> -t 60 -I -j`（x86_64 sha256 `663ca914…05df`，aarch64 `7f8cac62…9997`），去掉 `-C 1` cookie 误用与 `-e`（网络错误保持 fatal=诚实）；真实二进制 e2e：页面与全部子资源以 absolute-URI 经 HTTP_PROXY 到达代理，失败 exit≠0 不写产物。(h) 子资源 SSRF 闭环：新模块 `ssrf_proxy.py` 进程内正向代理，每请求 resolve→ensure_public_address→按钉住 IP 直拨（http origin-form 转发；https CONNECT 校验后盲隧道），不可解析/非公网/非 http(s) 一律 403 fail-closed（实测 169.254.169.254 → 403 → monolith exit 1 无产物）；runner 用最小子进程 env（PATH+代理变量）接线。(c) migration `0016_asset_origin.sql` 增 `url`（旧行回填 ''），列表端点返回真实 url。(d) dedupe 语义修正 True=本次保存复用已有字节，列表返回真实值（同秒保存按 (created_at,uuid) 规范序推导）。(e) 配额按每 sha256 计费一次。(f) 删除=资产行+身份行单事务，末引用提交后 unlink。(g) 保存先落盘后单事务、失败补偿删文件，`reconcile()` 清扫孤儿文件/死行。测试: `test_library_snapshots.py` + `test_ssrf_proxy.py` 等 8 文件合计 82 passed。
 
 ### P0-05 — API Source 的 feed 地址、Atom 与缓存逻辑不成立 — `confirmed`
 
@@ -182,6 +205,7 @@
   - 新问题：search library 腿分页重复行（每页重跑无游标查询+flatMap）；favorites `rss:` ref 可收藏但库腿永不显示且不清理；AI tag suggestion 用裸 ref 做 prompt 且 `existing` 计算后丢弃；`test_tags_graph.py:131` 死代码；FavoritesPage 重复 DateGroup 接口声明。
 - 修复方案（Gate 1 后端 + Gate 7 UI）：attach 幂等优先+existence validation（走统一 resolver）；大小写策略落地（决定：NFC+casefold 唯一性，forward-compatible——同名不同 case 归并为已有 tag，迁移脚本合并既有 case 变体）；graph scope 作用于全部边类型+返回 raw total 与返回数两个数字；wikilink 解析真实 note/显式 unresolved；UI 全闭环（见 IMPL-FE）。
 - Owner：主 Agent（后端语义）+ IMPL-FE（UI）。
+- FE wave1 ✓：workspace 重命名/删除 UI（PATCH/DELETE + 双重确认，保留工作区不给入口，queries 失效 ['workspaces']/['workspace']）；条目标签 attach/detach（EntryActionButtons 标签 Popover：useItemTags 勾选真值 + useTags 全量 ∪ suggested + 新建；assignTag/unassignTag 首批消费者）；标签管理收在图谱页标签列表行内菜单（重命名/删除，最小可发现面）；库收藏切换（UnifiedContentCard 库类 kind + FavoritesPage LibraryRow 取消收藏；乐观移除+回滚+诚实错误，RSS star 不动）（tests: p0-10-closures 9 + library-ui 11 passed）。locally_verified。
 
 ### P0-11 — Translation 的 user activation 仍可能被异步链消耗 — `confirmed`
 
@@ -193,6 +217,7 @@
   - 新发现：`localTranslatorAvailable()` 导出但零调用——不支持的平台也渲染翻译控件，点开才知道不可用（`ReaderHeader.tsx:324-326`）。
 - 修复方案：create() 移入手势内（预检提前缓存 availability/detect 结果）；真英语不标”回退”；同语言短路；不支持平台隐藏/禁用控件并给原因；每次重试新 activation。
 - Owner：IMPL-FE（Gate 7）。
+- FE wave1 ✓：点击→Reader 注册回调手势内直接编排（effect+120ms 降为二等路径）；detectArticleLanguage 判别 {lang,via}、真英语不再标回退；同语言短路零 translate()；availability 模块级缓存 + 探测 ref 缓存；detect→create 跨 await abort 检查；不支持平台控件禁用+原因（localTranslatorAvailable 首批消费者）；真实 activation 验证留给 headed-Chrome 矩阵（tests: local-translator 16 + browser-engine 5 + gesture 7 passed）。locally_verified（jsdom 编排契约）。
 
 ### P0-12 — 导航、文档和实际能力自相矛盾 — `confirmed`
 
@@ -204,6 +229,7 @@
   - a11y：`PlannedItem` 用不可聚焦 div + `aria-disabled`（屏幕阅读器通常不播报）；Graph 画布节点仅 tap 无键盘等价路径。
 - 修复方案：导航状态来自真实能力（可用→入口；不可用→诚实禁用+指向 Settings）；补 RAG 设置入口；修正 Settings 占位文案；ROADMAP/README 与实现对齐；PlannedItem 语义修正。
 - Owner：IMPL-FE + 主 Agent（Gate 7）。
+- FE wave1 ✓：API 来源/邮件简报 nav → 真实入口（settings-bridge 新增 requestOpenSettings 深链，桌面 Modal 与移动全屏页共用；未知分类降级 general）；RAG 索引选择「诚实禁用 + 指向 Agent 工作台」（不称规划中，badge 见工作台——独立管理 UI wave 2）；Settings 工作区卡改为「已上线」并指向真实入口；PlannedItem/RailItem 改真 disabled button + 说明（a11y）（tests: p0-12-navigation 5 + gate-c 10 + agent-graph-ui 7 passed）。locally_verified。
 
 ### P0-13 — 搜索后台任务在 interval=0 时空转 — `confirmed`
 
@@ -213,5 +239,20 @@
 - Owner：IMPL-BE-2 或主 Agent（Gate 0 顺手修）。
 
 ## 证据附录
+
+### 修复进度（按 Gate）
+
+- **P0-13** ✓ `6600c33`：interval=0 不再创建任务；负值被 config 拒绝；3 个回归测试。locally_verified。
+- **Gate 1 后端（主 Agent）** ✓ `83e5066`：
+  - P0-02：resolve_library 按 kind 分派（bookmark/clip/snapshot/obsidian_note）+ 打开 payload + 并发 batch resolve；20 个回归测试（test_gate1_foundations.py）。locally_verified。
+  - P0-10 后端：attach 幂等优先、NOCASE（migration 0017 合并变体）、ItemRef 存在性验证（workspace/tag/favorite）、graph scope 全边隔离 + totalNodes 真实总数 + wikilink 解析真实 note/显式 unresolved、starred 过滤作用于 library 腿、tag→items 服务端列表端点。**额外发现并修复**：DELETE /tags/assign 被 /{tag_id} 路由捕获的声明顺序 bug（detach 自上线即不可用）。
+  - P0-01 后端：GET /workspaces/read-later/timeline 服务端时间线（keyset 分页、投影优先+adapter 回退、悬挂成员 stale 可见）。
+- **Gate 4（主 Agent）** ✓（代码完成，待提交）：env 固定 vault 根 + 只读 bind mount overlay（docker-compose.obsidian.yml + ./lumirss 自动接线 + env 样例）；rename 消歧（唯一删除者+唯一新增者）；单事务扫描批次；索引快照一致渲染；显式截断（migration 0020 + truncatedNotes + NoteView.truncated）；LUMIRSS_OBSIDIAN_SCAN_INTERVAL 轮询；缺失 note 404；服务启动即构建（同时封死 P0-08f 的 deps 竞争后端半边）；10 个回归测试（test_obsidian_gate4.py）。
+- **BE-1（Gate 2 剪藏/快照/SSRF）**：进行中——已见 article_extract.py、article_sanitize.py、ssrf_transport.py、ssrf_proxy.py、db_tx.py、migrations/0016、test_clip_pipeline.py、test_ssrf_transport.py 落盘。
+- **BE-2（Gate 3 API源/邮件）** ✓ 代码完成（报告已交付；范围内 52 passed + 3 xfail；接线后本机复跑 83 passed + 2 xfail + 1 xpass）：
+  - P0-05：共享 RFC4287 渲染器 atom_render.py；feed updated 内容派生+单调；稳定 ETag+可靠 304（修 flaky 同秒断言）；last-known-good 持久化（migration 0019）+ `X-Lumi-Stale` 降级；退订失败阻止删除（409 unsubscribe_failed）；双 base URL（默认 `http://bff:8000`）；fetch_json 流式 2MB 上限（修 OOM DoS）。
+  - P0-06：per-list 去重（migration 0018）+ 稳定内容指纹；ingest 单事务；webhook bearer 通路（middleware 三处 defer + 10MB 路径限额，主 Agent 已落地）；scheduler/IMAP 任务工厂入 lifespan（主 Agent 已落地）；send-now 服务端取材（422 no_digest_items）；FreshRSS 自动订阅（诚实 subscribeFailed）；IMAP await 修复+配置/测试/轮询端点；Atom 合规。
+  - 主 Agent 已落地：middleware.py ×3、main.py lifespan 接线、.env.prod.example（LUMIRSS_ATOM_BASE_URL）、Caddyfile /feeds 内部 token 指令。待 BE-2 收尾：去 xfail 标记 + test_mail_imap 密码字面量（钩子拦截项）。
+- **FE 波 1（Gate 7 翻译/导航/tags/favorites/workspace UI）**：进行中——web 侧 20 个文件修改中。
 
 （各 P0 的复现输出、失败测试、审计 file:line 证据，随 Gate 推进追加。）
