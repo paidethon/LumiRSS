@@ -301,3 +301,34 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
   机制已在位）；schema 仅前向累加，v15 旧代码可运行于 v20 库（升级演练反向兼容证明）。
 - 迭代中修复的部署真相：FreshRSS CLI 配置后必须 `access-permissions`/chown（否则 greader
   登录 "configuration cannot be found"）——已固化进 run-smoke.sh 的 init。
+
+## 部署记录（2026-09-13，BLOCKER-E1 解除后）
+
+- 合并：PR #44（recovery → main）required checks 8/8 绿后合并 `8177748`；
+  部署后生产 smoke 发现 graph 路由 `max` 参数遮蔽内置函数的 500 → PR #45 修复
+  （HTTP 级回归测试补齐）→ checks 绿 → 合并 `0704e2c`。
+- 生产：47.100.64.202 /opt/lumirss，`./lumirss update --build`（GHCR 私有拉取 denied →
+  服务器本地构建）。**旧 SHA 7d1191b → 新 SHA 0704e2c**（镜像 tag 0704e2c9b0a2）。
+- 部署前备份：20260913-060626（+ 更早的 20260913-012436）；回滚快照
+  `.image-tag.previous` / `.env.prod.previous` 已手工修正指向 7d1191b7b603（已知
+  dispatch 陷阱）。
+- **生产 smoke（全部只读，容器内 + internal token）**：version/feeds/timeline/search/
+  workspaces/read-later timeline/tags/obsidian/rag/graph/mail/backups 全 200；
+  graph 在修复后 200（`{"nodes":[],"truncated":false,...}`）；basic auth 边界
+  401 挑战正常（负向验证）；schema v20。
+- 部署注意（记录在案）：回滚到 7d1191b 镜像时，0018 重建后的 mail_seen 列名不同，
+  邮件摄取去重会报错——生产 0 邮件列表，无数据影响；其余域（tags/library/api-source/
+  obsidian）向后兼容。
+
+## 状态总览（收尾）
+
+| 范围 | 状态 |
+| --- | --- |
+| P0-01/02/10（域基础） | production_verified |
+| P0-03/04（剪藏/快照/SSRF） | production_verified（镜像内 monolith 实测） |
+| P0-05/06（API 源/邮件） | production_verified（端点级；Mailpit 级验证在 E2E） |
+| P0-07/08（RAG/Agent） | production_verified（端点级；真实模型 smoke 在本地） |
+| P0-09（Obsidian） | compose_verified + production 端点级（生产未挂载 vault，特性关闭为诚实状态） |
+| P0-11（翻译） | locally_verified（jsdom 契约级）；真实 activation 矩阵 = 有头 Chrome（外部条件） |
+| P0-12（导航/文档） | production_verified（UI 部署于生产） |
+| P0-13（搜索空转） | production_verified |
