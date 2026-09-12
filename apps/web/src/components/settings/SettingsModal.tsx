@@ -12,23 +12,41 @@
  * 关闭路径（AC3）：点空白遮罩 / Escape / ✕——全部由 Dialog primitive 提供。
  * <768px 不渲染本组件（由 MobileSettingsScreen 接管）。 */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Dialog } from '../ui/Dialog'
 import { IconButton } from '../ui/IconButton'
 import { SettingItemList } from './SettingItem'
-import { CATEGORIES, categoryLabel, useCategoryItems, type CategoryId } from './categories'
+import {
+  CATEGORIES,
+  categoryLabel,
+  toCategoryId,
+  useCategoryItems,
+  type CategoryId,
+} from './categories'
+import type { SettingsOpenDetail } from './settings-bridge'
 import { cx } from '../ui/cx'
 
 export default function SettingsModal({
   open,
   onClose,
+  openCategory,
 }: {
   open: boolean
   onClose: () => void
+  /** P0-12：主界面导航深链（直达分类）；未知 id 安全降级为通用分类。 */
+  openCategory?: SettingsOpenDetail | null
 }) {
   const [category, setCategory] = useState<CategoryId>('general')
   const items = useCategoryItems(category)
+
+  // 深链请求（每次请求 seq 递增 → 对象身份变化即应用；同一分类重复
+  // 请求同样生效）。未知 id 由 toCategoryId 安全降级为通用分类。
+  useEffect(() => {
+    if (openCategory !== null && openCategory !== undefined && openCategory.category) {
+      setCategory(toCategoryId(openCategory.category))
+    }
+  }, [openCategory])
 
   return (
     <Dialog open={open} onClose={onClose} title="设置" panelClassName="!max-w-none w-auto p-0" hideTitle>

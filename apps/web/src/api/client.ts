@@ -1044,6 +1044,27 @@ export async function reorderWorkspaceItems(
   return (await response.json()) as WorkspaceItemsResponse
 }
 
+/** P0-10：重命名工作区（PATCH；保留工作区 read-later 由 BFF 拒绝）。 */
+export async function renameWorkspace(workspaceId: string, name: string): Promise<Workspace> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as Workspace
+}
+
+/** P0-10：删除工作区及其成员关系（DELETE 204；保留工作区由 BFF 拒绝，
+ * 不存在返回 404）。成员内容本身不受影响（只解除归属）。 */
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: 'DELETE',
+  })
+}
+
 // ---- phase2 Gate 3：网页剪藏（library/clips） ----
 // 抓取（SSRF 受限）→ 本地提取 → 存储三步由页面编排；ref 形如
 // `library:<uuid>`，路径参数取 uuid 部分（本模块负责剥离，UI 只透传
@@ -1580,6 +1601,25 @@ export async function unassignTag(input: TagAssignInput): Promise<void> {
     body: JSON.stringify({ itemRef: input.itemRef, name: input.name, origin: input.origin ?? 'manual' }),
     contentType: 'application/json',
   })
+}
+
+/** P0-10：单条内容的既有标签（GET /tags/item/{item_ref}；含 suggested
+ * 行——UI 以 status='attached' 为已勾选依据）。 */
+export interface ItemTag {
+  tagId: number
+  name: string
+  origin: string
+  status: string
+}
+
+export async function listTagsForItem(
+  itemRef: string,
+  signal?: AbortSignal,
+): Promise<{ items: ItemTag[] }> {
+  return request<{ items: ItemTag[] }>(
+    `${API_BASE}/tags/item/${encodeURIComponent(itemRef)}`,
+    signal,
+  )
 }
 
 // ---- phase2 G8：关系图谱（graph，只读派生视图） ----

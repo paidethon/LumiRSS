@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
+  addLibraryFavorite,
   addWorkspaceItem,
   applyRssHubConfig,
   clearAiProfileSecret,
@@ -28,6 +29,8 @@ import {
   deleteClip,
   deleteRssHubCredential,
   deleteSnapshot,
+  deleteTag,
+  deleteWorkspace,
   detectRssHub,
   discoverFeeds,
   executeRestore,
@@ -62,6 +65,7 @@ import {
   listRemoteBackups,
   listRssHubCredentials,
   listSnapshots,
+  listTagsForItem,
   listWorkspaces,
   lookupTranslationSegments,
   moveSubscription,
@@ -70,8 +74,11 @@ import {
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  removeLibraryFavorite,
   removeWorkspaceItem,
   renameCategory,
+  renameTag,
+  renameWorkspace,
   reorderWorkspaceItems,
   saveLibreTranslateKey,
   searchEntries,
@@ -93,6 +100,7 @@ import {
 import type {
   AiProfileInput,
   ClipInput,
+  FavoritesResponse,
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
 } from './client'
@@ -1057,6 +1065,34 @@ export function useReorderWorkspaceItemsMutation() {
   })
 }
 
+/** P0-10：重命名工作区（保留工作区由 BFF 拒绝；UI 不为其提供入口）。
+ * 成功后失效列表（名称/排序徽标）。 */
+export function useRenameWorkspaceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; name: string }) =>
+      renameWorkspace(vars.workspaceId, vars.name),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+  })
+}
+
+/** P0-10：删除工作区（破坏性；成员内容本身不删除，只解除归属）。
+ * 失效列表 + 全部 contents 缓存（前缀覆盖 ['workspace']）。 */
+export function useDeleteWorkspaceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (workspaceId: string) => deleteWorkspace(workspaceId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace'] }),
+      ])
+    },
+  })
+}
+
 // ---- phase2 Gate 3：网页剪藏（library/clips） ----
 
 /** 剪藏列表（cursor 分页；与 bookmarks 同一无限分页模式，maxPages
@@ -1335,11 +1371,66 @@ export function useFavorites() {
   })
 }
 
+/** P0-10：库收藏增删（addLibraryFavorite/removeLibraryFavorite 首批 UI
+ * 消费者）。乐观更新 ['favorites'] 的 library 腿：移除立即从列表消失；
+ * 失败回滚到前值并重取（诚实错误由调用方从 mutation.error 透出）。 */
+export function useLibraryFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { ref: string; favorite: boolean }) =>
+      vars.favorite ? addLibraryFavorite(vars.ref) : removeLibraryFavorite(vars.ref),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['favorites'] })
+      const previous = queryClient.getQueryData<FavoritesResponse>(['favorites'])
+      queryClient.setQueryData<FavoritesResponse>(['favorites'], (old) => {
+        if (old === undefined) return old
+        if (!vars.favorite) {
+          // 移除：行内数据可精确构造回滚前值 → 乐观过滤安全。
+          return { ...old, library: old.library.filter((item) => item.ref !== vars.ref) }
+        }
+        return old
+      })
+      return { previous }
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(['favorites'], context.previous)
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ['favorites'] })
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['favorites'] })
+    },
+  })
+}
+
+/** P0-10：单条库内容的收藏状态 + 切换（UnifiedContentCard /
+ * FavoritesPage LibraryRow 共用）。诚实语义：
+ * - favorite = 服务端列表命中 ∨ 进行中的乐观添加（未落库前不假装完成）；
+ * - pending 只在本人条目上；error 是本人条目最近一次失败（调用方原样
+ *   透出，不吞不假装成功）。 */
+export function useLibraryFavoriteToggle(ref: string) {
+  const favorites = useFavorites()
+  const mutation = useLibraryFavoriteMutation()
+  const matchesVars = mutation.variables?.ref === ref
+  const inList = favorites.data?.library.some((item) => item.ref === ref) ?? false
+  const favorite =
+    inList || (matchesVars && mutation.isPending && mutation.variables!.favorite)
+  return {
+    favorite,
+    pending: matchesVars && mutation.isPending,
+    error: matchesVars && mutation.isError ? mutation.error : null,
+    toggle: () => mutation.mutate({ ref, favorite: !favorite }),
+  }
+}
+
 // ---- phase2 G7/G8：Agent 工作台 / 标签 / 图谱 / RAG ----
 // 本节 client 函数按段引入（本文件约定 APPEND-ONLY，新增 import 只能
 // 随新节追加在尾部；ESM 顶层 import 提升，行为等价）。
 
 import {
+  assignTag,
   createAgentThread,
   decideAgentApproval,
   deleteAgentThread,
@@ -1349,6 +1440,7 @@ import {
   listAgentThreads,
   listTags,
   sendAgentMessage,
+  unassignTag,
 } from './client'
 
 /** 会话列表。 */
@@ -1434,6 +1526,74 @@ export function useTags(q: string = '') {
   return useQuery({
     queryKey: ['tags', { q }],
     queryFn: ({ signal }) => listTags(q === '' ? null : q, signal),
+  })
+}
+
+/** P0-10：单条内容的既有标签（条目标签选择面板用；null = 不发请求）。 */
+export function useItemTags(itemRef: string | null) {
+  return useQuery({
+    queryKey: ['item-tags', itemRef],
+    queryFn: ({ signal }) => listTagsForItem(itemRef!, signal),
+    enabled: itemRef !== null,
+  })
+}
+
+/** P0-10：给条目绑定标签（POST 幂等由 BFF 承载；失效条目标签 + 全列表）。 */
+export function useAssignTagMutation(itemRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => assignTag({ itemRef, name, origin: 'manual' }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：解绑标签（DELETE；失效条目标签 + 全列表）。 */
+export function useUnassignTagMutation(itemRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => unassignTag({ itemRef, name, origin: 'manual' }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：重命名标签（图谱页标签列表的行内管理入口；图谱/列表/条目标签
+ * 全部失效）。 */
+export function useRenameTagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { tagId: number; name: string }) => renameTag(vars.tagId, vars.name),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
+/** P0-10：删除标签（破坏性：解绑全部条目；图谱/列表/条目标签全部失效）。 */
+export function useDeleteTagMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (tagId: number) => deleteTag(tagId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
   })
 }
 

@@ -23,6 +23,7 @@ import type { LibrarySearchItem } from '../../api/client'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import EntryCard from '../EntryCard'
+import { LibraryFavoriteButton } from '../UnifiedContentCard'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
@@ -239,7 +240,9 @@ export default function FavoritesPage() {
   )
 }
 
-/** 库收藏行：标题 / kind 徽标 / 安全外链（http(s) 以外协议不放行）。 */
+/** 库收藏行：标题 / kind 徽标 / 安全外链（http(s) 以外协议不放行）。
+ * P0-10：行尾新增取消收藏（库域 removeLibraryFavorite；乐观移除 +
+ * 失败回滚 + 错误原样透出）。RSS 收藏行为保持不变（FreshRSS star 真值）。 */
 function LibraryRow({ item }: { item: LibrarySearchItem }) {
   const safeUrl = safeExternalHttpUrl(item.url)
   return (
@@ -249,8 +252,11 @@ function LibraryRow({ item }: { item: LibrarySearchItem }) {
         'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
       )}
     >
-      <span className="truncate text-sm font-medium text-[var(--lumi-text-primary)]">
-        {item.title}
+      <span className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--lumi-text-primary)]">
+          {item.title}
+        </span>
+        <LibraryFavoriteButton itemRef={item.ref} />
       </span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--lumi-text-tertiary)]">
         <span className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px]">

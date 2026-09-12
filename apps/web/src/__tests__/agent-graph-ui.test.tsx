@@ -7,7 +7,7 @@
  * - GraphPage：节点/边摘要行 + truncated 截断提示；「显示为表格」
  *   语义 <table> 等价路径列出节点；标签 chips 渲染名称/数量；
  * - Sidebar / 折叠 Rail：Agent 工作台 / 标签 / 图谱 section 导航激活，
- *   API 来源 / 邮件简报保持 PlannedItem（aria-disabled）。
+ *   API 来源 / 邮件简报为真实入口（P0-12：设置深链，不再是 PlannedItem）。
  *
  * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）+
  * vi.mock('cytoscape')（jsdom 无 canvas；fake 只需 on/destroy）。
@@ -269,17 +269,27 @@ describe('GraphPage', () => {
 })
 
 describe('Sidebar / 折叠 Rail 导航激活', () => {
-  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源/邮件简报保持 PlannedItem', () => {
+  it('Sidebar：Agent 工作台 → section=agent；标签 / 图谱 → section=graph；API 来源/邮件简报为真实入口（设置深链）', () => {
     render(withProviders(<Sidebar />))
     fireEvent.click(screen.getByRole('button', { name: 'Agent 工作台' }))
     expect(useReaderUi.getState().section).toBe('agent')
     fireEvent.click(screen.getByRole('button', { name: '标签 / 图谱' }))
     expect(useReaderUi.getState().section).toBe('graph')
 
-    const apiSource = screen.getByText('API 来源').closest('div')
-    expect(apiSource).toHaveAttribute('aria-disabled', 'true')
-    const mailDigest = screen.getByText('邮件简报').closest('div')
-    expect(mailDigest).toHaveAttribute('aria-disabled', 'true')
+    // P0-12：API 来源 / 邮件简报不再是 PlannedItem——真实按钮，点击
+    // 请求打开设置壳并直达对应分类（窗口事件桥）。
+    const openEvents: Array<{ category?: string }> = []
+    const onOpen = (event: Event) => {
+      openEvents.push((event as CustomEvent<{ category?: string }>).detail ?? {})
+    }
+    window.addEventListener('lumi:open-settings', onOpen)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /API 来源/ }))
+      fireEvent.click(screen.getByRole('button', { name: /邮件简报/ }))
+    } finally {
+      window.removeEventListener('lumi:open-settings', onOpen)
+    }
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
   })
 
   it('折叠 Rail：Agent 工作台 / 标签 / 图谱 可点击激活对应 section', () => {
@@ -288,5 +298,21 @@ describe('Sidebar / 折叠 Rail 导航激活', () => {
     expect(useReaderUi.getState().section).toBe('agent')
     fireEvent.click(screen.getByRole('button', { name: '标签 / 图谱' }))
     expect(useReaderUi.getState().section).toBe('graph')
+  })
+
+  it('折叠 Rail：API 来源 / 邮件简报点击 → 设置深链事件（P0-12）', () => {
+    render(withProviders(<SidebarCollapsedRail />))
+    const openEvents: Array<{ category?: string }> = []
+    const onOpen = (event: Event) => {
+      openEvents.push((event as CustomEvent<{ category?: string }>).detail ?? {})
+    }
+    window.addEventListener('lumi:open-settings', onOpen)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'API 来源' }))
+      fireEvent.click(screen.getByRole('button', { name: '邮件简报' }))
+    } finally {
+      window.removeEventListener('lumi:open-settings', onOpen)
+    }
+    expect(openEvents.map((e) => e.category)).toEqual(['api-sources', 'mail'])
   })
 })

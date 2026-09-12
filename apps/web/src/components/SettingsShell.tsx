@@ -12,6 +12,7 @@
 import { lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useIsMobile } from '../lib/use-is-mobile'
+import type { SettingsOpenDetail } from './settings/settings-bridge'
 
 const SettingsModal = lazy(() => import('./settings/SettingsModal'))
 const MobileSettingsScreen = lazy(() => import('./MobileSettingsScreen'))
@@ -27,18 +28,21 @@ function SettingsLoading() {
 export default function SettingsShell({
   open,
   onClose,
+  openCategory,
 }: {
   open: boolean
   onClose: () => void
+  /** P0-12：主界面导航深链（打开设置并直达分类）；null = 普通打开。 */
+  openCategory?: SettingsOpenDetail | null
 }) {
   const isMobile = useIsMobile()
   if (!open) return null
   return (
     <Suspense fallback={<SettingsLoading />}>
       {isMobile ? (
-        <MobileSettingsScreen open={open} onClose={onClose} />
+        <MobileSettingsScreen open={open} onClose={onClose} openCategory={openCategory} />
       ) : (
-        <SettingsModal open={open} onClose={onClose} />
+        <SettingsModal open={open} onClose={onClose} openCategory={openCategory} />
       )}
     </Suspense>
   )

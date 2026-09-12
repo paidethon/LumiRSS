@@ -13,10 +13,11 @@
  * 桌面端（CSS 切换的双壳）不渲染本组件，避免隐藏 Drawer 与桌面
  * SettingsModal 争抢焦点管理。 */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { CATEGORIES, CATEGORY_GROUPS, categoryLabel, useCategoryItems, type CategoryId } from './settings/categories'
+import { CATEGORIES, CATEGORY_GROUPS, categoryLabel, toCategoryId, useCategoryItems, type CategoryId } from './settings/categories'
 import { SettingItemList } from './settings/SettingItem'
+import type { SettingsOpenDetail } from './settings/settings-bridge'
 import { Sheet } from './ui/Sheet'
 import { IconButton } from './ui/IconButton'
 import { useIsMobile } from '../lib/use-is-mobile'
@@ -24,13 +25,23 @@ import { useIsMobile } from '../lib/use-is-mobile'
 export default function MobileSettingsScreen({
   open,
   onClose,
+  openCategory,
 }: {
   open: boolean
   onClose: () => void
+  /** P0-12：主界面导航深链（直达分类）；未知 id 安全降级为通用分类。 */
+  openCategory?: SettingsOpenDetail | null
 }) {
   // null = 首页（分组列表）；非 null = 当前 push 的子页分类
   const [page, setPage] = useState<CategoryId | null>(null)
   const isMobile = useIsMobile()
+
+  // 深链请求：直达分类子页（同一分类重复请求同样生效——seq 身份变化）。
+  useEffect(() => {
+    if (openCategory !== null && openCategory !== undefined && openCategory.category) {
+      setPage(toCategoryId(openCategory.category))
+    }
+  }, [openCategory])
 
   if (!isMobile || !open) return null
 

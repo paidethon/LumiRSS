@@ -167,7 +167,7 @@ export async function createLocalTranslator(
       '此浏览器不支持本地翻译（需要 Chrome 内置 Translator API）。',
     )
   }
-  const state = await availability(sourceLanguage, targetLanguage)
+  const state = await localTranslatorPairStatus(sourceLanguage, targetLanguage)
   if (state === 'unsupported') {
     throw new LocalTranslatorUnsupportedError(
       '此浏览器不支持本地翻译（需要 Chrome 内置 Translator API）。',
@@ -229,12 +229,27 @@ export async function createLocalTranslator(
   }
 }
 
-/** 能力探测（设置页/工具栏提示用）：不触发下载。 */
+/** 能力探测（设置页/工具栏提示用）：不触发下载。
+ * P0-11：结果按语言对做模块级缓存——点击手势链路在 create() 前不再
+ * 重复等待 availability（首次探测后零 await）。 */
+const pairStatusCache = new Map<string, LocalTranslatorAvailability>()
+
+/** 清空探测缓存（测试钩子：fake 环境可随用例重建；生产环境能力不随
+ * 会话变化，无需调用）。 */
+export function resetLocalTranslatorCache(): void {
+  pairStatusCache.clear()
+}
+
 export async function localTranslatorPairStatus(
   sourceLanguage: string,
   targetLanguage: string,
 ): Promise<LocalTranslatorAvailability> {
-  return availability(sourceLanguage, targetLanguage)
+  const key = `${sourceLanguage}>${targetLanguage}`
+  const cached = pairStatusCache.get(key)
+  if (cached !== undefined) return cached
+  const result = await availability(sourceLanguage, targetLanguage)
+  pairStatusCache.set(key, result)
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -277,14 +292,31 @@ export async function detectLanguage(
   }
 }
 
-/** 文章主语言探测：抽样正文前 ~600 字符；失败回退 fallback。
+/** 文章主语言探测结果（P0-11(b)：真英语 ≠ 探测失败，必须可区分）。
+ * via='detected'：LanguageDetector 给出了置信结果；
+ * via='fallback'：不支持/失败/空抽样 → 诚实回退 fallback。 */
+export interface DetectedArticleLanguage {
+  lang: string
+  via: 'detected' | 'fallback'
+}
+
+/** 文章主语言探测：抽样正文前 ~600 字符；失败回退 fallback（结果带
+ * via='fallback' 标记，UI 只对回退显示「探测失败回退」）。
  * 文章 lang 元数据由调用方优先传入（articles 常有 <html lang>）。 */
 export async function detectArticleLanguage(
   sample: string,
   fallback = 'en',
-): Promise<string> {
+): Promise<DetectedArticleLanguage> {
   const text = sample.slice(0, 600)
-  if (!text.trim()) return fallback
+  if (!text.trim()) return { lang: fallback, via: 'fallback' }
   const detected = await detectLanguage(text)
-  return detected ?? fallback
+  if (detected === null) return { lang: fallback, via: 'fallback' }
+  return { lang: detected, via: 'detected' }
+}
+
+/** 同语言短路判断（P0-11(c)）：探测到的 base language 与目标语言的
+ * base language 一致 → 整条翻译管线都不必跑。非法目标语言返回 false。 */
+export function isSameLanguage(detected: string, targetLanguage: string): boolean {
+  const targetBase = normalizeBcp47(targetLanguage)
+  return targetBase !== null && detected === targetBase
 }

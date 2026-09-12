@@ -29,23 +29,29 @@ import {
 } from 'lucide-react'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
+import { requestOpenSettings } from './settings/settings-bridge'
 import SettingsButton from './SettingsButton'
 import { cx } from './ui/cx'
 
 const iconCls = 'size-4 shrink-0'
 
-/** 折叠态图标行：44×40 可点击区域，icon 水平居中（§7） */
+/** 折叠态图标行：44×40 可点击区域，icon 水平居中（§7）。
+ * P0-12 a11y：禁用项改用真 disabled button（可浏览、语义明确），
+ * 不再用不可聚焦 div + aria-disabled。 */
 function RailItem({
   icon,
   label,
   active,
   disabled,
+  note,
   onClick,
 }: {
   icon: React.ReactNode
   label: string
   active?: boolean
   disabled?: boolean
+  /** 禁用原因（P0-12：诚实描述，不再统一说「Phase 2 规划」）。 */
+  note?: string
   onClick?: () => void
 }) {
   const cls = cx(
@@ -59,9 +65,16 @@ function RailItem({
   )
   if (disabled) {
     return (
-      <div aria-disabled="true" title={`${label}（Phase 2，当前不可用）`} className={cls}>
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        title={note ?? `${label}（当前不可用）`}
+        aria-label={`${label}（当前不可用）`}
+        className={cls}
+      >
         {icon}
-      </div>
+      </button>
     )
   }
   return (
@@ -135,8 +148,17 @@ export default function SidebarCollapsedRail() {
           active={section === 'snapshots'}
           onClick={() => selectSection('snapshots')}
         />
-        <RailItem icon={<FileText aria-hidden className={iconCls} />} label="API 来源" disabled />
-        <RailItem icon={<Mail aria-hidden className={iconCls} />} label="邮件简报" disabled />
+        {/* P0-12：API 来源 / 邮件简报真实可用 → 真实入口（设置深链）。 */}
+        <RailItem
+          icon={<FileText aria-hidden className={iconCls} />}
+          label="API 来源"
+          onClick={() => requestOpenSettings('api-sources')}
+        />
+        <RailItem
+          icon={<Mail aria-hidden className={iconCls} />}
+          label="邮件简报"
+          onClick={() => requestOpenSettings('mail')}
+        />
         {/* phase2 M1：书签（library 域）已可用 */}
         <RailItem
           icon={<Bookmark aria-hidden className={iconCls} />}
@@ -174,7 +196,14 @@ export default function SidebarCollapsedRail() {
           active={section === 'agent'}
           onClick={() => selectSection('agent')}
         />
-        <RailItem icon={<Zap aria-hidden className={iconCls} />} label="RAG 索引" disabled />
+        {/* P0-12：RAG 索引不再称「规划中」——后端已落地，独立管理 UI
+            未提供；诚实禁用并指向 Agent 工作台。 */}
+        <RailItem
+          icon={<Zap aria-hidden className={iconCls} />}
+          label="RAG 索引"
+          disabled
+          note="RAG 索引已在服务端运行；当前可在 Agent 工作台查看状态，独立管理入口尚未提供。"
+        />
         {/* phase2 G8：标签 / 图谱已可用。 */}
         <RailItem
           icon={<Tags aria-hidden className={iconCls} />}

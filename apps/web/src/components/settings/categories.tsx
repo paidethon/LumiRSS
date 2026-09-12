@@ -115,6 +115,14 @@ export function normalizeCategoryId(id: string): CategoryId {
   return id === ('backup' as CategoryId) ? 'data' : (id as CategoryId)
 }
 
+/** P0-12：字符串（导航深链/历史入口）→ 合法分类 id；未知值安全降级
+ * 为 'general'（绝不把非法 id 塞进组件 state 导致空分类页）。 */
+export function toCategoryId(id: string | undefined | null): CategoryId {
+  if (id == null) return 'general'
+  const normalized = normalizeCategoryId(id)
+  return CATEGORIES.some((c) => c.id === normalized) ? normalized : 'general'
+}
+
 /** 移动端设置首页的分组（Folo mobile SettingsList 分组模式，inspired）。 */
 export const CATEGORY_GROUPS: { label: string; ids: CategoryId[] }[] = [
   { label: '主设置', ids: ['general', 'appearance', 'reading', 'shortcuts', 'translation', 'filters', 'rsshub'] },
@@ -389,6 +397,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <OperationsSettingsSection /> },
       ]
     case 'workspace':
+      // P0-12：本分类不再是「占位」——Agent 工作台与工作区均已上线，
+      // 这里如实指路（不复制功能，只描述入口与现状）。
       return [
         {
           type: 'custom',
@@ -399,13 +409,14 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
                 <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">
                   知识工作台
                 </h3>
-                <span className="ml-auto rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
-                  规划中
+                <span className="ml-auto rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
+                  已上线
                 </span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                网页剪藏、API 来源、邮件简报与 Obsidian 库已按各自入口独立可用；
-                Agent 工作台将按真实需求逐项设计。本页为占位，无可用功能。
+                工作区（条目收集与整理）与 Agent 工作台（AI 会话 / 工具审批 /
+                RAG 状态）均已可用：入口在侧栏「工作区」与「Agent 工作台」。
+                网页剪藏、API 来源、邮件简报与 Obsidian 库也按各自入口独立可用。
               </p>
             </div>
           ),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useEntryDetail } from '../api/queries'
 import { ApiError } from '../api/client'
@@ -37,6 +37,19 @@ export default function Reader() {
   // Gate：语言视图（原文/双语/仅译文）——Reader 层持有，工具栏与内容区
   // 共享同一状态；默认原文（打开文章绝不发起翻译）。
   const [viewMode, setViewMode] = useState<ReaderViewMode>('original')
+  // P0-11：浏览器引擎翻译的手势入口——ReaderTranslation 注册 start 回调，
+  // 语言视图点击在同一个事件任务内转发（activation 不经 effect/timer 消耗）。
+  const translationStartRef = useRef<(() => void) | null>(null)
+  const registerTranslationStart = useCallback((start: () => void) => {
+    translationStartRef.current = start
+  }, [])
+  const handleViewModeChange = useCallback(
+    (mode: ReaderViewMode) => {
+      setViewMode(mode)
+      if (mode !== 'original') translationStartRef.current?.()
+    },
+    [],
+  )
   useEffect(() => {
     // 换文章回原文：不为“打开页面”付任何翻译钱。
     setViewMode('original')
@@ -146,18 +159,20 @@ export default function Reader() {
           key={`header-${detail.entryRef}`}
           detail={detail}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={handleViewModeChange}
           onOpenAiConversation={() => setAiConversationOpen(true)}
         />
         {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
             AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
             pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
         <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
-        {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染） */}
+        {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
+            P0-11：注册浏览器引擎的手势启动回调（点击 → 直接编排）。 */}
         <ReaderTranslation
           key={`translation-${detail.entryRef}`}
           detail={detail}
           viewMode={viewMode}
+          registerTranslationStart={registerTranslationStart}
         />
         {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏） */}
         <ArticleConversation

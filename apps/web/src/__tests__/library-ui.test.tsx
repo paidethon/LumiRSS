@@ -107,8 +107,9 @@ beforeEach(() => {
 })
 
 describe('UnifiedContentCard', () => {
+  // P0-10：库类条目内嵌收藏切换（用 hooks）→ 卡片测试需要 Query provider。
   it('rss 条目：RSS 徽标 + data-domain=rss + 安全外链（target=_blank）', () => {
-    render(<UnifiedContentCard item={resolvedItemFixture()} />)
+    render(withProviders(<UnifiedContentCard item={resolvedItemFixture()} />))
     expect(screen.getByText('RSS')).toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveAttribute('data-domain', 'rss')
     const link = screen.getByRole('link', { name: 'https://example.com/a' })
@@ -116,18 +117,22 @@ describe('UnifiedContentCard', () => {
     expect(link).toHaveAttribute('rel', 'noreferrer noopener')
   })
 
-  it('bookmark 条目：库徽标 + data-domain=library', () => {
+  it('bookmark 条目：库徽标 + data-domain=library + 收藏切换（P0-10）', () => {
     render(
-      <UnifiedContentCard
-        item={resolvedItemFixture({ ref: 'library:u1', domain: 'library', kind: 'bookmark' })}
-      />,
+      withProviders(
+        <UnifiedContentCard
+          item={resolvedItemFixture({ ref: 'library:u1', domain: 'library', kind: 'bookmark' })}
+        />,
+      ),
     )
     expect(screen.getByText('库')).toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveAttribute('data-domain', 'library')
+    // 库类条目带收藏切换（未收藏态）
+    expect(screen.getByRole('button', { name: '加入收藏' })).toBeInTheDocument()
   })
 
   it('stale：显示「源已失效」且不渲染任何链接（不伪造可打开内容）', () => {
-    render(<UnifiedContentCard item={resolvedItemFixture({ stale: true })} />)
+    render(withProviders(<UnifiedContentCard item={resolvedItemFixture({ stale: true })} />))
     expect(screen.getByText('源已失效')).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()
     expect(screen.queryByText('RSS')).toBeNull()
