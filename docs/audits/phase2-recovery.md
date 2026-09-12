@@ -278,3 +278,26 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 - **FE 波 2（最终 Web 波）** ✓：全部工作项落地——P0-01 客户端（见 P0-01 行）、P0-02 打开路由+统一 resolve（POST /api/v1/resolve client/queries；payload per-kind 契约 lib/open-item.ts）、P0-03 客户端（ClipsPage 改服务端管线：fetch 展示服务端文章确认 → 保存只提交 {url, finalUrl}；`clip-extract.ts` 删除、defuddle/@mozilla/readability 依赖移除；渲染前 DOMPurify 终界不变；tests: clips-ui 9）、P0-05 客户端（ApiSourcesSection 409 unsubscribe_failed 重试提示透出，沿用现有错误行）、P0-06 客户端（MailSection 收信地址→「HTTP 转发入口（webhook）」、绝对 ingest URL、subscribeFailed+atomPath 警告、no_digest_items 422 原样透出；tests: g6-ui 14）、P0-07 客户端（见 P0-12 行）、P0-08h 客户端（citations 可点，见 P0-10 行）、P0-09 客户端（ObsidianPage envRootConfigured 挂载模式不问宿主路径+宿主→容器只读挂载说明+env 模式不渲染 obsidian:// 深链；NoteView.truncated 显式「已截断」提示；tests: g6-ui）、契约修复（MailBridgeListCreatedV2/ClipFetchArticleResult/DigestSendNowRequest.messageId/GraphResponse.returnedNodes 对齐 regenerated schema；tests: client.test 27）。22 文件 209 tests passed；tsc -b 干净；oxlint 0 errors（warnings 与基线持平）。locally_verified（jsdom；真实网络/compose 冒烟留给主 Agent gate）。
 
 （各 P0 的复现输出、失败测试、审计 file:line 证据，随 Gate 推进追加。）
+
+### Gate 8 — production-like Compose E2E（2026-09-13）
+
+- 栈：生产 Dockerfile 构建的 bff 镜像（monolith 2.10.1 checksum 校验 + `--extra rag`）、
+  web/Caddy（session 模式）、FreshRSS 1.29.1、RSSHub、本地 SMTP 接收器、受控 fixtures、
+  脚本化 OpenAI 兼容服务器、只读 vault。
+- **run-smoke 15/15 PASS**：session 登录 / read-later 服务端时间线（FreshRSS 真实抓取后的
+  条目）/ 混合工作区 / 剪藏服务端提取+恶意 HTML 清理 / 生产镜像内真实 monolith 快照 /
+  /feeds 经 Caddy / FreshRSS 容器抓取生成的 Atom / 稳定 ETag+可靠 304 / webhook bearer
+  通路 / 空摘要拒绝 / Obsidian 挂载+同内容双身份 / RAG 诚实状态 / Agent 线程 / tag 幂等 /
+  backup 作业。
+- **新特性（E2E 发现的真实需求）**：`LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` 运维私网主机名
+  允许列表（默认空=行为不变；仍走 解析→验证→固定 IP 拨号），自托管内网源（内网 RSSHub）
+  所需。
+- **最终全量验证**：BFF 933 passed（基线 778）+ ruff clean；Web 710 passed（基线 669）+
+  lint 0 errors + build/bundle guard OK + tsc clean；OpenAPI/settings drift 干净。
+- **迁移升级演练**：v15（= 生产现状）→ v20 全部应用、数据存活、NOCASE 索引就位。
+- **备份/恢复**：资产字节随 full backup 归档（library-assets/ 组件）+ restore 原地回填 +
+  往返测试通过。
+- **回滚方案**：应用回滚 = 上一镜像 tag + 向前兼容数据库（生产 `.image-tag.previous`
+  机制已在位）；schema 仅前向累加，v15 旧代码可运行于 v20 库（升级演练反向兼容证明）。
+- 迭代中修复的部署真相：FreshRSS CLI 配置后必须 `access-permissions`/chown（否则 greader
+  登录 "configuration cannot be found"）——已固化进 run-smoke.sh 的 init。
