@@ -78,8 +78,14 @@ async def resolve_validated(
         raise UnresolvableHost(f"Host {host!r} could not be resolved.") from exc
     if not addresses:
         raise UnresolvableHost(f"Host {host!r} resolved to no addresses.")
+    from lumirss.feed_preview import hostname_allowlisted
+
+    allowlisted = hostname_allowlisted(host)
     validated: list[str] = []
     for address in addresses:
+        if allowlisted:
+            validated.append(address)
+            continue  # operator vouched for this hostname; still dial pinned
         try:
             ensure_public(address)
         except (ValueError, UnsafeFeedUrl, UnsafeTargetAddress) as exc:

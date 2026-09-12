@@ -188,6 +188,14 @@ class LumiSettings(BaseSettings):
     # Background incremental scan cadence in seconds; 0 disables the
     # poll loop (tests, explicit-rescan-only deployments).
     LUMIRSS_OBSIDIAN_SCAN_INTERVAL: float = 0.0
+    # --- Outbound fetch policy (Gate 2/8) ---
+    # Comma-separated exact hostnames the operator vouches for even
+    # though they resolve into a private network (deployment-internal
+    # sources: an in-network RSSHub, an E2E fixture server). Empty by
+    # default = private addresses are always refused. The dial still
+    # resolves, validates and pins the address — only the public-IP
+    # rejection is skipped for these names.
+    LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: str = ""
 
     @field_validator("LUMIRSS_OBSIDIAN_SCAN_INTERVAL")
     @classmethod

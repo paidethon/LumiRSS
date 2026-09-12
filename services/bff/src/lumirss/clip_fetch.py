@@ -119,7 +119,12 @@ async def validate_hop(
         raise ClipFetchError("页面地址无法解析。", "dns_failure") from exc
     if not addresses:
         raise ClipFetchError("页面地址解析为空。", "dns_failure")
+    from lumirss.feed_preview import hostname_allowlisted
+
+    allowlisted = hostname_allowlisted(host)
     for address in addresses:
+        if allowlisted:
+            break  # operator vouched for this hostname; still dial pinned IPs
         try:
             ensure_public(address)
         except (ValueError, UnsafeFeedUrl) as exc:

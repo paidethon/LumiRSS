@@ -174,7 +174,16 @@ def validate_field_map(field_map: dict[str, str]) -> str:
 
 def validate_endpoint(url: str) -> str:
     parts = urllib.parse.urlsplit(url.strip())
-    if parts.scheme != "https" or not parts.netloc:
+    if not parts.netloc:
+        raise ApiSourceInvalid("API endpoint must be an absolute https URL.")
+    # https is the production baseline; an operator-allow-listed private
+    # hostname (in-network RSSHub, E2E fixtures) may speak plain http.
+    from lumirss.feed_preview import hostname_allowlisted
+
+    if (
+        parts.scheme != "https"
+        and not hostname_allowlisted(parts.hostname)
+    ):
         raise ApiSourceInvalid("API endpoint must be an absolute https URL.")
     if len(url) > 2048:
         raise ApiSourceInvalid("API endpoint is too long.")

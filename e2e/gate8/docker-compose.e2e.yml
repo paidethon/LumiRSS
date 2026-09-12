@@ -34,6 +34,10 @@ services:
       LUMIRSS_SEARCH_SYNC_INTERVAL: "5"
       LUMIRSS_OBSIDIAN_VAULT_DIR: /vault
       LUMIRSS_OBSIDIAN_SCAN_INTERVAL: "5"
+      # The fixtures server lives on the compose network (private by
+      # definition) — the operator allow-list is exactly the mechanism
+      # self-hosted internal sources (in-network RSSHub) use.
+      LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: fixtures
     volumes:
       - lumi-data:/data
       - freshrss-data:/freshrss-data:ro
@@ -56,7 +60,8 @@ services:
     build: ../../apps/web
     container_name: lumirss-e2e-web
     environment:
-      DOMAIN: localhost
+      # Plain HTTP on :80 for the E2E driver (no TLS provisioning locally).
+      DOMAIN: ":80"
       LUMIRSS_INTERNAL_TOKEN: e2e-internal-token-0123456789abcdef
       LUMIRSS_AUTH_MODE: session
     ports:
