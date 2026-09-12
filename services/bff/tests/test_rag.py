@@ -301,10 +301,14 @@ def test_incremental_index_refs_updates_only_target(rag_db):
 
 
 def test_idle_unload_and_lifecycle_factory(rag_db):
+    import time as _time
+
     service = RagService(rag_db)
     assert service.unload_if_idle() is False  # nothing loaded
     service._embedder._model = object()  # noqa: SLF001 — test seam
-    service._embedder._last_used = 0.0  # noqa: SLF001 — ancient
+    # Ancient relative to the runner's monotonic clock (a fresh CI VM has
+    # a small monotonic value, so an absolute 0.0 is NOT ancient there).
+    service._embedder._last_used = _time.monotonic() - 10 * 3600  # noqa: SLF001
     assert service._embedder.idle_expired() is True
     assert service.unload_if_idle() is True
     assert service._embedder.loaded is False
