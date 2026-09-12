@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>E2E 剪藏测试页</title>
+  <meta name="author" content="E2E Fixture">
+  <script>window.alert("should-never-survive");</script>
+  <style>body { background: url(javascript:alert(1)); }</style>
+</head>
+<body>
+  <nav>导航 导航 导航</nav>
+  <article>
+    <h1>受控剪藏正文</h1>
+    <p onclick="steal()">这是第一段正文，包含一个 <a href="javascript:evil()">危险链接</a>
+       和一个 <a href="https://example.com/ok">正常链接</a>。</p>
+    <p>第二段：sqlite-vec 向量检索扩展的语义检索测试内容，需要足够长度参与评分。</p>
+    <iframe src="https://fixtures.internal/embed"></iframe>
+    <img src="x" onerror="boom()">
+    <p>第三段正文内容，用于确认段落质量评分选择 article 容器。</p>
+  </article>
+  <footer>页脚信息</footer>
+</body>
+</html>

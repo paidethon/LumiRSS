@@ -1,0 +1,17 @@
+{
+  "name": "E2E 受控来源",
+  "items": [
+    {
+      "title": "sqlite-vec 发布 1.0",
+      "url": "https://fixtures.internal/json/sqlite-vec-1-0",
+      "published": "2026-09-01T08:00:00Z",
+      "summary": "sqlite-vec 1.0 带来更稳定的向量检索扩展。"
+    },
+    {
+      "title": "FastAPI 0.115 性能改进",
+      "url": "https://fixtures.internal/json/fastapi-0-115",
+      "published": "2026-09-05T09:30:00Z",
+      "summary": "新版本降低了每请求开销并改进了流式响应。"
+    }
+  ]
+}
