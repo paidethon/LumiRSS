@@ -1,21 +1,24 @@
-/** ClipsPage — 网页剪藏页（phase2 Gate 3 Library 域）。
+/** ClipsPage — 网页剪藏页（phase2 Gate 3 Library 域；P0-03 后为服务端
+ * 可信管线）。
  *
- * 流程：粘贴链接 → BFF SSRF 受限抓取（fetchClipHtml）→ 本地懒提取
- * （extractArticle：defuddle/readability 动态加载 + DOMPurify 清洗）
- * → 自动 createClip。
+ * 流程：粘贴链接 → POST /library/clips/fetch（服务端 SSRF 钉住拨号 +
+ * 提取 + allow-list 清洗，返回 title/byline/contentHtml/contentText/
+ * finalUrl）→ 页面展示服务端文章供确认 → 保存只提交 {url, finalUrl}
+ * （客户端派生的 title/HTML 不再提交——服务端按 finalUrl 重取重导出，
+ * 浏览器提交的任何正文都不被信任）。
  * - 抓取错误（clip_fetch_forbidden / clip_fetch_failed 等）：原样展示
- *   BFF message（诚实语义）；
- * - 提取失败：给出「重试 / 只保存链接」两条路（链接模式以 url 为
- *   标题、正文只有链接本身）；
+ *   BFF message（诚实语义）+ 重试；
+ * - 确认面板正文渲染：contentHtml 已是服务端清洗产物，渲染前仍过
+ *   DOMPurify（sanitizeArticleHtml——全站唯一渲染终界，不变）；
  * - PWA Share Target：App 落地 ?share=1&url=… 后经 sessionStorage
  *   'lumirss-share-url' 一次性交接，本页挂载即读取并清除；
  * - 列表：cursor 分页「加载更多」+ 行内立即删除（与书签同一诚实
- *   语义，无二次确认）；标题点击打开 Dialog 阅读视图——contentHtml
- *   在提取时与渲染前双重 DOMPurify 清洗（sanitizeArticleHtml）。
+ *   语义，无二次确认）；标题点击打开 Dialog 阅读视图（同样渲染前
+ *   sanitize）。
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Globe, Loader2, Trash2 } from 'lucide-react'
+import { Check, ExternalLink, Globe, Loader2, Trash2, X } from 'lucide-react'
 import {
   useClipDetail,
   useClips,
@@ -23,9 +26,8 @@ import {
   useCreateClipMutation,
   useDeleteClipMutation,
 } from '../../api/queries'
-import type { Clip } from '../../api/types'
+import type { Clip, ClipFetchArticleResult } from '../../api/types'
 import { formatTimestamp } from '../../lib/date-format'
-import { extractArticle } from '../../lib/clip-extract'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { Button } from '../ui/Button'
@@ -38,17 +40,15 @@ import { cx } from '../ui/cx'
 /** PWA Share Target 交接 key（App.handleShareTarget 写入，读取即清除）。 */
 const SHARE_URL_KEY = 'lumirss-share-url'
 
-/** 提取失败的固定文案（clip-extract 两个提取器都失败时页面映射到此）。 */
-const EXTRACT_FAILED_MESSAGE = '正文提取失败：可重试或只保存链接。'
-
-/** 保存流程的阶段（诚实区分 抓取/提取/保存 三步）。 */
+/** 保存流程的阶段（诚实区分 抓取 / 确认 / 保存 三步；提取与清洗已
+ * 全部在服务端完成，客户端不再有「提取」阶段）。 */
 type ClipPhase =
   | { kind: 'idle' }
   | { kind: 'fetching'; url: string }
-  | { kind: 'extracting'; url: string }
+  | { kind: 'confirming'; fetched: ClipFetchArticleResult }
   | { kind: 'saving'; url: string }
   | { kind: 'saved'; title: string }
-  | { kind: 'failed'; url: string; stage: 'fetch' | 'extract' | 'create'; message: string }
+  | { kind: 'failed'; url: string; stage: 'fetch' | 'create'; message: string }
 
 const inputCls = cx(
   'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
@@ -212,7 +212,7 @@ export default function ClipsPage() {
   const clips = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
 
   const busy =
-    phase.kind === 'fetching' || phase.kind === 'extracting' || phase.kind === 'saving'
+    phase.kind === 'fetching' || phase.kind === 'saving'
 
   // 一次性交接完成：立即清除 sessionStorage key（下次挂载不重复预填）。
   useEffect(() => {
@@ -223,65 +223,37 @@ export default function ClipsPage() {
     }
   }, [])
 
-  const runSave = async (rawUrl: string) => {
+  /** 第一步：服务端抓取 + 提取（无任何客户端提取），结果进入确认态。 */
+  const runFetch = async (rawUrl: string) => {
     const url = rawUrl.trim()
     if (url === '' || busy) {
       return
     }
-    let stage: 'fetch' | 'extract' | 'create' = 'fetch'
+    setPhase({ kind: 'fetching', url })
     try {
-      setPhase({ kind: 'fetching', url })
       const fetched = await clipFetch.mutateAsync(url)
-      stage = 'extract'
-      setPhase({ kind: 'extracting', url })
-      const extracted = await extractArticle(fetched.html, fetched.finalUrl)
-      stage = 'create'
-      setPhase({ kind: 'saving', url })
-      const detail = await createClipMutation.mutateAsync({
-        url: fetched.url,
-        title: extracted.title,
-        byline: extracted.byline,
-        contentHtml: extracted.contentHtml,
-        contentText: extracted.contentText,
-        fetchedAt: new Date().toISOString(),
-      })
-      setPhase({ kind: 'saved', title: detail.title })
+      setPhase({ kind: 'confirming', fetched })
       setInput('')
-    } catch (saveError) {
-      if (stage === 'extract') {
-        // 两个提取器都失败 → 固定文案 + 重试 / 只保存链接
-        setPhase({ kind: 'failed', url, stage: 'extract', message: EXTRACT_FAILED_MESSAGE })
-      } else {
-        setPhase({
-          kind: 'failed',
-          url,
-          stage,
-          message:
-            saveError instanceof Error ? saveError.message : '保存失败，请稍后重试。',
-        })
-      }
+    } catch (fetchError) {
+      setPhase({
+        kind: 'failed',
+        url,
+        stage: 'fetch',
+        message:
+          fetchError instanceof Error ? fetchError.message : '抓取失败，请稍后重试。',
+      })
     }
   }
 
-  // 提取失败的降级保存：标题 = url，正文 = 只有链接本身
-  //（contentHtml 在渲染侧仍会再过 DOMPurify）。
-  const saveLinkOnly = async () => {
-    const url = phase.kind === 'failed' ? phase.url : ''
-    if (url === '') {
-      return
-    }
+  /** 第二步：用户确认服务端文章 → 只提交 {url, finalUrl}。标题/正文
+      由服务端按 finalUrl 重取重导出，客户端永不提交正文。 */
+  const confirmSave = async () => {
+    if (phase.kind !== 'confirming') return
+    const { url, finalUrl } = phase.fetched
+    setPhase({ kind: 'saving', url })
     try {
-      setPhase({ kind: 'saving', url })
-      const detail = await createClipMutation.mutateAsync({
-        url,
-        title: url,
-        byline: null,
-        contentHtml: `<p>${url}</p>`,
-        contentText: url,
-        fetchedAt: new Date().toISOString(),
-      })
+      const detail = await createClipMutation.mutateAsync({ url, finalUrl })
       setPhase({ kind: 'saved', title: detail.title })
-      setInput('')
     } catch (saveError) {
       setPhase({
         kind: 'failed',
@@ -290,6 +262,10 @@ export default function ClipsPage() {
         message: saveError instanceof Error ? saveError.message : '保存失败，请稍后重试。',
       })
     }
+  }
+
+  const cancelConfirm = () => {
+    setPhase({ kind: 'idle' })
   }
 
   return (
@@ -302,7 +278,7 @@ export default function ClipsPage() {
           className="mt-2.5 flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault()
-            void runSave(input)
+            void runFetch(input)
           }}
         >
           <label className="min-w-0 flex-1">
@@ -331,12 +307,7 @@ export default function ClipsPage() {
         {/* 保存流程的诚实状态区 */}
         {phase.kind === 'fetching' && (
           <p role="status" className="mt-2 text-sm text-[var(--lumi-text-secondary)]">
-            抓取中…
-          </p>
-        )}
-        {phase.kind === 'extracting' && (
-          <p role="status" className="mt-2 text-sm text-[var(--lumi-text-secondary)]">
-            提取中…
+            正在抓取并提取正文…
           </p>
         )}
         {phase.kind === 'saving' && (
@@ -354,31 +325,73 @@ export default function ClipsPage() {
             <p role="alert" className="text-sm text-[var(--lumi-danger)]">
               {phase.message}
             </p>
-            {phase.stage === 'extract' ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void runSave(phase.url)}
-                >
-                  重试
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => void saveLinkOnly()}>
-                  只保存链接
-                </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setInput(phase.url)
+                  void runFetch(phase.url)
+                }}
+              >
+                重试
+              </Button>
+            </div>
+          </div>
+        )}
+        {phase.kind === 'confirming' && (
+          // 确认面板：服务端提取的文章（title/byline/正文）。正文是服务端
+          // allow-list 清洗产物，渲染前仍过 DOMPurify（渲染终界不变）。
+          <section
+            aria-label="确认剪藏内容"
+            className="mt-2.5 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3.5"
+          >
+            <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
+              {phase.fetched.title}
+            </h2>
+            <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-[var(--lumi-text-tertiary)]">
+              {phase.fetched.byline != null && phase.fetched.byline !== '' && (
+                <span className="truncate">{phase.fetched.byline}</span>
+              )}
+              <span className="min-w-0 truncate">{phase.fetched.finalUrl}</span>
+            </p>
+            {phase.fetched.contentHtml.trim() !== '' ? (
+              <div className="mt-2 max-h-[40vh] overflow-y-auto">
+                <article
+                  className={cx(
+                    'text-sm leading-relaxed text-[var(--lumi-text-primary)]',
+                    '[&_a]:text-[var(--lumi-accent-text)] [&_a]:underline [&_a]:underline-offset-2',
+                    '[&_blockquote]:border-l-2 [&_blockquote]:border-[var(--lumi-border)] [&_blockquote]:pl-3',
+                    '[&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:text-base [&_h2]:font-semibold',
+                    '[&_h3]:mt-3 [&_h3]:font-semibold [&_h4]:mt-3 [&_h4]:font-semibold',
+                    '[&_img]:max-w-full [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6',
+                    '[&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-[var(--lumi-radius-md)]',
+                    '[&_pre]:bg-[var(--lumi-surface-selected)] [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6',
+                  )}
+                  dangerouslySetInnerHTML={{ __html: sanitizeArticleHtml(phase.fetched.contentHtml) }}
+                />
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void runSave(phase.url)}
-                >
-                  重试
-                </Button>
-              </div>
+              <p className="mt-2 max-h-[40vh] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-[var(--lumi-text-primary)]">
+                {phase.fetched.contentText}
+              </p>
             )}
-          </div>
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void confirmSave()}
+                disabled={phase.kind !== 'confirming' || createClipMutation.isPending}
+              >
+                <Check aria-hidden className="size-4" />
+                保存剪藏
+              </Button>
+              <Button variant="ghost" size="sm" onClick={cancelConfirm} disabled={createClipMutation.isPending}>
+                <X aria-hidden className="size-4" />
+                取消
+              </Button>
+            </div>
+          </section>
         )}
 
         {/* 列表 / 诚实状态 */}

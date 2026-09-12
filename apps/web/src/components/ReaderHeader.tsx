@@ -181,8 +181,10 @@ export default function ReaderHeader({
   onOpenAiConversation?: () => void
 }) {
   const mutation = useEntryStateMutation()
-  const { isReadLater, toggleReadLater } = useToggleReadLater()
+  const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
   const readLaterMarked = isReadLater(detail.entryRef)
+  const readLaterPending = pendingFor(detail.entryRef)
+  const readLaterError = errorFor(detail.entryRef)
   const showReadingTime = useAppSettings((s) => s.settings.readerShowReadingTime)
   // P0-11：本地引擎支持门控——engine=browser 且此浏览器没有 Translator
   // API（localTranslatorAvailable() 此前导出零调用）→ 控件禁用 + 原因。
@@ -261,27 +263,37 @@ export default function ReaderHeader({
           </Tooltip>
         )}
 
-        {/* 稍后读（0011 修正补充 §21–§23）：✓ ◷ ☆ 顺序——阅读处理 →
-            临时保存 → 长期收藏；本地 marker 零网络，即时切换（乐观）；
-            始终可见（不依赖 hover）；active = accent icon + subtle bg，
-            同一 Clock 图标不换形（§23）。 */}
+        {/* 稍后读（P0-01）：服务端保留工作区成员（真源）——乐观切换 +
+            失败回滚由 useReadLaterMemberMutation 承载；✓ ◷ ☆ 顺序——
+            阅读处理 → 临时保存 → 长期收藏；active = accent icon，同一
+            Clock 图标不换形（§23）；失败行内诚实提示（不假装成功）。 */}
         <Tooltip content={readLaterMarked ? '从稍后读移除' : '加入稍后读'}>
           <IconButton
             icon={
-              <Clock
-                aria-hidden
-                className={cx(
-                  readLaterMarked && 'fill-[var(--lumi-accent-soft)]',
-                )}
-              />
+              readLaterPending ? (
+                <Loader2 aria-hidden className="animate-spin" />
+              ) : (
+                <Clock
+                  aria-hidden
+                  className={cx(
+                    readLaterMarked && 'fill-[var(--lumi-accent-soft)]',
+                  )}
+                />
+              )
             }
             label={readLaterMarked ? '从稍后读移除' : '加入稍后读'}
             aria-pressed={readLaterMarked}
             touch
+            disabled={readLaterPending}
             className={readLaterMarked ? 'text-[var(--lumi-accent-text)]' : undefined}
             onClick={() => toggleReadLater(detail.entryRef)}
           />
         </Tooltip>
+        {readLaterError !== null && (
+          <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+            稍后读操作失败：{readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}
+          </span>
+        )}
 
         {pending ? (
           <IconButton

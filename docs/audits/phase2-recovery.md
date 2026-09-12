@@ -87,6 +87,7 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
   - 测试：`read-later.test.tsx:150,193` 把客户端过滤/双写设计固化进断言（修时要改）。
 - 修复方案（Gate 1）：服务端 read-later 时间线（entries 查询按保留工作区成员过滤，可分页可排序：`view=read-later` 由 BFF 直查 FreshRSS starred/read-later 成员交集或直接列 workspace members 的 rss refs 解析）；客户端删除本地过滤、toggle 走 mutation+invalidate、失败回滚+错误 toast；同步去掉 once-guard。
 - Owner：主 Agent（Gate 1，后端）+ IMPL-FE（客户端）。
+- FE wave2 ✓：稍后读视图改走服务端时间线 `GET /workspaces/read-later/timeline`（useInfiniteQuery cursor 分页 + 无限滚动哨兵）；删除 view=all 本地过滤（`toApiView` 退役、useEntries 对 read-later 禁用）、删除 localStorage 双写与 zustand store（`store/read-later.ts` 删除、once-only syncedRef 对账删除）；toggle 走 useReadLaterMemberMutation（乐观移除+失败回滚+共享 cache 失败告警+`['workspace','read-later']` 前缀失效），Clock 激活态来自服务端 refs 清单；悬挂成员 stale 行显式渲染+移除出口（tests: read-later 9 + timeline-gate2 9 + scroll-mark-unread 5 passed）。locally_verified。
 
 ### P0-02 — ItemRef / Source Registry 只真正解析 bookmark — `confirmed`
 
@@ -218,6 +219,7 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 - 修复方案（Gate 1 后端 + Gate 7 UI）：attach 幂等优先+existence validation（走统一 resolver）；大小写策略落地（决定：NFC+casefold 唯一性，forward-compatible——同名不同 case 归并为已有 tag，迁移脚本合并既有 case 变体）；graph scope 作用于全部边类型+返回 raw total 与返回数两个数字；wikilink 解析真实 note/显式 unresolved；UI 全闭环（见 IMPL-FE）。
 - Owner：主 Agent（后端语义）+ IMPL-FE（UI）。
 - FE wave1 ✓：workspace 重命名/删除 UI（PATCH/DELETE + 双重确认，保留工作区不给入口，queries 失效 ['workspaces']/['workspace']）；条目标签 attach/detach（EntryActionButtons 标签 Popover：useItemTags 勾选真值 + useTags 全量 ∪ suggested + 新建；assignTag/unassignTag 首批消费者）；标签管理收在图谱页标签列表行内菜单（重命名/删除，最小可发现面）；库收藏切换（UnifiedContentCard 库类 kind + FavoritesPage LibraryRow 取消收藏；乐观移除+回滚+诚实错误，RSS star 不动）（tests: p0-10-closures 9 + library-ui 11 passed）。locally_verified。
+- FE wave2 ✓：「一切皆可打开」——UnifiedContentCard 默认按 kind 路由打开（lib/open-item.ts：rss→Reader、bookmark rss 型→Reader/外链、clip→剪藏 section、snapshot→服务端沙箱页新标签、obsidian_note→Obsidian section；WorkspacesPage 不传 onOpen 也生效）；FavoritesPage/SearchPage 库行从惰性文本改为 resolve→路由打开（stale 行禁用+「已失效」注明）；图谱摘要行截断时如实分列「真实总数 vs 仅返回数」（totalNodes/returnedNodes），节点详情卡加「打开」，unresolved wikilink 显式未解析样式；Agent 引用改经 POST /api/v1/resolve 批量解析为可点按钮、失效为纯文本（tests: library-ui 15 + p0-10-closures 9 + agent-graph-ui 8 passed）。locally_verified。
 
 ### P0-11 — Translation 的 user activation 仍可能被异步链消耗 — `confirmed`
 
@@ -242,6 +244,7 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 - 修复方案：导航状态来自真实能力（可用→入口；不可用→诚实禁用+指向 Settings）；补 RAG 设置入口；修正 Settings 占位文案；ROADMAP/README 与实现对齐；PlannedItem 语义修正。
 - Owner：IMPL-FE + 主 Agent（Gate 7）。
 - FE wave1 ✓：API 来源/邮件简报 nav → 真实入口（settings-bridge 新增 requestOpenSettings 深链，桌面 Modal 与移动全屏页共用；未知分类降级 general）；RAG 索引选择「诚实禁用 + 指向 Agent 工作台」（不称规划中，badge 见工作台——独立管理 UI wave 2）；Settings 工作区卡改为「已上线」并指向真实入口；PlannedItem/RailItem 改真 disabled button + 说明（a11y）（tests: p0-12-navigation 5 + gate-c 10 + agent-graph-ui 7 passed）。locally_verified。
+- FE wave2 ✓：RAG「独立管理 UI」兑现——设置 → AI 新增「语义检索（RAG）」分类（RagSettingsSection：状态 enabled/chunks/model/lastRebuildAt、启用 POST /rag/enable（fastembed 未装禁用+说明）、重建 POST /rag/rebuild（busy+完成报告+RagRebuildBusy 原样透出）、lastError 展示），enableRag/rebuildRag 首批真实消费者、queries.ts:1450 注释成真（tests: rag-settings 5 passed）。locally_verified。
 
 ### P0-13 — 搜索后台任务在 interval=0 时空转 — `confirmed`
 
@@ -271,6 +274,7 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 - **BE-3（Gate 5+6 RAG/Agent）** ✓ 已提交 `341d598`（范围内 92 passed + 1 skipped；真实模型 smoke 通过）：
   - P0-07：rebuild 真写 `rag_vec`（核心缺陷）+ 单事务索引写入；**新发现并修复** fastembed `model=` kwarg 静默吞掉（始终加载默认英文模型）→ model_name + identity 校验 + 维度探测 fail-closed；enable 先 warmup 后持久化；idle-unload 生命周期任务；mark_stale/index_refs 增量钩子（已接线 bookmark/clip/snapshot 删除路由）；title 持久化；Dockerfile `--extra rag`（主 Agent 落地）。
   - P0-08：chat_completion 下沉到具体类（首轮 AttributeError 关闭）；真 SSE 流式（增量持久化+队列广播）；server-side cancel + 重启 sweep（不卡 processing）；per-thread 串行 + pending approval 409；审批原子化（rowcount 条件 UPDATE + 行内 args 校验）；history 符合 OpenAI tool 协议（错误形状测试修正）；list_workspace_items 工具；obsidian 工具初始化竞争回归测试；citationDetails（ResolvedItem 契约）供 FE 渲染可点引用。
-- **FE 波 2（最终 Web 波）**：进行中——read-later 客户端切换、打开目标、RAG 设置 UI、citations、mail 文案、obsidian envRoot 模式、clip 服务端契约适配。
+- **FE 波 2（最终 Web 波）**：代码完成（详见下方 ✓ 行与 P0-01/P0-10/P0-12 行；未提交，待主 Agent gate 验收）。
+- **FE 波 2（最终 Web 波）** ✓：全部工作项落地——P0-01 客户端（见 P0-01 行）、P0-02 打开路由+统一 resolve（POST /api/v1/resolve client/queries；payload per-kind 契约 lib/open-item.ts）、P0-03 客户端（ClipsPage 改服务端管线：fetch 展示服务端文章确认 → 保存只提交 {url, finalUrl}；`clip-extract.ts` 删除、defuddle/@mozilla/readability 依赖移除；渲染前 DOMPurify 终界不变；tests: clips-ui 9）、P0-05 客户端（ApiSourcesSection 409 unsubscribe_failed 重试提示透出，沿用现有错误行）、P0-06 客户端（MailSection 收信地址→「HTTP 转发入口（webhook）」、绝对 ingest URL、subscribeFailed+atomPath 警告、no_digest_items 422 原样透出；tests: g6-ui 14）、P0-07 客户端（见 P0-12 行）、P0-08h 客户端（citations 可点，见 P0-10 行）、P0-09 客户端（ObsidianPage envRootConfigured 挂载模式不问宿主路径+宿主→容器只读挂载说明+env 模式不渲染 obsidian:// 深链；NoteView.truncated 显式「已截断」提示；tests: g6-ui）、契约修复（MailBridgeListCreatedV2/ClipFetchArticleResult/DigestSendNowRequest.messageId/GraphResponse.returnedNodes 对齐 regenerated schema；tests: client.test 27）。22 文件 209 tests passed；tsc -b 干净；oxlint 0 errors（warnings 与基线持平）。locally_verified（jsdom；真实网络/compose 冒烟留给主 Agent gate）。
 
 （各 P0 的复现输出、失败测试、审计 file:line 证据，随 Gate 推进追加。）

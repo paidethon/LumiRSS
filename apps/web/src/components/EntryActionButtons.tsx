@@ -96,8 +96,10 @@ export function EntryActionButtons({
   /** 紧凑模式（桌面行）：按钮 28px、icon 16px；默认 44px 触控（卡片） */
   compact?: boolean
 }) {
-  const { isReadLater, toggleReadLater } = useToggleReadLater()
+  const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
   const marked = isReadLater(entryRef)
+  const readLaterPending = pendingFor(entryRef)
+  const readLaterError = errorFor(entryRef)
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
 
@@ -182,21 +184,29 @@ export function EntryActionButtons({
 
   return (
     <span className="flex shrink-0 items-center" data-entry-actions>
-      {/* 稍后读：本地 marker（零网络），点击即时切换（§25 天然乐观） */}
+      {/* 稍后读：服务端保留工作区成员（P0-01）——乐观切换 + 失败回滚
+          由 useReadLaterMemberMutation 承载；错误行内诚实透出。 */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation()
+          if (readLaterPending) return
           toggleReadLater(entryRef)
         }}
         aria-pressed={marked}
         aria-label={marked ? '从稍后读移除' : '加入稍后读'}
         title={marked ? '从稍后读移除' : '加入稍后读'}
         className={cx(btnBase, hoverCls, !marked && idleCls)}
-        style={marked ? { color: 'var(--lumi-accent)' } : { color: 'var(--lumi-text-tertiary)' }}
+        disabled={readLaterPending}
+        style={{ color: marked ? 'var(--lumi-accent)' : 'var(--lumi-text-tertiary)' }}
       >
-        <Clock aria-hidden className={cx(iconSize, marked && 'fill-[var(--lumi-accent-soft)]')} />
+        {readLaterPending ? (
+          <Loader2 aria-hidden className={cx(iconSize, 'animate-spin')} />
+        ) : (
+          <Clock aria-hidden className={cx(iconSize, marked && 'fill-[var(--lumi-accent-soft)]')} />
+        )}
       </button>
+
 
       {/* 收藏：set 语义 PATCH（乐观失败回滚由 0009 mutation 模式承载） */}
       <button
@@ -312,6 +322,19 @@ export function EntryActionButtons({
         }
         onSelect={addToWorkspace}
       />
+      {/* P0-01：稍后读写失败（加入/移除）诚实透出——不吞不假装成功。
+          紧凑模式靠 title 提示 + role=alert 播报，不撑破行布局。 */}
+      {readLaterError !== null && (
+        <span
+          role="alert"
+          title={`稍后读操作失败：${readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}`}
+          aria-label={`稍后读操作失败：${readLaterError instanceof Error ? readLaterError.message : '请稍后重试。'}`}
+          className={cx(
+            'shrink-0 rounded-full bg-[var(--lumi-danger)]',
+            compact ? 'size-1.5' : 'size-2',
+          )}
+        />
+      )}
     </span>
   )
 }

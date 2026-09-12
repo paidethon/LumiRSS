@@ -124,6 +124,7 @@ function libraryItemFixture(over: Partial<LibrarySearchItem> = {}): LibrarySearc
     url: null,
     snippet: '',
     updatedAt: '2026-09-01T08:00:00Z',
+    stale: false,
     ...over,
   }
 }

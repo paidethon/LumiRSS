@@ -390,6 +390,14 @@ function ApiSourceRow({ source }: { source: ApiSource }) {
           <StatusBadge source={source} />
           <span>上次成功：{formatRelative(source.lastSuccessAt)}</span>
         </p>
+        {/* P0-05f：409 unsubscribe_failed —— FreshRSS 退订失败时服务端
+            保留来源（防止死订阅继续轮询），这里诚实透出原因 + 重试提示，
+            不假装删除成功。 */}
+        {remove.isError && (
+          <p role="alert" className="mt-1 text-xs leading-relaxed text-[var(--lumi-danger)]">
+            删除失败，来源已保留（可重试）：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
+          </p>
+        )}
       </div>
       <Switch
         checked={source.enabled}

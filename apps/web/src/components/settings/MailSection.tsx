@@ -1,15 +1,17 @@
 /** MailSection — phase2 G6：设置 → 邮件简报。
  *
  * 两个子块：
- * - 收信地址（bridge lists）：列表 + 新增 Dialog（名称）。创建响应是
- *   唯一一次返回 bearer secret 的机会——一次性面板展示 ingest 地址
- *   `/api/mail/ingest/{uuid}` 与密钥，各带复制按钮 + 「仅显示一次」
- *   警告；删除立即生效。
+ * - HTTP 转发入口（webhook，P0-06h wave 2 诚实化）：这不是「收信地址」
+ *   ——简报出版商无法向它发送电子邮件。它是机器对机器的 HTTP POST
+ *   入口：投递方用 ingest 绝对 URL + Bearer 密钥 POST 内容，Lumi 落库
+ *   并（在配置了自动订阅时）转投 FreshRSS。密钥只在创建时显示一次；
+ *   subscribeFailed 时诚实展示自动订阅失败原因与可订阅的 Atom 路径；
+ *   删除立即生效。
  * - 每日摘要（digest）：启用开关 / 发送时刻（0–23）/ 来源（稍后读 /
  *   收藏）/ 条数上限 / SMTP 主机·端口·用户·发件·收件 / SMTP 密码
- *   （write-only：不回显，留空 = 不改动）；保存 → PUT；发送测试摘要
- *   v1 为空选择直发，BFF 错误 message 原样透出；lastSentAt / lastError
- *   诚实展示。
+ *   （write-only：不回显，留空 = 不改动）；保存 → PUT；「发送摘要」
+ *   服务端取材（无条目 → 422 no_digest_items 原样透出，绝不发空邮件）；
+ *   lastSentAt / lastError 诚实展示。
  *
  * 所有 HTTP 经 src/api/client.ts；loading / empty / error 三态齐备。 */
 
@@ -79,7 +81,13 @@ function SecretField({
   )
 }
 
-// ---- 收信地址（bridge lists） ----
+// ---- HTTP 转发入口（webhook bridge lists） ----
+
+/** ingest 路径 → 绝对 URL（webhook 是机器对机器入口，投递方需要完整
+ * 地址；相对路径复制出去不可用）。 */
+function ingestAbsoluteUrl(uuid: string): string {
+  return `${window.location.origin}/api/mail/ingest/${uuid}`
+}
 
 function BridgeListsBlock() {
   const lists = useMailBridgeLists()
@@ -101,13 +109,14 @@ function BridgeListsBlock() {
   }
 
   return (
-    <section aria-label="收信地址" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
+    <section aria-label="HTTP 转发入口" className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">收信地址</h3>
+          <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">HTTP 转发入口（webhook）</h3>
           <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            每个地址是一对机器投递入口：向 ingest 地址 POST 内容，邮件经 Lumi
-            中继发出。密钥只在创建时显示一次。
+            这是 HTTP POST 转发入口，不是电子邮箱地址：简报出版商无法向它发送电子邮件。
+            投递方（自动化脚本 / 机器）用 ingest 绝对 URL 携带 Bearer 密钥 POST
+            内容，经 Lumi 落库转投。密钥只在创建时显示一次。
           </p>
         </div>
         <Button
@@ -122,7 +131,7 @@ function BridgeListsBlock() {
       </div>
 
       {lists.isPending && (
-        <div className="mt-3 flex flex-col gap-2" aria-label="收信地址加载中">
+        <div className="mt-3 flex flex-col gap-2" aria-label="转发入口加载中">
           <Skeleton className="h-10 w-full" />
         </div>
       )}
@@ -131,7 +140,7 @@ function BridgeListsBlock() {
         <div role="alert" className="mt-3 text-sm">
           <p className="flex items-center gap-1.5 text-[var(--lumi-danger)]">
             <AlertCircle aria-hidden className="size-3.5 shrink-0" />
-            收信地址加载失败
+            转发入口加载失败
           </p>
           <p className="mt-1 text-xs text-[var(--lumi-text-secondary)]">{lists.error.message}</p>
           <Button size="sm" variant="secondary" className="mt-2" onClick={() => lists.refetch()}>
@@ -141,11 +150,11 @@ function BridgeListsBlock() {
       )}
 
       {lists.isSuccess && lists.data.items.length === 0 && (
-        <p className="mt-3 text-xs text-[var(--lumi-text-tertiary)]">还没有收信地址。</p>
+        <p className="mt-3 text-xs text-[var(--lumi-text-tertiary)]">还没有转发入口。</p>
       )}
 
       {lists.isSuccess && lists.data.items.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-2" aria-label="收信地址列表">
+        <ul className="mt-3 flex flex-col gap-2" aria-label="转发入口列表">
           {lists.data.items.map((item) => (
             <li
               key={item.uuid}
@@ -156,14 +165,14 @@ function BridgeListsBlock() {
                   {item.name}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
-                  /api/mail/ingest/{item.uuid}
+                  {ingestAbsoluteUrl(item.uuid)}
                   {item.createdAt !== '' && ` · 创建于 ${formatTimestamp(item.createdAt)}`}
                 </p>
               </div>
               <IconButton
                 icon={<Trash2 aria-hidden className="size-4" />}
                 label={`删除 ${item.name}`}
-                title="删除收信地址"
+                title="删除转发入口"
                 onClick={() => removeMutation.mutate(item.uuid)}
                 disabled={removeMutation.isPending}
               />
@@ -175,7 +184,7 @@ function BridgeListsBlock() {
       <Dialog
         open={dialogOpen}
         onClose={closeDialog}
-        title={created !== null ? '收信地址已创建' : '新增收信地址'}
+        title={created !== null ? '转发入口已创建' : '新增转发入口'}
         footer={
           created !== null ? (
             <Button variant="primary" size="sm" onClick={closeDialog}>
@@ -207,12 +216,32 @@ function BridgeListsBlock() {
             </p>
             <div className="flex flex-col gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3">
               <SecretField
-                label="Ingest 地址"
-                value={`/api/mail/ingest/${created.uuid}`}
-                copyLabel="复制收信地址"
+                label="Ingest 地址（绝对 URL，POST 目标）"
+                value={ingestAbsoluteUrl(created.uuid)}
+                copyLabel="复制 ingest 地址"
+                mono
               />
               <SecretField label="Bearer 密钥" value={created.secret} copyLabel="复制密钥" mono />
             </div>
+            {/* P0-06i：FreshRSS 自动订阅失败如实呈现——入口本身可用，
+                但「转投 FreshRSS」这一段没有发生；给出可手工订阅的 Atom。 */}
+            {created.subscribeFailed != null && created.subscribeFailed !== '' && (
+              <div
+                role="alert"
+                className="flex items-start gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-danger)]/30 bg-[var(--lumi-danger)]/10 px-3 py-2.5 text-xs leading-relaxed text-[var(--lumi-danger)]"
+              >
+                <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block font-medium">FreshRSS 自动订阅失败：{created.subscribeFailed}</span>
+                  <span className="mt-0.5 block break-all">
+                    内容仍会经此入口接收；如需进入 RSS 流，可在 FreshRSS 手工订阅：
+                    {created.atomPath != null && created.atomPath !== ''
+                      ? `${window.location.origin}${created.atomPath}`
+                      : '（Atom 路径未返回）'}
+                  </span>
+                </span>
+              </div>
+            )}
             <p className="text-xs leading-relaxed text-[var(--lumi-danger)]">
               密钥仅显示一次，请立即保存；关闭后无法再次查看。
             </p>
@@ -307,7 +336,9 @@ function DigestForm({ settings }: { settings: DigestSettings }) {
   }
 
   const sendNow = () => {
-    // v1：无选择协议 —— 空列表直发，BFF 的错误 message 原样展示。
+    // P0-06b：服务端取材——空选择 = 按设置来源/上限取最新条目；
+    // 无可发条目时 BFF 返回 422 no_digest_items（错误消息原样透出，
+    // 绝不发空邮件）。SMTP 未配置同理原样透出。
     sendMutation.mutate([])
   }
 

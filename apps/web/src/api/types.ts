@@ -122,13 +122,18 @@ export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
+/** P0-01：服务端稍后读时间线（server-driven list；cursor opaque）。 */
+export type ReadLaterItem = Schemas['ReadLaterItem']
+export type ReadLaterTimelineResponse = Schemas['ReadLaterTimelineResponse']
 
 // ---- phase2 M2 web clips + offline snapshots ----
 
 export type Clip = Schemas['Clip']
 export type ClipDetail = Schemas['ClipDetail']
 export type ClipListResponse = Schemas['ClipListResponse']
-export type ClipFetchResult = Schemas['ClipFetchResult']
+/** P0-03：/library/clips/fetch 返回服务端提取 + 清洗后的文章
+ * （contentHtml 已是 allow-list 产物；浏览器 DOMPurify 仍为渲染终界）。 */
+export type ClipFetchArticleResult = Schemas['ClipFetchArticleResult']
 export type SnapshotView = Schemas['SnapshotView']
 export type SnapshotListResponse = Schemas['SnapshotListResponse']
 export type SnapshotUsage = Schemas['SnapshotUsage']

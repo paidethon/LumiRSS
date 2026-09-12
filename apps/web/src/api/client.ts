@@ -1,7 +1,6 @@
 /** LumiRSS API client — 只访问相对 /api/v1/*，所有 BFF HTTP 调用集中在此。
  * 读：getFeeds / getEntries / getEntry；写：setEntryState（set 语义）。 */
 
-import { toApiView, type UiView } from '../lib/read-later'
 import { sessionExpired } from '../store/auth'
 import type {
   AiProfile,
@@ -18,7 +17,7 @@ import type {
   BookmarkImportResult,
   BookmarkListResponse,
   ClipDetail,
-  ClipFetchResult,
+  ClipFetchArticleResult,
   ClipListResponse,
   TranslationSegmentsView,
   Category,
@@ -33,6 +32,7 @@ import type {
   OpmlImportPreview,
   OpmlImportResult,
   OperationsStatus,
+  ReadLaterTimelineResponse,
   RemoteBackupsResponse,
   RestorePreview,
   RestoreResult,
@@ -225,7 +225,7 @@ export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata>
 
 export async function getEntries(
   params: {
-    view: UiView
+    view: 'all' | 'unread' | 'starred'
     feedUrl: string | null
     sourceType?: string | null
     categoryId?: string | null
@@ -234,9 +234,10 @@ export async function getEntries(
   signal?: AbortSignal,
 ): Promise<EntryListResponse> {  const query = new URLSearchParams()
   // view 始终显式携带，与 query key 的 scope 保持一致（与 cursor scope
-  // 构造性一致，规避 invalid_cursor 400）。read-later 是前端 workspace
-  // 语义（无 BFF 契约）：翻译为 view=all 全量拉取，列表侧客户端过滤。
-  query.set('view', toApiView(params.view))
+  // 构造性一致，规避 invalid_cursor 400）。P0-01：read-later 不再是
+  // entries 查询的客户端过滤视图——它走服务端时间线
+  // getReadLaterTimeline（本模块下方），此处类型上已收窄排除。
+  query.set('view', params.view)
   if (params.feedUrl !== null) {
     query.set('feedUrl', params.feedUrl)
   }
@@ -1066,49 +1067,45 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
 }
 
 // ---- phase2 Gate 3：网页剪藏（library/clips） ----
-// 抓取（SSRF 受限）→ 本地提取 → 存储三步由页面编排；ref 形如
-// `library:<uuid>`，路径参数取 uuid 部分（本模块负责剥离，UI 只透传
-// ref，与书签同一模式）。
+// P0-03 后服务端可信管线：/clips/fetch 返回服务端提取 + 清洗的文章
+// （ClipFetchArticleResult）；/clips 只接受 {url, finalUrl}——客户端
+// 派生的 title/html 一律不再提交（服务端按 finalUrl 重取重导出）。
+// ref 形如 `library:<uuid>`，路径参数取 uuid 部分（本模块负责剥离，
+// UI 只透传 ref，与书签同一模式）。
 
 /** `library:<uuid>` → `<uuid>`（容错裸 uuid，原样返回）。 */
 function toClipId(clipRef: string): string {
   return clipRef.startsWith('library:') ? clipRef.slice('library:'.length) : clipRef
 }
 
-/** 服务端匿名抓取目标页 HTML（SSRF 守卫：只放行公网 http/https、
- * MIME 白名单、5MB / 20s 上限；400 clip_fetch_forbidden /
- * 502 clip_fetch_failed 由 UI 原样展示 message）。无副作用 mutation
- * 语义：不接 AbortSignal，发出后允许完成。 */
-export async function fetchClipHtml(url: string): Promise<ClipFetchResult> {
+/** 服务端抓取并提取目标页文章（SSRF 钉住拨号 + 服务端 allow-list 清洗；
+ * contentHtml 在渲染前仍必须过 DOMPurify——渲染终界不变）。
+ * 400 clip_fetch_forbidden / 502 clip_fetch_failed 由 UI 原样展示
+ * message。无副作用 mutation 语义：不接 AbortSignal，发出后允许完成。 */
+export async function fetchClipArticle(url: string): Promise<ClipFetchArticleResult> {
   const response = await rawRequest(`${API_BASE}/library/clips/fetch`, {
     method: 'POST',
     body: JSON.stringify({ url }),
     contentType: 'application/json',
   })
-  return (await response.json()) as ClipFetchResult
+  return (await response.json()) as ClipFetchArticleResult
 }
 
+/** 保存确认的剪藏：url 必填；finalUrl 来自 /fetch 预览（存在时服务端
+ * 抓 finalUrl 重取重导出）。任何客户端 title/html 字段都不再提交。 */
 export interface ClipInput {
   url: string
-  title: string
-  byline?: string | null
-  contentHtml: string
-  contentText: string
-  fetchedAt?: string
+  finalUrl?: string | null
 }
 
-/** 保存剪藏（contentHtml 必须已过 DOMPurify——见 lib/clip-extract.ts；
- * 重复 url 幂等返回同一 ref）。不接 AbortSignal，与其它 mutation 一致。 */
+/** 保存剪藏（服务端重新提取+清洗后落库；重复 url 幂等返回同一 ref）。
+ * 不接 AbortSignal，与其它 mutation 一致。 */
 export async function createClip(body: ClipInput): Promise<ClipDetail> {
   const response = await rawRequest(`${API_BASE}/library/clips`, {
     method: 'POST',
     body: JSON.stringify({
       url: body.url,
-      title: body.title,
-      byline: body.byline ?? null,
-      contentHtml: body.contentHtml,
-      contentText: body.contentText,
-      fetchedAt: body.fetchedAt ?? new Date().toISOString(),
+      finalUrl: body.finalUrl ?? null,
     }),
     contentType: 'application/json',
   })
@@ -1188,7 +1185,9 @@ export type ApiSource = G6Schemas['ApiSource']
 export type ApiSourceListResponse = G6Schemas['ApiSourceListResponse']
 export type ApiSourcePreviewResult = G6Schemas['ApiSourcePreviewResult']
 export type MailBridgeList = G6Schemas['MailBridgeList']
-export type MailBridgeListCreated = G6Schemas['MailBridgeListCreated']
+/** P0-06i：创建响应含诚实的 FreshRSS 自动订阅状态（subscribeFailed/
+ * atomPath 未设置时不出现在线路上）。 */
+export type MailBridgeListCreated = G6Schemas['MailBridgeListCreatedV2']
 export type MailBridgeListResponse = G6Schemas['MailBridgeListResponse']
 export type MailIngestResult = G6Schemas['MailIngestResult']
 export type DigestSettings = G6Schemas['DigestSettings']
@@ -1336,14 +1335,15 @@ export async function updateDigestSettings(
   return (await response.json()) as DigestSettings
 }
 
+/** P0-06b：send-now 的条目引用 = bridge 条目的 messageId（服务端只按
+ * messageId 解析已存条目，其它键被忽略——客户端文本永不被信任）。 */
 export interface DigestEntryRefInput {
-  title: string
-  url: string
-  source: string
+  messageId: string
 }
 
-/** 立即发送摘要（显式条目选择；503 smtp_not_configured /
- * 502 smtp_send_failed 的 error.message 由 UI 原样透出）。 */
+/** 立即发送摘要（服务端取材：显式 messageId 解析或按设置来源取最新；
+ * 422 no_digest_items / 503 smtp_not_configured / 502 smtp_send_failed
+ * 的 error.message 由 UI 原样透出）。 */
 export async function sendDigestNow(
   entryRefs: DigestEntryRefInput[],
 ): Promise<MailIngestResult> {
@@ -1641,7 +1641,9 @@ export interface GraphResponse {
   nodes: GraphNode[]
   edges: GraphEdge[]
   truncated: boolean
+  /** 截断前候选总数（真实总数）——截断时绝不冒充返回数（P0-10d）。 */
   totalNodes: number
+  returnedNodes: number
 }
 
 /** 关系图谱（scope=all|workspace:<id>；max 上限由 BFF 钳制）。 */
@@ -1657,7 +1659,6 @@ export async function getGraph(
 }
 
 // ---- phase2 G7：RAG（显式启用 / 重建 / 混合检索；状态仅展示） ----
-
 export interface RagStatus {
   enabled: boolean
   chunks: number
@@ -1708,4 +1709,41 @@ export async function searchRag(
   query.set('q', q)
   query.set('k', String(k))
   return request<RagSearchResponse>(`${API_BASE}/rag/search?${query}`, signal)
+}
+
+// ---- phase2 recovery wave 2：统一 resolve + 稍后读时间线 ----
+
+/** P0-02：批量解析 ItemRef → ResolvedItem（含 per-kind 打开 payload）。
+ * stale/unknown 目标降级为 stale=true 的视图，绝不抛错——调用方按
+ * stale 渲染「已失效」态。openTarget 语义见 lib/open-item.ts。 */
+export async function resolveItems(
+  refs: string[],
+  signal?: AbortSignal,
+): Promise<WorkspaceItemsResolvedResponse> {
+  const response = await rawRequest(`${API_BASE}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ refs }),
+    contentType: 'application/json',
+    signal,
+  })
+  return (await response.json()) as WorkspaceItemsResolvedResponse
+}
+
+/** P0-01：服务端稍后读时间线（最新加入在前；cursor opaque 原样透传；
+ * 悬挂成员以 stale=true 行可见而非消失）。 */
+export async function getReadLaterTimeline(
+  params: { limit?: number; cursor?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<ReadLaterTimelineResponse> {
+  const query = new URLSearchParams()
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.cursor != null) {
+    query.set('cursor', params.cursor)
+  }
+  return request<ReadLaterTimelineResponse>(
+    `${API_BASE}/workspaces/read-later/timeline?${query}`,
+    signal,
+  )
 }

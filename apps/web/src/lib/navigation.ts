@@ -11,7 +11,8 @@
  *   rss      → sourceType=rss（BFF 契约，服务端语义）
  *   category → sourceType=rss + categoryId（greader label stream，服务端过滤）
  *   feed     → feedUrl（既有服务端过滤）
- *   readLater → view=all 全量拉取 + 客户端 marker 过滤（本地 sidecar，§31）
+ *   readLater → 服务端时间线（P0-01：/workspaces/read-later/timeline），
+ *               不经过本映射（useEntries 对 read-later 禁用）
  *   favorites → view=starred（既有）
  *
  * Query key 统一含 scope（§19）：不同 scope 不同 cache，切换不闪旧数据。 */
@@ -38,12 +39,13 @@ export interface EntryQuery {
   categoryId: string | null
 }
 
-/** NavigationTarget → Entry API query（§18 唯一映射；纯函数可单测）。 */
+/** NavigationTarget → Entry API query（§18 唯一映射；纯函数可单测）。
+ * read-later 视图不产生 entries 查询（服务端时间线承载，见 useEntries
+ * 的 enabled 门）；此处的防御性翻译仅为类型收窄兜底。 */
 export function buildEntryQuery(
   scope: ContentScope,
   view: 'all' | 'unread' | 'starred' | 'read-later',
 ): EntryQuery {
-  // read-later 是本地 workspace：API 拉全量，列表侧客户端 marker 过滤
   const apiView: EntryView = view === 'read-later' ? 'all' : view
   switch (scope.kind) {
     case 'all':

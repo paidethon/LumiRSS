@@ -53,6 +53,8 @@ import { OperationsSettingsSection } from './OperationsSettingsSection'
 import { DataBackupSection } from './DataControlPage'
 // AI 设置（Profile + 用途分配 + 服务端密钥，真实可用）
 import { AiSettingsSection } from './AiSettingsPage'
+// P0-07/P0-12：语义检索（RAG）——启用 / 重建 / 状态（真实控制面）
+import { RagSettingsSection } from './RagSettingsSection'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/高级入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
 // phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
@@ -363,6 +365,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
       return [
         { type: 'title', value: 'AI 配置' },
         { type: 'custom', node: <AiSettingsSection /> },
+        { type: 'title', value: '语义检索（RAG）' },
+        // P0-07：enableRag/rebuildRag/getRagStatus 的真实操作入口
+        // （此前只有 Agent 页只读 chip，queries.ts 注释兑现于此）。
+        { type: 'custom', node: <RagSettingsSection /> },
       ]
     case 'data':
       // 数据控制 = 缓存 / 设置 / 配置迁移 / 完整备份 / 备份历史 / WebDAV / 恢复

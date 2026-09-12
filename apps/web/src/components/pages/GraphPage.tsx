@@ -26,6 +26,7 @@ import {
   useWorkspaces,
 } from '../../api/queries'
 import type { GraphNode, TagSummary } from '../../api/client'
+import { resolveAndOpen } from '../../lib/open-item'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -41,18 +42,24 @@ const CANVAS_NODE_LIMIT = 500
 /** 截断提示里的上限文案（与客户端请求的 max=2000 一致）。 */
 const GRAPH_MAX_NODES = 2000
 
-/** kind → 展示名（契约备注：library 子类经 label 体现，kind 仍是 library）。 */
+/** kind → 展示名（契约备注：library 子类经 label 体现，kind 仍是 library；
+ * P0-10e：解析不到真实笔记的 wikilink 以 kind=unresolved 显式呈现）。 */
 const KIND_LABELS: Record<string, string> = {
   tag: '标签',
   workspace: '工作区',
   wikilink: '笔记链接',
   rss: 'RSS',
   library: '库',
+  unresolved: '未解析链接',
 }
 
 function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind
 }
+
+/** 可通过「打开」路由到真实内容的节点 kind（tag/workspace 是分组节点，
+ * unresolved 没有目标——都不提供打开）。 */
+const OPENABLE_NODE_KINDS = new Set(['rss', 'library'])
 
 /** kind → CSS token（现有 --lumi-category-* 色板，不新增颜色）。 */
 const KIND_COLOR_TOKENS: Record<string, [token: string, fallback: string]> = {
@@ -222,6 +229,33 @@ export default function GraphPage() {
   const selectedNode: GraphNode | null =
     selectedRef !== null ? (nodes.find((n) => n.ref === selectedRef) ?? null) : null
 
+  // P0-02 wave 2：节点详情卡「打开」——resolve → 按 kind 路由
+  // （Reader / 外链 / 剪藏 / 快照沙箱页 / Obsidian）；失败诚实透出。
+  const [openState, setOpenState] = useState<{ busy: boolean; error: string | null }>({
+    busy: false,
+    error: null,
+  })
+  const openNode = async (ref: string) => {
+    setOpenState({ busy: true, error: null })
+    try {
+      const resolved = await resolveAndOpen(ref)
+      if (resolved === null) {
+        setOpenState({ busy: false, error: '打开失败：内容解析请求未成功，请稍后重试。' })
+        return
+      }
+      if (resolved.stale) {
+        setOpenState({ busy: false, error: '内容已失效，无法打开。' })
+        return
+      }
+      setOpenState({ busy: false, error: null })
+    } catch (error) {
+      setOpenState({
+        busy: false,
+        error: error instanceof Error ? error.message : '打开失败，请稍后重试。',
+      })
+    }
+  }
+
   const scopeOptions = useMemo(
     () => [
       { value: 'all', label: '全部' },
@@ -370,24 +404,45 @@ export default function GraphPage() {
 
         {!graph.isPending && !graph.isError && nodes.length > 0 && (
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* 文字摘要行：始终渲染（a11y 等价路径之一） */}
+            {/* 文字摘要行（a11y 等价路径之一）：截断时如实区分真实总数
+                与返回数（P0-10d——截断后的数量绝不冒充总数）。 */}
             <p role="status" className="px-1 text-xs text-[var(--lumi-text-secondary)]">
-              共 {nodes.length} 节点 · {visibleEdges.length} 边
-              {graph.data?.truncated === true && (
-                <> · 节点过多，已按连接数截断显示前 {GRAPH_MAX_NODES} 个</>
+              {graph.data?.truncated === true ? (
+                <>
+                  真实总数 {graph.data.totalNodes} 节点 · 因过多仅返回{' '}
+                  {graph.data.returnedNodes ?? nodes.length} 个 · {visibleEdges.length} 边
+                  （按连接数截断，上限 {GRAPH_MAX_NODES}）
+                </>
+              ) : (
+                <>共 {nodes.length} 节点 · {visibleEdges.length} 边</>
               )}
             </p>
 
             {/* 选中节点详情卡片（画布 tap / 标签 chip 均可触发） */}
             {selectedNode !== null && (
               <div
-                className="mt-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-3 py-2"
+                className={cx(
+                  'mt-2 rounded-[var(--lumi-radius-lg)] border px-3 py-2',
+                  selectedNode.kind === 'unresolved'
+                    ? 'border-dashed border-[var(--lumi-border)] bg-[var(--lumi-surface)] opacity-80'
+                    : 'border-[var(--lumi-border)]',
+                )}
                 aria-live="polite"
               >
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-[var(--lumi-text-primary)]">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--lumi-text-primary)]">
                     {selectedNode.label}
                   </p>
+                  {OPENABLE_NODE_KINDS.has(selectedNode.kind) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={openState.busy}
+                      onClick={() => void openNode(selectedNode.ref)}
+                    >
+                      打开
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => setSelectedRef(null)}>
                     关闭
                   </Button>
@@ -395,9 +450,19 @@ export default function GraphPage() {
                 <p className="mt-0.5 text-xs text-[var(--lumi-text-secondary)]">
                   类型：{kindLabel(selectedNode.kind)} · 连接数：{selectedNode.degree}
                 </p>
+                {selectedNode.kind === 'unresolved' && (
+                  <p className="mt-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                    这个笔记链接在库内没有解析到真实笔记（目标不存在或尚未扫描）。
+                  </p>
+                )}
                 <p className="mt-0.5 text-[11px] break-all text-[var(--lumi-text-tertiary)]">
                   {selectedNode.ref}
                 </p>
+                {openState.error !== null && (
+                  <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+                    {openState.error}
+                  </p>
+                )}
               </div>
             )}
 

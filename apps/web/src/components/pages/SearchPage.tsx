@@ -22,6 +22,7 @@ import { useFeeds, useSearch } from '../../api/queries'
 import type { LibrarySearchItem } from '../../api/client'
 import type { SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
+import { resolveAndOpen } from '../../lib/open-item'
 import { dateTimeFormatter, formatPublishedAt } from '../../lib/date-format'
 import {
   clearSearchHistory,
@@ -80,6 +81,67 @@ function formatRelative(iso: string | null | undefined): string {
   return dateTimeFormatter.format(date)
 }
 
+/** 库搜索结果行：标题按钮（resolve → 按 kind 路由：Reader / 外链 /
+ * 剪藏 / 快照沙箱页 / Obsidian）。wave 2（P0-02「一切皆可打开」）：
+ * 行不再是惰性文本；stale 行禁用打开并显式标注。 */
+function LibraryResultRow({ item }: { item: LibrarySearchItem }) {
+  const [openError, setOpenError] = useState<string | null>(null)
+  const stale = item.stale
+
+  const open = async () => {
+    setOpenError(null)
+    try {
+      const resolved = await resolveAndOpen(item.ref)
+      if (resolved === null) {
+        setOpenError('打开失败：内容解析请求未成功，请稍后重试。')
+      } else if (resolved.stale) {
+        setOpenError('内容已失效，无法打开。')
+      }
+    } catch (error) {
+      setOpenError(error instanceof Error ? error.message : '打开失败，请稍后重试。')
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] px-3.5 py-3">
+      <span className="flex min-w-0 items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+        <span className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px]">
+          {libraryKindLabel(item.kind)}
+        </span>
+        {stale && (
+          <span className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[11px]">
+            已失效
+          </span>
+        )}
+        <span className="ml-auto shrink-0">{formatRelative(item.updatedAt)}</span>
+      </span>
+      {stale ? (
+        <span className="line-clamp-2 text-sm font-medium text-[var(--lumi-text-secondary)]">
+          {item.title}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void open()}
+          className="line-clamp-2 text-left text-sm font-medium text-[var(--lumi-text-primary)] underline-offset-2 transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-accent-text)] hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+        >
+          {item.title}
+        </button>
+      )}
+      {item.snippet !== '' && (
+        <span className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          {item.snippet}
+        </span>
+      )}
+      {openError !== null && (
+        <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {openError}
+        </span>
+      )}
+    </li>
+  )
+}
+
 /** 库搜索结果分组：标题行 / kind 徽标 / snippet（纯文本，不进 HTML）/
  * updatedAt 相对时间；libraryError 时小字诚实提示（库腿失败不影响
  * RSS 结果展示）。items 为空且无 error → 不渲染。 */
@@ -99,25 +161,7 @@ function LibraryGroup({
       {items.length > 0 && (
         <ul className="flex flex-col gap-1">
           {items.map((item) => (
-            <li
-              key={item.ref}
-              className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] px-3.5 py-3"
-            >
-              <span className="flex min-w-0 items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
-                <span className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px]">
-                  {libraryKindLabel(item.kind)}
-                </span>
-                <span className="ml-auto shrink-0">{formatRelative(item.updatedAt)}</span>
-              </span>
-              <span className="line-clamp-2 text-sm font-medium text-[var(--lumi-text-primary)]">
-                {item.title}
-              </span>
-              {item.snippet !== '' && (
-                <span className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                  {item.snippet}
-                </span>
-              )}
-            </li>
+            <LibraryResultRow key={item.ref} item={item} />
           ))}
         </ul>
       )}

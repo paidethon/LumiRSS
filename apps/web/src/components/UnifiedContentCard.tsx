@@ -13,21 +13,28 @@
  * 失败回滚由 useLibraryFavoriteMutation 承载，错误原样透出）。RSS 条目
  * 不显示（收藏语义归 RSS star，绝不跨域复制）。
  *
- * 其余动作（actions）与打开行为（onOpen）仍由调用方注入。 */
+ * P0-02（wave 2）：默认打开行为按 kind 路由（lib/open-item.ts 契约）：
+ * rss→Reader；bookmark→Reader(rss 型)/安全外链；clip→剪藏 section；
+ * snapshot→服务端沙箱页新标签；obsidian_note→Obsidian section。
+ * 调用方可用 onOpen 覆盖；stale 永不可打开。 */
 
 import { Star, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ResolvedItem } from '../api/types'
 import { useLibraryFavoriteToggle } from '../api/queries'
 import { formatPublishedAt } from '../lib/date-format'
+import { isOpenable, openResolvedItem } from '../lib/open-item'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
 
-/** kind → 徽标文案（RSS 条目 / 库书签 / 未知引用，诚实标注）。 */
+/** kind → 徽标文案（诚实标注；未知 kind 不冒充已知域）。 */
 function kindLabel(kind: string): string {
   if (kind === 'rss') return 'RSS'
-  if (kind === 'bookmark') return '库'
+  if (kind === 'bookmark') return '书签'
+  if (kind === 'clip') return '剪藏'
+  if (kind === 'snapshot') return '快照'
+  if (kind === 'obsidian_note') return '笔记'
   return '未知'
 }
 
@@ -76,13 +83,24 @@ export function UnifiedContentCard({
   item: ResolvedItem
   /** 卡片动作区（移除 / 上移 / 下移等），布局由本组件承载 */
   actions?: ReactNode
-  /** 打开内容（v1 工作区页的 rss 条目不接 Reader，仅外链）；stale 时无效 */
+  /** 覆盖默认打开路由（缺省 = lib/open-item.ts 按 kind 路由）；
+   * stale 时一律无效（不伪造可打开内容）。 */
   onOpen?: () => void
 }) {
   const stale = item.stale
   // 外链安全边界：只放行绝对 http/https；stale 一律不给链接。
   const safeUrl = stale ? null : safeExternalHttpUrl(item.url ?? null)
-  const canOpen = onOpen !== undefined && !stale
+  // P0-02：默认可打开（按 kind 路由），调用方 onOpen 优先。
+  const openable = isOpenable(item)
+  const canOpen = !stale && (onOpen !== undefined || openable)
+  const handleOpen = () => {
+    if (stale) return
+    if (onOpen !== undefined) {
+      onOpen()
+      return
+    }
+    openResolvedItem(item)
+  }
 
   return (
     <article
@@ -98,7 +116,7 @@ export function UnifiedContentCard({
           {canOpen ? (
             <button
               type="button"
-              onClick={onOpen}
+              onClick={handleOpen}
               className="w-full text-left transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-accent-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
             >
               {item.title}
