@@ -263,12 +263,14 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
   - P0-02：resolve_library 按 kind 分派（bookmark/clip/snapshot/obsidian_note）+ 打开 payload + 并发 batch resolve；20 个回归测试（test_gate1_foundations.py）。locally_verified。
   - P0-10 后端：attach 幂等优先、NOCASE（migration 0017 合并变体）、ItemRef 存在性验证（workspace/tag/favorite）、graph scope 全边隔离 + totalNodes 真实总数 + wikilink 解析真实 note/显式 unresolved、starred 过滤作用于 library 腿、tag→items 服务端列表端点。**额外发现并修复**：DELETE /tags/assign 被 /{tag_id} 路由捕获的声明顺序 bug（detach 自上线即不可用）。
   - P0-01 后端：GET /workspaces/read-later/timeline 服务端时间线（keyset 分页、投影优先+adapter 回退、悬挂成员 stale 可见）。
-- **Gate 4（主 Agent）** ✓（代码完成，待提交）：env 固定 vault 根 + 只读 bind mount overlay（docker-compose.obsidian.yml + ./lumirss 自动接线 + env 样例）；rename 消歧（唯一删除者+唯一新增者）；单事务扫描批次；索引快照一致渲染；显式截断（migration 0020 + truncatedNotes + NoteView.truncated）；LUMIRSS_OBSIDIAN_SCAN_INTERVAL 轮询；缺失 note 404；服务启动即构建（同时封死 P0-08f 的 deps 竞争后端半边）；10 个回归测试（test_obsidian_gate4.py）。
-- **BE-1（Gate 2 剪藏/快照/SSRF）**：进行中——已见 article_extract.py、article_sanitize.py、ssrf_transport.py、ssrf_proxy.py、db_tx.py、migrations/0016、test_clip_pipeline.py、test_ssrf_transport.py 落盘。
-- **BE-2（Gate 3 API源/邮件）** ✓ 代码完成（报告已交付；范围内 52 passed + 3 xfail；接线后本机复跑 83 passed + 2 xfail + 1 xpass）：
+- **Gate 4（主 Agent）** ✓ 已提交 `49ce2b8`：env 固定 vault 根 + 只读 bind mount overlay（docker-compose.obsidian.yml + ./lumirss 自动接线 + env 样例）；rename 消歧（唯一删除者+唯一新增者）；单事务扫描批次；索引快照一致渲染；显式截断（migration 0020 + truncatedNotes + NoteView.truncated）；LUMIRSS_OBSIDIAN_SCAN_INTERVAL 轮询；缺失 note 404；服务启动即构建（同时封死 P0-08f 的 deps 竞争后端半边）；10 个回归测试（test_obsidian_gate4.py）。备份含资产字节（library-assets/ 组件 + restore 回填）。
+- **BE-1（Gate 2 剪藏/快照/SSRF）** ✓ 已提交 `7d7a41a`：服务端提取+清洗管线、PinnedAddressTransport（TOCTOU 关闭）、SsrfFilteringProxy（真实 monolith 验证，元数据 IP 403 无产物）、monolith 2.10.1 checksum 入镜像、argv 修正、dedupe 语义修正、配额按唯一字节、事务化+补偿+reconcile；范围内 82 passed。
+- **BE-2（Gate 3 API源/邮件）** ✓ 已提交 `2462ffd`（报告已交付；范围内 52 passed + 3 xfail；接线后本机复跑 83 passed + 2 xfail + 1 xpass）：
   - P0-05：共享 RFC4287 渲染器 atom_render.py；feed updated 内容派生+单调；稳定 ETag+可靠 304（修 flaky 同秒断言）；last-known-good 持久化（migration 0019）+ `X-Lumi-Stale` 降级；退订失败阻止删除（409 unsubscribe_failed）；双 base URL（默认 `http://bff:8000`）；fetch_json 流式 2MB 上限（修 OOM DoS）。
-  - P0-06：per-list 去重（migration 0018）+ 稳定内容指纹；ingest 单事务；webhook bearer 通路（middleware 三处 defer + 10MB 路径限额，主 Agent 已落地）；scheduler/IMAP 任务工厂入 lifespan（主 Agent 已落地）；send-now 服务端取材（422 no_digest_items）；FreshRSS 自动订阅（诚实 subscribeFailed）；IMAP await 修复+配置/测试/轮询端点；Atom 合规。
-  - 主 Agent 已落地：middleware.py ×3、main.py lifespan 接线、.env.prod.example（LUMIRSS_ATOM_BASE_URL）、Caddyfile /feeds 内部 token 指令。待 BE-2 收尾：去 xfail 标记 + test_mail_imap 密码字面量（钩子拦截项）。
-- **FE 波 1（Gate 7 翻译/导航/tags/favorites/workspace UI）**：进行中——web 侧 20 个文件修改中。
+  - P0-06：per-list 去重（migration 0018）+ 稳定内容指纹；ingest 单事务；webhook bearer 通路（middleware 三处 defer + 10MB 路径限额，主 Agent 已落地）；scheduler/IMAP 任务工厂入 lifespan（主 Agent 已落地）；send-now 服务端取材（422 no_digest_items）；FreshRSS 自动订阅（诚实 subscribeFailed）；IMAP await 修复+配置/测试/轮询端点；Atom 合规。xfail 已移除、凭据字面量已清。
+- **BE-3（Gate 5+6 RAG/Agent）** ✓ 已提交 `341d598`（范围内 92 passed + 1 skipped；真实模型 smoke 通过）：
+  - P0-07：rebuild 真写 `rag_vec`（核心缺陷）+ 单事务索引写入；**新发现并修复** fastembed `model=` kwarg 静默吞掉（始终加载默认英文模型）→ model_name + identity 校验 + 维度探测 fail-closed；enable 先 warmup 后持久化；idle-unload 生命周期任务；mark_stale/index_refs 增量钩子（已接线 bookmark/clip/snapshot 删除路由）；title 持久化；Dockerfile `--extra rag`（主 Agent 落地）。
+  - P0-08：chat_completion 下沉到具体类（首轮 AttributeError 关闭）；真 SSE 流式（增量持久化+队列广播）；server-side cancel + 重启 sweep（不卡 processing）；per-thread 串行 + pending approval 409；审批原子化（rowcount 条件 UPDATE + 行内 args 校验）；history 符合 OpenAI tool 协议（错误形状测试修正）；list_workspace_items 工具；obsidian 工具初始化竞争回归测试；citationDetails（ResolvedItem 契约）供 FE 渲染可点引用。
+- **FE 波 2（最终 Web 波）**：进行中——read-later 客户端切换、打开目标、RAG 设置 UI、citations、mail 文案、obsidian envRoot 模式、clip 服务端契约适配。
 
 （各 P0 的复现输出、失败测试、审计 file:line 证据，随 Gate 推进追加。）
