@@ -17,8 +17,11 @@ export interface paths {
          * Ingest Mail
          * @description Authenticated thin bridge: bearer secret + raw MIME body.
          *
-         *     Lives at /api/mail/* (not /api/v1/*): it is machine-to-machine and
-         *     still passes through the same security middlewares by path prefix.
+         *     Lives at /api/mail/* (not /api/v1/*): it is machine-to-machine. The
+         *     route IS the auth boundary — the bearer secret is compared in
+         *     constant time and NEVER logged (no auth header or secret value is
+         *     ever logged on this path). The per-list rate budget is consumed
+         *     before authentication so guessing cannot out-retry the window.
          */
         post: operations["ingest_mail_api_mail_ingest__list_uuid__post"];
         delete?: never;
@@ -172,7 +175,16 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Source */
+        /**
+         * Delete Source
+         * @description Delete requires a successful FreshRSS unsubscribe first (P0-05e).
+         *
+         *     A failed unsubscribe returns the stable 409 ``unsubscribe_failed``
+         *     envelope and keeps the source, so no dead subscription keeps polling
+         *     a removed URL. No ``force`` param by design: FreshRSS-unconfigured
+         *     and already-absent feeds already pass (idempotent), and decommissioning
+         *     FreshRSS (unsetting its env) re-enables deletion.
+         */
         delete: operations["delete_source_api_v1_api_sources__source_uuid__delete"];
         options?: never;
         head?: never;
@@ -473,6 +485,15 @@ export interface paths {
          * Digest Send Now
          * @description Immediate send with the configured relay (never a test to real
          *     third parties — tests use local sinks only).
+         *
+         *     Server-derived content only (P0-06b/j): ``entryRefs`` entries are
+         *     RESOLVED against stored bridge entries by their ``messageId`` (any
+         *     other keys are ignored — client title/url text is never trusted);
+         *     no refs → the newest bridge entries bounded by ``limitCount``. An
+         *     empty resolved selection is the stable 422 ``no_digest_items``
+         *     error — an empty email is never sent. ``enabled`` is intentionally
+         *     NOT consulted here (explicit user action); only the scheduled path
+         *     respects it.
          */
         post: operations["digest_send_now_api_v1_digest_send_now_post"];
         delete?: never;
@@ -745,7 +766,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add Library Favorite */
+        /**
+         * Add Library Favorite
+         * @description Favorite one library ItemRef (existence-validated, ADR 0004).
+         */
         post: operations["add_library_favorite_api_v1_favorites_library_post"];
         /** Remove Library Favorite */
         delete: operations["remove_library_favorite_api_v1_favorites_library_delete"];
@@ -969,7 +993,17 @@ export interface paths {
         /** List Clips */
         get: operations["list_clips_api_v1_library_clips_get"];
         put?: never;
-        /** Create Clip */
+        /**
+         * Create Clip
+         * @description Create a clip from a URL confirmation.
+         *
+         *     Security contract (P0-03): ALL content is re-derived server-side by
+         *     fetching ``finalUrl`` (the page the user confirmed in the preview)
+         *     or ``url``. Client-supplied title/byline/contentHtml/contentText/
+         *     fetchedAt are ignored by design; what gets stored comes only from
+         *     the server's own fetch → extract → sanitize pipeline, and the URL
+         *     recorded is the FINAL url after redirects.
+         */
         post: operations["create_clip_api_v1_library_clips_post"];
         delete?: never;
         options?: never;
@@ -988,7 +1022,7 @@ export interface paths {
         put?: never;
         /**
          * Fetch For Clip
-         * @description One bounded anonymous SSRF-guarded server fetch (no cookies).
+         * @description Server fetch (SSRF-pinned) + extraction + sanitization preview.
          */
         post: operations["fetch_for_clip_api_v1_library_clips_fetch_post"];
         delete?: never;
@@ -1085,6 +1119,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mail/imap/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Poll Mail Imap
+         * @description Manual one-shot poll of the configured mailbox into its bound
+         *     bridge list (the background task runs the same adapter).
+         */
+        post: operations["poll_mail_imap_api_v1_mail_imap_poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/imap/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mail Imap Settings */
+        get: operations["get_mail_imap_settings_api_v1_mail_imap_settings_get"];
+        /** Update Mail Imap Settings */
+        put: operations["update_mail_imap_settings_api_v1_mail_imap_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/imap/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Mail Imap
+         * @description Connectivity + auth probe (downloads nothing). Honest ok/error
+         *     report — error text carries the failure kind, never credentials.
+         */
+        post: operations["test_mail_imap_api_v1_mail_imap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/notes": {
         parameters: {
             query?: never;
@@ -1147,6 +1241,9 @@ export interface paths {
         /**
          * Set Obsidian Settings
          * @description Configure the vault root (canonicalized, validated, read-only).
+         *
+         *     Rejected while the deployment fixes the root via
+         *     LUMIRSS_OBSIDIAN_VAULT_DIR — the bind mount owns the path then.
          */
         put: operations["set_obsidian_settings_api_v1_obsidian_settings_put"];
         post?: never;
@@ -2163,6 +2260,27 @@ export interface paths {
         patch: operations["rename_tag_api_v1_tags__tag_id__patch"];
         trace?: never;
     };
+    "/api/v1/tags/{tag_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tag Items
+         * @description Server-driven list of one tag's items, each resolved (P0-10i):
+         *     the client never filters a partially loaded timeline to show a tag.
+         */
+        get: operations["tag_items_api_v1_tags__tag_id__items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -2199,6 +2317,30 @@ export interface paths {
         put?: never;
         /** Create Workspace */
         post: operations["create_workspace_api_v1_workspaces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/read-later/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Later Timeline
+         * @description Server-driven read-later timeline (P0-01): newest-added-first,
+         *     keyset-paged over the reserved workspace's rss members. Cards come
+         *     from the derived projection; a projection miss falls back to the
+         *     FreshRSS adapter; a ref that resolves nowhere stays visible as
+         *     ``stale`` instead of vanishing (ADR 0004).
+         */
+        get: operations["read_later_timeline_api_v1_workspaces_read_later_timeline_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2260,6 +2402,9 @@ export interface paths {
         /**
          * Add Workspace Item
          * @description Idempotent add of one typed ItemRef (returns 201 with current slot).
+         *
+         *     The ref must resolve (ADR 0004): writes never create dangling
+         *     membership. A known-but-stale domain (FreshRSS unconfigured) passes.
          */
         post: operations["add_workspace_item_api_v1_workspaces__workspace_id__items_post"];
         delete?: never;
@@ -2296,6 +2441,11 @@ export interface paths {
         /**
          * Serve Mail Atom
          * @description Per-list Atom for FreshRSS (constant-time secret check).
+         *
+         *     RFC 4287 via the shared renderer (P0-06h): feed id/title/updated
+         *     (never empty — falls back to the list creation time)/link rel=self
+         *     (absolute IRI)/author; entries carry updated (received_at) and
+         *     author (From header).
          */
         get: operations["serve_mail_atom_feeds_mail__list_uuid___secret__atom_get"];
         put?: never;
@@ -2317,6 +2467,12 @@ export interface paths {
          * Serve Atom
          * @description The FreshRSS-facing feed. Constant-time secret check, ETag/304,
          *     bounded fetch + mapping on every pull, honest error status marking.
+         *
+         *     Last-known-good (P0-05d): success persists the rendered Atom, a
+         *     content-derived monotonic feed updated and the matching ETag; an
+         *     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
+         *     keeps its cached copy functional) and only a source with no last-good
+         *     body falls back to the 502 stub.
          */
         get: operations["serve_atom_feeds__source_uuid___secret__atom_get"];
         put?: never;
@@ -3073,20 +3229,28 @@ export interface components {
             url: string;
         };
         /**
-         * ClipCreate
-         * @description POST /api/v1/library/clips — extracted content from the client.
+         * ClipCreateRequest
+         * @description POST /api/v1/library/clips — URL confirmation only.
+         *
+         *     ``url`` is required; ``finalUrl`` (from the /fetch preview) is
+         *     fetched instead when present. ``title``/``byline``/``contentHtml``/
+         *     ``contentText``/``fetchedAt`` are deprecated client-derived fields:
+         *     accepted for wire-shape compatibility with the pre-recovery client,
+         *     NEVER trusted or stored (server re-derives everything).
          */
-        ClipCreate: {
+        ClipCreateRequest: {
             /** Byline */
             byline?: string | null;
             /** Contenthtml */
-            contentHtml: string;
+            contentHtml?: string | null;
             /** Contenttext */
-            contentText: string;
+            contentText?: string | null;
             /** Fetchedat */
             fetchedAt?: string | null;
+            /** Finalurl */
+            finalUrl?: string | null;
             /** Title */
-            title: string;
+            title?: string | null;
             /** Url */
             url: string;
         };
@@ -3113,22 +3277,33 @@ export interface components {
             url: string;
         };
         /**
-         * ClipFetchRequest
-         * @description POST /api/v1/library/clips/fetch — server-side bounded fetch.
+         * ClipFetchArticleResult
+         * @description POST /api/v1/library/clips/fetch — the server-produced article.
+         *
+         *     ``url`` echoes the requested URL; ``finalUrl`` is where the fetch
+         *     actually landed (redirects followed). ``contentHtml`` is already
+         *     server-sanitized (allow-list); the browser DOMPurify pass remains
+         *     the final render boundary.
          */
-        ClipFetchRequest: {
+        ClipFetchArticleResult: {
+            /** Byline */
+            byline?: string | null;
+            /** Contenthtml */
+            contentHtml: string;
+            /** Contenttext */
+            contentText: string;
+            /** Finalurl */
+            finalUrl: string;
+            /** Title */
+            title: string;
             /** Url */
             url: string;
         };
         /**
-         * ClipFetchResult
-         * @description Raw fetched page handed to the browser extractor.
+         * ClipFetchRequest
+         * @description POST /api/v1/library/clips/fetch — server-side bounded fetch.
          */
-        ClipFetchResult: {
-            /** Finalurl */
-            finalUrl: string;
-            /** Html */
-            html: string;
+        ClipFetchRequest: {
             /** Url */
             url: string;
         };
@@ -3419,6 +3594,11 @@ export interface components {
             library: components["schemas"]["LibrarySearchItem"][];
             /** Libraryerror */
             libraryError?: string | null;
+            /**
+             * Librarytotal
+             * @default 0
+             */
+            libraryTotal: number;
             /** Rss */
             rss: components["schemas"]["SearchItem"][];
         };
@@ -3533,12 +3713,21 @@ export interface components {
         /**
          * GraphResponse
          * @description Envelope for GET /api/v1/graph (truncation reported honestly).
+         *
+         *     ``totalNodes`` is the pre-truncation candidate count; ``returnedNodes``
+         *     is what the payload carries (P0-10d — the truncated count never
+         *     masquerades as the total).
          */
         GraphResponse: {
             /** Edges */
             edges: components["schemas"]["GraphEdge"][];
             /** Nodes */
             nodes: components["schemas"]["GraphNode"][];
+            /**
+             * Returnednodes
+             * @default 0
+             */
+            returnedNodes: number;
             /** Totalnodes */
             totalNodes: number;
             /** Truncated */
@@ -3579,9 +3768,17 @@ export interface components {
              * @default
              */
             snippet: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
             /** Title */
             title: string;
-            /** Updatedat */
+            /**
+             * Updatedat
+             * @default
+             */
             updatedAt: string;
             /** Url */
             url?: string | null;
@@ -3628,16 +3825,24 @@ export interface components {
             name: string;
         };
         /**
-         * MailBridgeListCreated
-         * @description Creation response — the only time the bearer secret is visible.
+         * MailBridgeListCreatedV2
+         * @description Creation response + honest FreshRSS auto-subscribe status
+         *     (P0-06i). Extends the G5 shape; ``subscribeFailed``/``atomPath`` are
+         *     omitted from wire responses when unset
+         *     (response_model_exclude_none), keeping the historical payload
+         *     byte-compatible on success.
          */
-        MailBridgeListCreated: {
+        MailBridgeListCreatedV2: {
+            /** Atompath */
+            atomPath?: string | null;
             /** Createdat */
             createdAt: string;
             /** Name */
             name: string;
             /** Secret */
             secret: string;
+            /** Subscribefailed */
+            subscribeFailed?: string | null;
             /** Uuid */
             uuid: string;
         };
@@ -3648,6 +3853,99 @@ export interface components {
         MailBridgeListResponse: {
             /** Items */
             items: components["schemas"]["MailBridgeList"][];
+        };
+        /**
+         * MailImapPollResult
+         * @description POST /api/v1/mail/imap/poll — one bounded manual poll.
+         */
+        MailImapPollResult: {
+            /** Fetched */
+            fetched: number;
+            /** Ingested */
+            ingested: components["schemas"]["MailIngestResult"][];
+        };
+        /**
+         * MailImapSettings
+         * @description GET /api/v1/mail/imap/settings — password never returned.
+         */
+        MailImapSettings: {
+            /**
+             * Configured
+             * @default false
+             */
+            configured: boolean;
+            /**
+             * Folder
+             * @default INBOX
+             */
+            folder: string;
+            /**
+             * Host
+             * @default
+             */
+            host: string;
+            /**
+             * Intervalseconds
+             * @default 300
+             */
+            intervalSeconds: number;
+            /**
+             * Listuuid
+             * @default
+             */
+            listUuid: string;
+            /**
+             * Passwordconfigured
+             * @default false
+             */
+            passwordConfigured: boolean;
+            /**
+             * Port
+             * @default 993
+             */
+            port: number;
+            /**
+             * Ssl
+             * @default true
+             */
+            ssl: boolean;
+            /**
+             * User
+             * @default
+             */
+            user: string;
+        };
+        /**
+         * MailImapSettingsUpdate
+         * @description PUT /api/v1/mail/imap/settings — partial; password write-only.
+         */
+        MailImapSettingsUpdate: {
+            /** Folder */
+            folder?: string | null;
+            /** Host */
+            host?: string | null;
+            /** Intervalseconds */
+            intervalSeconds?: number | null;
+            /** Listuuid */
+            listUuid?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Port */
+            port?: number | null;
+            /** Ssl */
+            ssl?: boolean | null;
+            /** User */
+            user?: string | null;
+        };
+        /**
+         * MailImapTestResult
+         * @description POST /api/v1/mail/imap/test — honest connectivity report.
+         */
+        MailImapTestResult: {
+            /** Error */
+            error?: string | null;
+            /** Ok */
+            ok: boolean;
         };
         /**
          * MailIngestResult
@@ -3680,6 +3978,9 @@ export interface components {
         /**
          * NoteView
          * @description One projected note; contentHtml only on detail (client sanitizes).
+         *
+         *     ``truncated`` marks notes that exceeded the bounded-projection caps
+         *     — never silently shortened (P0-09d).
          */
         NoteView: {
             /** Contenthtml */
@@ -3697,6 +3998,11 @@ export interface components {
             tags: string[];
             /** Title */
             title: string;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
             /** Wikilinks */
             wikilinks?: string[] | null;
         };
@@ -3725,6 +4031,11 @@ export interface components {
             renames: number;
             /** Skipped */
             skipped: number;
+            /**
+             * Truncatednotes
+             * @default 0
+             */
+            truncatedNotes: number;
             /** Unchanged */
             unchanged: number;
             /**
@@ -3748,6 +4059,11 @@ export interface components {
          * @description Honest scanner status (error keeps the old index visible).
          */
         ObsidianStatus: {
+            /**
+             * Envrootconfigured
+             * @default false
+             */
+            envRootConfigured: boolean;
             /** Lasterror */
             lastError?: string | null;
             /** Lastscanat */
@@ -3968,6 +4284,36 @@ export interface components {
             semanticError?: string | null;
             /** Semanticused */
             semanticUsed: boolean;
+        };
+        /**
+         * ReadLaterItem
+         * @description One read-later timeline row (P0-01: server-driven list).
+         *
+         *     ``entry`` is the RSS card from the projection (or a live adapter
+         *     fallback); a dangling member surfaces as ``stale=True`` with no card
+         *     instead of disappearing from the list.
+         */
+        ReadLaterItem: {
+            /** Addedat */
+            addedAt: string;
+            entry?: components["schemas"]["SearchItem"] | null;
+            /** Itemref */
+            itemRef: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
+        /**
+         * ReadLaterTimelineResponse
+         * @description GET /api/v1/workspaces/read-later/timeline.
+         */
+        ReadLaterTimelineResponse: {
+            /** Items */
+            items: components["schemas"]["ReadLaterItem"][];
+            /** Nextcursor */
+            nextCursor?: string | null;
         };
         /**
          * ReadinessComponentDetail
@@ -4620,6 +4966,14 @@ export interface components {
             ref?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /**
+         * TagItemsResponse
+         * @description GET /api/v1/tags/{id}/items — one tag's refs, resolved server-side.
+         */
+        TagItemsResponse: {
+            /** Items */
+            items: components["schemas"]["ResolvedItem"][];
         };
         /**
          * TagListResponse
@@ -6497,7 +6851,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClipCreate"];
+                "application/json": components["schemas"]["ClipCreateRequest"];
             };
         };
         responses: {
@@ -6540,7 +6894,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClipFetchResult"];
+                    "application/json": components["schemas"]["ClipFetchArticleResult"];
                 };
             };
             /** @description Validation Error */
@@ -6735,7 +7089,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MailBridgeListCreated"];
+                    "application/json": components["schemas"]["MailBridgeListCreatedV2"];
                 };
             };
             /** @description Validation Error */
@@ -6774,6 +7128,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_mail_imap_api_v1_mail_imap_poll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailImapPollResult"];
+                };
+            };
+        };
+    };
+    get_mail_imap_settings_api_v1_mail_imap_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailImapSettings"];
+                };
+            };
+        };
+    };
+    update_mail_imap_settings_api_v1_mail_imap_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailImapSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailImapSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_mail_imap_api_v1_mail_imap_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailImapTestResult"];
                 };
             };
         };
@@ -8557,6 +9004,39 @@ export interface operations {
             };
         };
     };
+    tag_items_api_v1_tags__tag_id__items_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                tag_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     version_api_v1_version_get: {
         parameters: {
             query?: never;
@@ -8617,6 +9097,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_later_timeline_api_v1_workspaces_read_later_timeline_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadLaterTimelineResponse"];
                 };
             };
             /** @description Validation Error */
