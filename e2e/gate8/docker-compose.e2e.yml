@@ -81,8 +81,14 @@ services:
       CACHE_TYPE: memory
 
   mailpit:
-    image: axllent/mailpit:v1.22
+    # Local stdlib SMTP sink + HTTP inspector (e2e/gate8/mail_sink.py).
+    # Stands in for Mailpit so the stack stays pullable offline; same
+    # ports (SMTP 1025, HTTP API 8025).
+    image: python:3.12-slim
     container_name: lumirss-e2e-mailpit
+    command: python /srv/mail_sink.py
+    volumes:
+      - ./mail_sink.py:/srv/mail_sink.py:ro
     expose:
       - "1025"
       - "8025"
