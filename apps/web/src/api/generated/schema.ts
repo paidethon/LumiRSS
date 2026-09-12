@@ -82,6 +82,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/threads/{thread_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Turn
+         * @description Server-side cancel: the loop finalizes a partial ``cancelled``
+         *     state in storage (never stuck ``processing``).
+         */
+        post: operations["cancel_turn_api_v1_agent_threads__thread_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads/{thread_id}/events": {
         parameters: {
             query?: never;
@@ -91,9 +112,10 @@ export interface paths {
         };
         /**
          * Stream Events
-         * @description SSE replay: streams all messages after `after` then closes — the
-         *     client re-subscribes while a turn is processing (simple, reconnect
-         *     safe, no server-side push state).
+         * @description Real-time SSE: storage replay after `after`, then live deltas from
+         *     the running turn until it reaches a terminal state. Disconnects never
+         *     abort the server-side run — clients reconnect with `after` and get the
+         *     persisted rows.
          */
         get: operations["stream_events_api_v1_agent_threads__thread_id__events_get"];
         put?: never;
@@ -111,14 +133,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Messages */
+        /**
+         * Get Messages
+         * @description REST read path (polling fallback) + resolved citation details.
+         */
         get: operations["get_messages_api_v1_agent_threads__thread_id__messages_get"];
         put?: never;
         /**
          * Post Message
          * @description Queue one user turn; the loop runs to completion or to the first
          *     approval suspension. Result/messages are read back via /messages or
-         *     the SSE stream (replay-friendly).
+         *     the SSE stream (real deltas; replay on reconnect).
          */
         post: operations["post_message_api_v1_agent_threads__thread_id__messages_post"];
         delete?: never;
@@ -1368,6 +1393,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Disable
+         * @description Disable the semantic leg and release the model resources.
+         */
+        post: operations["rag_disable_api_v1_rag_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/enable": {
         parameters: {
             query?: never;
@@ -1380,6 +1425,9 @@ export interface paths {
         /**
          * Rag Enable
          * @description Explicit user consent to download/load the embedding model.
+         *
+         *     Failure is honest: a 503 ``model_unavailable`` envelope with the
+         *     reason also recorded in status.lastError; ``enabled`` stays false.
          */
         post: operations["rag_enable_api_v1_rag_enable_post"];
         delete?: never;
@@ -1429,7 +1477,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Rag Status */
+        /**
+         * Rag Status
+         * @description Everything the enable/rebuild UI needs: index counts, model
+         *     info, resource state, last error.
+         */
         get: operations["rag_status_api_v1_rag_status_get"];
         put?: never;
         post?: never;
@@ -5350,6 +5402,37 @@ export interface operations {
             };
         };
     };
+    cancel_turn_api_v1_agent_threads__thread_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_events_api_v1_agent_threads__thread_id__events_get: {
         parameters: {
             query?: {
@@ -7437,6 +7520,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    rag_disable_api_v1_rag_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagEnableResult"];
                 };
             };
         };

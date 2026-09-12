@@ -6409,9 +6409,47 @@
     "summary": "Decide Approval"
    }
   },
+  "/api/v1/agent/threads/{thread_id}/cancel": {
+   "post": {
+    "description": "Server-side cancel: the loop finalizes a partial ``cancelled``\nstate in storage (never stuck ``processing``).",
+    "operationId": "cancel_turn_api_v1_agent_threads__thread_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "thread_id",
+      "required": true,
+      "schema": {
+       "title": "Thread Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Turn"
+   }
+  },
   "/api/v1/agent/threads/{thread_id}/events": {
    "get": {
-    "description": "SSE replay: streams all messages after `after` then closes — the\nclient re-subscribes while a turn is processing (simple, reconnect\nsafe, no server-side push state).",
+    "description": "Real-time SSE: storage replay after `after`, then live deltas from\nthe running turn until it reaches a terminal state. Disconnects never\nabort the server-side run — clients reconnect with `after` and get the\npersisted rows.",
     "operationId": "stream_events_api_v1_agent_threads__thread_id__events_get",
     "parameters": [
      {
@@ -6459,6 +6497,7 @@
   },
   "/api/v1/agent/threads/{thread_id}/messages": {
    "get": {
+    "description": "REST read path (polling fallback) + resolved citation details.",
     "operationId": "get_messages_api_v1_agent_threads__thread_id__messages_get",
     "parameters": [
      {
@@ -6504,7 +6543,7 @@
     "summary": "Get Messages"
    },
    "post": {
-    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (replay-friendly).",
+    "description": "Queue one user turn; the loop runs to completion or to the first\napproval suspension. Result/messages are read back via /messages or\nthe SSE stream (real deltas; replay on reconnect).",
     "operationId": "post_message_api_v1_agent_threads__thread_id__messages_post",
     "parameters": [
      {
@@ -8956,9 +8995,28 @@
     "summary": "Opml Import Preview"
    }
   },
+  "/api/v1/rag/disable": {
+   "post": {
+    "description": "Disable the semantic leg and release the model resources.",
+    "operationId": "rag_disable_api_v1_rag_disable_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEnableResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Disable"
+   }
+  },
   "/api/v1/rag/enable": {
    "post": {
-    "description": "Explicit user consent to download/load the embedding model.",
+    "description": "Explicit user consent to download/load the embedding model.\n\nFailure is honest: a 503 ``model_unavailable`` envelope with the\nreason also recorded in status.lastError; ``enabled`` stays false.",
     "operationId": "rag_enable_api_v1_rag_enable_post",
     "responses": {
      "200": {
@@ -9060,6 +9118,7 @@
   },
   "/api/v1/rag/status": {
    "get": {
+    "description": "Everything the enable/rebuild UI needs: index counts, model\ninfo, resource state, last error.",
     "operationId": "rag_status_api_v1_rag_status_get",
     "responses": {
      "200": {
