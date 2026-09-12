@@ -480,6 +480,9 @@ def test_streaming_fetch_caps_oversized_response(monkeypatch):
     client_http = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), trust_env=False
     )
+    monkeypatch.setattr(
+        "lumirss.api_sources._pinned_client", lambda: client_http
+    )
 
     async def scenario():
         with pytest.raises(ApiSourceFetchFailed, match="2MB"):

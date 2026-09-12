@@ -218,43 +218,55 @@ def map_items(payload: Any, items_expr: str, field_map_raw: str) -> list[dict[st
     return mapped
 
 
+def _pinned_client() -> httpx.AsyncClient:
+    """Client over the pinned-IP transport (SSRF TOCTOU fix).
+
+    Module-level factory so tests can inject a mock-transport client."""
+    from lumirss.ssrf_transport import PinnedAddressTransport
+
+    return httpx.AsyncClient(transport=PinnedAddressTransport(), trust_env=False)
+
+
 async def fetch_json(http_client: httpx.AsyncClient, endpoint: str) -> Any:
     """SSRF-checked, size-capped (streamed), JSON-only fetch of the endpoint.
 
     The response body is streamed with a hard cap instead of being read
     whole first (P0-05f): buffering the full body before the size check
-    let an oversized endpoint OOM the BFF."""
+    let an oversized endpoint OOM the BFF. The dial goes through the
+    pinned-IP transport (P0-03/P0-05): validate_hop's getaddrinfo check
+    alone is TOCTOU-racy — DNS may re-resolve between check and connect;
+    the transport re-validates and dials the verified address."""
     await validate_hop(endpoint)
-    # TODO(P0-05 SSRF follow-up): when the pinned-IP transport lands in
-    # http_fetch.py, build the request client from it HERE — validate_hop's
-    # getaddrinfo check is TOCTOU-racy (DNS may re-resolve between check
-    # and connect). Wiring spot: the send() call below.
-    request = http_client.build_request(
-        "GET",
-        endpoint,
-        headers={"accept": "application/json"},
-        timeout=_FETCH_TIMEOUT_SECONDS,
-    )
+    pinned_client = _pinned_client()
     try:
-        response = await http_client.send(request, stream=True, follow_redirects=False)
-    except httpx.HTTPError as exc:
-        raise ApiSourceFetchFailed("API 端点连接失败。") from exc
-    try:
-        if response.status_code != 200:
-            raise ApiSourceFetchFailed(f"API 端点返回 HTTP {response.status_code}。")
-        content_type = response.headers.get("content-type", "").lower()
-        if "json" not in content_type:
-            raise ApiSourceFetchFailed("API 端点未返回 JSON。")
-        body = bytearray()
+        request = pinned_client.build_request(
+            "GET",
+            endpoint,
+            headers={"accept": "application/json"},
+            timeout=_FETCH_TIMEOUT_SECONDS,
+        )
         try:
-            async for chunk in response.aiter_bytes():
-                body.extend(chunk)
-                if len(body) > _MAX_JSON_BYTES:
-                    raise ApiSourceFetchFailed("API 响应超过 2MB 上限。")
+            response = await pinned_client.send(request, stream=True, follow_redirects=False)
         except httpx.HTTPError as exc:
-            raise ApiSourceFetchFailed("API 响应读取失败。") from exc
+            raise ApiSourceFetchFailed("API 端点连接失败。") from exc
+        try:
+            if response.status_code != 200:
+                raise ApiSourceFetchFailed(f"API 端点返回 HTTP {response.status_code}。")
+            content_type = response.headers.get("content-type", "").lower()
+            if "json" not in content_type:
+                raise ApiSourceFetchFailed("API 端点未返回 JSON。")
+            body = bytearray()
+            try:
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _MAX_JSON_BYTES:
+                        raise ApiSourceFetchFailed("API 响应超过 2MB 上限。")
+            except httpx.HTTPError as exc:
+                raise ApiSourceFetchFailed("API 响应读取失败。") from exc
+        finally:
+            await response.aclose()
     finally:
-        await response.aclose()
+        await pinned_client.aclose()
     try:
         return json.loads(bytes(body).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:

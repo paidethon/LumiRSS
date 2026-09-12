@@ -52,6 +52,20 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 
+# P0-04: monolith (web snapshots) — pinned release binary, checksum-verified
+# against the v2.10.1 release artifacts (argv verified via `monolith --help`).
+ARG TARGETARCH
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) MONOLITH_URL=https://github.com/Y2Z/monolith/releases/download/v2.10.1/monolith-gnu-linux-x86_64; MONOLITH_SHA256=663ca914b078e91d5a854b4a07e913c613bbbcfe8fb11a24da1a6ab23c9205df ;; \
+      arm64) MONOLITH_URL=https://github.com/Y2Z/monolith/releases/download/v2.10.1/monolith-gnu-linux-aarch64; MONOLITH_SHA256=7f8cac6291b4015b24b964fcdf115a196abecc59e9149f7aa485175943f99997 ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    python -c "import urllib.request, sys; urllib.request.urlretrieve(sys.argv[1], '/tmp/monolith')" "$MONOLITH_URL"; \
+    echo "$MONOLITH_SHA256  /tmp/monolith" | sha256sum -c -; \
+    install -m 0755 /tmp/monolith /usr/local/bin/monolith; \
+    rm /tmp/monolith
+
 # Run as a non-root user with a writable /data volume (mounted at runtime).
 RUN useradd --create-home --uid 10001 lumirss && mkdir -p /data && chown lumirss:lumirss /data
 USER lumirss
