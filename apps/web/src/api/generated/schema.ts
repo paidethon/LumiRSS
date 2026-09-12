@@ -890,6 +890,9 @@ export interface paths {
         /**
          * Relationship Graph
          * @description Pure derived, read-only graph; truncation reported honestly.
+         *
+         *     The wire query parameter stays ``max`` (Query alias); the local name
+         *     must not shadow the builtin ``max`` used for clamping.
          */
         get: operations["relationship_graph_api_v1_graph_get"];
         put?: never;
