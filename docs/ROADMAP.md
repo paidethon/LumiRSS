@@ -11,6 +11,13 @@
   Obsidian 只读挂载契约、RAG 真向量索引、Agent 真实 provider 契约与
   审批加固、翻译 user activation、导航/文档与真实能力对齐。进度与证据：
   [audits/phase2-recovery.md](audits/phase2-recovery.md)。
+- **收件箱推送来源 + 统一来源注册表（0021，2026-09-13）**：第一个
+  "新来源=新 Adapter"纵向切片——`POST /api/v1/inbox/ingest/{uuid}`
+  （bearer，(source, guid) 幂等，HTML 服务端清洗后入库）把外部脚本/
+  Agent 推送的 JSON 落为 Lumi 拥有的 `api_item`；统一卡片（/resolve）、
+  收件箱页、稍后读/标签/收藏、统一搜索库腿、`GET /api/v1/sources`
+  只读综合视图全部自动接通（ADR 0004 kind 语义澄清；migration 0021
+  纯增量）。
 
 ## Next（候选，立项由用户批准的 spec 决定）
 

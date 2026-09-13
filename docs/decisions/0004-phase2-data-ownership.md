@@ -22,12 +22,25 @@ to the BFF) and ADR 0003 (no RSS shadow database).
 | --- | --- | --- |
 | RSS feeds, entries, read/star | FreshRSS | derived search projection (`search_entries`), rebuildable |
 | API source configs | Lumi (`api_sources`) | generated Atom is a derivative; converted entries belong to FreshRSS once subscribed |
+| Inbox push connectors + pushed items | Lumi (`inbox_sources`, `library_inbox`) | pushed content is Lumi-owned `api_item` content (0021); bearer secret lives with the connector row, shown once, never echoed |
 | Newsletter bridge configs + delivery spool | Lumi (`mail_*`) | spool is bounded, cleanable, rebuildable-from-source; readable entries live in FreshRSS; never a second long-term article store |
 | Bookmarks, clips, snapshots (user-saved) | Lumi (`library_items` + kind tables, `library_assets`) | — |
 | Obsidian vault content | The vault (filesystem) | one-way, deletable/rebuildable projection (`obsidian_notes`); never writes back |
 | RAG vectors/chunks | nobody (derived index) | rebuildable from owned sources; `rag_vec` is the only vector table search queries |
 | Tags, workspaces, favorites | Lumi | reference content exclusively via validated typed ItemRefs |
 | Agent threads/messages/approvals | Lumi (`agent_*`) | references content via ItemRefs |
+
+### Kind semantics: `api_item` is the pushed-inbox kind
+
+`api_item` means "content object ingested through Lumi's HTTP API"
+(0021: the `POST /api/v1/inbox/ingest/{connector}` push flow). The
+pull-converted api-source flow never creates library rows — its entries
+belong to FreshRSS once subscribed. The kind enum was deliberately NOT
+extended (no `inbox` value): the `library_items` CHECK lives on the
+parent table, and a parent-table rebuild under `foreign_keys=ON` would
+cascade-wipe existing child rows (implicit DELETE on DROP TABLE), so
+0021 is purely additive. `newsletter_item` stays FreshRSS-owned and
+still resolves honestly as missing.
 
 ### The one ItemRef implementation
 

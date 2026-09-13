@@ -41,6 +41,7 @@
 | 0018_mail_list_scope | mail_seen 按 list 隔离 + 稳定指纹（P0-06j/k） | IMPL-BE-2 |
 | 0019_api_source_lastgood | api_sources 持久化 last-known-good Atom + 状态（P0-05c/e） | IMPL-BE-2 |
 | 0020_obsidian_scan_state | obsidian 扫描 checkpoint/截断状态（P0-09） | 主 Agent |
+| 0021_inbox | 收件箱推送来源（inbox_sources + library_inbox，kind 复用 api_item；纯增量）| 主 Agent（0021 夜间批次）|
 
 规则：新增迁移一律先在此登记编号；migrations 按文件名字典序发现。
 
