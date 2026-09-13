@@ -89,6 +89,11 @@ from lumirss.feed_preview import (
     NotAFeedError,
     UnsafeFeedUrl,
 )
+from lumirss.inbox_store import (
+    InboxItemNotFound,
+    InboxSourceNotFound,
+    InvalidInboxPayload,
+)
 from lumirss.itemref import InvalidItemRef
 from lumirss.library import (
     BookmarkInvalid,
@@ -283,6 +288,10 @@ _ERROR_RESPONSES = {
     ThreadNotFound: (404, "thread_not_found"),
     PendingApprovalBlocked: (409, "pending_approval"),
     NoActiveRun: (409, "no_active_run"),
+    # 0021 inbox push sources
+    InvalidInboxPayload: (400, "invalid_inbox_payload"),
+    InboxSourceNotFound: (404, "inbox_source_not_found"),
+    InboxItemNotFound: (404, "inbox_item_not_found"),
 }
 
 
@@ -392,6 +401,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ThreadNotFound)
     @app.exception_handler(PendingApprovalBlocked)
     @app.exception_handler(NoActiveRun)
+    @app.exception_handler(InvalidInboxPayload)
+    @app.exception_handler(InboxSourceNotFound)
+    @app.exception_handler(InboxItemNotFound)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

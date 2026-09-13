@@ -2947,6 +2947,286 @@
     "title": "HealthStatus",
     "type": "object"
    },
+   "InboxIngestItem": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/inbox/ingest/{uuid} body.\n\nUnknown fields are rejected (honest machine contract). ``content`` is\nplain text; ``contentHtml`` is UNTRUSTED and is sanitized server-side\n(allow-list) before storage — the browser DOMPurify pass remains the\nfinal render boundary. There is no attachment storage in v1; senders\nmust not include an ``attachments`` field.",
+    "properties": {
+     "author": {
+      "anyOf": [
+       {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author"
+     },
+     "categories": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 24,
+      "title": "Categories",
+      "type": "array"
+     },
+     "content": {
+      "anyOf": [
+       {
+        "maxLength": 200000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Content"
+     },
+     "contentHtml": {
+      "anyOf": [
+       {
+        "maxLength": 500000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
+     },
+     "guid": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Guid",
+      "type": "string"
+     },
+     "publishedAt": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedat"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "maxLength": 2048,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "guid"
+    ],
+    "title": "InboxIngestItem",
+    "type": "object"
+   },
+   "InboxIngestResult": {
+    "description": "``created`` on first sight of (source, guid); ``exists`` on replay.",
+    "properties": {
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "created",
+       "exists"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "ref"
+    ],
+    "title": "InboxIngestResult",
+    "type": "object"
+   },
+   "InboxItemList": {
+    "properties": {
+     "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/InboxItemRow"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "nextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextcursor"
+     }
+    },
+    "required": [
+     "items",
+     "hasMore"
+    ],
+    "title": "InboxItemList",
+    "type": "object"
+   },
+   "InboxItemRow": {
+    "description": "One inbox item as a bare ItemRef row; cards come from\nPOST /api/v1/resolve (the registry owns display shapes).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "sourceUuid": {
+      "title": "Sourceuuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "createdAt",
+     "sourceUuid"
+    ],
+    "title": "InboxItemRow",
+    "type": "object"
+   },
+   "InboxSource": {
+    "description": "One inbox connector without its secret.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastSuccessAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsuccessat"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "name",
+     "enabled",
+     "createdAt"
+    ],
+    "title": "InboxSource",
+    "type": "object"
+   },
+   "InboxSourceCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/inbox/sources body.",
+    "properties": {
+     "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "InboxSourceCreate",
+    "type": "object"
+   },
+   "InboxSourceCreated": {
+    "description": "POST /api/v1/inbox/sources — the bearer ``secret`` is shown exactly\nonce, here; list/read paths never echo it.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "ingestPath": {
+      "title": "Ingestpath",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "secret": {
+      "title": "Secret",
+      "type": "string"
+     },
+     "uuid": {
+      "title": "Uuid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "uuid",
+     "name",
+     "secret",
+     "ingestPath",
+     "createdAt"
+    ],
+    "title": "InboxSourceCreated",
+    "type": "object"
+   },
    "LibraryFavoriteRequest": {
     "additionalProperties": false,
     "description": "POST/DELETE /api/v1/favorites/library — one ItemRef.",
@@ -5525,6 +5805,89 @@
     "title": "SourceDiscoveryResponse",
     "type": "object"
    },
+   "SourceRegistryEntry": {
+    "description": "One row of the unified read-only source registry (统一 API ≠ 统一\n数据库): synthesized from the owning stores at request time, never a\nsecond source of truth.",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastSuccessAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsuccessat"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "label",
+     "enabled"
+    ],
+    "title": "SourceRegistryEntry",
+    "type": "object"
+   },
+   "SourceRegistryResponse": {
+    "properties": {
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/SourceRegistryEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+     }
+    },
+    "required": [
+     "sources",
+     "generatedAt"
+    ],
+    "title": "SourceRegistryResponse",
+    "type": "object"
+   },
    "Subscription": {
     "description": "GET/POST /api/v1/subscriptions item (0013 management view).\n\nsubscriptionRef is Lumi-owned and opaque; clients never assemble ids.",
     "properties": {
@@ -8023,6 +8386,271 @@
     "summary": "Relationship Graph"
    }
   },
+  "/api/v1/inbox/ingest/{source_uuid}": {
+   "post": {
+    "description": "Machine-to-machine push (bearer secret, constant-time compare).\n\nIdempotent on (source, guid): replaying an item returns ``exists``\nwith 200 instead of duplicating. Unknown source and wrong secret are\nindistinguishable (404) so the endpoint does not leak existence.",
+    "operationId": "ingest_inbox_item_api_v1_inbox_ingest__source_uuid__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboxIngestItem"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboxIngestResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Ingest Inbox Item"
+   }
+  },
+  "/api/v1/inbox/items": {
+   "get": {
+    "description": "Newest-first page of bare ItemRef rows; the web client renders them\nthrough POST /api/v1/resolve so display stays registry-owned.",
+    "operationId": "list_inbox_items_api_v1_inbox_items_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sourceUuid",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sourceuuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboxItemList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Inbox Items"
+   }
+  },
+  "/api/v1/inbox/items/{item_uuid}": {
+   "delete": {
+    "operationId": "delete_inbox_item_api_v1_inbox_items__item_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete Inbox Item Api V1 Inbox Items  Item Uuid  Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Inbox Item"
+   }
+  },
+  "/api/v1/inbox/sources": {
+   "get": {
+    "operationId": "list_inbox_sources_api_v1_inbox_sources_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/InboxSource"
+         },
+         "title": "Response List Inbox Sources Api V1 Inbox Sources Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Inbox Sources"
+   },
+   "post": {
+    "description": "Create an inbox connector. The bearer secret is returned exactly\nonce; it cannot be retrieved afterwards.",
+    "operationId": "create_inbox_source_api_v1_inbox_sources_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InboxSourceCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboxSourceCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Inbox Source"
+   }
+  },
+  "/api/v1/inbox/sources/{source_uuid}": {
+   "delete": {
+    "description": "Delete a connector and every item it pushed (identity, payload and\nsearch projections in one operation; RAG invalidation best-effort).",
+    "operationId": "delete_inbox_source_api_v1_inbox_sources__source_uuid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete Inbox Source Api V1 Inbox Sources  Source Uuid  Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Inbox Source"
+   }
+  },
   "/api/v1/library/assets/{asset_uuid}/page.html": {
    "get": {
     "description": "Sandboxed artifact read-out. The CSP `sandbox` directive strips\nscripts, forms, same-origin access and top navigation — the snapshot\ncan never reach Lumi's origin, cookies or /api endpoints.",
@@ -10397,6 +11025,24 @@
      }
     },
     "summary": "Source Discovery"
+   }
+  },
+  "/api/v1/sources": {
+   "get": {
+    "operationId": "list_sources_api_v1_sources_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceRegistryResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Sources"
    }
   },
   "/api/v1/subscriptions": {

@@ -10,7 +10,7 @@ adapter and returned by the routes, so there is no second mapping layer.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lumirss.app_settings import PortableSettings
 
@@ -1558,3 +1558,109 @@ class ClipFetchArticleResult(BaseModel):
     byline: str | None = None
     contentHtml: str
     contentText: str
+
+
+# ---------------------------------------------------------------------------
+# Inbox push sources (0021) — machine-to-machine connector + user reads
+# ---------------------------------------------------------------------------
+
+
+class InboxSourceCreated(BaseModel):
+    """POST /api/v1/inbox/sources — the bearer ``secret`` is shown exactly
+    once, here; list/read paths never echo it."""
+
+    uuid: str
+    name: str
+    secret: str
+    ingestPath: str
+    createdAt: str
+
+
+class InboxSourceCreate(BaseModel):
+    """POST /api/v1/inbox/sources body."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be blank")
+        return stripped
+
+
+class InboxSource(BaseModel):
+    """One inbox connector without its secret."""
+
+    uuid: str
+    name: str
+    enabled: bool
+    lastSuccessAt: str | None = None
+    lastError: str | None = None
+    createdAt: str
+
+
+class InboxIngestItem(BaseModel):
+    """POST /api/v1/inbox/ingest/{uuid} body.
+
+    Unknown fields are rejected (honest machine contract). ``content`` is
+    plain text; ``contentHtml`` is UNTRUSTED and is sanitized server-side
+    (allow-list) before storage — the browser DOMPurify pass remains the
+    final render boundary. There is no attachment storage in v1; senders
+    must not include an ``attachments`` field.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    guid: str = Field(min_length=1, max_length=512)
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    url: str | None = Field(default=None, max_length=2048)
+    author: str | None = Field(default=None, min_length=1, max_length=256)
+    content: str | None = Field(default=None, max_length=200_000)
+    contentHtml: str | None = Field(default=None, max_length=500_000)
+    publishedAt: str | None = Field(default=None, max_length=64)
+    categories: list[str] = Field(default_factory=list, max_length=24)
+
+
+class InboxIngestResult(BaseModel):
+    """``created`` on first sight of (source, guid); ``exists`` on replay."""
+
+    status: Literal["created", "exists"]
+    ref: str
+
+
+class InboxItemRow(BaseModel):
+    """One inbox item as a bare ItemRef row; cards come from
+    POST /api/v1/resolve (the registry owns display shapes)."""
+
+    ref: str
+    createdAt: str
+    sourceUuid: str
+
+
+class InboxItemList(BaseModel):
+    items: list[InboxItemRow]
+    nextCursor: str | None = None
+    hasMore: bool
+
+
+class SourceRegistryEntry(BaseModel):
+    """One row of the unified read-only source registry (统一 API ≠ 统一
+    数据库): synthesized from the owning stores at request time, never a
+    second source of truth."""
+
+    id: str
+    type: str
+    label: str
+    enabled: bool
+    summary: str | None = None
+    lastSuccessAt: str | None = None
+    lastError: str | None = None
+
+
+class SourceRegistryResponse(BaseModel):
+    sources: list[SourceRegistryEntry]
+    generatedAt: str

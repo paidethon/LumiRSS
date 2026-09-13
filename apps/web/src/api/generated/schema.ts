@@ -903,6 +903,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox/ingest/{source_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Inbox Item
+         * @description Machine-to-machine push (bearer secret, constant-time compare).
+         *
+         *     Idempotent on (source, guid): replaying an item returns ``exists``
+         *     with 200 instead of duplicating. Unknown source and wrong secret are
+         *     indistinguishable (404) so the endpoint does not leak existence.
+         */
+        post: operations["ingest_inbox_item_api_v1_inbox_ingest__source_uuid__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Inbox Items
+         * @description Newest-first page of bare ItemRef rows; the web client renders them
+         *     through POST /api/v1/resolve so display stays registry-owned.
+         */
+        get: operations["list_inbox_items_api_v1_inbox_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/items/{item_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Inbox Item */
+        delete: operations["delete_inbox_item_api_v1_inbox_items__item_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Inbox Sources */
+        get: operations["list_inbox_sources_api_v1_inbox_sources_get"];
+        put?: never;
+        /**
+         * Create Inbox Source
+         * @description Create an inbox connector. The bearer secret is returned exactly
+         *     once; it cannot be retrieved afterwards.
+         */
+        post: operations["create_inbox_source_api_v1_inbox_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Inbox Source
+         * @description Delete a connector and every item it pushed (identity, payload and
+         *     search projections in one operation; RAG invalidation best-effort).
+         */
+        delete: operations["delete_inbox_source_api_v1_inbox_sources__source_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/assets/{asset_uuid}/page.html": {
         parameters: {
             query?: never;
@@ -2119,6 +2224,23 @@ export interface paths {
          *     POST /api/v1/feed-preview, subscribing is POST /api/v1/subscriptions.
          */
         post: operations["source_discovery_api_v1_source_discovery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_v1_sources_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3802,6 +3924,112 @@ export interface components {
             status: string;
         };
         /**
+         * InboxIngestItem
+         * @description POST /api/v1/inbox/ingest/{uuid} body.
+         *
+         *     Unknown fields are rejected (honest machine contract). ``content`` is
+         *     plain text; ``contentHtml`` is UNTRUSTED and is sanitized server-side
+         *     (allow-list) before storage — the browser DOMPurify pass remains the
+         *     final render boundary. There is no attachment storage in v1; senders
+         *     must not include an ``attachments`` field.
+         */
+        InboxIngestItem: {
+            /** Author */
+            author?: string | null;
+            /** Categories */
+            categories?: string[];
+            /** Content */
+            content?: string | null;
+            /** Contenthtml */
+            contentHtml?: string | null;
+            /** Guid */
+            guid: string;
+            /** Publishedat */
+            publishedAt?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * InboxIngestResult
+         * @description ``created`` on first sight of (source, guid); ``exists`` on replay.
+         */
+        InboxIngestResult: {
+            /** Ref */
+            ref: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "exists";
+        };
+        /** InboxItemList */
+        InboxItemList: {
+            /** Hasmore */
+            hasMore: boolean;
+            /** Items */
+            items: components["schemas"]["InboxItemRow"][];
+            /** Nextcursor */
+            nextCursor?: string | null;
+        };
+        /**
+         * InboxItemRow
+         * @description One inbox item as a bare ItemRef row; cards come from
+         *     POST /api/v1/resolve (the registry owns display shapes).
+         */
+        InboxItemRow: {
+            /** Createdat */
+            createdAt: string;
+            /** Ref */
+            ref: string;
+            /** Sourceuuid */
+            sourceUuid: string;
+        };
+        /**
+         * InboxSource
+         * @description One inbox connector without its secret.
+         */
+        InboxSource: {
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Name */
+            name: string;
+            /** Uuid */
+            uuid: string;
+        };
+        /**
+         * InboxSourceCreate
+         * @description POST /api/v1/inbox/sources body.
+         */
+        InboxSourceCreate: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * InboxSourceCreated
+         * @description POST /api/v1/inbox/sources — the bearer ``secret`` is shown exactly
+         *     once, here; list/read paths never echo it.
+         */
+        InboxSourceCreated: {
+            /** Createdat */
+            createdAt: string;
+            /** Ingestpath */
+            ingestPath: string;
+            /** Name */
+            name: string;
+            /** Secret */
+            secret: string;
+            /** Uuid */
+            uuid: string;
+        };
+        /**
          * LibraryFavoriteRequest
          * @description POST/DELETE /api/v1/favorites/library — one ItemRef.
          */
@@ -4939,6 +5167,35 @@ export interface components {
         SourceDiscoveryResponse: {
             /** Candidates */
             candidates: components["schemas"]["DiscoveryCandidate"][];
+        };
+        /**
+         * SourceRegistryEntry
+         * @description One row of the unified read-only source registry (统一 API ≠ 统一
+         *     数据库): synthesized from the owning stores at request time, never a
+         *     second source of truth.
+         */
+        SourceRegistryEntry: {
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Type */
+            type: string;
+        };
+        /** SourceRegistryResponse */
+        SourceRegistryResponse: {
+            /** Generatedat */
+            generatedAt: string;
+            /** Sources */
+            sources: components["schemas"]["SourceRegistryEntry"][];
         };
         /**
          * Subscription
@@ -6682,6 +6939,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_inbox_item_api_v1_inbox_ingest__source_uuid__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxIngestItem"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxIngestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_inbox_items_api_v1_inbox_items_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+                sourceUuid?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxItemList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_inbox_item_api_v1_inbox_items__item_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_inbox_sources_api_v1_inbox_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxSource"][];
+                };
+            };
+        };
+    };
+    create_inbox_source_api_v1_inbox_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxSourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxSourceCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_inbox_source_api_v1_inbox_sources__source_uuid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -8698,6 +9142,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_v1_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceRegistryResponse"];
                 };
             };
         };

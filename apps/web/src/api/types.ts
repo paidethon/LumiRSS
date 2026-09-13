@@ -137,3 +137,16 @@ export type ClipFetchArticleResult = Schemas['ClipFetchArticleResult']
 export type SnapshotView = Schemas['SnapshotView']
 export type SnapshotListResponse = Schemas['SnapshotListResponse']
 export type SnapshotUsage = Schemas['SnapshotUsage']
+
+// ---- 0021 inbox push sources + unified source registry ----
+
+/** 推送连接器（列表视图，永不携带 secret）。 */
+export type InboxSource = Schemas['InboxSource']
+/** 创建连接器的一次性响应：bearer secret 只在这里出现。 */
+export type InboxSourceCreated = Schemas['InboxSourceCreated']
+/** 收件条目分页（裸 ItemRef 行；卡片经 POST /resolve 渲染）。 */
+export type InboxItemList = Schemas['InboxItemList']
+export type InboxItemRow = Schemas['InboxItemRow']
+/** 统一来源注册表（只读综合视图，统一 API ≠ 统一数据库）。 */
+export type SourceRegistryEntry = Schemas['SourceRegistryEntry']
+export type SourceRegistryResponse = Schemas['SourceRegistryResponse']

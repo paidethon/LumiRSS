@@ -47,6 +47,9 @@ export function isOpenable(item: ResolvedItem): boolean {
     case 'clip':
     case 'obsidian_note':
       return true
+    case 'api_item':
+      // 0021 收件条目：有安全外链即可打开（无独立详情页 v1）。
+      return safeExternalHttpUrl(item.url ?? null) !== null
     case 'snapshot':
       return payloadString(item, 'pageUrl') !== null
     default:
@@ -82,6 +85,11 @@ export function openResolvedItem(item: ResolvedItem): boolean {
     case 'clip':
       ui.selectSection('clips')
       return true
+    case 'api_item': {
+      // 0021 收件条目：内容在 Lumi，打开 = 安全外链（payload.url 与
+      // item.url 同值；无 url 即不可打开——诚实降级，无独立详情页 v1）。
+      return openExternalUrl(payloadString(item, 'url') ?? item.url)
+    }
     case 'snapshot': {
       const pageUrl = payloadString(item, 'pageUrl')
       // 服务端沙箱快照页是同源绝对路径；补 origin 成绝对 URL 新开标签。

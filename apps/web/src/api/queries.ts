@@ -60,11 +60,16 @@ import {
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
+  createInboxSource,
+  deleteInboxItem,
+  deleteInboxSource,
   importBookmarks,
   importOpml,
   listBackups,
   listBookmarks,
   listClips,
+  listInboxItems,
+  listInboxSources,
   listRemoteBackups,
   listRssHubCredentials,
   listSnapshots,
@@ -1784,5 +1789,68 @@ export function useResolveRefs(refs: string[]) {
     enabled: refs.length > 0,
     staleTime: 30_000,
     retry: false,
+  })
+}
+
+// ---- 0021：Inbox 推送来源（连接器 + 条目 refs；卡片复用 /resolve） ----
+
+/** 收件连接器列表（服务端永不回显 secret）。 */
+export function useInboxSources() {
+  return useQuery({
+    queryKey: ['inbox', 'sources'],
+    queryFn: ({ signal }) => listInboxSources(signal),
+  })
+}
+
+/** 新建连接器；成功后失效连接器列表与统一来源注册表。 */
+export function useCreateInboxSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => createInboxSource(name),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inbox', 'sources'] }),
+        queryClient.invalidateQueries({ queryKey: ['sources'] }),
+      ])
+    },
+  })
+}
+
+/** 删除连接器（连带其全部推送条目）；失效收件与注册表视图。 */
+export function useDeleteInboxSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sourceUuid: string) => deleteInboxSource(sourceUuid),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inbox'] }),
+        queryClient.invalidateQueries({ queryKey: ['sources'] }),
+      ])
+    },
+  })
+}
+
+/** 收件条目 refs 分页（最新在前；cursor opaque）。 */
+export function useInboxItems() {
+  return useInfiniteQuery({
+    queryKey: ['inbox', 'items'],
+    queryFn: ({ pageParam, signal }) =>
+      listInboxItems({ cursor: pageParam, limit: 20 }, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+}
+
+/** 删除单条推送内容；失效收件条目与解析卡片。 */
+export function useDeleteInboxItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (itemRef: string) => deleteInboxItem(itemRef),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inbox'] }),
+        queryClient.invalidateQueries({ queryKey: ['resolve'] }),
+      ])
+    },
   })
 }

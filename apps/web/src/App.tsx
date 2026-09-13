@@ -52,6 +52,8 @@ const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
 // phase2 M2：网页剪藏 / 网页快照列表页
 const ClipsPage = lazy(() => import('./components/pages/ClipsPage'))
 const SnapshotsPage = lazy(() => import('./components/pages/SnapshotsPage'))
+// 0021：收件箱（推送式来源的工作台入口）
+const InboxPage = lazy(() => import('./components/pages/InboxPage'))
 // phase2 G6：Obsidian 只读库
 const ObsidianPage = lazy(() => import('./components/pages/ObsidianPage'))
 // phase2 G7/G8：Agent 工作台 / 标签与图谱
@@ -195,9 +197,11 @@ export default function App() {
                       ? '工作区'
                       : section === 'clips'
                         ? '网页剪藏'
-                        : section === 'snapshots'
-                          ? '网页快照'
-                          : '收藏'
+                    : section === 'snapshots'
+                      ? '网页快照'
+                      : section === 'inbox'
+                        ? '收件箱'
+                        : '收藏'
             }
           >
             {section === 'subscriptions' && (
@@ -233,6 +237,11 @@ export default function App() {
             {section === 'snapshots' && (
               <Suspense fallback={<PageSkeleton />}>
                 <SnapshotsPage />
+              </Suspense>
+            )}
+            {section === 'inbox' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <InboxPage />
               </Suspense>
             )}
             {section === 'obsidian' && (
@@ -299,6 +308,12 @@ export default function App() {
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <SnapshotsPage />
+              </Suspense>
+            </div>
+          ) : section === 'inbox' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <InboxPage />
               </Suspense>
             </div>
           ) : section === 'obsidian' ? (

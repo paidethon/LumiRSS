@@ -47,6 +47,7 @@ export default function MobileHeader() {
     workspaces: '工作区',
     clips: '网页剪藏',
     snapshots: '网页快照',
+    inbox: '收件箱',
     obsidian: 'Obsidian 库',
     agent: 'Agent 工作台',
     graph: '图谱',

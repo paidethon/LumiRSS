@@ -13,6 +13,7 @@
  * 「RSS 订阅」主按钮），不展开 tree——选 feed 需先展开侧栏。 */
 
 import {
+  Archive,
   Bot,
   Bookmark,
   Clock,
@@ -147,6 +148,13 @@ export default function SidebarCollapsedRail() {
           label="网页快照"
           active={section === 'snapshots'}
           onClick={() => selectSection('snapshots')}
+        />
+        {/* 0021：收件箱（推送式来源）已可用 */}
+        <RailItem
+          icon={<Archive aria-hidden className={iconCls} />}
+          label="收件箱"
+          active={section === 'inbox'}
+          onClick={() => selectSection('inbox')}
         />
         {/* P0-12：API 来源 / 邮件简报真实可用 → 真实入口（设置深链）。 */}
         <RailItem
