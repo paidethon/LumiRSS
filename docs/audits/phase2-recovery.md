@@ -321,6 +321,28 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
   邮件摄取去重会报错——生产 0 邮件列表，无数据影响；其余域（tags/library/api-source/
   obsidian）向后兼容。
 
+## 部署记录（2026-09-14，0021 收件箱批次）
+
+- 合并：PR #46（inbox push source + source registry，3 commits + 随行的 9c38bfe
+  部署记录 docs）required checks 8/8 绿（含 Playwright Chromium smoke）后合并。
+- 生产：`/opt/lumirss` git 前进到 `674ecd8`（detached HEAD → main --ff-only），
+  `LUMIRSS_IMAGE_TAG=674ecd811557` → `./lumirss update --build`（服务器本地构建，
+  GHCR 私有拉取 denied 同前）。**旧 SHA 0704e2c → 新 SHA 674ecd8**。
+- 部署前备份：20260914-072312（update 自动执行）；回滚快照两个文件同样落入新
+  tag 陷阱，已手工修正指向 `0704e2c9b0a2`，旧镜像本地在位（回滚路径完好）。
+- **生产 smoke（容器内 + internal token；schema v20 → v21 自动迁移成功）**：
+  - 只读：version/feeds/search（RSS 腿命中正常，libraryError=None）/workspaces/
+    sources（types = rss/rsshub/obsidian，尚无 inbox 连接器）全 200。
+  - 收件箱闭环（自清理）：建连接器 → **仅凭 bearer secret**（无 internal token，
+    验证生产中间件栈 bearer-defer）推送含 `<script>` 的 HTML → `created`，重放
+    `exists` → resolve 得 `api_item` 卡片 → 统一搜索库腿命中 → 删除连接器级联
+    清空（items=0）。secret 用后即焚（容器 /tmp 文件已删）。
+- `./lumirss doctor`：no failures（唯一 WARN 为 doctor 自探公网 HTTPS 的探测
+  方式所致；外部 curl 实测 401 basic auth 挑战正常，非回归）。
+- 已知限制（不变）：宿主 Caddy basic auth 会拦外部机器对
+  `/api/v1/inbox/ingest/*` 与 `/api/mail/ingest/*` 的直接投递——生产启用外部
+  推送前需在宿主 Caddy 豁免该路径（或中继带 basic 凭据后走容器内网）。
+
 ## 状态总览（收尾）
 
 | 范围 | 状态 |
