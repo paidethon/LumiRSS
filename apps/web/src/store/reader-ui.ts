@@ -16,7 +16,8 @@ import type { ContentScope } from '../lib/navigation'
  * Timeline 列位（与 search 同模式），移动端走顶部 section 区。
  * phase2 M2：+ clips（网页剪藏）/ snapshots（网页快照）。
  * phase2 G6：+ obsidian（Obsidian 库，只读投影）。
- * phase2 G7/G8：+ agent（工作台）/ graph（图谱，含标签列表等价路径）。 */
+ * phase2 G7/G8：+ agent（工作台）/ graph（图谱，含标签列表等价路径）。
+ * 0021：+ inbox（收件箱——推送式来源的工作台入口）。 */
 export type AppSection =
   | 'home'
   | 'subscriptions'
@@ -26,6 +27,7 @@ export type AppSection =
   | 'workspaces'
   | 'clips'
   | 'snapshots'
+  | 'inbox'
   | 'obsidian'
   | 'agent'
   | 'graph'

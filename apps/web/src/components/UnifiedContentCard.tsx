@@ -35,11 +35,19 @@ function kindLabel(kind: string): string {
   if (kind === 'clip') return '剪藏'
   if (kind === 'snapshot') return '快照'
   if (kind === 'obsidian_note') return '笔记'
+  if (kind === 'api_item') return '收件'
   return '未知'
 }
 
-/** P0-10：库类条目收藏切换可用的 kind 集合（与 BFF library 域一致）。 */
-const LIBRARY_FAVORITE_KINDS = new Set(['bookmark', 'clip', 'snapshot', 'obsidian_note'])
+/** P0-10：库类条目收藏切换可用的 kind 集合（与 BFF library 域一致；
+ * 0021 起推送收件条目同为 Lumi 拥有内容，可收藏/打标签/稍后读）。 */
+const LIBRARY_FAVORITE_KINDS = new Set([
+  'bookmark',
+  'clip',
+  'snapshot',
+  'obsidian_note',
+  'api_item',
+])
 
 /** 库收藏切换按钮（乐观更新 + 失败回滚在 mutation hook；此处诚实透出
  * pending 与错误，不假装成功）。 */

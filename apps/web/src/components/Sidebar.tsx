@@ -1,4 +1,5 @@
 import {
+  Archive,
   Bookmark,
   Bot,
   ChevronDown,
@@ -559,6 +560,17 @@ function Sidebar({
           >
             <Link2 aria-hidden className={icon16} />
             网页快照
+          </NavItem>
+          {/* 0021：收件箱（推送式来源）已可用——section 导航。 */}
+          <NavItem
+            active={section === 'inbox'}
+            onClick={() => {
+              selectSection('inbox')
+              onNavigate?.()
+            }}
+          >
+            <Archive aria-hidden className={icon16} />
+            收件箱
           </NavItem>
           {/* P0-12：API 来源 / 邮件简报已是真实可用能力（Settings 的
               ApiSourcesSection / MailSection）——导航不再是 PlannedItem，

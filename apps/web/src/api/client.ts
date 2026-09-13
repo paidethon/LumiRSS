@@ -29,6 +29,9 @@ import type {
   Feed,
   FeedPreviewMetadata,
   FreshRssUiInfo,
+  InboxItemList,
+  InboxSource,
+  InboxSourceCreated,
   OpmlImportPreview,
   OpmlImportResult,
   OperationsStatus,
@@ -43,6 +46,7 @@ import type {
   SnapshotListResponse,
   SnapshotView,
   SourceDiscoveryResponse,
+  SourceRegistryResponse,
   Subscription,
   WebDavSettings,
   WebDavTestResult,
@@ -1746,4 +1750,69 @@ export async function getReadLaterTimeline(
     `${API_BASE}/workspaces/read-later/timeline?${query}`,
     signal,
   )
+}
+
+// ---- 0021：Inbox 推送来源（连接器管理 + 条目 refs；卡片经 /resolve）----
+
+/** GET /api/v1/inbox/sources —— 连接器列表（永不回显 secret）。 */
+export async function listInboxSources(signal?: AbortSignal): Promise<InboxSource[]> {
+  return request<InboxSource[]>(`${API_BASE}/inbox/sources`, signal)
+}
+
+/** POST /api/v1/inbox/sources —— 创建连接器；bearer secret 仅此一次返回。 */
+export async function createInboxSource(name: string): Promise<InboxSourceCreated> {
+  const response = await rawRequest(`${API_BASE}/inbox/sources`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) {
+    throw await toApiError(response)
+  }
+  return (await response.json()) as InboxSourceCreated
+}
+
+/** DELETE /api/v1/inbox/sources/{uuid} —— 删除连接器及其全部推送条目。 */
+export async function deleteInboxSource(sourceUuid: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok && response.status !== 404) {
+    throw await toApiError(response)
+  }
+}
+
+/** GET /api/v1/inbox/items —— 最新在前 refs 分页；卡片渲染走 /resolve。 */
+export async function listInboxItems(
+  params: { limit?: number; cursor?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<InboxItemList> {
+  const query = new URLSearchParams()
+  if (params.limit != null) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.cursor != null) {
+    query.set('cursor', params.cursor)
+  }
+  return request<InboxItemList>(`${API_BASE}/inbox/items?${query}`, signal)
+}
+
+/** DELETE /api/v1/inbox/items/{uuid} —— 删除单条推送内容。 */
+export async function deleteInboxItem(itemRef: string): Promise<void> {
+  const uuid = itemRef.startsWith('library:')
+    ? itemRef.slice('library:'.length)
+    : itemRef
+  const response = await rawRequest(
+    `${API_BASE}/inbox/items/${encodeURIComponent(uuid)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok && response.status !== 404) {
+    throw await toApiError(response)
+  }
+}
+
+/** GET /api/v1/sources —— 统一来源注册表（只读综合，不含任何 secret）。 */
+export async function listSources(signal?: AbortSignal): Promise<SourceRegistryResponse> {
+  return request<SourceRegistryResponse>(`${API_BASE}/sources`, signal)
 }
