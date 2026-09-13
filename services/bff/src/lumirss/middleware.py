@@ -20,6 +20,18 @@ MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 # ceiling would otherwise reject large mails before the route sees them.
 MAIL_INGEST_BODY_LIMIT = 10 * 1024 * 1024
 _MAIL_INGEST_PREFIX = "/api/mail/ingest/"
+_INBOX_INGEST_PREFIX = "/api/v1/inbox/ingest/"
+
+
+def _bearer_machine_path(path: str, headers) -> bool:
+    """True for machine-to-machine ingest endpoints carrying a bearer
+    secret (validated constant-time by the route, never logged): the
+    token/session layers defer these requests to the route boundary."""
+    if not any(key == b"authorization" for key, _ in headers or []):
+        return False
+    return path.startswith(_MAIL_INGEST_PREFIX) or path.startswith(
+        _INBOX_INGEST_PREFIX
+    )
 
 
 class RequestBodyTooLarge(Exception):
@@ -110,6 +122,9 @@ _RATE_RULES: tuple[tuple[str, str, str, int, int], ...] = (
     ("POST", "/api/v1/opml/import", "opml", 6, 60),
     ("POST", "/api/v1/feed-preview", "outbound", 30, 60),
     ("POST", "/api/v1/source-discovery", "outbound", 30, 60),
+    ("POST", "/api/v1/inbox/sources", "inbox_write", 12, 60),
+    ("POST", "/api/v1/inbox/ingest/", "inbox_ingest", 120, 60),
+    ("DELETE", "/api/v1/inbox/", "inbox_write", 60, 60),
     ("POST", "/api/v1/entries/", "ai_generate", 120, 60),
     ("POST", "/api/v1/rsshub/", "rsshub_write", 60, 60),
     ("PUT", "/api/v1/rsshub/", "rsshub_write", 60, 60),
@@ -191,10 +206,9 @@ class InternalTokenMiddleware:
                 # machine-to-machine — external relays carry the per-list
                 # bearer secret (validated constant-time by the route),
                 # never the internal token. Defer only bearer-bearing
-                # requests; everything else stays token-gated.
-                if path.startswith("/api/mail/ingest/") and any(
-                    key == b"authorization" for key, _ in scope.get("headers") or []
-                ):
+                # requests; everything else stays token-gated. 0021 adds
+                # the inbox push ingest to the same treatment.
+                if _bearer_machine_path(path, scope.get("headers") or []):
                     await self.app(scope, receive, send)
                     return
                 token = LumiSettings().LUMIRSS_INTERNAL_TOKEN.get_secret_value()
@@ -335,13 +349,11 @@ class SessionAuthMiddleware:
         # phase2 recovery (P0-06d): bearer-authenticated machine ingest —
         # defer to the route (constant-time secret check; the secret is
         # never logged). Browsers without a bearer still require a
-        # session below.
-        if path.startswith("/api/mail/ingest/") and any(
-            key == b"authorization" for key, _ in scope.get("headers") or []
-        ):
+        # session below. 0021 adds the inbox push ingest.
+        headers = scope.get("headers") or []
+        if _bearer_machine_path(path, headers):
             await self.app(scope, receive, send)
             return
-        headers = scope.get("headers") or []
         method = scope.get("method", "")
         if method in _UNSAFE_METHODS and not _origin_allowed(scope, headers):
             await _reject_forbidden(send)

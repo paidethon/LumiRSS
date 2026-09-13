@@ -49,6 +49,7 @@ from lumirss.favorites import FavoritesService
 from lumirss.feed_preview import (
     FeedPreviewService,
 )
+from lumirss.inbox_store import InboxStore
 from lumirss.library import LibraryStore
 from lumirss.library_assets import AssetStore
 from lumirss.library_clips import ClipStore
@@ -402,6 +403,15 @@ def _get_clip_store(request: Request) -> ClipStore:
     )
 
 
+def _get_inbox_store(request: Request) -> InboxStore:
+    """Inbox push-source store (0021) over the shared Lumi database."""
+    return _cached_on_app_state(
+        request,
+        "inbox_store",
+        lambda: InboxStore(request.app.state.db),
+    )
+
+
 def _get_snapshot_store(request: Request) -> AssetStore:
     """Snapshot asset store (phase2 M2) under the Lumi data directory."""
 
@@ -720,9 +730,30 @@ def _get_source_registry(request: Request) -> dict:
                     url=None,
                     payload={"relPath": str(note["rel_path"])},
                 )
-            # api_item / newsletter_item have no library-side content:
-            # their readable entries live in FreshRSS (ADR 0004), so a
-            # dangling ref resolves honestly as missing.
+            if kind == "api_item":
+                # 0021: pushed inbox items are Lumi-owned api_item content
+                # (ADR 0004) — resolve from the inbox store like any other
+                # library kind.
+                inbox = await _get_inbox_store(request).get_item(item_uuid)
+                if inbox is None:
+                    return None
+                return ResolvedItem(
+                    ref=f"library:{item_uuid}",
+                    domain="library",
+                    kind="api_item",
+                    title=inbox["title"],
+                    source=f"Inbox · {inbox['sourceName']}",
+                    datetime=inbox["publishedAt"] or inbox["createdAt"],
+                    excerpt=excerpt_of(inbox["contentText"]),
+                    url=inbox["url"],
+                    payload={
+                        "inboxUuid": item_uuid,
+                        "url": inbox["url"],
+                    },
+                )
+            # newsletter_item has no library-side content: its readable
+            # entries live in FreshRSS (ADR 0004), so a dangling ref
+            # resolves honestly as missing.
             return None
 
         register_resolver(registry, "rss", resolve_rss)

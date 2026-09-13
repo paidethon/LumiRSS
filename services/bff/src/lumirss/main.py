@@ -38,6 +38,7 @@ from lumirss.routers import (
     entry_ai,
     feeds,
     health,
+    inbox,
     library,
     mail,
     obsidian,
@@ -48,6 +49,7 @@ from lumirss.routers import (
     search,
     settings,
     snapshots,
+    sources,
     subscriptions,
     tags,
     workspaces,
@@ -102,6 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.snapshot_runner = None
     app.state.api_source_store = None
     app.state.mail_bridge_store = None
+    app.state.inbox_store = None
     app.state.favorites_service = None
     app.state.library_search_writer = None
     app.state.rag_service = None
@@ -239,6 +242,8 @@ app.include_router(snapshots.router)
 app.include_router(api_sources.router)
 app.include_router(mail.router)
 app.include_router(obsidian.router)
+app.include_router(inbox.router)
+app.include_router(sources.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
