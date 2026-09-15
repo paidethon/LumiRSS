@@ -239,18 +239,20 @@ class FeedPreviewService:
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
         control,
         *,
         resolver=_default_resolver,
+        pin_factory=None,
     ) -> None:
-        self._client = client
         self._control = control
         self._resolver = resolver
+        self._pin_factory = pin_factory
 
     async def preview(self, feed_url: str) -> FeedPreview:
         validate_feed_url(feed_url)
-        document = await safe_fetch(self._client, feed_url, resolver=self._resolver)
+        document = await safe_fetch(
+            feed_url, resolver=self._resolver, pin_factory=self._pin_factory
+        )
         title, site_url, description, feed_format = parse_feed_document(
             document.body
         )
@@ -266,20 +268,31 @@ class FeedPreviewService:
         )
 
 async def safe_fetch(
-    client: httpx.AsyncClient,
     url: str,
     *,
     resolver=_default_resolver,
     max_redirects: int = _MAX_REDIRECTS,
+    ensure_public=ensure_public_address,
+    pin_factory=None,
 ) -> "FetchedDocument":
-    """Bounded, redirect-aware fetch with per-hop re-validation.
+    """Bounded, redirect-aware fetch with per-hop re-validation AND
+    pinned dialing.
 
     Shared by feed preview and source discovery: every hop (including
     redirect targets) passes the same URL/DNS/IP validation as the first
-    URL. The result carries the FINAL URL (so callers can resolve relative
-    links against where the document actually came from) and the final
-    content-type header.
+    URL, and the transport dials the VALIDATED address directly. The
+    historic validate-then-dial shape left a rebinding window (validate
+    resolves public, httpx re-resolves private — Q-P1-03); the pinned
+    transport closes it exactly like clip/api-source fetches.
+    ``pin_factory`` lets tests stub the underlying transport (same seam
+    as clip_fetch).
     """
+    if pin_factory is None:
+        # Imported here (not at module top): ssrf_transport imports this
+        # module's policy primitives, so a top-level import would cycle.
+        from lumirss.ssrf_transport import PinnedAddressTransport
+
+        pin_factory = PinnedAddressTransport
 
     async def validate_hop(hop_url: str) -> None:
         await _require_dialable(resolver, validate_feed_url(hop_url))
@@ -291,33 +304,51 @@ async def safe_fetch(
             )
         return FeedFetchError("Feed URL redirected too many times.")
 
-    response, final_url = await follow_redirects(
-        url,
-        send=lambda hop_url: _send(client, hop_url),
-        validate_hop=validate_hop,
-        fail=fail,
-        max_redirects=max_redirects,
-    )
-    try:
-        if response.status_code != 200:
-            raise FeedFetchError(
-                f"The feed URL answered HTTP {response.status_code}."
-            )
-        return FetchedDocument(
-            body=await read_bounded_body(response),
-            final_url=final_url,
-            content_type=response.headers.get("content-type"),
+    transport = pin_factory(resolver=resolver, ensure_public=ensure_public)
+    async with httpx.AsyncClient(
+        transport=transport,
+        trust_env=False,
+        follow_redirects=False,
+        # Same timeout contract as the shared client (main.py) — the
+        # per-call client used to fall back to httpx's 5s default and
+        # turned slow feeds into 502s (fresh-eyes P2).
+        timeout=httpx.Timeout(10.0, connect=5.0),
+    ) as client:
+        response, final_url = await follow_redirects(
+            url,
+            send=lambda hop_url: _send(client, hop_url),
+            validate_hop=validate_hop,
+            fail=fail,
+            max_redirects=max_redirects,
         )
-    finally:
-        await response.aclose()
+        try:
+            if response.status_code != 200:
+                raise FeedFetchError(
+                    f"The feed URL answered HTTP {response.status_code}."
+                )
+            return FetchedDocument(
+                body=await read_bounded_body(response),
+                final_url=final_url,
+                content_type=response.headers.get("content-type"),
+            )
+        finally:
+            await response.aclose()
 
 
 async def _send(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    from lumirss.ssrf_transport import UnresolvableHost, UnsafeTargetAddress
+
     request = client.build_request("GET", url, headers=_HEADERS)
     try:
         # follow_redirects stays OFF: redirects are handled manually so
         # every hop goes through the same validation as the first URL.
         return await client.send(request, stream=True)
+    except UnsafeTargetAddress as exc:
+        raise UnsafeFeedUrl(str(exc)) from exc
+    except UnresolvableHost as exc:
+        raise FeedFetchError(
+            f"The feed host could not be resolved: {exc}"
+        ) from exc
     except httpx.HTTPError as exc:
         raise FeedFetchError("The feed URL could not be reached.") from exc
 

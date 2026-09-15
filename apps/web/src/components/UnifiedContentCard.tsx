@@ -21,10 +21,11 @@
 import { Star, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ResolvedItem } from '../api/types'
-import { useLibraryFavoriteToggle } from '../api/queries'
+import { useItemTags, useLibraryFavoriteToggle } from '../api/queries'
 import { formatPublishedAt } from '../lib/date-format'
 import { isOpenable, openResolvedItem } from '../lib/open-item'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
+import { ItemTagButton } from './ItemTagButton'
 import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
 
@@ -80,6 +81,18 @@ export function LibraryFavoriteButton({ itemRef }: { itemRef: string }) {
         </span>
       )}
     </span>
+  )
+}
+
+/** 库类条目标签按钮（Q-P1-09）：与收藏同域的 kind 集合；itemRef 直接
+ * 用条目 ref（BFF tags 域支持任意可解析 ref），绝不拼 rss: 前缀。 */
+function LibraryTagButton({ itemRef }: { itemRef: string }) {
+  const itemTags = useItemTags(itemRef)
+  const attachedCount = (itemTags.data?.items ?? []).filter(
+    (t) => t.status === 'attached',
+  ).length
+  return (
+    <ItemTagButton itemRef={itemRef} attachedCount={attachedCount} compact />
   )
 }
 
@@ -172,11 +185,15 @@ export function UnifiedContentCard({
         </a>
       )}
 
-      {/* P0-10：库类条目的收藏切换 + 调用方动作区同一行（库类才显示）。 */}
+      {/* P0-10：库类条目的收藏切换 + 标签（Q-P1-09）+ 调用方动作区
+          同一行（库类才显示）。 */}
       {(actions !== undefined || LIBRARY_FAVORITE_KINDS.has(item.kind)) && (
         <div className="mt-2.5 flex min-h-7 items-center gap-1.5">
           {LIBRARY_FAVORITE_KINDS.has(item.kind) && (
-            <LibraryFavoriteButton itemRef={item.ref} />
+            <>
+              <LibraryFavoriteButton itemRef={item.ref} />
+              <LibraryTagButton itemRef={item.ref} />
+            </>
           )}
           {actions}
         </div>

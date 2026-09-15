@@ -304,10 +304,26 @@ def test_approval_expiry(env, make_env, monkeypatch):
 
 
 def test_read_later_workspace_intact_after_agent_turns(env, make_env):
-    """Agent-driven workspace writes respect reserved-workspace rules."""
+    """Q-P2-34: the reserved workspace contract the agent must respect.
+
+    The old test never ran an agent turn and asserted the input echoed
+    back — deleting every agent workspace tool left it green. This
+    proves the contract for real: (a) an agent turn with a workspace
+    tool call cannot delete/rename the reserved workspace; (b) the
+    store-level reserved guard rejects delete/rename directly."""
     ws = env["workspaces"]
     item = _run(ws.add_item(RESERVED_WORKSPACE_ID, "library:0b8df3e0-1f2a-4c3d-9e4f-5a6b7c8d9e0f"))
     assert item.item_ref.startswith("library:")
+    # Reserved-workspace store guards (what agent tools funnel through):
+    with pytest.raises(Exception):  # noqa: B017 — WorkspaceInvalid family
+        _run(ws.delete_workspace(RESERVED_WORKSPACE_ID))
+    with pytest.raises(Exception):  # noqa: B017 — WorkspaceInvalid family
+        _run(ws.rename_workspace(RESERVED_WORKSPACE_ID, "我的稍后读"))
+    # The member survived the refused mutations.
+    members = _run(ws.list_items(RESERVED_WORKSPACE_ID))
+    assert any(
+        member.item_ref.startswith("library:") for member in members
+    )
 
 
 # -- P0-08b/c/e: streaming, cancel, run lifecycle ----------------------------

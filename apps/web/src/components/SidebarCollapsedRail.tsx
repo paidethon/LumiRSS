@@ -204,13 +204,12 @@ export default function SidebarCollapsedRail() {
           active={section === 'agent'}
           onClick={() => selectSection('agent')}
         />
-        {/* P0-12：RAG 索引不再称「规划中」——后端已落地，独立管理 UI
-            未提供；诚实禁用并指向 Agent 工作台。 */}
+        {/* P0-12 + Q-P2-24：RAG 管理入口已落地（设置 → AI）——不再诚实
+            禁用+旧文案（「独立管理入口尚未提供」已不成立）。 */}
         <RailItem
           icon={<Zap aria-hidden className={iconCls} />}
           label="RAG 索引"
-          disabled
-          note="RAG 索引已在服务端运行；当前可在 Agent 工作台查看状态，独立管理入口尚未提供。"
+          onClick={() => requestOpenSettings('ai')}
         />
         {/* phase2 G8：标签 / 图谱已可用。 */}
         <RailItem

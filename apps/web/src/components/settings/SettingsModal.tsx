@@ -55,7 +55,9 @@ export default function SettingsModal({
         <h2 className="text-base font-semibold text-[var(--lumi-text-primary)]">设置</h2>
         <IconButton icon={<X aria-hidden className="size-4" />} label="关闭设置" onClick={onClose} />
       </div>
-      <div className="flex h-[min(72vh,640px)] w-[min(880px,84vw)]">
+      {/* fresh-eyes Issue 7：上限叠加 Dialog 的 85dvh 减去自带头部，
+          矮窗口下头部（含关闭按钮）不再被滚出可视区。 */}
+      <div className="flex h-[min(72vh,640px)] max-h-[calc(85dvh-3.5rem)] w-[min(880px,84vw)]">
         {/* 左导航（Folo 实测：行 34px / r8 / 选中 selected surface）。
             13 分类高度可能超出 → 导航区自身滚动。 */}
         <nav

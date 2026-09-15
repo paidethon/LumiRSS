@@ -20,6 +20,10 @@ const baseURL = process.env.LUMIRSS_E2E_BASE_URL ?? 'http://127.0.0.1'
 // CI 静态冒烟模式：自动启动 vite preview（无后端 API，验证降级态 UI）。
 // 本地/全栈跑法不启用（栈由 docker compose 提供）。
 const ciStatic = process.env.LUMIRSS_CI_STATIC === '1'
+// session 模式栈的预登录（Round 2 审计发现：journeys 只适配过 basic 栈，
+// session 栈上浏览器停在登录页）。设置口令 → globalSetup 登录一次，
+// storageState 注入全部 context；不设置（basic / CI 静态）行为不变。
+const sessionLogin = process.env.LUMIRSS_E2E_LOGIN
 
 export default defineConfig({
   testDir: './e2e',
@@ -39,8 +43,12 @@ export default defineConfig({
         },
       }
     : {}),
+  ...(sessionLogin ? { globalSetup: './e2e/global-setup.ts' } : {}),
   use: {
     baseURL,
+    ...(sessionLogin
+      ? { storageState: './e2e/.auth/state.json' }
+      : {}),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     actionTimeout: 10_000,

@@ -57,6 +57,7 @@ import { AiSettingsSection } from './AiSettingsPage'
 import { RagSettingsSection } from './RagSettingsSection'
 // 0013 Gate 4：订阅与来源（OPML 导入导出 + FreshRSS 状态/高级入口）
 import { SourcesSettingsSection } from './SourcesSettingsSection'
+import { SourceRegistrySection } from './SourceRegistrySection'
 // phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
 import { ApiSourcesSection } from './ApiSourcesSection'
 import { MailSection } from './MailSection'
@@ -348,6 +349,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '订阅管理' },
         // OPML 导入/导出 + FreshRSS 状态/高级入口（真实可用）
         { type: 'custom', node: <SourcesSettingsSection /> },
+        { type: 'title', value: '统一来源注册表' },
+        // Q-P1-06：GET /api/v1/sources 的真实 UI——全部来源类型总览 +
+        // 健康状态 + 深链到各自管理位置。
+        { type: 'custom', node: <SourceRegistrySection /> },
       ]
     case 'api-sources':
       // phase2 G6：API 来源（JSON API → JMESPath → Atom → FreshRSS 订阅）

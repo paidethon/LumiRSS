@@ -15,7 +15,7 @@
  *   颜色；token 不可解析时（headless/测试）用同色系十六进制兜底。
  * - loading Skeleton / empty / error+重试 三态齐备。 */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Loader2, MoreVertical, Pencil, RefreshCw, Trash2, Waypoints } from 'lucide-react'
 import type { Core, ElementDefinition, StylesheetJson } from 'cytoscape'
 import {
@@ -225,6 +225,9 @@ export default function GraphPage() {
 
   const overLimit = nodes.length > CANVAS_NODE_LIMIT
   const showTable = canvasFailed || (tablePreferred ?? overLimit)
+  // Q-P1-15：onFail 引用必须稳定——内联箭头让 effect deps 每次渲染都变，
+  // 任何交互（选中/开卡）都会销毁重建整个 cytoscape 实例。
+  const handleCanvasFail = useCallback(() => setCanvasFailed(true), [])
   // 派生查找：scope/重建后 ref 消失时卡片自然不渲染，无需同步 effect。
   const selectedNode: GraphNode | null =
     selectedRef !== null ? (nodes.find((n) => n.ref === selectedRef) ?? null) : null
@@ -314,20 +317,34 @@ export default function GraphPage() {
         )}
         {tags.data !== undefined && tags.data.items.length > 0 && (
           <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="标签列表">
-            {tags.data.items.map((tag) => (
+            {tags.data.items.map((tag) => {
+              const tagRef = `tag:${tag.name}`
+              // fresh-eyes Issue 6：全图 scope 下仍不在图内（2000 截断 /
+              // 加载失败）→ 如实禁用并说明，不再有第二种静默无响应。
+              const outOfGraph = scope === 'all' && !nodeRefs.has(tagRef)
+              return (
               <li key={tag.id} className="flex items-center gap-0.5">
                 <button
                   type="button"
                   onClick={() => {
-                    const ref = `tag:${tag.name}`
-                    if (nodeRefs.has(ref)) setSelectedRef(ref)
+                    // Q-P2-27：目标节点不在当前 scope 图里时，切回全图
+                    // 再选中——绝不静默吞掉可点击控件的行为。
+                    if (!nodeRefs.has(tagRef)) setScope('all')
+                    setSelectedRef(tagRef)
                   }}
+                  disabled={outOfGraph}
+                  title={
+                    outOfGraph
+                      ? '该标签不在当前图谱（节点数超上限被截断或图谱加载失败）'
+                      : undefined
+                  }
                   aria-label={`标签 ${tag.name}，${tag.count} 条内容`}
                   className={cx(
                     'min-h-8 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs',
                     'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)]',
                     'hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
                     'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    'disabled:cursor-default disabled:opacity-50',
                   )}
                 >
                   #{tag.name} ({tag.count})
@@ -369,7 +386,8 @@ export default function GraphPage() {
                   }}
                 />
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </section>
@@ -518,8 +536,8 @@ export default function GraphPage() {
                 <GraphCanvas
                   elements={elements}
                   colors={colors}
-                  onFail={() => setCanvasFailed(true)}
                   onSelect={setSelectedRef}
+                  onFail={handleCanvasFail}
                 />
               </div>
             )}

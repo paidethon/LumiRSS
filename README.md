@@ -13,7 +13,12 @@ On top of that foundation the MVP already ships: article reading with explicit
 read/star state, subscriptions & categories with OPML import/export, RSSHub
 source discovery & preview, AI summary / translation / article conversation,
 a unified settings center, and local + WebDAV backup with staged restore.
-Web clipping, Obsidian and other Phase-2 connectors are not implemented.
+Phase 2 adds the Lumi library (bookmarks / server-side web clips / offline
+snapshots), workspaces & read-later, inbox push sources (bearer-secured
+machine ingest), read-only API sources & newsletter bridges feeding
+FreshRSS, a read-only Obsidian vault projection, unified search over all of
+it with tags / favorites / graph, and an optional RAG-indexed semantic layer
+plus an Agent workbench over the same corpus.
 
 > The MVP baseline is complete and LumiRSS remains under active development.
 > Documentation and project status: [docs/README.md](docs/README.md)

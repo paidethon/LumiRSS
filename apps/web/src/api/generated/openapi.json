@@ -4427,7 +4427,7 @@
     "type": "object"
    },
    "ReadLaterItem": {
-    "description": "One read-later timeline row (P0-01: server-driven list).\n\n``entry`` is the RSS card from the projection (or a live adapter\nfallback); a dangling member surfaces as ``stale=True`` with no card\ninstead of disappearing from the list.",
+    "description": "One read-later timeline row (P0-01: server-driven list).\n\n``entry`` is the RSS card from the projection (or a live adapter\nfallback); ``resolved`` is the unified registry view for library\nrefs (inbox pushes etc. are first-class read-later members since\n0021 — Q-P1-05). A dangling member surfaces as ``stale=True`` with\nno card instead of disappearing from the list.",
     "properties": {
      "addedAt": {
       "title": "Addedat",
@@ -4446,6 +4446,16 @@
      "itemRef": {
       "title": "Itemref",
       "type": "string"
+     },
+     "resolved": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ResolvedItem"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "stale": {
       "default": false,

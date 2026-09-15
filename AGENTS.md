@@ -15,12 +15,18 @@ RSSHub, FastAPI BFF, responsive React Web / PWA.
 Implemented (verify against source before relying on this list): AI summary,
 translation and article conversation plus AI settings (0015–0017); RSSHub
 source discovery and control; unified settings center; backup / restore and
-operations (0018); Caddy-fronted production deployment (0018–0019).
+operations (0018); Caddy-fronted production deployment (0018–0019). Phase 2
+(0021 verified): Lumi library (bookmarks, server-side clips, offline
+snapshots), workspaces & server-side read-later, inbox push sources, API
+sources & newsletter bridges, read-only Obsidian projection, unified search
+/ tags / favorites / graph, optional RAG semantic index, Agent workbench,
+and the unified read-only source registry.
 
-NOT implemented — do not describe these as existing: web clipping, Obsidian
-integration, and other explicitly deferred Phase-2 features. LumiRSS is
-single-user by design (one trusted user behind the operator's own auth /
-network); multi-user tenancy and public-internet hardening are out of scope.
+NOT implemented — do not describe these as existing: web clipping browser
+extension, Obsidian write-back (the vault stays read-only), MCP surface,
+and other explicitly deferred Phase-2 features. LumiRSS is single-user by
+design (one trusted user behind the operator's own auth / network);
+multi-user tenancy and public-internet hardening are out of scope.
 
 ---
 

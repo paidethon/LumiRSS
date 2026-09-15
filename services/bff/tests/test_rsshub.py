@@ -357,7 +357,7 @@ async def route_request(path: str, *, json=None, base: str = BASE_URL):
     service.load_settings = lambda: FakeSettings(base)
     app.state.http_client = client
     app.state.rsshub_service = service
-    app.state.source_discovery_service = SourceDiscoveryService(client)
+    app.state.source_discovery_service = SourceDiscoveryService()
     try:
         from httpx import ASGITransport
 

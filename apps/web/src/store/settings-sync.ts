@@ -15,6 +15,7 @@ import {
   getServerSettings,
   patchServerSettings,
 } from '../api/client'
+import { useAuthStore, type AuthGateStatus } from './auth'
 import {
   portableSettings,
   PORTABLE_KEYS,
@@ -34,6 +35,9 @@ let debounceMs = DEFAULT_DEBOUNCE_MS
 let dirtyKeys = new Set<string>()
 /** hydration 应用 server 值时置位，避免被 subscribe 误判为用户修改。 */
 let applyingServerValues = false
+/** fresh-eyes Issue 3：启动 hydration 是否真正成功过（401/网络失败为假）。
+ * auth 之后才翻成 authenticated 时据此补一次 rehydrate。 */
+let hydratedOk = false
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let inFlight: Promise<void> | null = null
 let queuedFlush = false
@@ -41,6 +45,9 @@ let queuedFlush = false
 let flushedFinal = false
 /** store 订阅的退订句柄（测试重置用）。 */
 let unsubscribe: (() => void) | null = null
+/** Q-P1-14：auth 翻转订阅的退订句柄（fresh-eyes Issue 3：测试重置必须
+ * 一并退订，否则残留订阅在后续用例里并发触发 hydrate）。 */
+let unsubscribeAuth: (() => void) | null = null
 /** 0021：最近一次见到的服务端 revision（乐观并发）。null = 未知
  * （旧服务端 / 尚未读取）→ PATCH 不带 baseRevision，行为与历史一致。 */
 let serverRevision: number | null = null
@@ -175,6 +182,7 @@ async function hydrate(): Promise<void> {
   try {
     const server = await getServerSettings()
     serverRevision = typeof server.revision === 'number' ? server.revision : null
+    hydratedOk = true
     if (!server.stored) {
       // 首次访问：本地 portable 值作迁移种子 PUSH（幂等）。
       await sendPatch(portableSettings(useAppSettings.getState().settings))
@@ -209,11 +217,16 @@ function onPageHide(): void {
   if (flushedFinal || debounceTimer === null) return
   flushedFinal = true
   // keepalive 补发最终值：不 await，让浏览器在卸载时完成发送。
-  const payload = JSON.stringify(portableSettings(useAppSettings.getState().settings))
+  // Q-P2-37：带上 serverRevision（baseRevision）——卸载补发与常规
+  // PATCH 同一并发契约；旧值覆盖他人变更至少能被服务端检出。
+  const body: Record<string, unknown> = {
+    ...portableSettings(useAppSettings.getState().settings),
+  }
+  if (serverRevision !== null) body.baseRevision = serverRevision
   void fetch('/api/v1/settings', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: payload,
+    body: JSON.stringify(body),
     keepalive: true,
   }).catch(() => {
     /* 尽力而为 */
@@ -237,6 +250,17 @@ export function clearPendingSettingsSync(): void {
   dirtyKeys = new Set()
   persistDirtyKeys()
   flushedFinal = false
+}
+
+/** Q-P1-14：session 登录成功后重新 hydration。
+ *
+ * 启动时的 hydrate 在 session 模式未登录时 401 静默失败；登录成功
+ * （auth 状态翻转）后没有任何路径重试 → 服务端 portable 设置整段
+ * 丢失，且首次改动会以本地默认值整包 PATCH（无 baseRevision）静默
+ * 覆盖其他设备写入。authStore 订阅在 initSettingsSync 里接线；
+ * 本导出供测试与未来调用方手动触发（幂等）。 */
+export function rehydrateSettings(): void {
+  void hydrate()
 }
 
 /** 启动设置同步（main.tsx 调用一次；StrictMode 双调用安全）。 */
@@ -264,6 +288,22 @@ export function initSettingsSync(options: SettingsSyncOptions = {}): void {
     window.addEventListener('online', onOnline)
   }
 
+  // Q-P1-14：登录翻转入 authenticated 后重新 hydration——包括
+  // checking→authenticated（启动 hydrate 瞬时失败后 auth 门才完成的
+  // 场景，fresh-eyes Issue 3）；hydration 已成功过则不重复。
+  let prevAuthStatus: AuthGateStatus = useAuthStore.getState().status
+  unsubscribeAuth?.()
+  unsubscribeAuth = useAuthStore.subscribe((state) => {
+    if (
+      state.status === 'authenticated' &&
+      prevAuthStatus !== 'authenticated' &&
+      !hydratedOk
+    ) {
+      rehydrateSettings()
+    }
+    prevAuthStatus = state.status
+  })
+
   void hydrate()
 }
 
@@ -274,6 +314,7 @@ export function resetSettingsSyncForTests(): void {
   dirtyKeys = new Set()
   persistDirtyKeys()
   applyingServerValues = false
+  hydratedOk = false
   serverRevision = null
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer)
@@ -285,6 +326,10 @@ export function resetSettingsSyncForTests(): void {
   if (unsubscribe !== null) {
     unsubscribe()
     unsubscribe = null
+  }
+  if (unsubscribeAuth !== null) {
+    unsubscribeAuth()
+    unsubscribeAuth = null
   }
   if (typeof window !== 'undefined') {
     window.removeEventListener('pagehide', onPageHide)

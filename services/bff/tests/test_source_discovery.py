@@ -24,6 +24,7 @@ from lumirss.source_discovery import (
     SourceDiscoveryService,
     extract_declared_feed_links,
 )
+from lumirss.ssrf_transport import PinnedAddressTransport
 
 PAGE_URL = "https://blog.example/posts/hello"
 PUBLIC = "93.184.216.34"
@@ -79,18 +80,24 @@ async def discover_with(
     resolver_map: dict[str, list[str]] | None = None,
     common_feed_paths: tuple[str, ...] = COMMON_FEED_PATHS,
 ):
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     resolver = FakeResolver(
         resolver_map if resolver_map is not None else {"blog.example": [PUBLIC]}
     )
+
+    def pin_factory(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(handler),
+        )
+
     service = SourceDiscoveryService(
-        client, resolver=resolver, common_feed_paths=common_feed_paths
+        resolver=resolver,
+        common_feed_paths=common_feed_paths,
+        pin_factory=pin_factory,
     )
-    try:
-        result = await service.discover(url)
-        return result, resolver
-    finally:
-        await client.aclose()
+    result = await service.discover(url)
+    return result, resolver
 
 
 # --- declared link extraction (pure function) ------------------------------
@@ -371,12 +378,21 @@ async def post_discovery(url: str, handler, resolver_map=None):
     """Route-level call with injected MockTransport + fake resolver."""
     from lumirss.source_discovery import SourceDiscoveryService as Svc
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     resolver = FakeResolver(
         resolver_map if resolver_map is not None else {"blog.example": [PUBLIC]}
     )
-    app.state.http_client = client
-    app.state.source_discovery_service = Svc(client, resolver=resolver)
+
+    def pin_factory(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(handler),
+        )
+
+    app.state.http_client = httpx.AsyncClient()
+    app.state.source_discovery_service = Svc(
+        resolver=resolver, pin_factory=pin_factory
+    )
     try:
         from httpx import ASGITransport
 
@@ -388,7 +404,7 @@ async def post_discovery(url: str, handler, resolver_map=None):
                 "/api/v1/source-discovery", json={"url": url}
             )
     finally:
-        await client.aclose()
+        await app.state.http_client.aclose()
 
 
 @pytest.mark.anyio

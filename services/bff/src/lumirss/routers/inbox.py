@@ -19,6 +19,7 @@ boundary stays DOMPurify in the browser.
 """
 
 import base64
+import contextlib
 import json
 from datetime import datetime
 from html.parser import HTMLParser
@@ -187,29 +188,41 @@ async def ingest_inbox_item(
     if source is None or not store.secrets_match(supplied, source["secret"]):
         raise InboxSourceNotFound(source_uuid)
 
-    url = _validate_optional_url(item.url)
-    published_at = _validate_published_at(item.publishedAt)
-    content_html = ""
-    content_text = (item.content or "").strip()
-    if item.contentHtml:
-        from lumirss.article_sanitize import sanitize_html
+    try:
+        url = _validate_optional_url(item.url)
+        published_at = _validate_published_at(item.publishedAt)
+        content_html = ""
+        content_text = (item.content or "").strip()
+        if item.contentHtml:
+            from lumirss.article_sanitize import sanitize_html
 
-        content_html = sanitize_html(item.contentHtml)
-        if not content_text:
-            content_text = _html_to_text(content_html)
-    title = (item.title or item.guid).strip()[:512]
+            content_html = sanitize_html(item.contentHtml)
+            if not content_text:
+                content_text = _html_to_text(content_html)
+        title = (item.title or item.guid).strip()[:512]
 
-    status, ref = await store.ingest(
-        source,
-        guid=item.guid.strip(),
-        title=title,
-        url=url,
-        author=(item.author or "").strip() or None,
-        content_html=content_html,
-        content_text=content_text[:200_000],
-        published_at=published_at,
-        categories=_clean_categories(item.categories),
-    )
+        status, ref = await store.ingest(
+            source,
+            guid=item.guid.strip(),
+            title=title,
+            url=url,
+            author=(item.author or "").strip() or None,
+            content_html=content_html,
+            content_text=content_text[:200_000],
+            published_at=published_at,
+            categories=_clean_categories(item.categories),
+        )
+    except Exception as exc:
+        # Connector health stays honest (Q-P2-03): a rejected or failed
+        # push surfaces as lastError in the source registry instead of a
+        # permanently green connector. Recording is best-effort — never
+        # mask the original failure.
+        with contextlib.suppress(Exception):
+            await store.record_error(
+                source_uuid,
+                str(exc) if isinstance(exc, InvalidInboxPayload) else "ingest failed",
+            )
+        raise
     return InboxIngestResult(status=status, ref=ref)
 
 

@@ -36,8 +36,16 @@ def _reset_rate_limit_windows() -> None:
 
 
 @pytest.fixture()
-def client():
-    """A TestClient with a fresh temp Lumi database (phase2 M1 suites)."""
+def client(monkeypatch: pytest.MonkeyPatch):
+    """A TestClient with a fresh temp Lumi database (phase2 M1 suites).
+
+    Q-P1-10: the temp DB path must be in place BEFORE TestClient starts —
+    the lifespan binds app.state.db and eagerly builds the obsidian
+    service on it. Swapping app.state.db afterwards left the obsidian
+    service (and anything else captured at startup) reading the
+    developer's real database, so obsidian-route tests were not
+    hermetic (they passed only because the real DB happened to lack the
+    fixture rows)."""
     import tempfile
 
     from fastapi.testclient import TestClient
@@ -45,7 +53,12 @@ def client():
     from lumirss.main import app
     from lumirss.storage import Database
 
-    with TestClient(app) as test_client:
-        with tempfile.TemporaryDirectory() as tmp:
-            app.state.db = Database(f"{tmp}/lumi.sqlite")
+    tmp = tempfile.TemporaryDirectory()
+    monkeypatch.setenv("LUMIRSS_DB_PATH", f"{tmp.name}/lumi.sqlite")
+    try:
+        with TestClient(app) as test_client:
+            # Same DB the lifespan built — now provably the temp one.
+            app.state.db = Database(f"{tmp.name}/lumi.sqlite")
             yield test_client
+    finally:
+        tmp.cleanup()

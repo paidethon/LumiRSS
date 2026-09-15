@@ -355,3 +355,140 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
 | P0-11（翻译） | locally_verified（jsdom 契约级）；真实 activation 矩阵 = 有头 Chrome（外部条件） |
 | P0-12（导航/文档） | production_verified（UI 部署于生产） |
 | P0-13（搜索空转） | production_verified |
+
+---
+
+# 第二轮质量整治（2026-09-15，独立 Reality Audit）
+
+> 本节是第二轮整治的唯一缺陷账本。基线：BFF 952 passed / ruff clean / Web 719 passed。
+> 审计方式：6 个独立只读审计（后端架构、前端、测试质量、安全、功能完整性、性能资源），
+> 主 Agent 逐项亲核 file:line 后收录。状态机沿用上文。
+
+## Round 0 新缺陷队列
+
+> 修复状态标注（2026-09-15 Round 1）：〔已修〕= 修复+回归测试+全量绿；
+> 其余为待处理。BFF 961 passed / Web 720 passed / tsc clean / ruff clean。
+
+### Q-P0-01 — RAG rebuild 全量语料+全量向量驻留内存 — 〔已修〕`locally_verified`
+- 证据：`rag.py`（原 `_collect_documents` 两次 fetch_all + 一次性 embed 全部向量）。
+- 修复：staging 表流式重建（`_document_pages` keyset 分页 → 分批 embed → `_stage_rows` →
+  `_swap_staged_index` 单短事务换入；失败 `_stage_discard` 保留旧索引）。回归：
+  `test_rebuild_failure_mid_staging_keeps_previous_index`（事务性 seam 由
+  `_write_index_sync` 迁移到 `_swap_staged_index`）。
+- 证据：`rag.py:365-385`（`_collect_documents` 两次 `fetch_all` 全表 + 全部 chunk_jobs + `embed(全部)` 一次返回 `list[list[float]]`）；`rag.py:397-424`。
+- why：Python float 对象 ≈32B/元素 → 每 chunk 向量 ~16KB；10 万 chunk ≈ 1.6GB —— 生产 1.6GB RAM 服务器大语料必 OOM。语料随阅读无界增长，第一次真实规模 rebuild 即触发。
+- 修复：staging 表流式重建——分批（文档批）embed→serialize→写 `rag_rebuild_stage`；单短事务换入主表（DELETE+INSERT SELECT+DROP stage）；失败回滚保留旧索引，原子性不变。
+
+### Q-P1 组（正确性/安全/闭环）
+- **Q-P1-01 RAG 共享 vec 连接事务互踩**：〔已修〕mark_stale/index_refs 统一走 `_rebuild_lock`（回归 `test_index_refs_serializes_behind_rebuild_lock`）。
+- **Q-P1-02 mark_stale 静默截断 200**：〔已修〕按 `_STALE_SLICE=200` 分片消费全部 refs（回归 `test_mark_stale_processes_all_refs_beyond_single_slice`，250 refs 全删）。
+- **Q-P1-03 feed_preview/source_discovery SSRF TOCTOU**：〔已修〕safe_fetch 去 client 参数、per-call PinnedAddressTransport（测试 seam=pin_factory+MockTransport delegate；回归 `test_preview_rebinding_dns_public_check_private_dial_is_refused`）。
+- **Q-P1-04 inbox 批量删除双事务**：〔已修〕identity+source+search_library 单事务（回归 `test_delete_source_is_atomic_when_projection_delete_fails` 触发 RAISE(ABORT) 断言全回滚）。
+- **Q-P1-05 Read Later × Inbox 契约矛盾**：〔已修〕时间线非 rss ref 走统一 resolver 返回 `ReadLaterItem.resolved`（OpenAPI 已再生）；FE `ReadLaterRow` 渲染 UnifiedContentCard；mutation 契约从 entryRef+硬编码 `rss:` 前缀改为完整 itemRef（回归 `test_read_later_timeline_renders_inbox_item_as_resolved_card`）。
+- **Q-P1-06 Source Registry code_only**：〔已修〕`useSources` + 设置→订阅与来源新增「统一来源注册表」卡（类型徽标/健康/深链管理位置）；inbox mutation invalidate 的 `['sources']` 键从此真实存在。
+- **Q-P1-07 IMAP 后端完整前端缺失**：pending（Round 2 评估）。
+- **Q-P1-08 inbox ingest 地址复制相对路径**：〔已修〕InboxPage 拼 `window.location.origin`。
+- **Q-P1-09 库类内容无打标签入口**：〔已修〕EntryTagButton 提取为 kind 无关 `ItemTagButton`（itemRef 全形态），UnifiedContentCard 库类行内挂载。
+- **Q-P1-10 conftest 非 hermetic**：〔已修〕`LUMIRSS_DB_PATH` 在 TestClient 启动前 env 注入，lifespan 与测试共用 temp 库。
+- **Q-P1-11 compare_digest 非 ASCII → 500 ×4**：〔已修〕`util.constant_time_equals`（bytes 比较）替换 inbox/mail/api_source/middleware 四处。
+- **Q-P1-12 search E2E 过滤断言弱**：pending（测试质量波）。
+- **Q-P1-13 scroll-mark-unread 计时 flaky**：pending（测试质量波）。
+- **Q-P1-14 session 登录后 settings 永不 hydration**：〔已修〕auth 翻转（unauthenticated→authenticated）时 `rehydrateSettings()`；pagehide 补发带 baseRevision（Q-P2-37 一并修复）。回归：settings-sync.test「Q-P1-14」用例。
+- **Q-P1-15 GraphPage onFail 内联箭头进 effect deps**：〔已修〕`useCallback` 稳定引用（画布不再因任何交互销毁重建）。
+
+### Q-P2 组（择高价值修复）
+- Q-P2-01 agent_messages 无 UNIQUE(thread_id, seq)（`agent_store.py:32-34` 自认 reported）
+- Q-P2-02 index_refs 死代码——RAG 增量只删不建（rag.py:473 零调用方）〔已修：`rag_index_pass` 增量任务（新投影行反连接入索引 + 孤儿 chunk 清扫）入 lifespan，`LUMIRSS_RAG_INDEX_INTERVAL` 默认 300s、0 关闭；回归 `test_incremental_pass_converges_new_and_deleted_rows`〕
+- Q-P2-03 inbox record_error 无调用方——连接器健康恒绿（inbox_store.py:210）〔已修：ingest 校验/存储失败时 record_error + 回归测试〕
+- Q-P2-23 api_item 缺 kind 标签映射（FavoritesPage/SearchPage）〔已修：`api_item: '收件'`〕
+- Q-P2-24 Sidebar RAG 文案回潮（Sidebar + 折叠栏）〔已修：真实入口→设置 AI 分类；PlannedItem 零调用方后删除〕
+- Q-P2-25 searchRag/getAiPurposes 死代码（client.ts）〔已删（含 RagSearchResponse）〕
+- Q-P2-26 Dialog 无 max-h 高表单小屏溢出〔已修：面板 `max-h-[85dvh]` + 内容区自滚动 + footer shrink-0〕
+- Q-P2-27 Graph tag chip 越界点击静默无响应〔已修：切回 scope=all 再选中〕
+- Q-P2-37 pagehide 裸 PATCH 不带 baseRevision〔已修：随 Q-P1-14〕
+- Q-P2-40 assign/unassign tag 漏 invalidate ['graph']〔已修〕
+- Q-P2-41 useInboxItems 缺 maxPages〔已修：50 页上限，与其余无限查询一致〕
+- Q-P2-14 InboxPage 每卡片一次 resolve 请求〔已修：页级单次 useResolveRefs；`useResolveRefs` 支持 >100 refs 分块（顺带修复长列表整体 400 的潜在 bug）〕
+- Q-P2-04 obsidian rescan 无并发守卫（routers/obsidian.py:43 vs main.py:168-182 轮询）
+- Q-P2-05 read-later 时间线串行 N+1 + router 内联 SQL（workspaces.py:233,253-307）
+- Q-P2-06 统一搜索库腿无游标跨页重复 + favorite post-filter（search.py:105-124）
+- Q-P2-07 bookmark 写路径未事务化（library.py:167-196）
+- Q-P2-08 删除路径不清理 item_tags/library_favorites（多文件）
+- Q-P2-09 _provider_or_none 吞错谎报"AI 未配置"（deps.py:565-584）
+- Q-P2-10 FreshRSSAdapter 单例被 search/agent/registry 三处绕过（deps.py:376,531,621）
+- Q-P2-11 预认证 ingest 限速共享桶可被第三方耗尽（middleware.py:126）
+- Q-P2-12 restore.execute 用 manifest 原始路径绕过 safe_extract 规范化（restore.py:362-364,424-444）
+- Q-P2-13 favorites 串行 resolve N+1（favorites.py:127-131）
+- Q-P2-14 InboxPage 每卡片一次 resolve 请求（InboxPage.tsx:242）
+- Q-P2-15 workspace reorder 逐行 UPDATE（workspaces.py:316-321）
+- Q-P2-16 增量同步每页全量重载 known_states（search_index.py:147-152）
+- Q-P2-17 obsidian 扫描先全量读后比指纹（obsidian.py:326-332）
+- Q-P2-18 IMAP 任务静默死亡 + agent_tasks shutdown 不取消（mail_imap.py:210, main.py:184-199）
+- Q-P2-19 agent 轮询每秒 after=0 全量重拉（queries.ts:1618）
+- Q-P2-20 QueryClient 无 defaultOptions → focus 突发请求（main.tsx:56）
+- Q-P2-21 graph 每请求 5 全表扫描、scope 过滤不下推（graph.py:74-156）
+- Q-P2-22 删除收件连接器无确认（InboxPage.tsx:220-233）
+- Q-P2-23 api_item 缺 kind 标签映射（FavoritesPage.tsx:38-43, SearchPage.tsx:58-63）
+- Q-P2-24 Sidebar RAG 文案回潮（Sidebar.tsx:681-686 vs RagSettingsSection 已上线）
+- Q-P2-25 searchRag/getAiPurposes 死代码（client.ts）
+- Q-P2-26 Dialog 无 max-h 高表单小屏溢出（Dialog.tsx:61-90）
+- Q-P2-27 Graph tag chip 越界点击静默无响应（GraphPage.tsx:319-324）
+- Q-P2-28~35 测试质量：inbox 列表无排序断言、test_operations_api stub 泄漏、timeline-gate2 CSS 断言、inbox UI 只断言 mock、snapshot 裸 raises(Exception)、agent_env 5s 静默放弃、test_agent.py:306 零 agent 参与、deps.py:514 吞 RAG 错误无日志
+- Q-P2-36 E2E 结构债：跨文件依赖（J2←J3b、mobile M3←desktop J4、restore 共享栈）、数据不足静默 skip、固定 waitForTimeout 充当语义等待
+- Q-P2-37 pagehide 裸 PATCH 不带 baseRevision 绕过并发保护（settings-sync.ts:208-221）
+- Q-P2-38 滚动标记已读失败被 dispatched 前置位闩死、无 onError（EntryList.tsx:384-385,312）
+- Q-P2-39 filterStats.totalFiltered 波动时重复累加并持久化（EntryList.tsx:406-414）
+- Q-P2-40 assign/unassign tag 漏 invalidate ['graph']（queries.ts:1675-1700）
+- Q-P2-41 useInboxItems 缺 maxPages 内存保险丝（queries.ts:1834-1842）
+- Q-P2-42 ChatArea 无 key——草稿跨会话泄漏、pending 串台（AgentWorkbenchPage.tsx:540-541,277）
+- Q-P2-43 client.ts inbox 死代码错误检查（client.ts:1723-1745）
+- Q-P2-44 结构债：AiSettingsPage(888 行 10+ 子组件)/app-settings.ts(771 行四职责)/GraphPage(690 行) 拆分；queries.ts APPEND-ONLY 尾部 import 块
+
+（修复按 R1-1…R1-8 波次推进，每项修复后在此更新状态。）
+
+## Round 1 收口 — fresh-eyes 二层复审（2026-09-15）
+
+两个独立只读复审对未提交 diff 做"第一次看到"审计，抓到修复自身引入的第二层问题，
+全部已修：
+
+- **R2-P0（新增）— streaming rebuild 跨批 ord 重置**：`_stage_rows` 每批把 ord 归零，
+  文档 chunk 序列跨 embed 批次时产生重复 (ref, ord)，swap 撞 `ux_rag_ref_ord`
+  唯一索引 → 真实语料 rebuild 必失败（单元测试语料太小没抓到）。
+  修复：`ord_state` 计数器跨批传递（`_rebuild_streaming` 持有）。回归
+  `test_rebuild_spans_embed_batches_without_dup_ords`（monkeypatch _EMBED_BATCH=2 + 4 chunk 单文档）。
+- **R2-P1（新增）— mark_stale 持锁阻塞删除请求路径**：rebuild（分钟级）进行中，
+  所有走 `_rag_mark_stale` 的删除接口被 `_rebuild_lock` 阻塞到重建结束。
+  修复：`mark_stale(refs, wait=False)`（deps 路径）持锁时记日志跳过——
+  正确性由 `rag_index_pass` 孤儿清扫收敛（删除即投影行消失 → 反连接可扫）。
+- **R2-P1（新增，前端）— InboxPage 页级 resolve 的 key 漂移**：页级批量 resolve 的
+  queryKey 随 refs 集合漂移，删除/翻页触发全量重解析 + 整页 skeleton 闪烁——比原
+  问题更糟。处置：回退为 per-card `useResolveRefs([itemRef])`（per-ref 稳定缓存键，
+  30s staleTime 内零重发，请求量与基线持平）；`useResolveRefs` 的 >100 refs 分块保留。
+- R2-P2 ×7 已修：safe_fetch 超时对齐共享 client（10s/5s）；rag_index_pass 反连接
+  加内容非空条件（空行不再饿死增量）；read-later gather `return_exceptions` +
+  library 腿 try/except（单卡坏不 500 整条时间线）；inbox items/sources 显式
+  `refetchOnWindowFocus`（推送型视图的刷新路径）；settings-sync auth 订阅句柄
+  进 reset；ImapForm 密码框仅保存成功后清空；Graph chip 全图 scope 仍缺节点时
+  disabled+title；SettingsModal 高度叠加 85dvh 约束。
+- **R2-P2（E2E 环境，Q-P2-36 部分）— journeys 只适配 basic-auth 栈**：session 模式
+  栈上全部用例停在登录页。修复：`e2e/global-setup.ts`（LUMIRSS_E2E_LOGIN 设置时
+  API 预登录 + storageState 注入全部 context）；search/a11y spec 的开发栈数据依赖
+  （科技爱好者周刊/文章 alpha）改为 Gate 8 fixture 确定内容（sqlite-vec）与数据无关
+  定位器（[data-entry-row-ref]）。
+
+## Round 2–4 验证记录（Gate 8 生产级栈，全部 PASS）
+
+- 重建镜像后 `run-smoke.sh all`：**15/15 PASS**（session 登录 / read-later 服务端
+  时间线 / 混合工作区 / 剪藏服务端提取+恶意 HTML 清理 / 生产镜像 monolith 快照 /
+  /feeds 经 Caddy / FreshRSS 抓 Atom / 稳定 ETag+304 / webhook bearer / 空摘要拒绝 /
+  Obsidian 挂载+同内容双身份 / RAG 诚实状态 / Agent 线程 / tag 幂等 / backup）。
+- Round 2 定向探针（e2e/gate8/round2-probe.sh）：**8/8 PASS**——含
+  read-later timeline 返回收件条目的 resolved 卡片（resolved:稍后读探针条目:api_item）、
+  `rag_index_pass` 在生产镜像内真实收敛（indexed=2 chunks=37）、错误 bearer 404 envelope、
+  连接器 lastError 健康面、源注册表 inbox 行。
+- Round 3 Playwright 全视口：**69 passed / 0 failed**（desktop-1920/1440 +
+  mobile-430/390/375；LUMIRSS_E2E_LOGIN session 预登录）。
+- Round 4 故障注入 + 对抗（e2e/gate8/round4-chaos.sh）：**13/13 PASS**——
+  FreshRSS 停机时 web 壳/工作区/entries/search 诚实降级不拖垮主链路，
+  元数据/环回地址在 clip/feed-preview/api-source 三入口 fail-closed，
+  AI provider 停机时 RAG 状态诚实，恢复后栈全绿。

@@ -362,3 +362,28 @@ describe('0021 — baseRevision 乐观并发', () => {
     expect(useAppSettings.getState().settings.accentColor).toBe('#abcdef')
   })
 })
+
+describe('Q-P1-14 — session 登录翻转后重新 hydration', () => {
+  it('unauthenticated → authenticated 翻转触发 rehydrate，服务端值合并进本地', async () => {
+    const { useAuthStore } = await import('../store/auth')
+    const server = makeServer()
+    server.stored = true
+    server.doc = { accentColor: '#009876' }
+    const fetchMock = stubFetch(server)
+
+    // 模拟 session 模式：启动时未登录，首次 hydrate 401 静默失败。
+    useAuthStore.getState().setStatus('unauthenticated')
+    fetchMock.mockImplementationOnce(async () => new Response(
+      JSON.stringify({ error: { type: 'session_required', message: 'login' } }),
+      { status: 401 },
+    ))
+    initSettingsSync({ debounceMs: 0 })
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    // 登录成功：auth 翻转 → 自动重新 hydration（无需用户改动触发）。
+    useAuthStore.getState().setStatus('authenticated')
+    await vi.waitFor(() => {
+      expect(useAppSettings.getState().settings.accentColor).toBe('#009876')
+    })
+  })
+})

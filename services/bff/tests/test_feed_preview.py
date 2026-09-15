@@ -24,6 +24,7 @@ from lumirss.feed_preview import (
     validate_feed_url,
 )
 from lumirss.main import app
+from lumirss.ssrf_transport import PinnedAddressTransport
 
 FEED_URL = "https://feed.example/feed.xml"
 PUBLIC = "93.184.216.34"
@@ -104,18 +105,25 @@ async def preview_with(
     existing=(),
     resolver_map: dict[str, list[str]] | None = None,
 ):
-    """Run one preview over MockTransport + fake DNS + recording control."""
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    """Run one preview over a pinned transport delegating to MockTransport
+    + fake DNS + recording control."""
     control = FakeControl(existing)
     resolver = FakeResolver(
         resolver_map if resolver_map is not None else {"feed.example": [PUBLIC]}
     )
-    service = FeedPreviewService(client, control, resolver=resolver)
-    try:
-        result = await service.preview(feed_url)
-        return result, control, resolver
-    finally:
-        await client.aclose()
+
+    def pin_factory(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(handler),
+        )
+
+    service = FeedPreviewService(
+        control, resolver=resolver, pin_factory=pin_factory
+    )
+    result = await service.preview(feed_url)
+    return result, control, resolver
 
 
 def ok(body: bytes = RSS_DOC) -> httpx.Response:
@@ -305,9 +313,12 @@ async def test_preview_follows_redirect_and_revalidates_each_hop():
         },
     )
     assert result.title == "Test RSS Feed"
-    # 每一跳都重新做了 DNS/IP 校验（不是只验第一跳）。
+    # 每一跳都重新做了 DNS/IP 校验（不是只验第一跳）——预检一次 +
+    # pinned transport 拨号前复验一次（Q-P1-03：钉住已校验地址）。
     assert resolver.calls == [
         ("feed.example", 443),
+        ("feed.example", 443),
+        ("hop.example", 443),
         ("hop.example", 443),
     ]
 
@@ -422,18 +433,11 @@ async def test_preview_html_page_is_not_a_feed():
 
 @pytest.mark.anyio
 async def test_preview_malformed_url_is_rejected_before_any_fetch():
-    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
-        raise AssertionError("must not be reached")
-
     control = FakeControl()
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    service = FeedPreviewService(client, control)
-    try:
-        with pytest.raises(InvalidFeedUrl):
-            await service.preview("javascript:alert(1)")
-        assert control.calls == []
-    finally:
-        await client.aclose()
+    service = FeedPreviewService(control)
+    with pytest.raises(InvalidFeedUrl):
+        await service.preview("javascript:alert(1)")
+    assert control.calls == []
 
 
 # --- route wiring ---------------------------------------------------------
@@ -517,6 +521,40 @@ def test_preview_route_missing_body_is_422_without_service():
     assert service.calls == []
 
 
+@pytest.mark.anyio
+async def test_preview_rebinding_dns_public_check_private_dial_is_refused():
+    """Q-P1-03: a rebinding DNS answer (public for the pre-flight check,
+    private for the dial) must be refused — the pinned transport
+    re-validates whatever it actually dials."""
+    control = FakeControl()
+
+    class RebindingResolver:
+        def __init__(self) -> None:
+            self.n = 0
+
+        async def __call__(self, host, port):
+            self.n += 1
+            if self.n == 1:
+                return [PUBLIC]  # public answer for the pre-flight check
+            return ["10.0.0.5"]  # private answer when the transport dials
+
+    resolver = RebindingResolver()
+
+    def pin_factory(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(lambda request: ok()),
+        )
+
+    service = FeedPreviewService(
+        control, resolver=resolver, pin_factory=pin_factory
+    )
+    with pytest.raises(UnsafeFeedUrl):
+        await service.preview(FEED_URL)
+    assert control.calls == []  # nothing was fetched or subscribed
+
+
 def test_preview_route_is_non_mutating_end_to_end():
     """Route-level 无副作用证明：真实 FeedPreviewService + MockTransport +
     记录型 control —— POST preview 后 FreshRSS 侧只有一次订阅列表读取，
@@ -524,9 +562,17 @@ def test_preview_route_is_non_mutating_end_to_end():
     from fastapi.testclient import TestClient
 
     control = FakeControl(existing_urls=[FEED_URL])
-    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: ok()))
+    resolver = FakeResolver({"feed.example": [PUBLIC]})
+
+    def pin_factory(*, resolver, ensure_public):
+        return PinnedAddressTransport(
+            resolver=resolver,
+            ensure_public=ensure_public,
+            delegate=httpx.MockTransport(lambda request: ok()),
+        )
+
     service = FeedPreviewService(
-        client, control, resolver=FakeResolver({"feed.example": [PUBLIC]})
+        control, resolver=resolver, pin_factory=pin_factory
     )
     try:
         with TestClient(app) as client:

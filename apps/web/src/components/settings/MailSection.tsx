@@ -16,16 +16,20 @@
  * 所有 HTTP 经 src/api/client.ts；loading / empty / error 三态齐备。 */
 
 import { useState } from 'react'
-import { AlertCircle, CheckCircle2, Copy, MailPlus, Plus, Send, Trash2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Copy, MailPlus, Plus, RefreshCw, Send, Trash2, Wifi } from 'lucide-react'
 import {
   useCreateMailBridgeListMutation,
   useDeleteMailBridgeListMutation,
   useDigestSettings,
   useMailBridgeLists,
+  useMailImapSettings,
+  usePollMailImapMutation,
   useSendDigestNowMutation,
+  useTestMailImapMutation,
   useUpdateDigestSettingsMutation,
+  useUpdateMailImapSettingsMutation,
 } from '../../api/queries'
-import type { DigestSettings, MailBridgeListCreated } from '../../api/client'
+import type { DigestSettings, MailBridgeListCreated, MailImapSettings } from '../../api/client'
 import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -587,7 +591,170 @@ export function MailSection() {
   return (
     <div className="flex flex-col gap-4 py-1">
       <BridgeListsBlock />
+      <ImapBlock />
       <DigestBlock />
     </div>
+  )
+}
+
+// ---- IMAP 抓取（Q-P1-07：后端 4 端点 + 后台轮询已存在，此为首批 UI） ----
+
+function ImapBlock() {
+  const settings = useMailImapSettings()
+
+  if (settings.isPending) {
+    return <Skeleton className="h-24 w-full" />
+  }
+  if (settings.isError) {
+    return (
+      <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+        IMAP 设置加载失败：{settings.error instanceof Error ? settings.error.message : '请稍后重试。'}
+      </p>
+    )
+  }
+  // 表单只在服务端数据就绪后挂载，useState 初始值即服务端值——
+  // 不再有「数据到位后 setState 灌表单」的二次渲染（lint: set-state-in-render）。
+  return <ImapForm server={settings.data} />
+}
+
+function ImapForm({ server }: { server: MailImapSettings }) {
+  const lists = useMailBridgeLists()
+  const update = useUpdateMailImapSettingsMutation()
+  const test = useTestMailImapMutation()
+  const poll = usePollMailImapMutation()
+  const [host, setHost] = useState(server.host)
+  const [port, setPort] = useState(String(server.port))
+  const [user, setUser] = useState(server.user)
+  const [folder, setFolder] = useState(server.folder)
+  const [ssl, setSsl] = useState(server.ssl)
+  const [listUuid, setListUuid] = useState(server.listUuid)
+  const [interval, setIntervalSeconds] = useState(String(server.intervalSeconds))
+  const [password, setPassword] = useState('')
+
+  const save = () => {
+    update.mutate(
+      {
+        host: host.trim(),
+        port: Number.parseInt(port, 10) || undefined,
+        user: user.trim(),
+        folder: folder.trim() || 'INBOX',
+        ssl,
+        listUuid,
+        intervalSeconds: Number.parseInt(interval, 10) || undefined,
+        // write-only：留空 = 不改动已存密码
+        password: password === '' ? undefined : password,
+      },
+      // fresh-eyes Issue 4：保存成功才清空密码框——失败时用户不必重输。
+      { onSuccess: () => setPassword('') },
+    )
+  }
+
+  return (
+    <section className="rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">IMAP 抓取</h2>
+        <span
+          className={cx(
+            'rounded-[var(--lumi-radius-full)] px-2 py-0.5 text-[10px] font-medium',
+            server.configured
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-tertiary)]',
+          )}
+        >
+          {server.configured ? `已配置 · 每 ${server.intervalSeconds}s 轮询` : '未配置'}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
+        从任意 IMAP 邮箱拉取新闻邮件，进入下方选定的转发入口列表（与 webhook 同一落库与去重管线）。
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          服务器（host）
+          <input className={inputCls} value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.example.com" autoComplete="off" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          端口
+          <input className={inputCls} value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          用户名
+          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          密码（write-only：留空 = 不改动）
+          <input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder={server.passwordConfigured ? '已配置' : '未设置'} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          文件夹
+          <input className={inputCls} value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="INBOX" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          绑定转发入口
+          <select className={inputCls} value={listUuid} onChange={(e) => setListUuid(e.target.value)}>
+            <option value="">（未绑定）</option>
+            {(lists.data?.items ?? []).map((list) => (
+              <option key={list.uuid} value={list.uuid}>{list.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+          轮询间隔（秒，最小 60）
+          <input className={inputCls} value={interval} onChange={(e) => setIntervalSeconds(e.target.value)} inputMode="numeric" />
+        </label>
+        <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)] sm:mt-5">
+          <input type="checkbox" checked={ssl} onChange={(e) => setSsl(e.target.checked)} className="size-3.5 accent-[var(--lumi-accent)]" />
+          使用 SSL/TLS
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button variant="primary" size="sm" onClick={save} disabled={update.isPending || host.trim() === ''}>
+          {update.isPending ? '保存中…' : '保存 IMAP 设置'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => test.mutate()}
+          disabled={!server.configured || test.isPending}
+        >
+          {test.isPending ? '测试中…' : (
+            <span className="inline-flex items-center gap-1.5"><Wifi aria-hidden className="size-3.5" />测试连接</span>
+          )}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => poll.mutate()}
+          disabled={!server.configured || server.listUuid === '' || poll.isPending}
+        >
+          {poll.isPending ? '拉取中…' : (
+            <span className="inline-flex items-center gap-1.5"><RefreshCw aria-hidden className="size-3.5" />立即拉取</span>
+          )}
+        </Button>
+      </div>
+
+      {test.data && (
+        <p role="status" className={cx('mt-2 flex items-center gap-1.5 text-xs', test.data.ok ? 'text-[var(--lumi-success)]' : 'text-[var(--lumi-danger)]')}>
+          {test.data.ok ? <CheckCircle2 aria-hidden className="size-3.5" /> : <AlertCircle aria-hidden className="size-3.5" />}
+          {test.data.ok ? 'IMAP 连接成功。' : test.data.error ?? 'IMAP 连接失败。'}
+        </p>
+      )}
+      {test.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">连接测试失败：{test.error instanceof Error ? test.error.message : '请稍后重试。'}</p>
+      )}
+      {poll.data && (
+        <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+          <CheckCircle2 aria-hidden className="size-3.5 text-[var(--lumi-success)]" />
+          拉取完成：取回 {poll.data.fetched} 封，入库 {poll.data.ingested.length} 条（重复推送自动去重）。
+        </p>
+      )}
+      {poll.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">拉取失败：{poll.error instanceof Error ? poll.error.message : '请稍后重试。'}</p>
+      )}
+      {update.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">保存失败：{update.error instanceof Error ? update.error.message : '请稍后重试。'}</p>
+      )}
+    </section>
   )
 }

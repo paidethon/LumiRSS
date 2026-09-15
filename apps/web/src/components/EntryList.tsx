@@ -20,6 +20,7 @@ import EntryRow from './EntryRow'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
+import { UnifiedContentCard } from './UnifiedContentCard'
 import { Skeleton } from './ui/Skeleton'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
@@ -212,13 +213,15 @@ function ReadLaterList() {
   )
 }
 
-/** 时间线单行：entry 卡片（RSS 投影）或 stale 行（悬挂成员，诚实可见）。 */
+/** 时间线单行：entry 卡片（RSS 投影）/ resolved 卡片（库类成员，
+ * Q-P1-05）/ stale 行（悬挂成员，诚实可见）。 */
 function ReadLaterRow({ row }: { row: ReadLaterItem }) {
   const remove = useReadLaterMemberMutation()
   if (row.entry !== null && row.entry !== undefined) {
     // SearchItem 是 EntryListItem 的结构超集（entryRef/title/feedTitle/
     // read/starred 必备），行组件直接复用；Clock 的激活态来自服务端
     // refs 清单——点「从稍后读移除」经 mutation 乐观移除该行。
+    const fullRef = `rss:${row.entry.entryRef}`
     return (
       <li>
         <div className="max-lg:px-2 max-lg:py-1">
@@ -229,8 +232,40 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
             <EntryCard item={row.entry} selected={false} />
           </div>
         </div>
-        {remove.isError && remove.variables?.entryRef === row.entry.entryRef && (
+        {remove.isError && remove.variables?.itemRef === fullRef && (
           <p role="alert" className="mt-1 px-4 pb-1 text-xs text-[var(--lumi-danger)]">
+            移除失败：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
+          </p>
+        )}
+      </li>
+    )
+  }
+  if (row.resolved !== null && row.resolved !== undefined) {
+    // 库类成员（收件推送、剪藏等）：统一注册表视图卡片，按 kind 打开；
+    // 移除走同一 mutation（完整 itemRef）。
+    return (
+      <li className="px-4 py-3">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <UnifiedContentCard item={row.resolved} />
+          </div>
+          <IconButton
+            icon={
+              remove.isPending && remove.variables?.itemRef === row.itemRef ? (
+                <Loader2 aria-hidden className="size-4 animate-spin" />
+              ) : (
+                <Unplug aria-hidden className="size-4" />
+              )
+            }
+            label="从稍后读移除"
+            size="sm"
+            touch
+            disabled={remove.isPending}
+            onClick={() => remove.mutate({ itemRef: row.itemRef, add: false })}
+          />
+        </div>
+        {remove.isError && remove.variables?.itemRef === row.itemRef && (
+          <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
             移除失败：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
           </p>
         )}
@@ -248,7 +283,7 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
           <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
             {row.itemRef} · 加入于 {new Date(row.addedAt).toLocaleString()}
           </p>
-          {remove.isError && remove.variables?.entryRef === refToEntryRef(row.itemRef) && (
+          {remove.isError && remove.variables?.itemRef === row.itemRef && (
             <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
               移除失败：{remove.error instanceof Error ? remove.error.message : '请稍后重试。'}
             </p>
@@ -256,7 +291,7 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
         </div>
         <IconButton
           icon={
-            remove.isPending && remove.variables?.entryRef === refToEntryRef(row.itemRef) ? (
+            remove.isPending && remove.variables?.itemRef === row.itemRef ? (
               <Loader2 aria-hidden className="size-4 animate-spin" />
             ) : (
               <Unplug aria-hidden className="size-4" />
@@ -266,16 +301,11 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
           size="sm"
           touch
           disabled={remove.isPending}
-          onClick={() => remove.mutate({ entryRef: refToEntryRef(row.itemRef), add: false })}
+          onClick={() => remove.mutate({ itemRef: row.itemRef, add: false })}
         />
       </div>
     </li>
   )
-}
-
-/** `rss:<entryRef>` → `<entryRef>`（时间线 itemRef 契约）。 */
-function refToEntryRef(itemRef: string): string {
-  return itemRef.startsWith('rss:') ? itemRef.slice('rss:'.length) : itemRef
 }
 
 /** entries 视图列表（all / unread / starred；read-later 走 ReadLaterList）。 */

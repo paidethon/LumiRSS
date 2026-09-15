@@ -53,7 +53,17 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   })
 }
 
-const queryClient = new QueryClient()
+// Q-P2-20：全局默认——关掉 refetchOnWindowFocus（主壳挂载 ~6-10 个
+// 查询，每次切回标签页都突发整串请求）并给 30s fresh 窗口；个别
+// 高频视图已在各自 useQuery 显式覆盖，不受影响。
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    },
+  },
+})
 
 /** 会话认证门（Phase N）：启动时探测认证模式与登录态。
  *

@@ -179,6 +179,17 @@ class LumiSettings(BaseSettings):
             raise ValueError("must be 0 (disabled) or a positive number of seconds")
         return value
 
+    # Semantic-index convergence cadence in seconds; 0 disables the
+    # background task (the index then only changes via explicit rebuild).
+    LUMIRSS_RAG_INDEX_INTERVAL: float = 300.0
+
+    @field_validator("LUMIRSS_RAG_INDEX_INTERVAL")
+    @classmethod
+    def _sane_rag_index_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("must be 0 (disabled) or a positive number of seconds")
+        return value
+
     # --- Obsidian projection (Gate 4) ---
     # Fixed CONTAINER path of the read-only vault bind mount (production
     # contract). When set, the API cannot change the vault root and the

@@ -23,7 +23,6 @@ Guardrails (03-report §13/§14):
 """
 
 import hashlib
-import hmac
 import json
 import secrets as _secrets
 import urllib.parse
@@ -39,7 +38,7 @@ from lumirss.clip_fetch import (
     ClipForbidden,
     validate_hop,
 )
-from lumirss.util import utc_now
+from lumirss.util import constant_time_equals, utc_now
 
 _MAX_JSON_BYTES = 2 * 1024 * 1024
 _FETCH_TIMEOUT_SECONDS = 20.0
@@ -345,7 +344,7 @@ def feed_etag(atom_xml: str) -> str:
 
 
 def secrets_match(supplied: str, source: ApiSourceRecord) -> bool:
-    return hmac.compare_digest(supplied, source.secret)
+    return constant_time_equals(supplied, source.secret)
 
 
 _ = (ClipFetchError, ClipForbidden)  # SSRF error family shared with clips
