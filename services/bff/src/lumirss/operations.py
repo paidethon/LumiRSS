@@ -13,6 +13,7 @@ All returned messages are static, browser-safe strings — never raw
 exceptions, never URLs carrying credentials.
 """
 
+import asyncio
 from datetime import UTC, datetime
 
 import httpx
@@ -139,9 +140,9 @@ class OperationsService:
 
     async def full_status(self) -> dict:
         """The operations view for the Web UI (redacted by construction)."""
-        sqlite = await self.sqlite_status()
-        freshrss = await self.freshrss_status()
-        rsshub = await self.rsshub_status()
+        sqlite, freshrss, rsshub = await asyncio.gather(
+            self.sqlite_status(), self.freshrss_status(), self.rsshub_status()
+        )
         # lumi 状态如实反映核心存储（无假指标）：sqlite 不可用即 degraded。
         lumi_status = "healthy" if sqlite.get("status") == "healthy" else "degraded"
         return {
@@ -158,10 +159,10 @@ class OperationsService:
         violate the failure-isolation model (RSSHub down must not make
         already-fetched reading unavailable).
         """
-        sqlite = await self.sqlite_status()
+        sqlite, freshrss, rsshub = await asyncio.gather(
+            self.sqlite_status(), self.freshrss_status(), self.rsshub_status()
+        )
         ready = sqlite["status"] == "healthy"
-        freshrss = await self.freshrss_status()
-        rsshub = await self.rsshub_status()
         return ready, {
             "status": "ok" if ready else "unavailable",
             "components": {

@@ -8,6 +8,7 @@ create/delete/update) and the whole table is rebuildable from the owned
 library tables at any time — it is never a source of truth.
 """
 
+import sqlite3
 from typing import Any
 
 from lumirss.storage import Database
@@ -124,3 +125,36 @@ class LibrarySearchWriter:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def upsert_search_row(
+    conn: sqlite3.Connection,
+    *,
+    ref: str,
+    kind: str,
+    title: str,
+    body: str,
+    url: str | None,
+    now: str,
+) -> None:
+    """Sync projection upsert for use inside a ``db_tx.transaction`` block.
+
+    Same SELECT-then-INSERT/UPDATE shape as ``LibrarySearchWriter.upsert``
+    (house rule: no UPSERT syntax) but on the caller's connection so the
+    projection row commits atomically with the domain rows."""
+    row = conn.execute("SELECT ref FROM search_library WHERE ref = ?", (ref,)).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO search_library (ref, kind, title, body, url, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (ref, kind, title, body, url, now),
+        )
+    else:
+        conn.execute(
+            "UPDATE search_library SET kind = ?, title = ?, body = ?, url = ?, updated_at = ? WHERE ref = ?",
+            (kind, title, body, url, now, ref),
+        )
+
+
+def delete_search_row(conn: sqlite3.Connection, ref: str) -> None:
+    """Sync projection delete for use inside a ``db_tx.transaction`` block."""
+    conn.execute("DELETE FROM search_library WHERE ref = ?", (ref,))

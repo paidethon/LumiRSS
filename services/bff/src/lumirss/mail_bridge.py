@@ -16,7 +16,6 @@ The per-list Atom reuses the api_sources feed URL pattern (outside
 FreshRSS best-effort.
 """
 
-import asyncio
 import email
 import email.header
 import email.policy
@@ -27,6 +26,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.db_tx import transaction
 from lumirss.mail_sanitize import html_to_text, sanitize_email_html
 from lumirss.storage import Database
 from lumirss.util import constant_time_equals, utc_now
@@ -87,33 +87,13 @@ def _content_fingerprint(
 class MailBridgeStore:
     """Lists + seen ledger + per-list entry ring (for the Atom).
 
-    The store also owns the domain's only multi-statement transaction
-    helper: storage.Database commits per execute site by design, but the
-    ingest path must not lose mail when it crashes between the dedupe
-    row and the entry body (P0-06f)."""
+    Multi-statement writes go through ``db_tx.transaction`` (one
+    connection, one commit, rollback on failure, raw IntegrityError
+    propagated): the ingest path must not lose mail when it crashes
+    between the dedupe row and the entry body (P0-06f)."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
-
-    async def _transaction(
-        self, statements: list[tuple[str, tuple[Any, ...]]]
-    ) -> None:
-        """Commit every statement or none of them.
-
-        Local helper over the same connection primitives storage.Database
-        uses (mirrors migrations.py, which shares the private connector
-        for the same reason: one file, one transaction boundary)."""
-
-        def _run() -> None:
-            connection = self._db._connect()  # noqa: SLF001 — same module family
-            try:
-                for sql, params in statements:
-                    connection.execute(sql, params)
-                connection.commit()
-            finally:
-                connection.close()
-
-        await asyncio.to_thread(_run)
 
     # -- lists -------------------------------------------------------------
 
@@ -157,13 +137,20 @@ class MailBridgeStore:
         )
         if row is None:
             return False
-        await self._transaction(
-            [
-                ("DELETE FROM mail_seen WHERE list_uuid = ?", (list_uuid,)),
-                ("DELETE FROM mail_bridge_entries WHERE list_uuid = ?", (list_uuid,)),
-                ("DELETE FROM mail_bridge_lists WHERE uuid = ?", (list_uuid,)),
-            ]
-        )
+
+        def _run(connection: sqlite3.Connection) -> None:
+            connection.execute(
+                "DELETE FROM mail_seen WHERE list_uuid = ?", (list_uuid,)
+            )
+            connection.execute(
+                "DELETE FROM mail_bridge_entries WHERE list_uuid = ?",
+                (list_uuid,),
+            )
+            connection.execute(
+                "DELETE FROM mail_bridge_lists WHERE uuid = ?", (list_uuid,)
+            )
+
+        await transaction(self._db, _run)
         return True
 
     def secrets_match(self, supplied: str, lst: BridgeList) -> bool:
@@ -211,19 +198,19 @@ class MailBridgeStore:
             if seen is not None:
                 return {"status": "duplicate", "messageId": identity[:64]}
         now = utc_now()
-        statements: list[tuple[str, tuple[Any, ...]]] = [
-            (
-                "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
-                (lst.uuid, identity, now),
-            )
-            for identity in identities
-        ]
-        statements.append(
-            (
+        entry_id = message_id or fingerprint[:32]
+
+        def _run(connection: sqlite3.Connection) -> None:
+            for identity in identities:
+                connection.execute(
+                    "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
+                    (lst.uuid, identity, now),
+                )
+            connection.execute(
                 "INSERT INTO mail_bridge_entries (list_uuid, message_id, subject, sender, html, text, attachment_count, attachment_meta, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lst.uuid,
-                    message_id or fingerprint[:32],
+                    entry_id,
                     subject[:500],
                     sender[:200],
                     clean_html[:200_000],
@@ -233,9 +220,9 @@ class MailBridgeStore:
                     now,
                 ),
             )
-        )
+
         try:
-            await self._transaction(statements)
+            await transaction(self._db, _run)
         except sqlite3.IntegrityError:
             # A concurrent delivery of the same mail won the race; the
             # transaction rolled back — report honestly, store nothing twice.

@@ -136,3 +136,42 @@ def test_rss_body_is_never_copied_into_lumi(client):
     assert "content" not in columns
     assert "content_html" not in columns
     assert "content_text" not in columns
+
+
+def test_rss_bookmark_duplicate_converges_without_orphans(client):
+    """Quality closure: double-submit of the same rss entry converges on
+    the unique index (migration 0022) — 201 with the same ref, no 500,
+    and no orphan identity row from the pre-transaction create path."""
+    entry_ref = encode_entry_ref("4242")
+    payload = {"rssItemRef": f"rss:{entry_ref}", "title": "第一份"}
+    first = client.post("/api/v1/library/bookmarks", json=payload)
+    assert first.status_code == 201
+    second = client.post("/api/v1/library/bookmarks", json=payload)
+    assert second.status_code == 201
+    assert second.json()["ref"] == first.json()["ref"]
+
+    with app.state.db._connect() as conn:  # noqa: SLF001 — test-level probe
+        items = conn.execute("SELECT COUNT(*) FROM library_items").fetchone()[0]
+        bookmarks = conn.execute(
+            "SELECT COUNT(*) FROM library_bookmarks"
+        ).fetchone()[0]
+        orphans = conn.execute(
+            "SELECT COUNT(*) FROM library_items WHERE uuid NOT IN (SELECT item_uuid FROM library_bookmarks)"
+        ).fetchone()[0]
+    assert (items, bookmarks, orphans) == (1, 1, 0)
+
+
+def test_url_bookmark_duplicate_leaves_no_orphan_identity(client):
+    """Even the pre-existing url-dedupe path must not leak identity rows
+    (the create is one transaction now, not three commits)."""
+    payload = {"url": "https://example.com/dup", "title": "x"}
+    first = client.post("/api/v1/library/bookmarks", json=payload)
+    second = client.post("/api/v1/library/bookmarks", json=payload)
+    assert first.status_code == second.status_code == 201
+    assert first.json()["ref"] == second.json()["ref"]
+    with app.state.db._connect() as conn:  # noqa: SLF001 — test-level probe
+        items = conn.execute("SELECT COUNT(*) FROM library_items").fetchone()[0]
+        bookmarks = conn.execute(
+            "SELECT COUNT(*) FROM library_bookmarks"
+        ).fetchone()[0]
+    assert (items, bookmarks) == (1, 1)

@@ -272,26 +272,32 @@ def test_fingerprint_stable_across_second_boundaries(bridge_db, monkeypatch):
     assert len(_run(bridge_db.list_entries(created.uuid))) == 1
 
 
-def test_ingest_transaction_all_or_nothing(bridge_db):
-    """Seen rows and the entry body commit together (P0-06f): a failure
-    between statements rolls back the whole batch — no orphan dedupe row
-    that would silently swallow the retried mail forever."""
+def test_ingest_transaction_all_or_nothing(bridge_db, monkeypatch):
+    """Seen rows and the entry body commit together (P0-06f).
+
+    Two layers: (a) the shared db_tx primitive rolls back a mid-batch
+    failure; (b) ingest actually routes its writes through that
+    primitive — a regression back to per-statement commits fails here."""
     import sqlite3
 
+    import lumirss.mail_bridge as mail_bridge_module
+    from lumirss.db_tx import transaction as real_transaction
+
     created = _run(bridge_db.create_list("原子性"))
-    statements = [
-        (
+
+    def _batch(connection):
+        connection.execute(
             "INSERT INTO mail_seen (list_uuid, identity, seen_at) VALUES (?, ?, ?)",
             (created.uuid, "<mid@x>", "2026-01-01T00:00:00+00:00"),
-        ),
+        )
         # Malformed on purpose: crashes mid-transaction.
-        (
+        connection.execute(
             "INSERT INTO mail_bridge_entries (list_uuid, message_id) VALUES (?, ?)",
             (created.uuid,),
-        ),
-    ]
+        )
+
     with pytest.raises(sqlite3.ProgrammingError):
-        _run(bridge_db._transaction(statements))
+        _run(real_transaction(bridge_db._db, _batch))
     row = _run(
         bridge_db._db.fetch_one(
             "SELECT identity FROM mail_seen WHERE list_uuid = ? AND identity = ?",
@@ -299,6 +305,17 @@ def test_ingest_transaction_all_or_nothing(bridge_db):
         )
     )
     assert row is None  # rolled back together
+
+    # (b) wiring: ingest must go through the transaction primitive.
+    calls = []
+
+    def _spy(db, fn):
+        calls.append(db)
+        return real_transaction(db, fn)
+
+    monkeypatch.setattr(mail_bridge_module, "transaction", _spy)
+    _run(bridge_db.ingest(created, RAW_MAIL.encode()))
+    assert calls, "ingest bypassed db_tx.transaction"
 
 
 def test_delete_list_removes_all_state(bridge_db):

@@ -127,9 +127,15 @@ class Database:
     async def execute(
         self, sql: str, params: tuple[Any, ...] = ()
     ) -> int | None:
-        """One write statement (committed). Returns lastrowid."""
+        """One write statement (committed). Returns lastrowid.
+
+        ``sqlite3.IntegrityError`` propagates unchanged — same contract as
+        ``db_tx.transaction`` — so duplicate-create paths can converge on
+        the constraint instead of surfacing a generic storage error."""
         try:
             return await self._run(self._execute, sql, params)
+        except sqlite3.IntegrityError:
+            raise
         except sqlite3.Error as exc:
             raise DatabaseError(f"Lumi database write failed: {sql.splitlines()[0].strip()}") from exc
 
@@ -139,5 +145,7 @@ class Database:
         """Many write statements in one transaction."""
         try:
             await self._run(self._execute_many, sql, params)
+        except sqlite3.IntegrityError:
+            raise
         except sqlite3.Error as exc:
             raise DatabaseError(f"Lumi database write failed: {sql.splitlines()[0].strip()}") from exc

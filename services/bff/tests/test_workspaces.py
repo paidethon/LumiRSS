@@ -202,3 +202,35 @@ def test_resolve_endpoint_batch_and_limit(client):
     view = resolved.json()["items"][0]
     assert view["stale"] is False
     assert view["title"] == "解析我"
+
+
+def test_reorder_reaches_items_past_the_first_page(client, fake_rss_entries):
+    """Quality closure: reorder validation reads the FULL membership —
+    previously it validated against the default 200-item page, so moving
+    item #201+ of the read-later queue was falsely rejected."""
+    fake_rss_entries.clear()
+    for index in range(250):
+        fake_rss_entries[str(1000 + index)] = _entry_detail(
+            str(1000 + index), f"条目{index}"
+        )
+    refs = []
+    for index in range(250):
+        client.post(
+            "/api/v1/workspaces/read-later/items",
+            json={"itemRef": _rss_ref(str(1000 + index))},
+        )
+        refs.append(_rss_ref(str(1000 + index)))
+
+    ordered = list(reversed(refs))
+    response = client.patch(
+        "/api/v1/workspaces/read-later/items", json={"itemRefs": ordered}
+    )
+    assert response.status_code == 200
+    # The PATCH response pages at the default limit; verify positions via
+    # an explicit full-membership fetch.
+    listing = client.get(
+        "/api/v1/workspaces/read-later/items", params={"limit": 500}
+    )
+    positions = {i["itemRef"]: i["position"] for i in listing.json()["items"]}
+    assert positions[ordered[0]] == 1
+    assert positions[ordered[-1]] == 250

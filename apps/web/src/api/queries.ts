@@ -557,6 +557,8 @@ export function useUpdateAiSettingsMutation() {
         queryClient.invalidateQueries({ queryKey: ['ai-settings'] }),
         queryClient.invalidateQueries({ queryKey: ['entry-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['entry-translation'] }),
+        // 目标语言参与 segments 服务端结果，双保险：换键 + 显式失效。
+        queryClient.invalidateQueries({ queryKey: ['translation-segments'] }),
       ])
     },
   })
@@ -864,10 +866,13 @@ export function useTranslationSegments(
   entryRef: string,
   blocks: TranslationSegmentBlockInput[] | null,
   enabled: boolean,
+  targetLanguage: string,
 ) {
   const blocksKey = blocks ? JSON.stringify(blocks) : ''
   return useQuery({
-    queryKey: ['translation-segments', entryRef, blocksKey],
+    // targetLanguage 参与缓存身份：服务端按设置的目标语言产出译文，
+    // 语言切换后旧缓存不再匹配（staleTime: Infinity 下不换键就永远错）。
+    queryKey: ['translation-segments', entryRef, targetLanguage, blocksKey],
     queryFn: ({ signal }) =>
       lookupTranslationSegments(entryRef, blocks as TranslationSegmentBlockInput[], signal),
     // blocks 稳定后才有意义；同一内容版本的精确缓存永不重复请求

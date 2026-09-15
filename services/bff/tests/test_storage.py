@@ -104,13 +104,16 @@ def test_unique_cache_identity_constraint(db):
     )
     run(db.execute(base, args))
 
-    with pytest.raises(DatabaseError):
+    # IntegrityError propagates unchanged (converge-on-duplicate contract)
+    with pytest.raises(sqlite3.IntegrityError):
         run(db.execute(base, args))
 
 
 def test_invalid_status_rejected_by_check_constraint(db):
     run(db.migrate())
-    with pytest.raises(DatabaseError):
+    # IntegrityError propagates unchanged; only connection/operational
+    # failures are wrapped as DatabaseError.
+    with pytest.raises(sqlite3.IntegrityError):
         run(
             db.execute(
                 "INSERT INTO ai_summaries (entry_ref, content_hash, provider, model, "

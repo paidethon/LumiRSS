@@ -166,7 +166,7 @@ export default function ReaderTranslation({
     }
   }, [active, detail.entryRef])
 
-  const lookup = useTranslationSegments(detail.entryRef, blocks, active && serverEngine)
+  const lookup = useTranslationSegments(detail.entryRef, blocks, active && serverEngine, targetLanguage)
   const generate = useGenerateTranslationSegmentsMutation(detail.entryRef)
 
   // 切到 双语/仅译文 的那一次点击 = 显式请求：未生成的块自动生成一次

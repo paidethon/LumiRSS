@@ -18,6 +18,7 @@ committed row can always be read, and leftover files are swept by
 
 import contextlib
 import hashlib
+import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,8 @@ from lumirss.db_tx import transaction
 from lumirss.itemref import new_library_uuid
 from lumirss.storage import Database
 from lumirss.util import utc_now
+
+_logger = logging.getLogger("lumirss.library_assets")
 
 DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 _MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024  # 50MB per artifact
@@ -280,7 +283,14 @@ class AssetStore:
                 )
             }
         except Exception:
-            referenced = set()
+            # Fail SAFE: without the referenced set we cannot tell live
+            # files from orphans, so the file sweep must not run at all
+            # (an empty default here would unlink every stored snapshot).
+            _logger.warning(
+                "asset reconcile skipped: reference lookup failed",
+                exc_info=True,
+            )
+            return {"filesRemoved": 0, "rowsDropped": 0}
         if self._root.is_dir():
             for path in self._root.iterdir():
                 name = path.name
@@ -298,6 +308,9 @@ class AssetStore:
                 "SELECT DISTINCT path FROM library_assets"
             )
         except Exception:
+            _logger.warning(
+                "asset reconcile: dead-row lookup failed", exc_info=True
+            )
             rows = []
         for row in rows:
             path = str(row["path"])
@@ -322,7 +335,11 @@ class AssetStore:
                 await transaction(self._db, _tx)
                 rows_dropped += 1
             except Exception:
-                pass
+                _logger.warning(
+                    "asset reconcile: dead-row delete failed for %s",
+                    path,
+                    exc_info=True,
+                )
         return {"filesRemoved": files_removed, "rowsDropped": rows_dropped}
 
 

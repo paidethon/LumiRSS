@@ -68,6 +68,11 @@ def _validate_base_url(value: str) -> str:
     Same structural rules as the operator-configured service URLs: absolute
     http(s), no credentials/query/fragment, host root only (path must be
     empty, ``/`` or a version path such as ``/v1``). Blank clears the value.
+
+    SSRF baseline (quality closure): https is required unless the hostname
+    is on the operator's private-host allow-list — the BFF dials these
+    URLs server-side and sends the AI API key as a bearer token, so an
+    arbitrary http://10.x base must not be storable.
     """
     clean = value.strip()
     if not clean:
@@ -79,6 +84,13 @@ def _validate_base_url(value: str) -> str:
         raise ValueError("must not carry credentials, a query or a fragment")
     if parts.path != "" and not parts.path.startswith("/"):
         raise ValueError("must not carry a non-root path")
+    if parts.scheme != "https":
+        from lumirss.feed_preview import hostname_allowlisted
+
+        if not hostname_allowlisted(parts.hostname):
+            raise ValueError(
+                "must use https unless the host is on the private-host allow-list"
+            )
     return clean.rstrip("/")
 
 

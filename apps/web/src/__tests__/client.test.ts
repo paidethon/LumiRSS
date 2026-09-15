@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getEntries, getEntry, getFeeds, setEntryState } from '../api/client'
+import { ApiError, deleteInboxItem, deleteInboxSource, getEntries, getEntry, getFeeds, setEntryState } from '../api/client'
 import type { EntryDetail, EntryListResponse } from '../api/types'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -335,5 +335,39 @@ describe('Test G — getEntry / setEntryState 的错误安全化', () => {
     const error = await rejectsWithApiError(setEntryState('e1.fake1', { read: true }))
     expect(error.status).toBe(0)
     expect(error.type).toBe('network_error')
+  })
+})
+
+describe('inbox 删除的 404 幂等容错（质量收口）', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('deleteInboxItem 404（另一设备已删）→ 正常 resolve', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: { type: 'inbox_item_not_found', message: '不存在' } }, 404),
+      ),
+    )
+    await expect(deleteInboxItem('library:abc')).resolves.toBeUndefined()
+  })
+
+  it('deleteInboxItem 500 → 仍抛 ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: { type: 'database_error', message: '存储故障' } }, 500),
+      ),
+    )
+    await expect(deleteInboxItem('library:abc')).rejects.toMatchObject({ status: 500 })
+  })
+
+  it('deleteInboxSource 404 → 正常 resolve', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: { type: 'inbox_source_not_found', message: '不存在' } }, 404),
+      ),
+    )
+    await expect(deleteInboxSource('src-1')).resolves.toBeUndefined()
   })
 })

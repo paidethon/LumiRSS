@@ -333,3 +333,55 @@ def test_search_route_reports_empty_index_honestly(tmp_path, monkeypatch):
     assert payload["items"] == []
     assert payload["index"]["entryCount"] == 0
     assert payload["hasMore"] is False
+
+
+def test_search_service_reuses_the_shared_freshrss_session(tmp_path, monkeypatch):
+    """Quality closure: search wiring must reuse the ONE FreshRSSAdapter
+    cached on app.state (login/action-token single ownership) — never a
+    second private session."""
+
+    class _SentinelAdapter:
+        pass
+
+    from lumirss.deps import _get_search_service
+
+    monkeypatch.setenv("LUMIRSS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "data" / "lumi.sqlite"))
+    with TestClient(app):
+        app.state.freshrss_adapter = _SentinelAdapter()
+        app.state.search_service = None
+        service = _get_search_service(type("R", (), {"app": app})())
+        assert isinstance(service._adapter, _SentinelAdapter)
+
+
+def test_failed_rebuild_keeps_previous_index_and_heals(tmp_path):
+    """Quality closure: a rebuild that dies mid-walk must leave the live
+    projection intact and mark rebuild_incomplete, so the next sync
+    retries the full rebuild instead of "healing" a partial index with
+    an incremental catch-up."""
+    documents = [doc("i1", "keep one"), doc("i2", "keep two")]
+    service = make_service(tmp_path, documents)
+    report = run(service.rebuild())
+    assert report["entryCount"] == 2
+
+    class _BoomAdapter(FakeAdapter):
+        async def list_entry_documents(self, *, continuation=None, limit=50):
+            raise RuntimeError("FreshRSS outage mid-rebuild")
+
+    service._adapter = _BoomAdapter(documents)
+    with pytest.raises(RuntimeError):
+        run(service.rebuild())
+
+    # Live index untouched by the failed rebuild.
+    hits = run(service.search(query="keep", limit=10))
+    assert len(hits["rows"]) == 2
+    assert run(service._store.meta_get("rebuild_incomplete")) == "1"
+
+    # Next sync retries the full rebuild (heals instead of partial).
+    service._adapter = FakeAdapter(
+        [doc("i1", "keep one"), doc("i2", "keep two"), doc("i3", "new arrival")]
+    )
+    run(service.maybe_sync())
+    hits = run(service.search(query="arrival", limit=10))
+    assert len(hits["rows"]) == 1
+    assert run(service._store.meta_get("rebuild_incomplete")) == "0"

@@ -1,0 +1,17 @@
+{
+  "name": "lumirss-docs",
+  "private": true,
+  "type": "module",
+  "description": "Documentation site tooling only — the Web app lives in apps/web (pnpm), the BFF in services/bff (uv).",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}

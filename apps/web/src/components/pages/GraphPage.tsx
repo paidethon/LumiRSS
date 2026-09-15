@@ -574,7 +574,9 @@ function TagRenameDialog({ tag, onClose }: { tag: TagSummary; onClose: () => voi
   const [name, setName] = useState(tag.name)
   const rename = useRenameTagMutation()
   const trimmed = name.trim()
-  const canSubmit = trimmed !== '' && trimmed !== tag.name && !rename.isPending
+  // 契约上 id 可空（服务端列表行总带）；保守给一个不可提交分支。
+  const tagId = tag.id ?? null
+  const canSubmit = tagId !== null && trimmed !== '' && trimmed !== tag.name && !rename.isPending
 
   return (
     <Dialog
@@ -592,7 +594,7 @@ function TagRenameDialog({ tag, onClose }: { tag: TagSummary; onClose: () => voi
             disabled={!canSubmit}
             onClick={() => {
               if (!canSubmit) return
-              rename.mutate({ tagId: tag.id, name: trimmed }, { onSuccess: onClose })
+              rename.mutate({ tagId, name: trimmed }, { onSuccess: onClose })
             }}
           >
             {rename.isPending ? '保存中…' : '保存'}
@@ -604,7 +606,7 @@ function TagRenameDialog({ tag, onClose }: { tag: TagSummary; onClose: () => voi
         onSubmit={(e) => {
           e.preventDefault()
           if (!canSubmit) return
-          rename.mutate({ tagId: tag.id, name: trimmed }, { onSuccess: onClose })
+          rename.mutate({ tagId, name: trimmed }, { onSuccess: onClose })
         }}
       >
         <label className="flex flex-col gap-1">
@@ -638,6 +640,8 @@ function TagDeleteDialog({ tag, onClose }: { tag: TagSummary; onClose: () => voi
   const [stage, setStage] = useState<'confirm' | 'final'>('confirm')
   const remove = useDeleteTagMutation()
   const busy = remove.isPending
+  // 契约上 id 可空（服务端列表行总带）；空 id 时按钮不可达。
+  const tagId = tag.id ?? null
 
   return (
     <Dialog
@@ -665,7 +669,7 @@ function TagDeleteDialog({ tag, onClose }: { tag: TagSummary; onClose: () => voi
               variant="danger"
               size="sm"
               disabled={busy}
-              onClick={() => remove.mutate(tag.id, { onSuccess: onClose })}
+              onClick={() => { if (tagId !== null) remove.mutate(tagId, { onSuccess: onClose }) }}
             >
               {busy ? (
                 <>

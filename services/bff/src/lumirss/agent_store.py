@@ -40,6 +40,7 @@ import asyncio
 import hashlib
 import json
 import uuid as _uuid
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
@@ -120,7 +121,9 @@ class AgentStore:
 
     def __init__(self, db: Database) -> None:
         self._db = db
-        self._seq_locks: dict[str, asyncio.Lock] = {}
+        self._seq_locks: defaultdict[str, asyncio.Lock] = defaultdict(
+            asyncio.Lock
+        )
         self._sweep_lock = asyncio.Lock()
         self._swept = False
 
@@ -199,6 +202,9 @@ class AgentStore:
         }
 
     async def delete_thread(self, thread_id: str) -> bool:
+        """Delete a thread in ONE statement — messages/approvals cascade
+        via FK (ON DELETE CASCADE), so a crash can never strand a live
+        thread whose history was already half-deleted."""
         await self._db.migrate()
         row = await self._db.fetch_one(
             "SELECT id FROM agent_threads WHERE id = ?", (thread_id,)
@@ -206,12 +212,6 @@ class AgentStore:
         if row is None:
             return False
         await self.clear_run(thread_id)
-        await self._db.execute(
-            "DELETE FROM agent_messages WHERE thread_id = ?", (thread_id,)
-        )
-        await self._db.execute(
-            "DELETE FROM agent_approvals WHERE thread_id = ?", (thread_id,)
-        )
         await self._db.execute(
             "DELETE FROM agent_threads WHERE id = ?", (thread_id,)
         )
@@ -231,7 +231,7 @@ class AgentStore:
         # MAX(seq)+1 read+write serialized per thread (single process).
         # Durable fix is a UNIQUE(thread_id, seq) constraint — migration
         # recommendation filed in the recovery report.
-        async with self._seq_locks.setdefault(thread_id, asyncio.Lock()):
+        async with self._seq_locks[thread_id]:
             seq_row = await self._db.fetch_one(
                 "SELECT COALESCE(MAX(seq), 0) AS s FROM agent_messages WHERE thread_id = ?",
                 (thread_id,),

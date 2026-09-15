@@ -20,6 +20,8 @@ content text and author. Pagination is a (published_at, item_id) keyset
 wrapped in the opaque ``q1.`` cursor envelope.
 """
 
+import asyncio
+import contextlib
 import json
 import time
 
@@ -88,41 +90,70 @@ class SearchIndexService:
         # URL; the subscription list provides the title -> URL mapping used
         # to resolve feed scoping for harvested documents.
         self._feed_title_to_url: dict[str, str] = {}
+        # Serializes rebuild(): two concurrent rebuilds (manual API + the
+        # background sync loop) would DROP each other's staging table.
+        self._rebuild_lock = asyncio.Lock()
 
     # -- sync ---------------------------------------------------------------
 
     async def rebuild(self, *, max_pages: int = _REBUILD_MAX_PAGES) -> dict:
         """Replace the whole projection from FreshRSS (bounded).
 
+        Pages stream into a staging table while the live projection keeps
+        serving; staging swaps in during ONE short transaction. A failure
+        mid-walk therefore leaves the previous index intact and marks
+        ``rebuild_incomplete`` so the next sync retries a full rebuild.
         Returns honest stats: ``partial`` is True when the cap stopped
         the walk before the upstream continuation ran out.
         """
+        async with self._rebuild_lock:
+            return await self._rebuild_locked(max_pages=max_pages)
+
+    async def _rebuild_locked(self, *, max_pages: int) -> dict:
         self._require_adapter()
         await self._db.migrate()
         started = time.time()
+        await self._feeds.meta_set("rebuild_incomplete", "1")
+        await self._refresh_feed_categories(int(started))
+        await self._db.execute("DROP TABLE IF EXISTS search_rebuild_stage")
+        await self._db.execute(
+            "CREATE TABLE search_rebuild_stage (item_id TEXT UNIQUE NOT NULL, entry_ref TEXT UNIQUE NOT NULL, feed_url TEXT NOT NULL, feed_title TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', content_text TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, starred INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL)"
+        )
         pages = 0
         total = 0
         continuation: str | None = None
         partial = False
-        await self._refresh_feed_categories(int(started))
-        await self._db.execute("DELETE FROM search_entries")
-        while pages < max_pages:
-            page = await self._adapter.list_entry_documents(
-                continuation=continuation
-            )
-            pages += 1
-            if page.documents:
-                await self._replace_documents(page.documents)
-                total += len(page.documents)
-            continuation = page.upstreamContinuation
-            if continuation is None:
-                break
-        if continuation is not None:
-            partial = True
-        now = int(time.time())
-        await self._refresh_feed_categories(now)
+        try:
+            while pages < max_pages:
+                page = await self._adapter.list_entry_documents(
+                    continuation=continuation
+                )
+                pages += 1
+                if page.documents:
+                    await self._writer.stage_documents(
+                        page.documents,
+                        feed_urls=[self._resolve_feed_url(doc) for doc in page.documents],
+                        fetched_at=int(time.time()),
+                    )
+                    total += len(page.documents)
+                continuation = page.upstreamContinuation
+                if continuation is None:
+                    break
+            if continuation is not None:
+                partial = True
+            now = int(time.time())
+            await self._refresh_feed_categories(now)
+            await self._writer.swap_staged()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await self._db.execute(
+                    "DROP TABLE IF EXISTS search_rebuild_stage"
+                )
+            raise
+        await self._db.execute("DROP TABLE IF EXISTS search_rebuild_stage")
         await self._feeds.meta_set("last_synced_at", str(now * 1000))
         await self._feeds.meta_set("partial", "1" if partial else "0")
+        await self._feeds.meta_set("rebuild_incomplete", "0")
         return {
             "entryCount": total,
             "pages": pages,
@@ -144,11 +175,12 @@ class SearchIndexService:
         continuation: str | None = None
         scanned = 0
         updated = 0
+        # Hoisted: a full-table state read per page was pure repeat work.
+        known = await self._known_states()
         for _page in range(max_pages):
             page = await self._adapter.list_entry_documents(
                 continuation=continuation
             )
-            known = await self._known_states()
             changed: list = []
             for doc in page.documents:
                 scanned += 1
@@ -161,6 +193,11 @@ class SearchIndexService:
                 ):
                     continue
                 changed.append(doc)
+                known[doc.item_id] = {
+                    "published_at": doc.publishedAt,
+                    "read": int(doc.read),
+                    "starred": int(doc.starred),
+                }
                 updated += 1
             if changed:
                 await self._replace_documents(changed)
@@ -181,7 +218,8 @@ class SearchIndexService:
         }
 
     async def maybe_sync(self) -> None:
-        """Startup-time entry point: rebuild when empty, else catch up.
+        """Startup-time entry point: rebuild when empty or when a previous
+        rebuild aborted, else catch up.
 
         Best-effort by design: a FreshRSS outage must never break app
         startup — the next cycle (or an explicit rebuild) heals it.
@@ -190,7 +228,10 @@ class SearchIndexService:
             return
         try:
             count = await self.entry_count()
-            if count == 0:
+            incomplete = (
+                await self._store.meta_get("rebuild_incomplete")
+            ) == "1"
+            if count == 0 or incomplete:
                 await self.rebuild()
             elif await self._stale():
                 await self.sync_incremental()
@@ -309,24 +350,12 @@ class SearchIndexService:
     # -- internals ----------------------------------------------------------
 
     async def _replace_documents(self, documents: list) -> None:
-        """Replace the projected rows for these entries (delete + insert)."""
-        now = int(time.time())
-        for doc in documents:
-            await self._writer.delete_entry(doc.item_id)
-            await self._writer.insert_entry(
-                item_id=doc.item_id,
-                entry_ref=doc.entryRef,
-                feed_url=self._resolve_feed_url(doc),
-                feed_title=doc.feedTitle,
-                title=doc.title,
-                author=doc.author or "",
-                url=doc.url or "",
-                content_text=doc.contentText,
-                published_at=doc.publishedAt,
-                read=int(doc.read),
-                starred=int(doc.starred),
-                fetched_at=now,
-            )
+        """Replace the projected rows for these entries (one transaction)."""
+        await self._writer.replace_entries(
+            documents,
+            feed_urls=[self._resolve_feed_url(doc) for doc in documents],
+            fetched_at=int(time.time()),
+        )
 
     async def _refresh_feed_categories(self, now: int) -> None:
         """Mirror the FreshRSS subscription list into search_feeds, and
@@ -336,13 +365,7 @@ class SearchIndexService:
             feed.title: feed.feed_url for feed in feeds if feed.title
         }
         await self._feeds.clear_feeds()
-        for feed in feeds:
-            await self._feeds.insert_feed(
-                feed_url=feed.feed_url,
-                feed_title=feed.title,
-                category_id=feed.category_id,
-                refreshed_at=now,
-            )
+        await self._feeds.replace_feeds(feeds, refreshed_at=now)
 
     def _resolve_feed_url(self, doc: EntryDocument) -> str:
         """Real feed URL for a harvested document.

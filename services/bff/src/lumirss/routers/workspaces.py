@@ -283,10 +283,9 @@ async def _read_later_card(request: Request, member: WorkspaceItem) -> ReadLater
         item_id = decode_entry_ref(item_ref[len("rss:") :])
     except InvalidEntryReference:
         return stale_card
-    row = await request.app.state.db.fetch_one(
-        "SELECT entry_ref, title, feed_title, feed_url, author, url, published_at, read, starred, content_text FROM search_entries WHERE entry_ref = ?",
-        (item_ref,),
-    )
+    from lumirss.search_store import SearchStore
+
+    row = await SearchStore(request.app.state.db).entry_row_by_ref(item_ref)
     if row is not None:
         return ReadLaterItem(
             itemRef=item_ref,

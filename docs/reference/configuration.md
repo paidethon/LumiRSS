@@ -39,6 +39,11 @@
 | `LUMIRSS_DATA_DIR` | `LUMIRSS_DB_PATH` 的父目录 | Lumi 运行时状态根：`secrets.json`（0600）、本地备份 `backups/`、恢复暂存 `restore-staging/` |
 | `FRESHRSS_DATA_DIR` | 空 | FreshRSS 数据目录的**只读**挂载路径，供一致性在线备份；空 = 完整备份不可用（开发态）。生产 compose 固定为 `/freshrss-data` |
 | `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [../explanation/search.md](../explanation/search.md) |
+| `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom 相对路径对外解析基准（`GET /api/v1/sources` 返回的 `atomUrl` 用它拼绝对 URL）；空 = 返回相对路径 |
+| `LUMIRSS_OBSIDIAN_VAULT_DIR` | 空 | Obsidian vault 的容器内挂载路径（只读）。生产 compose 经 `LUMIRSS_OBSIDIAN_VAULT_HOST_DIR` 绑定宿主目录；空 = Obsidian 投影关闭 |
+| `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | 秒 | vault 增量扫描节奏（默认见 `config.py`；`0` 关闭后台扫描） |
+| `LUMIRSS_RAG_INDEX_INTERVAL` | 秒 | RAG 语义索引增量收敛节奏；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
+| `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI·LibreTranslate base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
 | `LUMIRSS_INTERNAL_TOKEN` | 空 | 同上表（BFF 侧读取） |
 | `AI_API_KEY` | 空 | 同上表（BFF 侧读取） |
 | `LUMIRSS_VERSION` / `LUMIRSS_COMMIT` | — | 版本与 commit 溯源，由镜像构建注入（见下） |

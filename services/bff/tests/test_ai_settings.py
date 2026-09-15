@@ -124,6 +124,29 @@ def test_put_rejects_invalid_base_url(tmp_path):
     assert response.json()["error"]["type"] == "invalid_ai_settings"
 
 
+def test_put_rejects_plain_http_base_url_without_allowlist(tmp_path, monkeypatch):
+    """SSRF baseline (quality closure): the BFF dials the AI base URL
+    server-side and sends the API key as a bearer token, so an arbitrary
+    http:// host must not be storable unless the operator allow-listed it."""
+    monkeypatch.delenv("LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS", raising=False)
+    with TestClient(app) as client:
+        _use_temp_state(tmp_path)
+        rejected = client.put(
+            "/api/v1/settings/ai",
+            json={"baseUrl": "http://10.0.0.5:8000/v1"},
+        )
+        assert rejected.status_code == 400
+
+        monkeypatch.setenv(
+            "LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS", "10.0.0.5"
+        )
+        allowed = client.put(
+            "/api/v1/settings/ai",
+            json={"baseUrl": "http://10.0.0.5:8000/v1"},
+        )
+        assert allowed.status_code == 200
+
+
 def test_put_rejects_unsupported_summary_language(tmp_path):
     with TestClient(app) as client:
         _use_temp_state(tmp_path)

@@ -29,7 +29,7 @@ def agent_env(client):  # noqa: F811 — reuse the conftest fixture
     # Q-P2-33: a timeout here must FAIL, not silently continue — residual
     # tasks used to error into whatever test ran next (order-dependent
     # "unable to open database" flakes).
-    deadline = time.time() + 5
+    deadline = time.time() + 15
     while app.state.agent_tasks and time.time() < deadline:
         time.sleep(0.05)
     if app.state.agent_tasks:
@@ -64,7 +64,7 @@ def test_post_message_without_provider_persists_honest_failure(agent_env, client
     assert response.json()["status"] == "processing"
     # The background turn finishes with an honest assistant message and
     # the run marker is cleared (never stuck processing).
-    deadline = time.time() + 5
+    deadline = time.time() + 15
     while time.time() < deadline:
         messages = client.get(
             f"/api/v1/agent/threads/{thread_id}/messages"

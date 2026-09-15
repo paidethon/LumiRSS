@@ -75,4 +75,14 @@ describe('Sanitizer — 安全结构断言', () => {
     expect(dom.querySelector('svg, circle')).toBeNull()
     expect(dom.querySelector('math, mi')).toBeNull()
   })
+
+  it('target 属性被剥离（html profile 不放行 → 无 reverse tabnabing 面）', () => {
+    const dom = parseDom(
+      sanitizeArticleHtml('<a href="https://evil.example" target="_blank">x</a>'),
+    )
+    const anchor = dom.querySelector('a')
+    expect(anchor).not.toBeNull()
+    expect(anchor!.getAttribute('target')).toBeNull()
+    expect(anchor!.getAttribute('href')).toBe('https://evil.example')
+  })
 })

@@ -115,6 +115,15 @@ class SearchStore:
             "SELECT item_id, published_at, read, starred FROM search_entries"
         )
 
+    async def entry_row_by_ref(self, entry_ref: str) -> Any | None:
+        """One projection row by entryRef — the resolve path's cheap leg
+        (card/list resolvers hit this before falling back to FreshRSS)."""
+        await self._db.migrate()
+        return await self._db.fetch_one(
+            "SELECT entry_ref, title, feed_title, feed_url, author, url, published_at, read, starred, content_text FROM search_entries WHERE entry_ref = ?",
+            (entry_ref,),
+        )
+
     async def meta_get(self, key: str) -> str | None:
         row = await self._db.fetch_one(
             "SELECT value FROM search_meta WHERE key = ?", (key,)

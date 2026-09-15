@@ -1,5 +1,13 @@
 # Phase 2 Recovery — Issue Ledger
 
+> **已冻结（2026-09-15）**：recovery 已完成、合入 main 并两次部署生产；
+> P0-01…P0-13 全部 `production_verified`。本文保留为审计证据，不再是
+> 当前开发入口——活跃状态看 [../ROADMAP.md](../ROADMAP.md)，开放积压
+> 已提取进其 Next 一节，运维陷阱（host-Caddy 对机器 ingest 的拦截、
+> 回滚快照 schema 注意项）已进入
+> [../how-to/troubleshoot.md](../how-to/troubleshoot.md) 与
+> [../how-to/deploy.md](../how-to/deploy.md)。
+
 > 单一事实账本。每项必须有：症状、根因、复现、受影响文件、数据风险、修复方案、
 > 回归测试、修复 commit、local/compose/production 三层状态、证据。
 > 状态机：`confirmed → implementing → locally_verified → compose_verified → production_verified`
@@ -42,6 +50,7 @@
 | 0019_api_source_lastgood | api_sources 持久化 last-known-good Atom + 状态（P0-05c/e） | IMPL-BE-2 |
 | 0020_obsidian_scan_state | obsidian 扫描 checkpoint/截断状态（P0-09） | 主 Agent |
 | 0021_inbox | 收件箱推送来源（inbox_sources + library_inbox，kind 复用 api_item；纯增量）| 主 Agent（0021 夜间批次）|
+| 0022_library_durability | RSS 书签唯一索引+重复归并、孤儿身份行清扫、热列表覆盖索引（质量收口批次）| 主 Agent（2026-09-15）|
 
 规则：新增迁移一律先在此登记编号；migrations 按文件名字典序发现。
 

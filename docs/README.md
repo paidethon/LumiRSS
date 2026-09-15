@@ -4,13 +4,14 @@ LumiRSS 是一个单用户、自托管、source-first 的信息阅读器：Fresh
 RSS 域引擎与真源，RSSHub 生成非 RSS 来源，项目自有的 FastAPI BFF 与
 React Web / PWA 客户端。
 
-项目阶段：**Phase 2 知识工作台——recovery 返工**（MVP 0000–0020 与
-phase2 integration 已合入 main；当前分支按
-[audits/phase2-recovery.md](audits/phase2-recovery.md) 修复已确认的
-P0 缺陷并补齐真实链路验证）。已完成工作见
-[history/milestones.md](history/milestones.md)。
+项目阶段：**MVP（0000–0020）+ Phase 2 知识工作台 + recovery 返工均已
+合入 main 并部署生产（2026-09）**。当前方向见
+[ROADMAP.md](ROADMAP.md)；已完成工作见
+[history/milestones.md](history/milestones.md)；recovery 账本（已冻结）
+见 [audits/phase2-recovery.md](audits/phase2-recovery.md)。
 
-首次接触本项目：先读根目录 [README](../README.md)，再按
+首次接触本项目：先读根目录
+[README](https://github.com/paidethon/LumiRSS#readme)，再按
 [getting-started.md](getting-started.md) 跑起来。
 
 ## 我要做什么 → 读什么
@@ -26,10 +27,10 @@ P0 缺陷并补齐真实链路验证）。已完成工作见
 | 理解系统架构（数据流 / 边界 / 不变量） | [explanation/architecture.md](explanation/architecture.md) |
 | 搞懂全局搜索原理 | [explanation/search.md](explanation/search.md) |
 | 复用 vs 自研边界 / 生成物规则 | [explanation/reuse-policy.md](explanation/reuse-policy.md) |
-| 关键架构决定（ADR） | [decisions/](decisions/) |
+| 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) |
 | 改 UI / 视觉与交互 | [design/design-system.md](design/design-system.md)（背景：[design/README.md](design/README.md)） |
 | 产品范围与原则 | [product/PRD.md](product/PRD.md) |
-| 许可证 / 上游引用 | [upstream/](upstream/)（[LICENSE_AUDIT.md](upstream/LICENSE_AUDIT.md)） |
+| 许可证 / 上游引用 | [LICENSE_AUDIT.md](upstream/LICENSE_AUDIT.md) · [UPSTREAMS.md](upstream/UPSTREAMS.md) |
 | 查历史里程碑 / 发布记录 | [history/milestones.md](history/milestones.md) |
 
 ## 阅读纪律

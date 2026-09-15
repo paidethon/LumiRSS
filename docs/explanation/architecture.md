@@ -1,7 +1,7 @@
 # LumiRSS Architecture
 
 > 本文回答"系统现在如何实现"（HOW），只描述当前状态；历史与决策过程见
-> [../decisions/](../decisions/)（ADR）与 [../history/milestones.md](../history/milestones.md)。
+> [ADR 0001](../decisions/0001-freshrss-owns-rss-state.md)（含全部 ADR 索引）与 [../history/milestones.md](../history/milestones.md)。
 > 产品范围与动机见 [../product/PRD.md](../product/PRD.md)。
 
 ## Principles
@@ -39,7 +39,8 @@ Non-RSS → RSSHub-generated feed ──┤
 | RSSHub 路由目录（Lumi 精选元数据） | BFF 静态 `CATALOG`（pinned 实例逐一验证） |
 | RSSHub 期望/已应用配置、AI 非机密设置与 purpose 映射、AI 结果、便携设置（`app.settings`）、备份账本、schema 版本 | Lumi SQLite |
 | RSSHub 实例地址 | `RSSHUB_BASE_URL` / `RSSHUB_FRESHRSS_BASE_URL` |
-| 设备本地设置（布局宽度、自定义字体、过滤规则、稍后读） | 浏览器 localStorage / IndexedDB，不上传 |
+| 库域内容（书签 / 剪藏 / 快照 / 收件箱条目）、工作区与稍后读时间线、标签、收藏、Agent 会话 | Lumi SQLite（`library_items` 身份表 + 各 kind 载荷表；workspace `read-later` 为保留种子行） |
+| 设备本地设置（布局宽度、自定义字体、过滤规则、阅读外观） | 浏览器 localStorage / IndexedDB，不上传 |
 | AI API keys、WebDAV 密码、RSSHub 机密 | `data/secrets.json`（0600；刻意置于 DB 与备份之外） |
 
 ## Read path
@@ -62,8 +63,25 @@ FreshRSS 抓取并规范化 RSS 域数据；RSSHub 只在上游生成 feed（宕
 ## Search path
 
 全局搜索运行在**派生的、100% 可重建的 SQLite 投影**上（FreshRSS greader
-API 不提供搜索）；投影只服务于搜索，删除不丢失任何 RSS 状态。详见
+API 不提供搜索）；RSS 腿（`search_entries`）与库腿（`search_library`）
+在 `/api/v1/search` 并列运行、各自独立失败（`libraryError` 如实上报）。
+投影只服务于搜索，删除不丢失任何 RSS 状态。详见
 [search.md](search.md)。
+
+## Phase-2 knowledge-workbench surface
+
+- **Lumi library**：书签（URL 与 `rss:` 引用）、服务端剪藏（`monolith`
+  服务端管线 + allow-list 清洗）、离线快照（sha256 去重 + 配额按物理
+  字节计费）；统一卡片解析走 Source Registry（ADR 0004）。
+- **来源接入**：API 来源（JMESPath → Atom → FreshRSS 订阅）、邮件桥
+  （webhook/IMAP → 清洗 → FreshRSS 订阅 + 摘要）、收件箱推送来源
+  （bearer webhook，(source, guid) 幂等）；`GET /api/v1/sources` 是
+  只读统一注册表。
+- **Obsidian 投影**：只读挂载 vault → SQLite 投影 → 渲染；路径不出
+  vault 根，绝不写回。
+- **RAG**：sqlite-vec + fastembed 低内存语义索引，显式启用、空闲卸载。
+- **Agent 工作台**：只读工具真实执行；写工具一律 row-bound 审批记录
+  （10 分钟过期），批准才执行。
 
 ## Reader content pipeline
 
@@ -80,9 +98,10 @@ Shiki 高亮）→ DOMPurify.sanitize（最终安全边界）→ ArticleContent
 ## Frontend state
 
 - **TanStack Query** 承载全部 server state；mutation server-confirmed 后
-  invalidate，不做 optimistic update。
-- **Zustand** 承载轻量 UI 状态（`useAppSettings`、`useReaderUi`、
-  read-later）。便携键经 settings-sync（600ms debounce）PATCH 到
+  invalidate，不做 optimistic update（read-later 行级乐观移除 + 行级
+  错误通道是唯一例外，误差有 UI 呈现）。
+- **Zustand** 承载轻量 UI 状态（`useAppSettings`、`useReaderUi`）。
+  便携键经 settings-sync（600ms debounce）PATCH 到
   `/api/v1/settings`；服务端严格校验，未知键/越界/NaN 一律拒绝。
 
 ## Security and trust boundaries
@@ -120,11 +139,13 @@ Internet / private access
 
 ## Deferred（不得描述为已存在）
 
-- Phase-2 统一来源层：web clipping、JSON/API connector、邮件、Obsidian connector、unified source registry、agent workspace；
-- 多用户 / 多租户与公共互联网硬化；PWA 离线（Service Worker / 离线缓存 / Push / 后台同步未实现，manifest 已有）；
-- AI：streaming、fallback 链、多供应商路由、向量检索。
+- Web clipping 浏览器扩展；Obsidian 写回（vault 永远只读）；MCP surface；
+- 多用户 / 多租户与公共互联网硬化；
+- PWA Push / 后台同步（app-shell 离线缓存已实现——`public/sw.js` 缓存
+  静态资源与导航回退；API / 认证响应永不入缓存）；
+- AI：streaming、fallback 链、多供应商自动路由。
 
 ## Related
 
-- ADR：[../decisions/](../decisions/) — FreshRSS owns RSS state / Web 只与 BFF 通信 / 不建 RSS 影子库（均 Accepted）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
-- API 家族清单以 `services/bff/src/lumirss/main.py` 与生成的 OpenAPI schema 为准（`/api/v1/integrations/*` 等 Phase-2 家族未实现）。
+- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库（均 Accepted）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
+- API 家族清单以生成的 OpenAPI schema 为准（`cd services/bff && uv run python scripts/export_openapi.py`，Web 侧 `pnpm api:check` 有 drift 门禁）。

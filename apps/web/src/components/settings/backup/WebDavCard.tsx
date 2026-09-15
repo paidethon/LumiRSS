@@ -5,7 +5,7 @@
  * 保存与「测试连接」分离；测试结果如实展示成功/失败与脱敏原因。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTestWebDavMutation, useUpdateWebDavSettingsMutation, useWebDavSettings } from '../../../api/queries'
 import { Button } from '../../ui/Button'
 import { Skeleton } from '../../ui/Skeleton'
@@ -31,14 +31,17 @@ export function WebDavCard() {
   const [tlsVerify, setTlsVerify] = useState(true)
   const [savedNote, setSavedNote] = useState<string | null>(null)
 
-  // 服务端值到达后同步一次表单（仅当用户未开始编辑时覆盖，避免打断输入：
-  // 用「初始为空」作为未编辑信号——简单且对单用户设置页足够）。
+  // 服务端值到达后同步一次表单（只做一次：之后的任何 refetch 都不得
+  // 覆盖编辑中的字段——「清空输入 = 未编辑」的启发式会被并发 refetch
+  // 打爆，正是被审计淘汰的写法）。
+  const hydratedRef = useRef(false)
   useEffect(() => {
     const doc = settings.data
-    if (!doc) return
-    setServerUrl((prev) => prev || doc.serverUrl)
-    setUsername((prev) => prev || doc.username)
-    setRemoteDir((prev) => prev || doc.remoteDir)
+    if (!doc || hydratedRef.current) return
+    hydratedRef.current = true
+    setServerUrl(doc.serverUrl)
+    setUsername(doc.username)
+    setRemoteDir(doc.remoteDir)
     setTlsVerify(doc.tlsVerify)
   }, [settings.data])
 

@@ -13,6 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.db_tx import transaction
 from lumirss.itemref import parse_item_ref
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 from lumirss.storage import Database
@@ -308,18 +309,29 @@ class WorkspaceStore:
                 f"Reorder batch too large (max {_MAX_REORDER_BATCH})."
             )
         parsed: list[str] = [parse_item_ref(ref).format() for ref in ordered_refs]
-        known = {item.item_ref for item in await self.list_items(workspace_id)}
+        # Validation reads the full membership (bounded by the workspace
+        # cap, not the default page limit — pages would falsely reject
+        # refs living past the first page of a long workspace).
+        rows = await self._db.fetch_all(
+            "SELECT item_ref FROM workspace_items WHERE workspace_id = ? LIMIT ?",
+            (workspace_id, _MAX_ITEMS_PER_WORKSPACE),
+        )
+        known = {str(row["item_ref"]) for row in rows}
         unknown = [ref for ref in parsed if ref not in known]
         if unknown:
             raise WorkspaceInvalid("Reorder contains refs not in the workspace.")
-        moved = 0
-        for index, ref in enumerate(parsed, start=1):
-            await self._db.execute(
-                "UPDATE workspace_items SET position = ? WHERE workspace_id = ? AND item_ref = ?",
-                (index, workspace_id, ref),
-            )
-            moved += 1
-        return moved
+
+        def _tx(conn: sqlite3.Connection) -> int:
+            moved = 0
+            for index, ref in enumerate(parsed, start=1):
+                cursor = conn.execute(
+                    "UPDATE workspace_items SET position = ? WHERE workspace_id = ? AND item_ref = ?",
+                    (index, workspace_id, ref),
+                )
+                moved += cursor.rowcount
+            return moved
+
+        return await transaction(self._db, _tx)
 
 
 def utc_now_compact() -> str:
