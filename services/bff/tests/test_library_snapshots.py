@@ -16,6 +16,7 @@ import stat
 
 import pytest
 
+from lumirss.clip_fetch import ClipForbidden
 from lumirss.library_assets import (
     AssetNotFound,
     AssetQuotaExceeded,
@@ -250,8 +251,11 @@ def test_snapshot_target_validated_before_subprocess(asset_store, monkeypatch):
         snapshots.asyncio, "create_subprocess_exec", fake_exec
     )
     runner = SnapshotJobRunner(asset_store)
-    with pytest.raises(Exception):
+    # Q-P2-32: lock the real error family — a bare `raises(Exception)`
+    # would accept any stray bug as "the guard worked".
+    with pytest.raises(ClipForbidden) as exc_info:
         _run(runner.run("http://169.254.169.254/latest/meta-data/"))
+    assert exc_info.value.reason == "unsafe_address"
     assert ran["exec"] is False
 
 

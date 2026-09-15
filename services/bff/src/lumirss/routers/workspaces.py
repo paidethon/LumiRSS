@@ -230,21 +230,54 @@ async def read_later_timeline(
     members, next_cursor = await store.list_items_desc(
         RESERVED_WORKSPACE_ID, cursor=cursor, limit=limit
     )
-    items = [await _read_later_card(request, member) for member in members]
+    # Q-P2-05: cards resolve concurrently (same gather pattern as
+    # workspace_contents below) — the serial comprehension paid one
+    # projection query or FreshRSS round-trip per card, back to back.
+    # return_exceptions + stale-card mapping: one broken ref must not
+    # 500 the whole timeline (same contract as the favorites view).
+    views = await asyncio.gather(
+        *(_read_later_card(request, member) for member in members),
+        return_exceptions=True,
+    )
+    items = [
+        view
+        if not isinstance(view, BaseException)
+        else ReadLaterItem(
+            itemRef=member.item_ref, addedAt=member.added_at, stale=True
+        )
+        for view, member in zip(views, members, strict=True)
+    ]
     return ReadLaterTimelineResponse(items=items, nextCursor=next_cursor)
 
 
 async def _read_later_card(request: Request, member: WorkspaceItem) -> ReadLaterItem:
+    from lumirss.deps import _get_source_registry
     from lumirss.entryref import InvalidEntryReference, decode_entry_ref
     from lumirss.models import SearchItem
+    from lumirss.sources import resolve_item
 
     item_ref = member.item_ref
     stale_card = ReadLaterItem(
         itemRef=item_ref, addedAt=member.added_at, stale=True, entry=None
     )
     if not item_ref.startswith("rss:"):
-        # Reserved workspace is rss-only by contract of the save path;
-        # anything else would never render as an entry card.
+        # Library refs (inbox api_item, clips, …) are first-class members:
+        # render the unified registry view instead of a fake-stale row
+        # (Q-P1-05 — the inbox save path legitimately adds these).
+        if item_ref.startswith("library:"):
+            registry = _get_source_registry(request)
+            try:
+                view = await resolve_item(registry, item_ref)
+            except Exception:  # noqa: BLE001 — resolver failure ≠ stale content 500
+                return stale_card
+            if view.stale:
+                return stale_card
+            return ReadLaterItem(
+                itemRef=item_ref,
+                addedAt=member.added_at,
+                stale=False,
+                resolved=ResolvedItem(**view.to_dict()),
+            )
         return stale_card
     try:
         item_id = decode_entry_ref(item_ref[len("rss:") :])

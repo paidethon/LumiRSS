@@ -25,8 +25,6 @@ import urllib.parse
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
-import httpx
-
 from lumirss.adapters.freshrss import AdapterError
 from lumirss.adapters.freshrss_control import InvalidFeedUrl
 from lumirss.feed_preview import (
@@ -177,14 +175,14 @@ class SourceDiscoveryService:
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
         *,
         resolver=_default_resolver,
         common_feed_paths: tuple[str, ...] = COMMON_FEED_PATHS,
+        pin_factory=None,
     ) -> None:
-        self._client = client
         self._resolver = resolver
         self._common_feed_paths = common_feed_paths
+        self._pin_factory = pin_factory
 
     async def discover(self, url: str) -> list[DiscoveryCandidate]:
         """Discover feed candidates for a website URL.
@@ -199,7 +197,9 @@ class SourceDiscoveryService:
             raise InvalidSourceUrl(
                 "Source URL must be an absolute http(s) URL."
             ) from exc
-        document = await safe_fetch(self._client, url, resolver=self._resolver)
+        document = await safe_fetch(
+            url, resolver=self._resolver, pin_factory=self._pin_factory
+        )
 
         # The URL may already be a feed (paste-into-website-box case):
         # return it directly, no link extraction, no probing.
@@ -250,7 +250,9 @@ class SourceDiscoveryService:
             probe_url = urllib.parse.urljoin(origin, path)
             try:
                 document = await safe_fetch(
-                    self._client, probe_url, resolver=self._resolver
+                    probe_url,
+                    resolver=self._resolver,
+                    pin_factory=self._pin_factory,
                 )
                 title, _site, _description, feed_format = parse_feed_document(
                     document.body

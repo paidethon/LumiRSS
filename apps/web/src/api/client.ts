@@ -553,9 +553,9 @@ export async function clearDefaultAiSecret(): Promise<void> {
   await rawRequest(`${API_BASE}/settings/ai/key`, { method: 'DELETE' })
 }
 
-export async function getAiPurposes(signal?: AbortSignal): Promise<AiPurposes> {
-  return request<AiPurposes>(`${API_BASE}/settings/ai/purposes`, signal)
-}
+// Q-P2-25：getAiPurposes 已删除（零消费者死代码）——用途 UI 从
+// settings 快照读真值，写路径走 updateAiPurposes（GET/PUT 真值源
+// 不对称曾留下双状态源隐患）。
 
 export async function updateAiPurposes(
   patch: Partial<Record<AiPurposeKey, string>>,
@@ -1680,11 +1680,8 @@ export interface RagSearchItem {
   score: number
 }
 
-export interface RagSearchResponse {
-  items: RagSearchItem[]
-  semanticUsed: boolean
-  semanticError: string | null
-}
+// Q-P2-25：RagSearchResponse 已随 searchRag 一并删除（零消费者）；
+// RagSearchItem 保留（语义命中行类型，Agent 引用面板语义对齐用）。
 
 /** RAG 状态（GET 语义，零成本；Agent 页状态 chip 用）。 */
 export async function getRagStatus(signal?: AbortSignal): Promise<RagStatus> {
@@ -1703,17 +1700,9 @@ export async function rebuildRag(): Promise<{ chunks: number; elapsedMs: number 
   return (await response.json()) as { chunks: number; elapsedMs: number }
 }
 
-/** 混合检索（语义 + 关键词；honest degradation flags）。 */
-export async function searchRag(
-  q: string,
-  k: number,
-  signal?: AbortSignal,
-): Promise<RagSearchResponse> {
-  const query = new URLSearchParams()
-  query.set('q', q)
-  query.set('k', String(k))
-  return request<RagSearchResponse>(`${API_BASE}/rag/search?${query}`, signal)
-}
+// Q-P2-25：searchRag 已删除（零消费者死代码）。语义检索当前只有
+// Agent 工具消费（agent_tools.py）；SearchPage 的「语义」开关属于
+// 新功能，届时重新引入（RAG 语义直接检索面，见 recovery 账本）。
 
 // ---- phase2 recovery wave 2：统一 resolve + 稍后读时间线 ----
 
@@ -1815,4 +1804,53 @@ export async function deleteInboxItem(itemRef: string): Promise<void> {
 /** GET /api/v1/sources —— 统一来源注册表（只读综合，不含任何 secret）。 */
 export async function listSources(signal?: AbortSignal): Promise<SourceRegistryResponse> {
   return request<SourceRegistryResponse>(`${API_BASE}/sources`, signal)
+}
+
+// ---- Q-P1-07：IMAP 收信通路（后端 4 端点早已存在，此前无任何 UI） ----
+// 类型来自生成契约（generated/schema），不手写复制。
+
+export type MailImapSettings = G6Schemas['MailImapSettings']
+export interface MailImapSettingsUpdate {
+  host?: string
+  port?: number
+  user?: string
+  folder?: string
+  ssl?: boolean
+  listUuid?: string
+  intervalSeconds?: number
+  /** write-only：GET 永不回显。 */
+  password?: string
+}
+export type MailImapTestResult = G6Schemas['MailImapTestResult']
+export type MailImapPollResult = G6Schemas['MailImapPollResult']
+
+/** GET /api/v1/mail/imap/settings —— password 永不回显（write-only）。 */
+export async function getMailImapSettings(
+  signal?: AbortSignal,
+): Promise<MailImapSettings> {
+  return request<MailImapSettings>(`${API_BASE}/mail/imap/settings`, signal)
+}
+
+/** PUT /api/v1/mail/imap/settings —— partial 更新 + write-only 密码。 */
+export async function updateMailImapSettings(
+  patch: MailImapSettingsUpdate,
+): Promise<MailImapSettings> {
+  const response = await rawRequest(`${API_BASE}/mail/imap/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as MailImapSettings
+}
+
+/** POST /api/v1/mail/imap/test —— 连通性+认证探测（不下载任何邮件）。 */
+export async function testMailImap(): Promise<MailImapTestResult> {
+  const response = await rawRequest(`${API_BASE}/mail/imap/test`, { method: 'POST' })
+  return (await response.json()) as MailImapTestResult
+}
+
+/** POST /api/v1/mail/imap/poll —— 手动单次拉取到绑定的 bridge 列表。 */
+export async function pollMailImap(): Promise<MailImapPollResult> {
+  const response = await rawRequest(`${API_BASE}/mail/imap/poll`, { method: 'POST' })
+  return (await response.json()) as MailImapPollResult
 }

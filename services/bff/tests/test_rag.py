@@ -20,6 +20,7 @@ from lumirss.rag import (
     RagRebuildBusy,
     RagService,
     chunk_text,
+    rag_index_pass,
     rrf_fuse,
     serialize_vector,
 )
@@ -233,19 +234,158 @@ def test_rebuild_is_transactional_previous_index_survives(rag_db, monkeypatch):
 
     import lumirss.rag as rag_module
 
-    def _exploding_write(*args, **kwargs):
+    def _exploding_swap(*args, **kwargs):
         raise RuntimeError("disk exploded mid-transaction")
 
-    monkeypatch.setattr(rag_module, "_write_index_sync", _exploding_write)
+    monkeypatch.setattr(rag_module, "_swap_staged_index", _exploding_swap)
     with pytest.raises(RuntimeError):
         _run(service.rebuild())
 
-    # Previous index fully intact.
+    # Previous index fully intact (the swap is the atomicity boundary).
     vec_count = _run(asyncio.to_thread(service._vec_count_sync))
     assert vec_count == 2
     status = _run(service.status())
     assert "disk exploded" in (status["lastError"] or "")
     assert service._embedder.loaded is False  # model unloaded on failure
+
+
+def test_rebuild_failure_mid_staging_keeps_previous_index(rag_db, monkeypatch):
+    """Q-P0-01: a failure while STAGING (before the swap) must leave the
+    previous index intact AND discard the staging table."""
+    _seed_projections(rag_db)
+    service = RagService(rag_db)
+    install_fake_embedder(service)
+    _run(service.enable())
+    _run(service.rebuild())
+
+    import lumirss.rag as rag_module
+
+    monkeypatch.setattr(rag_module, "_EMBED_BATCH", 1)  # one chunk per batch
+    original_stage = rag_module._stage_rows
+    calls = {"n": 0}
+
+    def _exploding_stage(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("disk exploded mid-staging")
+        return original_stage(*args, **kwargs)
+
+    monkeypatch.setattr(rag_module, "_stage_rows", _exploding_stage)
+    with pytest.raises(RuntimeError):
+        _run(service.rebuild())
+
+    vec_count = _run(asyncio.to_thread(service._vec_count_sync))
+    assert vec_count == 2  # previous index untouched
+    assert calls["n"] >= 2  # the failure happened mid-staging, not up front
+    with rag_db._connect() as conn:  # noqa: SLF001
+        leftover = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'rag_rebuild_stage'"
+        ).fetchall()
+    assert leftover == []  # staging table cleaned up
+
+
+def test_mark_stale_processes_all_refs_beyond_single_slice(rag_db):
+    """Q-P1-02: deleting a whole connector (>200 refs) must not silently
+    leave the tail of the list searchable."""
+    service = RagService(rag_db)
+    refs = [f"library:mark-{i:04d}" for i in range(250)]
+    with rag_db._connect() as conn:  # noqa: SLF001
+        for index, ref in enumerate(refs, start=1):
+            conn.execute(
+                "INSERT INTO rag_chunks (chunk_id, ref, ord, model_id, kind, title, text, embedding, created_at) VALUES (?, ?, 0, ?, 'clip', '', 'x', NULL, '2026-01-01T00:00:00+00:00')",
+                (index, ref, "test-model"),
+            )
+    removed = _run(service.mark_stale(refs))
+    assert removed == 250
+    rows = rag_db._fetch_all("SELECT COUNT(*) AS n FROM rag_chunks")
+    assert int(rows[0]["n"]) == 0
+
+
+def test_index_refs_serializes_behind_rebuild_lock(rag_db):
+    """Q-P1-01: index writers share one sqlite connection — index_refs
+    must wait for a held rebuild lock instead of racing it."""
+    _seed_projections(rag_db)
+    service = RagService(rag_db)
+    install_fake_embedder(service)
+    _run(service.enable())
+
+    async def racing():
+        async with service._rebuild_lock:  # noqa: SLF001 — simulate rebuild
+            task = asyncio.create_task(service.index_refs([_DOC_A_REF]))
+            await asyncio.sleep(0.05)
+            assert not task.done()  # blocked, not racing
+        return await task
+
+    report = _run(racing())
+    assert report["updated"] == 1
+
+
+def test_rebuild_spans_embed_batches_without_dup_ords(rag_db, monkeypatch):
+    """Fresh-eyes P0 regression: a document whose chunk sequence crosses
+    the embed-batch boundary must keep contiguous (ref, ord) — the
+    per-batch reset made every real-sized corpus rebuild die on the
+    rag_chunks unique index at swap time."""
+    import lumirss.rag as rag_module
+
+    monkeypatch.setattr(rag_module, "_EMBED_BATCH", 2)
+    # 无段落边界的 3200 字符单段 → chunker 硬切 4×800 → 两个 embed 批，
+    # 文档的 chunk 序列必然跨批（旧实现第二批 ord 从 0 重置即撞唯一索引）。
+    long_body = "x" * 3200
+    writer = LibrarySearchWriter(rag_db)
+    _run(
+        writer.upsert(
+            ref="library:long-doc-1",
+            kind="clip",
+            title="长文一篇",
+            body=long_body,
+            url=None,
+        )
+    )
+    service = RagService(rag_db)
+    install_fake_embedder(service)
+    _run(service.enable())
+    report = _run(service.rebuild())
+    assert report["chunks"] >= 4
+
+    rows = rag_db._fetch_all(
+        "SELECT ord FROM rag_chunks WHERE ref = 'library:long-doc-1' ORDER BY ord"
+    )
+    assert [int(r["ord"]) for r in rows] == list(range(len(rows)))
+    vec_count = _run(asyncio.to_thread(service._vec_count_sync))
+    assert vec_count == report["chunks"]
+
+
+def test_incremental_pass_converges_new_and_deleted_rows(rag_db):
+    """Q-P2-02: the incremental task must index NEW projection rows and
+    sweep chunks whose source row disappeared — without a full rebuild."""
+    _seed_projections(rag_db)
+    service = RagService(rag_db)
+    install_fake_embedder(service)
+    _run(service.enable())
+    _run(service.rebuild())
+
+    doc_c_ref = "library:0daf3e0-1f2a-4c3d-9e4f-5a6b7c8d9e0f"
+    writer = LibrarySearchWriter(rag_db)
+    _run(
+        writer.upsert(
+            ref=doc_c_ref,
+            kind="clip",
+            title="增量新增",
+            body="z" * 300,
+            url=None,
+        )
+    )
+    _run(rag_db.execute("DELETE FROM search_library WHERE ref = ?", (_DOC_B_REF,)))
+
+    report = _run(rag_index_pass(service))
+    assert report["indexed"] == 1
+    assert report["swept"] == 1
+
+    rows = rag_db._fetch_all("SELECT DISTINCT ref FROM rag_chunks ORDER BY ref")
+    indexed_refs = {str(row["ref"]) for row in rows}
+    assert indexed_refs == {_DOC_A_REF, doc_c_ref}
+    result = _run(service.search("增量新增"))
+    assert any(item["ref"] == doc_c_ref for item in result["items"])
 
 
 def test_enable_warmup_failure_rolls_back(rag_db, monkeypatch):

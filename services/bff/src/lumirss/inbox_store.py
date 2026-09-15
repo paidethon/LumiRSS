@@ -20,14 +20,13 @@ pattern: generated per source, returned exactly once at creation, never
 echoed by list/read paths.
 """
 
-import hmac
 import json
 import uuid as _uuid
 from typing import Any
 
 from lumirss.db_tx import transaction
 from lumirss.storage import Database
-from lumirss.util import utc_now
+from lumirss.util import constant_time_equals, utc_now
 
 
 class InboxSourceNotFound(Exception):
@@ -54,7 +53,7 @@ def new_source_secret() -> str:
 
 
 def secrets_match(supplied: str, stored: str) -> bool:
-    return hmac.compare_digest(supplied, stored)
+    return constant_time_equals(supplied, stored)
 
 
 class InboxStore:
@@ -129,6 +128,9 @@ class InboxStore:
         item_uuids = [str(row["item_uuid"]) for row in rows]
 
         def _tx(connection: Any) -> None:
+            # Identity rows AND the search projection commit together —
+            # deleting them in two transactions let a crash between the
+            # two leave permanently-orphaned projection rows (Q-P1-04).
             for item_uuid in item_uuids:
                 connection.execute(
                     "DELETE FROM library_items WHERE uuid = ?", (item_uuid,)
@@ -136,9 +138,13 @@ class InboxStore:
             connection.execute(
                 "DELETE FROM inbox_sources WHERE uuid = ?", (source_uuid,)
             )
+            for item_uuid in item_uuids:
+                connection.execute(
+                    "DELETE FROM search_library WHERE ref = ?",
+                    (f"library:{item_uuid}",),
+                )
 
         await transaction(self._db, _tx)
-        await self._delete_projections([f"library:{u}" for u in item_uuids])
         return [f"library:{u}" for u in item_uuids]
 
     async def ingest(
@@ -302,17 +308,6 @@ class InboxStore:
             "SELECT COUNT(*) AS n FROM inbox_sources", ()
         )
         return {"sources": int(sources["n"]), "items": int(row["n"])}
-
-    async def _delete_projections(self, refs: list[str]) -> None:
-        def _tx(connection: Any) -> None:
-            for ref in refs:
-                connection.execute(
-                    "DELETE FROM search_library WHERE ref = ?", (ref,)
-                )
-
-        if not refs:
-            return
-        await transaction(self._db, _tx)
 
     def _source_view(self, row: Any) -> dict[str, Any]:
         return {

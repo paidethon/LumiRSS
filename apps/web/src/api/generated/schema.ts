@@ -4573,8 +4573,10 @@ export interface components {
          * @description One read-later timeline row (P0-01: server-driven list).
          *
          *     ``entry`` is the RSS card from the projection (or a live adapter
-         *     fallback); a dangling member surfaces as ``stale=True`` with no card
-         *     instead of disappearing from the list.
+         *     fallback); ``resolved`` is the unified registry view for library
+         *     refs (inbox pushes etc. are first-class read-later members since
+         *     0021 — Q-P1-05). A dangling member surfaces as ``stale=True`` with
+         *     no card instead of disappearing from the list.
          */
         ReadLaterItem: {
             /** Addedat */
@@ -4582,6 +4584,7 @@ export interface components {
             entry?: components["schemas"]["SearchItem"] | null;
             /** Itemref */
             itemRef: string;
+            resolved?: components["schemas"]["ResolvedItem"] | null;
             /**
              * Stale
              * @default false

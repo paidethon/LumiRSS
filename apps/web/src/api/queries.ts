@@ -69,6 +69,11 @@ import {
   listBookmarks,
   listClips,
   listInboxItems,
+  listSources,
+  getMailImapSettings,
+  testMailImap,
+  pollMailImap,
+  updateMailImapSettings,
   listInboxSources,
   listRemoteBackups,
   listRssHubCredentials,
@@ -116,6 +121,7 @@ import type {
   TranslationSegmentBlockInput,
 } from './client'
 import type { AiPurposeKey } from './types'
+import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
@@ -1134,15 +1140,17 @@ export function useReadLaterMemberMutation() {
   return useMutation<
     void,
     Error,
-    { entryRef: string; add: boolean },
+    { itemRef: string; add: boolean },
     { previous: { pages: ReadLaterTimelinePage[] } | undefined }
   >({
     mutationFn: async (vars) => {
+      // itemRef 是完整存储形态（rss:<id> / library:<uuid>）——按域加前缀
+      // 曾把 library ref 变成 rss:library:…，收件条目永远删不掉（Q-P1-05）。
       if (vars.add) {
-        await addWorkspaceItem(READ_LATER_WORKSPACE_ID, `rss:${vars.entryRef}`)
+        await addWorkspaceItem(READ_LATER_WORKSPACE_ID, vars.itemRef)
         return
       }
-      await removeWorkspaceItem(READ_LATER_WORKSPACE_ID, `rss:${vars.entryRef}`)
+      await removeWorkspaceItem(READ_LATER_WORKSPACE_ID, vars.itemRef)
     },
     onMutate: async (vars) => {
       queryClient.setQueryData<string | null>(READ_LATER_LAST_ERROR_KEY, null)
@@ -1161,7 +1169,7 @@ export function useReadLaterMemberMutation() {
                 pages: old.pages.map((page) => ({
                   ...page,
                   items: page.items.filter(
-                    (it) => it.itemRef !== `rss:${vars.entryRef}`,
+                    (it) => it.itemRef !== vars.itemRef,
                   ),
                 })),
               },
@@ -1671,7 +1679,9 @@ export function useItemTags(itemRef: string | null) {
   })
 }
 
-/** P0-10：给条目绑定标签（POST 幂等由 BFF 承载；失效条目标签 + 全列表）。 */
+/** P0-10：给条目绑定标签（POST 幂等由 BFF 承载；失效条目标签 + 全列表
+ * + 图谱——Q-P2-40：图谱是标签绑定的派生视图，rename/delete 失效了它
+ * 而 assign/unassign 漏了，同一派生链两套标准）。 */
 export function useAssignTagMutation(itemRef: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -1680,12 +1690,13 @@ export function useAssignTagMutation(itemRef: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
         queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
       ])
     },
   })
 }
 
-/** P0-10：解绑标签（DELETE；失效条目标签 + 全列表）。 */
+/** P0-10：解绑标签（DELETE；失效条目标签 + 全列表 + 图谱，同 Q-P2-40）。 */
 export function useUnassignTagMutation(itemRef: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -1694,6 +1705,7 @@ export function useUnassignTagMutation(itemRef: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['item-tags', itemRef] }),
         queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
       ])
     },
   })
@@ -1785,7 +1797,20 @@ export function useResolveRefs(refs: string[]) {
   const key = [...refs].sort().join('\n')
   return useQuery({
     queryKey: ['resolve', key],
-    queryFn: ({ signal }) => resolveItems(refs, signal),
+    queryFn: async ({ signal }) => {
+      // Q-P2-14：调用方（收件箱长列表）一次传整页 refs；端点单次上限
+      // 100，超限分块并发解析后拍平（此前 >100 refs 会整请求 400）。
+      const unique = [...new Set(refs)]
+      if (unique.length <= 100) return resolveItems(unique, signal)
+      const chunks: string[][] = []
+      for (let i = 0; i < unique.length; i += 100) {
+        chunks.push(unique.slice(i, i + 100))
+      }
+      const results = await Promise.all(
+        chunks.map((chunk) => resolveItems(chunk, signal)),
+      )
+      return { items: results.flatMap((result) => result.items) }
+    },
     enabled: refs.length > 0,
     staleTime: 30_000,
     retry: false,
@@ -1799,6 +1824,7 @@ export function useInboxSources() {
   return useQuery({
     queryKey: ['inbox', 'sources'],
     queryFn: ({ signal }) => listInboxSources(signal),
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -1838,6 +1864,14 @@ export function useInboxItems() {
       listInboxItems({ cursor: pageParam, limit: 20 }, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    // Q-P2-41：与 entries/read-later 一致的病态增长内存保险丝——
+    // 收件箱持续推送 + 长滚动时缓存页数不设上界会无限膨胀。
+    maxPages: 50,
+    // fresh-eyes Issue 2：推送型视图对「切回标签页」敏感——全局默认
+    // 已关 focus 刷新，这里显式恢复，否则挂载期间没有刷新路径。
+    // 取舍（终审 Issue 4）：v5 的 infinite refetch 会按 pageParam 重拉
+    // 全部缓存页（maxPages 封顶）；推送型收件箱优先正确性。
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -1851,6 +1885,53 @@ export function useDeleteInboxItemMutation() {
         queryClient.invalidateQueries({ queryKey: ['inbox'] }),
         queryClient.invalidateQueries({ queryKey: ['resolve'] }),
       ])
+    },
+  })
+}
+
+// ---- Q-P1-06：统一来源注册表（GET /api/v1/sources 的首批真实消费者） ----
+
+/** 只读来源注册表：请求时由各 owning store 投影（统一 API ≠ 统一库），
+ * 健康面（lastError/lastSuccessAt）由 owning store 维护。 */
+export function useSources() {
+  return useQuery({
+    queryKey: ['sources'],
+    queryFn: ({ signal }) => listSources(signal),
+    staleTime: 30_000,
+  })
+}
+
+// ---- Q-P1-07：IMAP 收信（后端 4 端点的首批 UI 消费者） ----
+
+export function useMailImapSettings() {
+  return useQuery({
+    queryKey: ['mail', 'imap'],
+    queryFn: ({ signal }) => getMailImapSettings(signal),
+  })
+}
+
+export function useUpdateMailImapSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: MailImapSettingsUpdate) => updateMailImapSettings(patch),
+    onSuccess: (server) => {
+      // 用响应直接写缓存（GET 语义返回值）；密码框保持空（write-only）。
+      queryClient.setQueryData(['mail', 'imap'], server)
+    },
+  })
+}
+
+export function useTestMailImapMutation() {
+  return useMutation({ mutationFn: () => testMailImap() })
+}
+
+export function usePollMailImapMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => pollMailImap(),
+    onSuccess: () => {
+      // 拉取产生新的 bridge 条目 → 列表与摘要视图同步。
+      void queryClient.invalidateQueries({ queryKey: ['mail'] })
     },
   })
 }

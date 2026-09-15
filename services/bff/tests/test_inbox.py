@@ -9,6 +9,7 @@ for untrusted HTML, the search projection, kind-aware ItemRef resolution
 
 import asyncio
 import shutil
+import sqlite3
 
 import pytest
 
@@ -206,15 +207,33 @@ def test_ingest_updates_connector_health(client, db):
 # ---------------------------------------------------------------------------
 
 
-def test_list_items_is_newest_first_with_cursor(client):
+def test_list_items_is_newest_first_with_cursor(client, monkeypatch):
     source = _create_source(client)
+    # Q-P2-28：同秒 ingest 的平局由 uuid 决定（随机）——注入递增时钟，
+    # 让"最新摄取在前"成为可断言的真实排序，而不是碰运气。
+    import lumirss.inbox_store as inbox_store
+
+    counter = {"n": 0}
+
+    def increasing_now():
+        counter["n"] += 1
+        return f"2026-09-13T10:00:{counter['n']:02d}+00:00"
+
+    monkeypatch.setattr(inbox_store, "utc_now", increasing_now)
+
+    pushed_refs: list[str] = []
     for i in range(3):
-        assert _ingest(client, source, guid=f"g{i}").status_code == 200
+        resp = _ingest(client, source, guid=f"g{i}")
+        assert resp.status_code == 200
+        pushed_refs.append(resp.json()["ref"])
 
     page = client.get("/api/v1/inbox/items?limit=2").json()
     assert len(page["items"]) == 2
     assert page["hasMore"] is True
     assert page["nextCursor"]
+    # 最新摄取在前（newest-first 的真实断言，旧断言只验证并集为 3）。
+    assert page["items"][0]["ref"] == pushed_refs[2]
+    assert page["items"][1]["ref"] == pushed_refs[1]
 
     seen = {item["ref"] for item in page["items"]}
     page2 = client.get(
@@ -288,6 +307,96 @@ def test_delete_source_cascades_items_and_projections(client, db):
         db.fetch_one("SELECT COUNT(*) AS n FROM library_inbox", ())
     )
     assert identities["n"] == 0
+
+
+def test_delete_source_is_atomic_when_projection_delete_fails(client, db):
+    """Q-P1-04: identity rows and the search projection commit together —
+    a failure mid-delete must roll back the WHOLE operation (the historic
+    two-transaction shape left orphaned projections forever)."""
+    source = _create_source(client)
+    ref = _ingest(client, source, guid="atomic1").json()["ref"]
+
+    run(
+        db.execute(
+            "CREATE TRIGGER fail_projection_delete BEFORE DELETE ON search_library BEGIN SELECT RAISE(ABORT, 'injected'); END",
+            (),
+        )
+    )
+    try:
+        # The abort propagates (TestClient re-raises server exceptions);
+        # the contract under test is the all-or-nothing DB state below.
+        with pytest.raises(sqlite3.IntegrityError):
+            client.delete(f"/api/v1/inbox/sources/{source['uuid']}")
+        still_there = run(
+            db.fetch_one(
+                "SELECT COUNT(*) AS n FROM library_inbox WHERE source_uuid = ?",
+                (source["uuid"],),
+            )
+        )
+        projection = run(
+            db.fetch_one("SELECT ref FROM search_library WHERE ref = ?", (ref,))
+        )
+        assert still_there["n"] == 1, "aborted delete must not lose items"
+        assert projection is not None
+    finally:
+        run(db.execute("DROP TRIGGER fail_projection_delete", ()))
+
+    resp = client.delete(f"/api/v1/inbox/sources/{source['uuid']}")
+    assert resp.status_code == 200
+    assert resp.json()["items"] == 1
+
+
+def test_read_later_timeline_renders_inbox_item_as_resolved_card(client, db):
+    """Q-P1-05: an inbox push added to read-later is a first-class
+    member — the timeline must return the resolved registry view, not a
+    fake-stale row showing the raw ref."""
+    source = _create_source(client, name="reader-queue")
+    pushed = _ingest(client, source, guid="rl1", title="稍后读的收件").json()["ref"]
+
+    saved = client.post(
+        "/api/v1/workspaces/read-later/items", json={"itemRef": pushed}
+    )
+    assert saved.status_code == 201, saved.text
+
+    body = client.get("/api/v1/workspaces/read-later/timeline").json()
+    assert len(body["items"]) == 1
+    row = body["items"][0]
+    assert row["stale"] is False
+    assert row["resolved"] is not None
+    assert row["resolved"]["ref"] == pushed
+    assert row["resolved"]["title"] == "稍后读的收件"
+    assert row["entry"] is None
+
+
+def test_ingest_validation_failure_records_connector_error(client):
+    """Q-P2-03: a rejected push must surface as the connector's lastError
+    (the registry health face used to be permanently green)."""
+    source = _create_source(client)
+    resp = _ingest(client, source, guid="bad", url="javascript:alert(1)")
+    assert resp.status_code == 400
+
+    listed = client.get("/api/v1/inbox/sources").json()
+    assert listed[0]["lastError"], "connector must record the rejection"
+
+
+def test_ingest_non_ascii_bearer_is_404_not_500(client):
+    """Q-P1-11: constant-time comparison must tolerate non-ASCII input
+    (ASGI decodes headers as latin-1) — fail the match, never
+    TypeError→500. HTTP-level non-ASCII is unsendable through test
+    clients, so the comparator contract is proven directly."""
+    from lumirss.util import constant_time_equals
+
+    assert constant_time_equals("éé", "éé") is True
+    assert constant_time_equals("é", "e") is False
+    assert constant_time_equals("", "é") is False
+
+    source = _create_source(client)
+    resp = client.post(
+        f"/api/v1/inbox/ingest/{source['uuid']}",
+        json={"guid": "x", "content": "hi"},
+        headers={"Authorization": "Bearer aa"},
+    )
+    assert resp.status_code == 404  # wrong secret → indistinguishable 404
 
 
 # ---------------------------------------------------------------------------

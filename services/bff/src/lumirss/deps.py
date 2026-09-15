@@ -4,8 +4,7 @@ Lazily build adapters/stores/services once per app.state so a
 request handler never constructs upstream clients directly.
 """
 
-
-
+import logging
 from pathlib import Path
 
 from fastapi import Request
@@ -124,7 +123,8 @@ def _get_control_adapter(request: Request) -> FreshRSSControlAdapter:
 
 
 def _get_preview_service(request: Request) -> FeedPreviewService:
-    """Preview service over the shared HTTP client + control adapter.
+    """Preview service over the SSRF-pinned per-call fetch + control
+    adapter.
 
     Built lazily like the adapters (tests may inject a fake onto
     app.state.feed_preview_service).
@@ -132,9 +132,7 @@ def _get_preview_service(request: Request) -> FeedPreviewService:
     return _cached_on_app_state(
         request,
         "feed_preview_service",
-        lambda: FeedPreviewService(
-            request.app.state.http_client, _get_control_adapter(request)
-        ),
+        lambda: FeedPreviewService(_get_control_adapter(request)),
     )
 
 
@@ -151,7 +149,8 @@ def _preview_json(preview) -> dict[str, object]:
 
 
 def _get_discovery_service(request: Request) -> SourceDiscoveryService:
-    """SourceDiscoveryService over the shared HTTP client (lazy, cached).
+    """SourceDiscoveryService with SSRF-pinned per-call fetch (lazy,
+    cached).
 
     Holds NO FreshRSS reference by design — discovery is read-only against
     the discovered website.
@@ -159,7 +158,7 @@ def _get_discovery_service(request: Request) -> SourceDiscoveryService:
     return _cached_on_app_state(
         request,
         "source_discovery_service",
-        lambda: SourceDiscoveryService(request.app.state.http_client),
+        lambda: SourceDiscoveryService(),
     )
 
 
@@ -505,14 +504,20 @@ async def _rag_mark_stale(request: Request, refs: list[str]) -> None:
     """Best-effort RAG index invalidation after owned-content deletes
     (P0-07e). Only acts when a RAG service instance already exists —
     users who never touch RAG never pay for it; failures never mask the
-    delete that triggered them."""
-    import contextlib
-
+    delete that triggered them, but they ARE logged (a silently skipped
+    invalidation leaves deleted content searchable until the next
+    rebuild)."""
     rag: RagService | None = getattr(request.app.state, "rag_service", None)
     if rag is None:
         return
-    with contextlib.suppress(Exception):
-        await rag.mark_stale(refs)
+    try:
+        # wait=False: a running rebuild must not block deletes for its
+        # remaining duration — the orphan sweep converges instead.
+        await rag.mark_stale(refs, wait=False)
+    except Exception:  # noqa: BLE001 — invalidation is best-effort
+        logging.getLogger("lumirss.rag").warning(
+            "rag mark_stale failed for %d refs", len(refs), exc_info=True
+        )
 
 
 def _get_agent_store(request: Request) -> AgentStore:

@@ -180,6 +180,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     _logger.exception("obsidian scan failed; will retry")
 
         app.state.obsidian_scan_task = asyncio.create_task(obsidian_scan_loop())
+    rag_index_interval = settings.LUMIRSS_RAG_INDEX_INTERVAL
+    app.state.rag_index_task = None
+    if rag_index_interval > 0:
+        # Q-P2-02: converge new projection rows into the semantic index
+        # (and sweep deleted ones) without a manual full rebuild.
+        from lumirss.rag import build_rag_incremental_task
+
+        app.state.rag_index_task = build_rag_incremental_task(
+            app.state, rag_index_interval
+        )
     yield
     sync_task = app.state.search_sync_task
     if sync_task is not None:
@@ -191,7 +201,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         obsidian_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await obsidian_task
-    for task_name in ("digest_scheduler_task", "mail_imap_task", "rag_idle_task"):
+    for task_name in (
+        "digest_scheduler_task",
+        "mail_imap_task",
+        "rag_idle_task",
+        "rag_index_task",
+    ):
         task = getattr(app.state, task_name, None)
         if task is not None:
             task.cancel()

@@ -40,6 +40,7 @@ const LIBRARY_KIND_LABELS: Record<string, string> = {
   clip: '剪藏',
   obsidian_note: '笔记',
   snapshot: '快照',
+  api_item: '收件',
 }
 
 function libraryKindLabel(kind: string): string {

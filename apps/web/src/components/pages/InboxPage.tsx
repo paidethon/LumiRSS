@@ -52,6 +52,10 @@ function CreateConnectorDialog({ onClose }: { onClose: () => void }) {
     void navigator.clipboard?.writeText(text).catch(() => {})
   }
 
+  // ingest 是机器对机器入口：推送方通常在另一台机器上，相对路径复制
+  // 出去不可用（P0-06g 在 mail 域的修复，0021 曾原样复发——Q-P1-08）。
+  const ingestUrl = `${window.location.origin}${created?.ingestPath ?? ''}`
+
   if (created !== null) {
     return (
       <Dialog
@@ -69,10 +73,10 @@ function CreateConnectorDialog({ onClose }: { onClose: () => void }) {
             以下凭据<strong className="text-[var(--lumi-text-primary)]">仅显示这一次</strong>
             ，关闭后无法再查看；请立即保存到你的推送脚本中。
           </p>
-          <CopyField label="摄取地址（POST）" value={created.ingestPath} onCopy={copy} mono />
+          <CopyField label="摄取地址（POST，完整 URL）" value={ingestUrl} onCopy={copy} mono />
           <CopyField label="Bearer Secret" value={created.secret} onCopy={copy} mono />
           <p className="text-xs text-[var(--lumi-text-tertiary)]">
-            推送示例：curl -X POST {created.ingestPath} -H "Authorization: Bearer
+            推送示例：curl -X POST {ingestUrl} -H "Authorization: Bearer
             &lt;secret&gt;" -H "Content-Type: application/json" -d
             '{"{"}"guid":"demo-1","title":"第一条","content":"正文"{"}"}'
           </p>
@@ -171,10 +175,13 @@ function CopyField({
   )
 }
 
-/** 连接器列表（名称 + 最近成功时间 + 删除）。 */
+/** 连接器列表（名称 + 最近错误 + 两步确认删除）。
+ * 删除会级联销毁该连接器的全部推送条目（Q-P2-22）——单击 Trash2 直接
+ * mutate 的旧语义破坏半径远大于单条内容，先武装确认再执行。 */
 function ConnectorList() {
   const sources = useInboxSources()
   const del = useDeleteInboxSourceMutation()
+  const [confirmUuid, setConfirmUuid] = useState<string | null>(null)
 
   if (sources.isPending) {
     return <Skeleton className="h-10 w-full" />
@@ -193,51 +200,78 @@ function ConnectorList() {
   }
   return (
     <ul className="flex flex-col gap-1.5" aria-label="收件连接器列表">
-      {sources.data.map((source) => (
-        <li
-          key={source.uuid}
-          className="flex items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
-        >
-          <span
-            aria-hidden
-            className={cx(
-              'size-1.5 shrink-0 rounded-full',
-              source.lastError == null
-                ? 'bg-[var(--lumi-success)]'
-                : 'bg-[var(--lumi-danger)]',
-            )}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
-              {source.name}
-            </span>
-            {source.lastError !== null && (
-              <span role="alert" className="block truncate text-xs text-[var(--lumi-danger)]">
-                最近错误：{source.lastError}
+      {sources.data.map((source) => {
+        const armed = confirmUuid === source.uuid
+        return (
+          <li
+            key={source.uuid}
+            className="flex items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
+          >
+            <span
+              aria-hidden
+              className={cx(
+                'size-1.5 shrink-0 rounded-full',
+                source.lastError == null
+                  ? 'bg-[var(--lumi-success)]'
+                  : 'bg-[var(--lumi-danger)]',
+              )}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
+                {source.name}
               </span>
+              {source.lastError !== null && (
+                <span role="alert" className="block truncate text-xs text-[var(--lumi-danger)]">
+                  最近错误：{source.lastError}
+                </span>
+              )}
+            </span>
+            {armed ? (
+              <>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={del.isPending}
+                  onClick={() =>
+                    del.mutate(source.uuid, { onSettled: () => setConfirmUuid(null) })
+                  }
+                >
+                  {del.isPending && del.variables === source.uuid
+                    ? '删除中…'
+                    : '确认删除（连同全部条目）'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={del.isPending}
+                  onClick={() => setConfirmUuid(null)}
+                >
+                  取消
+                </Button>
+              </>
+            ) : (
+              <IconButton
+                icon={<Trash2 aria-hidden className="size-4" />}
+                label={`删除连接器 ${source.name}`}
+                size="sm"
+                touch
+                disabled={del.isPending}
+                onClick={() => setConfirmUuid(source.uuid)}
+              />
             )}
-          </span>
-          <IconButton
-            icon={
-              del.isPending && del.variables === source.uuid ? (
-                <Loader2 aria-hidden className="size-4 animate-spin" />
-              ) : (
-                <Trash2 aria-hidden className="size-4" />
-              )
-            }
-            label={`删除连接器 ${source.name}`}
-            size="sm"
-            touch
-            disabled={del.isPending}
-            onClick={() => del.mutate(source.uuid)}
-          />
-        </li>
-      ))}
+          </li>
+        )
+      })}
     </ul>
   )
 }
 
-/** 单条收件卡片：统一卡片 + 加入稍后读 / 删除动作。 */
+/** 单条收件卡片：统一卡片 + 加入稍后读 / 删除动作。
+ *
+ * 解析走 per-card useResolveRefs([itemRef])（fresh-eyes Issue 1）：ref
+ * 即稳定缓存键——页级批量 key 会随 refs 集合漂移（删除/翻页触发全量
+ * 重解析 + 整页 skeleton 闪烁，比原先每卡片 1 请求更糟）。单 ref 请求
+ * 被 TanStack 按 key 稳定缓存，30s 内零重发。 */
 function InboxCard({ itemRef }: { itemRef: string }) {
   const resolved = useResolveRefs([itemRef])
   const del = useDeleteInboxItemMutation()

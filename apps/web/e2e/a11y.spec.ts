@@ -54,10 +54,12 @@ test('a11y — 首页（时间线 + 侧栏/底部导航）', async ({ page }) =>
 
 test('a11y — Reader（打开文章）', async ({ page }) => {
   await page.goto('/')
-  const entryTitle = page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()
-  await expect(entryTitle).toBeVisible({ timeout: 15_000 })
-  await entryTitle.click()
-  await expect(page.getByText(/正文内容/).first()).toBeVisible()
+  // 数据无关定位（Q-P2-36）：静态栈有 mock 条目、真实栈有订阅条目——
+  // 打开时间线第一行，不再耦合特定标题数据。
+  const firstRow = page.locator('[data-entry-row-ref]').first()
+  await expect(firstRow).toBeVisible({ timeout: 15_000 })
+  await firstRow.getByRole('button').first().click()
+  await expect(page.locator('article').first()).toBeVisible()
   await expectNoCriticalViolations(page)
 })
 

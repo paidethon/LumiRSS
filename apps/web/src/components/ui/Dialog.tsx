@@ -68,25 +68,27 @@ export function Dialog({ open, onClose, title, children, footer, panelClassName,
               return panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel
             }}
             className={cx(
-              'relative w-full p-5',
+              'relative flex max-h-[85dvh] w-full flex-col p-5',
               'rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)]',
               'shadow-[var(--lumi-shadow-dialog)]',
               panelClassName ?? 'max-w-md',
               fullscreenOnMobile &&
-                'max-md:h-dvh max-md:w-screen max-md:rounded-none max-md:border-0 max-md:shadow-none',
+                'max-md:h-dvh max-md:max-h-none max-md:w-screen max-md:rounded-none max-md:border-0 max-md:shadow-none',
             )}
           >
             <BaseDialog.Title
               className={
                 hideTitle
-                  ? 'sr-only'
-                  : 'mb-3 text-base font-semibold text-[var(--lumi-text-primary)]'
+                  ? 'sr-only shrink-0'
+                  : 'mb-3 shrink-0 text-base font-semibold text-[var(--lumi-text-primary)]'
               }
             >
               {title}
             </BaseDialog.Title>
-            <div className="text-sm text-[var(--lumi-text-primary)]">{children}</div>
-            {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+            {/* Q-P2-26：内容区自身滚动——高表单（API 来源创建+预览等）
+                在小屏不再上下双向裁剪且 footer 恒可达。 */}
+            <div className="min-h-0 flex-1 overflow-y-auto text-sm text-[var(--lumi-text-primary)]">{children}</div>
+            {footer && <div className="mt-5 flex shrink-0 justify-end gap-2">{footer}</div>}
           </BaseDialog.Popup>
         </BaseDialog.Viewport>
       </BaseDialog.Portal>

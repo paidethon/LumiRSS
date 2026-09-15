@@ -51,7 +51,10 @@ export function useToggleReadLater(): {
     [refsQuery.data],
   )
 
-  const activeEntryRef = mutation.variables?.entryRef ?? null
+  const activeEntryRef =
+    mutation.variables?.itemRef?.startsWith('rss:')
+      ? mutation.variables.itemRef.slice('rss:'.length)
+      : null
 
   const membershipOf = (entryRef: string): boolean => {
     if (entryRef === activeEntryRef) {
@@ -64,7 +67,7 @@ export function useToggleReadLater(): {
   return {
     isReadLater: membershipOf,
     toggleReadLater: (entryRef) => {
-      mutation.mutate({ entryRef, add: !membershipOf(entryRef) })
+      mutation.mutate({ itemRef: `rss:${entryRef}`, add: !membershipOf(entryRef) })
     },
     pendingFor: (entryRef) => entryRef === activeEntryRef && mutation.isPending,
     errorFor: (entryRef) =>

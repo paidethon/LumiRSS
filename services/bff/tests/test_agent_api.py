@@ -26,9 +26,19 @@ def agent_env(client):  # noqa: F811 — reuse the conftest fixture
     yield {"db": app.state.db}
     # Drain background turn tasks BEFORE the temp dir is deleted — a task
     # hitting a removed database file would fail noisily in a later test.
+    # Q-P2-33: a timeout here must FAIL, not silently continue — residual
+    # tasks used to error into whatever test ran next (order-dependent
+    # "unable to open database" flakes).
     deadline = time.time() + 5
     while app.state.agent_tasks and time.time() < deadline:
         time.sleep(0.05)
+    if app.state.agent_tasks:
+        pending = [
+            task.get_name() for task in tuple(app.state.agent_tasks)
+        ]
+        for task in tuple(app.state.agent_tasks):
+            task.cancel()
+        pytest.fail(f"agent tasks did not drain within 5s: {pending}")
 
 
 def _create_thread(client) -> str:

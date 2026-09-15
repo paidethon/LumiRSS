@@ -7,11 +7,11 @@ session). Registered on the app in main.py.
 
 
 import contextlib
-import hmac
 import time
 import urllib.parse
 
 from lumirss.config import LumiSettings
+from lumirss.util import constant_time_equals
 
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
 
@@ -218,7 +218,7 @@ class InternalTokenMiddleware:
                         if key == b"x-lumi-token":
                             supplied = value.decode("latin-1")
                             break
-                    if not hmac.compare_digest(supplied, token):
+                    if not constant_time_equals(supplied, token):
                         await _reject_unauthorized(send)
                         return
         await self.app(scope, receive, send)

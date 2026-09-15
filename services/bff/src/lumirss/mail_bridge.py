@@ -21,7 +21,6 @@ import email
 import email.header
 import email.policy
 import hashlib
-import hmac
 import json
 import secrets as _secrets
 import sqlite3
@@ -30,7 +29,7 @@ from typing import Any
 
 from lumirss.mail_sanitize import html_to_text, sanitize_email_html
 from lumirss.storage import Database
-from lumirss.util import utc_now
+from lumirss.util import constant_time_equals, utc_now
 
 _MAX_RAW_BYTES = 10 * 1024 * 1024
 _MAX_PARTS = 40
@@ -168,7 +167,7 @@ class MailBridgeStore:
         return True
 
     def secrets_match(self, supplied: str, lst: BridgeList) -> bool:
-        return hmac.compare_digest(supplied, lst.secret)
+        return constant_time_equals(supplied, lst.secret)
 
     # -- ingest ------------------------------------------------------------
 

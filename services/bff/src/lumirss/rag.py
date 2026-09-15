@@ -7,11 +7,14 @@ lexical hits → RRF fusion. Hard properties:
 
 - derived/rebuildable: chunks always regenerate from the RSS and library
   projections; deleting the index loses nothing;
-- the index is REAL: rebuild writes every chunk into ``rag_chunks`` AND
-  its vector into ``rag_vec`` inside ONE transaction (delete-then-insert
-  on the same connection), so a failure leaves the previous index
-  untouched; search joins ``rag_vec`` via the knn operator — the
-  semantic leg hits from the vec table, not a lexical fallback;
+- the index is REAL and MEMORY-BOUNDED: rebuild streams the corpus in
+  document pages (chunk → embed → serialize into a staging table), then
+  swaps staging into ``rag_chunks``/``rag_vec`` inside ONE short
+  transaction — a failure leaves the previous index untouched and peak
+  RAM is one page, never the whole corpus (a full-corpus float-vector
+  residency OOMs a 1.6GB production box); search joins ``rag_vec`` via
+  the knn operator — the semantic leg hits from the vec table, not a
+  lexical fallback;
 - locked model identity: the fastembed kwarg is ``model_name`` (passing
   ``model=`` silently loads a DEFAULT model — fixed and now verified at
   load), the dimension is validated against the vec table, and
@@ -23,18 +26,25 @@ lexical hits → RRF fusion. Hard properties:
 - explicit enable: warmup happens FIRST and ``rag_enabled=1`` is only
   persisted after it succeeds (no more enabled-without-model state);
 - incremental propagation: ``mark_stale(refs)`` deletes rows for changed
-  sources (other stores call this one-liner) and ``index_refs(refs)``
-  re-embeds them from the projections in one transaction;
+  sources (other stores call this one-liner; the ref list is processed
+  in bounded slices — never silently truncated), ``index_refs(refs)``
+  re-embeds them from the projections in one transaction, and the
+  incremental index task (lifespan factory below) converges NEW
+  projection rows into the index and sweeps chunks whose source row is
+  gone, so newly saved content becomes semantically searchable without
+  a manual rebuild;
 - plain search never downloads anything and degrades to lexical
   honestly (``semanticUsed=false`` + a reason).
 """
 
 import asyncio
+import contextlib
 import importlib.util
 import logging
 import sqlite3
 import struct
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -54,8 +64,15 @@ _LEXICAL_CANDIDATES = 30
 _RRF_K = 60
 _IDLE_UNLOAD_SECONDS = 300.0
 _RAG_IDLE_TICK_SECONDS = 60.0
-_MAX_STALE_REFS = 200
+# Q-P1-02: stale refs are processed in bounded transaction slices — the
+# full list is always consumed (a silent cap left deleted content in the
+# index when a whole connector was removed).
+_STALE_SLICE = 200
 _MAX_INDEX_REFS = 50
+# Streaming rebuild (Q-P0-01): peak memory is one document page of text
+# plus one embed batch of float vectors — never the whole corpus.
+_DOC_PAGE = 16
+_EMBED_BATCH = 32
 
 _FASTEMBED_AVAILABLE = importlib.util.find_spec("fastembed") is not None
 
@@ -362,31 +379,11 @@ class RagService:
             started = utc_now()
             try:
                 await self._db.migrate()
-                documents = await self._collect_documents()
-                chunk_jobs: list[tuple[str, str, str, str]] = []
-                for doc in documents:
-                    for chunk in chunk_text(
-                        doc["text"], heading=doc["title"] or None
-                    ):
-                        chunk_jobs.append(
-                            (doc["ref"], doc["kind"], doc["title"], chunk)
-                        )
-                vectors: list[list[float]] = []
-                if chunk_jobs:
-                    vectors = await self._embedder.embed(
-                        [chunk for _ref, _kind, _title, chunk in chunk_jobs]
-                    )
-                    if any(len(vector) != MODEL_DIM for vector in vectors):
-                        raise RagModelUnavailable(
-                            "embedding 模型维度与索引不符。"
-                        )
-                report = await asyncio.to_thread(
-                    _write_index_sync, self, chunk_jobs, vectors
-                )
+                chunks = await self._rebuild_streaming()
                 await self._set_setting("rag_last_rebuild", started)
                 await self._clear_setting("rag_last_error")
                 return {
-                    "chunks": report["chunks"],
+                    "chunks": chunks,
                     "elapsedMs": _elapsed_ms(started),
                 }
             except Exception as exc:
@@ -394,48 +391,123 @@ class RagService:
                 self._embedder.unload()  # never keep a half-broken model
                 raise
 
-    async def _collect_documents(self) -> list[dict[str, str]]:
+    async def _rebuild_streaming(self) -> int:
+        """Stream the corpus in document pages: chunk → embed → stage.
+
+        Embeddings never accumulate (one ``_EMBED_BATCH`` of float
+        vectors at a time) and the staged rows swap into the live index
+        in ONE short transaction, so a failure leaves the previous index
+        intact (Q-P0-01: the old design resident the whole corpus and
+        every float vector at once — an OOM on production-sized data)."""
+        await asyncio.to_thread(_stage_reset, self)
+        try:
+            total = 0
+            # Per-ref chunk ordinals must survive batch boundaries: the
+            # UNIQUE(ref, ord, model_id) index on rag_chunks rejects any
+            # ref whose chunk sequence restarts at 0 mid-batch (the
+            # counter state lives for the WHOLE rebuild, not one batch).
+            ord_state: dict[str, int] = {}
+            async for page in self._document_pages():
+                jobs: list[tuple[str, str, str, str]] = []
+                for doc in page:
+                    for chunk in chunk_text(
+                        doc["text"], heading=doc["title"] or None
+                    ):
+                        jobs.append(
+                            (doc["ref"], doc["kind"], doc["title"], chunk)
+                        )
+                for start in range(0, len(jobs), _EMBED_BATCH):
+                    batch = jobs[start : start + _EMBED_BATCH]
+                    vectors = await self._embedder.embed(
+                        [chunk for _ref, _kind, _title, chunk in batch]
+                    )
+                    if any(len(vector) != MODEL_DIM for vector in vectors):
+                        raise RagModelUnavailable(
+                            "embedding 模型维度与索引不符。"
+                        )
+                    await asyncio.to_thread(
+                        _stage_rows, self, batch, vectors, ord_state
+                    )
+                    total += len(batch)
+            await asyncio.to_thread(_swap_staged_index, self)
+            return total
+        except BaseException:
+            await asyncio.to_thread(_stage_discard, self)
+            raise
+
+    async def _document_pages(self) -> AsyncIterator[list[dict[str, str]]]:
+        """Keyset-paged corpus reader (search_entries by id, then
+        search_library by ref) — never a whole-table fetch_all."""
         await self._db.migrate()
-        documents: list[dict[str, str]] = []
-        rss_rows = await self._db.fetch_all(
-            "SELECT entry_ref, title, content_text FROM search_entries"
-        )
-        for row in rss_rows:
-            documents.append(
+        after_id = 0
+        while True:
+            rows = await self._db.fetch_all(
+                "SELECT id, entry_ref, title, content_text FROM search_entries WHERE id > ? ORDER BY id LIMIT ?",
+                (after_id, _DOC_PAGE),
+            )
+            if not rows:
+                break
+            after_id = int(rows[-1]["id"])
+            yield [
                 {
                     "ref": str(row["entry_ref"]),
                     "kind": "rss",
                     "title": str(row["title"] or ""),
                     "text": str(row["content_text"] or ""),
                 }
+                for row in rows
+            ]
+        after_ref = ""
+        while True:
+            rows = await self._db.fetch_all(
+                "SELECT ref, kind, title, body FROM search_library WHERE ref > ? ORDER BY ref LIMIT ?",
+                (after_ref, _DOC_PAGE),
             )
-        lib_rows = await self._db.fetch_all(
-            "SELECT ref, kind, title, body FROM search_library"
-        )
-        for row in lib_rows:
-            documents.append(
+            if not rows:
+                break
+            after_ref = str(rows[-1]["ref"])
+            yield [
                 {
                     "ref": str(row["ref"]),
                     "kind": str(row["kind"]),
                     "title": str(row["title"] or ""),
                     "text": str(row["body"] or ""),
                 }
-            )
-        return documents
+                for row in rows
+            ]
 
     # -- incremental propagation (P0-07e) ------------------------------------
 
-    async def mark_stale(self, refs: list[str]) -> int:
+    async def mark_stale(self, refs: list[str], *, wait: bool = True) -> int:
         """Delete index rows (chunk + vector) for changed/deleted sources.
 
         One-line hook for the owning stores (clip/snapshot/obsidian
         delete, entry projection sync); re-indexing happens via
-        ``index_refs`` or the next full rebuild."""
-        cleaned = list(dict.fromkeys(str(ref) for ref in refs))[:_MAX_STALE_REFS]
+        ``index_refs`` or the incremental task. The FULL list is
+        consumed in bounded transaction slices — truncating here used to
+        leave deleted content searchable (Q-P1-02).
+
+        ``wait=False`` (request-path callers): skip with a log when a
+        rebuild/indexing holds the lock instead of blocking the HTTP
+        request for its remaining duration — correctness converges via
+        the incremental task's orphan sweep."""
+        cleaned = list(dict.fromkeys(str(ref) for ref in refs))
         if not cleaned:
             return 0
         await self._db.migrate()
-        return await asyncio.to_thread(self._mark_stale_sync, cleaned)
+        if not wait and self._rebuild_lock.locked():
+            _logger.warning(
+                "rag index busy; deferring invalidation of %d refs to the orphan sweep",
+                len(cleaned),
+            )
+            return 0
+        async with self._rebuild_lock:
+            removed = 0
+            for start in range(0, len(cleaned), _STALE_SLICE):
+                removed += await asyncio.to_thread(
+                    self._mark_stale_sync, cleaned[start : start + _STALE_SLICE]
+                )
+        return removed
 
     def _mark_stale_sync(self, refs: list[str]) -> int:
         removed = 0
@@ -477,6 +549,12 @@ class RagService:
         if not cleaned:
             return {"updated": 0, "chunks": 0, "missing": []}
         await self._db.migrate()
+        async with self._rebuild_lock:
+            return await self._index_refs_locked(cleaned)
+
+    async def _index_refs_locked(
+        self, cleaned: list[str]
+    ) -> dict[str, Any]:
         documents: list[dict[str, str]] = []
         found: set[str] = set()
         for ref in cleaned:
@@ -674,6 +752,137 @@ def _write_index_sync(
         connection.rollback()
         raise
     return {"chunks": len(chunk_jobs)}
+
+
+# -- streaming rebuild staging (Q-P0-01) --------------------------------------
+
+
+def _stage_reset(service: "RagService") -> None:
+    """Drop + recreate the staging table (start of a rebuild)."""
+    connection = service._vec_connection()
+    connection.execute("DROP TABLE IF EXISTS rag_rebuild_stage")
+    connection.execute("CREATE TABLE rag_rebuild_stage (ref TEXT NOT NULL, ord INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL)")
+
+
+def _stage_discard(service: "RagService") -> None:
+    """Failure cleanup: drop the staging table, best effort."""
+    with contextlib.suppress(Exception):
+        service._vec_connection().execute("DROP TABLE IF EXISTS rag_rebuild_stage")
+
+
+def _stage_rows(
+    service: "RagService",
+    batch: list[tuple[str, str, str, str]],
+    vectors: list[list[float]],
+    ord_state: dict[str, int],
+) -> None:
+    """Persist one embedded batch as compact blobs (auto-commit staging).
+
+    ``ord_state`` carries each ref's next chunk ordinal ACROSS batches —
+    a per-batch reset produced duplicate (ref, ord) pairs that blew up
+    the unique index at swap time for any corpus bigger than one batch
+    (found by the Round-1 fresh-eyes re-audit)."""
+    connection = service._vec_connection()
+    rows = []
+    for (ref, kind, title, chunk), vector in zip(batch, vectors, strict=True):
+        ord_ = ord_state.get(ref, 0)
+        ord_state[ref] = ord_ + 1
+        rows.append((ref, ord_, kind, title, chunk, serialize_vector(vector)))
+    connection.executemany(
+        "INSERT INTO rag_rebuild_stage (ref, ord, kind, title, text, embedding) VALUES (?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+
+
+def _swap_staged_index(service: "RagService") -> None:
+    """Swap the staged index into place in ONE short transaction.
+
+    chunk_id is reassigned by AUTOINCREMENT; rag_vec rows follow. A
+    failure rolls back to the previous index (same guarantee the old
+    single-transaction rebuild gave, without its memory residency)."""
+    if not service._ensure_vec_table():
+        raise RagModelUnavailable("sqlite-vec 扩展不可用。")
+    connection = service._vec_connection()
+    now = utc_now()
+    try:
+        connection.execute("BEGIN")
+        connection.execute("DELETE FROM rag_vec")
+        connection.execute("DELETE FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
+        connection.execute("INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at) SELECT ref, ord, ?, kind, title, text, embedding, ? FROM rag_rebuild_stage", (MODEL_ID, now))
+        connection.execute("INSERT INTO rag_vec (chunk_id, embedding) SELECT chunk_id, embedding FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
+        connection.execute("DROP TABLE rag_rebuild_stage")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+# -- incremental convergence (Q-P2-02) ----------------------------------------
+
+
+async def rag_index_pass(service: "RagService") -> dict[str, Any]:
+    """One incremental convergence pass over the projections.
+
+    NEW projection rows become searchable (anti-join) and chunks whose
+    source row is gone are swept — the two legs ``mark_stale`` hooks
+    could not cover. Content that mutates in place under the same ref
+    still needs the next full rebuild (documented limitation). Bounded:
+    at most ``_MAX_INDEX_REFS`` refs per leg per pass; empty-text rows
+    are excluded from the missing leg (they can never produce chunks
+    and would otherwise permanently occupy the pass budget)."""
+    await service._db.migrate()
+    if (await service._setting("rag_enabled")) != "1":
+        return {"indexed": 0, "swept": 0, "skipped": "disabled"}
+    orphan_rows = await service._db.fetch_all("SELECT DISTINCT c.ref FROM rag_chunks c WHERE c.ref NOT IN (SELECT entry_ref FROM search_entries) AND c.ref NOT IN (SELECT ref FROM search_library) LIMIT ?", (_MAX_INDEX_REFS,))
+    orphans = [str(row["ref"]) for row in orphan_rows]
+    swept = await service.mark_stale(orphans) if orphans else 0
+
+    missing_rows = await service._db.fetch_all("SELECT entry_ref AS ref FROM search_entries WHERE entry_ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(content_text) <> '' UNION ALL SELECT ref FROM search_library WHERE ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(body) <> '' ORDER BY ref LIMIT ?", (MODEL_ID, MODEL_ID, _MAX_INDEX_REFS))
+    missing = [str(row["ref"]) for row in missing_rows]
+    result = (
+        await service.index_refs(missing)
+        if missing
+        else {"updated": 0, "chunks": 0, "missing": []}
+    )
+    return {"indexed": result["updated"], "swept": swept}
+
+
+async def rag_incremental_loop(app_state: Any, interval: float) -> None:
+    """Periodically converge the semantic index with the projections.
+    Failures are logged, never fatal.
+
+    When no service instance exists yet (lazy-by-request construction),
+    the loop builds one itself once RAG is actually enabled — otherwise
+    an enabled deployment would not converge until the first RAG request
+    touched the app (fresh-eyes issue: restart silently idled the
+    sweep)."""
+    logger = logging.getLogger("lumirss.rag")
+    while True:
+        await asyncio.sleep(interval)
+        service: RagService | None = getattr(app_state, "rag_service", None)
+        if service is None:
+            try:
+                probe = RagService(app_state.db)
+                if (await probe._setting("rag_enabled")) != "1":  # noqa: SLF001
+                    continue  # RAG never enabled → no service, no pass
+                service = probe
+                app_state.rag_service = service
+            except Exception:  # noqa: BLE001 — lifecycle must never kill the app
+                logger.exception("rag incremental service build failed")
+                continue
+        try:
+            await rag_index_pass(service)
+        except Exception:  # noqa: BLE001 — lifecycle must never kill the app
+            logger.exception("rag incremental index pass failed")
+
+
+def build_rag_incremental_task(app_state: Any, interval: float) -> asyncio.Task:
+    """Lifespan wiring factory. Callers must pass a positive interval —
+    main.py owns the ``> 0`` (disabled) gate; this factory fails fast on
+    a zero/negative value instead of starting a sleep(0) hot loop."""
+    if interval <= 0:
+        raise ValueError("rag incremental interval must be a positive number of seconds")
+    return asyncio.create_task(rag_incremental_loop(app_state, interval))
 
 
 # -- idle lifecycle (P0-07d) --------------------------------------------------

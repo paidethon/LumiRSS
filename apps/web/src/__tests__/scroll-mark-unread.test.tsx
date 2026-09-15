@@ -8,7 +8,7 @@
  * - 同一条目不重复派发。 */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EntryListResponse, EntryListItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
@@ -118,7 +118,18 @@ function setup(getEntries: () => EntryListItem[], statePatches: { url: string; i
   return { qc, renderResult, fetcher }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** Q-P1-13：确定性时序——真定时器的 100/400ms 相位边界在 CI 单核
+ * 饱和下会翻转（settle 定时器先于断言触发）。fake timers 只冻结
+ * setTimeout/clearTimeout；每个用例在数据加载完成后启用，用
+ * advanceTimersByTimeAsync 精确穿越 settle 窗口（与
+ * reader-translation-gesture.test 的冻结先例同一模式）。 */
+async function settle(ms: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms)
+}
+
+function freezeTimers(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+}
 
 beforeEach(() => {
   localStorage.clear()
@@ -134,10 +145,11 @@ describe('scrollMarkUnread（0017 正式化）', () => {
     const patches: { url: string }[] = []
     setup(() => [item('a1'), item('a2')], patches)
     await screen.findAllByText('文章 a1')
+    freezeTimers()
 
     fireForRef('a1', true, 100)
     fireForRef('a1', false, -100)
-    await sleep(SETTLE_MS + 200)
+    await settle(SETTLE_MS + 200)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
   })
 
@@ -146,17 +158,16 @@ describe('scrollMarkUnread（0017 正式化）', () => {
     const patches: { url: string; init?: RequestInit; at?: number }[] = []
     setup(() => [item('b1'), item('b2')], patches)
     await screen.findAllByText('文章 b1')
+    freezeTimers()
 
     fireForRef('b1', true, 100)
     fireForRef('b1', false, -100)
     // settle 窗口未到 → 尚未标记
-    await sleep(100)
+    await settle(100)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
-    // 过 settle → 标记
-    await waitFor(async () => {
-      await sleep(SETTLE_MS + 100)
-      expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(1)
-    })
+    // 过 settle → 标记（定时器确定性推进，无 waitFor 轮询竞态）
+    await settle(SETTLE_MS + 100)
+    expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(1)
     const patch = patches.find((p) => p.url.includes('/state'))!
     expect(JSON.parse(String(patch.init?.body))).toEqual({ read: true })
   })
@@ -166,12 +177,13 @@ describe('scrollMarkUnread（0017 正式化）', () => {
     const patches: { url: string }[] = []
     setup(() => [item('c1'), item('c2')], patches)
     await screen.findAllByText('文章 c1')
+    freezeTimers()
 
     fireForRef('c1', true, 100)
     fireForRef('c1', false, -100)
-    await sleep(150) // 未过 settle
+    await settle(150) // 未过 settle
     fireForRef('c1', true, 50) // 滚回
-    await sleep(SETTLE_MS + 200)
+    await settle(SETTLE_MS + 200)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
   })
 
@@ -180,11 +192,12 @@ describe('scrollMarkUnread（0017 正式化）', () => {
     const patches: { url: string }[] = []
     setup(() => [item('d1'), item('d2')], patches)
     await screen.findAllByText('文章 d1')
+    freezeTimers()
 
     // 离开视口但还在视口下方（bottom > viewport，不会 < 0）
     fireForRef('d1', true, 100)
     fireForRef('d1', false, 900)
-    await sleep(SETTLE_MS + 200)
+    await settle(SETTLE_MS + 200)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
   })
 
@@ -198,30 +211,29 @@ describe('scrollMarkUnread（0017 正式化）', () => {
       patches,
     )
     await screen.findAllByText('文章 e1')
+    freezeTimers()
 
     // 用户曾滚过它（seen）
     fireForRef('e1', true, 100)
     fireForRef('e1', false, -100) // 已读状态 → 不满足 read===false，不标记
-    await sleep(SETTLE_MS + 100)
+    await settle(SETTLE_MS + 100)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
 
     // 用户在 Reader 手动标记未读 → 数据 true→false（refetch）
     reads = false
     await qc.invalidateQueries({ queryKey: ['entries'] })
-    await sleep(100)
+    await settle(100)
 
     // 重新触发「滚出上方」记录（新 observer 初始回调 / 继续滚动）：
     // 受手动未读保护，不应自动标记
     fireForRef('e1', false, -120)
-    await sleep(SETTLE_MS + 200)
+    await settle(SETTLE_MS + 200)
     expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(0)
 
     // 重新滚入视口后再滚出（新一轮阅读）→ 可以标记
     fireForRef('e1', true, 100)
     fireForRef('e1', false, -120)
-    await waitFor(async () => {
-      await sleep(SETTLE_MS + 100)
-      expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(1)
-    })
+    await settle(SETTLE_MS + 100)
+    expect(patches.filter((p) => p.url.includes('/state'))).toHaveLength(1)
   })
 })

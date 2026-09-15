@@ -75,44 +75,6 @@ function NavItem({
   )
 }
 
-/** 不可用导航项（P0-12 a11y 修正）：真 disabled button 语义（可聚焦
- * 浏览 + 明确的 disabled/aria-disabled 播报），title 承载真实原因——
- * 不再用不可聚焦 div + aria-disabled（屏幕阅读器通常不播报）。 */
-function PlannedItem({
-  icon,
-  label,
-  note,
-  badge,
-}: {
-  icon: React.ReactNode
-  label: string
-  /** 不可用的真实原因（title 悬浮提示 + 语义播报素材）。 */
-  note: string
-  /** 右侧小徽标（如「Phase 2」「见工作台」）；缺省不渲染。 */
-  badge?: string
-}) {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-disabled="true"
-      title={note}
-      className={cx(
-        'flex w-full cursor-default items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-left text-sm',
-        'min-h-8 max-lg:min-h-11',
-        'text-[var(--lumi-text-tertiary)] opacity-70',
-      )}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-      {badge !== undefined && (
-        <span className="ml-auto shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] font-medium">
-          {badge}
-        </span>
-      )}
-    </button>
-  )
-}
 
 /** 分组标题 */
 function GroupLabel({ children }: { children: React.ReactNode }) {
@@ -675,15 +637,19 @@ function Sidebar({
             <Bot aria-hidden className={icon16} />
             Agent 工作台
           </NavItem>
-          {/* P0-12（RAG 三方矛盾修正）：RAG 索引后端已落地（docs/ROADMAP
-              与 queries 注释一致），但独立管理 UI 尚未提供（wave 2）——
-              不再说「规划中」；诚实描述现状并指向 Agent 工作台的状态 chip。 */}
-          <PlannedItem
-            icon={<Zap aria-hidden className={icon16} />}
-            label="RAG 索引"
-            note="RAG 索引已在服务端运行；当前可在 Agent 工作台查看状态，独立管理入口尚未提供。"
-            badge="见工作台"
-          />
+          {/* P0-12 + Q-P2-24：RAG 管理入口已落地（设置 → AI 的
+              RagSettingsSection）——导航不再说「独立管理入口尚未提供」
+              （文案漂移回潮），直达该分类。 */}
+          <NavItem
+            active={false}
+            onClick={() => {
+              requestOpenSettings('ai')
+              onNavigate?.()
+            }}
+          >
+            <Zap aria-hidden className={icon16} />
+            RAG 索引
+          </NavItem>
           {/* phase2 G8：标签 / 图谱已可用——section 导航。 */}
           <NavItem
             active={section === 'graph'}

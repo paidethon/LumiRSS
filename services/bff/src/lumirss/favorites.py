@@ -10,6 +10,7 @@ Registry (ADR 0004) so dangling entries render as stale instead of
 silently vanishing.
 """
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -123,12 +124,16 @@ class FavoritesService:
             # Resolve the newest favorites first; dangling refs surface as
             # stale rows (never silently dropped), older rows beyond the
             # view limit stay reachable via libraryTotal.
-            resolved = []
-            for ref in refs:
-                try:
-                    resolved.append(await resolve_item(registry, ref))
-                except Exception:  # noqa: BLE001 — one bad ref must not kill the view
-                    continue
+            # Q-P2-13: resolves run concurrently — the serial loop paid
+            # one connection round-trip per ref (500 favorites ≈ 1000+
+            # sequential queries).
+            views = await asyncio.gather(
+                *(resolve_item(registry, ref) for ref in refs),
+                return_exceptions=True,
+            )
+            resolved = [
+                view for view in views if not isinstance(view, BaseException)
+            ]
             library_items = [
                 LibrarySearchItem(
                     ref=item.ref,

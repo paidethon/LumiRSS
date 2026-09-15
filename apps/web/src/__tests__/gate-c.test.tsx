@@ -64,15 +64,17 @@ describe('Sidebar 信息架构（AC12/V8）', () => {
     expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
   })
 
-  it('导航诚实性（P0-12）：API 来源/邮件简报为真实入口；仅 RAG 索引诚实禁用', () => {
+  it('导航诚实性（P0-12 + Q-P2-24）：API 来源/邮件简报/RAG 索引均为真实入口', () => {
     renderSidebar()
     // P0-12：API 来源 / 邮件简报已可用——真实按钮（设置深链入口）。
     expect(screen.getByRole('button', { name: /API 来源/ })).toBeEnabled()
     expect(screen.getByRole('button', { name: /邮件简报/ })).toBeEnabled()
-    // RAG 索引：后端已落地但独立管理 UI 未提供——诚实禁用 + 指向工作台。
+    // Q-P2-24：RAG 管理 UI（设置 → AI 的 RagSettingsSection）已落地——
+    // 旧断言（诚实禁用 + 「独立管理入口尚未提供」）固化的中间态已过时，
+    // 导航必须是可点入口，且不再撒谎。
     const rag = screen.getByRole('button', { name: /RAG 索引/ })
-    expect(rag).toBeDisabled()
-    expect(rag).toHaveAttribute('title', expect.stringContaining('Agent 工作台'))
+    expect(rag).toBeEnabled()
+    expect(rag).not.toHaveAttribute('title', expect.stringContaining('尚未提供'))
     expect(screen.queryByText('Phase 2')).toBeNull()
     // phase2 M1→G8：已点亮的一级入口
     expect(screen.getByRole('button', { name: '书签' })).toBeEnabled()
