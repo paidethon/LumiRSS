@@ -202,3 +202,24 @@ jobs:
         run: |
           docker image inspect lumirss-bff:ci > /dev/null && echo "bff image OK"
           docker image inspect lumirss-web:ci > /dev/null && echo "web image OK"
+
+  docs-build:
+    name: Docs site build (dead-link gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install docs tooling
+        run: npm ci
+
+      - name: Build docs (internal dead links fail the build)
+        run: npm run docs:build

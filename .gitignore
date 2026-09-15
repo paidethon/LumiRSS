@@ -46,3 +46,7 @@ coverage/
 
 # IDE agent session state (Qoder/Mimosa)
 .mimosa/
+
+# VitePress docs site build/cache (package.json at root is docs tooling only)
+docs/.vitepress/dist/
+docs/.vitepress/cache/
