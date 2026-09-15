@@ -142,14 +142,29 @@ def test_note_view_and_content(obsidian):
     assert "<p>" in note["contentHtml"]
 
 
-def test_unified_search_partial_failure(client, tmp_path):
-    """Library leg failure degrades the response, RSS leg unaffected."""
-    _ = tmp_path
-    rss_ok = client.get("/api/v1/search", params={"q": "x"})
-    # RSS projection may be empty (FreshRSS unconfigured) — endpoint still 200.
-    assert rss_ok.status_code == 200
-    body = rss_ok.json()
-    assert "library" in body  # additive field present
+def test_unified_search_partial_failure(client, monkeypatch):
+    """Library leg failure degrades the response, RSS leg unaffected.
+
+    Quality closure: this test used to assert the degraded SHAPE on a
+    healthy stack — no failure was ever injected, so a regression that
+    turned a library exception into a 500 would pass green. Now the
+    library writer actually raises."""
+    from lumirss.deps import _get_library_search_writer
+
+    async def exploding_search(query, *, kind=None, limit=20):
+        raise RuntimeError("simulated library projection outage")
+
+    monkeypatch.setattr(
+        _get_library_search_writer(client), "search", exploding_search
+    )
+    response = client.get("/api/v1/search", params={"q": "x"})
+    assert response.status_code == 200
+    body = response.json()
+    assert "library" in body
+    assert body["library"] is None
+    assert body["libraryError"] is not None
+    # The RSS leg is untouched by the library outage.
+    assert body["items"] is not None
 
 
 def test_federated_favorites_merge(client, tmp_path):

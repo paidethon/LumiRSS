@@ -11,6 +11,7 @@ silently vanishing.
 """
 
 import asyncio
+import sqlite3
 from collections.abc import Callable
 from typing import Any
 
@@ -43,10 +44,14 @@ class FavoritesStore:
         )
         if row is not None:
             return False
-        await self._db.execute(
-            "INSERT INTO library_favorites (ref, created_at) VALUES (?, ?)",
-            (parsed.format(), utc_now()),
-        )
+        try:
+            await self._db.execute(
+                "INSERT INTO library_favorites (ref, created_at) VALUES (?, ?)",
+                (parsed.format(), utc_now()),
+            )
+        except sqlite3.IntegrityError:
+            # Lost a double-submit race: the PK means it is already there.
+            return False
         return True
 
     async def remove(self, ref: str) -> bool:

@@ -22,6 +22,7 @@ from lumirss.config import LumiSettings
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
+    RestorePreviewRequired,
     RestoreService,
     _sqlite_snapshot_is_valid,
 )
@@ -124,7 +125,9 @@ def test_execute_requires_confirmation(tmp_path, monkeypatch):
 def test_execute_requires_prior_preview(tmp_path, monkeypatch):
     db_path = _make_real_lumi(tmp_path)
     service = _service(tmp_path, monkeypatch, db_path)
-    with pytest.raises(Exception):
+    # 质量收口 F7：断言具体契约错误——裸 Exception 会让重构期的内部
+    # TypeError/AttributeError 冒充守卫生效（restore 是最高风险路径）。
+    with pytest.raises(RestorePreviewRequired):
         run(service.execute("nonexistent-session", "RESTORE"))
 
 

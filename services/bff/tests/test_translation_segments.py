@@ -30,6 +30,15 @@ from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 
 
+@pytest.fixture(autouse=True)
+def _allow_fixture_endpoints(monkeypatch: pytest.MonkeyPatch):
+    """The http:// fixture endpoints (127.0.0.1 / ai.local) are only
+    storable when the operator allow-lists them — mirror that here."""
+    monkeypatch.setenv(
+        "LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS", "127.0.0.1,ai.local"
+    )
+
+
 def run(coroutine):
     return asyncio.run(coroutine)
 

@@ -498,7 +498,9 @@ class ObsidianService:
         import mistune
 
         body_text = str(row["body_text"] or "")
-        html = mistune.html(body_text) if body_text else ""
+        # mistune is pure-Python CPU: a large note rendered inline would
+        # stall the event loop for every concurrent request.
+        html = await _to_thread(mistune.html, body_text) if body_text else ""
         return {
             "ref": f"library:{row['item_uuid']}",
             "relPath": str(row["rel_path"]),

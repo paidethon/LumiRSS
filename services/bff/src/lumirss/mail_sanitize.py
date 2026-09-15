@@ -26,6 +26,26 @@ _VOID_TAGS = frozenset({"br", "hr"})
 _MAX_INPUT_BYTES = 2 * 1024 * 1024
 _MAX_DATA_URI = 64 * 1024
 
+# Dropped together with all of their content — same policy as
+# article_sanitize so stored mail HTML is independently safe against
+# parser-differential smuggling (mXSS carriers like math/template).
+_DROP_WITH_CONTENT = frozenset(
+    {
+        "script", "style", "noscript", "iframe", "frame", "frameset",
+        "object", "embed", "applet", "svg", "math", "canvas", "template",
+        "form", "input", "button", "select", "option", "optgroup",
+        "textarea", "label", "fieldset", "legend", "datalist", "output",
+        "video", "audio", "source", "track", "base", "meta", "link",
+        "title", "head", "dialog", "slot", "xmp", "plaintext", "noembed",
+        "noframes",
+    }
+)
+
+
+# Unsafe void elements (never carry an end tag): drop the tag itself —
+# incrementing the skip depth here would swallow the rest of the mail.
+_DROP_VOID = frozenset({"img", "input", "base", "meta", "link", "source", "track", "embed", "param", "area", "col", "wbr"})
+
 
 class _Sanitizer(HTMLParser):
     def __init__(self) -> None:
@@ -35,9 +55,10 @@ class _Sanitizer(HTMLParser):
         self._open_stack: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in ("script", "style", "iframe", "form", "img", "svg", "object", "embed", "video", "audio", "input", "button", "select", "textarea", "link", "meta", "base"):
-            if tag not in ("img",):
-                self._skip_depth += 1 if tag in ("script", "style", "iframe", "form", "svg", "object") else 0
+        if tag in _DROP_VOID:
+            return
+        if tag in _DROP_WITH_CONTENT:
+            self._skip_depth += 1
             return
         if self._skip_depth > 0:
             return
@@ -70,7 +91,11 @@ class _Sanitizer(HTMLParser):
             return
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in ("script", "style", "iframe", "form", "svg", "object") and self._skip_depth > 0:
+        # Void members never opened a skip region — a stray `</base>` must
+        # not close an unrelated dropped container (independent review).
+        if tag in _DROP_VOID:
+            return
+        if tag in _DROP_WITH_CONTENT and self._skip_depth > 0:
             self._skip_depth -= 1
             return
         if self._skip_depth > 0:

@@ -144,9 +144,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from lumirss.adapters.freshrss import FreshRSSAdapter
             from lumirss.config import FreshRSSSettings
 
+            # Cache the adapter on app.state so request-path wiring
+            # (deps._get_adapter) reuses the SAME session — login and
+            # action-token state stay single-owner.
+            if app.state.freshrss_adapter is None:
+                app.state.freshrss_adapter = FreshRSSAdapter(
+                    app.state.http_client, FreshRSSSettings()
+                )
             app.state.search_service = SearchIndexService(
                 app.state.db,
-                FreshRSSAdapter(app.state.http_client, FreshRSSSettings()),
+                app.state.freshrss_adapter,
             )
         except Exception:  # noqa: BLE001 — never block startup on search
             _logger.info("search sync disabled (FreshRSS not configured)")
@@ -212,6 +219,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+    # In-flight agent turns use the shared http_client: give them a short
+    # window to finalize (their `finally` marks the turn done) before the
+    # client closes underneath them, then cancel whatever is still running.
+    agent_tasks = [t for t in app.state.agent_tasks if not t.done()]
+    if agent_tasks:
+        _, still_running = await asyncio.wait(
+            agent_tasks, timeout=5.0
+        )
+        for task in still_running:
+            task.cancel()
+        await asyncio.gather(*still_running, return_exceptions=True)
     await app.state.http_client.aclose()
 
 

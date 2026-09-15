@@ -200,6 +200,26 @@ def test_reconcile_sweeps_orphan_files_and_dead_rows(asset_store):
         _run(asset_store.read_bytes(dead.uuid))
 
 
+def test_reconcile_db_failure_keeps_every_file(asset_store, monkeypatch):
+    """Fail-safe direction: when the referenced-paths lookup fails, the
+    sweep must do NOTHING (an empty default would unlink every stored
+    snapshot). Regression for the quality-closure P0."""
+
+    async def failing_fetch_all(sql, params=()):
+        raise RuntimeError("simulated db outage")
+
+    monkeypatch.setattr(asset_store._db, "fetch_all", failing_fetch_all)
+    record, _ = _run(asset_store.save_snapshot(data=b"<html>safe</html>"))
+    (asset_store.root / "deadbeef.html").write_bytes(b"orphan")
+
+    result = _run(asset_store.reconcile())
+
+    assert result == {"filesRemoved": 0, "rowsDropped": 0}
+    assert (asset_store.root / record.path).is_file()
+    # Even the true orphan survives — an unverifiable sweep must not run.
+    assert (asset_store.root / "deadbeef.html").exists()
+
+
 # --------------------------------------------------------------------------
 # Job runner: honest unavailability + pre-subprocess validation
 # --------------------------------------------------------------------------

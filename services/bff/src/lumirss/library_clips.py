@@ -19,6 +19,7 @@ from lumirss.clip_fetch import ClipForbidden
 from lumirss.db_tx import transaction
 from lumirss.itemref import new_library_uuid
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
+from lumirss.search_library import delete_search_row, upsert_search_row
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -116,19 +117,15 @@ class ClipStore:
                 ),
             )
             ref = f"library:{item_uuid}"
-            row = conn.execute(
-                "SELECT ref FROM search_library WHERE ref = ?", (ref,)
-            ).fetchone()
-            if row is None:
-                conn.execute(
-                    "INSERT INTO search_library (ref, kind, title, body, url, updated_at) VALUES (?, 'clip', ?, ?, ?, ?)",
-                    (ref, clean_title, clean_text[:4000], clean_url, now),
-                )
-            else:
-                conn.execute(
-                    "UPDATE search_library SET kind = 'clip', title = ?, body = ?, url = ?, updated_at = ? WHERE ref = ?",
-                    (clean_title, clean_text[:4000], clean_url, now, ref),
-                )
+            upsert_search_row(
+                conn,
+                ref=ref,
+                kind="clip",
+                title=clean_title,
+                body=clean_text[:4000],
+                url=clean_url,
+                now=now,
+            )
 
         try:
             await transaction(self._db, _tx)
@@ -159,10 +156,7 @@ class ClipStore:
             )
             if cursor.rowcount == 0:
                 return False
-            conn.execute(
-                "DELETE FROM search_library WHERE ref = ?",
-                (f"library:{item_uuid}",),
-            )
+            delete_search_row(conn, f"library:{item_uuid}")
             return True
 
         return await transaction(self._db, _tx)

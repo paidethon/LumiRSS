@@ -13,6 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.db_tx import transaction
 from lumirss.itemref import (
     LIBRARY_DOMAIN,
     RSS_DOMAIN,
@@ -21,7 +22,11 @@ from lumirss.itemref import (
     parse_item_ref,
 )
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
-from lumirss.search_library import LibrarySearchWriter
+from lumirss.search_library import (
+    LibrarySearchWriter,
+    delete_search_row,
+    upsert_search_row,
+)
 from lumirss.storage import Database
 from lumirss.util import utc_now
 
@@ -96,29 +101,30 @@ class LibraryStore:
             return existing, False
         item_uuid = new_library_uuid()
         now = utc_now()
-        await self._db.execute("INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'bookmark', ?)", (item_uuid, now))
+        ref = f"{LIBRARY_DOMAIN}:{item_uuid}"
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            conn.execute("INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'bookmark', ?)", (item_uuid, now))
+            conn.execute("INSERT INTO library_bookmarks (item_uuid, item_type, url, rss_item_ref, title, note, created_at) VALUES (?, 'url', ?, NULL, ?, ?, ?)", (item_uuid, clean_url, clean_title, clean_note, now))
+            upsert_search_row(conn, ref=ref, kind="bookmark", title=clean_title, body=clean_note[:4000], url=clean_url, now=now)
+
         try:
-            await self._db.execute("INSERT INTO library_bookmarks (item_uuid, item_type, url, rss_item_ref, title, note, created_at) VALUES (?, 'url', ?, NULL, ?, ?, ?)", (item_uuid, clean_url, clean_title, clean_note, now))
+            await transaction(self._db, _tx)
         except sqlite3.IntegrityError:
             # Lost a race against a concurrent create of the same URL:
             # converge on the unique index instead of failing.
-            await self._db.execute("DELETE FROM library_items WHERE uuid = ? AND NOT EXISTS (SELECT 1 FROM library_bookmarks b WHERE b.item_uuid = ?)", (item_uuid, item_uuid))
             existing = await self._find_by_url(clean_url)
             if existing is None:
                 raise
             return existing, False
         view = BookmarkView(
-            ref=f"{LIBRARY_DOMAIN}:{item_uuid}",
+            ref=ref,
             item_type="url",
             url=clean_url,
             rss_item_ref=None,
             title=clean_title,
             note=clean_note,
             created_at=now,
-        )
-        await self._search.upsert(
-            ref=view.ref, kind="bookmark", title=view.title,
-            body=view.note[:4000], url=view.url,
         )
         return view, True
 
@@ -135,25 +141,36 @@ class LibraryStore:
         clean_title = _validate_bookmark_title(title)
         clean_note = _validate_bookmark_note(note)
         await self._db.migrate()
-        existing = await self._find_by_rss_ref(parsed.format())
+        rss_ref = parsed.format()
+        existing = await self._find_by_rss_ref(rss_ref)
         if existing is not None:
             return existing, False
         item_uuid = new_library_uuid()
         now = utc_now()
-        await self._db.execute("INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'bookmark', ?)", (item_uuid, now))
-        await self._db.execute("INSERT INTO library_bookmarks (item_uuid, item_type, url, rss_item_ref, title, note, created_at) VALUES (?, 'rss', NULL, ?, ?, ?, ?)", (item_uuid, parsed.format(), clean_title, clean_note, now))
+        ref = f"{LIBRARY_DOMAIN}:{item_uuid}"
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            conn.execute("INSERT INTO library_items (uuid, kind, created_at) VALUES (?, 'bookmark', ?)", (item_uuid, now))
+            conn.execute("INSERT INTO library_bookmarks (item_uuid, item_type, url, rss_item_ref, title, note, created_at) VALUES (?, 'rss', NULL, ?, ?, ?, ?)", (item_uuid, rss_ref, clean_title, clean_note, now))
+            upsert_search_row(conn, ref=ref, kind="bookmark", title=clean_title, body=clean_note[:4000], url=None, now=now)
+
+        try:
+            await transaction(self._db, _tx)
+        except sqlite3.IntegrityError:
+            # Lost a race against a concurrent bookmark of the same entry:
+            # converge on the unique index instead of failing.
+            existing = await self._find_by_rss_ref(rss_ref)
+            if existing is None:
+                raise
+            return existing, False
         view = BookmarkView(
-            ref=f"{LIBRARY_DOMAIN}:{item_uuid}",
+            ref=ref,
             item_type="rss",
             url=None,
-            rss_item_ref=parsed.format(),
+            rss_item_ref=rss_ref,
             title=clean_title,
             note=clean_note,
             created_at=now,
-        )
-        await self._search.upsert(
-            ref=view.ref, kind="bookmark", title=view.title,
-            body=view.note[:4000], url=None,
         )
         return view, True
 
@@ -165,14 +182,20 @@ class LibraryStore:
         return _bookmark_from_row(row)
 
     async def delete_bookmark(self, item_uuid: str) -> bool:
-        """Delete a bookmark and its identity row; False when absent."""
-        row = await self._db.fetch_one("SELECT uuid FROM library_items WHERE uuid = ? AND kind = 'bookmark'", (item_uuid,))
-        if row is None:
-            return False
-        # library_items is the identity root; bookmarks cascade via FK.
-        await self._db.execute("DELETE FROM library_items WHERE uuid = ?", (item_uuid,))
-        await self._search.delete(f"{LIBRARY_DOMAIN}:{item_uuid}")
-        return True
+        """Delete a bookmark, its identity row and projection atomically."""
+        ref = f"{LIBRARY_DOMAIN}:{item_uuid}"
+
+        def _tx(conn: sqlite3.Connection) -> int:
+            # library_items is the identity root; bookmarks cascade via FK.
+            cursor = conn.execute(
+                "DELETE FROM library_items WHERE uuid = ? AND kind = 'bookmark'",
+                (item_uuid,),
+            )
+            if cursor.rowcount:
+                delete_search_row(conn, ref)
+            return cursor.rowcount
+
+        return await transaction(self._db, _tx) > 0
 
     async def update_bookmark(
         self, item_uuid: str, title: str | None, note: str | None

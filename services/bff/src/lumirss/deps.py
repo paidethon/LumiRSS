@@ -108,6 +108,19 @@ def _get_adapter(request: Request) -> FreshRSSAdapter:
     return adapter
 
 
+def _get_adapter_or_none(request: Request) -> FreshRSSAdapter | None:
+    """``_get_adapter`` for optional consumers (search sync, agent tools).
+
+    FreshRSS may be unconfigured (CI, degraded dev); those consumers
+    degrade honestly instead of failing. Unconfigured callers reuse the
+    SAME cached adapter as the read/control paths — never a second
+    session — so login/action-token state stays single-owner."""
+    try:
+        return _get_adapter(request)
+    except ConfigError:
+        return None
+
+
 def _get_control_adapter(request: Request) -> FreshRSSControlAdapter:
     """Control-plane adapter over the SAME session as the read adapter.
 
@@ -373,12 +386,7 @@ def _get_search_service(request: Request) -> SearchIndexService:
     """
 
     def build():
-        try:
-            adapter = FreshRSSAdapter(
-                request.app.state.http_client, FreshRSSSettings()
-            )
-        except (ConfigError, ValidationError):
-            adapter = None
+        adapter = _get_adapter_or_none(request)
         return SearchIndexService(request.app.state.db, adapter)
 
     return _cached_on_app_state(request, "search_service", build)
@@ -533,14 +541,7 @@ def _get_agent_loop(request: Request) -> AgentLoop:
     """Agent loop with the hardcoded tool whitelist on real services."""
 
     def build() -> AgentLoop:
-        from lumirss.adapters.freshrss import FreshRSSAdapter
-
-        try:
-            adapter = FreshRSSAdapter(
-                request.app.state.http_client, FreshRSSSettings()
-            )
-        except (ConfigError, ValidationError):
-            adapter = None
+        adapter = _get_adapter_or_none(request)
         from lumirss.search_library import rss_keyword_search
 
         async def rss_search(query: str, limit: int = 5):
@@ -568,25 +569,30 @@ def _get_agent_loop(request: Request) -> AgentLoop:
 
 
 async def _provider_or_none(request: Request):
-    """Agent provider factory: None when AI is unconfigured (honest)."""
+    """Agent provider factory: None when AI is unconfigured (honest).
+
+    Only the "not configured / not usable config" data states map to
+    None. Infrastructure failures (settings DB, secrets store) are
+    logged — an outage must not masquerade as a settings gap."""
     try:
-        provider_factory = _provider_factory_for(request, "chat")
         effective = await _get_ai_profile_store(request).effective_config(
             "chat", await _get_ai_settings_store(request).load(), ""
         )
-        if not effective.base_url or not effective.model:
-            return None
-        from lumirss.ai_provider import OpenAICompatibleProvider
-
-        return OpenAICompatibleProvider(
-            request.app.state.http_client,
-            base_url=effective.base_url,
-            model=effective.model,
-            api_key=effective.api_key or "",
+    except Exception:  # noqa: BLE001 — degrade, but leave evidence
+        logging.getLogger("lumirss.agent").exception(
+            "agent provider lookup failed; treating as unconfigured"
         )
-    except Exception:  # noqa: BLE001 — unconfigured → honest unavailable
         return None
-    _ = provider_factory
+    if not effective.base_url or not effective.model:
+        return None
+    from lumirss.ai_provider import OpenAICompatibleProvider
+
+    return OpenAICompatibleProvider(
+        request.app.state.http_client,
+        base_url=effective.base_url,
+        model=effective.model,
+        api_key=effective.api_key or "",
+    )
 
 
 def _get_snapshot_runner(request: Request) -> SnapshotJobRunner:
@@ -623,6 +629,28 @@ def _get_source_registry(request: Request) -> dict:
         async def resolve_rss(entry_ref: str) -> ResolvedItem | None:
             from lumirss.adapters.freshrss import EntryNotFound
 
+            # Projection-first (quality closure): the derived search
+            # projection already holds title/feed/excerpt, so a listing
+            # page of rss: refs costs N local point lookups instead of N
+            # upstream FreshRSS entry fetches (the read-later timeline's
+            # pattern, now shared).
+            from lumirss.search_store import SearchStore
+
+            row = await SearchStore(request.app.state.db).entry_row_by_ref(
+                entry_ref
+            )
+            if row is not None:
+                return ResolvedItem(
+                    ref=f"rss:{entry_ref}",
+                    domain="rss",
+                    kind="rss",
+                    title=str(row["title"]),
+                    source=str(row["feed_title"]),
+                    datetime=str(row["published_at"]),
+                    excerpt=excerpt_of(str(row["content_text"] or "")),
+                    url=str(row["url"] or ""),
+                    payload={"entryRef": entry_ref},
+                )
             adapter = request.app.state.freshrss_adapter
             if adapter is None:
                 try:

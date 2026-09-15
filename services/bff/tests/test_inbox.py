@@ -14,7 +14,7 @@ import sqlite3
 import pytest
 
 from lumirss.migrations import list_migrations, schema_version
-from lumirss.storage import Database, DatabaseError
+from lumirss.storage import Database
 
 
 @pytest.fixture()
@@ -477,7 +477,10 @@ def test_v21_enforces_connector_idempotency_at_schema_level(tmp_path):
             (),
         )
     )
-    with pytest.raises(DatabaseError):
+    with pytest.raises(sqlite3.IntegrityError):
+        # IntegrityError propagates unchanged (converge-on-duplicate
+        # contract, storage.py) — callers can distinguish it from a
+        # generic storage failure.
         run(
             db.execute(
                 "INSERT INTO library_inbox (item_uuid, source_uuid, guid, title, created_at) VALUES ('i2', 's1', 'dup', 't', '2026-09-13T00:00:00+00:00')",
