@@ -103,7 +103,8 @@ LumiRSS 的核心价值不是重新发明 RSS 抓取器，而是把成熟后端�
 - **Reader 深度定制**：连续排版滑杆、排版预设、`.lumitheme` 主题包、
   自定义 CSS、自定义字体、中文排版（简繁/缩进/标点悬挂）、代码高亮、
   图片模式、滚动标记已读（可选）；
-- **统一设置中心**：13 个分类（含“数据控制”，备份与恢复已并入）；
+- **统一设置中心**：15 个分类（API 来源、邮件简报等 Phase 2 域已并入；
+  以设置页与生成的 settings 元数据为准，避免清单式漂移）；
 - **备份/恢复**：本地 + WebDAV 备份、历史记录、两步恢复（预览校验 +
   显式确认 + 自动安全备份）、FreshRSS 数据离线恢复；
 - **部署运维**：生产 Compose + Caddy（TLS/basic auth/安全头）、健康检查、
@@ -111,8 +112,10 @@ LumiRSS 的核心价值不是重新发明 RSS 抓取器，而是把成熟后端�
 - **移动 Web / PWA**：可安装 manifest、移动五屏信息架构、touch target
   与 safe-area。
 
-明确未实现：web clipping、Obsidian 集成、邮件/JSON/API connector、
-统一搜索、PWA 离线缓存（无 Service Worker）、多用户——见 §10。
+明确未实现：web clipping **浏览器扩展**、Obsidian **写回**（vault 只读
+投影已实现）、MCP surface、PWA Push / 后台同步（app-shell 离线缓存已
+实现）、多用户——见 §10。Phase 2 域（剪藏/快照、API 来源、邮件桥、
+Obsidian 投影、统一搜索、来源注册表、Agent 工作台、RAG）均已交付。
 
 ---
 
@@ -173,20 +176,17 @@ MVP 不要求：自定义编写 RSSHub route、fork RSSHub、通用 Docker 管�
 - 缓存 key 至少考虑内容、provider、model、prompt 版本、语言；
   缓存命中与新生成在 UI 上明确区分；
 - 失败、重试、模型与时间状态诚实呈现；清晰标注 AI 生成内容；
-- 不做：多 Provider 自动路由、向量数据库、全库语义搜索。
+- 不做：多 Provider 自动路由、外部向量数据库服务（自研 RAG 用
+  sqlite-vec 单文件，显式启用 + 空闲卸载）。
 
 ### 5.5 设置
 
-统一设置中心，当前分类：
-
-```text
-通用 · 外观 · 阅读 · 快捷键 · 翻译 · 文章过滤 · RSSHub
-订阅与来源 · AI · 数据控制（含备份/恢复） · 账户与服务 · 工作区（占位） · 关于
-```
+统一设置中心的分类清单不在此维护（易漂移）：以设置页实际渲染与
+生成的 settings 元数据为准（`pnpm settings:generate`，CI 有 drift 门禁）。
 
 - 不照搬 FreshRSS 的所有界面偏好，只映射影响 Lumi 行为和数据的设置；
 - 设置应区分即时生效 / 重启后生效；
-- secret 值只写不读；工作区等未实现分类必须诚实标注“占位”。
+- secret 值只写不读；未上线的分类必须诚实标注“占位”。
 
 ### 5.6 移动 Web / PWA
 
@@ -289,7 +289,7 @@ React Web 只能访问 Lumi BFF：不直连 FreshRSS、RSSHub 或 AI Provider；
 | Lumi UI / Reader 偏好 | 浏览器本地优先，便携键经 Lumi SQLite 服务端同步 |
 | AI 结果缓存、AI 设置、备份账本 | Lumi SQLite |
 | API keys / WebDAV 密码 / RSSHub 机密 | 服务端 secrets.json（0600） |
-| Connector 配置（clip/email/Obsidian） | Phase 2，不进 FreshRSS |
+| 库域内容（书签/剪藏/快照/收件箱）、Connector 配置、RAG/Agent 数据 | Lumi SQLite（不进 FreshRSS） |
 
 硬规则：
 
@@ -305,7 +305,7 @@ commit SHA、许可证审计、用户批准 LumiRSS 许可证、`SOURCE_MAP.md`�
 
 LumiRSS 已于 2026-08-28 经用户批准采用 `AGPL-3.0-only`（仓库根目录
 LICENSE），以便合规适配 AGPL 参考代码；来源映射与声明文件随实现逐步
-维护（见 [upstream/](../upstream/)）。
+维护（见 [upstream/LICENSE_AUDIT.md](../upstream/LICENSE_AUDIT.md)）。
 
 硬规则：
 
@@ -317,16 +317,15 @@ LICENSE），以便合规适配 AGPL 参考代码；来源映射与声明文件�
 
 ## 10. 当前明确不做（Deferred）
 
-- web clipping、JSON/API 来源、邮件简报、Obsidian connector、
-  统一来源注册表、统一搜索、Agent workspace（Phase 2）；
+- web clipping 浏览器扩展、Obsidian 写回、MCP surface；
 - 多用户、注册、OAuth；
 - Folo 社交、推荐、公开 Profile、奖励经济；
 - 原生 iOS / Android；
-- 向量数据库、多模型自动路由；
+- 外部向量数据库服务、多模型自动路由；
 - Kubernetes、Redis / Celery（除非真实压力证明）；
-- PWA 完整离线 / Push / 后台同步。
+- PWA Push / 后台同步。
 
-Phase 2 不得反向破坏 RSS 域边界。
+Phase 2（已交付）不得反向破坏 RSS 域边界。
 
 ---
 

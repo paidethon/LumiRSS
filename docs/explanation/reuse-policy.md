@@ -24,7 +24,7 @@
 | Lumi 视觉 tokens | Lumi Design Tokens（`--lumi-*`） | 语义 token，不硬编码颜色 |
 | AI 派生缓存（summary/translation/conversation） | Lumi SQLite | 共享机制在 `ai_artifacts.py`，规则不重复实现 |
 | secrets | 服务端 SecretStore（0600 JSON） | 永不进浏览器、永不入库/备份 |
-| 设备本地 UI 状态 | Web（localStorage） | 见下方 read-later 条目 |
+| 设备本地 UI 状态 | Web（localStorage） | 阅读外观、字体等；可便携子集经 settings-sync 上服务器 |
 
 ## Generated artifacts（生成物一览）
 
@@ -68,10 +68,6 @@ SQL 语句一律内联字面量写在 execute 调用处——项目的静态安�
 - **PaneSeparator（`components/ui/PaneSeparator.tsx`）**：94 LOC，含
   ARIA separator、键盘 ±10px、双击重置、与 settings store 的持久化接线。
   `react-resizable-panels` 为此引入依赖不划算；Base UI 也无对应原语。
-- **read-later（稍后读，`store/read-later.ts`）**：当前定义为设备本地
-  产品数据（localStorage），刻意不映射 FreshRSS starred（收藏≠稍后读）。
-  跨设备同步是明确的 roadmap 项，落地时应迁到 Lumi SQLite 而非浏览器
-  之外的第三方存储。
 - **EntryRow / EntryCard 双组件**：桌面行/移动卡片的形态分裂是有意的
   响应式策略（同时渲染、CSS 隐藏切换），合并会付出可视化回归的高风险。
   共享逻辑（动作、选中态、时间格式化）已分别下沉到

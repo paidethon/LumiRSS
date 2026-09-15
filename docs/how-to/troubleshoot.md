@@ -17,6 +17,8 @@
 | 恢复后残留 interrupted 记录 | 正常：恢复会把快照中的陈旧运行态标记为 interrupted（审计） |
 | 磁盘增长 | 清理 `data/backups/` 与 `data/restore-staging/`（见 [backup-restore.md](backup-restore.md)） |
 | 部署时 DNS/端口告警 | `./lumirss deploy` preflight 会告警域名未解析、80/443 被占用、磁盘不足；先解决再部署 |
+| 机器推送（收件箱 ingest / 邮件 webhook）在 session 模式下 401 | 这两条是机器到机器端点（bearer 鉴权），外层 host Caddy 若开了 basic auth 会先拦截它们：在 host 反代上对 `/api/v1/inbox/ingest/*` 与 `/api/mail/ingest/*` 放行（仍受 BFF 侧 bearer 保护） |
+| 回滚到旧镜像后邮件桥报错 | 回滚快照的 schema 是按当时版本建的：回退跨越 0018（`mail_seen` 重建）之前的镜像时，须先把 DB 回滚到对应 schema 版本的快照，不能只换镜像 tag |
 
 ## 首次安装清单
 

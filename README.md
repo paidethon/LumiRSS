@@ -2,26 +2,23 @@
 
 LumiRSS is a single-user, self-hosted, source-first information reader.
 
-Its current foundation:
+Its foundation:
 
 - **FreshRSS** as the RSS-domain engine and source of truth;
 - **RSSHub** as an upstream generator for non-RSS sources;
 - a project-owned **FastAPI BFF**;
 - a responsive **React Web / PWA** client.
 
-On top of that foundation the MVP already ships: article reading with explicit
-read/star state, subscriptions & categories with OPML import/export, RSSHub
-source discovery & preview, AI summary / translation / article conversation,
-a unified settings center, and local + WebDAV backup with staged restore.
-Phase 2 adds the Lumi library (bookmarks / server-side web clips / offline
-snapshots), workspaces & read-later, inbox push sources (bearer-secured
-machine ingest), read-only API sources & newsletter bridges feeding
-FreshRSS, a read-only Obsidian vault projection, unified search over all of
-it with tags / favorites / graph, and an optional RAG-indexed semantic layer
-plus an Agent workbench over the same corpus.
-
-> The MVP baseline is complete and LumiRSS remains under active development.
-> Documentation and project status: [docs/README.md](docs/README.md)
+On top of that foundation it ships: article reading with explicit
+read/star state, subscriptions & categories with OPML import/export,
+AI summary / translation / article conversation, the Lumi library
+(bookmarks / server-side web clips / offline snapshots), workspaces &
+server-side read-later, inbox push sources, API sources & newsletter
+bridges feeding FreshRSS, a read-only Obsidian vault projection,
+unified search with tags / favorites / graph, an optional RAG-indexed
+semantic layer plus an Agent workbench, a unified settings center, and
+local + WebDAV backup with staged restore. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for exact feature status.
 
 ---
 
@@ -40,95 +37,62 @@ Non-RSS source → RSSHub → FreshRSS
 ```
 
 FreshRSS owns RSS-domain state. RSSHub generates feeds upstream. The Web
-client talks only to the Lumi BFF. Full explanation: [docs/explanation/architecture.md](docs/explanation/architecture.md).
+client talks only to the Lumi BFF. Full explanation:
+[docs/explanation/architecture.md](docs/explanation/architecture.md).
 
 ---
 
-## Development
-
-### FreshRSS and RSSHub
+## Quick start (development)
 
 ```bash
-docker compose up -d
+git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
+docker compose up -d          # FreshRSS + RSSHub
+cd services/bff && cp .env.example .env && uv sync && uv run uvicorn lumirss.main:app --reload
+cd ../web && pnpm install && pnpm dev
 ```
 
-### BFF
-
-```bash
-cd services/bff
-cp .env.example .env
-uv sync
-uv run pytest
-uv run uvicorn lumirss.main:app --reload
-```
-
-### Web
-
-```bash
-cd apps/web
-pnpm install
-pnpm dev
-pnpm test
-pnpm build
-```
-
-Detailed development guide: [docs/getting-started.md](docs/getting-started.md)
+Full guide: [docs/getting-started.md](docs/getting-started.md).
 
 ---
 
 ## Production deployment
 
 ```bash
-git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
 sudo ./lumirss deploy                      # interactive
 sudo ./lumirss deploy --auth-mode=session  # persistent session login
-sudo ./lumirss set-password                # bcrypt hash only, never plaintext
 sudo ./lumirss deploy --low-memory         # single-user resource preset
 ```
 
 Caddy serves the Web build and reverse-proxies `/api` to the BFF;
-FreshRSS / RSSHub stay on the internal network. Authentication is either
-proxy-level Basic Auth or app-level persistent sessions (one password →
-180-day sliding cookie), automated TLS, health endpoints, backups (local
-+ WebDAV) and staged restore are included. Install on a phone via
-Add-to-Home-Screen for a standalone PWA experience (offline shell;
-API/auth responses are never cached). Full runbook:
-[docs/how-to/deploy.md](docs/how-to/deploy.md).
+FreshRSS / RSSHub stay on the internal network. Automated TLS, health
+endpoints, backups (local + WebDAV) and staged restore are included.
+Full runbook: [docs/how-to/deploy.md](docs/how-to/deploy.md).
 
 ---
 
-## API baseline
+## Documentation
 
-```text
-GET   /health/live
-GET   /api/v1/feeds
-GET   /api/v1/entries
-GET   /api/v1/entries/{entryRef}
-PATCH /api/v1/entries/{entryRef}/state
-```
-
-Entry references and cursors are opaque. Opening an article does not
-auto-mark it read. Read/star writes use set semantics. The full API
-family list (subscriptions, RSSHub control, AI settings/profiles,
-backups, version provenance) lives in
-[docs/explanation/architecture.md](docs/explanation/architecture.md).
+| You want… | Read |
+|---|---|
+| Run it locally | [docs/getting-started.md](docs/getting-started.md) |
+| Deploy / upgrade / roll back | [docs/how-to/deploy.md](docs/how-to/deploy.md) |
+| Back up / restore | [docs/how-to/backup-restore.md](docs/how-to/backup-restore.md) |
+| Troubleshoot | [docs/how-to/troubleshoot.md](docs/how-to/troubleshoot.md) |
+| Configuration keys | [docs/reference/configuration.md](docs/reference/configuration.md) |
+| Architecture & invariants | [docs/explanation/architecture.md](docs/explanation/architecture.md) |
+| Docs index | [docs/README.md](docs/README.md) |
 
 ---
 
 ## License
 
-LumiRSS is licensed under **AGPL-3.0-only** (see `LICENSE`).
-
-Known upstream licenses: Folo AGPL-3.0 (icons/mgc redistribution restricted),
-OrigRead Desktop AGPL-3.0-only, OrigRead Android GPL-3.0.
-
-See [docs/upstream/LICENSE_AUDIT.md](docs/upstream/LICENSE_AUDIT.md) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
----
+LumiRSS is licensed under **AGPL-3.0-only** (see `LICENSE`). Upstream
+license notes: [docs/upstream/LICENSE_AUDIT.md](docs/upstream/LICENSE_AUDIT.md)
+and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Security
 
 Never commit `.env`, API credentials, FreshRSS/RSSHub secrets, AI keys,
 databases or private screenshots. RSS/website HTML is untrusted — keep
-sanitization and safe-link checks intact.
+sanitization and safe-link checks intact (see
+[AGENTS.md](AGENTS.md)).

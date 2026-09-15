@@ -45,3 +45,17 @@ SQLite 中维护一个从 FreshRSS 条目构建的搜索投影。
 - 排序 newest-first，分页为 `(published_at, item_id)` keyset，包在
   opaque 的 `q1.` cursor 信封里；
 - snippet 从净化后的正文纯文本提取，Web 端按纯文本渲染，绝不进 HTML 路径。
+
+## 统一搜索：两条腿
+
+`GET /api/v1/search`（phase2 G6）在 RSS 腿之外并列运行**库腿**：
+
+- 库腿查询 `search_library` 投影（书签 / 剪藏 / 收件箱条目 / Obsidian
+  笔记，由各自写路径同步维护——同样派生、可重建）；
+- `favorite=true` 的收藏过滤同时作用于两腿：库腿命中收敛到收藏 refs；
+- 两腿独立失败：库腿异常时 RSS 结果照常返回，`libraryError` 字段如实
+  上报（partial failure 永不静默、也永不拖垮整个端点）。
+
+语义索引是第三条可选腿：RAG（sqlite-vec + fastembed，显式启用）提供
+语义检索，由 Agent 工作台与 RAG 端点消费，见 architecture.md 的
+Phase-2 surface 一节。

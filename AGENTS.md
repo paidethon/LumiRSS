@@ -8,25 +8,19 @@
 
 ## 1. Project identity
 
-LumiRSS is a single-user, self-hosted, source-first information reader under
-active MVP development. Current scope: RSS/Atom via FreshRSS, non-RSS via
-RSSHub, FastAPI BFF, responsive React Web / PWA.
+LumiRSS is a single-user, self-hosted, source-first information reader:
+RSS/Atom via FreshRSS, non-RSS via RSSHub, a FastAPI BFF, and a responsive
+React Web / PWA client.
 
-Implemented (verify against source before relying on this list): AI summary,
-translation and article conversation plus AI settings (0015–0017); RSSHub
-source discovery and control; unified settings center; backup / restore and
-operations (0018); Caddy-fronted production deployment (0018–0019). Phase 2
-(0021 verified): Lumi library (bookmarks, server-side clips, offline
-snapshots), workspaces & server-side read-later, inbox push sources, API
-sources & newsletter bridges, read-only Obsidian projection, unified search
-/ tags / favorites / graph, optional RAG semantic index, Agent workbench,
-and the unified read-only source registry.
+Feature status lives in one place: [docs/ROADMAP.md](docs/ROADMAP.md)
+(implemented / next / deferred). Do not copy feature inventories into
+agent prompts or docs — link instead.
 
 NOT implemented — do not describe these as existing: web clipping browser
 extension, Obsidian write-back (the vault stays read-only), MCP surface,
-and other explicitly deferred Phase-2 features. LumiRSS is single-user by
-design (one trusted user behind the operator's own auth / network);
-multi-user tenancy and public-internet hardening are out of scope.
+PWA push / background sync. LumiRSS is single-user by design (one trusted
+user behind the operator's own auth / network); multi-user tenancy and
+public-internet hardening are out of scope.
 
 ---
 
@@ -70,57 +64,23 @@ docker-compose.yml    FreshRSS + RSSHub dev services
 
 ---
 
-## 4. Documentation routing
+## 4. Task workflow
 
-Start here for any task:
-
-1. Read `docs/README.md` (navigation index);
-2. Read the active task's spec / scope document (if any);
-3. Read directly affected source files and tests;
-4. Read `docs/explanation/architecture.md` only when touching data paths
-   or boundaries;
-5. Read `docs/product/PRD.md` only when product scope is unclear;
-6. Do NOT read milestone history, upstream studies or reference repos
-   unless the task specifically requires them;
-7. Do NOT read `docs/research/` (phase2 reports, ai-feeds, performance,
-   local-translation) by default — only open the specific report named by
-   an active milestone's implementation prompt.
+1. Read `docs/README.md` (index) → task scope → affected files + tests;
+2. `docs/explanation/architecture.md` only when touching data paths or
+   boundaries; `docs/product/PRD.md` only when product scope is unclear;
+3. Do NOT preload milestone history, `docs/research/`, upstream studies
+   or reference repos unless the task specifically requires them;
+4. Prefer exact symbol / component / directory search over broad scans;
+   do not scan the repo, inspect or refactor unrelated modules;
+5. Verification: targeted tests during development; full Web + BFF tests
+   plus lint and build only at milestone Gate completion;
+6. Once acceptance criteria are met → **STOP**. No autonomous adjacent
+   refactoring, unrelated tests, or starting the next milestone.
 
 ---
 
-## 5. Scope discipline
-
-```text
-- Do not scan the entire repository unless the task genuinely requires it.
-- Prefer targeted file search over broad exploration.
-- Do not inspect unrelated modules.
-- Do not refactor unrelated code.
-- Do not reread completed milestone history for ordinary work.
-- Do not inspect upstream reference repositories unless explicitly required.
-- Stop once acceptance criteria are satisfied.
-```
-
----
-
-## 6. Verification discipline
-
-During development:
-
-```text
-affected tests only (targeted)
-```
-
-At milestone Gate completion:
-
-```text
-full Web tests + full BFF tests + lint + build
-```
-
-Do not run full test suites for ordinary CSS or small UI changes.
-
----
-
-## 7. Git and safety
+## 5. Git and safety
 
 - Never `reset --hard`, `clean -fd`, force push or overwrite user work;
 - Do not create commits without explicit user approval;
@@ -131,7 +91,7 @@ Do not run full test suites for ordinary CSS or small UI changes.
 
 ---
 
-## 8. Security
+## 6. Security
 
 - RSS/website content is untrusted — preserve the DOMPurify boundary;
 - External links: safe protocols only, appropriate `rel` values;
@@ -140,7 +100,7 @@ Do not run full test suites for ordinary CSS or small UI changes.
 
 ---
 
-## 9. Conventions
+## 7. Conventions
 
 ### Backend (Python/FastAPI)
 
@@ -198,34 +158,7 @@ Do not run full test suites for ordinary CSS or small UI changes.
 
 ---
 
-## 10. Efficient agent workflow
-
-### Task start
-
-Read only:
-```text
-AGENTS.md → docs/README.md → task scope → affected files + tests
-```
-
-### Do not preload
-
-```text
-completed milestones · PRD · full architecture · upstream studies
-reference repos · full git history · unrelated modules
-```
-
-### Search strategy
-
-Prefer exact symbol / component / directory over broad scan.
-
-### Stop condition
-
-Once acceptance criteria are met → **STOP**. Do not autonomously refactor
-adjacent code, run unrelated tests, or continue to the next milestone.
-
----
-
-## 11. Definition of done
+## 8. Definition of done
 
 A task is complete only when:
 
