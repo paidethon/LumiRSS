@@ -132,8 +132,10 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
   const readerText = page.getByText(/正文内容，用于 Reader 断言|正文内容。/).first()
   await expect(readerText).toBeVisible()
 
-  // 架构不变量：打开文章不自动标记已读（unread 视图仍包含该条目）
-  await page.waitForTimeout(500)
+  // 架构不变量：打开文章不自动标记已读。负向断言不能 poll（条目现在
+  // 未读会让 poll 立即通过，抓不到迟到的错误写入）——保留一个比原
+  // 500ms 更长的真实观察窗口，再断言条目仍在 unread 视图（独立复审 F9）。
+  await page.waitForTimeout(700)
   const unread = await (await page.request.get('/api/v1/entries?view=unread')).json()
   expect(unread.items.some((i: { title: string }) => i.title === openedTitle)).toBe(true)
 
@@ -148,10 +150,17 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
   await expect(page.getByRole('button', { name: '取消收藏' }).first()).toBeVisible()
   await page.getByRole('button', { name: '标记为已读' }).first().click()
   await expect(page.getByRole('button', { name: '标记为未读' }).first()).toBeVisible()
-  // 显式已读生效：unread 视图不再包含该条目
-  await page.waitForTimeout(500)
-  const unreadAfter = await (await page.request.get('/api/v1/entries?view=unread')).json()
-  expect(unreadAfter.items.some((i: { title: string }) => i.title === openedTitle)).toBe(false)
+  // 显式已读生效：unread 视图不再包含该条目（poll 等服务端状态翻转，
+  // 不猜 PATCH 完成时刻）。
+  await expect
+    .poll(
+      async () => {
+        const unreadAfter = await (await page.request.get('/api/v1/entries?view=unread')).json()
+        return unreadAfter.items.some((i: { title: string }) => i.title === openedTitle)
+      },
+      { timeout: 5_000 },
+    )
+    .toBe(false)
 })
 
 test('J4 — AI：mock provider 设置 / key 不回显 / 摘要生成与失败重试诚实', async ({ page }) => {
@@ -224,8 +233,17 @@ test('J7 — 本地翻译：headless 下 unsupported 诚实提示（不假装可
   const dialog = visibleDialog(page)
   await dialog.getByLabel('翻译引擎').selectOption('browser')
   await dialog.getByRole('button', { name: /保存/ }).click()
-  // 该分区保存为静默式（无成功文案）：重载后以控件值验证持久化。
-  await page.waitForTimeout(800)
+  // 该分区保存为静默式（无成功文案）：轮询服务端状态翻转后再重载，
+  // 不猜 PATCH 完成时刻（固定 sleep 在慢机上会与保存竞速）。
+  await expect
+    .poll(
+      async () =>
+        (await (
+          await page.request.get('/api/v1/settings/ai')
+        ).json()).translationEngine,
+      { timeout: 5_000 },
+    )
+    .toBe('browser')
   await page.reload()
   await openSettingsCategory(page, '翻译')
   await expect(visibleDialog(page).getByLabel('翻译引擎')).toHaveValue('browser')

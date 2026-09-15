@@ -19,6 +19,15 @@ const RSS_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <item><title>文章 gamma</title><link>https://e2e.example/gamma</link>
 <guid>gamma</guid><pubDate>Wed, 03 Sep 2026 08:00:00 GMT</pubDate>
 <description>&lt;p&gt;gamma 正文内容。&lt;/p&gt;</description></item>
+<item><title>文章 delta</title><link>https://e2e.example/delta</link>
+<guid>delta</guid><pubDate>Thu, 04 Sep 2026 08:00:00 GMT</pubDate>
+<description>&lt;p&gt;delta 正文内容。&lt;/p&gt;</description></item>
+<item><title>文章 epsilon</title><link>https://e2e.example/epsilon</link>
+<guid>epsilon</guid><pubDate>Fri, 05 Sep 2026 08:00:00 GMT</pubDate>
+<description>&lt;p&gt;epsilon 正文内容。&lt;/p&gt;</description></item>
+<item><title>文章 zeta</title><link>https://e2e.example/zeta</link>
+<guid>zeta</guid><pubDate>Sat, 06 Sep 2026 08:00:00 GMT</pubDate>
+<description>&lt;p&gt;zeta 正文内容。&lt;/p&gt;</description></item>
 </channel></rss>`
 
 export function createFeedServer(port = 18083, host = '0.0.0.0') {

@@ -1438,21 +1438,17 @@ export async function removeLibraryFavorite(ref: string): Promise<void> {
 }
 
 // ---- phase2 G7/G8：Agent 工作台 / 标签 / 关系图谱 / RAG ----
-// 契约类型：generated schema 快照尚未收录本批端点（agent/tags/graph/rag
-// 不在 components['schemas'] 内，openapi 未再生成），按任务约定在本模块
-// 内以本地 interface 补齐（additive，不改既有导出）；字段与 BFF
-// models.py / routers 逐一对照（AgentThread / AgentMessage / TagBinding /
-// GraphResponse / Rag*）。
+// 契约类型：凡 OpenAPI 已收录的信封一律用 generated 别名（下方
+// `Schemas['…']`），绝不手写复制。AgentMessage / RagStatus / ItemTag
+// 所属端点目前返回无 response_model 的 dict（OpenAPI 抓不到），暂以
+// 本地 interface 对照 BFF routers 维护——补 response_model 后应换成
+// 生成别名（BFF 合同缺口，见 ROADMAP Next）。
 
-export interface AgentThread {
-  id: string
-  title: string
-  createdAt: string
-}
+type Schemas = components['schemas']
 
-export interface AgentThreadListResponse {
-  items: AgentThread[]
-}
+export type AgentThread = Schemas['AgentThread']
+
+export type AgentThreadListResponse = Schemas['AgentThreadListResponse']
 
 export type AgentMessageRole = 'user' | 'assistant' | 'tool' | 'system' | 'approval'
 
@@ -1480,6 +1476,8 @@ export interface AgentMessageListResponse {
   items: AgentMessage[]
 }
 
+/** 批准/拒绝取值（BFF 请求体 AgentApprovalDecision.decision 的有效值；
+ * BFF 侧是裸 str，OpenAPI 抓不到枚举，故在此手写联合）。 */
 export type AgentApprovalDecision = 'approve' | 'reject'
 
 /** 会话列表（GET 语义）。 */
@@ -1545,15 +1543,10 @@ export async function decideAgentApproval(
 
 // ---- phase2 G8：标签（tags） ----
 
-export interface TagSummary {
-  id: number
-  name: string
-  count: number
-}
+/** 列表行复用 BFF 的 TagBinding 模型（id/name/count + 可选绑定字段）。 */
+export type TagSummary = Schemas['TagBinding']
 
-export interface TagListResponse {
-  items: TagSummary[]
-}
+export type TagListResponse = Schemas['TagListResponse']
 
 export interface TagAssignInput {
   itemRef: string
@@ -1572,13 +1565,13 @@ export async function listTags(q: string | null, signal?: AbortSignal): Promise<
 }
 
 /** 重命名标签（PATCH 200，返回更新后的 binding 视图）。 */
-export async function renameTag(tagId: number, name: string): Promise<unknown> {
+export async function renameTag(tagId: number, name: string): Promise<TagSummary> {
   const response = await rawRequest(`${API_BASE}/tags/${encodeURIComponent(String(tagId))}`, {
     method: 'PATCH',
     body: JSON.stringify({ name }),
     contentType: 'application/json',
   })
-  return (await response.json()) as unknown
+  return (await response.json()) as TagSummary
 }
 
 /** 删除标签（破坏性；DELETE 204）。 */
@@ -1589,13 +1582,13 @@ export async function deleteTag(tagId: number): Promise<void> {
 }
 
 /** 绑定标签（POST 201 TagBinding）。 */
-export async function assignTag(input: TagAssignInput): Promise<unknown> {
+export async function assignTag(input: TagAssignInput): Promise<TagSummary> {
   const response = await rawRequest(`${API_BASE}/tags/assign`, {
     method: 'POST',
     body: JSON.stringify({ itemRef: input.itemRef, name: input.name, origin: input.origin ?? 'manual' }),
     contentType: 'application/json',
   })
-  return (await response.json()) as unknown
+  return (await response.json()) as TagSummary
 }
 
 /** 解绑标签（DELETE 204，契约带 JSON body）。 */
@@ -1628,27 +1621,11 @@ export async function listTagsForItem(
 
 // ---- phase2 G8：关系图谱（graph，只读派生视图） ----
 
-export interface GraphNode {
-  ref: string
-  label: string
-  kind: string
-  degree: number
-}
+export type GraphNode = Schemas['GraphNode']
 
-export interface GraphEdge {
-  src: string
-  dst: string
-  kind: string
-}
+export type GraphEdge = Schemas['GraphEdge']
 
-export interface GraphResponse {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-  truncated: boolean
-  /** 截断前候选总数（真实总数）——截断时绝不冒充返回数（P0-10d）。 */
-  totalNodes: number
-  returnedNodes: number
-}
+export type GraphResponse = Schemas['GraphResponse']
 
 /** 关系图谱（scope=all|workspace:<id>；max 上限由 BFF 钳制）。 */
 export async function getGraph(
@@ -1755,20 +1732,19 @@ export async function createInboxSource(name: string): Promise<InboxSourceCreate
     body: JSON.stringify({ name }),
     contentType: 'application/json',
   })
-  if (!response.ok) {
-    throw await toApiError(response)
-  }
   return (await response.json()) as InboxSourceCreated
 }
 
-/** DELETE /api/v1/inbox/sources/{uuid} —— 删除连接器及其全部推送条目。 */
+/** DELETE /api/v1/inbox/sources/{uuid} —— 删除连接器及其全部推送条目；
+ * 404（另一设备/标签页已删除）按幂等成功处理。 */
 export async function deleteInboxSource(sourceUuid: string): Promise<void> {
-  const response = await rawRequest(
-    `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}`,
-    { method: 'DELETE' },
-  )
-  if (!response.ok && response.status !== 404) {
-    throw await toApiError(response)
+  try {
+    await rawRequest(
+      `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}`,
+      { method: 'DELETE' },
+    )
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) throw error
   }
 }
 
@@ -1787,17 +1763,19 @@ export async function listInboxItems(
   return request<InboxItemList>(`${API_BASE}/inbox/items?${query}`, signal)
 }
 
-/** DELETE /api/v1/inbox/items/{uuid} —— 删除单条推送内容。 */
+/** DELETE /api/v1/inbox/items/{uuid} —— 删除单条推送内容；
+ * 404（另一设备/标签页已删除）按幂等成功处理。 */
 export async function deleteInboxItem(itemRef: string): Promise<void> {
   const uuid = itemRef.startsWith('library:')
     ? itemRef.slice('library:'.length)
     : itemRef
-  const response = await rawRequest(
-    `${API_BASE}/inbox/items/${encodeURIComponent(uuid)}`,
-    { method: 'DELETE' },
-  )
-  if (!response.ok && response.status !== 404) {
-    throw await toApiError(response)
+  try {
+    await rawRequest(
+      `${API_BASE}/inbox/items/${encodeURIComponent(uuid)}`,
+      { method: 'DELETE' },
+    )
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) throw error
   }
 }
 

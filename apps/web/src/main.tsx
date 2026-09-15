@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import LoginScreen from './components/LoginScreen.tsx'
-import { getAuthSession } from './api/client'
+import { getAuthSession, ApiError } from './api/client'
 import { useAuthStore } from './store/auth.ts'
 import { initAppSettings, useAppSettings, watchSystemTheme } from './store/app-settings.ts'
 import { initSettingsSync } from './store/settings-sync.ts'
@@ -56,11 +56,19 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // Q-P2-20：全局默认——关掉 refetchOnWindowFocus（主壳挂载 ~6-10 个
 // 查询，每次切回标签页都突发整串请求）并给 30s fresh 窗口；个别
 // 高频视图已在各自 useQuery 显式覆盖，不受影响。
+// 质量收口：4xx 永不重试（TanStack 默认 3 次指数退避对 404 文章、
+// 401 过期只付三倍延迟和请求量，结果不变），网络/5xx 保留 2 次重试。
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       staleTime: 30_000,
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+          return false
+        }
+        return failureCount < 2
+      },
     },
   },
 })

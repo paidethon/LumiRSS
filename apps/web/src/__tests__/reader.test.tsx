@@ -426,6 +426,39 @@ describe('Selection race（query）', () => {
     expect(await screen.findByText('文章 B')).toBeInTheDocument()
     expect(screen.queryByText('文章 A')).not.toBeInTheDocument()
   })
+
+  it('慢 A 在快 B 之后才 resolve → 仍显示 B（晚到响应不覆盖最新选择）', async () => {
+    useReaderUi.setState({ selectedEntryRef: 'e1.a' })
+    // A 的响应被网关挂起：B 先渲染完成，之后 A 才真正到达。
+    let releaseA: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    let aResponded = false
+    vi.stubGlobal('fetch', mockApi([
+      {
+        when: (url, init) => (init?.method ?? 'GET') === 'GET' && url === '/api/v1/entries/e1.a',
+        respond: async () => {
+          await gate
+          aResponded = true
+          return jsonResponse(detail({ entryRef: 'e1.a', title: '文章 A' }))
+        },
+      },
+      detailRoute('e1.b', detail({ entryRef: 'e1.b', title: '文章 B' })),
+    ]))
+    renderReader()
+
+    useReaderUi.setState({ selectedEntryRef: 'e1.b' })
+    expect(await screen.findByText('文章 B')).toBeInTheDocument()
+
+    // 放行 A 并确认其响应确实已产生（比固定 sleep 强：若实现改为取消
+    // 旧请求，本断言自动退化为“无晚到”，测试仍然成立）。
+    releaseA()
+    await vi.waitFor(() => expect(aResponded).toBe(true))
+
+    expect(screen.getByText('文章 B')).toBeInTheDocument()
+    expect(screen.queryByText('文章 A')).not.toBeInTheDocument()
+  })
 })
 
 describe('0020 AUDIT-002 — 正式 Reader 提供稳定 .lumi-reader 作用域', () => {
