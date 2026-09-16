@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useTestWebDavMutation, useUpdateWebDavSettingsMutation, useWebDavSettings } from '../../../api/queries'
+import { DOCS_LINKS } from '../../../lib/docs-links'
 import { Button } from '../../ui/Button'
 import { Skeleton } from '../../ui/Skeleton'
 import { Switch } from '../../ui/Switch'
@@ -192,7 +193,15 @@ export function WebDavCard() {
           )}
           {test.isError && (
             <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
-              测试失败：{test.error instanceof Error ? test.error.message : '请稍后重试。'}
+              测试失败：{test.error instanceof Error ? test.error.message : '请稍后重试。'}{' '}
+              <a
+                href={DOCS_LINKS.webdavBackup}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline underline-offset-2 hover:opacity-80"
+              >
+                配置帮助
+              </a>
             </p>
           )}
           {test.data && (

@@ -22,6 +22,7 @@ from lumirss.middleware import (
     MAX_REQUEST_BODY_BYTES,  # noqa: F401  (re-exported for tests)
     InternalTokenMiddleware,
     RateLimitMiddleware,
+    RequestCorrelationMiddleware,
     RequestSizeLimitMiddleware,
     SessionAuthMiddleware,
 )
@@ -112,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agent_loop = None
     app.state.agent_tasks = set()
     app.state.tag_store = None
+    app.state.saved_search_store = None
     # P0-06: digest scheduler + IMAP poll loop. Both factories return
     # self-disabling tasks (sleeping no-ops while unconfigured), so the
     # tasks exist unconditionally and settings drive actual behavior.
@@ -251,6 +253,9 @@ app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(InternalTokenMiddleware)
 app.add_middleware(SessionAuthMiddleware)
+# pool #47: correlation IDs — outermost of all, so every response
+# (including 401/413 envelopes) carries X-Request-ID.
+app.add_middleware(RequestCorrelationMiddleware)
 
 # Routers are included in the original route-declaration order (matches the
 # historical main.py; URL spaces are disjoint but ordering stays explicit).

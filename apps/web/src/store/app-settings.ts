@@ -91,6 +91,7 @@ export type UiFontSize = 15 | 16 | 18 | 20
 export type ReaderTextIndent = 'off' | '2em'
 /** 简繁转换（展示层，不改服务器数据）：原文/简→繁/繁→简/台标/港标 */
 export type ReaderChineseConversion = 'off' | 's2t' | 't2s' | 'tw' | 'hk'
+export type ReadLaterSort = 'newest' | 'oldest'
 /** 代码高亮：自动（含 code 文章按需加载 Shiki）/ 关闭 */
 export type ReaderCodeHighlight = 'auto' | 'off'
 
@@ -145,6 +146,8 @@ export interface AppSettings {
   unreadOnly: boolean
   /** 实验性：默认关；正式版 planned·0017（Reader Power UX） */
   scrollMarkUnread: boolean
+  /** 稍后读时间线排序（pool #14；服务器可持久化偏好） */
+  readLaterSort: ReadLaterSort
   /** 外观（0010a F1，Folo UISettings inspired） */
   accentColor: string // #RRGGBB
   uiFontSize: UiFontSize
@@ -230,6 +233,7 @@ const UI_FONT_SIZES = SETTING_ENUMS.uiFontSize
 const READER_TEXT_INDENTS = SETTING_ENUMS.readerTextIndent
 const READER_CHINESE_CONVERSIONS = SETTING_ENUMS.readerChineseConversion
 const READER_CODE_HIGHLIGHTS = SETTING_ENUMS.readerCodeHighlight
+const READ_LATER_SORTS = SETTING_ENUMS.readLaterSort
 /** Shiki 主题白名单（auto = 随 Reader 明暗切换；其余为单主题锁定） */
 const READER_CODE_THEMES = SETTING_ENUMS.readerCodeTheme
 
@@ -370,6 +374,11 @@ export function normalizeSettings(raw: unknown): AppSettings {
     scrollMarkUnread: pickBoolean(
       source.scrollMarkUnread,
       DEFAULT_APP_SETTINGS.scrollMarkUnread,
+    ),
+    readLaterSort: pickString(
+      source.readLaterSort,
+      READ_LATER_SORTS,
+      DEFAULT_APP_SETTINGS.readLaterSort,
     ),
     accentColor: pickHexColor(source.accentColor, DEFAULT_APP_SETTINGS.accentColor),
     uiFontSize: pickNumber(source.uiFontSize, UI_FONT_SIZES, DEFAULT_APP_SETTINGS.uiFontSize),
@@ -684,6 +693,7 @@ const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
   'readerCodeTheme',
   'readerBionic',
   'scrollMarkUnread',
+  'readLaterSort',
 ]
 
 interface AppSettingsState {

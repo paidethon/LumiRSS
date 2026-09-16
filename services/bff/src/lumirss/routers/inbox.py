@@ -159,6 +159,28 @@ async def list_inbox_sources(request: Request) -> list[InboxSource]:
     ]
 
 
+@router.post("/api/v1/inbox/sources/{source_uuid}/rotate", response_model=InboxSourceCreated)
+async def rotate_inbox_source_secret(
+    request: Request, source_uuid: str
+) -> InboxSourceCreated:
+    """Rotate the bearer secret (pool #28). The old token fails from the
+    next request on; pushed items are untouched; the new secret is shown
+    exactly once, like creation. Rotation never bypasses the Caddy/app
+    auth boundary."""
+    store = _get_inbox_store(request)
+    source = await store.get_source(source_uuid)
+    secret = await store.rotate_secret(source_uuid)
+    if source is None or secret is None:
+        raise InboxSourceNotFound(source_uuid)
+    return InboxSourceCreated(
+        uuid=source["uuid"],
+        name=source["name"],
+        secret=secret,
+        ingestPath=f"/api/v1/inbox/ingest/{source_uuid}",
+        createdAt=source["createdAt"],
+    )
+
+
 @router.delete("/api/v1/inbox/sources/{source_uuid}")
 async def delete_inbox_source(request: Request, source_uuid: str) -> dict:
     """Delete a connector and every item it pushed (identity, payload and

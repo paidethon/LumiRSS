@@ -16,6 +16,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
+from lumirss.db_tx import transaction
 from lumirss.itemref import parse_item_ref
 from lumirss.storage import Database
 from lumirss.util import utc_now
@@ -94,9 +95,74 @@ class TagStore:
         row = await self._db.fetch_one("SELECT id FROM tags WHERE id = ?", (tag_id,))
         if row is None:
             return False
-        await self._db.execute("DELETE FROM item_tags WHERE tag_id = ?", (tag_id,))
-        await self._db.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        # Pool #45: membership + tag rows die atomically — a crash between
+        # two autocommit deletes used to leave orphaned item_tags rows.
+        def _delete_tag(conn: sqlite3.Connection) -> None:
+            conn.execute("DELETE FROM item_tags WHERE tag_id = ?", (tag_id,))
+            conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+
+        await transaction(self._db, _delete_tag)
         return True
+
+    async def merge_preview(
+        self, source_tag_id: int, target_tag_id: int
+    ) -> dict[str, Any]:
+        """Affected-count preview for a merge (pool #16): how many source
+        bindings move to the target and how many are exact duplicates
+        that collapse away. Read-only."""
+        if source_tag_id == target_tag_id:
+            raise TagInvalid("源标签与目标标签相同。")
+        await self._db.migrate()
+        if await self._db.fetch_one("SELECT id FROM tags WHERE id = ?", (source_tag_id,)) is None:
+            raise TagNotFound(str(source_tag_id))
+        if await self._db.fetch_one("SELECT id FROM tags WHERE id = ?", (target_tag_id,)) is None:
+            raise TagNotFound(str(target_tag_id))
+        bindings = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM item_tags WHERE tag_id = ?",
+            (source_tag_id,),
+        )
+        overlaps = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM item_tags a WHERE a.tag_id = ? AND EXISTS (SELECT 1 FROM item_tags b WHERE b.item_ref = a.item_ref AND b.tag_id = ?)",
+            (source_tag_id, target_tag_id),
+        )
+        source_bindings = int(bindings["n"]) if bindings is not None else 0
+        overlap = int(overlaps["n"]) if overlaps is not None else 0
+        return {
+            "sourceTagId": source_tag_id,
+            "targetTagId": target_tag_id,
+            "bindings": source_bindings,
+            "overlaps": overlap,
+            "willMove": source_bindings - overlap,
+        }
+
+    async def merge(self, source_tag_id: int, target_tag_id: int) -> dict[str, Any]:
+        """Merge source INTO target atomically (pool #16): exact-duplicate
+        bindings collapse, the rest re-point to the target, the source
+        tag row is removed. One transaction — no half-merged state.
+        Touches Lumi-owned item_tags/tags only; FreshRSS categories are
+        never involved."""
+        await self.merge_preview(source_tag_id, target_tag_id)  # shared validation
+
+        def _merge(conn: sqlite3.Connection) -> dict[str, Any]:
+            conn.execute("BEGIN IMMEDIATE")
+            deduped_cur = conn.execute(
+                "DELETE FROM item_tags WHERE tag_id = ? AND item_ref IN (SELECT item_ref FROM item_tags WHERE tag_id = ?)",
+                (source_tag_id, target_tag_id),
+            )
+            deduped = deduped_cur.rowcount if deduped_cur.rowcount and deduped_cur.rowcount > 0 else 0
+            cur = conn.execute(
+                "UPDATE item_tags SET tag_id = ? WHERE tag_id = ?",
+                (target_tag_id, source_tag_id),
+            )
+            moved = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            conn.execute("DELETE FROM tags WHERE id = ?", (source_tag_id,))
+            return {
+                "targetTagId": target_tag_id,
+                "movedBindings": moved,
+                "dedupedBindings": deduped,
+            }
+
+        return await transaction(self._db, _merge)
 
     async def attach(
         self,

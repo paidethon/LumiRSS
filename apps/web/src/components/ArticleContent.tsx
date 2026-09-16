@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EntryDetail } from '../api/types'
 import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
+import { withHeadingIds } from '../lib/article-toc'
+import { decorateCodeCopyButtons } from '../lib/code-copy'
 import { useAppSettings } from '../store/app-settings'
 import { prefersDarkScheme, resolveTheme } from '../lib/theme'
+import ArticleToc from './ArticleToc'
 
 /** ArticleContent — 正文渲染边界（0006 建立；0012 Gate 4 升级为
  * presentation pipeline）。
@@ -80,14 +83,35 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     resolvedCodeTheme,
   ])
 
+  // 目录提取（pool #03）：在 DOMPurify 输出之上给 h2–h4 注入确定性 id
+  // 并生成目录；输入已清洗，注入的只有 id 属性，无脚本注入面。
+  const { html: htmlWithIds, toc } = useMemo(() => {
+    if (!hasHtml || html === '') return { html, toc: [] }
+    return withHeadingIds(html)
+  }, [html, hasHtml])
+
+  // 代码块复制按钮（pool #04）：渲染后 DOM 装饰（幂等），html 变化
+  // （管线重跑）后重装饰。
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const container = contentRef.current
+    if (container === null || !hasHtml) return
+    decorateCodeCopyButtons(container)
+  }, [htmlWithIds, hasHtml])
+
   if (hasHtml) {
     return (
-      <div
-        className="article-content"
-        // 注入的字符串永远是 DOMPurify 输出（唯一清洗点在
-        // sanitize-article-html.ts；transforms 发生在 sanitize 之前）。
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <>
+        <ArticleToc toc={toc} />
+        <div
+          ref={contentRef}
+          className="article-content"
+          // 注入的字符串永远是 DOMPurify 输出（唯一清洗点在
+          // sanitize-article-html.ts；transforms 发生在 sanitize 之前；
+          // withHeadingIds 只在其上补标题 id）。
+          dangerouslySetInnerHTML={{ __html: htmlWithIds }}
+        />
+      </>
     )
   }
 

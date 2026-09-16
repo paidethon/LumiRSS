@@ -110,6 +110,22 @@ class InboxStore:
             "createdAt": str(row["created_at"]),
         }
 
+    async def rotate_secret(self, source_uuid: str) -> str | None:
+        """Replace the bearer secret (pool #28): the old token stops
+        working immediately, pushed items are untouched, and the new
+        secret is returned exactly once (never logged). ``None`` when
+        the source is unknown."""
+        source = await self.get_source(source_uuid)
+        if source is None:
+            return None
+        secret = new_source_secret()
+        await self._db.migrate()
+        await self._db.execute(
+            "UPDATE inbox_sources SET secret = ? WHERE uuid = ?",
+            (secret, source_uuid),
+        )
+        return secret
+
     async def delete_source(self, source_uuid: str) -> list[str] | None:
         """Delete a connector and every item it pushed.
 

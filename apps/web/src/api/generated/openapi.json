@@ -829,6 +829,15 @@
       "title": "Accentcolor",
       "type": "string"
      },
+     "readLaterSort": {
+      "default": "newest",
+      "enum": [
+       "newest",
+       "oldest"
+      ],
+      "title": "Readlatersort",
+      "type": "string"
+     },
      "readerBackground": {
       "default": "follow",
       "enum": [
@@ -1863,6 +1872,72 @@
     "title": "ConversationQuestion",
     "type": "object"
    },
+   "DigestPreview": {
+    "description": "GET /api/v1/digest/preview — 无副作用预览（不发送、不记录错误）.",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "hour": {
+      "title": "Hour",
+      "type": "integer"
+     },
+     "html": {
+      "title": "Html",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "nextSendAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextsendat"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "subject": {
+      "title": "Subject",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "timezone": {
+      "title": "Timezone",
+      "type": "string"
+     }
+    },
+    "required": [
+     "subject",
+     "text",
+     "html",
+     "itemCount",
+     "enabled",
+     "hour",
+     "timezone"
+    ],
+    "title": "DigestPreview",
+    "type": "object"
+   },
    "DigestSendNowRequest": {
     "additionalProperties": false,
     "description": "POST /api/v1/digest/send-now — explicit item selection.",
@@ -1944,6 +2019,11 @@
      },
      "source": {
       "title": "Source",
+      "type": "string"
+     },
+     "timezone": {
+      "default": "",
+      "title": "Timezone",
       "type": "string"
      },
      "toAddr": {
@@ -2067,6 +2147,17 @@
        }
       ],
       "title": "Source"
+     },
+     "timezone": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timezone"
      },
      "toAddr": {
       "anyOf": [
@@ -4724,6 +4815,17 @@
       "title": "Stale",
       "type": "boolean"
      },
+     "staleReason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stalereason"
+     },
      "title": {
       "title": "Title",
       "type": "string"
@@ -5457,6 +5559,112 @@
     "title": "RssHubRoute",
     "type": "object"
    },
+   "SavedSearchCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/search/views.",
+    "properties": {
+     "categoryKey": {
+      "default": "",
+      "title": "Categorykey",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "view": {
+      "default": "all",
+      "title": "View",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "query"
+    ],
+    "title": "SavedSearchCreate",
+    "type": "object"
+   },
+   "SavedSearchList": {
+    "description": "GET /api/v1/search/views.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SavedSearchView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "SavedSearchList",
+    "type": "object"
+   },
+   "SavedSearchRename": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/search/views/{id}.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "SavedSearchRename",
+    "type": "object"
+   },
+   "SavedSearchView": {
+    "description": "One saved search view (pool #09): query + filter intent, never a\nresult snapshot — opening a view re-runs the search.",
+    "properties": {
+     "categoryKey": {
+      "default": "",
+      "title": "Categorykey",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "view": {
+      "default": "all",
+      "title": "View",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "query",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "SavedSearchView",
+    "type": "object"
+   },
    "SearchIndexInfo": {
     "description": "Honest state of the derived projection behind this response.",
     "properties": {
@@ -5640,6 +5848,22 @@
        }
       ],
       "title": "Libraryerror"
+     },
+     "libraryHasMore": {
+      "default": false,
+      "title": "Libraryhasmore",
+      "type": "boolean"
+     },
+     "libraryNextCursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Librarynextcursor"
      },
      "nextCursor": {
       "anyOf": [
@@ -6120,6 +6344,84 @@
      "items"
     ],
     "title": "TagListResponse",
+    "type": "object"
+   },
+   "TagMergePreview": {
+    "description": "GET /api/v1/tags/merge/preview — affected counts, read-only.",
+    "properties": {
+     "bindings": {
+      "title": "Bindings",
+      "type": "integer"
+     },
+     "overlaps": {
+      "title": "Overlaps",
+      "type": "integer"
+     },
+     "sourceId": {
+      "title": "Sourceid",
+      "type": "integer"
+     },
+     "targetId": {
+      "title": "Targetid",
+      "type": "integer"
+     },
+     "willMove": {
+      "title": "Willmove",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "sourceId",
+     "targetId",
+     "bindings",
+     "overlaps",
+     "willMove"
+    ],
+    "title": "TagMergePreview",
+    "type": "object"
+   },
+   "TagMergeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/tags/merge — merge source INTO target.",
+    "properties": {
+     "sourceId": {
+      "title": "Sourceid",
+      "type": "integer"
+     },
+     "targetId": {
+      "title": "Targetid",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "sourceId",
+     "targetId"
+    ],
+    "title": "TagMergeRequest",
+    "type": "object"
+   },
+   "TagMergeResult": {
+    "description": "POST /api/v1/tags/merge — committed outcome.",
+    "properties": {
+     "dedupedBindings": {
+      "title": "Dedupedbindings",
+      "type": "integer"
+     },
+     "movedBindings": {
+      "title": "Movedbindings",
+      "type": "integer"
+     },
+     "targetId": {
+      "title": "Targetid",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "targetId",
+     "movedBindings",
+     "dedupedBindings"
+    ],
+    "title": "TagMergeResult",
     "type": "object"
    },
    "TagRenameRequest": {
@@ -7546,6 +7848,25 @@
     "summary": "Rename Category"
    }
   },
+  "/api/v1/digest/preview": {
+   "get": {
+    "description": "无副作用预览（pool #31）：当前配置下摘要会长什么样、下次何时发。\n\n不发送、不写 last_error / last_sent_at、不触碰 SMTP——预览失败\n（SMTP 未配齐等）仍返回已可推导的内容与说明，由 note 诚实标注。\nnextSendAt 仅在 enabled 时给出，按配置时区（'' = 服务器本地）的\n墙钟计算。",
+    "operationId": "digest_preview_api_v1_digest_preview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DigestPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Digest Preview"
+   }
+  },
   "/api/v1/digest/send-now": {
    "post": {
     "description": "Immediate send with the configured relay (never a test to real\nthird parties — tests use local sinks only).\n\nServer-derived content only (P0-06b/j): ``entryRefs`` entries are\nRESOLVED against stored bridge entries by their ``messageId`` (any\nother keys are ignored — client title/url text is never trusted);\nno refs → the newest bridge entries bounded by ``limitCount``. An\nempty resolved selection is the stable 422 ``no_digest_items``\nerror — an empty email is never sent. ``enabled`` is intentionally\nNOT consulted here (explicit user action); only the scheduled path\nrespects it.",
@@ -8661,6 +8982,46 @@
     "summary": "Delete Inbox Source"
    }
   },
+  "/api/v1/inbox/sources/{source_uuid}/rotate": {
+   "post": {
+    "description": "Rotate the bearer secret (pool #28). The old token fails from the\nnext request on; pushed items are untouched; the new secret is shown\nexactly once, like creation. Rotation never bypasses the Caddy/app\nauth boundary.",
+    "operationId": "rotate_inbox_source_secret_api_v1_inbox_sources__source_uuid__rotate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboxSourceCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rotate Inbox Source Secret"
+   }
+  },
   "/api/v1/library/assets/{asset_uuid}/page.html": {
    "get": {
     "description": "Sandboxed artifact read-out. The CSP `sandbox` directive strips\nscripts, forms, same-origin access and top navigation — the snapshot\ncan never reach Lumi's origin, cookies or /api endpoints.",
@@ -8922,6 +9283,44 @@
      }
     },
     "summary": "Update Bookmark"
+   }
+  },
+  "/api/v1/library/bookmarks/{item_uuid}/export.md": {
+   "get": {
+    "description": "Deterministic Markdown download for one bookmark (pool #22).\n\nSame input → byte-identical output; YAML frontmatter is escaped and\nthe filename sanitized (never trusted from the raw title). A pure\nHTTP response — nothing is written to the Obsidian vault or any\nother store.",
+    "operationId": "export_bookmark_markdown_api_v1_library_bookmarks__item_uuid__export_md_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Bookmark Markdown"
    }
   },
   "/api/v1/library/clips": {
@@ -10335,7 +10734,7 @@
   },
   "/api/v1/search": {
    "get": {
-    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 chars, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive.",
+    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 chars, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive.\n\nEach leg paginates independently: ``cursor`` keys the RSS leg,\n``libraryCursor`` the library leg; both cursors are bound to the\nquery scope and rejected (400) on mismatch. A ``null`` cursor next\nto a non-null ``libraryCursor`` means the RSS leg is exhausted.",
     "operationId": "search_api_v1_search_get",
     "parameters": [
      {
@@ -10361,6 +10760,22 @@
         }
        ],
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "libraryCursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Librarycursor"
       }
      },
      {
@@ -10512,6 +10927,140 @@
      }
     },
     "summary": "Rebuild Index"
+   }
+  },
+  "/api/v1/search/views": {
+   "get": {
+    "operationId": "list_saved_search_views_api_v1_search_views_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SavedSearchList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Saved Search Views"
+   },
+   "post": {
+    "description": "Save the current query + filter intent (not the result set).",
+    "operationId": "create_saved_search_view_api_v1_search_views_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SavedSearchCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SavedSearchView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Saved Search View"
+   }
+  },
+  "/api/v1/search/views/{view_id}": {
+   "delete": {
+    "operationId": "delete_saved_search_view_api_v1_search_views__view_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "view_id",
+      "required": true,
+      "schema": {
+       "title": "View Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Saved Search View"
+   },
+   "patch": {
+    "operationId": "rename_saved_search_view_api_v1_search_views__view_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "view_id",
+      "required": true,
+      "schema": {
+       "title": "View Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SavedSearchRename"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SavedSearchView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Saved Search View"
    }
   },
   "/api/v1/settings": {
@@ -11343,6 +11892,94 @@
     "summary": "Item Tags"
    }
   },
+  "/api/v1/tags/merge": {
+   "post": {
+    "description": "Merge source tag INTO target in one transaction (pool #16):\nduplicate bindings collapse, the rest re-point, the source tag is\ndeleted. Lumi-owned bindings only — FreshRSS categories untouched.",
+    "operationId": "merge_tags_api_v1_tags_merge_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagMergeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagMergeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Merge Tags"
+   }
+  },
+  "/api/v1/tags/merge/preview": {
+   "get": {
+    "description": "Read-only affected-count preview: source bindings, how many\ncollapse as exact duplicates of target bindings, how many move.",
+    "operationId": "merge_tag_preview_api_v1_tags_merge_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "sourceId",
+      "required": true,
+      "schema": {
+       "title": "Sourceid",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "targetId",
+      "required": true,
+      "schema": {
+       "title": "Targetid",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TagMergePreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Merge Tag Preview"
+   }
+  },
   "/api/v1/tags/suggestions/{item_ref}": {
    "get": {
     "description": "AI suggestions are computed, NEVER stored here (assign-with-ai or\naccept endpoints persist only after explicit user action).",
@@ -11686,7 +12323,7 @@
   },
   "/api/v1/workspaces/read-later/timeline": {
    "get": {
-    "description": "Server-driven read-later timeline (P0-01): newest-added-first,\nkeyset-paged over the reserved workspace's rss members. Cards come\nfrom the derived projection; a projection miss falls back to the\nFreshRSS adapter; a ref that resolves nowhere stays visible as\n``stale`` instead of vanishing (ADR 0004).",
+    "description": "Server-driven read-later timeline (P0-01): keyset-paged over the\nreserved workspace's members by add time. ``order`` is ``newest``\n(default) or ``oldest`` (pool #14); cursors are bound to the order\nthey were issued under. Cards come from the derived projection; a\nprojection miss falls back to the FreshRSS adapter; a ref that\nresolves nowhere stays visible as ``stale`` instead of vanishing\n(ADR 0004).",
     "operationId": "read_later_timeline_api_v1_workspaces_read_later_timeline_get",
     "parameters": [
      {
@@ -11713,6 +12350,16 @@
         }
        ],
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order",
+      "required": false,
+      "schema": {
+       "default": "newest",
+       "title": "Order",
+       "type": "string"
       }
      }
     ],

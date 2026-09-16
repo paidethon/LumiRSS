@@ -25,6 +25,7 @@ import { useItemTags, useLibraryFavoriteToggle } from '../api/queries'
 import { formatPublishedAt } from '../lib/date-format'
 import { isOpenable, openResolvedItem } from '../lib/open-item'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
+import { staleState } from '../lib/stale-label'
 import { ItemTagButton } from './ItemTagButton'
 import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
@@ -148,7 +149,8 @@ export function UnifiedContentCard({
             </span>
           )}
         </h3>
-        {/* 域徽标：纯文本（无图标），stale 时降为 muted「源已失效」 */}
+        {/* 域徽标：纯文本（无图标），stale 时按失效原因区分（pool #13：
+            暂时不可用 ≠ 已删除），未知原因回退通用「源已失效」。 */}
         <span
           className={cx(
             'shrink-0 rounded-[var(--lumi-radius-full)] px-2 py-0.5 text-[11px] font-medium',
@@ -157,7 +159,7 @@ export function UnifiedContentCard({
               : 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]',
           )}
         >
-          {stale ? '源已失效' : kindLabel(item.kind)}
+          {stale ? staleState(item.staleReason).badge : kindLabel(item.kind)}
         </span>
       </div>
 

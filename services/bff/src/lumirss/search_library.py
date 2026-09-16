@@ -8,11 +8,21 @@ create/delete/update) and the whole table is rebuildable from the owned
 library tables at any time — it is never a source of truth.
 """
 
+import json
 import sqlite3
 from typing import Any
 
+from lumirss.cursor import InvalidCursor, decode_opaque_ref, encode_opaque_ref
 from lumirss.storage import Database
 from lumirss.util import utc_now
+
+_LIBRARY_CURSOR_PREFIX = "ql1."
+_LIBRARY_CURSOR_MAX = 512
+# Internal hard row cap for probe-style reads. The ROUTE still caps its
+# limit at 50 (routers/search.py); this cap only exists so search_page's
+# limit+1 hasMore probe keeps working at page size 50 — with the old 50
+# clamp the probe row was absorbed and hasMore lied at the boundary.
+_HARD_ROW_CAP = 200
 
 
 async def rss_keyword_search(db: Database, query: str, limit: int = 5) -> list[dict[str, Any]]:
@@ -71,18 +81,58 @@ class LibrarySearchWriter:
         *,
         kind: str | None = None,
         limit: int = 20,
+        favorite_only: bool = False,
+        keyset: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Bounded LIKE search across the library projection."""
+        """Bounded LIKE search across the library projection.
+
+        ``favorite_only`` and the keyset predicate run in SQL before
+        LIMIT — a post-limit favorite filter silently dropped favorited
+        hits outside the newest slice (pool #11)."""
         await self._db.migrate()
         needle = f"%{_escape_like(query.strip())}%"
         rows = await self._db.fetch_all(
             "SELECT ref, kind, title, body, url, updated_at FROM search_library"
             " WHERE (title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
             " AND (? IS NULL OR kind = ?)"
+            " AND (? = 0 OR EXISTS (SELECT 1 FROM library_favorites fav"
+            "      WHERE fav.ref = search_library.ref))"
+            " AND (? IS NULL OR updated_at < ?"
+            "      OR (updated_at = ? AND ref < ?))"
             " ORDER BY updated_at DESC, ref DESC LIMIT ?",
-            (needle, needle, needle, kind, kind, max(1, min(limit, 50))),
+            (
+                needle,
+                needle,
+                needle,
+                kind,
+                kind,
+                int(favorite_only),
+                None if keyset is None else keyset[0],
+                None if keyset is None else keyset[0],
+                None if keyset is None else keyset[0],
+                None if keyset is None else keyset[1],
+                max(1, min(limit, _HARD_ROW_CAP)),
+            ),
         )
         return [dict(row) for row in rows]
+
+    async def search_page(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+        favorite_only: bool = False,
+        keyset: tuple[str, str] | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """One keyset page plus an honest hasMore flag (limit+1 probe)."""
+        rows = await self.search(
+            query,
+            limit=limit + 1,
+            favorite_only=favorite_only,
+            keyset=keyset,
+        )
+        has_more = len(rows) > limit
+        return rows[:limit], has_more
 
     async def get_by_ref(self, ref: str) -> dict[str, Any] | None:
         await self._db.migrate()
@@ -125,6 +175,44 @@ class LibrarySearchWriter:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def encode_library_search_cursor(
+    updated_at: str, ref: str, *, scope: dict[str, Any]
+) -> str:
+    """Opaque library-leg cursor, bound to its query scope so a cursor
+    replayed under a different query/filter is rejected instead of
+    silently paging a different result set."""
+    payload = json.dumps(
+        {"u": updated_at, "r": ref, "s": scope}, ensure_ascii=False
+    )
+    return encode_opaque_ref(_LIBRARY_CURSOR_PREFIX, payload)
+
+
+def decode_library_search_cursor(
+    value: str, *, scope: dict[str, Any]
+) -> tuple[str, str]:
+    payload = decode_opaque_ref(
+        value,
+        prefix=_LIBRARY_CURSOR_PREFIX,
+        max_length=_LIBRARY_CURSOR_MAX,
+        error_type=InvalidCursor,
+        description="Library search cursor",
+    )
+    try:
+        parsed = json.loads(payload)
+        updated_at, ref, cursor_scope = parsed["u"], parsed["r"], parsed["s"]
+        if (
+            not isinstance(updated_at, str)
+            or not isinstance(ref, str)
+            or cursor_scope != scope
+        ):
+            raise ValueError("cursor payload or scope mismatch")
+    except ValueError as exc:
+        raise InvalidCursor(
+            "Library search cursor is invalid for this query."
+        ) from exc
+    return updated_at, ref
 
 
 def upsert_search_row(

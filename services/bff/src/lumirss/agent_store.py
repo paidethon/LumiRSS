@@ -29,9 +29,10 @@ P0-08 recovery hardening (this module):
   presence == processing. On the first agent access after a process
   start, the sweep finalizes any surviving marker as an ``interrupted``
   assistant message so the UI never polls forever.
-- ``append_message`` serializes the MAX(seq)+1 read+write per thread
-  with an asyncio lock (single-process invariant; a UNIQUE(thread_id,
-  seq) constraint + migration is the durable fix — reported).
+- ``append_message`` assigns MAX(seq)+1 inside a ``BEGIN IMMEDIATE``
+  transaction (migration 0023 adds the UNIQUE(thread_id, seq) index):
+  the database, not the process boundary, now owns ordering — a losing
+  writer gets IntegrityError and retries with a fresh MAX read.
 - ``update_message_content`` lets the loop persist streaming text
   incrementally into one assistant row (P0-08b).
 """
@@ -39,6 +40,7 @@ P0-08 recovery hardening (this module):
 import asyncio
 import hashlib
 import json
+import sqlite3
 import uuid as _uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -107,6 +109,43 @@ class NoActiveRun(Exception):
 
 def _new_id() -> str:
     return str(_uuid.uuid4())
+
+
+_SEQ_INSERT_RETRIES = 3
+
+
+def _append_message_sync(
+    conn: sqlite3.Connection,
+    *,
+    message_id: str,
+    thread_id: str,
+    role: str,
+    content_json: str,
+    citations_json: str,
+    now: str,
+) -> int:
+    """MAX(seq)+1 read+write under one BEGIN IMMEDIATE transaction —
+    the write lock is taken BEFORE the read, so the seq can never be
+    observed stale, even from another process (pool #38)."""
+    conn.execute("BEGIN IMMEDIATE")
+    row = conn.execute(
+        "SELECT MAX(seq) AS s FROM agent_messages WHERE thread_id = ?",
+        (thread_id,),
+    ).fetchone()
+    seq = (int(row["s"]) if row is not None and row["s"] is not None else 0) + 1
+    conn.execute(
+        "INSERT INTO agent_messages (id, thread_id, seq, role, content, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            message_id,
+            thread_id,
+            seq,
+            role,
+            content_json,
+            citations_json,
+            now,
+        ),
+    )
+    return seq
 
 
 def args_hash(tool: str, args: dict[str, Any]) -> str:
@@ -228,29 +267,40 @@ class AgentStore:
         citations: list[str] | None = None,
     ) -> dict[str, Any]:
         await self._db.migrate()
-        # MAX(seq)+1 read+write serialized per thread (single process).
-        # Durable fix is a UNIQUE(thread_id, seq) constraint — migration
-        # recommendation filed in the recovery report.
+        # MAX(seq)+1 read+write inside ONE BEGIN IMMEDIATE transaction:
+        # the write lock is held across the read, so even a second
+        # process serializes behind us; the UNIQUE(thread_id, seq) index
+        # (migration 0023) is the final guarantee. The per-thread asyncio
+        # lock stays as the cheap in-process fast path.
+        message_id = _new_id()
+        now = utc_now()
+        content_json = json.dumps(content, ensure_ascii=False)
+        citations_json = json.dumps(citations or [], ensure_ascii=False)
         async with self._seq_locks[thread_id]:
-            seq_row = await self._db.fetch_one(
-                "SELECT COALESCE(MAX(seq), 0) AS s FROM agent_messages WHERE thread_id = ?",
-                (thread_id,),
-            )
-            seq = (int(seq_row["s"]) if seq_row is not None else 0) + 1
-            message_id = _new_id()
-            now = utc_now()
-            await self._db.execute(
-                "INSERT INTO agent_messages (id, thread_id, seq, role, content, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    message_id,
-                    thread_id,
-                    seq,
-                    role,
-                    json.dumps(content, ensure_ascii=False),
-                    json.dumps(citations or [], ensure_ascii=False),
-                    now,
-                ),
-            )
+            for _attempt in range(_SEQ_INSERT_RETRIES):
+                try:
+                    seq = await transaction(
+                        self._db,
+                        lambda conn: _append_message_sync(
+                            conn,
+                            message_id=message_id,
+                            thread_id=thread_id,
+                            role=role,
+                            content_json=content_json,
+                            citations_json=citations_json,
+                            now=now,
+                        ),
+                    )
+                    break
+                except sqlite3.IntegrityError:
+                    # A foreign writer claimed our seq between processes;
+                    # retry reads the new MAX and re-appends atomically.
+                    continue
+            else:
+                raise RuntimeError(
+                    "agent_messages append kept colliding on seq; "
+                    "thread may be under cross-process write pressure."
+                )
         return {
             "id": message_id,
             "threadId": thread_id,

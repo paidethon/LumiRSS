@@ -3,6 +3,12 @@ import { RefreshCw } from 'lucide-react'
 import { useEntryDetail } from '../api/queries'
 import { ApiError } from '../api/client'
 import { useReaderUi } from '../store/reader-ui'
+import {
+  captureAnchorText,
+  findAnchorElement,
+  loadReadingPosition,
+  saveReadingPosition,
+} from '../lib/reading-position'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import ArticleConversation from './ArticleConversation'
 import ReaderHeader from './ReaderHeader'
@@ -11,6 +17,21 @@ import ReaderSummary from './ReaderSummary'
 import ReaderTranslation from './ReaderTranslation'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
+
+/** 段落锚点候选：正文容器内的常见内容元素（文档序遍历，取视口线上方
+ * 最近的一个作为位置锚点）。 */
+const ANCHOR_SELECTOR = [
+  '.lumi-reader-article p',
+  '.lumi-reader-article li',
+  '.lumi-reader-article pre',
+  '.lumi-reader-article blockquote',
+  '.lumi-reader-article h1',
+  '.lumi-reader-article h2',
+  '.lumi-reader-article h3',
+  '.lumi-reader-article h4',
+  '.lumi-reader-article h5',
+  '.lumi-reader-article h6',
+].join(', ')
 
 /** Reader — 右栏状态机（0006 行为 / 0009 Gate 3 视觉重建）：
  *
@@ -27,7 +48,8 @@ import { Skeleton } from './ui/Skeleton'
  * - 正文最大宽度 46rem（~736px，Spec 720–780 区间），居中；
  * - skeleton / error / 404 全部 token 化 + primitives。
  *
- * Reader 自己滚动；切换选择时滚回文章顶部。 */
+ * Reader 自己滚动；切换选择时恢复该文章的上次阅读位置（pool #01），
+ * 无记录则回到顶部。 */
 export default function Reader() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const selectEntry = useReaderUi((s) => s.selectEntry)
@@ -56,13 +78,64 @@ export default function Reader() {
   }, [selectedEntryRef])
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    // 选择新文章时回到顶部（不建 scroll restoration 框架）；
-    // scrollTop 赋值而非 scrollTo()，兼容 jsdom。
-    if (scrollRef.current !== null) {
-      scrollRef.current.scrollTop = 0
+
+// 阅读位置恢复（pool #01）：按 ItemRef 记录滚动比例 + 段落锚点，切换
+// 返回时恢复；锚点优先、ratio 回退，正文改版只会落在本篇内。只读滚动
+// 位置，绝不触碰已读状态。列表窗格滚动与正文互不影响。
+const restorePosition = useCallback(() => {
+  const container = scrollRef.current
+  if (container === null || selectedEntryRef === null) return
+  const saved = loadReadingPosition(selectedEntryRef)
+  if (saved === null) {
+    container.scrollTop = 0
+    return
+  }
+  const anchor = findAnchorElement(container, saved.anchorText)
+  if (anchor !== null) {
+    const top =
+      anchor.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop
+    container.scrollTop = Math.max(0, top - 12)
+  } else {
+    const max = container.scrollHeight - container.clientHeight
+    container.scrollTop = max > 0 ? Math.round(saved.ratio * max) : 0
+  }
+}, [selectedEntryRef])
+
+useEffect(() => {
+  restorePosition()
+}, [restorePosition])
+
+// 正文渲染完成后再恢复一次——此时锚点段落可被真正命中。
+const detailEntryRef = data?.entryRef ?? null
+useEffect(() => {
+  if (detailEntryRef !== null) restorePosition()
+}, [detailEntryRef, restorePosition])
+
+// 滚动保存：rAF 合并；锚点取视口顶 80px 线上方最近的正文段落。
+const saveTickRef = useRef<number | null>(null)
+const handleScroll = useCallback(() => {
+  if (saveTickRef.current !== null) return
+  saveTickRef.current = requestAnimationFrame(() => {
+    saveTickRef.current = null
+    const container = scrollRef.current
+    if (container === null || selectedEntryRef === null) return
+    const max = container.scrollHeight - container.clientHeight
+    const ratio = max > 0 ? container.scrollTop / max : 0
+    const containerTop = container.getBoundingClientRect().top
+    let anchor: Element | null = null
+    for (const el of container.querySelectorAll(ANCHOR_SELECTOR)) {
+      if (el.getBoundingClientRect().top > containerTop + 80) break
+      anchor = el
     }
-  }, [selectedEntryRef])
+    saveReadingPosition(selectedEntryRef, {
+      ratio,
+      anchorText: captureAnchorText(anchor),
+      savedAt: new Date().toISOString(),
+    })
+  })
+}, [selectedEntryRef])
 
   if (selectedEntryRef === null) {
     return (
@@ -137,7 +210,11 @@ export default function Reader() {
 
   const detail = data
   return (
-    <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
+    >
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，

@@ -140,6 +140,11 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     RssHubUnknownKey,
 )
+from lumirss.saved_search_store import (
+    SavedSearchInvalid,
+    SavedSearchLimit,
+    SavedSearchNotFound,
+)
 from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
@@ -284,6 +289,10 @@ _ERROR_RESPONSES = {
     # phase2 G8 tags
     TagInvalid: (400, "invalid_tag"),
     TagNotFound: (404, "tag_not_found"),
+    # pool #09 saved search views
+    SavedSearchInvalid: (400, "invalid_saved_search"),
+    SavedSearchNotFound: (404, "saved_search_not_found"),
+    SavedSearchLimit: (409, "saved_search_limit"),
     # phase2 recovery P0-08 (agent run lifecycle)
     ThreadNotFound: (404, "thread_not_found"),
     PendingApprovalBlocked: (409, "pending_approval"),
@@ -398,6 +407,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApprovalInvalid)
     @app.exception_handler(TagInvalid)
     @app.exception_handler(TagNotFound)
+    @app.exception_handler(SavedSearchInvalid)
+    @app.exception_handler(SavedSearchNotFound)
+    @app.exception_handler(SavedSearchLimit)
     @app.exception_handler(ThreadNotFound)
     @app.exception_handler(PendingApprovalBlocked)
     @app.exception_handler(NoActiveRun)

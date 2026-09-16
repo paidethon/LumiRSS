@@ -136,12 +136,16 @@ function ListHeader({ view, loadedCount }: { view: UiView; loadedCount: number }
   )
 }
 
-/** P0-01：稍后读视图 = 服务端时间线（最新加入在前；cursor 分页；
- * 悬挂成员以 stale 行可见而非消失——服务端是真源，ADR 0004）。
- * 行卡片复用 EntryRow/EntryCard（Clock 按钮经 useToggleReadLater 走
- * workspace mutation：乐观移除 + 失败回滚）；stale 行给移除出口。 */
+/** P0-01：稍后读视图 = 服务端时间线（排序偏好 readLaterSort：最新/最早
+ * 加入；cursor 分页且与排序绑定；悬挂成员以 stale 行可见而非消失——
+ * 服务端是真源，ADR 0004）。行卡片复用 EntryRow/EntryCard（Clock 按钮
+ * 经 useToggleReadLater 走 workspace mutation：乐观移除 + 失败回滚）；
+ * stale 行给移除出口。 */
 function ReadLaterList() {
-  const timeline = useReadLaterTimeline()
+  const readLaterSort = useAppSettings((s) => s.settings.readLaterSort)
+  const updateSettings = useAppSettings((s) => s.update)
+  const order: 'newest' | 'oldest' = readLaterSort
+  const timeline = useReadLaterTimeline(order)
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = timeline
   // 列表级失败告警：乐观移除会让行组件卸载（行级错误态随之丢失），
   // 失败信息由 useReadLaterMemberMutation 写入共享 cache，在此诚实展示。
@@ -153,6 +157,24 @@ function ReadLaterList() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ListHeader view="read-later" loadedCount={rows.length} />
+      <div className="flex items-center justify-end border-b border-[var(--lumi-separator)] px-4 py-1">
+        <button
+          type="button"
+          aria-pressed={order === 'oldest'}
+          title="切换：最早加入 / 最新加入"
+          onClick={() =>
+            updateSettings({ readLaterSort: order === 'newest' ? 'oldest' : 'newest' })
+          }
+          className={
+            'rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] ' +
+            (order === 'oldest'
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]')
+          }
+        >
+          {order === 'oldest' ? '最早加入' : '最新加入'}
+        </button>
+      </div>
       {lastError.data != null && (
         <p role="alert" className="border-b border-[var(--lumi-separator)] px-4 py-1.5 text-xs text-[var(--lumi-danger)]">
           稍后读操作失败：{lastError.data}（列表已恢复）

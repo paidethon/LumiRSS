@@ -34,6 +34,8 @@ import {
   detectRssHub,
   discoverFeeds,
   enableRag,
+  getTagMergePreview,
+  mergeTags,
   executeRestore,
   fetchClipArticle,
   generateEntrySummary,
@@ -98,6 +100,10 @@ import {
   resolveItems,
   saveLibreTranslateKey,
   searchEntries,
+  createSavedSearchView,
+  deleteSavedSearchView,
+  getSavedSearchViews,
+  renameSavedSearchView,
   sendConversationMessage,
   setAiProfileSecret,
   setDefaultAiSecret,
@@ -217,12 +223,13 @@ export function useEntries(scope: ContentScope, view: UiView) {
 
 /** P0-01：服务端稍后读时间线（最新加入在前；cursor opaque；悬挂成员
  * stale 行可见）。read-later 视图的唯一数据源——服务端是真源（ADR 0004）。 */
-export function useReadLaterTimeline() {
+export function useReadLaterTimeline(order: 'newest' | 'oldest' = 'newest') {
   return useInfiniteQuery({
-    queryKey: READ_LATER_TIMELINE_KEY,
+    // order 进入 queryKey：切换排序 = 换 key（cursor 自动重置，不重复）。
+    queryKey: [...READ_LATER_TIMELINE_KEY, { order }],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
-      getReadLaterTimeline({ cursor: pageParam, limit: 25 }, signal),
+      getReadLaterTimeline({ cursor: pageParam, limit: 25, order }, signal),
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     maxPages: 50,
     staleTime: 30_000,
@@ -255,12 +262,19 @@ export function useSearch(
   const trimmed = q.trim()
   return useInfiniteQuery({
     queryKey: ['search', { q: trimmed, ...filters }],
-    initialPageParam: null as string | null,
+    // 双腿独立 keyset（pool #10）：RSS 腿与库腿各自推进；某腿耗尽后
+    // 传 null，服务端据此跳过该腿（null cursor + 非 null
+    // libraryCursor = RSS 腿已取完，只续库腿）。
+    initialPageParam: { cursor: null, libraryCursor: null } as {
+      cursor: string | null
+      libraryCursor: string | null
+    },
     queryFn: ({ pageParam, signal }) =>
       searchEntries(
         {
           q: trimmed,
-          cursor: pageParam,
+          cursor: pageParam.cursor,
+          libraryCursor: pageParam.libraryCursor,
           feedUrl: filters.feedUrl ?? null,
           categoryId: filters.categoryId ?? null,
           state: filters.state ?? null,
@@ -268,10 +282,62 @@ export function useSearch(
         },
         signal,
       ),
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => {
+      const rssDone = !lastPage.hasMore || lastPage.nextCursor == null
+      const libraryDone =
+        !lastPage.libraryHasMore || lastPage.libraryNextCursor == null
+      if (rssDone && libraryDone) return undefined
+      return {
+        cursor: rssDone ? null : lastPage.nextCursor,
+        libraryCursor: libraryDone ? null : lastPage.libraryNextCursor!,
+      }
+    },
     enabled: trimmed.length > 0,
     placeholderData: keepPreviousData,
     maxPages: 50,
+  })
+}
+
+const SAVED_VIEWS_KEY = ['search', 'views'] as const
+
+/** pool #09：保存的搜索视图清单（存查询+筛选意图，不是结果集）。 */
+export function useSavedSearchViews() {
+  return useQuery({
+    queryKey: SAVED_VIEWS_KEY,
+    queryFn: ({ signal }) => getSavedSearchViews(signal),
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateSavedSearchViewMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { name: string; query: string; view: string; categoryKey: string }) =>
+      createSavedSearchView(body),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
+  })
+}
+
+export function useRenameSavedSearchViewMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      renameSavedSearchView(id, name),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
+  })
+}
+
+export function useDeleteSavedSearchViewMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteSavedSearchView(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
   })
 }
 
@@ -279,8 +345,7 @@ export function useSearch(
  * 完全不发请求；切换 selection = 换 query key，旧请求由
  * TanStack Query 通过 AbortSignal 自动取消。
  * staleTime：正文对同一 entryRef 是稳定的（read/star 走 mutation 的
- * 精确失效）——快速来回切换时命中缓存，不重复 refetch 数百 KB 正文。 */
-export function useEntryDetail(entryRef: string | null) {
+ * 精确失效）——快速来回切换时命中缓存，不重复 refetch 数百 KB 正文。 */export function useEntryDetail(entryRef: string | null) {
   return useQuery({
     queryKey: ['entry', entryRef],
     queryFn: ({ signal }) => getEntry(entryRef!, signal),
@@ -1737,6 +1802,32 @@ export function useDeleteTagMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (tagId: number) => deleteTag(tagId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['graph'] }),
+        queryClient.invalidateQueries({ queryKey: ['item-tags'] }),
+      ])
+    },
+  })
+}
+
+/** pool #16：合并预览（受影响计数；仅选定源+目标后启用）。 */
+export function useTagMergePreview(sourceId: number | null, targetId: number | null) {
+  return useQuery({
+    queryKey: ['tag-merge-preview', { sourceId, targetId }],
+    queryFn: ({ signal }) => getTagMergePreview(sourceId!, targetId!, signal),
+    enabled: sourceId !== null && targetId !== null && sourceId !== targetId,
+    staleTime: 0,
+  })
+}
+
+/** pool #16：执行合并（源并入目标；tags/graph/条目标签全部失效）。 */
+export function useTagMergeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { sourceId: number; targetId: number }) =>
+      mergeTags(vars.sourceId, vars.targetId),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['tags'] }),

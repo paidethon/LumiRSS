@@ -487,3 +487,49 @@ def test_v21_enforces_connector_idempotency_at_schema_level(tmp_path):
                 (),
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Bearer-secret rotation (pool #28)
+# ---------------------------------------------------------------------------
+
+
+def test_rotate_replaces_secret_keeps_items_and_dies_old_token(client):
+    source = _create_source(client)
+    assert _ingest(client, source, guid="g1").status_code == 200
+
+    response = client.post(f"/api/v1/inbox/sources/{source['uuid']}/rotate")
+    assert response.status_code == 200
+    rotated = response.json()
+    assert rotated["secret"]
+    assert rotated["secret"] != source["secret"]
+    assert rotated["uuid"] == source["uuid"]
+
+    # New secret works; old secret fails (contract: old token dies at the
+    # next request).
+    ok = _ingest(client, rotated, guid="g2")
+    assert ok.status_code == 200
+    stale = client.post(
+        f"/api/v1/inbox/ingest/{source['uuid']}",
+        json={
+            "guid": "g3",
+            "title": "t",
+            "url": "https://example.com/b",
+            "content": "c",
+            "publishedAt": "2026-09-13T10:00:00+00:00",
+        },
+        headers={"Authorization": f"Bearer {source['secret']}"},
+    )
+    assert stale.status_code == 404
+
+    # Rotation loses no history: both pushed items are still listed, and
+    # the list endpoint never echoes either secret.
+    items = client.get("/api/v1/inbox/items").json()["items"]
+    assert len(items) == 2
+    sources = client.get("/api/v1/inbox/sources").json()
+    assert rotated["secret"] not in str(sources)
+
+
+def test_rotate_unknown_source_is_404(client):
+    response = client.post("/api/v1/inbox/sources/does-not-exist/rotate")
+    assert response.status_code == 404

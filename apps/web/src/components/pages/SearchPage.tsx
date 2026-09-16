@@ -18,7 +18,15 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Search, X } from 'lucide-react'
-import { useFeeds, useSearch } from '../../api/queries'
+import {
+  useCreateSavedSearchViewMutation,
+  useDeleteSavedSearchViewMutation,
+  useFeeds,
+  useRenameSavedSearchViewMutation,
+  useSavedSearchViews,
+  useSearch,
+} from '../../api/queries'
+import { mergeUnique } from '../../lib/merge-unique'
 import type { LibrarySearchItem } from '../../api/client'
 import type { SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
@@ -234,6 +242,13 @@ export default function SearchPage() {
   const [categoryKey, setCategoryKey] = useState<string>('')
   const [history, setHistory] = useState<string[]>(() => readSearchHistory())
   const debounced = useDebouncedValue(input)
+  // pool #09：保存的搜索视图（服务端持久化；存意图，应用时重新查询）。
+  const savedViews = useSavedSearchViews()
+  const createView = useCreateSavedSearchViewMutation()
+  const deleteView = useDeleteSavedSearchViewMutation()
+  const renameView = useRenameSavedSearchViewMutation()
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
 
   const feeds = useFeeds()
   const categories = useMemo(() => {
@@ -260,15 +275,17 @@ export default function SearchPage() {
   })
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = search
 
+  // 多页合并按 ref 去重（merge-unique）：双腿独立 keyset 下同一 ref
+  // 理论上只出现一次，但旧服务端会每页重发同一库腿切片。
   const results = useMemo(
-    () => data?.pages.flatMap((page) => page.items) ?? [],
+    () => mergeUnique(data?.pages.flatMap((page) => page.items) ?? [], (i) => i.entryRef),
     [data],
   )
   const indexInfo = data?.pages.at(-1)?.index
   // phase2 G6：库腿（additive 字段）——多页合并；libraryError 取第一个
   // 非 null 页错误（诚实小字展示，不阻塞 RSS 结果）。
   const libraryHits = useMemo(
-    () => data?.pages.flatMap((page) => page.library ?? []) ?? [],
+    () => mergeUnique(data?.pages.flatMap((page) => page.library ?? []) ?? [], (h) => h.ref),
     [data],
   )
   const libraryError = useMemo(
@@ -308,6 +325,28 @@ export default function SearchPage() {
 
   const hasQuery = trimmed.length > 0
 
+  const saveCurrentView = () => {
+    if (!hasQuery) return
+    createView.mutate(
+      { name: trimmed.slice(0, 60), query: trimmed, view, categoryKey },
+      {
+        onSuccess: () => {
+          setInput(trimmed)
+          setSubmitted(trimmed)
+        },
+      },
+    )
+  }
+
+  const applySavedView = (saved: { query: string; view: string; categoryKey: string }) => {
+    const restored = saved.query
+    setCategoryKey(saved.categoryKey)
+    setView(saved.view as ViewFilter)
+    setInput(restored)
+    setSubmitted(restored)
+    setHistory((prev) => pushSearchHistory(prev, restored))
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
@@ -325,6 +364,7 @@ export default function SearchPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commit(input)
               }}
+              data-shortcut-target="search-input"
               placeholder="搜索文章标题、正文或作者…"
               aria-label="搜索"
               className={cx(
@@ -382,6 +422,75 @@ export default function SearchPage() {
                 </option>
               ))}
             </select>
+          )}
+        </div>
+
+        {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={saveCurrentView}
+            disabled={!hasQuery || createView.isPending}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-border)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              hasQuery
+                ? 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]'
+                : 'cursor-not-allowed text-[var(--lumi-text-tertiary)] opacity-60',
+            )}
+          >
+            {createView.isPending ? '保存中…' : '+ 保存此搜索'}
+          </button>
+          {(savedViews.data?.items ?? []).map((saved) => (
+            <div
+              key={saved.id}
+              className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1"
+            >
+              {renamingId === saved.id ? (
+                <input
+                  value={renameDraft}
+                  autoFocus
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && renameDraft.trim() !== '') {
+                      renameView.mutate({ id: saved.id, name: renameDraft.trim() })
+                      setRenamingId(null)
+                    }
+                    if (e.key === 'Escape') setRenamingId(null)
+                  }}
+                  onBlur={() => setRenamingId(null)}
+                  aria-label="重命名视图"
+                  className="w-28 bg-transparent py-1 text-xs text-[var(--lumi-text-primary)] focus:outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  title="点击应用；双击重命名"
+                  onDoubleClick={() => {
+                    setRenamingId(saved.id)
+                    setRenameDraft(saved.name)
+                  }}
+                  onClick={() => applySavedView(saved)}
+                  className="max-w-48 truncate py-1 text-xs font-medium text-[var(--lumi-accent-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  {saved.name}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => deleteView.mutate(saved.id)}
+                aria-label={`删除视图「${saved.name}」`}
+                className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <X aria-hidden className="size-3" />
+              </button>
+            </div>
+          ))}
+          {savedViews.isError && (
+            <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+              已存视图加载失败
+            </span>
           )}
         </div>
 

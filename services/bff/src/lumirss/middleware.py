@@ -1,19 +1,83 @@
 """Pure-ASGI request hardening middleware (0021).
 
-Body-size ceiling, fixed-window rate limits, the opt-in internal token
-check, and the persistent single-user session layer (LUMIRSS_AUTH_MODE=
-session). Registered on the app in main.py.
+Body-size ceiling, fixed-window rate limits, request correlation IDs,
+the opt-in internal token check, and the persistent single-user session
+layer (LUMIRSS_AUTH_MODE=session). Registered on the app in main.py.
 """
 
 
 import contextlib
+import logging
+import re
 import time
 import urllib.parse
+import uuid
+from contextvars import ContextVar
 
 from lumirss.config import LumiSettings
 from lumirss.util import constant_time_equals
 
 MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+
+# -- Correlation IDs (pool #47) ---------------------------------------------
+#
+# Every request gets an X-Request-ID: echoed from the client when it is a
+# safe bounded token, otherwise generated. The id rides back on EVERY
+# response (including error envelopes) so a failing front-end action can
+# be joined with the server log line that carries the same id. The
+# contextvar makes it readable anywhere in-process for future structured
+# logging / diagnostics export.
+
+_request_id_var: ContextVar[str | None] = ContextVar(
+    "lumirss_request_id", default=None
+)
+_REQUEST_ID_HEADER = b"x-request-id"
+# Inbound ids must already be safe log/header tokens; anything else is
+# replaced (never reflected back unbounded — header/log injection guard).
+_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+_logger = logging.getLogger("lumirss.request")
+
+
+def current_request_id() -> str | None:
+    return _request_id_var.get()
+
+
+class RequestCorrelationMiddleware:
+    """Attach a correlation id to every request/response pair."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        raw = headers.get(_REQUEST_ID_HEADER)
+        inbound = raw.decode("ascii", "ignore") if raw else ""
+        request_id = inbound if _SAFE_REQUEST_ID.match(inbound) else uuid.uuid4().hex
+        token = _request_id_var.set(request_id)
+
+        async def send_with_id(message) -> None:
+            if message["type"] == "http.response.start":
+                message = {
+                    **message,
+                    "headers": list(message.get("headers") or [])
+                    + [(_REQUEST_ID_HEADER, request_id.encode("ascii"))],
+                }
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_id)
+        except Exception:
+            # Unhandled errors only print a bare traceback otherwise —
+            # the correlation id is what ties the user-visible failure
+            # to this exact log record.
+            _logger.exception("request failed [request_id=%s]", request_id)
+            raise
+        finally:
+            _request_id_var.reset(token)
 
 # phase2 recovery (P0-06g): the mail ingest webhook accepts raw MIME up
 # to 10MB (routers/mail.py enforces the same cap). The global 4MB

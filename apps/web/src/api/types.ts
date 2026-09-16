@@ -110,6 +110,10 @@ export type SearchItem = Schemas['SearchItem']
 export type SearchIndexInfo = Schemas['SearchIndexInfo']
 export type SearchResponse = Schemas['SearchResponse']
 export type SearchRebuildResult = Schemas['SearchRebuildResult']
+export type SavedSearchView = Schemas['SavedSearchView']
+export type SavedSearchViewList = Schemas['SavedSearchList']
+export type TagMergePreview = Schemas['TagMergePreview']
+export type TagMergeResult = Schemas['TagMergeResult']
 
 // ---- phase2 M1 Library domain ----
 

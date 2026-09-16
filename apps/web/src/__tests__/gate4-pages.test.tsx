@@ -187,7 +187,7 @@ describe('SearchPage（0022 全局搜索正式功能）', () => {
     render(withProviders(<SearchPage />))
     expect(screen.getByText('搜索你的全部订阅')).toBeInTheDocument()
     const searchCalls = fetchSpy.mock.calls.filter((call) =>
-      String(call[0]).includes('/api/v1/search'),
+      String(call[0]).includes('/api/v1/search?'),
     )
     expect(searchCalls).toHaveLength(0)
   })
@@ -230,7 +230,7 @@ describe('SearchPage（0022 全局搜索正式功能）', () => {
     expect(readSearchHistory()).toContain('Midjourney V7')
     // 查询参数：q=Midjourney V7（calls[0] 是 useFeeds 的 /feeds）
     const searchCall = fetchSpy.mock.calls.find((call) =>
-      String(call[0]).includes('/api/v1/search'),
+      String(call[0]).includes('/api/v1/search?'),
     )
     expect(String(searchCall?.[0] ?? '')).toContain('q=Midjourney')
   })

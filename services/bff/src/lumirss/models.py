@@ -776,6 +776,10 @@ class SearchResponse(BaseModel):
     index: SearchIndexInfo
     library: list["LibrarySearchItem"] | None = None
     libraryError: str | None = None
+    # Library-leg keyset continuation (pool #10): the old fixed newest-50
+    # slice re-listed itself on every RSS page and hid older hits.
+    libraryNextCursor: str | None = None
+    libraryHasMore: bool = False
 
 
 class SearchRebuildResult(BaseModel):
@@ -785,6 +789,44 @@ class SearchRebuildResult(BaseModel):
     pages: int
     partial: bool
     elapsedMs: int
+
+
+class SavedSearchView(BaseModel):
+    """One saved search view (pool #09): query + filter intent, never a
+    result snapshot — opening a view re-runs the search."""
+
+    id: str
+    name: str
+    query: str
+    view: str = "all"
+    categoryKey: str = ""
+    createdAt: str
+    updatedAt: str
+
+
+class SavedSearchList(BaseModel):
+    """GET /api/v1/search/views."""
+
+    items: list[SavedSearchView]
+
+
+class SavedSearchCreate(BaseModel):
+    """POST /api/v1/search/views."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+    query: str
+    view: str = "all"
+    categoryKey: str = ""
+
+
+class SavedSearchRename(BaseModel):
+    """PATCH /api/v1/search/views/{id}."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
 
 
 # ---------------------------------------------------------------------------
@@ -921,6 +963,9 @@ class ResolvedItem(BaseModel):
     excerpt: str | None = None
     url: str | None = None
     stale: bool = False
+    # Why a stale card is stale: unsupported | not_found | timeout |
+    # error (pool #13) — the UI maps these to distinct next actions.
+    staleReason: str | None = None
     payload: dict[str, object] = {}
 
 
@@ -1149,6 +1194,8 @@ class DigestSettings(BaseModel):
     smtpUser: str
     fromAddr: str
     toAddr: str
+    # IANA 名称（'' = 服务器本地，历史语义）；调度与 nextSend 按此解释。
+    timezone: str = ""
     lastSentAt: str | None = None
     lastError: str | None = None
     passwordConfigured: bool = False
@@ -1168,7 +1215,22 @@ class DigestSettingsUpdate(BaseModel):
     smtpUser: str | None = None
     fromAddr: str | None = None
     toAddr: str | None = None
+    timezone: str | None = None
     smtpPassword: str | None = None
+
+
+class DigestPreview(BaseModel):
+    """GET /api/v1/digest/preview — 无副作用预览（不发送、不记录错误）."""
+
+    subject: str
+    text: str
+    html: str
+    itemCount: int
+    enabled: bool
+    hour: int
+    timezone: str
+    nextSendAt: str | None = None
+    note: str | None = None
 
 
 class DigestSendNowRequest(BaseModel):
@@ -1416,6 +1478,33 @@ class TagRenameRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str
+
+
+class TagMergeRequest(BaseModel):
+    """POST /api/v1/tags/merge — merge source INTO target."""
+
+    model_config = {"extra": "forbid"}
+
+    sourceId: int
+    targetId: int
+
+
+class TagMergePreview(BaseModel):
+    """GET /api/v1/tags/merge/preview — affected counts, read-only."""
+
+    sourceId: int
+    targetId: int
+    bindings: int
+    overlaps: int
+    willMove: int
+
+
+class TagMergeResult(BaseModel):
+    """POST /api/v1/tags/merge — committed outcome."""
+
+    targetId: int
+    movedBindings: int
+    dedupedBindings: int
 
 
 class TagSuggestionsResponse(BaseModel):
