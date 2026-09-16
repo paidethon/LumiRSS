@@ -38,6 +38,7 @@ import {
 } from '../api/queries'
 import type { TranslationSegmentBlockInput } from '../api/client'
 import type { ReaderViewMode } from '../lib/translation-blocks'
+import { DOCS_LINKS } from '../lib/docs-links'
 import {
   annotateBlocks,
   applyOverlay,
@@ -502,9 +503,17 @@ function TranslationStatusBar({
         </span>
       )}
       {localError !== null && (
-        <span className="inline-flex items-center gap-1.5 text-[var(--lumi-danger)]">
+        <span className="inline-flex flex-wrap items-center gap-1.5 text-[var(--lumi-danger)]">
           <AlertCircle aria-hidden className="size-3" />
           {localError}
+          <a
+            href={DOCS_LINKS.translationLocalUnsupported}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 hover:opacity-80"
+          >
+            帮助
+          </a>
           {onLocalRetry && (
             <Button size="sm" variant="ghost" onClick={onLocalRetry}>
               <RefreshCw aria-hidden className="size-3" />

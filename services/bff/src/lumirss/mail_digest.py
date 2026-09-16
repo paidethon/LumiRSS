@@ -10,21 +10,21 @@ SMTP credentials live in the secrets store (never SQLite, never logs);
 sending happens only when explicitly configured (disabled by default).
 ``send-now`` is an explicit user action and ignores ``enabled``; the
 scheduled path only sends when ``enabled`` is true (P0-06j). Scheduling
-is timezone-aware in the documented sense that ``hour`` is interpreted
-in the SERVER's local timezone (no tz setting exists in the schema;
-documented behavior — an IANA-tz setting is a later-wave addition).
-Errors are typed for honest UI (unreachable / auth failed / TLS).
-Tests use a local in-process SMTP sink (aiosmtpd-style) — real
-third-party mail is never touched.
+is timezone-aware (migration 0024): ``hour`` is interpreted in the
+configured IANA timezone; ``timezone=''`` keeps the historical server-
+local semantics. Errors are typed for honest UI (unreachable / auth
+failed / TLS). Tests use a local in-process SMTP sink (aiosmtpd-style)
+— real third-party mail is never touched.
 """
 
 import asyncio
 import logging
 import smtplib
 import ssl
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from lumirss.mail_bridge import MailBridgeStore
 from lumirss.secrets_store import SecretsStore
@@ -52,6 +52,42 @@ class SmtpSendFailed(Exception):
         self.reason = reason
 
 
+def _normalize_timezone(value: Any, fallback: str) -> str:
+    """''（服务器本地）或合法 IANA 名称；非法输入保留现值。"""
+    if not isinstance(value, str):
+        return fallback
+    name = value.strip()
+    if name == "":
+        return ""
+    try:
+        ZoneInfo(name)
+    except Exception:  # noqa: BLE001 — ZoneInfo 的失败形态不固定
+        return fallback
+    return name
+
+
+def now_in_timezone(timezone: str) -> datetime:
+    """配置时区下的当前时间；'' 或无效名回退服务器本地。"""
+    if timezone:
+        try:
+            return datetime.now(ZoneInfo(timezone))
+        except Exception:  # noqa: BLE001
+            pass
+    return datetime.now().astimezone()
+
+
+def next_send_at(now: datetime, hour: int) -> str:
+    """下一次发送时间（配置时区的墙钟）：今天 HH:00 已过则明天 HH:00。
+
+    DST 语义：墙钟构造（ZoneInfo fold 规则）——春令时缺失的墙钟时间
+    落到其后第一个真实时刻；只发送一次由 last_sent 的边界比较保证，
+    与该构造方式解耦。"""
+    candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate.isoformat()
+
+
 def digest_settings_defaults() -> dict[str, Any]:
     return {
         "enabled": False,
@@ -63,6 +99,7 @@ def digest_settings_defaults() -> dict[str, Any]:
         "smtpUser": "",
         "fromAddr": "",
         "toAddr": "",
+        "timezone": "",
         "lastSentAt": None,
         "lastError": None,
     }
@@ -78,7 +115,7 @@ class DigestStore:
     async def load(self) -> dict[str, Any]:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, enabled, hour, source, limit_count, smtp_host, smtp_port, smtp_user, from_addr, to_addr, last_sent_at, last_error FROM digest_settings WHERE id = 1"
+            "SELECT id, enabled, hour, source, limit_count, smtp_host, smtp_port, smtp_user, from_addr, to_addr, timezone, last_sent_at, last_error FROM digest_settings WHERE id = 1"
         )
         if row is None:
             return digest_settings_defaults()
@@ -92,6 +129,7 @@ class DigestStore:
             "smtpUser": str(row["smtp_user"]),
             "fromAddr": str(row["from_addr"]),
             "toAddr": str(row["to_addr"]),
+            "timezone": str(row["timezone"] or ""),
             "lastSentAt": row["last_sent_at"],
             "lastError": row["last_error"],
             "passwordConfigured": self._secrets.get("digest_smtp_password") is not None,
@@ -109,14 +147,17 @@ class DigestStore:
         smtp_user = update.get("smtpUser", current["smtpUser"])
         from_addr = update.get("fromAddr", current["fromAddr"])
         to_addr = update.get("toAddr", current["toAddr"])
+        timezone = update.get("timezone", current["timezone"])
         if not isinstance(hour, int) or not 0 <= hour <= 23:
             hour = current["hour"]
         if source not in _VALID_SOURCES:
             source = current["source"]
         if not isinstance(limit, int) or not 1 <= limit <= _MAX_LIMIT:
             limit = min(max(limit, 1), _MAX_LIMIT) if isinstance(limit, int) else _DEFAULT_LIMIT
+        # '' = 服务器本地时区；非空必须是合法 IANA 名称，否则保留现值。
+        timezone = _normalize_timezone(timezone, current["timezone"])
         await self._db.execute(
-            "UPDATE digest_settings SET enabled = ?, hour = ?, source = ?, limit_count = ?, smtp_host = ?, smtp_port = ?, smtp_user = ?, from_addr = ?, to_addr = ? WHERE id = 1",
+            "UPDATE digest_settings SET enabled = ?, hour = ?, source = ?, limit_count = ?, smtp_host = ?, smtp_port = ?, smtp_user = ?, from_addr = ?, to_addr = ?, timezone = ? WHERE id = 1",
             (
                 1 if enabled else 0,
                 hour,
@@ -127,6 +168,7 @@ class DigestStore:
                 str(smtp_user),
                 str(from_addr),
                 str(to_addr),
+                timezone,
             ),
         )
         return await self.load()
@@ -225,39 +267,49 @@ def send_digest_smtp(
 class DigestScheduler:
     """Hourly check inside the BFF's shared background loop.
 
-    ``hour`` is interpreted in the SERVER's local timezone (documented
-    behavior — no timezone column exists in the schema yet); the
-    once-per-boundary marker compares the persisted UTC ``last_sent_at``
-    converted to local time, so restarts stay idempotent across
-    timezones. Concurrency-safe via a process-local flag.
+    ``hour`` is interpreted in the CONFIGURED IANA timezone (migration
+    0024; ``timezone=''`` keeps the historical server-local semantics).
+    The once-per-boundary marker compares the persisted UTC
+    ``last_sent_at`` converted to the SAME timezone, so restarts stay
+    idempotent and a deployment move never shifts send times. A fixed
+    ``clock`` can be injected for deterministic tests (cross-day, DST).
+    Concurrency-safe via a process-local flag.
     """
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, clock: Any = None) -> None:
         self._db = db
         self._busy = False
+        self._clock = clock
+
+    def _now(self, timezone: str) -> datetime:
+        if self._clock is not None:
+            return self._clock(timezone)
+        return now_in_timezone(timezone)
 
     async def maybe_send(self, send_fn) -> None:
         if self._busy:
             return
         row = await self._db.fetch_one(
-            "SELECT enabled, hour, last_sent_at FROM digest_settings WHERE id = 1"
+            "SELECT enabled, hour, timezone, last_sent_at FROM digest_settings WHERE id = 1"
         )
         if row is None or not row["enabled"]:
             return
-        local_now = datetime.now().astimezone()
-        if local_now.hour != int(row["hour"]):
+        timezone = str(row["timezone"] or "")
+        now = self._now(timezone)
+        if now.hour != int(row["hour"]):
             return
         last_sent_at = str(row["last_sent_at"] or "")
         if last_sent_at:
             try:
-                last_local = datetime.fromisoformat(
-                    last_sent_at.replace("Z", "+00:00")
-                ).astimezone()
+                last = datetime.fromisoformat(last_sent_at.replace("Z", "+00:00"))
+                if timezone:
+                    last = last.astimezone(ZoneInfo(timezone))
+                else:
+                    last = last.astimezone()
             except ValueError:
-                last_local = None
-            if last_local is not None and (
-                last_local.strftime("%Y-%m-%dT%H")
-                == local_now.strftime("%Y-%m-%dT%H")
+                last = None
+            if last is not None and (
+                last.strftime("%Y-%m-%dT%H") == now.strftime("%Y-%m-%dT%H")
             ):
                 return
         self._busy = True

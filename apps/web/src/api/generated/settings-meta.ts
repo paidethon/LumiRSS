@@ -34,6 +34,7 @@ export const PORTABLE_DEFAULTS = {
   readerCodeHighlight: 'auto',
   readerCodeTheme: 'auto',
   scrollMarkUnread: false,
+  readLaterSort: 'newest',
 } as const
 
 export const SETTING_ENUMS = {
@@ -47,6 +48,7 @@ export const SETTING_ENUMS = {
   readerChineseConversion: ['off', 's2t', 't2s', 'tw', 'hk'],
   readerCodeHighlight: ['auto', 'off'],
   readerCodeTheme: ['auto', 'github-light', 'github-dark', 'vitesse-light', 'vitesse-dark'],
+  readLaterSort: ['newest', 'oldest'],
 } as const
 
 export const NUMERIC_RANGES = {

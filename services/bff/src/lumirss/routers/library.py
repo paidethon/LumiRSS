@@ -7,6 +7,8 @@ raw request body with a hard size cap (OPML style) and reports per-item
 failures honestly.
 """
 
+import urllib.parse
+
 from fastapi import APIRouter, Request, Response
 
 from lumirss.bookmarks_io import (
@@ -23,6 +25,7 @@ from lumirss.library import (
     BookmarkView,
     LibraryStore,
 )
+from lumirss.library_export import export_bookmark_markdown as _export_bookmark_md
 from lumirss.models import (
     Bookmark,
     BookmarkCreate,
@@ -32,7 +35,7 @@ from lumirss.models import (
     BookmarkUpdate,
 )
 
-from ..deps import _get_library_store
+from ..deps import _get_library_store, _get_tag_store
 
 router = APIRouter()
 
@@ -171,6 +174,33 @@ async def import_bookmarks(request: Request) -> BookmarkImportResult:
             skipped += 1
     return BookmarkImportResult(
         imported=imported, skipped=skipped, failed=failed
+    )
+
+
+@router.get("/api/v1/library/bookmarks/{item_uuid}/export.md")
+async def export_bookmark_markdown(item_uuid: str, request: Request) -> Response:
+    """Deterministic Markdown download for one bookmark (pool #22).
+
+    Same input → byte-identical output; YAML frontmatter is escaped and
+    the filename sanitized (never trusted from the raw title). A pure
+    HTTP response — nothing is written to the Obsidian vault or any
+    other store."""
+    library: LibraryStore = _get_library_store(request)
+    result = await _export_bookmark_md(
+        library, _get_tag_store(request), item_uuid
+    )
+    if result is None:
+        raise BookmarkNotFound(item_uuid)
+    filename, markdown = result
+    quoted = urllib.parse.quote(filename, safe="")
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="export.md"; filename*=UTF-8\'\'{quoted}'
+            )
+        },
     )
 
 

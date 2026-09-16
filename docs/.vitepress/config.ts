@@ -6,6 +6,12 @@
 
 import { defineConfig } from 'vitepress'
 
+// Deploy target is GitHub Pages PROJECT site → served under /LumiRSS/.
+// Overridable for other targets; local dev/preview serve under the same
+// base (VitePress dev+preview honor base), so what you preview is what
+// Pages serves.
+const base = process.env.DOCS_BASE || '/LumiRSS/'
+
 /** CJK-aware tokenizer: split latin/digit words, and CJK text into
  * single characters (whitespace tokenization would make whole Chinese
  * sentences unfindable). Mirrors the minisearch usage in VitePress. */
@@ -36,13 +42,16 @@ export default defineConfig({
   title: 'LumiRSS',
   description: '单用户、自托管、source-first 的信息阅读器',
   cleanUrls: true,
+  base,
   rewrites: {
     // docs/README.md is the docs homepage on GitHub AND the site home —
     // one source, no index copy.
     'README.md': 'index.md',
   },
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    // head entries are NOT base-prefixed by VitePress — build the
+    // absolute path ourselves.
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}logo.svg` }],
   ],
   themeConfig: {
     logo: '/logo.svg',
@@ -61,12 +70,15 @@ export default defineConfig({
             footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' },
           },
         },
-        options: {
-          miniSearch: {
-            // MiniSearch 构造参数：换掉按空白分词的默认 tokenizer，
-            // 中文按单字索引（实测默认分词搜不到中文）。
-            options: { tokenize },
-          },
+        // LocalSearchOptions.miniSearch — the custom CJK tokenizer was
+        // previously nested under a non-existent `options.options`
+        // wrapper, so MiniSearch never saw it and every CJK char ran
+        // through the default whitespace tokenizer (pool #49: verified
+        // against vitepress default-theme.d.ts).
+        miniSearch: {
+          // MiniSearch 构造参数：换掉按空白分词的默认 tokenizer，
+          // 中文按单字索引（实测默认分词搜不到中文）。
+          options: { tokenize },
         },
       },
     },
@@ -85,7 +97,10 @@ export default defineConfig({
           text: '开始',
           items: [
             { text: '快速上手', link: '/getting-started' },
-            { text: '文档导航', link: '/README' },
+            // README.md is rewritten to index.md — the /README route no
+            // longer exists at runtime (dead-link gate checks source
+            // files, not rewritten routes, so it never caught this).
+            { text: '文档导航', link: '/' },
           ],
         },
         {

@@ -10,14 +10,30 @@ them as text, never as HTML.
 """
 
 import time
+from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
-from lumirss.models import SearchRebuildResult, SearchResponse
+from lumirss.models import (
+    SavedSearchCreate,
+    SavedSearchList,
+    SavedSearchRename,
+    SavedSearchView,
+    SearchRebuildResult,
+    SearchResponse,
+)
+from lumirss.saved_search_store import (
+    SavedSearchNotFound,
+    SavedSearchStore,
+)
 from lumirss.search_index import (
     SearchQueryError,
     decode_search_cursor,
     encode_search_cursor,
+)
+from lumirss.search_library import (
+    decode_library_search_cursor,
+    encode_library_search_cursor,
 )
 
 from ..deps import _get_search_service
@@ -37,6 +53,7 @@ async def search(
     request: Request,
     q: str,
     cursor: str | None = None,
+    libraryCursor: str | None = None,
     limit: int = _DEFAULT_LIMIT,
     feedUrl: str | None = None,
     categoryId: str | None = None,
@@ -52,6 +69,11 @@ async def search(
     starred entries; ``from``/``to`` are inclusive/exclusive ISO dates
     (YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two
     are mutually exclusive.
+
+    Each leg paginates independently: ``cursor`` keys the RSS leg,
+    ``libraryCursor`` the library leg; both cursors are bound to the
+    query scope and rejected (400) on mismatch. A ``null`` cursor next
+    to a non-null ``libraryCursor`` means the RSS leg is exhausted.
     """
     service = _get_search_service(request)
     query = q.strip()
@@ -73,43 +95,82 @@ async def search(
             raise SearchQueryError('state only supports "unread".')
         unread_only = True
     started = time.time()
-    keyset = None
-    if cursor is not None:
-        keyset = decode_search_cursor(cursor)
-    result = await service.search(
-        query=query,
-        limit=limit,
-        keyset=keyset,
-        feed_url=feedUrl,
-        category_id=categoryId,
-        unread_only=unread_only,
-        starred_only=bool(favorite),
-        published_from=from_,
-        published_to=to,
+    rss_scope: dict[str, Any] = {
+        "q": query,
+        "feedUrl": feedUrl,
+        "categoryId": categoryId,
+        "unread": unread_only,
+        "favorite": bool(favorite),
+        "from": from_,
+        "to": to,
+    }
+    library_scope: dict[str, Any] = {"q": query, "favorite": bool(favorite)}
+    # Cursor decoding happens outside the per-leg try blocks: a bad or
+    # scope-mismatched cursor is a client error (400), never a silent
+    # "library temporarily unavailable" string.
+    keyset = (
+        decode_search_cursor(cursor, scope=rss_scope)
+        if cursor is not None
+        else None
     )
+    library_keyset = (
+        decode_library_search_cursor(libraryCursor, scope=library_scope)
+        if libraryCursor is not None
+        else None
+    )
+    result: dict[str, Any]
+    if cursor is None and libraryCursor is not None:
+        # Page contract: only the library leg continues.
+        result = {
+            "rows": [],
+            "hasMore": False,
+            "nextKeyset": None,
+        }
+    else:
+        result = await service.search(
+            query=query,
+            limit=limit,
+            keyset=keyset,
+            feed_url=feedUrl,
+            category_id=categoryId,
+            unread_only=unread_only,
+            starred_only=bool(favorite),
+            published_from=from_,
+            published_to=to,
+        )
     next_cursor = None
     if result["hasMore"] and result["nextKeyset"] is not None:
-        next_cursor = encode_search_cursor(*result["nextKeyset"])
+        next_cursor = encode_search_cursor(
+            *result["nextKeyset"], scope=rss_scope
+        )
     index = await service.index_info()
     # phase2 G6 unified view: the library leg runs beside the RSS leg and
     # fails independently (partial failure stays honest, never silent).
-    # A starred (favorite) filter applies to BOTH legs (P0-10j): library
-    # hits are then limited to favorited refs instead of everything.
+    # A starred (favorite) filter applies to BOTH legs (P0-10j) and is
+    # pushed into SQL before LIMIT (pool #11), with its own keyset
+    # cursor so hits beyond the first slice stay reachable (pool #10).
     library_items = None
     library_error = None
+    library_next_cursor = None
+    library_has_more = False
     try:
         from lumirss.deps import _get_library_search_writer
         from lumirss.models import LibrarySearchItem
 
         writer = _get_library_search_writer(request)
-        favorite_refs: set[str] | None = None
-        if favorite:
-            from lumirss.deps import _get_favorites_service
-
-            favorite_refs = set(
-                await _get_favorites_service(request).list_refs()
+        hits, library_has_more = await writer.search_page(
+            query,
+            limit=limit,
+            favorite_only=bool(favorite),
+            keyset=library_keyset,
+        )
+        if library_has_more and hits:
+            last = hits[-1]
+            library_next_cursor = encode_library_search_cursor(
+                str(last["updated_at"]),
+                str(last["ref"]),
+                scope=library_scope,
             )
-        hits = await writer.search(query, limit=_MAX_LIMIT)
         library_items = [
             LibrarySearchItem(
                 ref=str(hit["ref"]),
@@ -120,7 +181,6 @@ async def search(
                 updatedAt=str(hit["updated_at"]),
             )
             for hit in hits
-            if favorite_refs is None or str(hit["ref"]) in favorite_refs
         ]
     except Exception:  # noqa: BLE001 — leg failure must not kill RSS
         library_error = "库搜索暂不可用，RSS 结果不受影响。"
@@ -132,6 +192,8 @@ async def search(
         index=index,
         library=library_items,
         libraryError=library_error,
+        libraryNextCursor=library_next_cursor,
+        libraryHasMore=library_has_more,
     )
 
 
@@ -146,3 +208,71 @@ async def rebuild_index(request: Request) -> SearchRebuildResult:
         partial=report["partial"],
         elapsedMs=report["elapsedMs"],
     )
+
+
+# -- Saved search views (pool #09) ------------------------------------------
+
+
+def _get_saved_search_store(request: Request) -> SavedSearchStore:
+    from lumirss.deps import _cached_on_app_state
+
+    return _cached_on_app_state(
+        request,
+        "saved_search_store",
+        lambda: SavedSearchStore(request.app.state.db),
+    )
+
+
+def _saved_model(row: dict[str, Any]) -> SavedSearchView:
+    return SavedSearchView(
+        id=row["id"],
+        name=row["name"],
+        query=row["query"],
+        view=row["params"].get("view", "all"),
+        categoryKey=row["params"].get("categoryKey", ""),
+        createdAt=row["createdAt"],
+        updatedAt=row["updatedAt"],
+    )
+
+
+@router.get("/api/v1/search/views", response_model=SavedSearchList)
+async def list_saved_search_views(request: Request) -> SavedSearchList:
+    store = _get_saved_search_store(request)
+    rows = await store.list()
+    return SavedSearchList(items=[_saved_model(row) for row in rows])
+
+
+@router.post(
+    "/api/v1/search/views", response_model=SavedSearchView, status_code=201
+)
+async def create_saved_search_view(
+    payload: SavedSearchCreate, request: Request
+) -> SavedSearchView:
+    """Save the current query + filter intent (not the result set)."""
+    store = _get_saved_search_store(request)
+    row = await store.create(
+        payload.name, payload.query,
+        {"view": payload.view, "categoryKey": payload.categoryKey},
+    )
+    return _saved_model(row)
+
+
+@router.patch(
+    "/api/v1/search/views/{view_id}", response_model=SavedSearchView
+)
+async def rename_saved_search_view(
+    view_id: str, payload: SavedSearchRename, request: Request
+) -> SavedSearchView:
+    store = _get_saved_search_store(request)
+    row = await store.rename(view_id, payload.name)
+    if row is None:
+        raise SavedSearchNotFound(view_id)
+    return _saved_model(row)
+
+
+@router.delete("/api/v1/search/views/{view_id}", status_code=204)
+async def delete_saved_search_view(view_id: str, request: Request) -> Response:
+    store = _get_saved_search_store(request)
+    if not await store.delete(view_id):
+        raise SavedSearchNotFound(view_id)
+    return Response(status_code=204)

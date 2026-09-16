@@ -497,6 +497,31 @@ export interface paths {
         patch: operations["rename_category_api_v1_categories__category_id__patch"];
         trace?: never;
     };
+    "/api/v1/digest/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Digest Preview
+         * @description 无副作用预览（pool #31）：当前配置下摘要会长什么样、下次何时发。
+         *
+         *     不发送、不写 last_error / last_sent_at、不触碰 SMTP——预览失败
+         *     （SMTP 未配齐等）仍返回已可推导的内容与说明，由 note 诚实标注。
+         *     nextSendAt 仅在 enabled 时给出，按配置时区（'' = 服务器本地）的
+         *     墙钟计算。
+         */
+        get: operations["digest_preview_api_v1_digest_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/digest/send-now": {
         parameters: {
             query?: never;
@@ -1008,6 +1033,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox/sources/{source_uuid}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Inbox Source Secret
+         * @description Rotate the bearer secret (pool #28). The old token fails from the
+         *     next request on; pushed items are untouched; the new secret is shown
+         *     exactly once, like creation. Rotation never bypasses the Caddy/app
+         *     auth boundary.
+         */
+        post: operations["rotate_inbox_source_secret_api_v1_inbox_sources__source_uuid__rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/assets/{asset_uuid}/page.html": {
         parameters: {
             query?: never;
@@ -1114,6 +1162,31 @@ export interface paths {
         head?: never;
         /** Update Bookmark */
         patch: operations["update_bookmark_api_v1_library_bookmarks__item_uuid__patch"];
+        trace?: never;
+    };
+    "/api/v1/library/bookmarks/{item_uuid}/export.md": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Bookmark Markdown
+         * @description Deterministic Markdown download for one bookmark (pool #22).
+         *
+         *     Same input → byte-identical output; YAML frontmatter is escaped and
+         *     the filename sanitized (never trusted from the raw title). A pure
+         *     HTTP response — nothing is written to the Obsidian vault or any
+         *     other store.
+         */
+        get: operations["export_bookmark_markdown_api_v1_library_bookmarks__item_uuid__export_md_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/library/clips": {
@@ -1928,6 +2001,11 @@ export interface paths {
          *     starred entries; ``from``/``to`` are inclusive/exclusive ISO dates
          *     (YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two
          *     are mutually exclusive.
+         *
+         *     Each leg paginates independently: ``cursor`` keys the RSS leg,
+         *     ``libraryCursor`` the library leg; both cursors are bound to the
+         *     query scope and rejected (400) on mismatch. A ``null`` cursor next
+         *     to a non-null ``libraryCursor`` means the RSS leg is exhausted.
          */
         get: operations["search_api_v1_search_get"];
         put?: never;
@@ -1956,6 +2034,45 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Saved Search Views */
+        get: operations["list_saved_search_views_api_v1_search_views_get"];
+        put?: never;
+        /**
+         * Create Saved Search View
+         * @description Save the current query + filter intent (not the result set).
+         */
+        post: operations["create_saved_search_view_api_v1_search_views_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Saved Search View */
+        delete: operations["delete_saved_search_view_api_v1_search_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Saved Search View */
+        patch: operations["rename_saved_search_view_api_v1_search_views__view_id__patch"];
         trace?: never;
     };
     "/api/v1/settings": {
@@ -2361,6 +2478,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tags/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Tags
+         * @description Merge source tag INTO target in one transaction (pool #16):
+         *     duplicate bindings collapse, the rest re-point, the source tag is
+         *     deleted. Lumi-owned bindings only — FreshRSS categories untouched.
+         */
+        post: operations["merge_tags_api_v1_tags_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Merge Tag Preview
+         * @description Read-only affected-count preview: source bindings, how many
+         *     collapse as exact duplicates of target bindings, how many move.
+         */
+        get: operations["merge_tag_preview_api_v1_tags_merge_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tags/suggestions/{item_ref}": {
         parameters: {
             query?: never;
@@ -2509,11 +2669,13 @@ export interface paths {
         };
         /**
          * Read Later Timeline
-         * @description Server-driven read-later timeline (P0-01): newest-added-first,
-         *     keyset-paged over the reserved workspace's rss members. Cards come
-         *     from the derived projection; a projection miss falls back to the
-         *     FreshRSS adapter; a ref that resolves nowhere stays visible as
-         *     ``stale`` instead of vanishing (ADR 0004).
+         * @description Server-driven read-later timeline (P0-01): keyset-paged over the
+         *     reserved workspace's members by add time. ``order`` is ``newest``
+         *     (default) or ``oldest`` (pool #14); cursors are bound to the order
+         *     they were issued under. Cards come from the derived projection; a
+         *     projection miss falls back to the FreshRSS adapter; a ref that
+         *     resolves nowhere stays visible as ``stale`` instead of vanishing
+         *     (ADR 0004).
          */
         get: operations["read_later_timeline_api_v1_workspaces_read_later_timeline_get"];
         put?: never;
@@ -3063,6 +3225,12 @@ export interface components {
              */
             accentColor: string;
             /**
+             * Readlatersort
+             * @default newest
+             * @enum {string}
+             */
+            readLaterSort: "newest" | "oldest";
+            /**
              * Readerbackground
              * @default follow
              * @enum {string}
@@ -3531,6 +3699,30 @@ export interface components {
             question: string;
         };
         /**
+         * DigestPreview
+         * @description GET /api/v1/digest/preview — 无副作用预览（不发送、不记录错误）.
+         */
+        DigestPreview: {
+            /** Enabled */
+            enabled: boolean;
+            /** Hour */
+            hour: number;
+            /** Html */
+            html: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Nextsendat */
+            nextSendAt?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Subject */
+            subject: string;
+            /** Text */
+            text: string;
+            /** Timezone */
+            timezone: string;
+        };
+        /**
          * DigestSendNowRequest
          * @description POST /api/v1/digest/send-now — explicit item selection.
          */
@@ -3570,6 +3762,11 @@ export interface components {
             smtpUser: string;
             /** Source */
             source: string;
+            /**
+             * Timezone
+             * @default
+             */
+            timezone: string;
             /** Toaddr */
             toAddr: string;
         };
@@ -3596,6 +3793,8 @@ export interface components {
             smtpUser?: string | null;
             /** Source */
             source?: string | null;
+            /** Timezone */
+            timezone?: string | null;
             /** Toaddr */
             toAddr?: string | null;
         };
@@ -4708,6 +4907,8 @@ export interface components {
              * @default false
              */
             stale: boolean;
+            /** Stalereason */
+            staleReason?: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -5010,6 +5211,69 @@ export interface components {
             title: string;
         };
         /**
+         * SavedSearchCreate
+         * @description POST /api/v1/search/views.
+         */
+        SavedSearchCreate: {
+            /**
+             * Categorykey
+             * @default
+             */
+            categoryKey: string;
+            /** Name */
+            name: string;
+            /** Query */
+            query: string;
+            /**
+             * View
+             * @default all
+             */
+            view: string;
+        };
+        /**
+         * SavedSearchList
+         * @description GET /api/v1/search/views.
+         */
+        SavedSearchList: {
+            /** Items */
+            items: components["schemas"]["SavedSearchView"][];
+        };
+        /**
+         * SavedSearchRename
+         * @description PATCH /api/v1/search/views/{id}.
+         */
+        SavedSearchRename: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * SavedSearchView
+         * @description One saved search view (pool #09): query + filter intent, never a
+         *     result snapshot — opening a view re-runs the search.
+         */
+        SavedSearchView: {
+            /**
+             * Categorykey
+             * @default
+             */
+            categoryKey: string;
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Query */
+            query: string;
+            /** Updatedat */
+            updatedAt: string;
+            /**
+             * View
+             * @default all
+             */
+            view: string;
+        };
+        /**
          * SearchIndexInfo
          * @description Honest state of the derived projection behind this response.
          */
@@ -5086,6 +5350,13 @@ export interface components {
             library?: components["schemas"]["LibrarySearchItem"][] | null;
             /** Libraryerror */
             libraryError?: string | null;
+            /**
+             * Libraryhasmore
+             * @default false
+             */
+            libraryHasMore: boolean;
+            /** Librarynextcursor */
+            libraryNextCursor?: string | null;
             /** Nextcursor */
             nextCursor: string | null;
         };
@@ -5297,6 +5568,44 @@ export interface components {
         TagListResponse: {
             /** Items */
             items: components["schemas"]["TagBinding"][];
+        };
+        /**
+         * TagMergePreview
+         * @description GET /api/v1/tags/merge/preview — affected counts, read-only.
+         */
+        TagMergePreview: {
+            /** Bindings */
+            bindings: number;
+            /** Overlaps */
+            overlaps: number;
+            /** Sourceid */
+            sourceId: number;
+            /** Targetid */
+            targetId: number;
+            /** Willmove */
+            willMove: number;
+        };
+        /**
+         * TagMergeRequest
+         * @description POST /api/v1/tags/merge — merge source INTO target.
+         */
+        TagMergeRequest: {
+            /** Sourceid */
+            sourceId: number;
+            /** Targetid */
+            targetId: number;
+        };
+        /**
+         * TagMergeResult
+         * @description POST /api/v1/tags/merge — committed outcome.
+         */
+        TagMergeResult: {
+            /** Dedupedbindings */
+            dedupedBindings: number;
+            /** Movedbindings */
+            movedBindings: number;
+            /** Targetid */
+            targetId: number;
         };
         /**
          * TagRenameRequest
@@ -6323,6 +6632,26 @@ export interface operations {
             };
         };
     };
+    digest_preview_api_v1_digest_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestPreview"];
+                };
+            };
+        };
+    };
     digest_send_now_api_v1_digest_send_now_post: {
         parameters: {
             query?: never;
@@ -7142,6 +7471,37 @@ export interface operations {
             };
         };
     };
+    rotate_inbox_source_secret_api_v1_inbox_sources__source_uuid__rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxSourceCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get: {
         parameters: {
             query?: never;
@@ -7330,6 +7690,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Bookmark"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_bookmark_markdown_api_v1_library_bookmarks__item_uuid__export_md_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -8597,6 +8988,7 @@ export interface operations {
             query: {
                 q: string;
                 cursor?: string | null;
+                libraryCursor?: string | null;
                 limit?: number;
                 feedUrl?: string | null;
                 categoryId?: string | null;
@@ -8647,6 +9039,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchRebuildResult"];
+                };
+            };
+        };
+    };
+    list_saved_search_views_api_v1_search_views_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchList"];
+                };
+            };
+        };
+    };
+    create_saved_search_view_api_v1_search_views_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedSearchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_saved_search_view_api_v1_search_views__view_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_saved_search_view_api_v1_search_views__view_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedSearchRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9412,6 +9921,71 @@ export interface operations {
             };
         };
     };
+    merge_tags_api_v1_tags_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagMergeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_tag_preview_api_v1_tags_merge_preview_get: {
+        parameters: {
+            query: {
+                sourceId: number;
+                targetId: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagMergePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tag_suggestions_api_v1_tags_suggestions__item_ref__get: {
         parameters: {
             query?: never;
@@ -9688,6 +10262,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string | null;
+                order?: string;
             };
             header?: never;
             path?: never;

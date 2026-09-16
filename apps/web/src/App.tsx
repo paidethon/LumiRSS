@@ -37,6 +37,7 @@ import InstallHint from './components/InstallHint'
 import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
 import SidebarCollapsedRail from './components/SidebarCollapsedRail'
+import ShortcutsHelpDialog from './components/ShortcutsHelpDialog'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
 
@@ -87,8 +88,12 @@ const TIMELINE_MAX = 460
 export default function App() {
   const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
-  // 0010 Gate B：全局键盘快捷键（j/k/u/s；输入框聚焦时不劫持）
-  useKeyboardShortcuts()
+  // pool #06：「?」快捷键帮助弹窗（hook 持回调 ref，App 持开关状态）。
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
+  // 0010 Gate B：全局键盘快捷键（j/k/u/s///?；输入框聚焦时不劫持）
+  useKeyboardShortcuts({
+    onShowShortcutsHelp: () => setShortcutsHelpOpen(true),
+  })
   // P0-01：稍后读不再需要挂载期同步——成员状态由各消费组件的
   // useReadLaterRefs（服务端真源）按需拉取并共享缓存。
   // phase2 M2：PWA Share Target 落地（挂载一次）
@@ -381,6 +386,12 @@ export default function App() {
 
       {/* Phase M：克制的安装引导（standalone / 已关闭时零渲染） */}
       <InstallHint />
+
+      {/* pool #06：「?」键盘快捷键速查 */}
+      <ShortcutsHelpDialog
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
+      />
     </div>
   )
 }

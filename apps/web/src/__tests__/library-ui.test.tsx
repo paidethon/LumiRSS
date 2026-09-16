@@ -294,8 +294,13 @@ describe('WorkspacesPage', () => {
     expect(screen.getByText('保留')).toBeInTheDocument()
     // 默认选中第一个工作区（read-later）→ contents 加载后 stale 卡片
     expect(await screen.findByText('源已失效')).toBeInTheDocument()
-    expect(screen.queryByRole('link')).toBeNull()
-    expect(screen.getByText('源已失效，无法打开原文，建议移除。')).toBeInTheDocument()
+    // stale 卡片本体不渲染任何内容链接（不伪造可打开内容）；
+    // 卡片下方 hint 行的「排查帮助」外链（pool #56）不受此限。
+    const staleCard = screen.getByText('源已失效').closest('article')
+    expect(staleCard?.querySelector('a')).toBeNull()
+    expect(
+      screen.getByText(/源已失效，无法打开原文，建议移除。/),
+    ).toBeInTheDocument()
   })
 
   it('上移触发 PATCH 重排序（完整新顺序）；移除调用 DELETE', async () => {

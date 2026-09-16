@@ -210,3 +210,115 @@ def test_concurrent_appends_get_distinct_seq(store_env):
         assert seqs == list(range(1, 21))
 
     run(scenario())
+
+
+def test_migration_resequences_duplicate_seqs_losslessly(tmp_path):
+    """Migration 0023: threads with duplicate seqs (the historical
+    cross-process MAX+1 race) are resequenced 1..N in (created_at,
+    rowid) order — no row is deleted, and appends continue after the
+    unique index exists."""
+    import sqlite3
+
+    db_path = tmp_path / "lumi.sqlite"
+    db = Database(db_path)
+    run(db.migrate())
+
+    # Surgeon back to a pre-0023 shape (what a v22 production upgrade
+    # looked like): drop the unique index, inject the duplicate seqs the
+    # old MAX+1 race could produce, and un-record migration 0023.
+    raw = sqlite3.connect(str(db_path))
+    raw.execute("DROP INDEX ux_agent_messages_thread_seq")
+    thread_id = "t-dup"
+    raw.execute(
+        "INSERT INTO agent_threads (id, title, created_at) VALUES (?, '', ?)",
+        (thread_id, "2026-01-01T00:00:00Z"),
+    )
+    messages = [
+        ("m1", 1, "2026-01-01T00:00:01Z"),
+        ("m2", 2, "2026-01-01T00:00:02Z"),
+        ("m3", 2, "2026-01-01T00:00:03Z"),
+        ("m4", 3, "2026-01-01T00:00:04Z"),
+    ]
+    for message_id, seq, created_at in messages:
+        raw.execute(
+            "INSERT INTO agent_messages (id, thread_id, seq, role, content, created_at) VALUES (?, ?, ?, 'user', '{}', ?)",
+            (message_id, thread_id, seq, created_at),
+        )
+    raw.execute(
+        "INSERT INTO agent_threads (id, title, created_at) VALUES ('t-ok', '', '2026-01-01T00:00:00Z')"
+    )
+    raw.execute(
+        "INSERT INTO agent_messages (id, thread_id, seq, role, content, created_at) VALUES ('h1', 't-ok', 1, 'user', '{}', '2026-01-01T00:00:05Z')"
+    )
+    raw.execute("DELETE FROM schema_migrations WHERE version = 23")
+    raw.commit()
+    raw.close()
+
+    # A fresh Database instance re-applies 0023 — the v22→v23 path.
+    upgraded = Database(db_path)
+    applied = run(upgraded.migrate())
+    assert applied == [23], "only 0023 should be pending"
+
+    rows = run(
+        upgraded.fetch_all(
+            "SELECT id, seq FROM agent_messages WHERE thread_id = ? ORDER BY seq",
+            (thread_id,),
+        )
+    )
+    # Resequenced 1..4 in (created_at, rowid) order — all four rows kept.
+    assert [(r["id"], r["seq"]) for r in rows] == [
+        ("m1", 1),
+        ("m2", 2),
+        ("m3", 3),
+        ("m4", 4),
+    ]
+    healthy = run(
+        upgraded.fetch_one("SELECT seq FROM agent_messages WHERE id = 'h1'", ())
+    )
+    assert healthy["seq"] == 1, "healthy thread must not be touched"
+
+    # The unique index now rejects a foreign duplicate-seq insert...
+    with pytest.raises(sqlite3.IntegrityError):
+        run(
+            upgraded.execute(
+                "INSERT INTO agent_messages (id, thread_id, seq, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("bad", "t-ok", 1, "user", "{}", "2026-01-01T00:00:06Z"),
+            )
+        )
+    # ...and append_message continues from the true MAX afterwards.
+    store = AgentStore(upgraded)
+    message = run(
+        store.append_message("t-ok", role="assistant", content={"text": "next"})
+    )
+    assert message["seq"] == 2
+
+
+def test_append_message_survives_cross_process_seq_race(store_env):
+    """A losing writer (IntegrityError from the unique index) retries and
+    lands on the next free seq — messages are never silently dropped."""
+    async def scenario():
+        store = store_env["store"]
+        thread = await store.create_thread()
+        first = await store.append_message(
+            thread["id"], role="user", content={"text": "m1"}
+        )
+        # Simulate a foreign writer claiming seq 2 outside the store.
+        await store_env["db"].execute(
+            "INSERT INTO agent_messages (id, thread_id, seq, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("foreign", thread["id"], 2, "user", "{}", "2026-01-01T00:00:00Z"),
+        )
+        # The store re-reads MAX under BEGIN IMMEDIATE and must NOT
+        # produce a second seq 2 (unique index + bounded retry).
+        second = await store.append_message(
+            thread["id"], role="assistant", content={"text": "m2"}
+        )
+        assert second["seq"] == 3
+        assert first["seq"] == 1
+
+        rows = await store_env["db"].fetch_all(
+            "SELECT seq FROM agent_messages WHERE thread_id = ? ORDER BY seq",
+            (thread["id"],),
+        )
+        assert [r["seq"] for r in rows] == [1, 2, 3]
+
+    run(scenario())

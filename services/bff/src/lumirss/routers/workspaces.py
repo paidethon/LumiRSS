@@ -6,9 +6,11 @@ goes through the Source Registry (:mod:`lumirss.sources`). The reserved
 """
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Request, Response
 
+from lumirss.itemref import InvalidItemRef
 from lumirss.models import (
     ReadLaterItem,
     ReadLaterTimelineResponse,
@@ -24,7 +26,12 @@ from lumirss.models import (
     WorkspaceRename,
     WorkspaceReorderRequest,
 )
-from lumirss.sources import ItemRefUnresolvable, ensure_resolvable, resolve_item
+from lumirss.sources import (
+    ItemRefUnresolvable,
+    ensure_resolvable,
+    resolve_item,
+    stale_placeholder,
+)
 from lumirss.workspaces import (
     RESERVED_WORKSPACE_ID,
     WorkspaceInvalid,
@@ -39,6 +46,34 @@ router = APIRouter()
 _DEFAULT_ITEM_LIMIT = 200
 _MAX_ITEM_LIMIT = 500
 _MAX_RESOLVE_REFS = 100
+# Pool #44: resolve fan-out is bounded — one page must not start one
+# upstream round trip per ref with no ceiling. 16 concurrent resolves
+# keeps worst-case page latency at ceil(refs/16) round trips while a
+# slow FreshRSS cannot pin hundreds of event-loop tasks.
+_RESOLVE_CONCURRENCY = 16
+_RESOLVE_TIMEOUT_S = 15.0
+_resolve_semaphore: asyncio.Semaphore = asyncio.Semaphore(_RESOLVE_CONCURRENCY)
+
+_logger = logging.getLogger("lumirss.sources")
+
+
+async def _resolve_bounded(registry: dict, ref: str) -> ResolvedItem:
+    """One ref resolve under the shared concurrency cap and a per-item
+    deadline; upstream failures become distinguishable stale cards
+    (pool #13/#44), never a whole-page 500 and never a silent fake
+    success. A malformed ref stays a client error (400), as before."""
+    try:
+        async with _resolve_semaphore:
+            return await asyncio.wait_for(
+                resolve_item(registry, ref), timeout=_RESOLVE_TIMEOUT_S
+            )
+    except TimeoutError:
+        return stale_placeholder(ref, "timeout", title="解析超时，请稍后重试")
+    except InvalidItemRef:
+        raise
+    except Exception:
+        _logger.exception("resolve failed for ref %s", ref)
+        return stale_placeholder(ref, "error", title="暂时无法解析，请稍后重试")
 
 
 def _workspace_model(summary) -> Workspace:
@@ -71,6 +106,7 @@ def _resolved_models(views) -> list[ResolvedItem]:
             excerpt=view.excerpt,
             url=view.url,
             stale=view.stale,
+            staleReason=view.staleReason,
             payload=view.payload,
         )
         for view in views
@@ -200,11 +236,12 @@ async def workspace_contents(
     items = await store.list_items(workspace_id, limit=limit)
     registry = _get_source_registry(request)
 
-    # Refs resolve independently (rss hits FreshRSS, library stays local);
-    # gather keeps worst-case latency at one round trip, not N.
+    # Refs resolve independently (rss hits FreshRSS, library stays local)
+    # under the shared concurrency cap (pool #44); one broken ref degrades
+    # to its own stale card instead of 500ing the page.
     resolved = list(
         await asyncio.gather(
-            *(resolve_item(registry, item.item_ref) for item in items)
+            *(_resolve_bounded(registry, item.item_ref) for item in items)
         )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))
@@ -218,17 +255,20 @@ async def read_later_timeline(
     request: Request,
     limit: int = 25,
     cursor: str | None = None,
+    order: str = "newest",
 ) -> ReadLaterTimelineResponse:
-    """Server-driven read-later timeline (P0-01): newest-added-first,
-    keyset-paged over the reserved workspace's rss members. Cards come
-    from the derived projection; a projection miss falls back to the
-    FreshRSS adapter; a ref that resolves nowhere stays visible as
-    ``stale`` instead of vanishing (ADR 0004)."""
+    """Server-driven read-later timeline (P0-01): keyset-paged over the
+    reserved workspace's members by add time. ``order`` is ``newest``
+    (default) or ``oldest`` (pool #14); cursors are bound to the order
+    they were issued under. Cards come from the derived projection; a
+    projection miss falls back to the FreshRSS adapter; a ref that
+    resolves nowhere stays visible as ``stale`` instead of vanishing
+    (ADR 0004)."""
     if limit < 1 or limit > 100:
         raise WorkspaceInvalid("limit must be between 1 and 100.")
     store: WorkspaceStore = _get_workspace_store(request)
     members, next_cursor = await store.list_items_desc(
-        RESERVED_WORKSPACE_ID, cursor=cursor, limit=limit
+        RESERVED_WORKSPACE_ID, cursor=cursor, limit=limit, order=order
     )
     # Q-P2-05: cards resolve concurrently (same gather pattern as
     # workspace_contents below) — the serial comprehension paid one
@@ -254,7 +294,6 @@ async def _read_later_card(request: Request, member: WorkspaceItem) -> ReadLater
     from lumirss.deps import _get_source_registry
     from lumirss.entryref import InvalidEntryReference, decode_entry_ref
     from lumirss.models import SearchItem
-    from lumirss.sources import resolve_item
 
     item_ref = member.item_ref
     stale_card = ReadLaterItem(
@@ -266,10 +305,9 @@ async def _read_later_card(request: Request, member: WorkspaceItem) -> ReadLater
         # (Q-P1-05 — the inbox save path legitimately adds these).
         if item_ref.startswith("library:"):
             registry = _get_source_registry(request)
-            try:
-                view = await resolve_item(registry, item_ref)
-            except Exception:  # noqa: BLE001 — resolver failure ≠ stale content 500
-                return stale_card
+            # Shared resolve cap + per-item deadline (pool #44); failures
+            # degrade to this row's stale card, not a page-wide 500.
+            view = await _resolve_bounded(registry, item_ref)
             if view.stale:
                 return stale_card
             return ReadLaterItem(
@@ -350,6 +388,8 @@ async def resolve_refs(payload: ResolveRequest, request: Request) -> WorkspaceIt
     registry = _get_source_registry(request)
 
     resolved = list(
-        await asyncio.gather(*(resolve_item(registry, ref) for ref in payload.refs))
+        await asyncio.gather(
+            *(_resolve_bounded(registry, ref) for ref in payload.refs)
+        )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))

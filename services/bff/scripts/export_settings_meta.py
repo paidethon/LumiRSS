@@ -96,6 +96,7 @@ def main() -> None:
                 "vitesse-light",
                 "vitesse-dark",
             ),
+            "readLaterSort": ("newest", "oldest"),
         }.items()
     }
     for key, values in enum_fields.items():

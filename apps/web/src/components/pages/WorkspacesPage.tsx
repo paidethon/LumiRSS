@@ -34,6 +34,8 @@ import { IconButton } from '../ui/IconButton'
 import { Menu } from '../ui/Menu'
 import { Skeleton } from '../ui/Skeleton'
 import UnifiedContentCard from '../UnifiedContentCard'
+import { staleState } from '../../lib/stale-label'
+import { DOCS_LINKS } from '../../lib/docs-links'
 import { cx } from '../ui/cx'
 
 /** 新建工作区 Dialog（条件挂载；创建成功后选中新工作区）。 */
@@ -341,7 +343,15 @@ function ContentCardRow({
       />
       {item.stale && (
         <p className="mt-1 px-1 text-xs text-[var(--lumi-text-tertiary)]">
-          源已失效，无法打开原文，建议移除。
+          {staleState(item.staleReason).hint}{' '}
+          <a
+            href={DOCS_LINKS.troubleshootSymptoms}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 hover:text-[var(--lumi-text-secondary)]"
+          >
+            排查帮助
+          </a>
         </p>
       )}
       {(remove.isError || reorder.isError) && (

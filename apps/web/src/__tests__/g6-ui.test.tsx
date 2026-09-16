@@ -116,6 +116,7 @@ function digestSettingsFixture(over: Partial<DigestSettings> = {}): DigestSettin
     smtpUser: 'lumi',
     fromAddr: 'lumi@example.com',
     toAddr: 'me@example.com',
+    timezone: '',
     lastSentAt: null,
     lastError: null,
     passwordConfigured: true,
@@ -170,6 +171,8 @@ function searchResponseFixture(over: Partial<SearchResponse> = {}): SearchRespon
     hasMore: false,
     elapsedMs: 3,
     index: { entryCount: 5, lastSyncedAt: '100', partial: false },
+    library: [],
+    libraryHasMore: false,
     ...over,
   }
 }

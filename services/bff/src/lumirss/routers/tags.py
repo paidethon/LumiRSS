@@ -12,6 +12,9 @@ from lumirss.models import (
     TagBinding,
     TagItemsResponse,
     TagListResponse,
+    TagMergePreview,
+    TagMergeRequest,
+    TagMergeResult,
     TagRenameRequest,
     TagSuggestionsResponse,
 )
@@ -67,6 +70,39 @@ async def detach_tag(payload: TagAssignRequest, request: Request) -> Response:
     if not removed:
         raise TagNotFound(payload.name)
     return Response(status_code=204)
+
+
+# pool #16: tag merge — static paths declared before /{tag_id} routes
+# (same ordering rule as /assign above).
+@router.get("/api/v1/tags/merge/preview", response_model=TagMergePreview)
+async def merge_tag_preview(
+    request: Request, sourceId: int, targetId: int
+) -> TagMergePreview:
+    """Read-only affected-count preview: source bindings, how many
+    collapse as exact duplicates of target bindings, how many move."""
+    store: TagStore = _get_tag_store(request)
+    preview = await store.merge_preview(sourceId, targetId)
+    return TagMergePreview(
+        sourceId=sourceId,
+        targetId=targetId,
+        bindings=preview["bindings"],
+        overlaps=preview["overlaps"],
+        willMove=preview["willMove"],
+    )
+
+
+@router.post("/api/v1/tags/merge", response_model=TagMergeResult)
+async def merge_tags(payload: TagMergeRequest, request: Request) -> TagMergeResult:
+    """Merge source tag INTO target in one transaction (pool #16):
+    duplicate bindings collapse, the rest re-point, the source tag is
+    deleted. Lumi-owned bindings only — FreshRSS categories untouched."""
+    store: TagStore = _get_tag_store(request)
+    result = await store.merge(payload.sourceId, payload.targetId)
+    return TagMergeResult(
+        targetId=payload.targetId,
+        movedBindings=result["movedBindings"],
+        dedupedBindings=result["dedupedBindings"],
+    )
 
 
 @router.patch("/api/v1/tags/{tag_id}", response_model=TagBinding)

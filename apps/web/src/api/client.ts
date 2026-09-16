@@ -48,6 +48,10 @@ import type {
   SourceDiscoveryResponse,
   SourceRegistryResponse,
   Subscription,
+  SavedSearchView,
+  SavedSearchViewList,
+  TagMergePreview,
+  TagMergeResult,
   WebDavSettings,
   WebDavTestResult,
   Workspace,
@@ -260,11 +264,13 @@ export async function getEntries(
   return request<EntryListResponse>(`${API_BASE}/entries?${query}`, signal)
 }
 
-/** 0022 全局搜索：q 必填；cursor opaque 原样透传；过滤器由页面构造。 */
+/** 0022 全局搜索：q 必填；cursor / libraryCursor opaque 原样透传
+ * （库腿独立 keyset，pool #10）；过滤器由页面构造。 */
 export async function searchEntries(
   params: {
     q: string
     cursor?: string | null
+    libraryCursor?: string | null
     limit?: number
     feedUrl?: string | null
     categoryId?: string | null
@@ -280,6 +286,9 @@ export async function searchEntries(
   if (params.cursor != null) {
     // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
     query.set('cursor', params.cursor)
+  }
+  if (params.libraryCursor != null) {
+    query.set('libraryCursor', params.libraryCursor)
   }
   if (params.limit != null) {
     query.set('limit', String(params.limit))
@@ -1581,6 +1590,27 @@ export async function deleteTag(tagId: number): Promise<void> {
   })
 }
 
+/** pool #16：合并预览（受影响计数，只读）。 */
+export async function getTagMergePreview(
+  sourceId: number,
+  targetId: number,
+  signal?: AbortSignal,
+): Promise<TagMergePreview> {
+  const query = new URLSearchParams({ sourceId: String(sourceId), targetId: String(targetId) })
+  return request<TagMergePreview>(`${API_BASE}/tags/merge/preview?${query}`, signal)
+}
+
+/** pool #16：执行合并（源并入目标；一个事务）。 */
+export async function mergeTags(sourceId: number, targetId: number): Promise<TagMergeResult> {
+  const response = await rawRequest(`${API_BASE}/tags/merge`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceId, targetId }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as TagMergeResult
+}
+
 /** 绑定标签（POST 201 TagBinding）。 */
 export async function assignTag(input: TagAssignInput): Promise<TagSummary> {
   const response = await rawRequest(`${API_BASE}/tags/assign`, {
@@ -1699,10 +1729,58 @@ export async function resolveItems(
   return (await response.json()) as WorkspaceItemsResolvedResponse
 }
 
-/** P0-01：服务端稍后读时间线（最新加入在前；cursor opaque 原样透传；
- * 悬挂成员以 stale=true 行可见而非消失）。 */
+/** pool #09：保存搜索视图（存查询+筛选意图，不是结果集）。 */
+export async function getSavedSearchViews(
+  signal?: AbortSignal,
+): Promise<SavedSearchViewList> {
+  return request<SavedSearchViewList>(`${API_BASE}/search/views`, signal)
+}
+
+export async function createSavedSearchView(
+  body: { name: string; query: string; view: string; categoryKey: string },
+): Promise<SavedSearchView> {
+  const response = await rawRequest(`${API_BASE}/search/views`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SavedSearchView
+}
+
+export async function renameSavedSearchView(
+  id: string,
+  name: string,
+): Promise<SavedSearchView> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SavedSearchView
+}
+
+export async function deleteSavedSearchView(id: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** P0-01：服务端稍后读时间线（order: newest（默认）| oldest（pool #14）；
+ * cursor opaque 原样透传，绑定排序方向；悬挂成员以 stale=true 行可见
+ * 而非消失）。 */
 export async function getReadLaterTimeline(
-  params: { limit?: number; cursor?: string | null } = {},
+  params: {
+    limit?: number
+    cursor?: string | null
+    order?: 'newest' | 'oldest'
+  } = {},
   signal?: AbortSignal,
 ): Promise<ReadLaterTimelineResponse> {
   const query = new URLSearchParams()
@@ -1711,6 +1789,9 @@ export async function getReadLaterTimeline(
   }
   if (params.cursor != null) {
     query.set('cursor', params.cursor)
+  }
+  if (params.order != null && params.order !== 'newest') {
+    query.set('order', params.order)
   }
   return request<ReadLaterTimelineResponse>(
     `${API_BASE}/workspaces/read-later/timeline?${query}`,

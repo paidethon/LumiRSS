@@ -1,8 +1,10 @@
 /** 键盘快捷键 — 0010 Gate B。
  *
- * 基础集（Spec §设计规格）：
+ * 基础集（Spec §设计规格 + pool #06 补齐）：
  *   j / ↓ 下一篇   k / ↑ 上一篇   u 切换未读视图
  *   s     收藏切换（当前选中文章，走既有 mutation）
+ *   /     跳转搜索并聚焦输入框
+ *   ?     快捷键帮助弹窗（App 渲染 ShortcutsHelpDialog）
  *   Escape 关闭浮层（Modal/Drawer 已有自己的监听，这里不重复处理）
  *
  * 纪律（硬边界 10）：
@@ -12,7 +14,7 @@
  *   store 的当前选择做导航——不需要 DOM 滚动定位（列表本身可滚动，
  *   键盘导航只改选择，视觉滚动交给浏览器自然行为 + scrollIntoView）。 */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useReaderUi } from '../store/reader-ui'
 import { scopeKey, type ContentScope } from './navigation'
@@ -35,20 +37,30 @@ function isModalOpen(): boolean {
   return document.querySelector('[aria-modal="true"]') !== null
 }
 
-/** 快捷键速查表数据（设置中心「快捷键」页只读展示同一份）。 */
+/** 快捷键速查表数据（设置中心「快捷键」页与「?」帮助弹窗只读展示同一份）。 */
 export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 'j / ↓', action: '下一篇' },
   { keys: 'k / ↑', action: '上一篇' },
   { keys: 'u', action: '切换未读视图' },
   { keys: 's', action: '收藏 / 取消收藏当前文章' },
+  { keys: '/', action: '跳转搜索' },
+  { keys: '?', action: '快捷键帮助' },
   { keys: 'Escape', action: '关闭弹窗 / 抽屉' },
 ]
 
-export function useKeyboardShortcuts(): void {
+export interface ShortcutOptions {
+  /** 「?」按下时回调（App 挂帮助弹窗；不传则该键不生效）。 */
+  onShowShortcutsHelp?: () => void
+}
+
+export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const selectView = useReaderUi((s) => s.selectView)
+  const selectSection = useReaderUi((s) => s.selectSection)
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
+  const helpCallbackRef = useRef(options.onShowShortcutsHelp)
+  helpCallbackRef.current = options.onShowShortcutsHelp
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -62,6 +74,25 @@ export function useKeyboardShortcuts(): void {
       const key = e.key.toLowerCase()
       const state = useReaderUi.getState()
 
+      // 「?」= Shift+/（e.key 即 '?'）：任何页面唤起帮助。
+      if (e.key === '?') {
+        e.preventDefault()
+        helpCallbackRef.current?.()
+        return
+      }
+      // 「/」= 跳转搜索：不在搜索页则先切 section，再聚焦输入框。
+      if (key === '/') {
+        e.preventDefault()
+        if (state.section !== 'search') selectSection('search')
+        requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLInputElement>(
+              '[data-shortcut-target="search-input"]',
+            )
+            ?.focus()
+        })
+        return
+      }
       if (key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault()
         const next = findSiblingEntry(queryClient, state, +1)
@@ -101,7 +132,7 @@ export function useKeyboardShortcuts(): void {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectEntry, selectView, mutation, queryClient])
+  }, [selectEntry, selectView, selectSection, mutation, queryClient])
 }
 
 /** 从当前缓存页里找选中项的相邻项（±1）。列表数据只在 Query cache，

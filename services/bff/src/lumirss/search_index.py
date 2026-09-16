@@ -36,6 +36,7 @@ from .search_writer import SearchEntryWriter
 from .storage import Database
 
 _SEARCH_CURSOR_PREFIX = "q1."
+_SEARCH_CURSOR_V2_PREFIX = "q2."
 _SEARCH_CURSOR_MAX = 512
 _MAX_SEARCH_TERMS = 4
 _SYNC_INTERVAL_SECONDS = 60.0
@@ -52,15 +53,31 @@ def split_terms(query: str) -> list[str]:
     return [term for term in query.split() if term]
 
 
-def encode_search_cursor(published_at: str, item_id: str) -> str:
-    payload = json.dumps({"p": published_at, "i": item_id}, ensure_ascii=False)
-    return encode_opaque_ref(_SEARCH_CURSOR_PREFIX, payload)
+def encode_search_cursor(
+    published_at: str, item_id: str, *, scope: dict | None = None
+) -> str:
+    """``q1.`` is the legacy unscoped envelope; ``q2.`` binds the cursor
+    to its query scope so replaying it under different filters is a
+    400, not silent paging of a different result set (pool #10)."""
+    payload: dict
+    prefix = _SEARCH_CURSOR_PREFIX
+    if scope is not None:
+        prefix = _SEARCH_CURSOR_V2_PREFIX
+        payload = {"p": published_at, "i": item_id, "s": scope}
+    else:
+        payload = {"p": published_at, "i": item_id}
+    return encode_opaque_ref(
+        prefix, json.dumps(payload, ensure_ascii=False)
+    )
 
 
-def decode_search_cursor(value: str) -> tuple[str, str]:
+def decode_search_cursor(
+    value: str, *, scope: dict | None = None
+) -> tuple[str, str]:
+    v2 = value.startswith(_SEARCH_CURSOR_V2_PREFIX)
     payload = decode_opaque_ref(
         value,
-        prefix=_SEARCH_CURSOR_PREFIX,
+        prefix=_SEARCH_CURSOR_V2_PREFIX if v2 else _SEARCH_CURSOR_PREFIX,
         max_length=_SEARCH_CURSOR_MAX,
         error_type=InvalidCursor,
         description="Search cursor",
@@ -70,6 +87,8 @@ def decode_search_cursor(value: str) -> tuple[str, str]:
         published_at, item_id = parsed["p"], parsed["i"]
         if not isinstance(published_at, str) or not isinstance(item_id, str):
             raise ValueError("cursor payload has wrong types")
+        if v2 and (scope is None or parsed.get("s") != scope):
+            raise ValueError("cursor scope mismatch")
     except ValueError as exc:
         raise InvalidCursor("Search cursor payload is invalid.") from exc
     return published_at, item_id

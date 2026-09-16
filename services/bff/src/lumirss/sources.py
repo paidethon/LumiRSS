@@ -33,7 +33,10 @@ class ResolvedItem:
     """Unified ViewModel consumed by UnifiedContentCard (report 12 §3).
 
     One shape for every domain: the web client renders this, never the
-    storage model. ``stale`` marks refs whose target no longer resolves.
+    storage model. ``stale`` marks refs whose target no longer resolves;
+    ``staleReason`` says why ("unsupported" domain, "not_found" content,
+    "timeout" upstream, "error" resolver failure) so the UI can offer a
+    meaningful next action instead of one generic 已失效 badge.
     """
 
     ref: str
@@ -45,6 +48,7 @@ class ResolvedItem:
     excerpt: str | None = None
     url: str | None = None
     stale: bool = False
+    staleReason: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -58,8 +62,32 @@ class ResolvedItem:
             "excerpt": self.excerpt,
             "url": self.url,
             "stale": self.stale,
+            "staleReason": self.staleReason,
             "payload": self.payload,
         }
+
+
+def stale_placeholder(
+    ref: str, reason: str, *, title: str, domain: str | None = None
+) -> "ResolvedItem":
+    """One honest stale card per failure cause (pool #13): callers map
+    exceptions/timeouts to this instead of collapsing everything into a
+    generic 已失效 or a 500."""
+    parsed_domain = domain
+    if parsed_domain is None:
+        try:
+            parsed_domain = parse_item_ref(ref).domain
+        except Exception:  # noqa: BLE001 — ref already failed to resolve
+            parsed_domain = "unknown"
+    return ResolvedItem(
+        ref=ref,
+        domain=parsed_domain,
+        kind="unknown",
+        title=title,
+        source=parsed_domain,
+        stale=True,
+        staleReason=reason,
+    )
 
 
 def register_resolver(
@@ -73,7 +101,8 @@ def register_resolver(
 async def resolve_item(
     registry: dict[str, Resolver], ref: str
 ) -> ResolvedItem:
-    """Resolve one ItemRef string; unknown/stale targets become stale views."""
+    """Resolve one ItemRef string; unknown/stale targets become stale
+    views with a distinguishable ``staleReason`` (pool #13)."""
     parsed: ItemRef = parse_item_ref(ref)
     resolver = registry.get(parsed.domain)
     if resolver is None:
@@ -84,6 +113,7 @@ async def resolve_item(
             title="未知来源",
             source=parsed.domain,
             stale=True,
+            staleReason="unsupported",
         )
     resolved = await resolver(parsed.key)
     if resolved is None:
@@ -94,6 +124,7 @@ async def resolve_item(
             title="内容不存在",
             source=parsed.domain,
             stale=True,
+            staleReason="not_found",
         )
     return resolved
 

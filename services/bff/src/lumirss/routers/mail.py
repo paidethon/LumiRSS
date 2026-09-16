@@ -33,10 +33,14 @@ from lumirss.mail_bridge import (
     MailBridgeStore,
 )
 from lumirss.mail_digest import (
+    _DIGEST_TITLE,
     DigestStore,
     SmtpNotConfigured,
     build_bridge_digest_items,
+    compose_digest,
     deliver_digest,
+    next_send_at,
+    now_in_timezone,
 )
 from lumirss.mail_imap import (
     ImapAdapter,
@@ -48,6 +52,7 @@ from lumirss.mail_imap import (
     save_imap_config,
 )
 from lumirss.models import (
+    DigestPreview,
     DigestSendNowRequest,
     DigestSettings,
     DigestSettingsUpdate,
@@ -145,9 +150,40 @@ async def list_bridge_lists(request: Request) -> MailBridgeListResponse:
     )
 
 
+async def _unsubscribe_required(request: Request, list_uuid: str) -> str | None:
+    """Bridge-list delete must unsubscribe its generated Atom feed first
+    (pool #32 — same blocking contract as api-sources P0-05e): a failed
+    unsubscribe returns honest error text that BLOCKS the delete so no
+    dead subscription lingers; FreshRSS-unconfigured → nothing to do."""
+    try:
+        adapter = _get_control_adapter(request)
+    except Exception:  # FreshRSS not configured — no subscription can exist
+        return None
+    try:
+        suffix = f"/feeds/mail/{list_uuid}."
+        for subscription in await adapter.list_subscriptions():
+            if subscription.feed_url.endswith(suffix):
+                await adapter.unsubscribe(subscription.stream_id)
+                return None
+        return None  # already absent → idempotent success
+    except Exception as exc:  # noqa: BLE001 — honest blocking error
+        return f"取消订阅失败：{exc}"
+
+
 @router.delete("/api/v1/mail/bridge-lists/{list_uuid}", status_code=204)
 async def delete_bridge_list(list_uuid: str, request: Request) -> Response:
     store: MailBridgeStore = _get_mail_bridge_store(request)
+    unsubscribe_error = await _unsubscribe_required(request, list_uuid)
+    if unsubscribe_error is not None:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "unsubscribe_failed",
+                    "message": unsubscribe_error,
+                }
+            },
+        )
     deleted = await store.delete_list(list_uuid)
     if not deleted:
         raise MailBridgeNotFound(list_uuid)
@@ -260,6 +296,41 @@ async def update_digest_settings(
         await store.set_password(payload.smtpPassword)
         settings = await store.load()
     return _digest_model(settings)
+
+
+@router.get("/api/v1/digest/preview", response_model=DigestPreview)
+async def digest_preview(request: Request) -> DigestPreview:
+    """无副作用预览（pool #31）：当前配置下摘要会长什么样、下次何时发。
+
+    不发送、不写 last_error / last_sent_at、不触碰 SMTP——预览失败
+    （SMTP 未配齐等）仍返回已可推导的内容与说明，由 note 诚实标注。
+    nextSendAt 仅在 enabled 时给出，按配置时区（'' = 服务器本地）的
+    墙钟计算。"""
+    settings = await _digest_store(request).load()
+    bridge: MailBridgeStore = _get_mail_bridge_store(request)
+    note: str | None = None
+    if settings["source"] != "mail":
+        items = []
+        note = "定时摘要当前仅支持 source=mail；read_later/starred 聚合尚未实现。"
+    else:
+        items = await build_bridge_digest_items(bridge, settings["limitCount"])
+        if not items:
+            note = "没有可发送的摘要条目（bridge 列表暂无邮件）。"
+    text, html = compose_digest(_DIGEST_TITLE, items)
+    now = now_in_timezone(settings["timezone"])
+    return DigestPreview(
+        subject=_DIGEST_TITLE,
+        text=text,
+        html=html,
+        itemCount=len(items),
+        enabled=settings["enabled"],
+        hour=settings["hour"],
+        timezone=settings["timezone"],
+        nextSendAt=(
+            next_send_at(now, settings["hour"]) if settings["enabled"] else None
+        ),
+        note=note,
+    )
 
 
 @router.post("/api/v1/digest/send-now", response_model=MailIngestResult)
@@ -429,6 +500,7 @@ def _digest_model(settings) -> DigestSettings:
         smtpUser=settings["smtpUser"],
         fromAddr=settings["fromAddr"],
         toAddr=settings["toAddr"],
+        timezone=settings.get("timezone", ""),
         lastSentAt=settings["lastSentAt"],
         lastError=settings["lastError"],
         passwordConfigured=settings.get("passwordConfigured", False),

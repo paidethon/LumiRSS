@@ -149,15 +149,20 @@ class WorkspaceStore:
         return updated
 
     async def delete_workspace(self, workspace_id: str) -> bool:
-        """Delete a workspace and its membership rows; False when absent."""
+        """Delete a workspace and its membership rows atomically (pool #45);
+        False when absent."""
         if workspace_id == RESERVED_WORKSPACE_ID:
             raise ReservedWorkspaceError(RESERVED_WORKSPACE_ID)
         await self._db.migrate()
         row = await self._db.fetch_one("SELECT id FROM workspaces WHERE id = ?", (workspace_id,))
         if row is None:
             return False
-        await self._db.execute("DELETE FROM workspace_items WHERE workspace_id = ?", (workspace_id,))
-        await self._db.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
+
+        def _delete(conn: sqlite3.Connection) -> None:
+            conn.execute("DELETE FROM workspace_items WHERE workspace_id = ?", (workspace_id,))
+            conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
+
+        await transaction(self._db, _delete)
         return True
 
     # -- membership --------------------------------------------------------
@@ -257,25 +262,40 @@ class WorkspaceStore:
         *,
         cursor: str | None = None,
         limit: int = 25,
+        order: str = "newest",
     ) -> tuple[list[WorkspaceItem], str | None]:
-        """Newest-added-first keyset page (read-later timeline, P0-01).
+        """Keyset page over the reserved workspace's members by add time
+        (read-later timeline, P0-01); ``order`` is ``newest`` (default,
+        historical) or ``oldest`` (pool #14).
 
-        Cursor is an opaque envelope over (added_at, item_ref); an absent
-        workspace or an invalid cursor raises WorkspaceInvalid.
+        Cursor is an opaque envelope over (added_at, item_ref, order) —
+        a cursor is only valid for the order it was issued under;
+        legacy two-field cursors mean ``newest``. An absent workspace or
+        an invalid cursor raises WorkspaceInvalid.
         """
         if limit < 1 or limit > _MAX_ITEM_LIMIT:
             raise WorkspaceInvalid(f"limit must be between 1 and {_MAX_ITEM_LIMIT}.")
+        if order not in ("newest", "oldest"):
+            raise WorkspaceInvalid("order must be 'newest' or 'oldest'.")
         await self._db.migrate()
         row = await self._db.fetch_one(
             "SELECT id FROM workspaces WHERE id = ?", (workspace_id,)
         )
         if row is None:
             raise WorkspaceNotFound(workspace_id)
-        key = _decode_desc_cursor(cursor) if cursor else None
+        key = _decode_timeline_cursor(cursor) if cursor else None
+        if key is not None and key[2] != order:
+            raise WorkspaceInvalid(
+                "timeline cursor belongs to a different sort order."
+            )
         key_added = key[0] if key else None
         key_ref = key[1] if key else None
+        if order == "oldest":
+            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at > ? OR (added_at = ? AND item_ref > ?)) ORDER BY added_at ASC, item_ref ASC LIMIT ?"
+        else:
+            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?"
         rows = await self._db.fetch_all(
-            "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?",
+            sql,
             (workspace_id, key_added, key_added, key_added, key_ref, limit + 1),
         )
         has_more = len(rows) > limit
@@ -291,7 +311,7 @@ class WorkspaceStore:
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            next_cursor = _encode_desc_cursor(last.added_at, last.item_ref)
+            next_cursor = _encode_timeline_cursor(last.added_at, last.item_ref, order)
         return items, next_cursor
 
     async def reorder_items(
@@ -342,12 +362,14 @@ _DESC_CURSOR_PREFIX = "c1ws."
 _MAX_DESC_CURSOR_LENGTH = 1024
 
 
-def _encode_desc_cursor(added_at: str, item_ref: str) -> str:
-    payload = json.dumps([added_at, item_ref], separators=(",", ":"))
+def _encode_timeline_cursor(added_at: str, item_ref: str, order: str) -> str:
+    payload = json.dumps([added_at, item_ref, order], separators=(",", ":"))
     return encode_opaque_ref(_DESC_CURSOR_PREFIX, payload)
 
 
-def _decode_desc_cursor(cursor: str) -> tuple[str, str]:
+def _decode_timeline_cursor(cursor: str) -> tuple[str, str, str]:
+    """Returns (added_at, item_ref, order); legacy two-field payloads are
+    the historical ``newest`` order."""
     payload = decode_opaque_ref(
         cursor,
         prefix=_DESC_CURSOR_PREFIX,
@@ -356,12 +378,25 @@ def _decode_desc_cursor(cursor: str) -> tuple[str, str]:
         description="workspace timeline cursor",
     )
     try:
-        added_at, item_ref = json.loads(payload)
+        parsed = json.loads(payload)
     except ValueError as exc:
         raise WorkspaceInvalid("timeline cursor payload is not valid JSON.") from exc
-    if not isinstance(added_at, str) or not isinstance(item_ref, str):
-        raise WorkspaceInvalid("timeline cursor payload is not a key pair.")
-    return added_at, item_ref
+    if (
+        isinstance(parsed, list)
+        and len(parsed) == 3
+        and all(isinstance(v, str) for v in parsed)
+    ):
+        added_at, item_ref, order = parsed
+        if order not in ("newest", "oldest"):
+            raise WorkspaceInvalid("timeline cursor order is not recognized.")
+        return added_at, item_ref, order
+    if (
+        isinstance(parsed, list)
+        and len(parsed) == 2
+        and all(isinstance(v, str) for v in parsed)
+    ):
+        return parsed[0], parsed[1], "newest"
+    raise WorkspaceInvalid("timeline cursor payload is not a key pair.")
 
 
 def _validate_name(name: str) -> str:

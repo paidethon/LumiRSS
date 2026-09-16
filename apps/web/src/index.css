@@ -62,6 +62,12 @@ body {
   word-break: break-word;
 }
 
+/* 目录锚点（pool #03）：标题带 toc- id（ArticleToc 跳转目标），定位时
+   预留呼吸空间，不贴边。 */
+.article-content :is(h2, h3, h4)[id^='toc-'] {
+  scroll-margin-top: 0.75rem;
+}
+
 .article-content p {
   /* 0010a F6：段距档位（store 挂 em 值） */
   margin: 0 0 var(--lumi-reader-paragraph-spacing, 0.85em);
@@ -173,6 +179,36 @@ html[data-reader-images='hidden'] .article-content img {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.875em;
+  position: relative; /* 复制按钮（.code-copy-btn）的定位容器 */
+}
+
+/* 代码块复制按钮（pool #04）：悬浮右上角，不随横向滚动内容跑出视口；
+   44px 触控目标的可点区域由 min-width/height + padding 保证。 */
+.article-content pre .code-copy-btn {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.375rem;
+  min-width: 44px;
+  min-height: 24px;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--lumi-surface, var(--bg));
+  color: var(--lumi-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.article-content pre .code-copy-btn:hover {
+  color: var(--lumi-text-primary);
+  background: var(--lumi-surface-selected);
+}
+.article-content pre .code-copy-btn:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+}
+.article-content pre .code-copy-btn:disabled {
+  cursor: default;
 }
 
 .article-content code {

@@ -106,6 +106,7 @@ class PortableSettings(BaseModel):
         "auto", "github-light", "github-dark", "vitesse-light", "vitesse-dark"
     ] = "auto"
     scrollMarkUnread: bool = False
+    readLaterSort: Literal["newest", "oldest"] = "newest"
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod
@@ -172,6 +173,7 @@ class PortableSettingsPatch(BaseModel):
         "auto", "github-light", "github-dark", "vitesse-light", "vitesse-dark"
     ] | None = None
     scrollMarkUnread: bool | None = None
+    readLaterSort: Literal["newest", "oldest"] | None = None
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod

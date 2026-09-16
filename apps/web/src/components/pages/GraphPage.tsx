@@ -22,6 +22,8 @@ import {
   useDeleteTagMutation,
   useGraph,
   useRenameTagMutation,
+  useTagMergeMutation,
+  useTagMergePreview,
   useTags,
   useWorkspaces,
 } from '../../api/queries'
@@ -196,6 +198,8 @@ export default function GraphPage() {
   // P0-10：标签管理（重命名/删除）目标与模式（null = 关闭）。
   const [manageTag, setManageTag] = useState<TagSummary | null>(null)
   const [manageMode, setManageMode] = useState<'rename' | 'delete' | null>(null)
+  // pool #16：合并标签对话框开关。
+  const [mergeOpen, setMergeOpen] = useState(false)
 
   const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data])
   const nodeRefs = useMemo(() => new Set(nodes.map((n) => n.ref)), [nodes])
@@ -298,9 +302,20 @@ export default function GraphPage() {
 
       {/* 标签列表（非图形等价路径）：chip = #名称 (数量)，可聚焦 */}
       <section aria-labelledby="graph-tags-heading" className="mt-3 px-1">
-        <h3 id="graph-tags-heading" className="text-xs font-semibold text-[var(--lumi-text-secondary)]">
-          标签列表（非图形等价路径）
-        </h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 id="graph-tags-heading" className="text-xs font-semibold text-[var(--lumi-text-secondary)]">
+            标签列表（非图形等价路径）
+          </h3>
+          {(tags.data?.items.length ?? 0) >= 2 && (
+            <button
+              type="button"
+              onClick={() => setMergeOpen(true)}
+              className="rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            >
+              合并标签
+            </button>
+          )}
+        </div>
         {tags.isPending && (
           <div className="mt-1.5 flex gap-1.5" aria-label="标签加载中">
             <Skeleton className="h-6 w-20" />
@@ -564,7 +579,91 @@ export default function GraphPage() {
           }}
         />
       )}
+      {mergeOpen && (
+        <TagMergeDialog
+          tagList={tags.data?.items ?? []}
+          onClose={() => setMergeOpen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+/** pool #16：合并标签（条件挂载对话框）：选源/目标 → 只读预览受影响
+ * 数量 → 确认事务化合并。失败原样内联透出，不半合并。 */
+function TagMergeDialog({
+  tagList,
+  onClose,
+}: {
+  tagList: TagSummary[]
+  onClose: () => void
+}) {
+  const [sourceId, setSourceId] = useState<number | null>(null)
+  const [targetId, setTargetId] = useState<number | null>(null)
+  const preview = useTagMergePreview(sourceId, targetId)
+  const merge = useTagMergeMutation()
+
+  return (
+    <Dialog open onClose={onClose} title="合并标签">
+      <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        源标签的全部条目绑定并入目标标签（重复绑定自动折叠），源标签随后删除。
+      </p>
+      <div className="mt-3 flex flex-col gap-2">
+        <select
+          aria-label="源标签"
+          value={sourceId === null ? '' : sourceId}
+          onChange={(e) => setSourceId(e.target.value === '' ? null : Number(e.target.value))}
+          className="min-h-9 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-sm"
+        >
+          <option value="">选择源标签…</option>
+          {tagList.map((t) => (
+            <option key={t.id ?? 0} value={t.id ?? 0}>#{t.name}</option>
+          ))}
+        </select>
+        <select
+          aria-label="目标标签"
+          value={targetId === null ? '' : targetId}
+          onChange={(e) => setTargetId(e.target.value === '' ? null : Number(e.target.value))}
+          className="min-h-9 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-sm"
+        >
+          <option value="">选择目标标签…</option>
+          {tagList.filter((t) => t.id !== sourceId).map((t) => (
+            <option key={t.id ?? 0} value={t.id ?? 0}>#{t.name}</option>
+          ))}
+        </select>
+        {sourceId !== null && targetId !== null && (
+          <p className="text-xs text-[var(--lumi-text-secondary)]" aria-live="polite">
+            {preview.isPending
+              ? '统计中…'
+              : preview.isError
+                ? '预览失败，请重试。'
+                : `将移动 ${preview.data?.willMove ?? 0} 个绑定，折叠 ${preview.data?.overlaps ?? 0} 个重复绑定。`}
+          </p>
+        )}
+        {merge.isError && (
+          <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+            {merge.error instanceof Error ? merge.error.message : '合并失败，请重试。'}
+          </p>
+        )}
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          取消
+        </Button>
+        <Button
+          size="sm"
+          disabled={
+            sourceId === null || targetId === null || preview.isPending || merge.isPending
+          }
+          onClick={() => {
+            if (sourceId === null || targetId === null) return
+            merge.mutate({ sourceId, targetId }, { onSuccess: onClose })
+          }}
+        >
+          {merge.isPending ? '合并中…' : '确认合并'}
+        </Button>
+      </div>
+    </Dialog>
   )
 }
 
