@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { Camera, Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useAiSettings, useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
+import { getEntry } from '../api/client'
+import { useQueryClient } from '@tanstack/react-query'
 import { useToggleReadLater } from '../lib/read-later'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { formatReadingTime, textFromHtml } from '../lib/reading-time'
 import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
 import { localTranslatorAvailable } from '../lib/local-translator'
 import { useAppSettings } from '../store/app-settings'
+import { useUndo } from '../store/undo'
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { IconButton } from './ui/IconButton'
@@ -181,6 +184,9 @@ export default function ReaderHeader({
   onOpenAiConversation?: () => void
 }) {
   const mutation = useEntryStateMutation()
+  const queryClient = useQueryClient()
+  // F20：读/未读切换的短时撤销（撤销前核对服务器状态，防跨设备覆盖）
+  const pushUndo = useUndo((s) => s.push)
   const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
   const readLaterMarked = isReadLater(detail.entryRef)
   const readLaterPending = pendingFor(detail.entryRef)
@@ -253,12 +259,34 @@ export default function ReaderHeader({
               label={detail.read ? '标记为未读' : '标记为已读'}
               aria-pressed={detail.read}
               touch
-              onClick={() =>
-                mutation.mutate({
-                  entryRef: detail.entryRef,
-                  patch: { read: !detail.read },
-                })
-              }
+              onClick={() => {
+                const next = !detail.read
+                mutation.mutate(
+                  { entryRef: detail.entryRef, patch: { read: next } },
+                  {
+                    onSuccess: () => {
+                      // F20：8 秒撤销窗口；撤销前核对服务器 read 状态
+                      pushUndo({
+                        label: next ? '已标记已读' : '已标记未读',
+                        check: async () => {
+                          const fresh = await queryClient.fetchQuery({
+                            queryKey: ['entry', detail.entryRef],
+                            queryFn: ({ signal }) => getEntry(detail.entryRef, signal),
+                            staleTime: 0,
+                          })
+                          return fresh.read === next
+                        },
+                        undo: async () => {
+                          await mutation.mutateAsync({
+                            entryRef: detail.entryRef,
+                            patch: { read: !next },
+                          })
+                        },
+                      })
+                    },
+                  },
+                )
+              }}
             />
           </Tooltip>
         )}
