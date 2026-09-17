@@ -2918,6 +2918,276 @@
     "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
+   "GptDigestConfig": {
+    "description": "F01：一份主题日报配置（token 不在此响应中）。",
+    "properties": {
+     "createdAt": {
+      "default": "",
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedUrlAllow": {
+      "default": "",
+      "title": "Feedurlallow",
+      "type": "string"
+     },
+     "hour": {
+      "title": "Hour",
+      "type": "integer"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastIssueKey": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastissuekey"
+     },
+     "limitCount": {
+      "default": 12,
+      "title": "Limitcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "perSourceCap": {
+      "default": 2,
+      "title": "Persourcecap",
+      "type": "integer"
+     },
+     "timezone": {
+      "default": "",
+      "title": "Timezone",
+      "type": "string"
+     },
+     "windowHours": {
+      "default": 24,
+      "title": "Windowhours",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "enabled",
+     "hour"
+    ],
+    "title": "GptDigestConfig",
+    "type": "object"
+   },
+   "GptDigestConfigList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestConfig"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "GptDigestConfigList",
+    "type": "object"
+   },
+   "GptDigestConfigUpdate": {
+    "description": "PUT /api/v1/gpt-digest/configs/{id} — partial（enabled=false = 暂停）。",
+    "properties": {
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "feedUrlAllow": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurlallow"
+     },
+     "hour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hour"
+     },
+     "limitCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limitcount"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "perSourceCap": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Persourcecap"
+     },
+     "timezone": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timezone"
+     },
+     "windowHours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Windowhours"
+     }
+    },
+    "title": "GptDigestConfigUpdate",
+    "type": "object"
+   },
+   "GptDigestCreate": {
+    "description": "POST /api/v1/gpt-digest/configs（新配置默认 paused）。",
+    "properties": {
+     "feedUrlAllow": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurlallow"
+     },
+     "hour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hour"
+     },
+     "limitCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limitcount"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "perSourceCap": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Persourcecap"
+     },
+     "timezone": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timezone"
+     },
+     "windowHours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Windowhours"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "GptDigestCreate",
+    "type": "object"
+   },
    "GptDigestFeedInfo": {
     "description": "订阅路径（含 token）。token 即凭据：只在会话认证下返回。",
     "properties": {
@@ -3010,6 +3280,99 @@
     "title": "GptDigestIssueList",
     "type": "object"
    },
+   "GptDigestPreview": {
+    "description": "GET /api/v1/gpt-digest/preview — 无副作用选材预览。",
+    "properties": {
+     "counts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Counts",
+      "type": "object"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "perSource": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Persource",
+      "type": "object"
+     },
+     "selected": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestPreviewItem"
+      },
+      "title": "Selected",
+      "type": "array"
+     },
+     "windowEnd": {
+      "title": "Windowend",
+      "type": "string"
+     },
+     "windowStart": {
+      "title": "Windowstart",
+      "type": "string"
+     }
+    },
+    "required": [
+     "windowStart",
+     "windowEnd"
+    ],
+    "title": "GptDigestPreview",
+    "type": "object"
+   },
+   "GptDigestPreviewItem": {
+    "description": "F06：预览中的一条入选材料（sourceId 与生成时一致）。",
+    "properties": {
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "sourceId": {
+      "title": "Sourceid",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "sourceId",
+     "title",
+     "feedTitle",
+     "feedUrl",
+     "url",
+     "publishedAt"
+    ],
+    "title": "GptDigestPreviewItem",
+    "type": "object"
+   },
    "GptDigestSettings": {
     "description": "GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。",
     "properties": {
@@ -3046,6 +3409,11 @@
      "limitCount": {
       "default": 12,
       "title": "Limitcount",
+      "type": "integer"
+     },
+     "perSourceCap": {
+      "default": 2,
+      "title": "Persourcecap",
       "type": "integer"
      },
      "timezone": {
@@ -3101,6 +3469,17 @@
        }
       ],
       "title": "Limitcount"
+     },
+     "perSourceCap": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Persourcecap"
      },
      "timezone": {
       "anyOf": [
@@ -8876,6 +9255,303 @@
     "summary": "Freshrss Ui"
    }
   },
+  "/api/v1/gpt-digest/configs": {
+   "get": {
+    "operationId": "list_gpt_digest_configs_api_v1_gpt_digest_configs_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestConfigList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Gpt Digest Configs"
+   },
+   "post": {
+    "operationId": "create_gpt_digest_config_api_v1_gpt_digest_configs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GptDigestCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestConfig"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Gpt Digest Config"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}": {
+   "delete": {
+    "operationId": "delete_gpt_digest_config_api_v1_gpt_digest_configs__config_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Gpt Digest Config"
+   },
+   "put": {
+    "operationId": "update_gpt_digest_config_api_v1_gpt_digest_configs__config_id__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GptDigestConfigUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestConfig"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Gpt Digest Config"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/feed": {
+   "get": {
+    "operationId": "get_config_feed_api_v1_gpt_digest_configs__config_id__feed_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestFeedInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Config Feed"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/generate": {
+   "post": {
+    "operationId": "generate_config_digest_api_v1_gpt_digest_configs__config_id__generate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Config Digest"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/issues": {
+   "get": {
+    "operationId": "list_config_issues_api_v1_gpt_digest_configs__config_id__issues_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 14,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestIssueList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Config Issues"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/preview": {
+   "get": {
+    "operationId": "preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Config Digest"
+   }
+  },
   "/api/v1/gpt-digest/feed": {
    "get": {
     "description": "订阅路径（含 token）。token 是密码级秘密：只在会话认证的 UI 里\n返回，绝不进公开文档、日志或共享缓存。",
@@ -8968,6 +9644,25 @@
      }
     },
     "summary": "List Gpt Digest Issues"
+   }
+  },
+  "/api/v1/gpt-digest/preview": {
+   "get": {
+    "description": "F06：生成前看到入选/排除与原因；不调用模型、不写库。",
+    "operationId": "preview_gpt_digest_api_v1_gpt_digest_preview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Preview Gpt Digest"
    }
   },
   "/api/v1/gpt-digest/settings": {
@@ -13097,17 +13792,17 @@
     "summary": "Remove Workspace Item"
    }
   },
-  "/feeds/gpt-digest/{token}.atom": {
+  "/feeds/gpt-digest/{spec}.atom": {
    "get": {
     "description": "只读订阅输出。token 错误 → 404（不区分「无此资源」与「token 错」）。",
-    "operationId": "serve_gpt_digest_atom_feeds_gpt_digest__token__atom_get",
+    "operationId": "serve_gpt_digest_atom_feeds_gpt_digest__spec__atom_get",
     "parameters": [
      {
       "in": "path",
-      "name": "token",
+      "name": "spec",
       "required": true,
       "schema": {
-       "title": "Token",
+       "title": "Spec",
        "type": "string"
       }
      }

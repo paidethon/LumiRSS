@@ -1241,6 +1241,7 @@ class GptDigestSettings(BaseModel):
     timezone: str = ""
     windowHours: int = 24
     limitCount: int = 12
+    perSourceCap: int = 2
     lastIssueKey: str | None = None
     lastError: str | None = None
 
@@ -1253,6 +1254,7 @@ class GptDigestSettingsUpdate(BaseModel):
     timezone: str | None = None
     windowHours: int | None = None
     limitCount: int | None = None
+    perSourceCap: int | None = None
 
 
 class GptDigestIssue(BaseModel):
@@ -1277,6 +1279,74 @@ class GptDigestFeedInfo(BaseModel):
     """订阅路径（含 token）。token 即凭据：只在会话认证下返回。"""
 
     atomPath: str
+
+
+class GptDigestPreviewItem(BaseModel):
+    """F06：预览中的一条入选材料（sourceId 与生成时一致）。"""
+
+    sourceId: str
+    title: str
+    feedTitle: str
+    feedUrl: str
+    url: str
+    publishedAt: str
+
+
+class GptDigestPreview(BaseModel):
+    """GET /api/v1/gpt-digest/preview — 无副作用选材预览。"""
+
+    windowStart: str
+    windowEnd: str
+    selected: list[GptDigestPreviewItem] = []
+    counts: dict[str, int] = {}
+    perSource: dict[str, int] = {}
+    note: str | None = None
+
+
+class GptDigestConfig(BaseModel):
+    """F01：一份主题日报配置（token 不在此响应中）。"""
+
+    id: int
+    name: str
+    enabled: bool
+    hour: int
+    timezone: str = ""
+    windowHours: int = 24
+    limitCount: int = 12
+    perSourceCap: int = 2
+    feedUrlAllow: str = ""
+    lastIssueKey: str | None = None
+    lastError: str | None = None
+    createdAt: str = ""
+
+
+class GptDigestConfigList(BaseModel):
+    items: list[GptDigestConfig] = []
+
+
+class GptDigestCreate(BaseModel):
+    """POST /api/v1/gpt-digest/configs（新配置默认 paused）。"""
+
+    name: str
+    hour: int | None = None
+    timezone: str | None = None
+    windowHours: int | None = None
+    limitCount: int | None = None
+    perSourceCap: int | None = None
+    feedUrlAllow: str | None = None
+
+
+class GptDigestConfigUpdate(BaseModel):
+    """PUT /api/v1/gpt-digest/configs/{id} — partial（enabled=false = 暂停）。"""
+
+    name: str | None = None
+    enabled: bool | None = None
+    hour: int | None = None
+    timezone: str | None = None
+    windowHours: int | None = None
+    limitCount: int | None = None
+    perSourceCap: int | None = None
+    feedUrlAllow: str | None = None
 
 
 class DigestSendNowRequest(BaseModel):

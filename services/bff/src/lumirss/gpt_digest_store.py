@@ -23,6 +23,7 @@ _DEFAULT_LIMIT = 12
 _MAX_LIMIT = 40
 _MIN_WINDOW_HOURS = 1
 _MAX_WINDOW_HOURS = 72
+_MAX_PER_SOURCE_CAP = 5
 FEED_TOKEN_KEY = "gpt_digest_feed_token"
 
 
@@ -33,6 +34,7 @@ def gpt_digest_settings_defaults() -> dict[str, Any]:
         "timezone": "",
         "windowHours": 24,
         "limitCount": _DEFAULT_LIMIT,
+        "perSourceCap": 2,
         "lastIssueKey": None,
         "lastError": None,
     }
@@ -60,62 +62,42 @@ def issue_key_for(now: datetime, timezone: str) -> str:
 
 
 class GptDigestStore:
-    """Single-row GPT digest configuration + schedule marker."""
+    """兼容外观（0027 起）：旧单配置接口投影到 gpt_digest_configs 的
+    配置 1（「默认日报」）。订阅 token 仍由本类持有（SecretsStore）。"""
 
     def __init__(self, db: Database, secrets: SecretsStore) -> None:
         self._db = db
         self._secrets = secrets
 
+    def _configs(self):
+        from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+        return GptDigestConfigStore(self._db)
+
     async def load(self) -> dict[str, Any]:
-        await self._db.migrate()
-        row = await self._db.fetch_one(
-            "SELECT enabled, hour, timezone, window_hours, limit_count, last_issue_key, last_error FROM gpt_digest_settings WHERE id = 1"
-        )
-        if row is None:
+        config = await self._configs().get_config(1)
+        if config is None:  # 迁移前的极端情况：给出默认形状
             return gpt_digest_settings_defaults()
         return {
-            "enabled": bool(row["enabled"]),
-            "hour": int(row["hour"]),
-            "timezone": str(row["timezone"] or ""),
-            "windowHours": int(row["window_hours"]),
-            "limitCount": int(row["limit_count"]),
-            "lastIssueKey": row["last_issue_key"],
-            "lastError": row["last_error"],
+            "enabled": config["enabled"],
+            "hour": config["hour"],
+            "timezone": config["timezone"],
+            "windowHours": config["windowHours"],
+            "limitCount": config["limitCount"],
+            "perSourceCap": config["perSourceCap"],
+            "lastIssueKey": config["lastIssueKey"],
+            "lastError": config["lastError"],
         }
 
     async def save(self, update: dict[str, Any]) -> dict[str, Any]:
-        await self._db.migrate()
-        current = await self.load()
-        enabled = update.get("enabled", current["enabled"])
-        hour = update.get("hour", current["hour"])
-        window = update.get("windowHours", current["windowHours"])
-        limit = update.get("limitCount", current["limitCount"])
-        if not isinstance(hour, int) or not 0 <= hour <= 23:
-            hour = current["hour"]
-        if not isinstance(window, int):
-            window = current["windowHours"]
-        window = min(max(window, _MIN_WINDOW_HOURS), _MAX_WINDOW_HOURS)
-        if not isinstance(limit, int):
-            limit = current["limitCount"]
-        limit = min(max(limit, 1), _MAX_LIMIT)
-        timezone = normalize_timezone(update.get("timezone", current["timezone"]), current["timezone"])
-        await self._db.execute(
-            "UPDATE gpt_digest_settings SET enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ? WHERE id = 1",
-            (1 if enabled else 0, hour, timezone, window, limit),
-        )
+        await self._configs().update_config(1, dict(update))
         return await self.load()
 
     async def mark_error(self, error: str) -> None:
-        await self._db.execute(
-            "UPDATE gpt_digest_settings SET last_error = ? WHERE id = 1",
-            (str(error)[:500],),
-        )
+        await self._configs().mark_error(1, str(error))
 
     async def mark_published(self, issue_key: str) -> None:
-        await self._db.execute(
-            "UPDATE gpt_digest_settings SET last_issue_key = ?, last_error = NULL WHERE id = 1",
-            (issue_key,),
-        )
+        await self._configs().mark_published(1, issue_key)
 
     def feed_token(self) -> str | None:
         return self._secrets.get(FEED_TOKEN_KEY)

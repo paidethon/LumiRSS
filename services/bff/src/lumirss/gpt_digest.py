@@ -31,8 +31,10 @@ from lumirss.ai_provider import (
     AiNotConfigured,
     AiProviderError,
 )
+from lumirss.gpt_digest_configs import parse_allow_list
 from lumirss.gpt_digest_issues import GptDigestIssuesStore
-from lumirss.gpt_digest_store import GptDigestStore, issue_key_for
+from lumirss.gpt_digest_store import issue_key_for
+from lumirss.util import utc_now
 
 _PROMPT_VERSION = "gpt-digest-v1"
 _HARVEST_LIMIT = 120
@@ -65,28 +67,83 @@ def select_material(
     window_start: str,
     window_end: str,
     limit: int,
+    per_source_cap: int = 0,
 ) -> list[dict[str, Any]]:
-    """确定性选材：窗口内 → 排除自有 feed → item_id 去重 → 时间倒序。
+    """确定性选材的薄封装（F06 语义见 :func:`classify_material`）。"""
+    return classify_material(
+        documents, window_start, window_end, limit, per_source_cap
+    )["selected"]
 
-    ``documents`` 是适配器收割的 EntryDocument 形状（dict 化以便纯函数
-    测试）。比较用 canonical UTC 字符串的字典序（见 atom_render.rfc3339
-    同一约定）；无发布时间的文档不参与（不把采集时间冒充发布时间）。"""
+
+def classify_material(
+    documents: list[dict[str, Any]],
+    window_start: str,
+    window_end: str,
+    limit: int,
+    per_source_cap: int = 0,
+    allow_list: list[str] | None = None,
+) -> dict[str, Any]:
+    """F06/F01：带原因的确定性选材。
+
+    - selected：按发布时间倒序、受 limitCount 与单源配额约束的入选集
+      （顺序即生成时的 source id 顺序，同一输入可复现）；
+    - counts：每类排除原因的数量（窗口外 / 自有 feed / 重复 /
+      超单源配额 / 超总量 / 来源不在白名单），未知不当零；
+    - perSource：入选集的来源分布（供配额调整参考）。
+    排序键稳定：publishedAt 倒序 + item_id 兜底，避免同刻抖动。"""
     seen: set[str] = set()
-    chosen: list[dict[str, Any]] = []
+    counts = {
+        "outsideWindow": 0,
+        "selfFeed": 0,
+        "duplicate": 0,
+        "perSourceCapped": 0,
+        "overLimit": 0,
+        "notAllowed": 0,
+    }
+    rules = allow_list or []
+    eligible: list[dict[str, Any]] = []
     for doc in documents:
         published = str(doc.get("publishedAt") or "")
-        if not window_start <= published < window_end:
-            continue
         feed_url = str(doc.get("feedUrl") or "")
-        if _SELF_FEED_MARKER in feed_url:
-            continue  # 本实例生成的 Atom 已被 FreshRSS 订阅时不再作为输入
         item_id = str(doc.get("item_id") or doc.get("entryRef") or "")
+        if not window_start <= published < window_end:
+            counts["outsideWindow"] += 1
+            continue
+        if _SELF_FEED_MARKER in feed_url:
+            counts["selfFeed"] += 1
+            continue  # 本实例生成的 Atom 已被 FreshRSS 订阅时不再作为输入
+        if rules and not any(rule in feed_url.lower() for rule in rules):
+            counts["notAllowed"] += 1
+            continue  # F01：来源白名单之外的订阅不进入本配置
         if not item_id or item_id in seen:
+            counts["duplicate"] += 1
             continue
         seen.add(item_id)
-        chosen.append(doc)
-    chosen.sort(key=lambda doc: str(doc.get("publishedAt") or ""), reverse=True)
-    return chosen[: max(limit, 1)]
+        eligible.append(doc)
+    eligible.sort(
+        key=lambda doc: (str(doc.get("publishedAt") or ""), str(doc.get("item_id") or "")),
+        reverse=True,
+    )
+    cap = max(int(per_source_cap), 0)
+    per_source_tally: dict[str, int] = {}
+    selected: list[dict[str, Any]] = []
+    for doc in eligible:
+        feed_title = str(doc.get("feedTitle") or "") or str(doc.get("feedUrl") or "")
+        if cap > 0 and per_source_tally.get(feed_title, 0) >= cap:
+            counts["perSourceCapped"] += 1
+            continue
+        if len(selected) >= max(int(limit), 1):
+            counts["overLimit"] += 1
+            continue
+        per_source_tally[feed_title] = per_source_tally.get(feed_title, 0) + 1
+        selected.append(doc)
+    return {
+        "selected": selected,
+        "counts": counts,
+        "perSource": dict(
+            sorted(per_source_tally.items(), key=lambda kv: (-kv[1], kv[0]))
+        ),
+    }
 
 
 def _clip(text: str, limit: int) -> str:
@@ -247,43 +304,44 @@ def render_issue_html(output: dict[str, Any], refs: dict[str, dict[str, str]]) -
 
 
 async def generate_issue(
-    store: GptDigestStore,
+    configs: Any,
     issues: GptDigestIssuesStore,
     *,
+    config: dict[str, Any],
     adapter: Any,
     ai_settings: Any,
     provider_factory: Any,
-    settings: dict[str, Any],
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """生成（或修订）当天期号；返回 issue 行 dict。
+    """生成（或修订）该配置当天期号；返回 issue 行 dict。
 
-    生成失败抛出类型化异常并记 last_error；上一份有效发布物保持不变。
-    远程调用不持有写事务——先完成选材与调用，最后才 upsert。"""
-    await store.load()  # 确保迁移已应用（失败路径也要能写 last_error）
+    ``config`` 是 GptDigestConfigStore 的一行（含 timezone/windowHours/
+    limitCount/perSourceCap/feedUrlAllow）。生成失败抛类型化异常并记该
+    配置的 last_error；上一份有效发布物保持不变。远程调用不持有写事务
+    ——先完成选材与调用，最后才 upsert。"""
+    config_id = int(config["id"])
+    await configs.mark_error(config_id, "")  # 触发迁移（失败路径也要能写库）
     now = now or datetime.now().astimezone()
-    window_start, window_end = window_bounds(
-        now, settings["timezone"], settings["windowHours"]
-    )
+    window_start, window_end = window_bounds(now, config["timezone"], config["windowHours"])
     page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
-    material = select_material(
+    material = classify_material(
         [doc.model_dump() for doc in page.documents],
         window_start,
         window_end,
-        settings["limitCount"],
-    )
+        int(config["limitCount"]),
+        int(config.get("perSourceCap") or 0),
+        parse_allow_list(config.get("feedUrlAllow") or ""),
+    )["selected"]
     if not material:
-        await store.mark_error(
-            "窗口内没有可用材料（检查 FreshRSS 自动更新与窗口/上限配置）。"
+        await configs.mark_error(
+            config_id, "窗口内没有可用材料（检查 FreshRSS 自动更新与窗口/白名单/上限配置）。"
         )
-        raise DigestMaterialEmpty(
-            "窗口内没有可用材料；未生成空日报。"
-        )
+        raise DigestMaterialEmpty("窗口内没有可用材料；未生成空日报。")
     ai_values = await ai_settings.load()
     base_url = str(ai_values.get("ai.base_url") or "")
     model = str(ai_values.get("ai.model") or "")
     if not base_url or not model:
-        await store.mark_error("AI 未配置（base URL / model 缺失）。")
+        await configs.mark_error(config_id, "AI 未配置（base URL / model 缺失）。")
         raise AiNotConfigured("AI 未配置。")
     provider = await provider_factory(base_url, model)
     messages = build_messages(material)
@@ -298,23 +356,71 @@ async def generate_issue(
             if isinstance(exc, AiProviderError)
             else str(exc)
         )
-        await store.mark_error(message)
+        await configs.mark_error(config_id, message)
         raise
     refs = build_refs(material)
-    issue_key = issue_key_for(now, settings["timezone"])
+    issue_key = issue_key_for(now, config["timezone"])
     body_html = render_issue_html(output, refs)
-    published_at = store.now_utc()
     row = await issues.upsert_issue(
+        config_id=config_id,
         issue_key=issue_key,
         title=output["title"],
         body_html=body_html,
         sections_json=json.dumps(output, ensure_ascii=False),
         refs_json=json.dumps(refs, ensure_ascii=False),
         model=model,
-        published_at=published_at,
+        published_at=utc_now(),
     )
-    await store.mark_published(issue_key)
+    await configs.mark_published(config_id, issue_key)
     return row
+
+
+async def build_preview(
+    adapter: Any,
+    config: dict[str, Any],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """F06：无副作用选材预览（不调用模型、不写库）。
+
+    sourceId 顺序与 generate_issue 的实际选材一一对应；material 为空的
+    原因由 counts 诚实解释，note 说明窗口与配额。"""
+    now = now or datetime.now().astimezone()
+    window_start, window_end = window_bounds(now, config["timezone"], config["windowHours"])
+    page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
+    verdict = classify_material(
+        [doc.model_dump() for doc in page.documents],
+        window_start,
+        window_end,
+        int(config["limitCount"]),
+        int(config.get("perSourceCap") or 0),
+        parse_allow_list(config.get("feedUrlAllow") or ""),
+    )
+    selected = verdict["selected"]
+    items = []
+    for index, doc in enumerate(selected, start=1):
+        items.append(
+            {
+                "sourceId": f"s{index}",
+                "title": _clip(doc.get("title") or "(无标题)", 300),
+                "feedTitle": _clip(doc.get("feedTitle") or "", 200),
+                "feedUrl": str(doc.get("feedUrl") or ""),
+                "url": str(doc.get("url") or ""),
+                "publishedAt": str(doc.get("publishedAt") or ""),
+            }
+        )
+    note = (
+        f"窗口内入选 {len(selected)} 条"
+        f"（上限 {config['limitCount']}，单源配额 {config.get('perSourceCap', 0) or '∞'}）；"
+        "生成时按本顺序提供 source id。"
+    )
+    return {
+        "windowStart": window_start,
+        "windowEnd": window_end,
+        "selected": items,
+        "counts": verdict["counts"],
+        "perSource": verdict["perSource"],
+        "note": note,
+    }
 
 
 class GptDigestScheduler:
@@ -340,17 +446,17 @@ class GptDigestScheduler:
 
         return now_in_timezone(timezone)
 
-    async def maybe_generate(
-        self, generate_fn: Any, settings: dict[str, Any]
+    async def maybe_generate_config(
+        self, generate_fn: Any, config: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """到期则生成；返回 issue 行或 None（未到期/已发布/禁用/忙碌）。"""
-        if self._busy or not settings["enabled"]:
+        """单个配置的到期检查；返回 issue 行或 None（未到期/已发布/禁用）。"""
+        if self._busy or not config["enabled"]:
             return None
-        now = self._now(settings["timezone"])
-        if now.hour != int(settings["hour"]):
+        now = self._now(config["timezone"])
+        if now.hour != int(config["hour"]):
             return None
-        today_key = issue_key_for(now, settings["timezone"])
-        if settings.get("lastIssueKey") == today_key:
+        today_key = issue_key_for(now, config["timezone"])
+        if config.get("lastIssueKey") == today_key:
             return None
         self._busy = True
         try:
@@ -362,14 +468,8 @@ class GptDigestScheduler:
 _SCHEDULE_TICK_SECONDS = 300
 
 
-async def _scheduled_generate(app_state: Any) -> dict[str, Any]:
-    """The scheduler's generate: builds the same dependency graph as the
-    route (adapter + summary-purpose AI view + key-aware provider)."""
-    store = GptDigestStore(app_state.db, app_state.secrets_store)
-    issues = GptDigestIssuesStore(app_state.db, store)
-    adapter = app_state.freshrss_adapter
-    if adapter is None:
-        raise AiNotConfigured("FreshRSS 适配器不可用。")
+def _build_ai_deps(app_state: Any):
+    """summary purpose 的 AI 依赖（路由与调度共用同一解析）。"""
     from lumirss.ai_profiles import AiProfileStore
     from lumirss.ai_settings import AiSettingsStore
 
@@ -389,26 +489,46 @@ async def _scheduled_generate(app_state: Any) -> dict[str, Any]:
             api_key=effective.api_key or "",
         )
 
+    ai_settings = PurposeAiSettings(settings_store, profiles, "summary")
+    return ai_settings, provider_factory
+
+
+async def _scheduled_generate(app_state: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """The scheduler's generate: builds the same dependency graph as the
+    route (adapter + summary-purpose AI view + key-aware provider)."""
+    from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+    configs = GptDigestConfigStore(app_state.db)
+    adapter = app_state.freshrss_adapter
+    if adapter is None:
+        raise AiNotConfigured("FreshRSS 适配器不可用。")
+    ai_settings, provider_factory = _build_ai_deps(app_state)
     return await generate_issue(
-        store,
-        issues,
+        configs,
+        GptDigestIssuesStore(app_state.db),
+        config=config,
         adapter=adapter,
-        ai_settings=PurposeAiSettings(settings_store, profiles, "summary"),
+        ai_settings=ai_settings,
         provider_factory=provider_factory,
-        settings=await store.load(),
     )
 
 
 async def gpt_digest_scheduler_loop(app_state: Any) -> None:
-    """Background loop; failures are logged, never fatal."""
+    """Background loop; failures are logged, never fatal.
+
+    F01：逐个配置检查到期（配置间串行，避免并发模型调用互相挤占）。"""
+    from lumirss.gpt_digest_configs import GptDigestConfigStore
+
     scheduler = GptDigestScheduler(app_state.db)
     while True:
         await asyncio.sleep(_SCHEDULE_TICK_SECONDS)
         try:
-            store = GptDigestStore(app_state.db, app_state.secrets_store)
-            await scheduler.maybe_generate(
-                lambda: _scheduled_generate(app_state), await store.load()
-            )
+            configs = GptDigestConfigStore(app_state.db)
+            for config in await configs.list_configs():
+                await scheduler.maybe_generate_config(
+                    lambda config=config: _scheduled_generate(app_state, config),
+                    config,
+                )
         except Exception:  # noqa: BLE001 — 调度永不杀死应用
             logger.exception("scheduled gpt digest failed; retry next tick")
 

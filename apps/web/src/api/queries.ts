@@ -123,6 +123,8 @@ import type {
   AiProfileInput,
   ClipInput,
   FavoritesResponse,
+  GptDigestConfigUpdate,
+  GptDigestCreate,
   GptDigestSettingsUpdate,
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
@@ -1406,10 +1408,19 @@ import {
   deleteMailBridgeList,
   getDigestSettings,
   generateGptDigest,
+  generateConfigDigest,
+  getConfigFeed,
   getGptDigestFeed,
   getGptDigestSettings,
+  listConfigIssues,
+  listGptDigestConfigs,
   listGptDigestIssues,
+  previewConfigDigest,
+  previewGptDigest,
   rotateGptDigestFeed,
+  updateGptDigestConfig,
+  createGptDigestConfig,
+  deleteGptDigestConfig,
   updateGptDigestSettings,
   getFavorites,
   getObsidianNote,
@@ -1583,6 +1594,80 @@ export function useGenerateGptDigestMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
     },
+  })
+}
+
+/** 选材预览（F06）：按需触发，不进缓存失效体系。 */
+export function useGptDigestPreviewMutation() {
+  return useMutation({ mutationFn: () => previewGptDigest() })
+}
+
+// ---- F01：多配置 ----
+
+export function useGptDigestConfigs() {
+  return useQuery({
+    queryKey: ['gpt-digest', 'configs'],
+    queryFn: ({ signal }) => listGptDigestConfigs(signal),
+  })
+}
+
+function useInvalidateGptDigest() {
+  const queryClient = useQueryClient()
+  return async () => {
+    await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+  }
+}
+
+export function useCreateGptDigestConfigMutation() {
+  const invalidate = useInvalidateGptDigest()
+  return useMutation({
+    mutationFn: (payload: GptDigestCreate) => createGptDigestConfig(payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateGptDigestConfigMutation() {
+  const invalidate = useInvalidateGptDigest()
+  return useMutation({
+    mutationFn: ({ configId, patch }: { configId: number; patch: GptDigestConfigUpdate }) =>
+      updateGptDigestConfig(configId, patch),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteGptDigestConfigMutation() {
+  const invalidate = useInvalidateGptDigest()
+  return useMutation({
+    mutationFn: (configId: number) => deleteGptDigestConfig(configId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useConfigFeed(configId: number | null) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'feed', configId],
+    queryFn: () => getConfigFeed(configId as number),
+    enabled: configId !== null,
+  })
+}
+
+export function useConfigPreviewMutation() {
+  return useMutation({ mutationFn: (configId: number) => previewConfigDigest(configId) })
+}
+
+export function useGenerateConfigMutation() {
+  const invalidate = useInvalidateGptDigest()
+  return useMutation({
+    mutationFn: (configId: number) => generateConfigDigest(configId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useConfigIssues(configId: number | null) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'issues', configId],
+    queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
+    enabled: configId !== null,
   })
 }
 

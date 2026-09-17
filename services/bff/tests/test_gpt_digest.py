@@ -17,6 +17,7 @@ from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
     GptDigestScheduler,
+    classify_material,
     generate_issue,
     parse_and_validate_output,
     render_issue_html,
@@ -39,17 +40,18 @@ def _store():
 
 
 def _issues_store():
-    return GptDigestIssuesStore(app.state.db, _store())
+    return GptDigestIssuesStore(app.state.db)
 
 
 def _doc(item_id: str, published: str, feed_url: str = "https://blog.example.com/rss") -> dict:
+    base = feed_url.rsplit("/", 1)[0]
     return {
         "item_id": item_id,
         "entryRef": f"ref-{item_id}",
         "feedUrl": feed_url,
         "feedTitle": "示例源",
         "title": f"文章 {item_id}",
-        "url": f"https://blog.example.com/{item_id}",
+        "url": f"{base}/{item_id}",
         "publishedAt": published,
         "read": False,
         "starred": False,
@@ -77,6 +79,35 @@ def test_select_material_window_dedupe_and_self_exclusion():
     assert ids == ["b", "a"], ids  # 时间倒序、去重、窗口、自有 feed 排除
     capped = select_material(docs, start, end, limit=1)
     assert [d["item_id"] for d in capped] == ["b"]
+
+
+def test_classify_material_reports_reasons_and_per_source_cap():
+    start = "2026-09-17T00:00:00+00:00"
+    end = "2026-09-18T00:00:00+00:00"
+    docs = [
+        dict(_doc("a", "2026-09-17T05:00:00+00:00"), feedTitle="源一"),
+        dict(_doc("a2", "2026-09-17T06:00:00+00:00"), feedTitle="源一"),
+        dict(_doc("a3", "2026-09-17T07:00:00+00:00"), feedTitle="源一"),
+        dict(_doc("b", "2026-09-17T23:30:00+00:00"), feedTitle="源二"),
+        _doc("old", "2026-09-16T23:59:59+00:00"),  # 窗口外
+        _doc("self", "2026-09-17T10:00:00+00:00", feed_url="https://rss.example.com/feeds/gpt-digest/t.atom"),
+        _doc("a", "2026-09-17T05:00:00+00:00"),  # 重复
+    ]
+    verdict = classify_material(docs, start, end, limit=10, per_source_cap=2)
+    assert [d["item_id"] for d in verdict["selected"]] == ["b", "a3", "a2"]
+    assert verdict["counts"]["outsideWindow"] == 1
+    assert verdict["counts"]["selfFeed"] == 1
+    assert verdict["counts"]["duplicate"] == 1
+    assert verdict["counts"]["perSourceCapped"] == 1  # 源一第 3 条被截
+    assert verdict["perSource"] == {"源一": 2, "源二": 1}
+    # 总量上限=2 先于单源配额触发（后续条目计入 overLimit）
+    verdict2 = classify_material(docs, start, end, limit=2, per_source_cap=2)
+    assert [d["item_id"] for d in verdict2["selected"]] == ["b", "a3"]
+    assert verdict2["counts"]["perSourceCapped"] == 0
+    assert verdict2["counts"]["overLimit"] == 2
+    # 配额为 0 = 不启用
+    verdict3 = classify_material(docs, start, end, limit=10, per_source_cap=0)
+    assert len(verdict3["selected"]) == 4
 
 
 def test_parse_and_validate_happy_and_garbage():
@@ -169,6 +200,7 @@ def test_issue_upsert_is_revision_not_duplicate(client):
     issues = _issues_store()
     first = run(
         issues.upsert_issue(
+            config_id=1,
             issue_key="2026-09-18",
             title="v1",
             body_html="<p>v1</p>",
@@ -180,6 +212,7 @@ def test_issue_upsert_is_revision_not_duplicate(client):
     )
     second = run(
         issues.upsert_issue(
+            config_id=1,
             issue_key="2026-09-18",
             title="v2",
             body_html="<p>v2</p>",
@@ -192,10 +225,97 @@ def test_issue_upsert_is_revision_not_duplicate(client):
     assert first["issue_key"] == second["issue_key"]
     assert second["title"] == "v2"
     assert second["published_at"] == "2026-09-18T00:00:00+00:00"  # 首发时刻保留
-    recent = run(issues.recent_issues(10))
+    recent = run(issues.recent_issues(1, 10))
     assert len(recent) == 1
     dto = issues.issue_to_dto(recent[0])
     assert dto["issueKey"] == "2026-09-18"
+
+
+def test_f01_configs_crud_isolation_and_same_day_no_collision(client):
+    """F01 验收：新增/编辑/暂停/删除；两份配置同日生成互不覆盖；
+    来源白名单让材料互不串用；默认配置不可删除。"""
+    configs = _config_store()
+    issues = _issues_store()
+    provider = _FakeProvider(_material_output(["s1"]))
+    tech = run(
+        configs.create_config(
+            {"name": "技术日报", "timezone": "UTC", "feedUrlAllow": "tech.example.com"}
+        )
+    )
+    oss = run(
+        configs.create_config(
+            {"name": "开源日报", "timezone": "UTC", "feedUrlAllow": "oss.example.org"}
+        )
+    )
+    assert tech["enabled"] is False and oss["enabled"] is False  # 新配置默认 paused
+    run(configs.update_config(tech["id"], {"enabled": True}))
+    run(configs.update_config(oss["id"], {"enabled": True}))
+
+    docs = [
+        _doc("t1", "2026-09-18T00:10:00+00:00", feed_url="https://tech.example.com/rss"),
+        _doc("o1", "2026-09-18T00:20:00+00:00", feed_url="https://oss.example.org/rss"),
+    ]
+    adapter = _FakeAdapter(docs)
+
+    class _Bound:
+        def __init__(self, cfg):
+            self._cfg = cfg
+
+        def __getattr__(self, name):
+            return getattr(adapter, name)
+
+        async def list_entry_documents(self, limit=120):
+            return await adapter.list_entry_documents(limit)
+
+    run(
+        generate_issue(
+            configs,
+            issues,
+            config=run(configs.get_config(tech["id"])),
+            adapter=adapter,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+            now=_fixed_now(),
+        )
+    )
+    run(
+        generate_issue(
+            configs,
+            issues,
+            config=run(configs.get_config(oss["id"])),
+            adapter=adapter,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+            now=_fixed_now(),
+        )
+    )
+    tech_issues = run(issues.recent_issues(tech["id"], 10))
+    oss_issues = run(issues.recent_issues(oss["id"], 10))
+    # 同一期号（同日）互不覆盖，且引用只含各自白名单内的来源
+    assert tech_issues[0]["issue_key"] == oss_issues[0]["issue_key"] == "2026-09-18"
+    tech_refs = json.loads(tech_issues[0]["refs_json"])
+    oss_refs = json.loads(oss_issues[0]["refs_json"])
+    assert all("tech.example.com" in ref["url"] for ref in tech_refs.values())
+    assert all("oss.example.org" in ref["url"] for ref in oss_refs.values())
+
+    # 暂停 = enabled false；删除级联期刊；默认配置不可删除
+    paused = run(configs.update_config(tech["id"], {"enabled": False}))
+    assert paused["enabled"] is False
+    assert run(configs.delete_config(1)) is False
+    assert run(configs.delete_config(tech["id"])) is True
+    assert run(issues.recent_issues(tech["id"], 10)) == []
+    assert run(issues.recent_issues(oss["id"], 10)), "其它配置的期刊不受级联影响"
+
+    # API 面：列表 + 指定配置订阅路径 + 错误 token 404
+    listing = client.get("/api/v1/gpt-digest/configs").json()
+    assert {c["name"] for c in listing["items"]} >= {"默认日报", "开源日报"}
+    token = client.get("/api/v1/gpt-digest/feed").json()["atomPath"].split("/")[-1][: -len(".atom")]
+    oss_feed = client.get(f"/api/v1/gpt-digest/configs/{oss['id']}/feed").json()["atomPath"]
+    assert oss_feed == f"/feeds/gpt-digest/{oss['id']}.{token}.atom"
+    body = client.get(oss_feed)
+    assert body.status_code == 200
+    assert "开源日报" in body.text
+    assert client.get(f"/feeds/gpt-digest/{oss['id']}.wrong.atom").status_code == 404
 
 
 class _FakeAdapter:
@@ -248,6 +368,25 @@ def _fixed_now() -> datetime:
     return datetime(2026, 9, 18, 8, 5, 0, tzinfo=UTC)
 
 
+def _config_store():
+    from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+    return GptDigestConfigStore(app.state.db)
+
+
+_DEFAULT_CONFIG = {
+    "id": 1,
+    "name": "默认日报",
+    "enabled": True,
+    "timezone": "UTC",
+    "windowHours": 24,
+    "limitCount": 10,
+    "hour": 8,
+    "perSourceCap": 0,
+    "feedUrlAllow": "",
+}
+
+
 def test_generate_issue_success_marks_and_persists(client):
     docs = [_doc("a", "2026-09-18T00:10:00+00:00")]
     store = _store()
@@ -255,18 +394,12 @@ def test_generate_issue_success_marks_and_persists(client):
     provider = _FakeProvider(_material_output(["s1"]))
     row = run(
         generate_issue(
-            store,
+            _config_store(),
             issues,
+            config=dict(_DEFAULT_CONFIG),
             adapter=_FakeAdapter(docs),
             ai_settings=_FakeAiSettings(),
             provider_factory=_ok(provider),
-            settings={
-                "timezone": "UTC",
-                "windowHours": 24,
-                "limitCount": 10,
-                "hour": 8,
-                "enabled": True,
-            },
             now=_fixed_now(),
         )
     )
@@ -289,6 +422,7 @@ def test_generate_issue_empty_window_keeps_previous_issue(client):
     issues = _issues_store()
     run(
         issues.upsert_issue(
+            config_id=1,
             issue_key="2026-09-17",
             title="上一份",
             body_html="<p>ok</p>",
@@ -299,24 +433,20 @@ def test_generate_issue_empty_window_keeps_previous_issue(client):
         )
     )
     provider = _FakeProvider("{}")
-    try:
+    with pytest.raises(DigestMaterialEmpty):
         run(
             generate_issue(
-                store,
+                _config_store(),
                 issues,
+                config=dict(_DEFAULT_CONFIG),
                 adapter=_FakeAdapter([]),
                 ai_settings=_FakeAiSettings(),
                 provider_factory=_ok(provider),
-                settings={"timezone": "UTC", "windowHours": 24, "limitCount": 10, "hour": 8, "enabled": True},
                 now=_fixed_now(),
             )
         )
-    except DigestMaterialEmpty:
-        pass
-    else:
-        raise AssertionError("empty window should raise")
     assert provider.calls == 0, "没有材料时不发生任何模型调用"
-    assert run(issues.recent_issues(10))[0]["title"] == "上一份"
+    assert run(issues.recent_issues(1, 10))[0]["title"] == "上一份"
     assert "没有可用材料" in (run(store.load())["lastError"] or "")
 
 
@@ -330,16 +460,16 @@ def test_generate_issue_invalid_output_never_publishes(client):
     with pytest.raises(DigestOutputInvalid):
         run(
             generate_issue(
-                store,
+                _config_store(),
                 issues,
+                config=dict(_DEFAULT_CONFIG),
                 adapter=_FakeAdapter(docs),
                 ai_settings=_FakeAiSettings(),
                 provider_factory=_ok(provider),
-                settings={"timezone": "UTC", "windowHours": 24, "limitCount": 10, "hour": 8, "enabled": True},
                 now=_fixed_now(),
             )
         )
-    assert run(issues.recent_issues(10)) == []
+    assert run(issues.recent_issues(1, 10)) == []
     assert "来源编号" in (run(store.load())["lastError"] or "")
 
 
@@ -353,18 +483,20 @@ def test_scheduler_idempotent_across_restarts_with_fixed_clock(client):
         generated.append(clock_now.date().isoformat())
         return {"issue_key": "2026-09-18"}
 
+    config = run(_config_store().get_config(1))
     scheduler = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
-    first = run(scheduler.maybe_generate(generate_fn, run(store.load())))
+    first = run(scheduler.maybe_generate_config(generate_fn, config))
     assert first == {"issue_key": "2026-09-18"}
     # 重启（新 scheduler 实例）+ 同一天 → 幂等不重跑
     scheduler2 = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
-    run(store.mark_published("2026-09-18"))
-    assert run(scheduler2.maybe_generate(generate_fn, run(store.load()))) is None
+    run(_config_store().mark_published(1, "2026-09-18"))
+    config = run(_config_store().get_config(1))
+    assert run(scheduler2.maybe_generate_config(generate_fn, config)) is None
     assert generated == ["2026-09-18"]
     # 错过 08:00、09:30 重启的同日补跑由 lastIssueKey 阻止；非到期小时也不触发
     later = _fixed_now() + timedelta(hours=2)
     scheduler3 = GptDigestScheduler(store._db, clock=lambda _tz: later)
-    assert run(scheduler3.maybe_generate(generate_fn, run(store.load()))) is None
+    assert run(scheduler3.maybe_generate_config(generate_fn, config)) is None
 
 
 def test_issue_key_uses_configured_timezone():
@@ -395,6 +527,7 @@ def test_api_settings_roundtrip_and_atom_subscription(client):
     issues = _issues_store()
     run(
         issues.upsert_issue(
+            config_id=1,
             issue_key="2026-09-18",
             title="订阅可见的一期",
             body_html="<p>正文</p>",
@@ -407,7 +540,7 @@ def test_api_settings_roundtrip_and_atom_subscription(client):
     ok = client.get(atom_path)
     assert ok.status_code == 200
     assert "订阅可见的一期" in ok.text
-    assert "urn:lumirss:gptdigest:2026-09-18" in ok.text
+    assert "urn:lumirss:gptdigest:1:2026-09-18" in ok.text
     etag = ok.headers["ETag"]
     not_modified = client.get(atom_path, headers={"If-None-Match": etag})
     assert not_modified.status_code == 304

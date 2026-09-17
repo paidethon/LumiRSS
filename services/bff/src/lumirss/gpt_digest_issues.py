@@ -9,20 +9,19 @@ UPDATE 路径，最多产生一个逻辑发布结果。
 import json
 from typing import Any
 
-from lumirss.gpt_digest_store import GptDigestStore
 from lumirss.storage import Database
 
 
 class GptDigestIssuesStore:
     """Issue persistence: upsert / recent list / single get."""
 
-    def __init__(self, db: Database, settings: GptDigestStore) -> None:
+    def __init__(self, db: Database) -> None:
         self._db = db
-        self._settings = settings
 
     async def upsert_issue(
         self,
         *,
+        config_id: int,
         issue_key: str,
         title: str,
         body_html: str,
@@ -33,8 +32,9 @@ class GptDigestIssuesStore:
     ) -> dict[str, Any]:
         await self._db.migrate()
         await self._db.execute(
-            "INSERT INTO gpt_digest_issues (issue_key, status, title, body_html, sections_json, refs_json, model, created_at, published_at, updated_at) VALUES (?, 'published', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(issue_key) DO UPDATE SET status = 'published', title = excluded.title, body_html = excluded.body_html, sections_json = excluded.sections_json, refs_json = excluded.refs_json, model = excluded.model, updated_at = excluded.updated_at",
+            "INSERT INTO gpt_digest_issues (config_id, issue_key, status, title, body_html, sections_json, refs_json, model, created_at, published_at, updated_at) VALUES (?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(config_id, issue_key) DO UPDATE SET status = 'published', title = excluded.title, body_html = excluded.body_html, sections_json = excluded.sections_json, refs_json = excluded.refs_json, model = excluded.model, updated_at = excluded.updated_at",
             (
+                config_id,
                 issue_key,
                 title,
                 body_html,
@@ -47,24 +47,24 @@ class GptDigestIssuesStore:
             ),
         )
         row = await self._db.fetch_one(
-            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE issue_key = ?",
-            (issue_key,),
+            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE config_id = ? AND issue_key = ?",
+            (config_id, issue_key),
         )
         return dict(row) if row else {}
 
-    async def recent_issues(self, limit: int) -> list[dict[str, Any]]:
+    async def recent_issues(self, config_id: int, limit: int) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE status = 'published' ORDER BY issue_key DESC LIMIT ?",
-            (max(1, min(limit, 90)),),
+            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE config_id = ? AND status = 'published' ORDER BY issue_key DESC LIMIT ?",
+            (config_id, max(1, min(limit, 90))),
         )
         return [dict(row) for row in rows]
 
-    async def get_issue(self, issue_key: str) -> dict[str, Any] | None:
+    async def get_issue(self, config_id: int, issue_key: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE issue_key = ?",
-            (issue_key,),
+            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE config_id = ? AND issue_key = ?",
+            (config_id, issue_key),
         )
         return dict(row) if row else None
 

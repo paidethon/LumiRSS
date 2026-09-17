@@ -1,21 +1,25 @@
-/** GptDigestSection — M4：GPT 日报设置（设置中心分类页）。
+/** GptDigestSection — M4/F01：GPT 日报（多主题配置）设置页。
  *
- * 配置：启用开关 / 发布小时 / 时区（'' = 服务器本地）/ 选材窗口 /
- * 条目上限；操作：立即生成（显式动作，忽略 enabled）、订阅地址展示与
- * 轮换（token 即凭据：只在会话认证的设置里可见）；状态：lastIssueKey、
- * lastError 与最近期刊列表。生成失败原样透出服务端 error.message。 */
+ * 一份配置 = 一个主题日报：独立调度/窗口/上限/单源配额/来源白名单，
+ * 互不覆盖也互不串用。顶部选择配置 + 新建；表单编辑（暂停 = 关闭
+ * 开关）；操作：预览选材（F06，无副作用）、立即生成/修订、订阅地址
+ * 展示与复制；删除仅非默认配置可点。生成失败原样透出服务端消息。 */
 
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../api/client'
 import {
-  useGenerateGptDigestMutation,
-  useGptDigestFeed,
-  useGptDigestIssues,
-  useGptDigestSettings,
+  useConfigFeed,
+  useConfigIssues,
+  useConfigPreviewMutation,
+  useCreateGptDigestConfigMutation,
+  useDeleteGptDigestConfigMutation,
+  useGenerateConfigMutation,
+  useGptDigestConfigs,
   useRotateGptDigestFeedMutation,
-  useUpdateGptDigestSettingsMutation,
+  useUpdateGptDigestConfigMutation,
 } from '../../api/queries'
+import type { GptDigestConfig } from '../../api/client'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
@@ -38,29 +42,17 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 export function GptDigestSection() {
-  const settings = useGptDigestSettings()
-  const issues = useGptDigestIssues()
-  const feed = useGptDigestFeed()
-  const updateMutation = useUpdateGptDigestSettingsMutation()
-  const generateMutation = useGenerateGptDigestMutation()
-  const rotateMutation = useRotateGptDigestFeedMutation()
+  const configs = useGptDigestConfigs()
+  const items = configs.data?.items ?? []
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const selected: GptDigestConfig | undefined =
+    items.find((c) => c.id === selectedId) ?? items[0]
 
-  const [hour, setHour] = useState(8)
-  const [timezone, setTimezone] = useState('')
-  const [windowHours, setWindowHours] = useState(24)
-  const [limitCount, setLimitCount] = useState(12)
-
-  const loaded = settings.data
   useEffect(() => {
-    if (loaded) {
-      setHour(loaded.hour)
-      setTimezone(loaded.timezone)
-      setWindowHours(loaded.windowHours)
-      setLimitCount(loaded.limitCount)
-    }
-  }, [loaded])
+    if (selectedId === null && items.length > 0) setSelectedId(items[0].id)
+  }, [items, selectedId])
 
-  if (settings.isPending) {
+  if (configs.isPending) {
     return (
       <div className="flex flex-col gap-2" aria-label="日报设置加载中">
         {Array.from({ length: 4 }, (_, i) => (
@@ -69,25 +61,111 @@ export function GptDigestSection() {
       </div>
     )
   }
-  if (settings.isError || !loaded) {
-    return <p className="text-sm text-[var(--lumi-text-secondary)]">日报设置加载失败。</p>
+  if (configs.isError || items.length === 0) {
+    return <p className="text-sm text-[var(--lumi-text-secondary)]">日报配置加载失败。</p>
   }
 
+  return (
+    <div className="flex flex-col gap-1 pb-6">
+      <Row label="主题日报" hint="每份配置独立调度与选材；同一天各生成一期互不覆盖">
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="选择日报配置"
+            className="min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
+            value={selected?.id ?? ''}
+            onChange={(e) => setSelectedId(Number(e.target.value))}
+          >
+            {items.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.enabled ? '' : '（已暂停）'}
+              </option>
+            ))}
+          </select>
+          <CreateButton onCreated={(id) => setSelectedId(id)} />
+        </div>
+      </Row>
+      {selected ? <ConfigForm config={selected} /> : null}
+    </div>
+  )
+}
+
+function CreateButton({ onCreated }: { onCreated: (id: number) => void }) {
+  const create = useCreateGptDigestConfigMutation()
+  if (create.isError) {
+    return <span className="text-xs text-[var(--lumi-text-tertiary)]">创建失败</span>
+  }
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={create.isPending}
+      onClick={() =>
+        create.mutate(
+          { name: `新日报 ${new Date().toLocaleTimeString()}` },
+          { onSuccess: (created) => onCreated(created.id) },
+        )
+      }
+    >
+      新建配置
+    </Button>
+  )
+}
+
+function ConfigForm({ config }: { config: GptDigestConfig }) {
+  const update = useUpdateGptDigestConfigMutation()
+  const del = useDeleteGptDigestConfigMutation()
+  const generate = useGenerateConfigMutation()
+  const preview = useConfigPreviewMutation()
+  const issues = useConfigIssues(config.id)
+  const feed = useConfigFeed(config.id)
+  const rotate = useRotateGptDigestFeedMutation()
+
+  const [name, setName] = useState(config.name)
+  const [hour, setHour] = useState(config.hour)
+  const [timezone, setTimezone] = useState(config.timezone)
+  const [windowHours, setWindowHours] = useState(config.windowHours)
+  const [limitCount, setLimitCount] = useState(config.limitCount)
+  const [perSourceCap, setPerSourceCap] = useState(config.perSourceCap)
+  const [feedUrlAllow, setFeedUrlAllow] = useState(config.feedUrlAllow)
+
+  useEffect(() => {
+    setName(config.name)
+    setHour(config.hour)
+    setTimezone(config.timezone)
+    setWindowHours(config.windowHours)
+    setLimitCount(config.limitCount)
+    setPerSourceCap(config.perSourceCap)
+    setFeedUrlAllow(config.feedUrlAllow)
+  }, [config])
+
   const dirty =
-    loaded.hour !== hour ||
-    loaded.timezone !== timezone ||
-    loaded.windowHours !== windowHours ||
-    loaded.limitCount !== limitCount
+    config.name !== name ||
+    config.hour !== hour ||
+    config.timezone !== timezone ||
+    config.windowHours !== windowHours ||
+    config.limitCount !== limitCount ||
+    config.perSourceCap !== perSourceCap ||
+    config.feedUrlAllow !== feedUrlAllow
 
   const feedUrl = feed.data ? `${window.location.origin}${feed.data.atomPath}` : ''
 
   return (
-    <div className="flex flex-col gap-1 pb-6">
-      <Row label="启用每日自动生成" hint="到点自动从窗口内的订阅内容生成一期；GET 订阅地址永远不会触发生成">
+    <div className="flex flex-col gap-1">
+      <Row label="名称">
+        <input
+          aria-label="日报名称"
+          type="text"
+          className={textInputCls}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Row>
+      <Row label="启用" hint="关闭 = 暂停调度；已有的期刊与订阅地址保留">
         <Switch
-          id="gpt-digest-enabled"
-          checked={loaded.enabled}
-          onCheckedChange={(checked) => updateMutation.mutate({ enabled: checked })}
+          id={`gpt-digest-enabled-${config.id}`}
+          checked={config.enabled}
+          onCheckedChange={(checked) => update.mutate({ configId: config.id, patch: { enabled: checked } })}
         />
       </Row>
       <Row label="发布小时（0–23）" hint="按下方时区解释；错过时刻后重启会当日补跑一次">
@@ -111,7 +189,7 @@ export function GptDigestSection() {
           onChange={(e) => setTimezone(e.target.value)}
         />
       </Row>
-      <Row label="选材窗口（小时，1–72）" hint="只总结窗口内发布的内容；空窗口不生成空日报">
+      <Row label="选材窗口（小时，1–72）">
         <input
           aria-label="选材窗口小时"
           type="number"
@@ -133,71 +211,136 @@ export function GptDigestSection() {
           onChange={(e) => setLimitCount(Number(e.target.value))}
         />
       </Row>
-      <div className="flex items-center gap-2 py-2">
+      <Row label="单一来源占比上限（0–5）" hint="每个来源最多入选条数；0 = 不限制">
+        <input
+          aria-label="单一来源占比上限"
+          type="number"
+          min={0}
+          max={5}
+          className={numberInputCls}
+          value={perSourceCap}
+          onChange={(e) => setPerSourceCap(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="来源白名单" hint="feed 地址包含任一子串才入选（换行/逗号分隔）；留空 = 全部订阅">
+        <textarea
+          aria-label="来源白名单"
+          className={`${textInputCls} min-h-16`}
+          placeholder={'tech.example.com\noss.example.org/feed'}
+          value={feedUrlAllow}
+          onChange={(e) => setFeedUrlAllow(e.target.value)}
+        />
+      </Row>
+      <div className="flex flex-wrap items-center gap-2 py-2">
         <Button
           variant="primary"
           size="sm"
-          disabled={!dirty || updateMutation.isPending}
-          onClick={() => updateMutation.mutate({ hour, timezone, windowHours, limitCount })}
+          disabled={!dirty || update.isPending}
+          onClick={() =>
+            update.mutate({
+              configId: config.id,
+              patch: { name, hour, timezone, windowHours, limitCount, perSourceCap, feedUrlAllow },
+            })
+          }
         >
           保存设置
         </Button>
         <Button
           variant="secondary"
           size="sm"
-          disabled={generateMutation.isPending}
-          onClick={() => generateMutation.mutate()}
+          disabled={preview.isPending}
+          onClick={() => preview.mutate(config.id)}
         >
-          {generateMutation.isPending ? '生成中…' : '立即生成/修订今日'}
+          {preview.isPending ? '预览中…' : '预览选材'}
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={generate.isPending}
+          onClick={() => generate.mutate(config.id)}
+        >
+          {generate.isPending ? '生成中…' : '立即生成/修订今日'}
+        </Button>
+        {config.id > 1 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={del.isPending}
+            onClick={() => {
+              if (window.confirm(`删除「${config.name}」及其全部期刊？`)) del.mutate(config.id)
+            }}
+          >
+            删除配置
+          </Button>
+        ) : null}
       </div>
-      {generateMutation.isError && generateMutation.error instanceof ApiError ? (
+      {generate.isError && generate.error instanceof ApiError ? (
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
-          生成失败：{generateMutation.error.message}
+          生成失败：{generate.error.message}
         </p>
       ) : null}
-      {generateMutation.isSuccess ? (
+      {preview.isError && preview.error instanceof ApiError ? (
+        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+          预览失败：{preview.error.message}
+        </p>
+      ) : null}
+      {generate.isSuccess ? (
         <p className="text-xs text-[var(--lumi-text-secondary)]">
-          已生成/修订：{generateMutation.data.issue.title}
+          已生成/修订：{generate.data.issue.title}
         </p>
       ) : null}
-      {loaded.lastError ? (
+      {config.lastError ? (
         <p className="text-xs text-[var(--lumi-text-secondary)]" role="status">
-          上次错误：{loaded.lastError}
+          上次错误：{config.lastError}
         </p>
       ) : null}
-      {loaded.lastIssueKey ? (
-        <p className="text-xs text-[var(--lumi-text-tertiary)]">
-          最近发布期号：{loaded.lastIssueKey}
-        </p>
+      {config.lastIssueKey ? (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">最近发布期号：{config.lastIssueKey}</p>
+      ) : null}
+      {preview.data ? (
+        <div className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5">
+          <p className="text-xs text-[var(--lumi-text-secondary)]">{preview.data.note}</p>
+          <ul className="flex flex-col gap-0.5">
+            {preview.data.selected.map((item) => (
+              <li key={item.sourceId} className="text-xs text-[var(--lumi-text-secondary)]">
+                <span className="font-medium text-[var(--lumi-text-primary)]">[{item.sourceId}]</span> {item.title}{' '}
+                · {item.feedTitle}
+              </li>
+            ))}
+            {preview.data.selected.length === 0 ? (
+              <li className="text-xs text-[var(--lumi-text-tertiary)]">窗口内没有入选条目。</li>
+            ) : null}
+          </ul>
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">
+            排除：窗口外 {preview.data.counts.outsideWindow ?? 0} · 白名单外{' '}
+            {preview.data.counts.notAllowed ?? 0} · 自有 feed {preview.data.counts.selfFeed ?? 0} · 重复{' '}
+            {preview.data.counts.duplicate ?? 0} · 超单源配额 {preview.data.counts.perSourceCapped ?? 0} · 超总量{' '}
+            {preview.data.counts.overLimit ?? 0}
+          </p>
+        </div>
       ) : null}
 
-      <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">订阅</h3>
+      <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">订阅本日报</h3>
       {feed.isPending ? (
         <Skeleton className="h-9 w-full" />
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
-              {feedUrl || '—'}
-            </code>
-            <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard?.writeText(feedUrl)}>
-              复制
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={rotateMutation.isPending}
-              onClick={() => rotateMutation.mutate()}
-            >
-              轮换 token
-            </Button>
-          </div>
-          <p className="text-xs text-[var(--lumi-text-tertiary)]">
-            订阅地址含私密 token（持有即访问）；轮换后旧地址立即失效。
-          </p>
-        </>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+            {feedUrl || '—'}
+          </code>
+          <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard?.writeText(feedUrl)}>
+            复制
+          </Button>
+        </div>
       )}
+      <p className="text-xs text-[var(--lumi-text-tertiary)]">
+        订阅地址含私密 token（持有即访问）；所有配置共享同一 token，轮换后旧地址立即失效。
+      </p>
+      <div>
+        <Button variant="ghost" size="sm" onClick={() => rotate.mutate()}>
+          轮换 token
+        </Button>
+      </div>
 
       <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">最近期刊</h3>
       {issues.isPending ? (

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS gpt_digest_settings (
     timezone TEXT NOT NULL DEFAULT '',
     window_hours INTEGER NOT NULL DEFAULT 24,
     limit_count INTEGER NOT NULL DEFAULT 12,
+    per_source_cap INTEGER NOT NULL DEFAULT 2,
     last_issue_key TEXT,
     last_error TEXT
 );

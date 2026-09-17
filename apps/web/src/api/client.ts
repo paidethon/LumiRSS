@@ -1210,6 +1210,12 @@ export type GptDigestSettingsUpdate = G6Schemas['GptDigestSettingsUpdate']
 export type GptDigestIssue = G6Schemas['GptDigestIssue']
 export type GptDigestIssueList = G6Schemas['GptDigestIssueList']
 export type GptDigestFeedInfo = G6Schemas['GptDigestFeedInfo']
+export type GptDigestPreview = G6Schemas['GptDigestPreview']
+export type GptDigestPreviewItem = G6Schemas['GptDigestPreviewItem']
+export type GptDigestConfig = G6Schemas['GptDigestConfig']
+export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
+export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
+export type GptDigestCreate = G6Schemas['GptDigestCreate']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1373,7 +1379,78 @@ export async function sendDigestNow(
   return (await response.json()) as MailIngestResult
 }
 
-// ---- M4：GPT 日报（生成 + Atom 订阅） ----
+// ---- M4/F01：GPT 日报（多配置；旧单配置端点等价配置 1） ----
+
+/** 配置列表。 */
+export async function listGptDigestConfigs(signal?: AbortSignal): Promise<GptDigestConfigList> {
+  return request<GptDigestConfigList>(`${API_BASE}/gpt-digest/configs`, signal)
+}
+
+/** 新建配置（默认 paused；enabled 由编辑打开）。 */
+export async function createGptDigestConfig(payload: GptDigestCreate): Promise<GptDigestConfig> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as GptDigestConfig
+}
+
+/** 编辑/暂停配置（enabled=false = 暂停；非法值由服务端回退现值）。 */
+export async function updateGptDigestConfig(
+  configId: number,
+  patch: GptDigestConfigUpdate,
+): Promise<GptDigestConfig> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as GptDigestConfig
+}
+
+/** 删除配置（级联删除其期刊；默认配置服务端拒绝）。 */
+export async function deleteGptDigestConfig(configId: number): Promise<void> {
+  await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}`, { method: 'DELETE' })
+}
+
+/** 指定配置的订阅路径（含 token）。 */
+export async function getConfigFeed(configId: number): Promise<GptDigestFeedInfo> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/feed`, {
+    method: 'GET',
+  })
+  return (await response.json()) as GptDigestFeedInfo
+}
+
+/** 指定配置的选材预览（F06）。 */
+export async function previewConfigDigest(configId: number): Promise<GptDigestPreview> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/preview`, {
+    method: 'GET',
+  })
+  return (await response.json()) as GptDigestPreview
+}
+
+/** 指定配置的立即生成/修订。 */
+export async function generateConfigDigest(
+  configId: number,
+): Promise<{ issue: GptDigestIssue; promptVersion: string }> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/generate`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { issue: GptDigestIssue; promptVersion: string }
+}
+
+/** 指定配置的最近期刊。 */
+export async function listConfigIssues(
+  configId: number,
+  signal?: AbortSignal,
+  limit = 14,
+): Promise<GptDigestIssueList> {
+  return request<GptDigestIssueList>(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues?limit=${limit}`,
+    signal,
+  )
+}
 
 /** GPT 日报设置（token 不在此响应中，见 getGptDigestFeed）。 */
 export async function getGptDigestSettings(signal?: AbortSignal): Promise<GptDigestSettings> {
@@ -1402,6 +1479,12 @@ export async function getGptDigestFeed(): Promise<GptDigestFeedInfo> {
 export async function rotateGptDigestFeed(): Promise<GptDigestFeedInfo> {
   const response = await rawRequest(`${API_BASE}/gpt-digest/feed/rotate`, { method: 'POST' })
   return (await response.json()) as GptDigestFeedInfo
+}
+
+/** 选材预览（F06）：无副作用，sourceId 与实际生成一致。 */
+export async function previewGptDigest(): Promise<GptDigestPreview> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/preview`, { method: 'GET' })
+  return (await response.json()) as GptDigestPreview
 }
 
 /** 显式生成/修订当天期号（用户动作，忽略 enabled）。失败时 error.type:
