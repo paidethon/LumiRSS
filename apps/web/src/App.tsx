@@ -77,6 +77,11 @@ const SIDEBAR_MAX = 300
 const TIMELINE_MIN = 360
 const TIMELINE_MAX = 460
 
+/** M1 布局契约：全宽 section 桌面独占侧栏外主内容区——Timeline、
+ * Reader 与分隔条均不挂载（无文章域查询与空态 DOM）；移动端仍由
+ * 上方 section 区承载。其余 section 保持 Sidebar | Timeline | Reader。 */
+const FULL_WIDTH_SECTIONS: ReadonlySet<string> = new Set(['agent', 'graph'])
+
 /** 响应式 Web Shell（0010 Gate C + 0011）。
  *
  * >=1024px（lg）：Sidebar | sep | Timeline | sep | Reader。
@@ -206,7 +211,13 @@ export default function App() {
                       ? '网页快照'
                       : section === 'inbox'
                         ? '收件箱'
-                        : '收藏'
+                        : section === 'obsidian'
+                          ? 'Obsidian 库'
+                          : section === 'agent'
+                            ? 'Agent 工作台'
+                            : section === 'graph'
+                              ? '标签与图谱'
+                              : '收藏'
             }
           >
             {section === 'subscriptions' && (
@@ -267,6 +278,20 @@ export default function App() {
           </section>
         )}
 
+        {/* ===== 全宽页面区（M1 布局契约）：agent / graph 桌面独占主区 =====
+            仅 lg 渲染本体（移动端走上方 section 区）；挂载期间下方
+            Timeline / 分隔条 / Reader 整体不渲染。 */}
+        {FULL_WIDTH_SECTIONS.has(section) && (
+          <section
+            className="hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:flex"
+            aria-label={section === 'agent' ? 'Agent 工作台' : '标签与图谱'}
+          >
+            <Suspense fallback={<PageSkeleton />}>
+              {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
+            </Suspense>
+          </section>
+        )}
+
         {/* ===== Timeline（桌面可隐藏，仅 lg 有分隔条；移动端 home section 显示） =====
             0011 阻断修复：桌面栏宽不再用 inline flexBasis（<1024 时 main 为
             flex-col，flexBasis 会把列表高度锁死在 360–460px）——CSS 变量 +
@@ -274,6 +299,8 @@ export default function App() {
             0011 §25/§26：隐藏 = 桌面完全退出布局列（不渲染 section 与分隔
             条，无窄栏）；toggle 移到 Reader 列顶（隐藏时）+ 列表头（可见时）。
             移动端不受 timelineCollapsed 影响（该状态是桌面概念）。 */}
+        {/* 全宽 section（agent/graph）不挂载 Timeline 列本体 */}
+        {!FULL_WIDTH_SECTIONS.has(section) && (
         <section
           className={`flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:w-auto lg:flex-none lg:basis-[var(--lumi-timeline-width)] ${
             selectedEntryRef === null ? '' : 'hidden lg:flex'
@@ -284,7 +311,8 @@ export default function App() {
         >
           {/* 0022：桌面（lg）搜索 = Timeline 列位；移动端走上方 section 区。
               phase2 M1：书签/工作区列表同模式（桌面 Timeline 列位）。
-              hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。 */}
+              hidden 包裹避免移动端双挂载（可见性仍是每视口单一实例）。
+              agent/graph 是全宽 section（M1），不进入本三栏分支。 */}
           {section === 'search' ? (
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
@@ -327,19 +355,14 @@ export default function App() {
                 <ObsidianPage />
               </Suspense>
             </div>
-          ) : section === 'agent' || section === 'graph' ? (
-            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
-              <Suspense fallback={<PageSkeleton />}>
-                {section === 'agent' ? <AgentWorkbenchPage /> : <GraphPage />}
-              </Suspense>
-            </div>
           ) : (
             <EntryList />
           )}
         </section>
+        )}
 
-        {/* Timeline | Reader 分隔条（未隐藏且未移动端时） */}
-        {!timelineCollapsed && (
+        {/* Timeline | Reader 分隔条（未隐藏且未移动端时；全宽 section 无分隔条） */}
+        {!timelineCollapsed && !FULL_WIDTH_SECTIONS.has(section) && (
           <div className="hidden lg:flex">
             <PaneSeparator
               label="文章列表宽度"
@@ -352,9 +375,10 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== Reader（flex-1 占满剩余） =====
+        {/* ===== Reader（flex-1 占满剩余；全宽 section 不挂载 =====
             0011 §27：Timeline 隐藏时 toggle 移到 Reader 列顶部左侧
             （同一功能的 toggle，非第二个功能；不产生纵向窄栏）。 */}
+        {!FULL_WIDTH_SECTIONS.has(section) && (
         <section
           className={`min-h-0 min-w-0 flex-1 bg-[var(--lumi-surface)] ${
             selectedEntryRef === null ? 'hidden lg:block' : 'lg:block'
@@ -376,6 +400,7 @@ export default function App() {
           )}
           <Reader />
         </section>
+        )}
       </main>
 
       {/* Mobile 导航抽屉：仅 <1024 有意义；关闭时不渲染 */}

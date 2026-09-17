@@ -1,6 +1,8 @@
 /** AgentWorkbenchPage — phase2 G7：Agent 工作台。
  *
- * App 已把本页接入 section='agent'（桌面 Timeline 列位 + 移动 section 区）。
+ * App 已把本页接入 section='agent'（桌面全宽主区 + 移动 section 区；
+ * 见 App.tsx FULL_WIDTH_SECTIONS 布局契约——挂载期间 Timeline/Reader
+ * 与文章域查询均不渲染）。
  *
  * - 左：会话列表（新会话 POST /agent/threads；行 = 标题 + 相对时间 +
  *   删除 IconButton）；右：消息区。
