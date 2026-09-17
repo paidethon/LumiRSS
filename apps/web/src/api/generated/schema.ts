@@ -4082,6 +4082,8 @@ export interface components {
             contentHtml?: string | null;
             /** Contenttext */
             contentText: string;
+            /** Crawledat */
+            crawledAt?: string | null;
             /** Entryref */
             entryRef: string;
             /** Feedtitle */

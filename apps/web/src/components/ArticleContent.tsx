@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EntryDetail } from '../api/types'
 import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
+import { deferImages } from '../lib/article-images'
 import { withHeadingIds } from '../lib/article-toc'
 import { decorateCodeCopyButtons } from '../lib/code-copy'
 import { useAppSettings } from '../store/app-settings'
@@ -31,6 +32,14 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const codeHighlight = useAppSettings((s) => s.settings.readerCodeHighlight)
   const codeTheme = useAppSettings((s) => s.settings.readerCodeTheme)
   const themeMode = useAppSettings((s) => s.settings.themeMode)
+  // F22 省流：hidden 模式下图片在进入 DOM 前摘掉 src（不发请求）；
+  // imagesAllowed 是单篇覆盖（点「加载图片」后恢复本篇的真实地址）。
+  // Reader 按 entryRef 重挂载（既定架构），覆盖状态天然不跨文章泄漏。
+  const imageMode = useAppSettings((s) => s.settings.readerImageMode)
+  const [imagesAllowed, setImagesAllowed] = useState(false)
+  useEffect(() => {
+    setImagesAllowed(false)
+  }, [detail.entryRef])
 
   const rawHtml = detail.contentHtml ?? null
   const hasHtml = rawHtml !== null && rawHtml.trim() !== ''
@@ -85,10 +94,17 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
 
   // 目录提取（pool #03）：在 DOMPurify 输出之上给 h2–h4 注入确定性 id
   // 并生成目录；输入已清洗，注入的只有 id 属性，无脚本注入面。
-  const { html: htmlWithIds, toc } = useMemo(() => {
-    if (!hasHtml || html === '') return { html, toc: [] }
-    return withHeadingIds(html)
-  }, [html, hasHtml])
+  // F22：hidden 且未单篇覆盖 → 摘除图片地址（不发请求），并统计数量；
+  // 覆盖后 memo 重算，直接产回带 src 的版本（defer 结果不回写状态）。
+  const { html: htmlWithIds, toc, deferredImageCount } = useMemo(() => {
+    if (!hasHtml || html === '') return { html, toc: [], deferredImageCount: 0 }
+    const withIds = withHeadingIds(html)
+    if (imageMode !== 'hidden' || imagesAllowed) {
+      return { html: withIds.html, toc: withIds.toc, deferredImageCount: 0 }
+    }
+    const deferred = deferImages(withIds.html)
+    return { html: deferred.html, toc: withIds.toc, deferredImageCount: deferred.imageCount }
+  }, [html, hasHtml, imageMode, imagesAllowed])
 
   // 代码块复制按钮（pool #04）：渲染后 DOM 装饰（幂等），html 变化
   // （管线重跑）后重装饰。
@@ -103,12 +119,24 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     return (
       <>
         <ArticleToc toc={toc} />
+        {deferredImageCount > 0 ? (
+          <div className="flex items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+            <span>省流模式：{deferredImageCount} 张图片未加载</span>
+            <button
+              type="button"
+              onClick={() => setImagesAllowed(true)}
+              className="text-[var(--lumi-accent-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            >
+              加载本文图片
+            </button>
+          </div>
+        ) : null}
         <div
           ref={contentRef}
           className="article-content"
           // 注入的字符串永远是 DOMPurify 输出（唯一清洗点在
           // sanitize-article-html.ts；transforms 发生在 sanitize 之前；
-          // withHeadingIds 只在其上补标题 id）。
+          // withHeadingIds/deferImages 只在其上做属性级后处理）。
           dangerouslySetInnerHTML={{ __html: htmlWithIds }}
         />
       </>

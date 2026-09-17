@@ -69,6 +69,7 @@ DETAIL_ITEM = {
     "title": "科技爱好者周刊（第 409 期）",
     "author": "阮一峰",
     "published": 1787270034,
+    "crawlTimestampMsec": "1787270100000",
     "summary": {
         "content": (
             "<p>这里记录每周值得分享的科技内容，&amp; 周五发布。</p>"
@@ -299,6 +300,7 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     assert detail.author == "阮一峰"
     assert detail.url == "http://example.com/weekly-409"
     assert detail.publishedAt == "2026-08-20T23:53:54Z"
+    assert detail.crawledAt == "2026-08-20T23:55:00Z"  # F30：首次收录 ≠ 发布时间
     assert detail.read is True  # fixture carries the read marker
     assert detail.starred is False  # ... but no starred marker
     assert detail.entryRef.startswith("e1.")

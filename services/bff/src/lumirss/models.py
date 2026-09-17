@@ -66,6 +66,8 @@ class EntryDetail(BaseModel):
     author: str | None = None
     url: str | None = None
     publishedAt: str | None = None
+    # F30 溯源：FreshRSS 首次收录时刻（发布时间缺失时也不冒充发布时间）。
+    crawledAt: str | None = None
     read: bool
     starred: bool
     contentText: str

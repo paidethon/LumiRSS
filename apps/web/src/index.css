@@ -359,3 +359,52 @@ html[data-reader-images='hidden'] .article-content img {
   content-visibility: auto;
   contain-intrinsic-size: auto 88px;
 }
+
+/* ---- F24：清洁打印视图 ----
+ * 打印/导出 PDF 时只保留正文与元信息：顶层导航（MobilePageHeader 的
+ * <header>、Sidebar 的 <aside>、底部/抽屉 <nav>）、main 的非末位子区
+ * （时间线 / 移动 section 区 / 全宽页面区）与分隔条 div 一律隐藏；
+ * 交互控件（按钮/目录/安装提示）不打印；正文链接追加可见 href，
+ * 长代码块/表格不截断。 */
+@media print {
+  header,
+  nav,
+  aside,
+  button,
+  .article-toc {
+    display: none !important;
+  }
+  main > div,
+  main > section:not(:last-child) {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .article-content {
+    max-width: 100% !important;
+    padding: 0 !important;
+    font-size: 12pt;
+    color: #000 !important;
+    background: transparent !important;
+  }
+  .article-content img,
+  .article-content pre,
+  .article-content table,
+  .article-content blockquote {
+    max-width: 100% !important;
+    overflow-wrap: anywhere;
+  }
+  .article-content pre,
+  .article-content blockquote,
+  .article-content tr {
+    break-inside: avoid;
+  }
+  .article-content a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 10px;
+    color: #444;
+  }
+}

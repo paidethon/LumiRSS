@@ -14,6 +14,7 @@ import ArticleConversation from './ArticleConversation'
 import ReaderHeader from './ReaderHeader'
 import ReaderPlaceholder from './ReaderPlaceholder'
 import ReaderSummary from './ReaderSummary'
+import ProvenanceCard from './ProvenanceCard'
 import ReaderTranslation from './ReaderTranslation'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
@@ -243,6 +244,8 @@ const handleScroll = useCallback(() => {
             AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
             pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
         <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
+        {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
+        <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
             P0-11：注册浏览器引擎的手势启动回调（点击 → 直接编排）。 */}
         <ReaderTranslation

@@ -2278,6 +2278,17 @@
       "title": "Contenttext",
       "type": "string"
      },
+     "crawledAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Crawledat"
+     },
      "entryRef": {
       "title": "Entryref",
       "type": "string"

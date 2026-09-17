@@ -566,6 +566,7 @@ class FreshRSSAdapter(FreshRSSSession):
             author=base["author"],
             url=base["url"],
             publishedAt=base["published_at"],
+            crawledAt=base["crawled_at"],
             read=base["read"],
             starred=base["starred"],
             contentText=html_to_text(base["content_html"]),
@@ -845,6 +846,19 @@ class FreshRSSAdapter(FreshRSSSession):
                 datetime.fromtimestamp(published, tz=UTC)
                 .strftime("%Y-%m-%dT%H:%M:%SZ")
             )
+        # F30 溯源：crawlTimestampMsec = FreshRSS 首次收录时刻（毫秒）。
+        # 与 published（发布时间）严格区分；缺失保持 None（前端显示未知）。
+        crawl_msec = item.get("crawlTimestampMsec")
+        crawled_at = None
+        if isinstance(crawl_msec, str) and crawl_msec.isdigit():
+            crawled_at = (
+                datetime.fromtimestamp(int(crawl_msec) / 1000, tz=UTC)
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
+        elif isinstance(crawl_msec, int) and not isinstance(crawl_msec, bool) and crawl_msec >= 0:
+            crawled_at = datetime.fromtimestamp(crawl_msec / 1000, tz=UTC).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
         categories = item.get("categories")
         categories = categories if isinstance(categories, list) else []
         return {
@@ -854,6 +868,7 @@ class FreshRSSAdapter(FreshRSSSession):
             "author": author,
             "url": url,
             "published_at": published_at,
+            "crawled_at": crawled_at,
             "read": _READ_MARKER in categories,
             "starred": _STARRED_MARKER in categories,
             "content_html": FreshRSSAdapter._content_html_of(item),
