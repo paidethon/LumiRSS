@@ -44,6 +44,8 @@ import {
   useSnoozeReadLaterMutation,
   useWorkspaces,
 } from '../api/queries'
+import { getEntry } from '../api/client'
+import { useUndo } from '../store/undo'
 import type { EntryDetail, EntryListItem } from '../api/types'
 import { useToggleReadLater } from '../lib/read-later'
 import { ItemTagButton } from './ItemTagButton'
@@ -100,6 +102,25 @@ export function EntryActionButtons({
   const readLaterError = errorFor(entryRef)
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
+  // F20：收藏动作的短时撤销（8 秒；撤销前核对服务器状态，防跨设备覆盖）
+  const pushUndo = useUndo((s) => s.push)
+
+  const starUndo = (next: boolean) => {
+    pushUndo({
+      label: next ? '已收藏' : '已取消收藏',
+      check: async () => {
+        const detail = await queryClient.fetchQuery({
+          queryKey: ['entry', entryRef],
+          queryFn: ({ signal }) => getEntry(entryRef, signal),
+          staleTime: 0,
+        })
+        return detail.starred === next
+      },
+      undo: async () => {
+        await mutation.mutateAsync({ entryRef, patch: { starred: !next } })
+      },
+    })
+  }
 
   // ---- 存书签（library 域，POST 幂等） ----
   const createBookmark = useCreateBookmarkMutation()
@@ -211,13 +232,17 @@ export function EntryActionButtons({
         <SnoozeButton entryRef={entryRef} itemRef={`rss:${entryRef}`} btnBase={btnBase} hoverCls={hoverCls} iconSize={iconSize} idleCls={idleCls} />
       ) : null}
 
-      {/* 收藏：set 语义 PATCH（乐观失败回滚由 0009 mutation 模式承载） */}
+      {/* 收藏：set 语义 PATCH（乐观失败回滚由 0009 mutation 模式承载）；
+          F20：成功后提供 8 秒撤销窗口（核对服务器状态后逆操作）。 */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation()
           if (starPending) return
-          mutation.mutate({ entryRef, patch: { starred: !starred } })
+          const next = !starred
+          mutation.mutate({ entryRef, patch: { starred: next } }, {
+            onSuccess: () => starUndo(next),
+          })
         }}
         aria-pressed={starred}
         aria-label={starred ? '取消收藏' : '收藏'}

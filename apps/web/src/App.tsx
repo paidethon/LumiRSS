@@ -38,6 +38,7 @@ import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
 import SidebarCollapsedRail from './components/SidebarCollapsedRail'
 import ShortcutsHelpDialog from './components/ShortcutsHelpDialog'
+import UndoSnackbar from './components/UndoSnackbar'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
 
@@ -405,6 +406,9 @@ export default function App() {
 
       {/* Mobile 导航抽屉：仅 <1024 有意义；关闭时不渲染 */}
       <MobileNavigationDrawer />
+
+      {/* F20：最近操作撤销条（单实例；无可撤销动作时零渲染） */}
+      <UndoSnackbar />
 
       {/* 0011 Gate 1：<768 底部导航岛（首页/订阅/搜索/收藏）；Reader 打开时隐藏 */}
       <MobileTabBar />
