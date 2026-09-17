@@ -1307,6 +1307,8 @@ class GptDigestPreview(BaseModel):
     selected: list[GptDigestPreviewItem] = []
     counts: dict[str, int] = {}
     perSource: dict[str, int] = {}
+    coveredSources: list[dict[str, str]] = []
+    missingSources: list[dict[str, str]] = []
     note: str | None = None
 
 

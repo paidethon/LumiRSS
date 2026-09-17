@@ -408,6 +408,30 @@ async def build_preview(
                 "publishedAt": str(doc.get("publishedAt") or ""),
             }
         )
+    # R05：来源覆盖与遗漏——本配置的订阅里，哪些在窗口内有入选材料、
+    # 哪些没有（遗漏 ≠ 错误：可能只是没更新；不给任何「建议取消订阅」
+    # 之类的推断，只陈述事实）。
+    covered: set[str] = set()
+    for doc in selected:
+        covered.add(str(doc.get("feedUrl") or ""))
+    covered_titles: dict[str, str] = {}
+    try:
+        subscriptions = await adapter.list_subscriptions()
+    except Exception:  # noqa: BLE001 — 订阅清单失败时跳过覆盖说明
+        subscriptions = []
+    for subscription in subscriptions:
+        if subscription.feed_url not in covered:
+            continue
+        covered_titles[subscription.feed_url] = subscription.title
+    covered_list = [
+        {"feedUrl": url, "title": covered_titles.get(url) or url}
+        for url in sorted(covered_titles)
+    ]
+    missing = [
+        {"feedUrl": subscription.feed_url, "title": subscription.title}
+        for subscription in subscriptions
+        if subscription.feed_url not in covered
+    ]
     note = (
         f"窗口内入选 {len(selected)} 条"
         f"（上限 {config['limitCount']}，单源配额 {config.get('perSourceCap', 0) or '∞'}）；"
@@ -419,6 +443,8 @@ async def build_preview(
         "selected": items,
         "counts": verdict["counts"],
         "perSource": verdict["perSource"],
+        "coveredSources": covered_list,
+        "missingSources": missing,
         "note": note,
     }
 

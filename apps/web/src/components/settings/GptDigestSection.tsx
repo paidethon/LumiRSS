@@ -317,6 +317,17 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
             {preview.data.counts.duplicate ?? 0} · 超单源配额 {preview.data.counts.perSourceCapped ?? 0} · 超总量{' '}
             {preview.data.counts.overLimit ?? 0}
           </p>
+          {/* R05：来源覆盖与遗漏（只陈述事实，不做推断） */}
+          {preview.data.missingSources.length > 0 ? (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              窗口内无入选材料的订阅（{preview.data.missingSources.length}）：
+              {preview.data.missingSources.map((source) => source.title || source.feedUrl).join('、')}
+            </p>
+          ) : (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              本配置的订阅在窗口内均有入选材料。
+            </p>
+          )}
         </div>
       ) : null}
 

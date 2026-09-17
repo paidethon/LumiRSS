@@ -4585,6 +4585,20 @@ export interface components {
             counts: {
                 [key: string]: number;
             };
+            /**
+             * Coveredsources
+             * @default []
+             */
+            coveredSources: {
+                [key: string]: string;
+            }[];
+            /**
+             * Missingsources
+             * @default []
+             */
+            missingSources: {
+                [key: string]: string;
+            }[];
             /** Note */
             note?: string | null;
             /**

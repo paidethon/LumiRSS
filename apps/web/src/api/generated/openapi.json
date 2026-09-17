@@ -3302,6 +3302,28 @@
       "title": "Counts",
       "type": "object"
      },
+     "coveredSources": {
+      "default": [],
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Coveredsources",
+      "type": "array"
+     },
+     "missingSources": {
+      "default": [],
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Missingsources",
+      "type": "array"
+     },
      "note": {
       "anyOf": [
        {
