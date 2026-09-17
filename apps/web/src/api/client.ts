@@ -1226,6 +1226,7 @@ export type StorageUsage = G6Schemas['StorageUsage']
 export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
 export type SourceOverrideResult = G6Schemas['SourceOverrideResult']
+export type TitleTranslationView = G6Schemas['TitleTranslationView']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1510,6 +1511,18 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+/** F23：单条标题按需翻译（缓存优先；原题保留）。 */
+export async function translateEntryTitle(
+  entryRef: string,
+  language = 'zh-CN',
+): Promise<TitleTranslationView> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translate-title`,
+    { method: 'POST', body: JSON.stringify({ language }), contentType: 'application/json' },
+  )
+  return (await response.json()) as TitleTranslationView
 }
 
 /** F36：存储用量（只读统计；无预算时 warning 为 null）。 */

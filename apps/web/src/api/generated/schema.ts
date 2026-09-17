@@ -718,6 +718,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translate-title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Translate Entry Title
+         * @description F23：单条标题按需翻译（缓存优先；一次一条，无批量入口）。
+         *
+         *     原题永远保留（响应含 originalTitle）；缓存身份 = 标题哈希+语言+
+         *     模型+prompt 版本。provider/校验失败映射稳定错误，绝不假成功。
+         */
+        post: operations["translate_entry_title_api_v1_entries__entry_ref__translate_title_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation": {
         parameters: {
             query?: never;
@@ -6530,6 +6553,39 @@ export interface components {
             suggestions: string[];
         };
         /**
+         * TitleTranslateRequest
+         * @description F23：目标语言（缺省回退 AI 设置的翻译目标语言）。
+         */
+        TitleTranslateRequest: {
+            /** Language */
+            language?: string | null;
+        };
+        /**
+         * TitleTranslationView
+         * @description F23：单条标题译文（原题保留，UI 叠加展示）。
+         */
+        TitleTranslationView: {
+            /**
+             * Cached
+             * @default false
+             */
+            cached: boolean;
+            /**
+             * Language
+             * @default
+             */
+            language: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Originaltitle */
+            originalTitle: string;
+            /** Translatedtitle */
+            translatedTitle: string;
+        };
+        /**
          * TranslationSegmentBlockIn
          * @description One client-segmented content block.
          */
@@ -7867,6 +7923,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntrySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    translate_entry_title_api_v1_entries__entry_ref__translate_title_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleTranslateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleTranslationView"];
                 };
             };
             /** @description Validation Error */

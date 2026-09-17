@@ -7541,6 +7541,58 @@
     "title": "TagSuggestionsResponse",
     "type": "object"
    },
+   "TitleTranslateRequest": {
+    "description": "F23：目标语言（缺省回退 AI 设置的翻译目标语言）。",
+    "properties": {
+     "language": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Language"
+     }
+    },
+    "title": "TitleTranslateRequest",
+    "type": "object"
+   },
+   "TitleTranslationView": {
+    "description": "F23：单条标题译文（原题保留，UI 叠加展示）。",
+    "properties": {
+     "cached": {
+      "default": false,
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "language": {
+      "default": "",
+      "title": "Language",
+      "type": "string"
+     },
+     "model": {
+      "default": "",
+      "title": "Model",
+      "type": "string"
+     },
+     "originalTitle": {
+      "title": "Originaltitle",
+      "type": "string"
+     },
+     "translatedTitle": {
+      "title": "Translatedtitle",
+      "type": "string"
+     }
+    },
+    "required": [
+     "originalTitle",
+     "translatedTitle"
+    ],
+    "title": "TitleTranslationView",
+    "type": "object"
+   },
    "TranslationSegmentBlockIn": {
     "description": "One client-segmented content block.",
     "properties": {
@@ -9437,6 +9489,56 @@
      }
     },
     "summary": "Generate Entry Summary"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/translate-title": {
+   "post": {
+    "description": "F23：单条标题按需翻译（缓存优先；一次一条，无批量入口）。\n\n原题永远保留（响应含 originalTitle）；缓存身份 = 标题哈希+语言+\n模型+prompt 版本。provider/校验失败映射稳定错误，绝不假成功。",
+    "operationId": "translate_entry_title_api_v1_entries__entry_ref__translate_title_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TitleTranslateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TitleTranslationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Translate Entry Title"
    }
   },
   "/api/v1/entries/{entry_ref}/translation": {

@@ -33,7 +33,16 @@
  * （wave 2），不在本组件。 */
 
 import { useMemo, useState } from 'react'
-import { Bookmark, CalendarClock, Check, Clock, FolderPlus, Loader2, Star } from 'lucide-react'
+import {
+  Bookmark,
+  CalendarClock,
+  Check,
+  Clock,
+  FolderPlus,
+  Languages,
+  Loader2,
+  Star,
+} from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useAddWorkspaceItemMutation,
@@ -41,6 +50,7 @@ import {
   useCreateBookmarkMutation,
   useEntryStateMutation,
   useItemTags,
+  useTitleTranslationMutation,
   useSnoozeReadLaterMutation,
   useWorkspaces,
 } from '../api/queries'
@@ -104,6 +114,8 @@ export function EntryActionButtons({
   const queryClient = useQueryClient()
   // F20：收藏动作的短时撤销（8 秒；撤销前核对服务器状态，防跨设备覆盖）
   const pushUndo = useUndo((s) => s.push)
+  // F23：按需标题翻译（缓存优先，一次一条）
+  const titleTranslation = useTitleTranslationMutation()
 
   const starUndo = (next: boolean) => {
     pushUndo({
@@ -307,6 +319,34 @@ export function EntryActionButtons({
         compact={compact}
         idleCls={idleCls}
         attachedCount={attachedTagNames.size}
+      />
+
+      {/* F23：按需翻译标题（单条显式动作，不批量）。译文以 muted 副行
+          叠加在原题下方（由调用方布局承接 titleTranslation 状态）。 */}
+      <IconButton
+        icon={
+          titleTranslation.isPending &&
+          titleTranslation.variables?.entryRef === entryRef ? (
+            <Loader2 aria-hidden className={cx(iconSize, 'animate-spin')} />
+          ) : (
+            <Languages aria-hidden className={iconSize} />
+          )
+        }
+        label="翻译标题"
+        title={
+          titleTranslation.data && titleTranslation.variables?.entryRef === `rss:${entryRef}` && false
+            ? '再次点击刷新译文'
+            : '翻译标题（原题保留）'
+        }
+        size={compact ? 'sm' : 'md'}
+        touch={!compact}
+        className={idleCls}
+        style={{ color: 'var(--lumi-text-tertiary)' }}
+        disabled={titleTranslation.isPending}
+        onClick={(e) => {
+          e.stopPropagation()
+          titleTranslation.mutate({ entryRef: `rss:${entryRef}` })
+        }}
       />
 
       {/* 添加到工作区：溢出菜单（Base UI 行为底座），列出全部工作区

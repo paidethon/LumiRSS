@@ -79,6 +79,16 @@ class EntryDetail(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class TitleTranslationView(BaseModel):
+    """F23：单条标题译文（原题保留，UI 叠加展示）。"""
+
+    originalTitle: str
+    translatedTitle: str
+    cached: bool = False
+    language: str = ""
+    model: str = ""
+
+
 class EntrySummary(BaseModel):
     """GET/POST /api/v1/entries/{entryRef}/summary (browser-safe view)."""
 

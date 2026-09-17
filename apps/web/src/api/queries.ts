@@ -49,6 +49,7 @@ import {
   getClip,
   getEntries,
   getEntry,
+  translateEntryTitle,
   getEntryConversation,
   getEntrySummary,
   getEntryTranslation,
@@ -1679,6 +1680,13 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F23：按需标题翻译（一次一条；缓存以服务端为准）。 */
+export function useTitleTranslationMutation() {
+  return useMutation({
+    mutationFn: (vars: { entryRef: string }) => translateEntryTitle(vars.entryRef),
   })
 }
 

@@ -3,9 +3,11 @@
 
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from lumirss.ai_conversation import MAX_QUESTION_CHARS
+from lumirss.ai_profiles import PurposeAiSettings
 from lumirss.ai_settings import (
     KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
@@ -15,16 +17,21 @@ from lumirss.ai_translation_segments import (
     SegmentInput,
 )
 from lumirss.deps import (
+    _get_adapter,
+    _get_ai_profile_store,
+    _get_ai_settings_store,
     _get_conversation_service,
     _get_segment_service,
     _get_summary_service,
     _get_translation_service,
+    _provider_factory_for,
 )
 from lumirss.entryref import decode_entry_ref
 from lumirss.models import (
     EntryConversation,
     EntrySummary,
     EntryTranslation,
+    TitleTranslationView,
     TranslationSegmentsView,
 )
 
@@ -257,5 +264,51 @@ async def send_conversation_message(
 # ---------------------------------------------------------------------------
 # 0018 — Operations, RSSHub Control Center, Backup / WebDAV / Restore
 # ---------------------------------------------------------------------------
+
+
+class TitleTranslateRequest(BaseModel):
+    """F23：目标语言（缺省回退 AI 设置的翻译目标语言）。"""
+
+    language: str | None = None
+
+
+@router.post(
+    "/api/v1/entries/{entry_ref}/translate-title",
+    response_model=TitleTranslationView,
+)
+async def translate_entry_title(
+    entry_ref: str, payload: TitleTranslateRequest, request: Request
+) -> dict[str, object]:
+    """F23：单条标题按需翻译（缓存优先；一次一条，无批量入口）。
+
+    原题永远保留（响应含 originalTitle）；缓存身份 = 标题哈希+语言+
+    模型+prompt 版本。provider/校验失败映射稳定错误，绝不假成功。"""
+    from lumirss.ai_provider import AiProviderError
+    from lumirss.title_translation import TitleTranslationService
+
+    service = TitleTranslationService(request.app.state.db)
+    try:
+        result = await service.translate(
+            _get_adapter(request),
+            PurposeAiSettings(
+                _get_ai_settings_store(request),
+                _get_ai_profile_store(request),
+                "translation",
+            ),
+            _provider_factory_for(request, "translation"),
+            entry_ref,
+            payload.language or "",
+        )
+    except AiProviderError as exc:
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            status, etype = 409, "ai_not_configured"
+        else:
+            status, etype = 502, "ai_upstream"
+        return JSONResponse(
+            status_code=status,
+            content={"error": {"type": etype, "message": str(exc)}},
+        )
+    return dict(result)
 
 
