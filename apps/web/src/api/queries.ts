@@ -1417,6 +1417,7 @@ import {
   generateConfigDigest,
   getConfigFeed,
   getGptDigestFeed,
+  explainGptDigestIssue,
   snoozeReadLaterItem,
   getGptDigestSettings,
   listConfigIssues,
@@ -1713,6 +1714,18 @@ export function useReviseGptDigestIssueMutation() {
       issueKey: string
       payload: GptDigestIssueRevise
     }) => reviseGptDigestIssue(vars.configId, vars.issueKey, vars.payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
+  })
+}
+
+/** F05：生成初学者解释版（独立条目，原版不变）。 */
+export function useExplainGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { configId: number; issueKey: string }) =>
+      explainGptDigestIssue(vars.configId, vars.issueKey),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
     },

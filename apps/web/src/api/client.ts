@@ -1485,6 +1485,18 @@ export async function listNotesByEntry(
   )
 }
 
+/** F05：生成某期的初学者解释版（独立条目 key = {key}-x）。 */
+export async function explainGptDigestIssue(
+  configId: number,
+  issueKey: string,
+): Promise<{ issue: GptDigestIssue }> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/explain`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { issue: GptDigestIssue }
+}
+
 /** F36：存储用量（只读统计；无预算时 warning 为 null）。 */
 export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsage> {
   return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)

@@ -10004,6 +10004,53 @@
     "summary": "Revise Gpt Digest Issue"
    }
   },
+  "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
+   "post": {
+    "description": "F05：为某期生成初学者解释版（独立条目 key = {key}-x）。\n\n输入只含该期自身的总结与来源标题——不可能引入原文之外的新事实。\nAI 未配置/上游失败映射为稳定错误；原版不受影响。",
+    "operationId": "explain_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__explain_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "issue_key",
+      "required": true,
+      "schema": {
+       "title": "Issue Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Explain Gpt Digest Issue"
+   }
+  },
   "/api/v1/gpt-digest/configs/{config_id}/preview": {
    "get": {
     "operationId": "preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get",

@@ -18,6 +18,7 @@ from lumirss.gpt_digest import (
     DigestOutputInvalid,
     GptDigestScheduler,
     classify_material,
+    explain_issue,
     generate_issue,
     parse_and_validate_output,
     render_issue_html,
@@ -617,6 +618,54 @@ def test_f08_revise_issue_endpoint(client):
         "/api/v1/gpt-digest/configs/1/issues/1999-01-01",
         json={"title": "x", "sections": []},
     ).status_code == 404
+
+
+def test_f05_explain_issue_creates_variant(client):
+    """F05：解释版是独立条目（key += -x），引用沿用原版；原版不变。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="原版",
+            body_html="<p>原</p>",
+            sections_json='[{"heading":"主题","items":[{"summary":"术语甲的总结。","sourceIds":["s1"],"uncertainty":null}]}]',
+            refs_json='{"s1": {"title": "T", "url": "https://a.example.com/x", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    provider = _FakeProvider(
+        '{"title":"初学者版","sections":[{"heading":"主题","items":[{"summary":"解释后的总结。","sourceIds":["s1"],"uncertainty":"术语甲指代不明"}]}],"limitations":[]}'
+    )
+    config = run(_config_store().get_config(1))
+    row = run(
+        explain_issue(
+            _config_store(),
+            issues,
+            config=config,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+            issue_key="2026-09-18",
+        )
+    )
+    assert row["issue_key"] == "2026-09-18-x"
+    assert row["title"].startswith("〔解释版〕")
+    # 原版不受影响
+    assert run(issues.get_issue(1, "2026-09-18"))["title"] == "原版"
+    # 幽灵引用被拒
+    bad = _FakeProvider('{"title":"x","sections":[{"heading":"h","items":[{"summary":"s","sourceIds":["ghost"]}]}],"limitations":[]}')
+    with pytest.raises(DigestOutputInvalid):
+        run(
+            explain_issue(
+                _config_store(),
+                issues,
+                config=config,
+                ai_settings=_FakeAiSettings(),
+                provider_factory=_ok(bad),
+                issue_key="2026-09-18",
+            )
+        )
 
 
 def test_issue_key_uses_configured_timezone():

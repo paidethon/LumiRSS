@@ -1015,6 +1015,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Gpt Digest Issue
+         * @description F05：为某期生成初学者解释版（独立条目 key = {key}-x）。
+         *
+         *     输入只含该期自身的总结与来源标题——不可能引入原文之外的新事实。
+         *     AI 未配置/上游失败映射为稳定错误；原版不受影响。
+         */
+        post: operations["explain_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__explain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/preview": {
         parameters: {
             query?: never;
@@ -8315,6 +8338,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GptDigestIssueList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__explain_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

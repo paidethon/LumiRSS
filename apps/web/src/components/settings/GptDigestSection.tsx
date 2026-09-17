@@ -15,6 +15,7 @@ import {
   useConfigPreviewMutation,
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
+  useExplainGptDigestIssueMutation,
   useGenerateConfigMutation,
   useGptDigestConfigs,
   useReviseGptDigestIssueMutation,
@@ -429,6 +430,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
  * 新增——保证引用真实性不受人工编辑影响）。 */
 function IssueRow({ configId, issue }: { configId: number; issue: GptDigestIssue }) {
   const revise = useReviseGptDigestIssueMutation()
+  const explain = useExplainGptDigestIssueMutation()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [summaries, setSummaries] = useState<string[]>(
@@ -462,10 +464,27 @@ function IssueRow({ configId, issue }: { configId: number; issue: GptDigestIssue
         <span className="min-w-0 flex-1 truncate">
           {issue.issueKey} · {issue.title}
         </span>
+        {issue.issueKey.endsWith('-x') ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={explain.isPending}
+            onClick={() => explain.mutate({ configId, issueKey: issue.issueKey })}
+          >
+            {explain.isPending && explain.variables?.issueKey === issue.issueKey
+              ? '解释中…'
+              : '生成解释版'}
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>
           {editing ? '收起' : '修订'}
         </Button>
       </div>
+      {explain.isError && explain.error instanceof ApiError && explain.variables?.issueKey === issue.issueKey ? (
+        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+          解释版失败：{explain.error.message}
+        </p>
+      ) : null}
       {editing ? (
         <div className="flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5">
           <label className="flex flex-col gap-1">

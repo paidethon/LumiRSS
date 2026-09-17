@@ -300,6 +300,67 @@ async def revise_gpt_digest_issue(
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
+@router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain")
+async def explain_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> Response:
+    """F05：为某期生成初学者解释版（独立条目 key = {key}-x）。
+
+    输入只含该期自身的总结与来源标题——不可能引入原文之外的新事实。
+    AI 未配置/上游失败映射为稳定错误；原版不受影响。"""
+    from lumirss.gpt_digest import (
+        DigestOutputInvalid,
+        _build_ai_deps,
+        explain_issue,
+    )
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        row = await explain_issue(
+            _config_store(request),
+            _issues(request),
+            config=config,
+            ai_settings=ai_settings,
+            provider_factory=provider_factory,
+            issue_key=issue_key,
+        )
+    except DigestOutputInvalid as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"type": "generation_failed", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping
+        if type(exc).__name__ in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": {
+                        "type": "ai_not_configured",
+                        "message": "AI 未配置或配置不可用（详见设置）。",
+                    }
+                },
+            )
+        if type(exc).__name__ in {"AiRateLimited", "AiTimeout", "AiUpstreamError"}:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "type": "ai_upstream",
+                        "message": "AI 上游暂时不可用，原版未受影响。",
+                    }
+                },
+            )
+        raise
+    dto = _issues(request).issue_to_dto(row)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
 @router.get("/api/v1/gpt-digest/issues", response_model=GptDigestIssueList)
 async def list_gpt_digest_issues(
     request: Request, limit: int = 14
