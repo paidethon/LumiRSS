@@ -115,9 +115,10 @@ describe('Test J — success（HTML path）', () => {
     renderReader()
 
     expect(await screen.findByText('文章 A')).toBeInTheDocument()
-    // meta 行由多个 span 组成，分别断言各字段（分隔符 · 在 span 内）
-    expect(screen.getByText('示例源')).toBeInTheDocument()
-    expect(screen.getByText(/作者甲/)).toBeInTheDocument()
+    // meta 行由多个 span 组成，分别断言各字段（分隔符 · 在 span 内）。
+    // F30：溯源卡也展示来源，getAllByText 保证「至少渲染一次」。
+    expect((await screen.findAllByText('示例源')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/作者甲/)).length).toBeGreaterThan(0)
     // 期望值由同一 formatter 规则推导，避免 CI (UTC) 与本地时区差异
     const expected = new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric', month: '2-digit', day: '2-digit',

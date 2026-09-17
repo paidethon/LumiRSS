@@ -53,7 +53,7 @@ export function CapabilitiesSection() {
   const obsidian = useObsidianStatus()
 
   const aiValues = ai.data
-  const aiConfigured = Boolean(aiValues && aiValues['ai.base_url'] && aiValues['ai.model'])
+  const aiConfigured = Boolean(aiValues?.baseUrl && aiValues?.model)
   const freshrss = operations.data?.freshrss as
     | { status?: string; configured?: boolean }
     | undefined
@@ -75,24 +75,26 @@ export function CapabilitiesSection() {
       level: aiConfigured ? 'ok' : 'unconfigured',
       basis: 'configured',
       detail: aiConfigured
-        ? `模型：${String(aiValues?.['ai.model'])}（调用费用由服务端产生）`
+        ? `模型：${String(aiValues?.model)}（调用费用由服务端产生）`
         : '缺少 base URL 或模型；API 密钥保存在服务端',
     },
     {
       key: 'rag',
       label: '语义检索（RAG）',
-      level: rag.data?.available ? 'ok' : rag.data?.enabled ? 'down' : 'unconfigured',
+      level: rag.data?.enabled ? 'ok' : rag.data?.fastembedAvailable ? 'unconfigured' : 'down',
       basis: 'probed',
-      detail: rag.data?.available
-        ? '索引可用（单文件 sqlite-vec，无外部向量库）'
-        : '可在 AI 设置中开启；首次建立索引需要时间',
+      detail: rag.data?.enabled
+        ? `索引可用（${rag.data.chunks} 个分块，单文件 sqlite-vec）`
+        : rag.data?.fastembedAvailable
+          ? '本地模型可用但未启用；可在 AI 设置中开启'
+          : '本地嵌入模型不可用（详见 RAG 设置）',
     },
     {
       key: 'obsidian',
       label: 'Obsidian 库（只读）',
-      level: obsidian.data?.configured ? 'ok' : 'unconfigured',
+      level: obsidian.data?.envRootConfigured || obsidian.data?.vaultPath ? 'ok' : 'unconfigured',
       basis: 'configured',
-      detail: obsidian.data?.configured
+      detail: obsidian.data?.envRootConfigured || obsidian.data?.vaultPath
         ? 'Vault 路径已配置（只读投影，不回写）'
         : '未配置 Vault 路径',
     },

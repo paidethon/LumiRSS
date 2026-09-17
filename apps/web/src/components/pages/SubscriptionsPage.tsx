@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
 import { useCategories, useSubscriptions } from '../../api/queries'
-import { VolumeOverview } from './VolumeOverview'
+import { VolumeOverview } from '../VolumeOverview'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
 import { useOpmlExportFlow } from '../../lib/opml-import'

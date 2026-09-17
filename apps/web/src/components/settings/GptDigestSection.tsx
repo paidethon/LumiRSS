@@ -164,6 +164,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
       <Row label="启用" hint="关闭 = 暂停调度；已有的期刊与订阅地址保留">
         <Switch
           id={`gpt-digest-enabled-${config.id}`}
+          label={`启用 ${config.name}`}
           checked={config.enabled}
           onCheckedChange={(checked) => update.mutate({ configId: config.id, patch: { enabled: checked } })}
         />

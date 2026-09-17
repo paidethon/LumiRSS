@@ -153,6 +153,7 @@ def test_entry_detail_route_returns_detail():
             "author": "阮一峰",
             "url": "http://example.com/weekly-409",
             "publishedAt": "2026-08-20T23:53:54Z",
+            "crawledAt": None,  # F30：fixture 未带 crawlTimestampMsec → 未知
             "read": False,
             "starred": False,
             "contentText": "这里是文章正文纯文本。",

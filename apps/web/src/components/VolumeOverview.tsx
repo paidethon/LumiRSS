@@ -8,8 +8,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 
-import { getSubscriptionVolume } from '../../api/client'
-import { cx } from '../ui/cx'
+import { getSubscriptionVolume } from '../api/client'
+import { cx } from './ui/cx'
 
 export function VolumeOverview() {
   const [open, setOpen] = useState(false)

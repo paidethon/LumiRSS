@@ -146,18 +146,19 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   if (detail.contentText.trim() !== '') {
     return (
       <div className="article-content">
+        <p className="whitespace-pre-wrap">{detail.contentText}</p>
         {/* F16 内容完整度：contentHtml 缺失 = 上游 feed 只给了摘要/文本，
-            这是唯一可验证的信号——不凭长度猜测是否完整。 */}
+            这是唯一可验证的信号——不凭长度猜测是否完整。
+            （放在正文之后，保持 .article-content 首个 p 为正文的既有契约。） */}
         {!hasHtml ? (
           <p
-            className="mb-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
+            className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
             data-lumi-content-completeness="summary-only"
           >
             上游 feed 未提供正文 HTML，本条仅显示可用的文本内容（可能是摘要）；
             完整性未知，可点「打开原文」核对。
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap">{detail.contentText}</p>
       </div>
     )
   }

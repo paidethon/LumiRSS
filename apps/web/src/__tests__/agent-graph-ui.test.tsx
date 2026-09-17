@@ -122,7 +122,7 @@ function tagsFixture(): TagListResponse {
 function workspacesFixture(): WorkspaceListResponse {
   return {
     items: [
-      { id: 'w1', name: '工作区一', itemCount: 0, position: 0, reserved: false },
+      { id: 'w1', name: '工作区一', itemCount: 0, position: 0, reserved: false, description: '' },
     ],
   }
 }

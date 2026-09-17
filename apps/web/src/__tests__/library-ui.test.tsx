@@ -84,6 +84,7 @@ function workspaceFixture(over: Partial<Workspace> = {}): Workspace {
     position: 0,
     itemCount: 0,
     reserved: false,
+    description: '',
     ...over,
   }
 }

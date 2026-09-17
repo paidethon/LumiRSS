@@ -11,7 +11,7 @@
  * graph 与 agent 同属 FULL_WIDTH_SECTIONS，本文件一并覆盖 graph 挂载。 */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from '../App'

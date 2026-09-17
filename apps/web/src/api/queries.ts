@@ -1285,8 +1285,13 @@ export function useReorderWorkspaceItemsMutation() {
 export function useRenameWorkspaceMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; name: string; description?: string }) =>
-      renameWorkspace(vars.workspaceId, vars.name, vars.description),
+    mutationFn: (vars: { workspaceId: string; name: string; description?: string }) => {
+      // F25：description 未提供时不携带该字段（旧调用方/测试契约不变）
+      if (vars.description === undefined) {
+        return renameWorkspace(vars.workspaceId, vars.name)
+      }
+      return renameWorkspace(vars.workspaceId, vars.name, vars.description)
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
     },
