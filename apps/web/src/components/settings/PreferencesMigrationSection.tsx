@@ -1,0 +1,158 @@
+/** PreferencesMigrationSection — F32：非敏感偏好迁移。
+ *
+ * 导出/导入「可迁移 UI 偏好」（PORTABLE_KEYS：阅读排版、外观、筛选等
+ * 纯展示偏好），供更换设备或实例使用：
+ * - 导出 = 版本化 JSON（schemaVersion/kind/exportedAt + values），
+ *   只含偏好，绝不含认证、SMTP、Webhook 或 AI 密钥；
+ * - 导入 = 选文件 → 与当前值 diff 预览 → 用户确认后应用；
+ * - 与完整备份用途分开（完整备份走「数据控制」的备份引擎）。
+ */
+
+import { useRef, useState } from 'react'
+
+import { portableSettings, portableToPatch, useAppSettings } from '../../store/app-settings'
+import { Button } from '../ui/Button'
+
+const SCHEMA_VERSION = 1
+
+interface DiffRow {
+  key: string
+  from: unknown
+  to: unknown
+}
+
+function formatValue(value: unknown): string {
+  if (value === undefined || value === null) return '（空）'
+  return String(value)
+}
+
+export function PreferencesMigrationSection() {
+  const settings = useAppSettings((s) => s.settings)
+  const update = useAppSettings((s) => s.update)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [pending, setPending] = useState<DiffRow[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [applied, setApplied] = useState(false)
+
+  function handleExport() {
+    const payload = {
+      schemaVersion: SCHEMA_VERSION,
+      kind: 'lumirss-preferences',
+      exportedAt: new Date().toISOString(),
+      values: portableSettings(settings),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `lumirss-preferences-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleImportClick() {
+    setError(null)
+    setApplied(false)
+    fileRef.current?.click()
+  }
+
+  function handleFile(file: File) {
+    file
+      .text()
+      .then((text) => {
+        const parsed = JSON.parse(text) as {
+          schemaVersion?: number
+          kind?: string
+          values?: Record<string, unknown>
+        }
+        if (parsed.kind !== 'lumirss-preferences' || parsed.schemaVersion !== SCHEMA_VERSION) {
+          setError('不是有效的 LumiRSS 偏好文件（kind/schemaVersion 不匹配）。')
+          setPending(null)
+          return
+        }
+        const patch = portableToPatch(parsed.values ?? {})
+        const current = portableSettings(settings)
+        const rows: DiffRow[] = []
+        for (const [key, to] of Object.entries(patch)) {
+          const from = (current as Record<string, unknown>)[key]
+          if (from !== to) rows.push({ key, from, to })
+        }
+        setPending(rows)
+      })
+      .catch(() => {
+        setError('文件无法解析（需 JSON）。')
+        setPending(null)
+      })
+  }
+
+  function applyPending() {
+    if (!pending) return
+    const patch: Record<string, unknown> = {}
+    for (const row of pending) patch[row.key] = row.to
+    update(patch as Parameters<typeof update>[0])
+    setApplied(true)
+    setPending(null)
+  }
+
+  return (
+    <div className="flex flex-col gap-2 py-3">
+      <div className="text-sm font-medium text-[var(--lumi-text-primary)]">偏好迁移</div>
+      <p className="text-xs text-[var(--lumi-text-tertiary)]">
+        导出阅读排版与界面偏好为版本化 JSON，可在另一台设备导入。只含偏好，不含认证、
+        SMTP、Webhook 或 AI 密钥；与完整备份用途分开。
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={handleExport}>
+          导出偏好
+        </Button>
+        <Button variant="secondary" size="sm" onClick={handleImportClick}>
+          导入偏好
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          aria-label="选择偏好文件"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleFile(file)
+            e.target.value = ''
+          }}
+        />
+      </div>
+      {error ? (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {error}
+        </p>
+      ) : null}
+      {applied ? (
+        <p className="text-xs text-[var(--lumi-text-secondary)]" role="status">
+          偏好已应用。
+        </p>
+      ) : null}
+      {pending ? (
+        <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5">
+          <p className="mb-1 text-xs font-medium text-[var(--lumi-text-primary)]">
+            将修改 {pending.length} 项偏好：
+          </p>
+          <ul className="mb-2 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+            {pending.map((row) => (
+              <li key={row.key} className="text-xs text-[var(--lumi-text-secondary)]">
+                {row.key}: {formatValue(row.from)} → {formatValue(row.to)}
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <Button variant="primary" size="sm" onClick={applyPending}>
+              应用
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
+              取消
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}

@@ -76,6 +76,12 @@ import {
 import { ReaderTypographyControls } from './reader/ReaderTypographyControls'
 // 关于页：Web/BFF 构建溯源（版本错配诊断）
 import { AboutVersion } from './AboutVersion'
+// F34：能力可用性统一说明（复用既有状态端点，只读聚合）
+import { CapabilitiesSection } from './CapabilitiesSection'
+// F32：非敏感偏好迁移（导出/导入版本化 JSON，diff 预览后应用）
+import { PreferencesMigrationSection } from './PreferencesMigrationSection'
+// F36：存储用量统计卡
+import { StorageUsageSection } from './StorageUsageSection'
 
 // ---- 分类定义 ----
 
@@ -402,6 +408,10 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           action: () => reset(),
         },
         { type: 'title', value: '配置迁移与备份' },
+        // F32：非敏感偏好迁移（与完整备份用途分开）
+        { type: 'custom', node: <PreferencesMigrationSection /> },
+        // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
+        { type: 'custom', node: <StorageUsageSection /> },
         { type: 'custom', node: <DataBackupSection /> },
       ]
     case 'services':
@@ -492,6 +502,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             </div>
           ),
         },
+        { type: 'title', value: '能力可用性' },
+        // F34：本实例能力状态统一说明（只读；区分配置与探测，不产生费用）
+        { type: 'custom', node: <CapabilitiesSection /> },
       ]
     default:
       return []

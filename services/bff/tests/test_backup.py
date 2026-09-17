@@ -97,12 +97,17 @@ def test_sqlite_backup_produces_consistent_snapshot(tmp_path):
 def test_build_manifest_contains_required_fields():
     files = [
         {"path": "lumi.sqlite", "size": 123, "sha256": "a" * 64, "component": "lumi.sqlite"},
+        {"path": "assets/x.bin", "size": 5, "sha256": "b" * 64, "component": "assets"},
+        {"path": "assets/y.bin", "size": 7, "sha256": "c" * 64, "component": "assets"},
     ]
     manifest = build_manifest(db_schema_version=3, files=files, secret_configured=True)
     assert manifest["backupSchemaVersion"] == 1
     assert manifest["appName"] == "LumiRSS"
     assert manifest["lumiDbSchemaVersion"] == 3
-    assert manifest["components"] == ["lumi.sqlite"]
+    assert manifest["components"] == ["assets", "lumi.sqlite"]
+    # F37：类别数量可读核对——与 files 数量一一对应
+    assert manifest["componentCounts"] == {"assets": 2, "lumi.sqlite": 1}
+    assert sum(manifest["componentCounts"].values()) == len(manifest["files"])
     assert manifest["secretPolicy"]["configured"] is True
     assert manifest["files"][0]["sha256"] == "a" * 64
 

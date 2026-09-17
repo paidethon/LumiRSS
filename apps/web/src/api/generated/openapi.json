@@ -6722,6 +6722,78 @@
     "title": "SourceRegistryResponse",
     "type": "object"
    },
+   "StorageUsage": {
+    "description": "GET /api/v1/storage/usage — F36 用量口径（未知为 null，不冒充零）。",
+    "properties": {
+     "backupsDir": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "title": "Backupsdir",
+      "type": "object"
+     },
+     "budgetMB": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Budgetmb"
+     },
+     "database": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "title": "Database",
+      "type": "object"
+     },
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "libraryAssets": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "title": "Libraryassets",
+      "type": "object"
+     },
+     "totalKnownBytes": {
+      "title": "Totalknownbytes",
+      "type": "integer"
+     },
+     "warning": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Warning"
+     }
+    },
+    "required": [
+     "database",
+     "libraryAssets",
+     "backupsDir",
+     "totalKnownBytes",
+     "generatedAt"
+    ],
+    "title": "StorageUsage",
+    "type": "object"
+   },
    "Subscription": {
     "description": "GET/POST /api/v1/subscriptions item (0013 management view).\n\nsubscriptionRef is Lumi-owned and opaque; clients never assemble ids.",
     "properties": {
@@ -12733,6 +12805,24 @@
      }
     },
     "summary": "List Sources"
+   }
+  },
+  "/api/v1/storage/usage": {
+   "get": {
+    "operationId": "storage_usage_api_v1_storage_usage_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StorageUsage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Storage Usage"
    }
   },
   "/api/v1/subscriptions": {

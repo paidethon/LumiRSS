@@ -583,6 +583,12 @@ def build_manifest(
     secret_configured: bool,
 ) -> dict[str, Any]:
     settings = LumiSettings()
+    # F37：对象类别数量（恢复前可读核对——与 files 一一对应；旧版备份
+    # 无此字段，restore 按缺省容忍）。
+    component_counts: dict[str, int] = {}
+    for file in files:
+        component = str(file["component"])
+        component_counts[component] = component_counts.get(component, 0) + 1
     return {
         "backupSchemaVersion": BACKUP_SCHEMA_VERSION,
         "appName": APP_NAME,
@@ -590,7 +596,8 @@ def build_manifest(
         "lumiVersion": settings.LUMIRSS_VERSION,
         "lumiCommit": settings.LUMIRSS_COMMIT,
         "lumiDbSchemaVersion": db_schema_version,
-        "components": sorted({file["component"] for file in files}),
+        "components": sorted(component_counts),
+        "componentCounts": dict(sorted(component_counts.items())),
         "secretPolicy": {
             "excludedSecrets": [
                 "ai.api_key",

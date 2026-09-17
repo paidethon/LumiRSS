@@ -1221,6 +1221,7 @@ export type GptDigestConfig = G6Schemas['GptDigestConfig']
 export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
 export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
 export type GptDigestCreate = G6Schemas['GptDigestCreate']
+export type StorageUsage = G6Schemas['StorageUsage']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1466,6 +1467,11 @@ export async function listNotesByEntry(
     `${API_BASE}/library/notes-by-entry/${encodeURIComponent(entryRef)}`,
     signal,
   )
+}
+
+/** F36：存储用量（只读统计；无预算时 warning 为 null）。 */
+export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsage> {
+  return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)
 }
 
 /** GPT 日报设置（token 不在此响应中，见 getGptDigestFeed）。 */

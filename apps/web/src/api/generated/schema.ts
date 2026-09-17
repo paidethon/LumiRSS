@@ -2605,6 +2605,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/storage/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storage Usage */
+        get: operations["storage_usage_api_v1_storage_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/subscriptions": {
         parameters: {
             query?: never;
@@ -5996,6 +6013,32 @@ export interface components {
             generatedAt: string;
             /** Sources */
             sources: components["schemas"]["SourceRegistryEntry"][];
+        };
+        /**
+         * StorageUsage
+         * @description GET /api/v1/storage/usage — F36 用量口径（未知为 null，不冒充零）。
+         */
+        StorageUsage: {
+            /** Backupsdir */
+            backupsDir: {
+                [key: string]: number;
+            };
+            /** Budgetmb */
+            budgetMB?: number | null;
+            /** Database */
+            database: {
+                [key: string]: number;
+            };
+            /** Generatedat */
+            generatedAt: string;
+            /** Libraryassets */
+            libraryAssets: {
+                [key: string]: number | null;
+            };
+            /** Totalknownbytes */
+            totalKnownBytes: number;
+            /** Warning */
+            warning?: string | null;
         };
         /**
          * Subscription
@@ -10647,6 +10690,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceRegistryResponse"];
+                };
+            };
+        };
+    };
+    storage_usage_api_v1_storage_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageUsage"];
                 };
             };
         };

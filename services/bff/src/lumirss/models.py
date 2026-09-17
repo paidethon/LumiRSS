@@ -1356,6 +1356,18 @@ class GptDigestConfigUpdate(BaseModel):
     feedUrlAllow: str | None = None
 
 
+class StorageUsage(BaseModel):
+    """GET /api/v1/storage/usage — F36 用量口径（未知为 null，不冒充零）。"""
+
+    database: dict[str, int]
+    libraryAssets: dict[str, int | None]
+    backupsDir: dict[str, int]
+    totalKnownBytes: int
+    budgetMB: int | None = None
+    warning: str | None = None
+    generatedAt: str
+
+
 class DigestSendNowRequest(BaseModel):
     """POST /api/v1/digest/send-now — explicit item selection."""
 

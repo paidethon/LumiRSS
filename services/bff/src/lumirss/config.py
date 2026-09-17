@@ -140,6 +140,9 @@ class LumiSettings(BaseSettings):
     FRESHRSS_DATA_DIR: str = ""
     LUMIRSS_VERSION: str = "0.1.0"
     LUMIRSS_COMMIT: str = ""
+    # F36: storage usage budget in MB (0 = off); >80% usage raises a warning
+    # in /api/v1/storage/usage — reporting only, never auto-deletion.
+    LUMIRSS_STORAGE_BUDGET_MB: int = 0
     # phase2 M3: base URL FreshRSS uses to reach this BFF's Atom endpoints
     # (docker-internal address, e.g. http://lumirss-bff:8000).
     LUMIRSS_ATOM_BASE_URL: str = ""

@@ -52,6 +52,7 @@ from lumirss.routers import (
     settings,
     snapshots,
     sources,
+    storage,
     subscriptions,
     tags,
     workspaces,
@@ -293,5 +294,6 @@ app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
 app.include_router(gpt_digest.router)
+app.include_router(storage.router)
 
 register_error_handlers(app)
