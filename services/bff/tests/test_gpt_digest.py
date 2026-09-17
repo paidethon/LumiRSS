@@ -400,6 +400,7 @@ def test_generate_issue_success_marks_and_persists(client):
             adapter=_FakeAdapter(docs),
             ai_settings=_FakeAiSettings(),
             provider_factory=_ok(provider),
+            db=app.state.db,
             now=_fixed_now(),
         )
     )

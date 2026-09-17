@@ -76,6 +76,103 @@ def _canonical_utc(value: str | None) -> str | None:
     return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_WINDOW_OPEN = "0001-01-01T00:00:00Z"
+_WINDOW_FAR = "9999-12-31T23:59:59Z"
+_SAVED_FETCH_LIMIT = 40
+
+
+async def saved_material_docs(
+    adapter: Any, db: Any, source_kind: str, limit: int
+) -> list[dict[str, Any]]:
+    """F04：保存类材料（read_later / starred）→ EntryDocument 形状。
+
+    - read_later：稍后读队列中的 rss: 成员（用户显式保存）；
+    - starred：FreshRSS 收藏（greader starred 视图首页）。
+    每条经 get_entry 取正文文本，上限 ``limit`` 条（有界 greader 往返）；
+    只读——绝不改已读/收藏/队列状态。"""
+    from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+    from lumirss.workspaces import RESERVED_WORKSPACE_ID, WorkspaceStore
+
+    if source_kind == "read_later":
+        members = await WorkspaceStore(db).list_items(
+            RESERVED_WORKSPACE_ID, limit=_SAVED_FETCH_LIMIT
+        )
+        refs = [m.item_ref for m in members if m.item_ref.startswith("rss:")]
+    elif source_kind == "starred":
+        page = await adapter.list_entries(view="starred", limit=_SAVED_FETCH_LIMIT)
+        refs = [item.entryRef for item in page.items]
+    else:
+        return []
+    docs: list[dict[str, Any]] = []
+    for entry_ref in refs[: max(limit, 1)]:
+        try:
+            item_id = decode_entry_ref(entry_ref.removeprefix("rss:"))
+        except InvalidEntryReference:
+            continue
+        try:
+            detail = await adapter.get_entry(item_id)
+        except Exception:  # noqa: BLE001 — 单条失败跳过，不拖垮整期
+            continue
+        docs.append(
+            {
+                "item_id": detail.entryRef,
+                "entryRef": detail.entryRef,
+                "feedUrl": "",
+                "feedTitle": detail.feedTitle,
+                "title": detail.title,
+                "url": detail.url,
+                "publishedAt": detail.publishedAt or "",
+                "read": detail.read,
+                "starred": detail.starred,
+                "contentText": detail.contentText,
+            }
+        )
+    return docs
+
+
+async def select_material_for_config(
+    config: dict[str, Any], adapter: Any, db: Any, now: datetime
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int], str, str]:
+    """按 source_kind 取材料并分类；返回 (selected, counts, perSource,
+    window_start, window_end)。保存类来源用全时间窗 + 无白名单。"""
+    source_kind = str(config.get("sourceKind") or "window")
+    if source_kind == "window":
+        page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
+        window_start, window_end = window_bounds(
+            now, config["timezone"], config["windowHours"]
+        )
+        verdict = classify_material(
+            [doc.model_dump() for doc in page.documents],
+            window_start,
+            window_end,
+            int(config["limitCount"]),
+            int(config.get("perSourceCap") or 0),
+            parse_allow_list(config.get("feedUrlAllow") or ""),
+        )
+        return (
+            verdict["selected"],
+            verdict["counts"],
+            verdict["perSource"],
+            window_start,
+            window_end,
+        )
+    docs = await saved_material_docs(adapter, db, source_kind, int(config["limitCount"]))
+    verdict = classify_material(
+        docs,
+        _WINDOW_OPEN,
+        _WINDOW_FAR,
+        int(config["limitCount"]),
+        0,  # 保存类不做单源配额（用户显式选择的集合，量本来就小）
+    )
+    return (
+        verdict["selected"],
+        verdict["counts"],
+        verdict["perSource"],
+        _WINDOW_OPEN,
+        _WINDOW_FAR,
+    )
+
+
 def window_bounds(now: datetime, timezone: str, window_hours: int) -> tuple[str, str]:
     """[start, end)，统一为 canonical UTC「Z」串（时区只影响期号归属）。"""
     end = now
@@ -346,6 +443,7 @@ async def generate_issue(
     adapter: Any,
     ai_settings: Any,
     provider_factory: Any,
+    db: Any | None = None,
     plan: RunPlan | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -359,27 +457,17 @@ async def generate_issue(
     await configs.mark_error(config_id, "")  # 触发迁移（失败路径也要能写库）
     now = now or datetime.now().astimezone()
     if plan is None:
-        window_start, window_end = window_bounds(
-            now, config["timezone"], config["windowHours"]
-        )
         issue_key = issue_key_for(now, config["timezone"])
     else:
-        window_start, window_end = plan.window_start, plan.window_end
         issue_key = plan.issue_key
-    page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
-    material = classify_material(
-        [doc.model_dump() for doc in page.documents],
-        window_start,
-        window_end,
-        int(config["limitCount"]),
-        int(config.get("perSourceCap") or 0),
-        parse_allow_list(config.get("feedUrlAllow") or ""),
-    )["selected"]
+    material, _, _, _, _ = await select_material_for_config(
+        config, adapter, db, now
+    )
     if not material:
         await configs.mark_error(
-            config_id, "窗口内没有可用材料（检查 FreshRSS 自动更新与窗口/白名单/上限配置）。"
+            config_id, "没有可用材料（检查 FreshRSS 自动更新与窗口/白名单/上限配置）。"
         )
-        raise DigestMaterialEmpty("窗口内没有可用材料；未生成空日报。")
+        raise DigestMaterialEmpty("没有可用材料；未生成空日报。")
     ai_values = await ai_settings.load()
     base_url = str(ai_values.get("ai.base_url") or "")
     model = str(ai_values.get("ai.model") or "")
@@ -420,29 +508,21 @@ async def generate_issue(
 async def build_preview(
     adapter: Any,
     config: dict[str, Any],
+    db: Any | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """F06：无副作用选材预览（不调用模型、不写库）。
+    """F06/R05：无副作用选材预览（不调用模型、不写库）。
 
     sourceId 顺序与 generate_issue 的实际选材一一对应；material 为空的
     原因由 counts 诚实解释，note 说明窗口与配额。"""
     now = now or datetime.now().astimezone()
-    slots = parse_slots(config.get("slots") or [])
-    if slots:
-        plan = plan_run(config, now, catchup_minutes=None)
-        window_start, window_end = plan.window_start, plan.window_end
-    else:
-        window_start, window_end = window_bounds(now, config["timezone"], config["windowHours"])
-    page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
-    verdict = classify_material(
-        [doc.model_dump() for doc in page.documents],
+    (
+        selected,
+        counts,
+        per_source,
         window_start,
         window_end,
-        int(config["limitCount"]),
-        int(config.get("perSourceCap") or 0),
-        parse_allow_list(config.get("feedUrlAllow") or ""),
-    )
-    selected = verdict["selected"]
+    ) = await select_material_for_config(config, adapter, db, now)
     items = []
     for index, doc in enumerate(selected, start=1):
         items.append(
@@ -457,15 +537,18 @@ async def build_preview(
         )
     # R05：来源覆盖与遗漏——本配置的订阅里，哪些在窗口内有入选材料、
     # 哪些没有（遗漏 ≠ 错误：可能只是没更新；不给任何「建议取消订阅」
-    # 之类的推断，只陈述事实）。
+    # 之类的推断，只陈述事实）。保存类来源（read_later/starred）跳过
+    # 该说明（材料不来自订阅抓取面）。
     covered: set[str] = set()
     for doc in selected:
         covered.add(str(doc.get("feedUrl") or ""))
     covered_titles: dict[str, str] = {}
-    try:
-        subscriptions = await adapter.list_subscriptions()
-    except Exception:  # noqa: BLE001 — 订阅清单失败时跳过覆盖说明
-        subscriptions = []
+    subscriptions = []
+    if str(config.get("sourceKind") or "window") == "window":
+        try:
+            subscriptions = await adapter.list_subscriptions()
+        except Exception:  # noqa: BLE001 — 订阅清单失败时跳过覆盖说明
+            subscriptions = []
     for subscription in subscriptions:
         if subscription.feed_url not in covered:
             continue
@@ -480,7 +563,7 @@ async def build_preview(
         if subscription.feed_url not in covered
     ]
     note = (
-        f"窗口内入选 {len(selected)} 条"
+        f"入选 {len(selected)} 条"
         f"（上限 {config['limitCount']}，单源配额 {config.get('perSourceCap', 0) or '∞'}）；"
         "生成时按本顺序提供 source id。"
     )
@@ -488,8 +571,8 @@ async def build_preview(
         "windowStart": window_start,
         "windowEnd": window_end,
         "selected": items,
-        "counts": verdict["counts"],
-        "perSource": verdict["perSource"],
+        "counts": counts,
+        "perSource": per_source,
         "coveredSources": covered_list,
         "missingSources": missing,
         "note": note,
@@ -662,6 +745,7 @@ async def _scheduled_generate(
         adapter=adapter,
         ai_settings=ai_settings,
         provider_factory=provider_factory,
+        db=app_state.db,
         plan=plan,
     )
 

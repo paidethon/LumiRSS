@@ -1327,6 +1327,8 @@ class GptDigestConfig(BaseModel):
     limitCount: int = 12
     perSourceCap: int = 2
     feedUrlAllow: str = ""
+    # F04：材料源（window=订阅窗口 / read_later=稍后读 / starred=收藏）
+    sourceKind: str = "window"
     slots: list[int] = []
     lastIssueKey: str | None = None
     lastError: str | None = None
@@ -1347,6 +1349,7 @@ class GptDigestCreate(BaseModel):
     limitCount: int | None = None
     perSourceCap: int | None = None
     feedUrlAllow: str | None = None
+    sourceKind: str | None = None
     slots: list[int] | None = None
 
 
@@ -1361,6 +1364,7 @@ class GptDigestConfigUpdate(BaseModel):
     limitCount: int | None = None
     perSourceCap: int | None = None
     feedUrlAllow: str | None = None
+    sourceKind: str | None = None
     slots: list[int] | None = None
 
 

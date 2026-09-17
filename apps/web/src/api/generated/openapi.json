@@ -2998,6 +2998,11 @@
       "title": "Slots",
       "type": "array"
      },
+     "sourceKind": {
+      "default": "window",
+      "title": "Sourcekind",
+      "type": "string"
+     },
      "timezone": {
       "default": "",
       "title": "Timezone",
@@ -3115,6 +3120,17 @@
       ],
       "title": "Slots"
      },
+     "sourceKind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcekind"
+     },
      "timezone": {
       "anyOf": [
        {
@@ -3205,6 +3221,17 @@
        }
       ],
       "title": "Slots"
+     },
+     "sourceKind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcekind"
      },
      "timezone": {
       "anyOf": [

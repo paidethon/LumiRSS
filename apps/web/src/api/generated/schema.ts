@@ -4459,6 +4459,11 @@ export interface components {
              */
             slots: number[];
             /**
+             * Sourcekind
+             * @default window
+             */
+            sourceKind: string;
+            /**
              * Timezone
              * @default
              */
@@ -4496,6 +4501,8 @@ export interface components {
             perSourceCap?: number | null;
             /** Slots */
             slots?: number[] | null;
+            /** Sourcekind */
+            sourceKind?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Windowhours */
@@ -4518,6 +4525,8 @@ export interface components {
             perSourceCap?: number | null;
             /** Slots */
             slots?: number[] | null;
+            /** Sourcekind */
+            sourceKind?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Windowhours */

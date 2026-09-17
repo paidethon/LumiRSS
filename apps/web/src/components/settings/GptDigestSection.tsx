@@ -128,6 +128,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const [limitCount, setLimitCount] = useState(config.limitCount)
   const [perSourceCap, setPerSourceCap] = useState(config.perSourceCap)
   const [feedUrlAllow, setFeedUrlAllow] = useState(config.feedUrlAllow)
+  const [sourceKind, setSourceKind] = useState(config.sourceKind)
   // F02：多时点（逗号分隔小时；空 = 单时点 hour）
   const [slotsText, setSlotsText] = useState(config.slots.join(','))
 
@@ -139,6 +140,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     setLimitCount(config.limitCount)
     setPerSourceCap(config.perSourceCap)
     setFeedUrlAllow(config.feedUrlAllow)
+    setSourceKind(config.sourceKind)
     setSlotsText(config.slots.join(','))
   }, [config])
 
@@ -159,6 +161,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     config.limitCount !== limitCount ||
     config.perSourceCap !== perSourceCap ||
     config.feedUrlAllow !== feedUrlAllow ||
+    config.sourceKind !== sourceKind ||
     slotsChanged
 
   const feedUrl = feed.data ? `${window.location.origin}${feed.data.atomPath}` : ''
@@ -245,6 +248,18 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setFeedUrlAllow(e.target.value)}
         />
       </Row>
+      <Row label="材料来源（F04）" hint="窗口 = 订阅时间窗；稍后读/收藏 = 生成时从对应队列取材（只读，不改状态）">
+        <select
+          aria-label="材料来源"
+          className="min-h-9 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
+          value={sourceKind}
+          onChange={(e) => setSourceKind(e.target.value)}
+        >
+          <option value="window">订阅窗口</option>
+          <option value="read_later">稍后读队列</option>
+          <option value="starred">收藏</option>
+        </select>
+      </Row>
       <Row label="发布时点（F02 早晚刊）" hint="逗号分隔的多个小时（如 8,20）：窗口按相邻时点切分；留空 = 单时点（用发布小时），期号退化为日期">
         <input
           aria-label="发布时点列表"
@@ -271,6 +286,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
                 limitCount,
                 perSourceCap,
                 feedUrlAllow,
+                sourceKind,
                 slots: slotsText.trim() === '' ? [] : parsedSlots,
               },
             })

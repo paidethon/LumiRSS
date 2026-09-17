@@ -152,7 +152,7 @@ async def preview_config_digest(config_id: int, request: Request) -> GptDigestPr
                 "error": {"type": "freshrss_unconfigured", "message": "FreshRSS 未配置。"}
             },
         )
-    preview = await build_preview(adapter, config)
+    preview = await build_preview(adapter, config, request.app.state.db)
     return GptDigestPreview(**preview)
 
 
@@ -226,7 +226,7 @@ async def preview_gpt_digest(request: Request) -> GptDigestPreview:
                 "error": {"type": "freshrss_unconfigured", "message": "FreshRSS 未配置。"}
             },
         )
-    preview = await build_preview(adapter, config)
+    preview = await build_preview(adapter, config, request.app.state.db)
     return GptDigestPreview(**preview)
 
 
@@ -279,6 +279,7 @@ async def _generate_for_config(request: Request, config: dict | None) -> Respons
             adapter=adapter,
             ai_settings=ai_settings,
             provider_factory=provider_factory,
+            db=request.app.state.db,
             plan=plan,
         )
     except DigestMaterialEmpty as exc:
