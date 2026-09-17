@@ -1368,6 +1368,26 @@ class StorageUsage(BaseModel):
     generatedAt: str
 
 
+class SubscriptionVolumeItem(BaseModel):
+    """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
+
+    feedUrl: str
+    title: str
+    publishedCount: int | None = None
+    lastPublishedAt: str | None = None
+    lastSyncedAt: str | None = None
+
+
+class SubscriptionVolumeResponse(BaseModel):
+    """GET /api/v1/sources/volume — 收件量概览（口径 = 发布时间窗口）。"""
+
+    days: int
+    since: str
+    basis: str
+    items: list[SubscriptionVolumeItem] = []
+    generatedAt: str
+
+
 class DigestSendNowRequest(BaseModel):
     """POST /api/v1/digest/send-now — explicit item selection."""
 
@@ -1470,6 +1490,25 @@ class ReadLaterTimelineResponse(BaseModel):
 
     items: list[ReadLaterItem]
     nextCursor: str | None = None
+
+
+class ReadLaterSnoozeRequest(BaseModel):
+    """POST snooze — 延后到该 ISO 时刻（必须为未来）。"""
+
+    until: str
+
+
+class ReadLaterSnoozeResult(BaseModel):
+    """延后结果 / 单项（F19）。"""
+
+    itemRef: str
+    snoozedUntil: str
+
+
+class ReadLaterSnoozedList(BaseModel):
+    """GET snoozed — 当前延后中的项目。"""
+
+    items: list[ReadLaterSnoozeResult] = []
 
 
 class LibrarySearchItem(BaseModel):

@@ -14,13 +14,21 @@ last-success / last-error health hints that the owning stores already
 maintain.
 """
 
+from datetime import UTC
+
 from fastapi import APIRouter, Request
 
 from lumirss.config import RssHubSettings
-from lumirss.models import SourceRegistryEntry, SourceRegistryResponse
+from lumirss.models import (
+    SourceRegistryEntry,
+    SourceRegistryResponse,
+    SubscriptionVolumeItem,
+    SubscriptionVolumeResponse,
+)
 from lumirss.util import utc_now
 
 from ..deps import (
+    _get_adapter,
     _get_api_source_store,
     _get_inbox_store,
     _get_mail_bridge_store,
@@ -114,3 +122,67 @@ async def list_sources(request: Request) -> SourceRegistryResponse:
         )
 
     return SourceRegistryResponse(sources=entries, generatedAt=utc_now())
+
+
+@router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)
+async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVolumeResponse:
+    """F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。
+
+    口径（显式区分，未知为 null 不冒充零）：
+    - publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自
+      search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null
+      （投影落后 ≠ 没有新内容）；
+    - lastPublishedAt：该订阅在投影中最新的发布时间；
+    - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+    """
+    from datetime import datetime, timedelta
+
+    def _epoch_to_iso(seconds: int) -> str:
+        return datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    days = min(max(days, 1), 30)
+    now = datetime.now(UTC)
+    since = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    adapter = _get_adapter(request)
+    subscriptions = await adapter.list_subscriptions()
+    db = request.app.state.db
+    await db.migrate()
+    try:
+        window_rows = await db.fetch_all(
+            "SELECT feed_url, COUNT(*) AS n, MAX(published_at) AS latest_published FROM search_entries WHERE published_at >= ? GROUP BY feed_url",
+            (since,),
+        )
+        sync_rows = await db.fetch_all(
+            "SELECT feed_url, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
+        )
+    except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
+        window_rows = []
+        sync_rows = []
+    counts = {
+        str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
+        for row in window_rows
+    }
+    synced = {
+        str(row["feed_url"]): _epoch_to_iso(int(row["latest_fetched"]))
+        for row in sync_rows
+        if row["latest_fetched"] is not None
+    }
+    items: list[SubscriptionVolumeItem] = []
+    for subscription in subscriptions:
+        hit = counts.get(subscription.feed_url)
+        items.append(
+            SubscriptionVolumeItem(
+                feedUrl=subscription.feed_url,
+                title=subscription.title,
+                publishedCount=hit[0] if hit else None,
+                lastPublishedAt=hit[1] if hit else None,
+                lastSyncedAt=synced.get(subscription.feed_url),
+            )
+        )
+    return SubscriptionVolumeResponse(
+        days=days,
+        since=since,
+        basis="published_at（search_entries 派生投影，可重建）",
+        items=items,
+        generatedAt=utc_now(),
+    )

@@ -2605,6 +2605,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/volume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subscription Volume
+         * @description F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。
+         *
+         *     口径（显式区分，未知为 null 不冒充零）：
+         *     - publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自
+         *       search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null
+         *       （投影落后 ≠ 没有新内容）；
+         *     - lastPublishedAt：该订阅在投影中最新的发布时间；
+         *     - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+         */
+        get: operations["subscription_volume_api_v1_sources_volume_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/storage/usage": {
         parameters: {
             query?: never;
@@ -2912,6 +2939,53 @@ export interface paths {
         put?: never;
         /** Create Workspace */
         post: operations["create_workspace_api_v1_workspaces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/read-later/items/{item_ref}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snooze Read Later Item
+         * @description F19：延后一个稍后读项目到指定时刻（ISO；到期自动回到时间线）。
+         *
+         *     只影响时间线可见性：行保留、成员关系与已读/收藏状态不变。
+         *     until 必须是未来时刻（防止「延后到过去」造成假消失）。
+         */
+        post: operations["snooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_post"];
+        /**
+         * Unsnooze Read Later Item
+         * @description F19：取消延后——项目立即回到时间线。
+         */
+        delete: operations["unsnooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/read-later/snoozed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Snoozed Read Later
+         * @description 当前处于延后状态的项目（供「已延后」视图展示）。
+         */
+        get: operations["list_snoozed_read_later_api_v1_workspaces_read_later_snoozed_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5334,6 +5408,35 @@ export interface components {
             stale: boolean;
         };
         /**
+         * ReadLaterSnoozeRequest
+         * @description POST snooze — 延后到该 ISO 时刻（必须为未来）。
+         */
+        ReadLaterSnoozeRequest: {
+            /** Until */
+            until: string;
+        };
+        /**
+         * ReadLaterSnoozeResult
+         * @description 延后结果 / 单项（F19）。
+         */
+        ReadLaterSnoozeResult: {
+            /** Itemref */
+            itemRef: string;
+            /** Snoozeduntil */
+            snoozedUntil: string;
+        };
+        /**
+         * ReadLaterSnoozedList
+         * @description GET snoozed — 当前延后中的项目。
+         */
+        ReadLaterSnoozedList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ReadLaterSnoozeResult"][];
+        };
+        /**
          * ReadLaterTimelineResponse
          * @description GET /api/v1/workspaces/read-later/timeline.
          */
@@ -6085,6 +6188,41 @@ export interface components {
             categoryId?: string | null;
             /** Newcategorylabel */
             newCategoryLabel?: string | null;
+        };
+        /**
+         * SubscriptionVolumeItem
+         * @description F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。
+         */
+        SubscriptionVolumeItem: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Lastpublishedat */
+            lastPublishedAt?: string | null;
+            /** Lastsyncedat */
+            lastSyncedAt?: string | null;
+            /** Publishedcount */
+            publishedCount?: number | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * SubscriptionVolumeResponse
+         * @description GET /api/v1/sources/volume — 收件量概览（口径 = 发布时间窗口）。
+         */
+        SubscriptionVolumeResponse: {
+            /** Basis */
+            basis: string;
+            /** Days */
+            days: number;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SubscriptionVolumeItem"][];
+            /** Since */
+            since: string;
         };
         /**
          * TagAssignRequest
@@ -10694,6 +10832,37 @@ export interface operations {
             };
         };
     };
+    subscription_volume_api_v1_sources_volume_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionVolumeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     storage_usage_api_v1_storage_usage_get: {
         parameters: {
             query?: never;
@@ -11289,6 +11458,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadLaterSnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadLaterSnoozeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsnooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_snoozed_read_later_api_v1_workspaces_read_later_snoozed_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadLaterSnoozedList"];
                 };
             };
         };

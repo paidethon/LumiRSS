@@ -291,6 +291,7 @@ class WorkspaceStore:
         if order not in ("newest", "oldest"):
             raise WorkspaceInvalid("order must be 'newest' or 'oldest'.")
         await self._db.migrate()
+        now_iso = utc_now()
         row = await self._db.fetch_one(
             "SELECT id FROM workspaces WHERE id = ?", (workspace_id,)
         )
@@ -303,13 +304,14 @@ class WorkspaceStore:
             )
         key_added = key[0] if key else None
         key_ref = key[1] if key else None
+        # F19：延后（snoozed_until > now）的行不进入时间线；到期自动回。
         if order == "oldest":
-            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at > ? OR (added_at = ? AND item_ref > ?)) ORDER BY added_at ASC, item_ref ASC LIMIT ?"
+            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at > ? OR (added_at = ? AND item_ref > ?)) ORDER BY added_at ASC, item_ref ASC LIMIT ?"
         else:
-            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?"
+            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?"
         rows = await self._db.fetch_all(
             sql,
-            (workspace_id, key_added, key_added, key_added, key_ref, limit + 1),
+            (workspace_id, now_iso, key_added, key_added, key_added, key_ref, limit + 1),
         )
         has_more = len(rows) > limit
         rows = rows[:limit]
@@ -327,9 +329,37 @@ class WorkspaceStore:
             next_cursor = _encode_timeline_cursor(last.added_at, last.item_ref, order)
         return items, next_cursor
 
+    async def snooze_item(
+        self, workspace_id: str, item_ref: str, until: str | None
+    ) -> bool:
+        """F19：延后/取消延后一个保存项（until=None = 取消延后）。
+
+        行保留、成员关系不变；只影响 read-later 时间线的可见性。
+        Returns False when the item is not a member of the workspace."""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT item_ref FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, item_ref),
+        )
+        if row is None:
+            return False
+        await self._db.execute(
+            "UPDATE workspace_items SET snoozed_until = ? WHERE workspace_id = ? AND item_ref = ?",
+            (until, workspace_id, item_ref),
+        )
+        return True
+
+    async def list_snoozed(self, workspace_id: str) -> list[tuple[str, str]]:
+        """当前处于延后状态的 (item_ref, snoozed_until) 列表（新→旧）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT item_ref, snoozed_until FROM workspace_items WHERE workspace_id = ? AND snoozed_until IS NOT NULL ORDER BY snoozed_until ASC, item_ref ASC",
+            (workspace_id,),
+        )
+        return [(str(r["item_ref"]), str(r["snoozed_until"])) for r in rows]
+
     async def reorder_items(
-        self, workspace_id: str, ordered_refs: list[str]
-    ) -> int:
+        self, workspace_id: str, ordered_refs: list[str]    ) -> int:
         """Assign positions 1..N for the given refs (bounded batch).
 
         Refs not included keep their relative order after the moved block;

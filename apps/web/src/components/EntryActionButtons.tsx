@@ -33,7 +33,7 @@
  * （wave 2），不在本组件。 */
 
 import { useMemo, useState } from 'react'
-import { Bookmark, Check, Clock, FolderPlus, Loader2, Star } from 'lucide-react'
+import { Bookmark, CalendarClock, Check, Clock, FolderPlus, Loader2, Star } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useAddWorkspaceItemMutation,
@@ -41,6 +41,7 @@ import {
   useCreateBookmarkMutation,
   useEntryStateMutation,
   useItemTags,
+  useSnoozeReadLaterMutation,
   useWorkspaces,
 } from '../api/queries'
 import type { EntryDetail, EntryListItem } from '../api/types'
@@ -204,6 +205,11 @@ export function EntryActionButtons({
         )}
       </button>
 
+      {/* F19 延后：仅对已在稍后读的条目提供——把项目推迟 7 天，到期自动
+          回到时间线；行保留、已读/收藏状态不受影响。 */}
+      {marked ? (
+        <SnoozeButton entryRef={entryRef} itemRef={`rss:${entryRef}`} btnBase={btnBase} hoverCls={hoverCls} iconSize={iconSize} idleCls={idleCls} />
+      ) : null}
 
       {/* 收藏：set 语义 PATCH（乐观失败回滚由 0009 mutation 模式承载） */}
       <button
@@ -334,5 +340,45 @@ export function EntryActionButtons({
         />
       )}
     </span>
+  )
+}
+
+/** F19 延后按钮（Clock 旁；仅稍后读条目显示）。
+ *
+ * 单击 = 延后 7 天（最常用的「以后再看」语义，不弹菜单）；Shift+单击 =
+ * 延后 1 天。成功后时间线失效，行从列表消失（到期自动回来）——
+ * 这是有意的可见性变化，不是删除。 */
+function SnoozeButton({
+  itemRef,
+  btnBase,
+  hoverCls,
+  iconSize,
+  idleCls,
+}: {
+  entryRef: string
+  itemRef: string
+  btnBase: string
+  hoverCls: string
+  iconSize: string
+  idleCls: string
+}) {
+  const snooze = useSnoozeReadLaterMutation()
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        snooze.mutate({ itemRef, days: e.shiftKey ? 1 : 7 })
+      }}
+      aria-label="延后该条目（默认 7 天）"
+      title="延后 7 天（Shift+点击 = 1 天），到期自动回到稍后读"
+      className={cx(btnBase, hoverCls, idleCls)}
+    >
+      {snooze.isPending && snooze.variables?.itemRef === itemRef ? (
+        <Loader2 aria-hidden className={cx(iconSize, 'animate-spin')} />
+      ) : (
+        <CalendarClock aria-hidden className={iconSize} />
+      )}
+    </button>
   )
 }

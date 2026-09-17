@@ -99,4 +99,29 @@ describe('ArticleContent 省流模式', () => {
     )
     expect(screen.queryByText(/张图片未加载/)).not.toBeInTheDocument()
   })
+
+  it('F16：仅摘要（无正文 HTML）时显示诚实完整性提示', () => {
+    useAppSettings.setState({
+      settings: { ...DEFAULT_APP_SETTINGS, readerImageMode: 'all' },
+    })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const detail = {
+      entryRef: 'e1.b',
+      title: '仅摘要条目',
+      feedTitle: '源',
+      author: null,
+      url: 'https://blog.example.com/x',
+      publishedAt: '2026-09-18T00:00:00Z',
+      read: false,
+      starred: false,
+      contentHtml: null,
+      contentText: '只有一段短摘要。',
+    } as unknown as EntryDetail
+    render(
+      <QueryClientProvider client={qc}>
+        <ArticleContent detail={detail} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByText(/上游 feed 未提供正文 HTML/)).toBeInTheDocument()
+  })
 })

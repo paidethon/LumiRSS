@@ -13,6 +13,9 @@ from fastapi import APIRouter, Request, Response
 from lumirss.itemref import InvalidItemRef
 from lumirss.models import (
     ReadLaterItem,
+    ReadLaterSnoozedList,
+    ReadLaterSnoozeRequest,
+    ReadLaterSnoozeResult,
     ReadLaterTimelineResponse,
     ResolvedItem,
     ResolveRequest,
@@ -250,6 +253,61 @@ async def workspace_contents(
         )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))
+
+
+@router.post(
+    "/api/v1/workspaces/read-later/items/{item_ref}/snooze",
+    response_model=ReadLaterSnoozeResult,
+)
+async def snooze_read_later_item(
+    item_ref: str, payload: ReadLaterSnoozeRequest, request: Request
+) -> ReadLaterSnoozeResult:
+    """F19：延后一个稍后读项目到指定时刻（ISO；到期自动回到时间线）。
+
+    只影响时间线可见性：行保留、成员关系与已读/收藏状态不变。
+    until 必须是未来时刻（防止「延后到过去」造成假消失）。"""
+    from datetime import datetime
+
+    try:
+        until_dt = datetime.fromisoformat(payload.until.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise WorkspaceInvalid("until must be an ISO timestamp.") from exc
+    now = datetime.now(until_dt.tzinfo) if until_dt.tzinfo else datetime.now()
+    if until_dt <= now:
+        raise WorkspaceInvalid("until must be in the future.")
+    store: WorkspaceStore = _get_workspace_store(request)
+    ok = await store.snooze_item(RESERVED_WORKSPACE_ID, item_ref, payload.until)
+    if not ok:
+        raise WorkspaceNotFound(f"read-later item {item_ref}")
+    return ReadLaterSnoozeResult(itemRef=item_ref, snoozedUntil=payload.until)
+
+
+@router.delete(
+    "/api/v1/workspaces/read-later/items/{item_ref}/snooze",
+    status_code=204,
+)
+async def unsnooze_read_later_item(item_ref: str, request: Request) -> Response:
+    """F19：取消延后——项目立即回到时间线。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    ok = await store.snooze_item(RESERVED_WORKSPACE_ID, item_ref, None)
+    if not ok:
+        raise WorkspaceNotFound(f"read-later item {item_ref}")
+    return Response(status_code=204)
+
+
+@router.get(
+    "/api/v1/workspaces/read-later/snoozed",
+    response_model=ReadLaterSnoozedList,
+)
+async def list_snoozed_read_later(request: Request) -> ReadLaterSnoozedList:
+    """当前处于延后状态的项目（供「已延后」视图展示）。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    rows = await store.list_snoozed(RESERVED_WORKSPACE_ID)
+    return ReadLaterSnoozedList(
+        items=[
+            ReadLaterSnoozeResult(itemRef=ref, snoozedUntil=until) for ref, until in rows
+        ]
+    )
 
 
 @router.get(

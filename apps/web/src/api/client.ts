@@ -1222,6 +1222,8 @@ export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
 export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
 export type GptDigestCreate = G6Schemas['GptDigestCreate']
 export type StorageUsage = G6Schemas['StorageUsage']
+export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
+export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1472,6 +1474,25 @@ export async function listNotesByEntry(
 /** F36：存储用量（只读统计；无预算时 warning 为 null）。 */
 export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsage> {
   return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)
+}
+
+/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。 */
+export async function getSubscriptionVolume(
+  signal?: AbortSignal,
+  days = 7,
+): Promise<SubscriptionVolumeResponse> {
+  return request<SubscriptionVolumeResponse>(
+    `${API_BASE}/sources/volume?days=${days}`,
+    signal,
+  )
+}
+
+/** F19：延后一个稍后读项目（until=ISO 未来时刻；到期自动回时间线）。 */
+export async function snoozeReadLaterItem(itemRef: string, until: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/read-later/items/${encodeURIComponent(itemRef)}/snooze`,
+    { method: 'POST', body: JSON.stringify({ until }), contentType: 'application/json' },
+  )
 }
 
 /** GPT 日报设置（token 不在此响应中，见 getGptDigestFeed）。 */

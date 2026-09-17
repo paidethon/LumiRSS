@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
 import { useCategories, useSubscriptions } from '../../api/queries'
+import { VolumeOverview } from './VolumeOverview'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
 import { useOpmlExportFlow } from '../../lib/opml-import'
@@ -201,6 +202,8 @@ export default function SubscriptionsPage() {
         category={renameTarget}
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
+        {/* F12：收件量概览（可折叠；识别信息过载与异常停更） */}
+        <VolumeOverview />
         {/* 搜索订阅源（本地过滤，文案诚实） */}
         <div className="relative mb-3">
           <Search

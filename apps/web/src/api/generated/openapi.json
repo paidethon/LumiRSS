@@ -5161,6 +5161,54 @@
     "title": "ReadLaterItem",
     "type": "object"
    },
+   "ReadLaterSnoozeRequest": {
+    "description": "POST snooze — 延后到该 ISO 时刻（必须为未来）。",
+    "properties": {
+     "until": {
+      "title": "Until",
+      "type": "string"
+     }
+    },
+    "required": [
+     "until"
+    ],
+    "title": "ReadLaterSnoozeRequest",
+    "type": "object"
+   },
+   "ReadLaterSnoozeResult": {
+    "description": "延后结果 / 单项（F19）。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "snoozedUntil": {
+      "title": "Snoozeduntil",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "snoozedUntil"
+    ],
+    "title": "ReadLaterSnoozeResult",
+    "type": "object"
+   },
+   "ReadLaterSnoozedList": {
+    "description": "GET snoozed — 当前延后中的项目。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ReadLaterSnoozeResult"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "ReadLaterSnoozedList",
+    "type": "object"
+   },
    "ReadLaterTimelineResponse": {
     "description": "GET /api/v1/workspaces/read-later/timeline.",
     "properties": {
@@ -6894,6 +6942,95 @@
      }
     },
     "title": "SubscriptionPatch",
+    "type": "object"
+   },
+   "SubscriptionVolumeItem": {
+    "description": "F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "lastPublishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastpublishedat"
+     },
+     "lastSyncedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsyncedat"
+     },
+     "publishedCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedcount"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title"
+    ],
+    "title": "SubscriptionVolumeItem",
+    "type": "object"
+   },
+   "SubscriptionVolumeResponse": {
+    "description": "GET /api/v1/sources/volume — 收件量概览（口径 = 发布时间窗口）。",
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "days": {
+      "title": "Days",
+      "type": "integer"
+     },
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SubscriptionVolumeItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "since": {
+      "title": "Since",
+      "type": "string"
+     }
+    },
+    "required": [
+     "days",
+     "since",
+     "basis",
+     "generatedAt"
+    ],
+    "title": "SubscriptionVolumeResponse",
     "type": "object"
    },
    "TagAssignRequest": {
@@ -12807,6 +12944,47 @@
     "summary": "List Sources"
    }
   },
+  "/api/v1/sources/volume": {
+   "get": {
+    "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。",
+    "operationId": "subscription_volume_api_v1_sources_volume_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 7,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SubscriptionVolumeResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Subscription Volume"
+   }
+  },
   "/api/v1/storage/usage": {
    "get": {
     "operationId": "storage_usage_api_v1_storage_usage_get",
@@ -13540,6 +13718,106 @@
      }
     },
     "summary": "Create Workspace"
+   }
+  },
+  "/api/v1/workspaces/read-later/items/{item_ref}/snooze": {
+   "delete": {
+    "description": "F19：取消延后——项目立即回到时间线。",
+    "operationId": "unsnooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unsnooze Read Later Item"
+   },
+   "post": {
+    "description": "F19：延后一个稍后读项目到指定时刻（ISO；到期自动回到时间线）。\n\n只影响时间线可见性：行保留、成员关系与已读/收藏状态不变。\nuntil 必须是未来时刻（防止「延后到过去」造成假消失）。",
+    "operationId": "snooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReadLaterSnoozeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadLaterSnoozeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Snooze Read Later Item"
+   }
+  },
+  "/api/v1/workspaces/read-later/snoozed": {
+   "get": {
+    "description": "当前处于延后状态的项目（供「已延后」视图展示）。",
+    "operationId": "list_snoozed_read_later_api_v1_workspaces_read_later_snoozed_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadLaterSnoozedList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Snoozed Read Later"
    }
   },
   "/api/v1/workspaces/read-later/timeline": {

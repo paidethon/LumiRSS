@@ -1411,6 +1411,7 @@ import {
   generateConfigDigest,
   getConfigFeed,
   getGptDigestFeed,
+  snoozeReadLaterItem,
   getGptDigestSettings,
   listConfigIssues,
   listGptDigestConfigs,
@@ -1678,6 +1679,21 @@ export function useNotesByEntry(entryRef: string | null) {
     queryKey: ['library', 'notes-by-entry', entryRef],
     queryFn: ({ signal }) => listNotesByEntry(entryRef as string, signal),
     enabled: entryRef !== null,
+  })
+}
+
+/** F19：延后稍后读项目——成功后失效时间线（行即从列表消失）。 */
+export function useSnoozeReadLaterMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { itemRef: string; days: number }) => {
+      const until = new Date(Date.now() + vars.days * 86_400_000).toISOString()
+      return snoozeReadLaterItem(vars.itemRef, until)
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['workspace', 'read-later'] })
+      await queryClient.invalidateQueries({ queryKey: READ_LATER_TIMELINE_KEY })
+    },
   })
 }
 
