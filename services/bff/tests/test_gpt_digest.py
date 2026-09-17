@@ -479,24 +479,99 @@ def test_scheduler_idempotent_across_restarts_with_fixed_clock(client):
     generated = []
     clock_now = _fixed_now()
 
-    async def generate_fn():
-        generated.append(clock_now.date().isoformat())
-        return {"issue_key": "2026-09-18"}
+    async def generate_fn(plan):
+        generated.append(plan.issue_key)
+        # 真实流程会在成功后 upsert 期刊；测试模拟同一条去重来源
+        await _issues_store().upsert_issue(
+            config_id=1,
+            issue_key=plan.issue_key,
+            title="t",
+            body_html="",
+            sections_json="[]",
+            refs_json="{}",
+            model="m",
+            published_at="2026-09-18T08:00:00+00:00",
+        )
+        return {"issue_key": plan.issue_key}
+
+    issues = _issues_store()
+    config = run(_config_store().get_config(1))
+    scheduler = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
+    first = run(scheduler.maybe_generate_config(generate_fn, config, issues))
+    assert first == {"issue_key": "2026-09-18"}
+    # 重启（新 scheduler 实例）+ 同一天 → 期刊已存在，幂等不重跑
+    scheduler2 = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
+    config = run(_config_store().get_config(1))
+    assert run(scheduler2.maybe_generate_config(generate_fn, config, issues)) is None
+    assert generated == ["2026-09-18"]
+    # 错过 08:00、09:30 重启：单时点配置按 hour 相等门控，不再触发
+    later = _fixed_now() + timedelta(hours=2)
+    scheduler3 = GptDigestScheduler(store._db, clock=lambda _tz: later)
+    assert run(scheduler3.maybe_generate_config(generate_fn, config, issues)) is None
+
+
+def test_f02_slots_plan_boundaries_and_dedup(client):
+    """F02：早晚两刊窗口按相邻时点切分（不重叠不漏）；错过补刊窗口
+    跳过；显式修订取最近已过期时点。"""
+    from lumirss.gpt_digest import plan_run
+
+    config = {
+        "id": 2,
+        "name": "早晚刊",
+        "enabled": True,
+        "hour": 8,
+        "timezone": "UTC",
+        "windowHours": 24,
+        "limitCount": 10,
+        "perSourceCap": 0,
+        "feedUrlAllow": "",
+        "slots": [8, 20],
+    }
+    # 08:30 → 早刊窗口 = [昨 20:00, 今 08:00)，边界统一 UTC Z 形态
+    now = datetime(2026, 9, 18, 8, 30, 0, tzinfo=UTC)
+    plan = plan_run(config, now)
+    assert plan.issue_key == "2026-09-18-08"
+    assert plan.window_end == "2026-09-18T08:00:00Z"
+    assert plan.window_start == "2026-09-17T20:00:00Z"
+    # 12:00 → 早刊补刊窗口（65 分钟）已过、晚刊未到 → 不运行
+    assert plan_run(config, datetime(2026, 9, 18, 12, 0, tzinfo=UTC)) is None
+    # 09:00 → 早刊补刊窗口内（60 分钟 ≤ 65）仍可运行
+    assert plan_run(config, datetime(2026, 9, 18, 9, 0, tzinfo=UTC)) is not None
+    # 20:30 → 晚刊窗口 = [08:00, 20:00)，与早刊不重叠不漏项
+    evening = plan_run(config, datetime(2026, 9, 18, 20, 30, tzinfo=UTC))
+    assert evening.issue_key == "2026-09-18-20"
+    assert evening.window_start == "2026-09-18T08:00:00Z"
+    assert evening.window_end == "2026-09-18T20:00:00Z"
+    # 显式修订路径（catchup 不限）：任意时刻取最近已过期时点
+    revision = plan_run(config, datetime(2026, 9, 18, 23, 0, tzinfo=UTC), catchup_minutes=None)
+    assert revision.issue_key == "2026-09-18-20"
+
+
+def test_f02_slot_scheduler_skips_existing_issue(client):
+    """F02 去重：期刊 (config_id, issue_key) 已存在 → 调度跳过，
+    绝不重写已发布期（重启/错过时刻均收敛到同一规则）。"""
+    store = _store()
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="已有早刊",
+            body_html="<p>x</p>",
+            sections_json="[]",
+            refs_json="{}",
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    clock_now = _fixed_now()
+
+    async def generate_fn(plan):
+        raise AssertionError("不应重跑已存在的期号")
 
     config = run(_config_store().get_config(1))
     scheduler = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
-    first = run(scheduler.maybe_generate_config(generate_fn, config))
-    assert first == {"issue_key": "2026-09-18"}
-    # 重启（新 scheduler 实例）+ 同一天 → 幂等不重跑
-    scheduler2 = GptDigestScheduler(store._db, clock=lambda _tz: clock_now)
-    run(_config_store().mark_published(1, "2026-09-18"))
-    config = run(_config_store().get_config(1))
-    assert run(scheduler2.maybe_generate_config(generate_fn, config)) is None
-    assert generated == ["2026-09-18"]
-    # 错过 08:00、09:30 重启的同日补跑由 lastIssueKey 阻止；非到期小时也不触发
-    later = _fixed_now() + timedelta(hours=2)
-    scheduler3 = GptDigestScheduler(store._db, clock=lambda _tz: later)
-    assert run(scheduler3.maybe_generate_config(generate_fn, config)) is None
+    assert run(scheduler.maybe_generate_config(generate_fn, config, issues)) is None
 
 
 def test_issue_key_uses_configured_timezone():

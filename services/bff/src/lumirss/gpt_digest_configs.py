@@ -16,10 +16,27 @@ from lumirss.storage import Database
 from lumirss.util import utc_now
 
 _MAX_NAME = 80
-_CONFIG_FIELDS = (
-    "id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, "
-    "feed_url_allow, last_issue_key, last_error, created_at"
-)
+_MAX_SLOTS = 4
+
+
+def parse_slots(value: Any) -> list[int]:
+    """F02：slots 解析（list[int] 或逗号字符串）→ 升序去重的 0–23 小时
+    列表，最多 4 个时点；空 = 回退单 hour 字段。"""
+    if isinstance(value, str):
+        raw_parts = [p for p in value.replace("，", ",").split(",") if p.strip()]
+    elif isinstance(value, list):
+        raw_parts = value
+    else:
+        return []
+    hours: set[int] = set()
+    for part in raw_parts:
+        try:
+            hour = int(part)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= hour <= 23:
+            hours.add(hour)
+    return sorted(hours)[:_MAX_SLOTS]
 
 
 def parse_allow_list(raw: str) -> list[str]:
@@ -39,15 +56,22 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
     limit = limit if isinstance(limit, int) else fallback["limitCount"]
     per_source = values.get("perSourceCap", fallback["perSourceCap"])
     per_source = per_source if isinstance(per_source, int) else fallback["perSourceCap"]
+    slots = values.get("slots", fallback.get("slots", ""))
+    if not isinstance(slots, str):
+        slots = ",".join(str(h) for h in parse_slots(slots))
+    else:
+        slots = ",".join(str(h) for h in parse_slots(slots))
     return {
         "hour": hour,
         "windowHours": min(max(window, 1), 72),
         "limitCount": min(max(limit, 1), 40),
         "perSourceCap": min(max(per_source, 0), 5),
+        "slots": slots,
     }
 
 
 def config_row_to_dict(row: Any) -> dict[str, Any]:
+    slots_raw = str(row["slots"] or "") if "slots" in row else ""
     return {
         "id": int(row["id"]),
         "name": str(row["name"]),
@@ -58,6 +82,8 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
         "limitCount": int(row["limit_count"]),
         "perSourceCap": int(row["per_source_cap"]),
         "feedUrlAllow": str(row["feed_url_allow"] or ""),
+        "slots": parse_slots(slots_raw),
+        "slotsRaw": slots_raw,
         "lastIssueKey": row["last_issue_key"],
         "lastError": row["last_error"],
         "createdAt": str(row["created_at"] or ""),
@@ -73,14 +99,14 @@ class GptDigestConfigStore:
     async def list_configs(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, last_issue_key, last_error, created_at FROM gpt_digest_configs ORDER BY id"
+            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs ORDER BY id"
         )
         return [config_row_to_dict(row) for row in rows]
 
     async def get_config(self, config_id: int) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, last_issue_key, last_error, created_at FROM gpt_digest_configs WHERE id = ?",
+            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs WHERE id = ?",
             (config_id,),
         )
         return config_row_to_dict(row) if row else None
@@ -90,7 +116,7 @@ class GptDigestConfigStore:
         name = str(values.get("name") or "").strip()[:_MAX_NAME] or "未命名日报"
         clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2})
         await self._db.execute(
-            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, slots, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 clamped["hour"],
@@ -99,6 +125,7 @@ class GptDigestConfigStore:
                 clamped["limitCount"],
                 clamped["perSourceCap"],
                 str(values.get("feedUrlAllow") or ""),
+                clamped["slots"],
                 utc_now(),
             ),
         )
@@ -117,7 +144,7 @@ class GptDigestConfigStore:
         name = str(values.get("name", current["name"])).strip()[:_MAX_NAME] or current["name"]
         clamped = _clamp_config(values, current)
         await self._db.execute(
-            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, feed_url_allow = ? WHERE id = ?",
+            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, feed_url_allow = ?, slots = ? WHERE id = ?",
             (
                 name,
                 1 if values.get("enabled", current["enabled"]) else 0,
@@ -127,6 +154,7 @@ class GptDigestConfigStore:
                 clamped["limitCount"],
                 clamped["perSourceCap"],
                 str(values.get("feedUrlAllow", current["feedUrlAllow"])),
+                clamped["slots"],
                 config_id,
             ),
         )

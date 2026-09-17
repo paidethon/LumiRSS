@@ -262,9 +262,15 @@ async def _generate_for_config(request: Request, config: dict | None) -> Respons
                 "error": {"type": "freshrss_unconfigured", "message": "FreshRSS 未配置。"}
             },
         )
-    from lumirss.gpt_digest import _build_ai_deps
+    from datetime import datetime
+
+    from lumirss.gpt_digest import _build_ai_deps, plan_run
 
     ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    # F02：显式生成 = 修订「最近一个已过期时点」的期号（不限补刊窗口；
+    # 多时点配置的窗口按相邻时点切分）。单时点配置 plan=None 时由
+    # generate_issue 走历史语义。
+    plan = plan_run(config, datetime.now().astimezone(), catchup_minutes=None)
     try:
         row = await generate_issue(
             _config_store(request),
@@ -273,6 +279,7 @@ async def _generate_for_config(request: Request, config: dict | None) -> Respons
             adapter=adapter,
             ai_settings=ai_settings,
             provider_factory=provider_factory,
+            plan=plan,
         )
     except DigestMaterialEmpty as exc:
         return JSONResponse(

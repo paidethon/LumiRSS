@@ -77,4 +77,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
 
-CMD ["uvicorn", "lumirss.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-access-log (Gate A P2): uvicorn's default access log would write the
+# full /feeds/gpt-digest/{token}.atom path (token = bearer secret) to stdout.
+# Request-level visibility lives at the Caddy layer, which redacts /feeds/*.
+CMD ["uvicorn", "lumirss.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

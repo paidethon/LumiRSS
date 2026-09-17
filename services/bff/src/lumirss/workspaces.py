@@ -359,7 +359,8 @@ class WorkspaceStore:
         return [(str(r["item_ref"]), str(r["snoozed_until"])) for r in rows]
 
     async def reorder_items(
-        self, workspace_id: str, ordered_refs: list[str]    ) -> int:
+        self, workspace_id: str, ordered_refs: list[str]
+    ) -> int:
         """Assign positions 1..N for the given refs (bounded batch).
 
         Refs not included keep their relative order after the moved block;

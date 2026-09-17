@@ -128,6 +128,8 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const [limitCount, setLimitCount] = useState(config.limitCount)
   const [perSourceCap, setPerSourceCap] = useState(config.perSourceCap)
   const [feedUrlAllow, setFeedUrlAllow] = useState(config.feedUrlAllow)
+  // F02：多时点（逗号分隔小时；空 = 单时点 hour）
+  const [slotsText, setSlotsText] = useState(config.slots.join(','))
 
   useEffect(() => {
     setName(config.name)
@@ -137,7 +139,17 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     setLimitCount(config.limitCount)
     setPerSourceCap(config.perSourceCap)
     setFeedUrlAllow(config.feedUrlAllow)
+    setSlotsText(config.slots.join(','))
   }, [config])
+
+  const parsedSlots = slotsText
+    .split(/[,，\s]+/)
+    .map((part) => Number(part))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 23)
+    .slice(0, 4)
+    .sort((a, b) => a - b)
+  const nextSlots = slotsText.trim() === '' ? [] : parsedSlots
+  const slotsChanged = nextSlots.join(',') !== config.slots.join(',')
 
   const dirty =
     config.name !== name ||
@@ -146,7 +158,8 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     config.windowHours !== windowHours ||
     config.limitCount !== limitCount ||
     config.perSourceCap !== perSourceCap ||
-    config.feedUrlAllow !== feedUrlAllow
+    config.feedUrlAllow !== feedUrlAllow ||
+    slotsChanged
 
   const feedUrl = feed.data ? `${window.location.origin}${feed.data.atomPath}` : ''
 
@@ -232,6 +245,16 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setFeedUrlAllow(e.target.value)}
         />
       </Row>
+      <Row label="发布时点（F02 早晚刊）" hint="逗号分隔的多个小时（如 8,20）：窗口按相邻时点切分；留空 = 单时点（用发布小时），期号退化为日期">
+        <input
+          aria-label="发布时点列表"
+          type="text"
+          className={textInputCls}
+          placeholder="8,20"
+          value={slotsText}
+          onChange={(e) => setSlotsText(e.target.value)}
+        />
+      </Row>
       <div className="flex flex-wrap items-center gap-2 py-2">
         <Button
           variant="primary"
@@ -240,7 +263,16 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onClick={() =>
             update.mutate({
               configId: config.id,
-              patch: { name, hour, timezone, windowHours, limitCount, perSourceCap, feedUrlAllow },
+              patch: {
+                name,
+                hour,
+                timezone,
+                windowHours,
+                limitCount,
+                perSourceCap,
+                feedUrlAllow,
+                slots: slotsText.trim() === '' ? [] : parsedSlots,
+              },
             })
           }
         >

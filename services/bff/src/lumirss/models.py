@@ -1313,7 +1313,10 @@ class GptDigestPreview(BaseModel):
 
 
 class GptDigestConfig(BaseModel):
-    """F01：一份主题日报配置（token 不在此响应中）。"""
+    """F01/F02：一份主题日报配置（token 不在此响应中）。
+
+    ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
+    （用 hour），期号退化为日期。"""
 
     id: int
     name: str
@@ -1324,6 +1327,7 @@ class GptDigestConfig(BaseModel):
     limitCount: int = 12
     perSourceCap: int = 2
     feedUrlAllow: str = ""
+    slots: list[int] = []
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -1343,6 +1347,7 @@ class GptDigestCreate(BaseModel):
     limitCount: int | None = None
     perSourceCap: int | None = None
     feedUrlAllow: str | None = None
+    slots: list[int] | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -1356,6 +1361,7 @@ class GptDigestConfigUpdate(BaseModel):
     limitCount: int | None = None
     perSourceCap: int | None = None
     feedUrlAllow: str | None = None
+    slots: list[int] | None = None
 
 
 class StorageUsage(BaseModel):

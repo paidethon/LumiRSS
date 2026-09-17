@@ -2960,6 +2960,8 @@ export interface paths {
          *
          *     只影响时间线可见性：行保留、成员关系与已读/收藏状态不变。
          *     until 必须是未来时刻（防止「延后到过去」造成假消失）。
+         *     入库前归一化为 UTC「Z」串（Gate A P2：与 utc_now() 的比较是字典序，
+         *     非 UTC 偏移格式会造成提前/滞后回归）。
          */
         post: operations["snooze_read_later_item_api_v1_workspaces_read_later_items__item_ref__snooze_post"];
         /**
@@ -4413,7 +4415,10 @@ export interface components {
         };
         /**
          * GptDigestConfig
-         * @description F01：一份主题日报配置（token 不在此响应中）。
+         * @description F01/F02：一份主题日报配置（token 不在此响应中）。
+         *
+         *     ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
+         *     （用 hour），期号退化为日期。
          */
         GptDigestConfig: {
             /**
@@ -4448,6 +4453,11 @@ export interface components {
              * @default 2
              */
             perSourceCap: number;
+            /**
+             * Slots
+             * @default []
+             */
+            slots: number[];
             /**
              * Timezone
              * @default
@@ -4484,6 +4494,8 @@ export interface components {
             name?: string | null;
             /** Persourcecap */
             perSourceCap?: number | null;
+            /** Slots */
+            slots?: number[] | null;
             /** Timezone */
             timezone?: string | null;
             /** Windowhours */
@@ -4504,6 +4516,8 @@ export interface components {
             name: string;
             /** Persourcecap */
             perSourceCap?: number | null;
+            /** Slots */
+            slots?: number[] | null;
             /** Timezone */
             timezone?: string | null;
             /** Windowhours */

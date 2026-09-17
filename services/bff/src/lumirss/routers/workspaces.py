@@ -7,6 +7,7 @@ goes through the Source Registry (:mod:`lumirss.sources`). The reserved
 
 import asyncio
 import logging
+from datetime import UTC
 
 from fastapi import APIRouter, Request, Response
 
@@ -265,21 +266,26 @@ async def snooze_read_later_item(
     """F19：延后一个稍后读项目到指定时刻（ISO；到期自动回到时间线）。
 
     只影响时间线可见性：行保留、成员关系与已读/收藏状态不变。
-    until 必须是未来时刻（防止「延后到过去」造成假消失）。"""
+    until 必须是未来时刻（防止「延后到过去」造成假消失）。
+    入库前归一化为 UTC「Z」串（Gate A P2：与 utc_now() 的比较是字典序，
+    非 UTC 偏移格式会造成提前/滞后回归）。"""
     from datetime import datetime
 
     try:
         until_dt = datetime.fromisoformat(payload.until.replace("Z", "+00:00"))
     except ValueError as exc:
         raise WorkspaceInvalid("until must be an ISO timestamp.") from exc
-    now = datetime.now(until_dt.tzinfo) if until_dt.tzinfo else datetime.now()
+    if until_dt.tzinfo is None:
+        until_dt = until_dt.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
     if until_dt <= now:
         raise WorkspaceInvalid("until must be in the future.")
+    until_canonical = until_dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     store: WorkspaceStore = _get_workspace_store(request)
-    ok = await store.snooze_item(RESERVED_WORKSPACE_ID, item_ref, payload.until)
+    ok = await store.snooze_item(RESERVED_WORKSPACE_ID, item_ref, until_canonical)
     if not ok:
         raise WorkspaceNotFound(f"read-later item {item_ref}")
-    return ReadLaterSnoozeResult(itemRef=item_ref, snoozedUntil=payload.until)
+    return ReadLaterSnoozeResult(itemRef=item_ref, snoozedUntil=until_canonical)
 
 
 @router.delete(
