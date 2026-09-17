@@ -6736,6 +6736,72 @@
     "title": "SecretValuePut",
     "type": "object"
    },
+   "SettingsHistoryEntry": {
+    "description": "F33：一次设置变更（diff 只含实际变化的键）。",
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "changedAt": {
+      "title": "Changedat",
+      "type": "string"
+     },
+     "diff": {
+      "additionalProperties": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "default": {},
+      "title": "Diff",
+      "type": "object"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "changedAt",
+     "action"
+    ],
+    "title": "SettingsHistoryEntry",
+    "type": "object"
+   },
+   "SettingsHistoryList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SettingsHistoryEntry"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SettingsHistoryList",
+    "type": "object"
+   },
+   "SettingsRevertResult": {
+    "description": "回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。",
+    "properties": {
+     "applied": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Applied",
+      "type": "object"
+     },
+     "skipped": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Skipped",
+      "type": "object"
+     }
+    },
+    "title": "SettingsRevertResult",
+    "type": "object"
+   },
    "SnapshotCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/library/snapshots.",
@@ -13308,6 +13374,87 @@
      }
     },
     "summary": "Put Ai Purposes"
+   }
+  },
+  "/api/v1/settings/history": {
+   "get": {
+    "description": "F33：最近的设置变更（新→旧；只含 portable 设置，无密钥）。",
+    "operationId": "get_settings_history_api_v1_settings_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 10,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsHistoryList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Settings History"
+   }
+  },
+  "/api/v1/settings/history/{history_id}/revert": {
+   "post": {
+    "description": "F33：回退一次历史变更。\n\n冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于\n该条记录的 after 值（之后又被改过），则跳过该键并如实返回；\n其余键应用 before 值。回退本身作为一次 update 记入历史（可再\n次撤销）；至少一个键被应用时才有实际写入。",
+    "operationId": "revert_settings_history_api_v1_settings_history__history_id__revert_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "history_id",
+      "required": true,
+      "schema": {
+       "title": "History Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsRevertResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revert Settings History"
    }
   },
   "/api/v1/settings/translation/libretranslate-key": {

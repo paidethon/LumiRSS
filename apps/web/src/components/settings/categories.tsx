@@ -82,6 +82,7 @@ import { CapabilitiesSection } from './CapabilitiesSection'
 import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 // F36：存储用量统计卡
 import { StorageUsageSection } from './StorageUsageSection'
+import { SettingsHistorySection } from './SettingsHistorySection'
 
 // ---- 分类定义 ----
 
@@ -408,6 +409,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           action: () => reset(),
         },
         { type: 'title', value: '配置迁移与备份' },
+        // F33：设置变更历史与回退（不覆盖新修改）
+        { type: 'custom', node: <SettingsHistorySection /> },
         // F32：非敏感偏好迁移（与完整备份用途分开）
         { type: 'custom', node: <PreferencesMigrationSection /> },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）

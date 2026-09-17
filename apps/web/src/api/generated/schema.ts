@@ -2588,6 +2588,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings History
+         * @description F33：最近的设置变更（新→旧；只含 portable 设置，无密钥）。
+         */
+        get: operations["get_settings_history_api_v1_settings_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/history/{history_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Settings History
+         * @description F33：回退一次历史变更。
+         *
+         *     冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于
+         *     该条记录的 after 值（之后又被改过），则跳过该键并如实返回；
+         *     其余键应用 before 值。回退本身作为一次 update 记入历史（可再
+         *     次撤销）；至少一个键被应用时才有实际写入。
+         */
+        post: operations["revert_settings_history_api_v1_settings_history__history_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/translation/libretranslate-key": {
         parameters: {
             query?: never;
@@ -6204,6 +6249,55 @@ export interface components {
         SecretValuePut: {
             /** Value */
             value: string;
+        };
+        /**
+         * SettingsHistoryEntry
+         * @description F33：一次设置变更（diff 只含实际变化的键）。
+         */
+        SettingsHistoryEntry: {
+            /** Action */
+            action: string;
+            /** Changedat */
+            changedAt: string;
+            /**
+             * Diff
+             * @default {}
+             */
+            diff: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Id */
+            id: number;
+        };
+        /** SettingsHistoryList */
+        SettingsHistoryList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SettingsHistoryEntry"][];
+        };
+        /**
+         * SettingsRevertResult
+         * @description 回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。
+         */
+        SettingsRevertResult: {
+            /**
+             * Applied
+             * @default {}
+             */
+            applied: {
+                [key: string]: unknown;
+            };
+            /**
+             * Skipped
+             * @default {}
+             */
+            skipped: {
+                [key: string]: unknown;
+            };
         };
         /**
          * SnapshotCreate
@@ -11055,6 +11149,68 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_history_api_v1_settings_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsHistoryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_settings_history_api_v1_settings_history__history_id__revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsRevertResult"];
                 };
             };
             /** @description Validation Error */

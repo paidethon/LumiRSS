@@ -1227,6 +1227,9 @@ export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
 export type SourceOverrideResult = G6Schemas['SourceOverrideResult']
 export type TitleTranslationView = G6Schemas['TitleTranslationView']
+export type SettingsHistoryList = G6Schemas['SettingsHistoryList']
+export type SettingsHistoryEntry = G6Schemas['SettingsHistoryEntry']
+export type SettingsRevertResult = G6Schemas['SettingsRevertResult']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1485,6 +1488,23 @@ export async function listNotesByEntry(
     `${API_BASE}/library/notes-by-entry/${encodeURIComponent(entryRef)}`,
     signal,
   )
+}
+
+/** F33：设置变更历史（新→旧）。 */
+export async function getSettingsHistory(
+  signal?: AbortSignal,
+  limit = 10,
+): Promise<SettingsHistoryList> {
+  return request<SettingsHistoryList>(`${API_BASE}/settings/history?limit=${limit}`, signal)
+}
+
+/** F33：回退一次历史变更（跳过之后被改过的键）。 */
+export async function revertSettingsHistory(historyId: number): Promise<SettingsRevertResult> {
+  const response = await rawRequest(
+    `${API_BASE}/settings/history/${historyId}/revert`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as SettingsRevertResult
 }
 
 /** F05：生成某期的初学者解释版（独立条目 key = {key}-x）。 */

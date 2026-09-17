@@ -13,6 +13,9 @@ from lumirss.app_settings import (
 from lumirss.deps import _get_app_settings_store
 from lumirss.models import (
     AppSettingsView,
+    SettingsHistoryEntry,
+    SettingsHistoryList,
+    SettingsRevertResult,
 )
 
 router = APIRouter()
@@ -110,10 +113,16 @@ async def patch_app_settings(request: Request) -> dict[str, object]:
             raise AppSettingsConflict(
                 "Settings were changed by another device; reload and retry."
             )
+    before_doc, _ = await store.load()
     try:
         merged = await store.save(update)
     except ValueError as exc:
         raise InvalidAppSettings(str(exc)) from exc
+    # F33：记录实际变化的键（不含任何密钥——portable 设置无密钥字段）
+    from lumirss.settings_history import SettingsHistoryStore, compute_diff
+
+    diff = compute_diff(before_doc.model_dump(), merged.model_dump())
+    await SettingsHistoryStore(request.app.state.db).record("update", diff)
     return _app_settings_json(merged, True, await store.document_revision())
 
 
@@ -128,4 +137,56 @@ async def delete_app_settings(request: Request) -> Response:
     await store.reset()
     return Response(status_code=204)
 
+@router.get("/api/v1/settings/history", response_model=SettingsHistoryList)
+async def get_settings_history(request: Request, limit: int = 10) -> SettingsHistoryList:
+    """F33：最近的设置变更（新→旧；只含 portable 设置，无密钥）。"""
+    from lumirss.settings_history import SettingsHistoryStore
 
+    items = await SettingsHistoryStore(request.app.state.db).list_history(limit)
+    return SettingsHistoryList(
+        items=[SettingsHistoryEntry(**item) for item in items]
+    )
+
+
+@router.post("/api/v1/settings/history/{history_id}/revert", response_model=SettingsRevertResult)
+async def revert_settings_history(
+    history_id: int, request: Request
+) -> SettingsRevertResult:
+    """F33：回退一次历史变更。
+
+    冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于
+    该条记录的 after 值（之后又被改过），则跳过该键并如实返回；
+    其余键应用 before 值。回退本身作为一次 update 记入历史（可再
+    次撤销）；至少一个键被应用时才有实际写入。"""
+    from lumirss.app_settings import PortableSettingsPatch
+    from lumirss.settings_history import SettingsHistoryStore, compute_diff
+
+    store = _get_app_settings_store(request)
+    entry = await SettingsHistoryStore(request.app.state.db).get_entry(history_id)
+    if entry is None:
+        from lumirss.app_settings import InvalidAppSettings
+
+        raise InvalidAppSettings("history entry not found")
+    current_doc, _ = await store.load()
+    current = current_doc.model_dump()
+    skipped: dict[str, object] = {}
+    patch_values: dict[str, object] = {}
+    for key, change in entry["diff"].items():
+        if current.get(key) == change["after"]:
+            patch_values[key] = change["before"]
+        else:
+            skipped[key] = current.get(key)
+    if not patch_values:
+        return SettingsRevertResult(applied={}, skipped=skipped)
+    try:
+        patch = PortableSettingsPatch.model_validate(patch_values)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise InvalidAppSettings(
+            f"Invalid {first.get('loc', ())}: {first.get('msg', 'value rejected')}"
+        ) from exc
+    merged = await store.save(patch)
+    after_doc = merged.model_dump()
+    diff = compute_diff(current, after_doc)
+    await SettingsHistoryStore(request.app.state.db).record("revert", diff)
+    return SettingsRevertResult(applied=patch_values, skipped=skipped)

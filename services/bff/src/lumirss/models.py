@@ -1438,6 +1438,26 @@ class SourceOverrideUpdate(BaseModel):
     showFrom: str | None = None
 
 
+class SettingsHistoryEntry(BaseModel):
+    """F33：一次设置变更（diff 只含实际变化的键）。"""
+
+    id: int
+    changedAt: str
+    action: str
+    diff: dict[str, dict[str, object]] = {}
+
+
+class SettingsHistoryList(BaseModel):
+    items: list[SettingsHistoryEntry] = []
+
+
+class SettingsRevertResult(BaseModel):
+    """回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。"""
+
+    applied: dict[str, object] = {}
+    skipped: dict[str, object] = {}
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
