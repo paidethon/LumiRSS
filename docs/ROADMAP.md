@@ -11,6 +11,13 @@
   统一来源注册表（0021）、API 来源（JMESPath→Atom→FreshRSS）、邮件桥 +
   摘要、Obsidian 只读投影、统一搜索双腿 + 联邦收藏、标签/图谱、低内存
   RAG、Agent 工作台（服务端强制审批）。
+- **2026-09-18 夜间批次已合入 main**：RSS 自动采集修复（FreshRSS
+  `CRON_MIN` 为唯一调度拥有者，dev/prod compose 均已接线）；Agent 工作台
+  桌面全宽布局契约（FULL_WIDTH_SECTIONS）；GPT 日报（多主题配置 + 选材
+  预览 + 单源配额 + 来源白名单 + token 订阅 Atom，0026/0027 迁移）；
+  收件量概览 / 稍后读延后（0029）/ 完整度提示 / 打印视图 / 溯源卡片 /
+  能力可用性页 / 存储用量 / 偏好迁移 / 备份清单计数 / 邮件桥取消订阅
+  匹配修复。
 - **Phase 2 recovery（2026-09-13/14）已完成并部署生产**：13 个 P0 返工
   全部 `production_verified`，Gate 8 smoke 15/15。完整账本（已冻结）：
   [audits/phase2-recovery.md](audits/phase2-recovery.md)。

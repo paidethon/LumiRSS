@@ -25,6 +25,7 @@ React Web / PWA 客户端。
 | 查配置键含义 | [reference/configuration.md](reference/configuration.md) |
 | 跑测试 / CI 门禁 | [reference/testing.md](reference/testing.md) |
 | 理解系统架构（数据流 / 边界 / 不变量） | [explanation/architecture.md](explanation/architecture.md) |
+| 快速读懂项目（边界图 / 两条时序 / 追踪方法） | [explanation/project-map.md](explanation/project-map.md) |
 | 搞懂全局搜索原理 | [explanation/search.md](explanation/search.md) |
 | 复用 vs 自研边界 / 生成物规则 | [explanation/reuse-policy.md](explanation/reuse-policy.md) |
 | 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) |

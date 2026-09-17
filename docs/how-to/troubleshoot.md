@@ -8,6 +8,7 @@
 
 | 症状 | 处置 |
 |---|---|
+| **RSS 永不自动更新**（只有手动刷新才出现新文章） | 逐层查：① 上游 feed 是否真有新条目（用阅读器直开 feed URL）；② FreshRSS 容器是否设置了 `CRON_MIN`——缺省时容器内置 cron 不启动，订阅永不自动刷新（2026-09-18 前的 compose 正是此问题）。修复：compose 的 freshrss 加 `CRON_MIN: "13,43"` 并 `docker compose up -d freshrss`；验证 `docker exec <freshrss容器> cat /var/spool/cron/crontabs/*` 有 actualize 行，且 freshrss 日志在对应分钟出现抓取记录；③ 投影滞后：`GET /api/v1/sources/volume` 看 lastSyncedAt 是否推进 |
 | 界面新功能调用接口返回 404（如备份/RSSHub 配置） | 线上 BFF 是旧镜像：`./lumirss update --build`（或手工 `docker compose -f docker-compose.prod.yml up -d --build`，必须带 `--build`）。核对「关于」页前端构建与服务端 (BFF) commit 是否一致（`GET /api/v1/version`） |
 | 容器反复重启、auth 不生效 | `.env.prod` auth 只设了一个变量（entrypoint FATAL）或 bcrypt `$` 未转义 `$$`（规则见 [../reference/configuration.md](../reference/configuration.md)） |
 | FreshRSS unhealthy → BFF 不启动 | healthcheck = 官方 `php cli/health.php`；确认 FreshRSS 初始化完成（首次安装需先完成安装向导） |
