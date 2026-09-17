@@ -90,6 +90,13 @@ async def entries(
         source_type=sourceType,
         continuation=continuation,
     )
+    # F11/F13：来源级显示覆盖只作用于通用时间线（all/unread、无来源/
+    # 分类 scope）——用户显式打开某来源或分类时按明确意图显示全部。
+    items = page.items
+    if feedUrl is None and categoryId is None and effective_view in ("all", "unread"):
+        from lumirss.source_overrides import filter_timeline_items
+
+        items = await filter_timeline_items(request.app.state.db, list(page.items))
     next_cursor = (
         encode_cursor(
             page.upstreamContinuation,
@@ -101,7 +108,7 @@ async def entries(
         if page.upstreamContinuation is not None
         else None
     )
-    return EntryListResponse(items=page.items, nextCursor=next_cursor)
+    return EntryListResponse(items=items, nextCursor=next_cursor)
 
 
 @router.get(

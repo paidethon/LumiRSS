@@ -6872,6 +6872,97 @@
     "title": "SourceDiscoveryResponse",
     "type": "object"
    },
+   "SourceOverrideList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SourceOverrideResult"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SourceOverrideList",
+    "type": "object"
+   },
+   "SourceOverrideResult": {
+    "description": "F11/F13：单个来源的显示覆盖（null = 该维度未启用）。",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "hiddenUntil": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hiddenuntil"
+     },
+     "showFrom": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Showfrom"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "SourceOverrideResult",
+    "type": "object"
+   },
+   "SourceOverrideUpdate": {
+    "description": "PUT /api/v1/sources/overrides — sentinel：缺席=不改，null=清除。",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "hiddenUntil": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hiddenuntil"
+     },
+     "showFrom": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Showfrom"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "SourceOverrideUpdate",
+    "type": "object"
+   },
    "SourceRegistryEntry": {
     "description": "One row of the unified read-only source registry (统一 API ≠ 统一\n数据库): synthesized from the owning stores at request time, never a\nsecond source of truth.",
     "properties": {
@@ -13233,6 +13324,62 @@
      }
     },
     "summary": "List Sources"
+   }
+  },
+  "/api/v1/sources/overrides": {
+   "get": {
+    "description": "F11/F13：当前全部来源级显示覆盖（隐藏期 + 阅读起点）。",
+    "operationId": "list_source_overrides_api_v1_sources_overrides_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceOverrideList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Source Overrides"
+   },
+   "put": {
+    "description": "设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom）。\n\nsentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =\n设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）。",
+    "operationId": "set_source_override_api_v1_sources_overrides_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceOverrideUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceOverrideResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Source Override"
    }
   },
   "/api/v1/sources/volume": {

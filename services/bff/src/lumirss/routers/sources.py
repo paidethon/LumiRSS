@@ -20,6 +20,9 @@ from fastapi import APIRouter, Request
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
+    SourceOverrideList,
+    SourceOverrideResult,
+    SourceOverrideUpdate,
     SourceRegistryEntry,
     SourceRegistryResponse,
     SubscriptionVolumeItem,
@@ -122,6 +125,48 @@ async def list_sources(request: Request) -> SourceRegistryResponse:
         )
 
     return SourceRegistryResponse(sources=entries, generatedAt=utc_now())
+
+
+@router.get("/api/v1/sources/overrides", response_model=SourceOverrideList)
+async def list_source_overrides(request: Request) -> SourceOverrideList:
+    """F11/F13：当前全部来源级显示覆盖（隐藏期 + 阅读起点）。"""
+    from lumirss.source_overrides import SourceOverrideStore
+
+    items = await SourceOverrideStore(request.app.state.db).list_overrides()
+    return SourceOverrideList(
+        items=[SourceOverrideResult(**item) for item in items]
+    )
+
+
+@router.put("/api/v1/sources/overrides", response_model=SourceOverrideResult)
+async def set_source_override(payload: SourceOverrideUpdate, request: Request) -> SourceOverrideResult:
+    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom）。
+
+    sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
+    设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）。"""
+    from lumirss.source_overrides import (
+        SourceOverrideStore,
+        canonical_utc,
+    )
+
+    fields = payload.model_fields_set
+    kwargs: dict[str, object] = {}
+    if "hiddenUntil" in fields:
+        if payload.hiddenUntil is not None and canonical_utc(payload.hiddenUntil) is None:
+            from lumirss.library import BookmarkInvalid
+
+            raise BookmarkInvalid("hiddenUntil must be an RFC3339 timestamp.")
+        kwargs["hidden_until"] = payload.hiddenUntil
+    if "showFrom" in fields:
+        if payload.showFrom is not None and canonical_utc(payload.showFrom) is None:
+            from lumirss.library import BookmarkInvalid
+
+            raise BookmarkInvalid("showFrom must be an RFC3339 timestamp.")
+        kwargs["show_from"] = payload.showFrom
+    result = await SourceOverrideStore(request.app.state.db).set_fields(
+        payload.feedUrl, **kwargs
+    )
+    return SourceOverrideResult(**result)
 
 
 @router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)

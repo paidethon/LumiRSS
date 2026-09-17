@@ -1225,6 +1225,7 @@ export type GptDigestIssueRevise = G6Schemas['GptDigestIssueRevise']
 export type StorageUsage = G6Schemas['StorageUsage']
 export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
+export type SourceOverrideResult = G6Schemas['SourceOverrideResult']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1495,6 +1496,20 @@ export async function explainGptDigestIssue(
     { method: 'POST' },
   )
   return (await response.json()) as { issue: GptDigestIssue }
+}
+
+/** F11/F13：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+export async function setSourceOverride(patch: {
+  feedUrl: string
+  hiddenUntil?: string | null
+  showFrom?: string | null
+}): Promise<SourceOverrideResult> {
+  const response = await rawRequest(`${API_BASE}/sources/overrides`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceOverrideResult
 }
 
 /** F36：存储用量（只读统计；无预算时 warning 为 null）。 */

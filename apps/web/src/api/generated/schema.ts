@@ -2651,6 +2651,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Overrides
+         * @description F11/F13：当前全部来源级显示覆盖（隐藏期 + 阅读起点）。
+         */
+        get: operations["list_source_overrides_api_v1_sources_overrides_get"];
+        /**
+         * Set Source Override
+         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom）。
+         *
+         *     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
+         *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）。
+         */
+        put: operations["set_source_override_api_v1_sources_overrides_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/volume": {
         parameters: {
             query?: never;
@@ -6222,6 +6249,43 @@ export interface components {
         SourceDiscoveryResponse: {
             /** Candidates */
             candidates: components["schemas"]["DiscoveryCandidate"][];
+        };
+        /** SourceOverrideList */
+        SourceOverrideList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceOverrideResult"][];
+        };
+        /**
+         * SourceOverrideResult
+         * @description F11/F13：单个来源的显示覆盖（null = 该维度未启用）。
+         */
+        SourceOverrideResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Hiddenuntil */
+            hiddenUntil?: string | null;
+            /** Showfrom */
+            showFrom?: string | null;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /**
+         * SourceOverrideUpdate
+         * @description PUT /api/v1/sources/overrides — sentinel：缺席=不改，null=清除。
+         */
+        SourceOverrideUpdate: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Hiddenuntil */
+            hiddenUntil?: string | null;
+            /** Showfrom */
+            showFrom?: string | null;
         };
         /**
          * SourceRegistryEntry
@@ -11031,6 +11095,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceRegistryResponse"];
+                };
+            };
+        };
+    };
+    list_source_overrides_api_v1_sources_overrides_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOverrideList"];
+                };
+            };
+        };
+    };
+    set_source_override_api_v1_sources_overrides_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceOverrideUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOverrideResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

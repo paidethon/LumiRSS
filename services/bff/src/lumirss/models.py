@@ -1407,6 +1407,27 @@ class StorageUsage(BaseModel):
     generatedAt: str
 
 
+class SourceOverrideResult(BaseModel):
+    """F11/F13：单个来源的显示覆盖（null = 该维度未启用）。"""
+
+    feedUrl: str
+    hiddenUntil: str | None = None
+    showFrom: str | None = None
+    updatedAt: str = ""
+
+
+class SourceOverrideList(BaseModel):
+    items: list[SourceOverrideResult] = []
+
+
+class SourceOverrideUpdate(BaseModel):
+    """PUT /api/v1/sources/overrides — sentinel：缺席=不改，null=清除。"""
+
+    feedUrl: str
+    hiddenUntil: str | None = None
+    showFrom: str | None = None
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 

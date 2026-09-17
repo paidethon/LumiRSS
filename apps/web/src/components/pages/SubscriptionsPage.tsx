@@ -20,7 +20,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
-import { useCategories, useSubscriptions } from '../../api/queries'
+import {
+  useCategories,
+  useSetSourceOverrideMutation,
+  useSubscriptions,
+} from '../../api/queries'
 import { VolumeOverview } from '../VolumeOverview'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
@@ -146,6 +150,8 @@ export default function SubscriptionsPage() {
       }
     }
   }, [subscriptions.data, categories.data, scope, selectScope])
+
+  const overrideMutation = useSetSourceOverrideMutation()
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -403,11 +409,35 @@ export default function SubscriptionsPage() {
                             )}
                             items={[
                               { key: 'move', content: '移动到分类' },
+                              { key: 'hide7', content: '隐藏 7 天（F11）' },
+                              { key: 'hide30', content: '隐藏 30 天' },
+                              { key: 'unhide', content: '取消隐藏' },
+                              { key: 'readFromNow', content: '阅读起点=现在（F13）' },
+                              { key: 'clearStart', content: '清除阅读起点' },
                               { key: 'unsubscribe', content: '取消订阅' },
                             ]}
                             onSelect={(key) => {
                               if (key === 'move') setMoveTarget(subscription)
                               else if (key === 'unsubscribe') setUnsubscribeTarget(subscription)
+                              else if (key === 'hide7')
+                                overrideMutation.mutate({
+                                  feedUrl: subscription.feedUrl,
+                                  hiddenUntil: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+                                })
+                              else if (key === 'hide30')
+                                overrideMutation.mutate({
+                                  feedUrl: subscription.feedUrl,
+                                  hiddenUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+                                })
+                              else if (key === 'unhide')
+                                overrideMutation.mutate({ feedUrl: subscription.feedUrl, hiddenUntil: null })
+                              else if (key === 'readFromNow')
+                                overrideMutation.mutate({
+                                  feedUrl: subscription.feedUrl,
+                                  showFrom: new Date().toISOString(),
+                                })
+                              else if (key === 'clearStart')
+                                overrideMutation.mutate({ feedUrl: subscription.feedUrl, showFrom: null })
                             }}
                           />
                         </li>

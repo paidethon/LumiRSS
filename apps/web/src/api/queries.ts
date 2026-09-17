@@ -1428,6 +1428,7 @@ import {
   previewGptDigest,
   reviseGptDigestIssue,
   rotateGptDigestFeed,
+  setSourceOverride,
   updateGptDigestConfig,
   createGptDigestConfig,
   deleteGptDigestConfig,
@@ -1678,6 +1679,21 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F11/F13：设置来源显示覆盖（隐藏期/阅读起点）。 */
+export function useSetSourceOverrideMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: {
+      feedUrl: string
+      hiddenUntil?: string | null
+      showFrom?: string | null
+    }) => setSourceOverride(patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['entries'] })
+    },
   })
 }
 
