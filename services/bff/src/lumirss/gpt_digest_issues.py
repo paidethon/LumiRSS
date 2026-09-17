@@ -52,6 +52,37 @@ class GptDigestIssuesStore:
         )
         return dict(row) if row else {}
 
+    async def revise_issue(
+        self,
+        *,
+        config_id: int,
+        issue_key: str,
+        title: str,
+        body_html: str,
+        sections: dict[str, Any],
+        note: str,
+        updated_at: str,
+    ) -> dict[str, Any] | None:
+        """F08 人工修订：改标题/删条目/调排序后重渲染发布。
+
+        只接受人工编辑域的字段（title/sections + 由其重渲染的 body_html
+        + note）；refs_json、model、published_at 保持生成时的值——修订不
+        改变来源引用的真实性，订阅端 entry id 不变、仅 updated 前移。
+        Returns None 当期号不存在。"""
+        await self._db.migrate()
+        exists = await self._db.fetch_one(
+            "SELECT 1 AS x FROM gpt_digest_issues WHERE config_id = ? AND issue_key = ?",
+            (config_id, issue_key),
+        )
+        if exists is None:
+            return None
+        sections_json = json.dumps(sections, ensure_ascii=False)
+        await self._db.execute(
+            "UPDATE gpt_digest_issues SET title = ?, body_html = ?, sections_json = ?, note = ?, updated_at = ? WHERE config_id = ? AND issue_key = ?",
+            (title, body_html, sections_json, note[:500], updated_at, config_id, issue_key),
+        )
+        return await self.get_issue(config_id, issue_key)
+
     async def recent_issues(self, config_id: int, limit: int) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(

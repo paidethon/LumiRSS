@@ -16,6 +16,8 @@
 """
 
 import hashlib
+import json
+from datetime import UTC
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
@@ -38,6 +40,7 @@ from lumirss.models import (
     GptDigestCreate,
     GptDigestFeedInfo,
     GptDigestIssueList,
+    GptDigestIssueRevise,
     GptDigestPreview,
     GptDigestSettings,
     GptDigestSettingsUpdate,
@@ -237,6 +240,66 @@ async def generate_gpt_digest(request: Request) -> Response:
     return await _generate_for_config(request, config)
 
 
+@router.put(
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}",
+    response_model=GptDigestIssueList,
+)
+async def revise_gpt_digest_issue(
+    config_id: int,
+    issue_key: str,
+    payload: GptDigestIssueRevise,
+    request: Request,
+) -> Response:
+    """F08：人工编辑标题/条目/排序后重新发布同一期。
+
+    修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空
+    新增）；entry id 不变、updated 前移，订阅端不产生新刊次。"""
+    issues = _issues(request)
+    row = await issues.get_issue(config_id, issue_key)
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "期号不存在。"}},
+        )
+    try:
+        refs = json.loads(str(row["refs_json"] or "{}"))
+    except ValueError:
+        refs = {}
+    from lumirss.gpt_digest import (
+        DigestOutputInvalid,
+        parse_and_validate_output,
+        render_issue_html,
+    )
+
+    output = {"title": payload.title, "sections": payload.sections, "limitations": []}
+    try:
+        validated = parse_and_validate_output(
+            json.dumps(output, ensure_ascii=False), list(refs.keys())
+        )
+    except DigestOutputInvalid as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_issue", "message": str(exc)}},
+        )
+    body_html = render_issue_html(validated, refs)
+    updated = await issues.revise_issue(
+        config_id=config_id,
+        issue_key=issue_key,
+        title=validated["title"],
+        body_html=body_html,
+        sections=validated["sections"],
+        note="人工修订",
+        updated_at=_utc_now_seconds(),
+    )
+    if updated is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "期号不存在。"}},
+        )
+    dto = issues.issue_to_dto(updated)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
 @router.get("/api/v1/gpt-digest/issues", response_model=GptDigestIssueList)
 async def list_gpt_digest_issues(
     request: Request, limit: int = 14
@@ -376,3 +439,8 @@ async def serve_gpt_digest_atom(spec: str, request: Request) -> Response:
 
 
 __all__ = ["router"]
+
+def _utc_now_seconds() -> str:
+    from datetime import datetime
+
+    return datetime.now(UTC).isoformat(timespec="seconds")

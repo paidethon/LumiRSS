@@ -1221,6 +1221,7 @@ export type GptDigestConfig = G6Schemas['GptDigestConfig']
 export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
 export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
 export type GptDigestCreate = G6Schemas['GptDigestCreate']
+export type GptDigestIssueRevise = G6Schemas['GptDigestIssueRevise']
 export type StorageUsage = G6Schemas['StorageUsage']
 export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
@@ -1458,6 +1459,19 @@ export async function listConfigIssues(
     `${API_BASE}/gpt-digest/configs/${configId}/issues?limit=${limit}`,
     signal,
   )
+}
+
+/** F08：人工修订某期（title/sections；sourceIds 只能引用既有引用集）。 */
+export async function reviseGptDigestIssue(
+  configId: number,
+  issueKey: string,
+  payload: GptDigestIssueRevise,
+): Promise<{ issue: GptDigestIssue }> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}`,
+    { method: 'PUT', body: JSON.stringify(payload), contentType: 'application/json' },
+  )
+  return (await response.json()) as { issue: GptDigestIssue }
 }
 
 /** F29 反向入口：引用某一 RSS 条目的书签/笔记（新→旧；无效引用为空列表）。 */

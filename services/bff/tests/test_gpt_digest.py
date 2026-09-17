@@ -575,6 +575,50 @@ def test_f02_slot_scheduler_skips_existing_issue(client):
     assert run(scheduler.maybe_generate_config(generate_fn, config, issues)) is None
 
 
+def test_f08_revise_issue_endpoint(client):
+    """F08：人工修订同一期（entry id/首发时刻不变）；幽灵引用 422；
+    不存在的期号 404。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="原标题",
+            body_html="<p>原</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"s","sourceIds":["s1"]}]}]',
+            refs_json='{"s1": {"title": "T", "url": "https://a.example.com/x", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    ok = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={
+            "title": "人工修订版",
+            "sections": [
+                {"heading": "主题", "items": [{"summary": "改后的总结。", "sourceIds": ["s1"], "uncertainty": None}]}
+            ],
+        },
+    )
+    assert ok.status_code == 200, ok.text
+    body = ok.json()["issue"]
+    assert body["title"] == "人工修订版"
+    assert body["sections"][0]["items"][0]["summary"] == "改后的总结。"
+
+    bad = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={
+            "title": "x",
+            "sections": [{"heading": "h", "items": [{"summary": "s", "sourceIds": ["ghost"]}]}],
+        },
+    )
+    assert bad.status_code == 422
+    assert client.put(
+        "/api/v1/gpt-digest/configs/1/issues/1999-01-01",
+        json={"title": "x", "sections": []},
+    ).status_code == 404
+
+
 def test_issue_key_uses_configured_timezone():
     now = datetime(2026, 9, 18, 16, 0, 0, tzinfo=UTC)  # 北京时间 9-19 00:00
     assert issue_key_for(now, "UTC") == "2026-09-18"

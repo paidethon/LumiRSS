@@ -992,6 +992,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Revise Gpt Digest Issue
+         * @description F08：人工编辑标题/条目/排序后重新发布同一期。
+         *
+         *     修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空
+         *     新增）；entry id 不变、updated 前移，订阅端不产生新刊次。
+         */
+        put: operations["revise_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/preview": {
         parameters: {
             query?: never;
@@ -4567,17 +4590,13 @@ export interface components {
              * @default {}
              */
             refs: {
-                [key: string]: {
-                    [key: string]: string;
-                };
+                [key: string]: components["schemas"]["GptDigestRef"];
             };
             /**
              * Sections
              * @default []
              */
-            sections: {
-                [key: string]: unknown;
-            }[];
+            sections: components["schemas"]["GptDigestSection"][];
             /** Status */
             status: string;
             /** Title */
@@ -4595,6 +4614,32 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["GptDigestIssue"][];
+        };
+        /**
+         * GptDigestIssueRevise
+         * @description PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+         *
+         *     sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。
+         */
+        GptDigestIssueRevise: {
+            /** Sections */
+            sections: {
+                [key: string]: unknown;
+            }[];
+            /** Title */
+            title: string;
+        };
+        /** GptDigestItem */
+        GptDigestItem: {
+            /**
+             * Sourceids
+             * @default []
+             */
+            sourceIds: string[];
+            /** Summary */
+            summary: string;
+            /** Uncertainty */
+            uncertainty?: string | null;
         };
         /**
          * GptDigestPreview
@@ -4658,6 +4703,36 @@ export interface components {
             title: string;
             /** Url */
             url: string;
+        };
+        /** GptDigestRef */
+        GptDigestRef: {
+            /**
+             * Feedtitle
+             * @default
+             */
+            feedTitle: string;
+            /**
+             * Publishedat
+             * @default
+             */
+            publishedAt: string;
+            /** Title */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /** GptDigestSection */
+        GptDigestSection: {
+            /** Heading */
+            heading: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["GptDigestItem"][];
         };
         /**
          * GptDigestSettings
@@ -8196,6 +8271,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestIssueList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GptDigestIssueRevise"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

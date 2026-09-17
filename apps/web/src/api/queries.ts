@@ -125,6 +125,7 @@ import type {
   FavoritesResponse,
   GptDigestConfigUpdate,
   GptDigestCreate,
+  GptDigestIssueRevise,
   GptDigestSettingsUpdate,
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
@@ -1424,6 +1425,7 @@ import {
   listNotesByEntry,
   previewConfigDigest,
   previewGptDigest,
+  reviseGptDigestIssue,
   rotateGptDigestFeed,
   updateGptDigestConfig,
   createGptDigestConfig,
@@ -1698,6 +1700,21 @@ export function useSnoozeReadLaterMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['workspace', 'read-later'] })
       await queryClient.invalidateQueries({ queryKey: READ_LATER_TIMELINE_KEY })
+    },
+  })
+}
+
+/** F08：人工修订某期（重渲染 + updated 前移；entry id 不变）。 */
+export function useReviseGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      configId: number
+      issueKey: string
+      payload: GptDigestIssueRevise
+    }) => reviseGptDigestIssue(vars.configId, vars.issueKey, vars.payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
     },
   })
 }

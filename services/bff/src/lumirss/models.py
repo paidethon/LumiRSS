@@ -1264,14 +1264,32 @@ class GptDigestSettingsUpdate(BaseModel):
     perSourceCap: int | None = None
 
 
+class GptDigestItem(BaseModel):
+    summary: str
+    sourceIds: list[str] = []
+    uncertainty: str | None = None
+
+
+class GptDigestSection(BaseModel):
+    heading: str
+    items: list[GptDigestItem] = []
+
+
+class GptDigestRef(BaseModel):
+    title: str
+    url: str = ""
+    feedTitle: str = ""
+    publishedAt: str = ""
+
+
 class GptDigestIssue(BaseModel):
     """一期日报；列表与详情共用（列表 limit 小、正文不重）。"""
 
     issueKey: str
     status: str
     title: str
-    sections: list[dict[str, object]] = []
-    refs: dict[str, dict[str, str]] = {}
+    sections: list[GptDigestSection] = []
+    refs: dict[str, GptDigestRef] = {}
     model: str = ""
     createdAt: str = ""
     publishedAt: str = ""
@@ -1280,6 +1298,15 @@ class GptDigestIssue(BaseModel):
 
 class GptDigestIssueList(BaseModel):
     items: list[GptDigestIssue] = []
+
+
+class GptDigestIssueRevise(BaseModel):
+    """PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+
+    sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。"""
+
+    title: str
+    sections: list[dict[str, object]]
 
 
 class GptDigestFeedInfo(BaseModel):

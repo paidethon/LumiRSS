@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../api/client'
+import type { GptDigestConfig, GptDigestIssue } from '../../api/client'
 import {
   useConfigFeed,
   useConfigIssues,
@@ -16,10 +17,10 @@ import {
   useDeleteGptDigestConfigMutation,
   useGenerateConfigMutation,
   useGptDigestConfigs,
+  useReviseGptDigestIssueMutation,
   useRotateGptDigestFeedMutation,
   useUpdateGptDigestConfigMutation,
 } from '../../api/queries'
-import type { GptDigestConfig } from '../../api/client'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
@@ -28,6 +29,8 @@ const numberInputCls =
   'w-20 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 min-h-9 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
 const textInputCls =
   'w-full max-w-72 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 min-h-9 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
+const cxText =
+  'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 min-h-9 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -406,16 +409,114 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
       {issues.isPending ? (
         <Skeleton className="h-9 w-full" />
       ) : issues.data && issues.data.items.length > 0 ? (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1.5">
           {issues.data.items.map((issue) => (
-            <li key={issue.issueKey} className="text-sm text-[var(--lumi-text-secondary)]">
-              {issue.issueKey} · {issue.title}
-            </li>
+            <IssueRow
+              key={issue.issueKey}
+              configId={config.id}
+              issue={issue}
+            />
           ))}
         </ul>
       ) : (
         <p className="text-sm text-[var(--lumi-text-tertiary)]">还没有期刊；点上方「立即生成」试一次。</p>
       )}
     </div>
+  )
+}
+
+/** F08：单期行 + 展开式修订编辑（标题与各条目总结；sourceIds 不可
+ * 新增——保证引用真实性不受人工编辑影响）。 */
+function IssueRow({ configId, issue }: { configId: number; issue: GptDigestIssue }) {
+  const revise = useReviseGptDigestIssueMutation()
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(issue.title)
+  const [summaries, setSummaries] = useState<string[]>(
+    issue.sections.map((section) => section.items.map((item) => item.summary).join('\n')),
+  )
+
+  useEffect(() => {
+    setTitle(issue.title)
+    setSummaries(issue.sections.map((section) => section.items.map((item) => item.summary).join('\n')))
+  }, [issue])
+
+  const dirty =
+    title !== issue.title ||
+    summaries.join('\u0000') !==
+      issue.sections.map((s) => s.items.map((i) => i.summary).join('\n')).join('\u0000')
+
+  function save() {
+    const sections = issue.sections.map((section, sIdx) => ({
+      ...section,
+      items: section.items.map((item, iIdx) => ({
+        ...item,
+        summary: (summaries[sIdx]?.split('\n')[iIdx] ?? item.summary).trim() || item.summary,
+      })),
+    }))
+    revise.mutate({ configId, issueKey: issue.issueKey, payload: { title, sections } })
+  }
+
+  return (
+    <li className="flex flex-col gap-1 text-sm text-[var(--lumi-text-secondary)]">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate">
+          {issue.issueKey} · {issue.title}
+        </span>
+        <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>
+          {editing ? '收起' : '修订'}
+        </Button>
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-[var(--lumi-text-tertiary)]">标题</span>
+            <input
+              aria-label={`修订标题 ${issue.issueKey}`}
+              type="text"
+              className={cxText}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+          {issue.sections.map((section, sIdx) =>
+            section.items.map((item, iIdx) => (
+              <label key={`${sIdx}-${iIdx}`} className="flex flex-col gap-1">
+                <span className="text-xs text-[var(--lumi-text-tertiary)]">
+                  [{item.sourceIds.join('、')}] {item.summary.slice(0, 18)}…
+                </span>
+                <textarea
+                  aria-label={`条目总结 ${sIdx}-${iIdx}`}
+                  rows={2}
+                  className={cxText}
+                  value={summaries[sIdx]?.split('\n')[iIdx] ?? item.summary}
+                  onChange={(e) => {
+                    setSummaries((prev) => {
+                      const next = [...prev]
+                      const lines = (next[sIdx] ?? '').split('\n')
+                      lines[iIdx] = e.target.value
+                      next[sIdx] = lines.join('\n')
+                      return next
+                    })
+                  }}
+                />
+              </label>
+            )),
+          )}
+          <div className="flex gap-2">
+            <Button variant="primary" size="sm" disabled={!dirty || revise.isPending} onClick={save}>
+              {revise.isPending ? '保存中…' : '保存修订'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              取消
+            </Button>
+          </div>
+          {revise.isError && revise.error instanceof ApiError ? (
+            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+              修订失败：{revise.error.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
   )
 }
