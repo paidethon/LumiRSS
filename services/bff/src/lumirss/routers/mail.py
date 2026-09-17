@@ -154,15 +154,25 @@ async def _unsubscribe_required(request: Request, list_uuid: str) -> str | None:
     """Bridge-list delete must unsubscribe its generated Atom feed first
     (pool #32 — same blocking contract as api-sources P0-05e): a failed
     unsubscribe returns honest error text that BLOCKS the delete so no
-    dead subscription lingers; FreshRSS-unconfigured → nothing to do."""
+    dead subscription lingers; FreshRSS-unconfigured → nothing to do.
+
+    2026-09-18 fix（任务书 §12.5 线索本地证实）：generated URL 是
+    ``{base}/feeds/mail/{uuid}.{secret}.atom``——旧的
+    ``feed_url.endswith(f"/feeds/mail/{uuid}.")`` 永不匹配（secret 与
+    .atom 后缀），unsubscribe 静默假成功。现按 URL path 段匹配本
+    connector 的身份：path 以 ``/feeds/mail/{uuid}.`` 开头且以 ``.atom``
+    结尾——相近 uuid（abc vs abcd）、不同 host、重复调用均不会误判。"""
     try:
         adapter = _get_control_adapter(request)
     except Exception:  # FreshRSS not configured — no subscription can exist
         return None
+    from urllib.parse import urlsplit
+
+    prefix = f"/feeds/mail/{list_uuid}."
     try:
-        suffix = f"/feeds/mail/{list_uuid}."
         for subscription in await adapter.list_subscriptions():
-            if subscription.feed_url.endswith(suffix):
+            path = urlsplit(subscription.feed_url).path
+            if path.startswith(prefix) and path.endswith(".atom"):
                 await adapter.unsubscribe(subscription.stream_id)
                 return None
         return None  # already absent → idempotent success
