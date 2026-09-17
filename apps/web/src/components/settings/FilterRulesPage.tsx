@@ -219,6 +219,10 @@ export function FilterRulesSection() {
         </div>
       )}
 
+      {/* F31：规则试运行 —— 在限定样本上预览匹配结果与命中的规则，
+          与真实执行共用 matchesFilterRules 引擎；只读，不改任何状态。 */}
+      <FilterDryRun rules={rules} />
+
       {/* 规则列表 */}
       {rules.length === 0 ? (
         <p className="py-6 text-center text-xs text-[var(--lumi-text-tertiary)]">
@@ -255,6 +259,82 @@ export function FilterRulesSection() {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/** F31：规则试运行。样本来自用户粘贴的标题（每行一条），与实际执行
+ * 使用同一 matchesFilterRules 引擎；输出每条样本的命中规则或「不匹配」。
+ * 样本数上限 200，防止把试运行当批量工具。 */
+function FilterDryRun({ rules }: { rules: FilterRule[] }) {
+  const [open, setOpen] = useState(false)
+  const [sample, setSample] = useState('')
+  const [results, setResults] = useState<{ title: string; matched: FilterRule | null }[] | null>(
+    null,
+  )
+
+  const lines = sample
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .slice(0, 200)
+
+  function run() {
+    setResults(lines.map((title) => ({ title, matched: matchesFilterRules(title, rules, null) })))
+  }
+
+  return (
+    <div className="my-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="text-xs font-medium text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+      >
+        规则试运行（粘贴标题样本，预览匹配结果）
+      </button>
+      {open ? (
+        <div className="mt-2 flex flex-col gap-2">
+          <textarea
+            aria-label="试运行样本标题"
+            rows={4}
+            value={sample}
+            onChange={(e) => setSample(e.target.value)}
+            placeholder={'每行一条标题，最多 200 行\n例如：某产品发布 v2.0'}
+            className={cx(
+              'w-full resize-y rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+              'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
+              'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+            )}
+          />
+          <div>
+            <Button variant="secondary" size="sm" onClick={run} disabled={lines.length === 0}>
+              试运行（{lines.length} 条样本）
+            </Button>
+          </div>
+          {results ? (
+            <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto text-xs">
+              {results.map(({ title, matched }) => (
+                <li key={title} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[var(--lumi-text-primary)]">{title}</span>
+                  {matched ? (
+                    <span className="shrink-0 text-[var(--lumi-accent-text)]" data-run="filtered">
+                      命中：{matched.keyword}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[var(--lumi-text-tertiary)]" data-run="kept">
+                      不匹配（保留）
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+            试运行不修改任何已读/收藏/标签状态；样本仅在本页使用，不会上传。
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }
