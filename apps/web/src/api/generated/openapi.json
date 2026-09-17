@@ -2918,6 +2918,216 @@
     "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
+   "GptDigestFeedInfo": {
+    "description": "订阅路径（含 token）。token 即凭据：只在会话认证下返回。",
+    "properties": {
+     "atomPath": {
+      "title": "Atompath",
+      "type": "string"
+     }
+    },
+    "required": [
+     "atomPath"
+    ],
+    "title": "GptDigestFeedInfo",
+    "type": "object"
+   },
+   "GptDigestIssue": {
+    "description": "一期日报；列表与详情共用（列表 limit 小、正文不重）。",
+    "properties": {
+     "createdAt": {
+      "default": "",
+      "title": "Createdat",
+      "type": "string"
+     },
+     "issueKey": {
+      "title": "Issuekey",
+      "type": "string"
+     },
+     "model": {
+      "default": "",
+      "title": "Model",
+      "type": "string"
+     },
+     "publishedAt": {
+      "default": "",
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "refs": {
+      "additionalProperties": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "default": {},
+      "title": "Refs",
+      "type": "object"
+     },
+     "sections": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Sections",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "issueKey",
+     "status",
+     "title"
+    ],
+    "title": "GptDigestIssue",
+    "type": "object"
+   },
+   "GptDigestIssueList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestIssue"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "GptDigestIssueList",
+    "type": "object"
+   },
+   "GptDigestSettings": {
+    "description": "GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。",
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "hour": {
+      "title": "Hour",
+      "type": "integer"
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastIssueKey": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastissuekey"
+     },
+     "limitCount": {
+      "default": 12,
+      "title": "Limitcount",
+      "type": "integer"
+     },
+     "timezone": {
+      "default": "",
+      "title": "Timezone",
+      "type": "string"
+     },
+     "windowHours": {
+      "default": 24,
+      "title": "Windowhours",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "enabled",
+     "hour"
+    ],
+    "title": "GptDigestSettings",
+    "type": "object"
+   },
+   "GptDigestSettingsUpdate": {
+    "description": "PUT /api/v1/gpt-digest/settings — partial；非法值回退现值。",
+    "properties": {
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "hour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hour"
+     },
+     "limitCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limitcount"
+     },
+     "timezone": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timezone"
+     },
+     "windowHours": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Windowhours"
+     }
+    },
+    "title": "GptDigestSettingsUpdate",
+    "type": "object"
+   },
    "GraphEdge": {
     "description": "One derived edge.",
     "properties": {
@@ -8666,6 +8876,154 @@
     "summary": "Freshrss Ui"
    }
   },
+  "/api/v1/gpt-digest/feed": {
+   "get": {
+    "description": "订阅路径（含 token）。token 是密码级秘密：只在会话认证的 UI 里\n返回，绝不进公开文档、日志或共享缓存。",
+    "operationId": "get_gpt_digest_feed_api_v1_gpt_digest_feed_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestFeedInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Gpt Digest Feed"
+   }
+  },
+  "/api/v1/gpt-digest/feed/rotate": {
+   "post": {
+    "operationId": "rotate_gpt_digest_feed_api_v1_gpt_digest_feed_rotate_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestFeedInfo"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rotate Gpt Digest Feed"
+   }
+  },
+  "/api/v1/gpt-digest/generate": {
+   "post": {
+    "description": "显式生成/修订当天期号。启用与否不影响（显式用户动作）。",
+    "operationId": "generate_gpt_digest_api_v1_gpt_digest_generate_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Generate Gpt Digest"
+   }
+  },
+  "/api/v1/gpt-digest/issues": {
+   "get": {
+    "operationId": "list_gpt_digest_issues_api_v1_gpt_digest_issues_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 14,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestIssueList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Gpt Digest Issues"
+   }
+  },
+  "/api/v1/gpt-digest/settings": {
+   "get": {
+    "operationId": "get_gpt_digest_settings_api_v1_gpt_digest_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Gpt Digest Settings"
+   },
+   "put": {
+    "operationId": "update_gpt_digest_settings_api_v1_gpt_digest_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GptDigestSettingsUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Gpt Digest Settings"
+   }
+  },
   "/api/v1/graph": {
    "get": {
     "description": "Pure derived, read-only graph; truncation reported honestly.\n\nThe wire query parameter stays ``max`` (Query alias); the local name\nmust not shadow the builtin ``max`` used for clamping.",
@@ -12737,6 +13095,44 @@
      }
     },
     "summary": "Remove Workspace Item"
+   }
+  },
+  "/feeds/gpt-digest/{token}.atom": {
+   "get": {
+    "description": "只读订阅输出。token 错误 → 404（不区分「无此资源」与「token 错」）。",
+    "operationId": "serve_gpt_digest_atom_feeds_gpt_digest__token__atom_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "token",
+      "required": true,
+      "schema": {
+       "title": "Token",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Serve Gpt Digest Atom"
    }
   },
   "/feeds/mail/{list_uuid}.{secret}.atom": {

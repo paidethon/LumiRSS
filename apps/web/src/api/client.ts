@@ -1205,6 +1205,11 @@ export type MailBridgeListResponse = G6Schemas['MailBridgeListResponse']
 export type MailIngestResult = G6Schemas['MailIngestResult']
 export type DigestSettings = G6Schemas['DigestSettings']
 export type DigestSettingsUpdate = G6Schemas['DigestSettingsUpdate']
+export type GptDigestSettings = G6Schemas['GptDigestSettings']
+export type GptDigestSettingsUpdate = G6Schemas['GptDigestSettingsUpdate']
+export type GptDigestIssue = G6Schemas['GptDigestIssue']
+export type GptDigestIssueList = G6Schemas['GptDigestIssueList']
+export type GptDigestFeedInfo = G6Schemas['GptDigestFeedInfo']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1366,6 +1371,52 @@ export async function sendDigestNow(
     contentType: 'application/json',
   })
   return (await response.json()) as MailIngestResult
+}
+
+// ---- M4：GPT 日报（生成 + Atom 订阅） ----
+
+/** GPT 日报设置（token 不在此响应中，见 getGptDigestFeed）。 */
+export async function getGptDigestSettings(signal?: AbortSignal): Promise<GptDigestSettings> {
+  return request<GptDigestSettings>(`${API_BASE}/gpt-digest/settings`, signal)
+}
+
+/** 部分更新 GPT 日报设置；非法值由服务端回退现值。 */
+export async function updateGptDigestSettings(
+  patch: GptDigestSettingsUpdate,
+): Promise<GptDigestSettings> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as GptDigestSettings
+}
+
+/** 订阅路径（含 token；token 即凭据，只在会话认证下返回）。 */
+export async function getGptDigestFeed(): Promise<GptDigestFeedInfo> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/feed`, { method: 'GET' })
+  return (await response.json()) as GptDigestFeedInfo
+}
+
+/** 轮换订阅 token：旧 URL 立即失效。 */
+export async function rotateGptDigestFeed(): Promise<GptDigestFeedInfo> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/feed/rotate`, { method: 'POST' })
+  return (await response.json()) as GptDigestFeedInfo
+}
+
+/** 显式生成/修订当天期号（用户动作，忽略 enabled）。失败时 error.type:
+ * no_material / generation_failed / ai_not_configured / ai_upstream。 */
+export async function generateGptDigest(): Promise<{ issue: GptDigestIssue; promptVersion: string }> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/generate`, { method: 'POST' })
+  return (await response.json()) as { issue: GptDigestIssue; promptVersion: string }
+}
+
+/** 最近期刊（不含正文 HTML）。 */
+export async function listGptDigestIssues(
+  signal?: AbortSignal,
+  limit = 14,
+): Promise<GptDigestIssueList> {
+  return request<GptDigestIssueList>(`${API_BASE}/gpt-digest/issues?limit=${limit}`, signal)
 }
 
 // ---- phase2 G6：Obsidian 库（只读投影） ----

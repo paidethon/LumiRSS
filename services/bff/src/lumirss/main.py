@@ -38,6 +38,7 @@ from lumirss.routers import (
     entries,
     entry_ai,
     feeds,
+    gpt_digest,
     health,
     inbox,
     library,
@@ -122,6 +123,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.digest_scheduler_task = build_digest_scheduler_task(app.state)
     app.state.mail_imap_task = build_mail_imap_task(app.state)
+    # M4: GPT 日报调度（同一工厂接法；未配置时是睡眠 no-op）。
+    from lumirss.gpt_digest import build_gpt_digest_scheduler_task
+
+    app.state.gpt_digest_scheduler_task = build_gpt_digest_scheduler_task(
+        app.state
+    )
     # P0-07d: the RAG idle-unload loop (no-op until the RAG service is
     # first built) keeps the low-memory budget honest in production.
     from lumirss.rag import build_rag_idle_task
@@ -285,5 +292,6 @@ app.include_router(sources.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
+app.include_router(gpt_digest.router)
 
 register_error_handlers(app)

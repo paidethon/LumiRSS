@@ -61,6 +61,8 @@ import { SourceRegistrySection } from './SourceRegistrySection'
 // phase2 G6：API 来源（JSON API → JMESPath → Atom）+ 邮件简报（收信地址/每日摘要）
 import { ApiSourcesSection } from './ApiSourcesSection'
 import { MailSection } from './MailSection'
+// M4：GPT 日报（生成 + Atom 订阅）
+import { GptDigestSection } from './GptDigestSection'
 // 会话认证（LUMIRSS_AUTH_MODE=session）：改密 + 登出（basic 模式自隐藏）
 import { AccountSecuritySection } from './AccountSecuritySection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
@@ -361,10 +363,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <ApiSourcesSection /> },
       ]
     case 'mail':
-      // phase2 G6：邮件简报（收信地址 + 每日摘要）
+      // phase2 G6：邮件简报（收信地址 + 每日摘要）；M4：GPT 日报
       return [
         { type: 'title', value: '邮件简报' },
         { type: 'custom', node: <MailSection /> },
+        { type: 'title', value: 'GPT 日报' },
+        { type: 'custom', node: <GptDigestSection /> },
       ]
     case 'ai':
       return [

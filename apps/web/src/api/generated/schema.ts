@@ -905,6 +905,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gpt Digest Feed
+         * @description 订阅路径（含 token）。token 是密码级秘密：只在会话认证的 UI 里
+         *     返回，绝不进公开文档、日志或共享缓存。
+         */
+        get: operations["get_gpt_digest_feed_api_v1_gpt_digest_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/feed/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Gpt Digest Feed */
+        post: operations["rotate_gpt_digest_feed_api_v1_gpt_digest_feed_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Gpt Digest
+         * @description 显式生成/修订当天期号。启用与否不影响（显式用户动作）。
+         */
+        post: operations["generate_gpt_digest_api_v1_gpt_digest_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Gpt Digest Issues */
+        get: operations["list_gpt_digest_issues_api_v1_gpt_digest_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Gpt Digest Settings */
+        get: operations["get_gpt_digest_settings_api_v1_gpt_digest_settings_get"];
+        /** Update Gpt Digest Settings */
+        put: operations["update_gpt_digest_settings_api_v1_gpt_digest_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/graph": {
         parameters: {
             query?: never;
@@ -2770,6 +2863,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feeds/gpt-digest/{token}.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Gpt Digest Atom
+         * @description 只读订阅输出。token 错误 → 404（不区分「无此资源」与「token 错」）。
+         */
+        get: operations["serve_gpt_digest_atom_feeds_gpt_digest__token__atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feeds/mail/{list_uuid}.{secret}.atom": {
         parameters: {
             query?: never;
@@ -4056,6 +4169,115 @@ export interface components {
             reasonCode?: string | null;
             /** Sqlitefilecount */
             sqliteFileCount?: number | null;
+        };
+        /**
+         * GptDigestFeedInfo
+         * @description 订阅路径（含 token）。token 即凭据：只在会话认证下返回。
+         */
+        GptDigestFeedInfo: {
+            /** Atompath */
+            atomPath: string;
+        };
+        /**
+         * GptDigestIssue
+         * @description 一期日报；列表与详情共用（列表 limit 小、正文不重）。
+         */
+        GptDigestIssue: {
+            /**
+             * Createdat
+             * @default
+             */
+            createdAt: string;
+            /** Issuekey */
+            issueKey: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Publishedat
+             * @default
+             */
+            publishedAt: string;
+            /**
+             * Refs
+             * @default {}
+             */
+            refs: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+            /**
+             * Sections
+             * @default []
+             */
+            sections: {
+                [key: string]: unknown;
+            }[];
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /** GptDigestIssueList */
+        GptDigestIssueList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["GptDigestIssue"][];
+        };
+        /**
+         * GptDigestSettings
+         * @description GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。
+         */
+        GptDigestSettings: {
+            /** Enabled */
+            enabled: boolean;
+            /** Hour */
+            hour: number;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastissuekey */
+            lastIssueKey?: string | null;
+            /**
+             * Limitcount
+             * @default 12
+             */
+            limitCount: number;
+            /**
+             * Timezone
+             * @default
+             */
+            timezone: string;
+            /**
+             * Windowhours
+             * @default 24
+             */
+            windowHours: number;
+        };
+        /**
+         * GptDigestSettingsUpdate
+         * @description PUT /api/v1/gpt-digest/settings — partial；非法值回退现值。
+         */
+        GptDigestSettingsUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Hour */
+            hour?: number | null;
+            /** Limitcount */
+            limitCount?: number | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Windowhours */
+            windowHours?: number | null;
         };
         /**
          * GraphEdge
@@ -7248,6 +7470,150 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreshRssUiInfo"];
+                };
+            };
+        };
+    };
+    get_gpt_digest_feed_api_v1_gpt_digest_feed_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestFeedInfo"];
+                };
+            };
+        };
+    };
+    rotate_gpt_digest_feed_api_v1_gpt_digest_feed_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestFeedInfo"];
+                };
+            };
+        };
+    };
+    generate_gpt_digest_api_v1_gpt_digest_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_gpt_digest_issues_api_v1_gpt_digest_issues_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestIssueList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gpt_digest_settings_api_v1_gpt_digest_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestSettings"];
+                };
+            };
+        };
+    };
+    update_gpt_digest_settings_api_v1_gpt_digest_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GptDigestSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10539,6 +10905,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_gpt_digest_atom_feeds_gpt_digest__token__atom_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

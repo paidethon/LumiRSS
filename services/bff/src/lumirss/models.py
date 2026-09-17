@@ -1233,6 +1233,52 @@ class DigestPreview(BaseModel):
     note: str | None = None
 
 
+class GptDigestSettings(BaseModel):
+    """GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。"""
+
+    enabled: bool
+    hour: int
+    timezone: str = ""
+    windowHours: int = 24
+    limitCount: int = 12
+    lastIssueKey: str | None = None
+    lastError: str | None = None
+
+
+class GptDigestSettingsUpdate(BaseModel):
+    """PUT /api/v1/gpt-digest/settings — partial；非法值回退现值。"""
+
+    enabled: bool | None = None
+    hour: int | None = None
+    timezone: str | None = None
+    windowHours: int | None = None
+    limitCount: int | None = None
+
+
+class GptDigestIssue(BaseModel):
+    """一期日报；列表与详情共用（列表 limit 小、正文不重）。"""
+
+    issueKey: str
+    status: str
+    title: str
+    sections: list[dict[str, object]] = []
+    refs: dict[str, dict[str, str]] = {}
+    model: str = ""
+    createdAt: str = ""
+    publishedAt: str = ""
+    updatedAt: str = ""
+
+
+class GptDigestIssueList(BaseModel):
+    items: list[GptDigestIssue] = []
+
+
+class GptDigestFeedInfo(BaseModel):
+    """订阅路径（含 token）。token 即凭据：只在会话认证下返回。"""
+
+    atomPath: str
+
+
 class DigestSendNowRequest(BaseModel):
     """POST /api/v1/digest/send-now — explicit item selection."""
 

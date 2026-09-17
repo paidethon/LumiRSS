@@ -123,6 +123,7 @@ import type {
   AiProfileInput,
   ClipInput,
   FavoritesResponse,
+  GptDigestSettingsUpdate,
   RssHubCredentialInput,
   TranslationSegmentBlockInput,
 } from './client'
@@ -1404,6 +1405,12 @@ import {
   deleteApiSource,
   deleteMailBridgeList,
   getDigestSettings,
+  generateGptDigest,
+  getGptDigestFeed,
+  getGptDigestSettings,
+  listGptDigestIssues,
+  rotateGptDigestFeed,
+  updateGptDigestSettings,
   getFavorites,
   getObsidianNote,
   getObsidianStatus,
@@ -1522,6 +1529,60 @@ export function useUpdateDigestSettingsMutation() {
 export function useSendDigestNowMutation() {
   return useMutation({
     mutationFn: (entryRefs: DigestEntryRefInput[]) => sendDigestNow(entryRefs),
+  })
+}
+
+// ---- M4：GPT 日报 ----
+
+export function useGptDigestSettings() {
+  return useQuery({
+    queryKey: ['gpt-digest', 'settings'],
+    queryFn: ({ signal }) => getGptDigestSettings(signal),
+  })
+}
+
+export function useGptDigestIssues() {
+  return useQuery({
+    queryKey: ['gpt-digest', 'issues'],
+    queryFn: ({ signal }) => listGptDigestIssues(signal),
+  })
+}
+
+export function useUpdateGptDigestSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: GptDigestSettingsUpdate) => updateGptDigestSettings(patch),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest', 'settings'] })
+    },
+  })
+}
+
+export function useGptDigestFeed() {
+  return useQuery({
+    queryKey: ['gpt-digest', 'feed'],
+    queryFn: () => getGptDigestFeed(),
+  })
+}
+
+export function useRotateGptDigestFeedMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => rotateGptDigestFeed(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest', 'feed'] })
+    },
+  })
+}
+
+/** 立即生成（成功后失效 settings + issues：lastIssueKey/lastError/期刊列表）。 */
+export function useGenerateGptDigestMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => generateGptDigest(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
   })
 }
 
