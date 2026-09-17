@@ -1472,6 +1472,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/notes-by-entry/{entry_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes By Entry
+         * @description F29 反向入口：列出引用该 RSS 条目的书签/笔记（新→旧）。
+         *
+         *     rss_item_ref 走存储层的规范化形式匹配；无效引用返回空列表而非
+         *     500——「没有笔记引用它」是正常态。查询是索引列等值匹配，不是
+         *     每请求的全量扫描。
+         */
+        get: operations["list_notes_by_entry_api_v1_library_notes_by_entry__entry_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/snapshots": {
         parameters: {
             query?: never;
@@ -6253,6 +6277,11 @@ export interface components {
          * @description One workspace summary (read-later reports reserved=true).
          */
         Workspace: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Id */
             id: string;
             /** Itemcount */
@@ -6269,6 +6298,8 @@ export interface components {
          * @description POST /api/v1/workspaces.
          */
         WorkspaceCreate: {
+            /** Description */
+            description?: string | null;
             /** Name */
             name: string;
         };
@@ -6318,9 +6349,11 @@ export interface components {
         };
         /**
          * WorkspaceRename
-         * @description PATCH /api/v1/workspaces/{id}.
+         * @description PATCH /api/v1/workspaces/{id}（description 缺省 = 不修改说明）。
          */
         WorkspaceRename: {
+            /** Description */
+            description?: string | null;
             /** Name */
             name: string;
         };
@@ -8789,6 +8822,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notes_by_entry_api_v1_library_notes_by_entry__entry_ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkListResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

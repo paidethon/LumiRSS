@@ -83,6 +83,7 @@ def _workspace_model(summary) -> Workspace:
         position=summary.position,
         itemCount=summary.item_count,
         reserved=summary.reserved,
+        description=summary.description,
     )
 
 
@@ -116,7 +117,9 @@ def _resolved_models(views) -> list[ResolvedItem]:
 @router.post("/api/v1/workspaces", response_model=Workspace, status_code=201)
 async def create_workspace(payload: WorkspaceCreate, request: Request) -> Workspace:
     store: WorkspaceStore = _get_workspace_store(request)
-    return _workspace_model(await store.create_workspace(payload.name))
+    return _workspace_model(
+        await store.create_workspace(payload.name, payload.description or "")
+    )
 
 
 @router.get("/api/v1/workspaces", response_model=WorkspaceListResponse)
@@ -142,7 +145,9 @@ async def rename_workspace(
     workspace_id: str, payload: WorkspaceRename, request: Request
 ) -> Workspace:
     store: WorkspaceStore = _get_workspace_store(request)
-    return _workspace_model(await store.rename_workspace(workspace_id, payload.name))
+    return _workspace_model(
+        await store.rename_workspace(workspace_id, payload.name, payload.description)
+    )
 
 
 @router.delete("/api/v1/workspaces/{workspace_id}", status_code=204)

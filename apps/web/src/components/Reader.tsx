@@ -15,6 +15,7 @@ import ReaderHeader from './ReaderHeader'
 import ReaderPlaceholder from './ReaderPlaceholder'
 import ReaderSummary from './ReaderSummary'
 import ProvenanceCard from './ProvenanceCard'
+import EntryNotesBacklinks from './EntryNotesBacklinks'
 import ReaderTranslation from './ReaderTranslation'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
@@ -246,6 +247,8 @@ const handleScroll = useCallback(() => {
         <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
         {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
         <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
+        {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
+        <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
             P0-11：注册浏览器引擎的手势启动回调（点击 → 直接编排）。 */}
         <ReaderTranslation

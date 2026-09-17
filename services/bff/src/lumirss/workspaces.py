@@ -47,6 +47,7 @@ class WorkspaceSummary:
     position: int
     item_count: int
     reserved: bool
+    description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +56,7 @@ class WorkspaceSummary:
             "position": self.position,
             "itemCount": self.item_count,
             "reserved": self.reserved,
+            "description": self.description,
         }
 
 
@@ -82,8 +84,9 @@ class WorkspaceStore:
 
     # -- workspace CRUD ----------------------------------------------------
 
-    async def create_workspace(self, name: str) -> WorkspaceSummary:
+    async def create_workspace(self, name: str, description: str = "") -> WorkspaceSummary:
         clean = _validate_name(name)
+        clean_description = _validate_description(description)
         count = await self._count_workspaces()
         if count >= _MAX_WORKSPACES:
             raise WorkspaceInvalid(f"Too many workspaces (max {_MAX_WORKSPACES}).")
@@ -95,8 +98,8 @@ class WorkspaceStore:
         next_position = (int(row["p"]) if row is not None else 0) + 1
         workspace_id = f"ws-{utc_now_compact()}-{next_position:04d}"
         await self._db.execute(
-            "INSERT INTO workspaces (id, name, position, created_at) VALUES (?, ?, ?, ?)",
-            (workspace_id, clean, next_position, utc_now()),
+            "INSERT INTO workspaces (id, name, description, position, created_at) VALUES (?, ?, ?, ?, ?)",
+            (workspace_id, clean, clean_description, next_position, utc_now()),
         )
         return WorkspaceSummary(
             id=workspace_id,
@@ -104,6 +107,7 @@ class WorkspaceStore:
             position=next_position,
             item_count=0,
             reserved=False,
+            description=clean_description,
         )
 
     async def _count_workspaces(self) -> int:
@@ -114,9 +118,9 @@ class WorkspaceStore:
     async def list_workspaces(self) -> list[WorkspaceSummary]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT w.id, w.name, w.position, COUNT(wi.item_ref) AS n"
+            "SELECT w.id, w.name, w.description, w.position, COUNT(wi.item_ref) AS n"
             " FROM workspaces w LEFT JOIN workspace_items wi ON wi.workspace_id = w.id"
-            " GROUP BY w.id, w.name, w.position ORDER BY w.position ASC, w.id ASC"
+            " GROUP BY w.id, w.name, w.description, w.position ORDER BY w.position ASC, w.id ASC"
         )
         return [
             WorkspaceSummary(
@@ -125,6 +129,7 @@ class WorkspaceStore:
                 position=int(row["position"]),
                 item_count=int(row["n"]),
                 reserved=str(row["id"]) == RESERVED_WORKSPACE_ID,
+                description=str(row["description"] or ""),
             )
             for row in rows
         ]
@@ -135,7 +140,9 @@ class WorkspaceStore:
                 return summary
         return None
 
-    async def rename_workspace(self, workspace_id: str, name: str) -> WorkspaceSummary:
+    async def rename_workspace(
+        self, workspace_id: str, name: str, description: str | None = None
+    ) -> WorkspaceSummary:
         if workspace_id == RESERVED_WORKSPACE_ID:
             raise ReservedWorkspaceError(RESERVED_WORKSPACE_ID)
         clean = _validate_name(name)
@@ -143,7 +150,13 @@ class WorkspaceStore:
         row = await self._db.fetch_one("SELECT id FROM workspaces WHERE id = ?", (workspace_id,))
         if row is None:
             raise WorkspaceNotFound(workspace_id)
-        await self._db.execute("UPDATE workspaces SET name = ? WHERE id = ?", (clean, workspace_id))
+        if description is None:
+            await self._db.execute("UPDATE workspaces SET name = ? WHERE id = ?", (clean, workspace_id))
+        else:
+            await self._db.execute(
+                "UPDATE workspaces SET name = ?, description = ? WHERE id = ?",
+                (clean, _validate_description(description), workspace_id),
+            )
         updated = await self.get_workspace(workspace_id)
         assert updated is not None
         return updated
@@ -407,4 +420,14 @@ def _validate_name(name: str) -> str:
         raise WorkspaceInvalid("Workspace name must not be empty.")
     if len(clean) > _MAX_NAME_LENGTH:
         raise WorkspaceInvalid("Workspace name is too long.")
+    return clean
+
+
+def _validate_description(description: str) -> str:
+    """F25：纯文本说明；空白归一、上限 500 字符（None 视为空由调用方处理）。"""
+    if not isinstance(description, str):
+        raise WorkspaceInvalid("Workspace description must be a string.")
+    clean = " ".join(description.split())
+    if len(clean) > 500:
+        raise WorkspaceInvalid("Workspace description is too long (max 500 chars).")
     return clean

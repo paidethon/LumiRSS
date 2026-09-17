@@ -897,14 +897,17 @@ class WorkspaceCreate(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str
+    # F25：工作区说明（目标/范围/入口导航；空 = 无说明）
+    description: str | None = None
 
 
 class WorkspaceRename(BaseModel):
-    """PATCH /api/v1/workspaces/{id}."""
+    """PATCH /api/v1/workspaces/{id}（description 缺省 = 不修改说明）。"""
 
     model_config = {"extra": "forbid"}
 
     name: str
+    description: str | None = None
 
 
 class Workspace(BaseModel):
@@ -915,6 +918,8 @@ class Workspace(BaseModel):
     position: int
     itemCount: int
     reserved: bool
+    # F25：工作区说明（纯文本；空串 = 未设置）
+    description: str = ""
 
 
 class WorkspaceListResponse(BaseModel):

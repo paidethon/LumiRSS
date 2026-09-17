@@ -114,9 +114,27 @@ function RenameWorkspaceDialog({
   onClose: () => void
 }) {
   const [name, setName] = useState(workspace.name)
+  // F25：说明编辑（创建后也能补充目标/范围说明）
+  const [description, setDescription] = useState(workspace.description ?? '')
   const rename = useRenameWorkspaceMutation()
   const trimmed = name.trim()
-  const canSubmit = trimmed !== '' && trimmed !== workspace.name && !rename.isPending
+  const descriptionChanged = description !== (workspace.description ?? '')
+  const canSubmit =
+    (trimmed !== '' && trimmed !== workspace.name) || descriptionChanged
+      ? !rename.isPending
+      : false
+
+  function submit() {
+    if (!canSubmit) return
+    rename.mutate(
+      {
+        workspaceId: workspace.id,
+        name: trimmed,
+        ...(descriptionChanged ? { description } : {}),
+      },
+      { onSuccess: onClose },
+    )
+  }
 
   return (
     <Dialog
@@ -128,18 +146,7 @@ function RenameWorkspaceDialog({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={rename.isPending}>
             取消
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!canSubmit}
-            onClick={() => {
-              if (!canSubmit) return
-              rename.mutate(
-                { workspaceId: workspace.id, name: trimmed },
-                { onSuccess: onClose },
-              )
-            }}
-          >
+          <Button variant="primary" size="sm" disabled={!canSubmit} onClick={submit}>
             {rename.isPending ? '保存中…' : '保存'}
           </Button>
         </>
@@ -148,11 +155,7 @@ function RenameWorkspaceDialog({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!canSubmit) return
-          rename.mutate(
-            { workspaceId: workspace.id, name: trimmed },
-            { onSuccess: onClose },
-          )
+          submit()
         }}
       >
         <label className="flex flex-col gap-1">
@@ -166,6 +169,22 @@ function RenameWorkspaceDialog({
             aria-label="工作区名称"
             className={cx(
               'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+              'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
+              'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+            )}
+          />
+        </label>
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="text-xs text-[var(--lumi-text-secondary)]">说明（可选）</span>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={500}
+            rows={3}
+            aria-label="工作区说明"
+            placeholder="这个工作区收集什么、用于什么目标"
+            className={cx(
+              'w-full resize-y rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
               'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
               'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
             )}
@@ -376,6 +395,8 @@ export default function WorkspacesPage() {
 
   const wsItems = workspaces.data?.items ?? []
   const effectiveSelectedId = selectedId ?? wsItems[0]?.id ?? null
+  // F25：选中工作区的说明（空 = 不渲染说明区）
+  const selectedDescription = wsItems.find((w) => w.id === effectiveSelectedId)?.description
   const selectedWorkspace = wsItems.find((w) => w.id === effectiveSelectedId) ?? null
 
   const contents = useWorkspaceContents(effectiveSelectedId)
@@ -491,6 +512,11 @@ export default function WorkspacesPage() {
         )}
 
         {/* 选中工作区的内容 */}
+        {effectiveSelectedId !== null && !workspaces.isError && selectedDescription ? (
+          <p className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-3 py-2 text-xs text-[var(--lumi-text-secondary)]" data-workspace-description>
+            {selectedDescription}
+          </p>
+        ) : null}
         {effectiveSelectedId !== null && !workspaces.isError && (
           contents.isPending ? (
             <ul className="mt-3 flex flex-col gap-2" aria-label="工作区内容加载中">

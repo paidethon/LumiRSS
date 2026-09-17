@@ -279,6 +279,15 @@ class LibraryStore:
         row = await self._db.fetch_one("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE b.url = ?", (url,))
         return _bookmark_from_row(row) if row is not None else None
 
+    async def notes_by_rss_ref(self, rss_ref: str) -> list[BookmarkView]:
+        """F29 反向入口：引用某一 RSS 条目的全部书签/笔记（新→旧）。
+
+        无分页——同一篇文章被保存成书签的数量天然有界（用户动作），
+        与每次请求的全量扫描无关（查询走 rss_item_ref 索引等价列）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE b.rss_item_ref = ? ORDER BY b.created_at DESC, b.item_uuid DESC", (rss_ref,))
+        return [_bookmark_from_row(row) for row in rows]
+
     async def _find_by_rss_ref(self, rss_ref: str) -> BookmarkView | None:
         row = await self._db.fetch_one("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE b.rss_item_ref = ?", (rss_ref,))
         return _bookmark_from_row(row) if row is not None else None

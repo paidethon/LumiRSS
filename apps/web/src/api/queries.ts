@@ -1285,8 +1285,8 @@ export function useReorderWorkspaceItemsMutation() {
 export function useRenameWorkspaceMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; name: string }) =>
-      renameWorkspace(vars.workspaceId, vars.name),
+    mutationFn: (vars: { workspaceId: string; name: string; description?: string }) =>
+      renameWorkspace(vars.workspaceId, vars.name, vars.description),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
     },
@@ -1415,6 +1415,7 @@ import {
   listConfigIssues,
   listGptDigestConfigs,
   listGptDigestIssues,
+  listNotesByEntry,
   previewConfigDigest,
   previewGptDigest,
   rotateGptDigestFeed,
@@ -1668,6 +1669,15 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F29：引用某文章的书签/笔记（文章页反向入口；空 = 没有笔记引用）。 */
+export function useNotesByEntry(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['library', 'notes-by-entry', entryRef],
+    queryFn: ({ signal }) => listNotesByEntry(entryRef as string, signal),
+    enabled: entryRef !== null,
   })
 }
 

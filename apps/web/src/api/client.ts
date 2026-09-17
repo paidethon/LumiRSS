@@ -1059,12 +1059,17 @@ export async function reorderWorkspaceItems(
 }
 
 /** P0-10：重命名工作区（PATCH；保留工作区 read-later 由 BFF 拒绝）。 */
-export async function renameWorkspace(workspaceId: string, name: string): Promise<Workspace> {
+export async function renameWorkspace(
+  workspaceId: string,
+  name: string,
+  description?: string,
+): Promise<Workspace> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      // F25：description 缺省 = 不修改说明（旧调用方零改动兼容）
+      body: JSON.stringify(description === undefined ? { name } : { name, description }),
       contentType: 'application/json',
     },
   )
@@ -1448,6 +1453,17 @@ export async function listConfigIssues(
 ): Promise<GptDigestIssueList> {
   return request<GptDigestIssueList>(
     `${API_BASE}/gpt-digest/configs/${configId}/issues?limit=${limit}`,
+    signal,
+  )
+}
+
+/** F29 反向入口：引用某一 RSS 条目的书签/笔记（新→旧；无效引用为空列表）。 */
+export async function listNotesByEntry(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<BookmarkListResponse> {
+  return request<BookmarkListResponse>(
+    `${API_BASE}/library/notes-by-entry/${encodeURIComponent(entryRef)}`,
     signal,
   )
 }

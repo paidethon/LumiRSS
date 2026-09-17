@@ -101,6 +101,35 @@ async def list_bookmarks(
     )
 
 
+@router.get(
+    "/api/v1/library/notes-by-entry/{entry_ref}", response_model=BookmarkListResponse
+)
+async def list_notes_by_entry(entry_ref: str, request: Request) -> BookmarkListResponse:
+    """F29 反向入口：列出引用该 RSS 条目的书签/笔记（新→旧）。
+
+    rss_item_ref 走存储层的规范化形式匹配；无效引用返回空列表而非
+    500——「没有笔记引用它」是正常态。查询是索引列等值匹配，不是
+    每请求的全量扫描。"""
+    from lumirss.entryref import (
+        InvalidEntryReference,
+        decode_entry_ref,
+        encode_entry_ref,
+    )
+    from lumirss.itemref import InvalidItemRef, parse_item_ref
+
+    try:
+        item_id = decode_entry_ref(entry_ref)
+        canonical = parse_item_ref(f"rss:{encode_entry_ref(item_id)}").format()
+    except (InvalidEntryReference, InvalidItemRef):
+        return BookmarkListResponse(items=[], nextCursor=None)
+    store: LibraryStore = _get_library_store(request)
+    views = await store.notes_by_rss_ref(canonical)
+    return BookmarkListResponse(
+        items=[_bookmark_model(view) for view in views],
+        nextCursor=None,
+    )
+
+
 @router.patch("/api/v1/library/bookmarks/{item_uuid}", response_model=Bookmark)
 async def update_bookmark(
     item_uuid: str, payload: BookmarkUpdate, request: Request

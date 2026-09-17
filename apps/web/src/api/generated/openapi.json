@@ -7354,6 +7354,11 @@
    "Workspace": {
     "description": "One workspace summary (read-later reports reserved=true).",
     "properties": {
+     "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+     },
      "id": {
       "title": "Id",
       "type": "string"
@@ -7389,6 +7394,17 @@
     "additionalProperties": false,
     "description": "POST /api/v1/workspaces.",
     "properties": {
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -7492,8 +7508,19 @@
    },
    "WorkspaceRename": {
     "additionalProperties": false,
-    "description": "PATCH /api/v1/workspaces/{id}.",
+    "description": "PATCH /api/v1/workspaces/{id}（description 缺省 = 不修改说明）。",
     "properties": {
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -10586,6 +10613,46 @@
      }
     },
     "summary": "Get Clip"
+   }
+  },
+  "/api/v1/library/notes-by-entry/{entry_ref}": {
+   "get": {
+    "description": "F29 反向入口：列出引用该 RSS 条目的书签/笔记（新→旧）。\n\nrss_item_ref 走存储层的规范化形式匹配；无效引用返回空列表而非\n500——「没有笔记引用它」是正常态。查询是索引列等值匹配，不是\n每请求的全量扫描。",
+    "operationId": "list_notes_by_entry_api_v1_library_notes_by_entry__entry_ref__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BookmarkListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Notes By Entry"
    }
   },
   "/api/v1/library/snapshots": {
