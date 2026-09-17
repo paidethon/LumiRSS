@@ -7,6 +7,9 @@ services:
       - "127.0.0.1:8080:80" # 仅本机可访问
     environment:
       TZ: Asia/Shanghai
+      # FreshRSS 容器内置 cron 的自动刷新分钟（本部署唯一调度拥有者）。
+      # 缺省时 cron 不启动，RSS 永不自动更新（M0 根因）。
+      CRON_MIN: "13,43"
     volumes:
       - freshrss-data:/var/www/FreshRSS/data
 

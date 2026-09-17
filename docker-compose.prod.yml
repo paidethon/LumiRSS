@@ -99,6 +99,9 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
+      # FreshRSS 容器内置 cron 的自动刷新分钟（本部署唯一调度拥有者）。
+      # 缺省时 cron 不启动，RSS 永不自动更新（M0 根因，2026-09-18 修复）。
+      CRON_MIN: ${LUMIRSS_FRESHRSS_CRON_MIN:-13,43}
     volumes:
       - freshrss-data:/var/www/FreshRSS/data
     # Internal only — never published publicly.
