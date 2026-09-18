@@ -2871,6 +2871,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/replacement-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Replacement Preview
+         * @description F14：失效来源替换预览——基于既有发现能力，只读。
+         *
+         *     从站点 URL 出发找候选 feed（排除当前 feed 自身）；不自动改订阅、
+         *     不判断"失效"（那由 FreshRSS 的 feed error 状态承载）。
+         */
+        get: operations["replacement_preview_api_v1_sources_replacement_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/volume": {
         parameters: {
             query?: never;
@@ -11888,6 +11911,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceOverrideResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replacement_preview_api_v1_sources_replacement_preview_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

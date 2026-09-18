@@ -14128,6 +14128,48 @@
     "summary": "Set Source Override"
    }
   },
+  "/api/v1/sources/replacement-preview": {
+   "get": {
+    "description": "F14：失效来源替换预览——基于既有发现能力，只读。\n\n从站点 URL 出发找候选 feed（排除当前 feed 自身）；不自动改订阅、\n不判断\"失效\"（那由 FreshRSS 的 feed error 状态承载）。",
+    "operationId": "replacement_preview_api_v1_sources_replacement_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "title": "Feedurl",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Replacement Preview Api V1 Sources Replacement Preview Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Replacement Preview"
+   }
+  },
   "/api/v1/sources/volume": {
    "get": {
     "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。",
