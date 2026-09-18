@@ -1490,6 +1490,18 @@ export async function listNotesByEntry(
   )
 }
 
+/** F39：导出 Lumi 自有数据（工作区/标签/书签/日报；版本化 JSON）。 */
+export async function exportLumiData(): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/export/lumi-data`, { method: 'GET' })
+  const blob = new Blob([await response.text()], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `lumirss-data-${new Date().toISOString().slice(0, 10)}.json`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 /** F33：设置变更历史（新→旧）。 */
 export async function getSettingsHistory(
   signal?: AbortSignal,

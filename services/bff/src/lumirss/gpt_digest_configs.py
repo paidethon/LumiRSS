@@ -75,7 +75,7 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
 
 
 def config_row_to_dict(row: Any) -> dict[str, Any]:
-    slots_raw = str(row["slots"] or "") if "slots" in row else ""
+    slots_raw = str(row["slots"] or "")
     return {
         "id": int(row["id"]),
         "name": str(row["name"]),

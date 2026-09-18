@@ -42,6 +42,7 @@ from lumirss.routers import (
     health,
     inbox,
     library,
+    lumi_export,
     mail,
     obsidian,
     operations,
@@ -295,5 +296,6 @@ app.include_router(agent.router)
 app.include_router(tags.router)
 app.include_router(gpt_digest.router)
 app.include_router(storage.router)
+app.include_router(lumi_export.router)
 
 register_error_handlers(app)

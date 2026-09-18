@@ -81,6 +81,7 @@ import { CapabilitiesSection } from './CapabilitiesSection'
 // F32：非敏感偏好迁移（导出/导入版本化 JSON，diff 预览后应用）
 import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 // F36：存储用量统计卡
+import { exportLumiData } from '../../api/client'
 import { StorageUsageSection } from './StorageUsageSection'
 import { SettingsHistorySection } from './SettingsHistorySection'
 
@@ -413,6 +414,17 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <SettingsHistorySection /> },
         // F32：非敏感偏好迁移（与完整备份用途分开）
         { type: 'custom', node: <PreferencesMigrationSection /> },
+        // F39：Lumi 自有数据可携带导出
+        {
+          type: 'action',
+          label: '导出 Lumi 数据',
+          description:
+            '导出工作区、标签、书签笔记与日报配置为版本化 JSON（与完整备份用途分开；不含密钥与 FreshRSS 订阅）。',
+          buttonText: '导出',
+          action: () => {
+            void exportLumiData()
+          },
+        },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
         { type: 'custom', node: <DataBackupSection /> },
