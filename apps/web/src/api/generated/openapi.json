@@ -2929,6 +2929,95 @@
     "title": "FreshrssDataBackupCapability",
     "type": "object"
    },
+   "GlossaryTerm": {
+    "description": "F21：一条术语（term 不唯一——同词不同含义可并存）。",
+    "properties": {
+     "createdAt": {
+      "default": "",
+      "title": "Createdat",
+      "type": "string"
+     },
+     "definition": {
+      "title": "Definition",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "sourceRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourceref"
+     },
+     "term": {
+      "title": "Term",
+      "type": "string"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "term",
+     "definition"
+    ],
+    "title": "GlossaryTerm",
+    "type": "object"
+   },
+   "GlossaryTermCreate": {
+    "description": "POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。",
+    "properties": {
+     "definition": {
+      "title": "Definition",
+      "type": "string"
+     },
+     "sourceRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourceref"
+     },
+     "term": {
+      "title": "Term",
+      "type": "string"
+     }
+    },
+    "required": [
+     "term",
+     "definition"
+    ],
+    "title": "GlossaryTermCreate",
+    "type": "object"
+   },
+   "GlossaryTermList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GlossaryTerm"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "GlossaryTermList",
+    "type": "object"
+   },
    "GptDigestConfig": {
     "description": "F01/F02：一份主题日报配置（token 不在此响应中）。\n\n``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点\n（用 hour），期号退化为日期。",
     "properties": {
@@ -7607,6 +7696,71 @@
     "title": "TagSuggestionsResponse",
     "type": "object"
    },
+   "TaskRecord": {
+    "description": "F35：一条后台任务记录（备份/日报/邮件摘要）。",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "finishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finishedat"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "default": "",
+      "title": "Ref",
+      "type": "string"
+     },
+     "startedAt": {
+      "default": "",
+      "title": "Startedat",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "status"
+    ],
+    "title": "TaskRecord",
+    "type": "object"
+   },
+   "TaskRecordList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TaskRecord"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "TaskRecordList",
+    "type": "object"
+   },
    "TitleTranslateRequest": {
     "description": "F23：目标语言（缺省回退 AI 设置的翻译目标语言）。",
     "properties": {
@@ -9785,6 +9939,23 @@
     "summary": "Lookup Translation Segments"
    }
   },
+  "/api/v1/export/lumi-data": {
+   "get": {
+    "description": "可携带导出：工作区/标签/书签笔记/日报配置与期刊（版本化 JSON）。\n\n与运维备份（全量归档）和 FreshRSS OPML 导出用途分开；不包含服务\n密钥、订阅 token、Agent 会话/审批与 Vault 内容。",
+    "operationId": "export_lumi_data_api_v1_export_lumi_data_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Lumi Data"
+   }
+  },
   "/api/v1/favorites": {
    "get": {
     "description": "RSS star (FreshRSS truth) + library favorites (Lumi truth) merged\nfor display — never copied across domains.",
@@ -9944,6 +10115,177 @@
      }
     },
     "summary": "Freshrss Ui"
+   }
+  },
+  "/api/v1/glossary": {
+   "get": {
+    "operationId": "list_glossary_api_v1_glossary_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 100,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GlossaryTermList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Glossary"
+   },
+   "post": {
+    "operationId": "create_glossary_term_api_v1_glossary_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GlossaryTermCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GlossaryTerm"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Glossary Term"
+   }
+  },
+  "/api/v1/glossary/{term_id}": {
+   "delete": {
+    "operationId": "delete_glossary_term_api_v1_glossary__term_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "term_id",
+      "required": true,
+      "schema": {
+       "title": "Term Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Glossary Term"
+   },
+   "patch": {
+    "operationId": "update_glossary_term_api_v1_glossary__term_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "term_id",
+      "required": true,
+      "schema": {
+       "title": "Term Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GlossaryTermCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GlossaryTerm"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Glossary Term"
    }
   },
   "/api/v1/gpt-digest/configs": {
@@ -10263,6 +10605,53 @@
     "summary": "Revise Gpt Digest Issue"
    }
   },
+  "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare": {
+   "post": {
+    "description": "F07：相邻日报变化对照（对照上一期；独立条目 key = {key}-d）。",
+    "operationId": "compare_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "issue_key",
+      "required": true,
+      "schema": {
+       "title": "Issue Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compare Gpt Digest Issue"
+   }
+  },
   "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
    "post": {
     "description": "F05：为某期生成初学者解释版（独立条目 key = {key}-x）。\n\n输入只含该期自身的总结与来源标题——不可能引入原文之外的新事实。\nAI 未配置/上游失败映射为稳定错误；原版不受影响。",
@@ -10347,6 +10736,44 @@
      }
     },
     "summary": "Preview Config Digest"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/weekly": {
+   "post": {
+    "description": "F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。\n\n期号 = 配置时区 ISO 周（2026-W38）；输入只含已发布日刊总结与引用\n（来源可追溯）；空输入 422 no_material。",
+    "operationId": "generate_weekly_digest_api_v1_gpt_digest_configs__config_id__weekly_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Weekly Digest"
    }
   },
   "/api/v1/gpt-digest/feed": {
@@ -14332,6 +14759,47 @@
      }
     },
     "summary": "Tag Items"
+   }
+  },
+  "/api/v1/tasks/recent": {
+   "get": {
+    "description": "最近的本应用后台任务结果（备份/日报/邮件摘要；新→旧，有界）。",
+    "operationId": "recent_tasks_api_v1_tasks_recent_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskRecordList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Recent Tasks"
    }
   },
   "/api/v1/version": {

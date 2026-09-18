@@ -38,6 +38,7 @@ from lumirss.routers import (
     entries,
     entry_ai,
     feeds,
+    glossary,
     gpt_digest,
     health,
     inbox,
@@ -296,6 +297,7 @@ app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
 app.include_router(gpt_digest.router)
+app.include_router(glossary.router)
 app.include_router(storage.router)
 app.include_router(lumi_export.router)
 app.include_router(task_records.router)

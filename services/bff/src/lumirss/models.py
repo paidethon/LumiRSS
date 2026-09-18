@@ -1349,6 +1349,29 @@ class GptDigestPreview(BaseModel):
     note: str | None = None
 
 
+class GlossaryTerm(BaseModel):
+    """F21：一条术语（term 不唯一——同词不同含义可并存）。"""
+
+    id: str
+    term: str
+    definition: str
+    sourceRef: str | None = None
+    createdAt: str = ""
+    updatedAt: str = ""
+
+
+class GlossaryTermList(BaseModel):
+    items: list[GlossaryTerm] = []
+
+
+class GlossaryTermCreate(BaseModel):
+    """POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。"""
+
+    term: str
+    definition: str
+    sourceRef: str | None = None
+
+
 class GptDigestConfig(BaseModel):
     """F01/F02：一份主题日报配置（token 不在此响应中）。
 

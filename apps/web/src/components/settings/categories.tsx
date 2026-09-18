@@ -78,6 +78,8 @@ import { ReaderTypographyControls } from './reader/ReaderTypographyControls'
 import { AboutVersion } from './AboutVersion'
 // F34：能力可用性统一说明（复用既有状态端点，只读聚合）
 import { CapabilitiesSection } from './CapabilitiesSection'
+// F21：个人术语本（手工维护，与 AI 无关）
+import { GlossarySection } from './GlossarySection'
 // F32：非敏感偏好迁移（导出/导入版本化 JSON，diff 预览后应用）
 import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 // F36：存储用量统计卡
@@ -520,6 +522,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '能力可用性' },
         // F34：本实例能力状态统一说明（只读；区分配置与探测，不产生费用）
         { type: 'custom', node: <CapabilitiesSection /> },
+        // F21：个人术语本（手工维护，与 AI 无关）
+        { type: 'title', value: '个人术语本' },
+        { type: 'custom', node: <GlossarySection /> },
       ]
     default:
       return []

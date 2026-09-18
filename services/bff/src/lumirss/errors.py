@@ -89,6 +89,7 @@ from lumirss.feed_preview import (
     NotAFeedError,
     UnsafeFeedUrl,
 )
+from lumirss.glossary import GlossaryInvalid, GlossaryNotFound
 from lumirss.inbox_store import (
     InboxItemNotFound,
     InboxSourceNotFound,
@@ -170,6 +171,9 @@ _ERROR_RESPONSES = {
     UpstreamConnectionError: (502, "connection_error"),
     UpstreamError: (502, "upstream_error"),
     InvalidEntryReference: (400, "invalid_entry_reference"),
+    # F21 个人术语本
+    GlossaryInvalid: (400, "invalid_glossary"),
+    GlossaryNotFound: (404, "glossary_not_found"),
     EntryNotFound: (404, "entry_not_found"),
     InvalidCursor: (400, "invalid_cursor"),
     # 0013 control plane
@@ -313,6 +317,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(InvalidEntryReference)
     @app.exception_handler(EntryNotFound)
     @app.exception_handler(InvalidCursor)
+    @app.exception_handler(GlossaryInvalid)
+    @app.exception_handler(GlossaryNotFound)
     @app.exception_handler(InvalidSubscriptionReference)
     @app.exception_handler(InvalidFeedUrl)
     @app.exception_handler(FeedRejectedError)

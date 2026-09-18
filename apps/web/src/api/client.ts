@@ -1230,6 +1230,8 @@ export type TitleTranslationView = G6Schemas['TitleTranslationView']
 export type SettingsHistoryList = G6Schemas['SettingsHistoryList']
 export type SettingsHistoryEntry = G6Schemas['SettingsHistoryEntry']
 export type SettingsRevertResult = G6Schemas['SettingsRevertResult']
+export type GlossaryTerm = G6Schemas['GlossaryTerm']
+export type GlossaryTermList = G6Schemas['GlossaryTermList']
 export type ObsidianStatus = G6Schemas['ObsidianStatus']
 export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
@@ -1578,6 +1580,46 @@ export async function translateEntryTitle(
     { method: 'POST', body: JSON.stringify({ language }), contentType: 'application/json' },
   )
   return (await response.json()) as TitleTranslationView
+}
+
+/** F21：术语本列表（搜索 q 可选）。 */
+export async function listGlossary(
+  signal?: AbortSignal,
+  q?: string,
+): Promise<GlossaryTermList> {
+  const suffix = q ? `&q=${encodeURIComponent(q)}` : ''
+  return request<GlossaryTermList>(`${API_BASE}/glossary?limit=100${suffix}`, signal)
+}
+
+/** F21：新建术语。 */
+export async function createGlossaryTerm(payload: {
+  term: string
+  definition: string
+}): Promise<GlossaryTerm> {
+  const response = await rawRequest(`${API_BASE}/glossary`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as GlossaryTerm
+}
+
+/** F21：修改术语。 */
+export async function updateGlossaryTerm(
+  id: string,
+  payload: { term: string; definition: string },
+): Promise<GlossaryTerm> {
+  const response = await rawRequest(`${API_BASE}/glossary/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as GlossaryTerm
+}
+
+/** F21：删除术语。 */
+export async function deleteGlossaryTerm(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/glossary/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 /** F36：存储用量（只读统计；无预算时 warning 为 null）。 */

@@ -809,6 +809,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/export/lumi-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Lumi Data
+         * @description 可携带导出：工作区/标签/书签笔记/日报配置与期刊（版本化 JSON）。
+         *
+         *     与运维备份（全量归档）和 FreshRSS OPML 导出用途分开；不包含服务
+         *     密钥、订阅 token、Agent 会话/审批与 Vault 内容。
+         */
+        get: operations["export_lumi_data_api_v1_export_lumi_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/favorites": {
         parameters: {
             query?: never;
@@ -928,6 +951,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/glossary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Glossary */
+        get: operations["list_glossary_api_v1_glossary_get"];
+        put?: never;
+        /** Create Glossary Term */
+        post: operations["create_glossary_term_api_v1_glossary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/glossary/{term_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Glossary Term */
+        delete: operations["delete_glossary_term_api_v1_glossary__term_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Glossary Term */
+        patch: operations["update_glossary_term_api_v1_glossary__term_id__patch"];
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs": {
         parameters: {
             query?: never;
@@ -1038,6 +1097,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Gpt Digest Issue
+         * @description F07：相邻日报变化对照（对照上一期；独立条目 key = {key}-d）。
+         */
+        post: operations["compare_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
         parameters: {
             query?: never;
@@ -1072,6 +1151,29 @@ export interface paths {
         get: operations["preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/weekly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Weekly Digest
+         * @description F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。
+         *
+         *     期号 = 配置时区 ISO 周（2026-W38）；输入只含已发布日刊总结与引用
+         *     （来源可追溯）；空输入 422 no_material。
+         */
+        post: operations["generate_weekly_digest_api_v1_gpt_digest_configs__config_id__weekly_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3044,6 +3146,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Tasks
+         * @description 最近的本应用后台任务结果（备份/日报/邮件摘要；新→旧，有界）。
+         */
+        get: operations["recent_tasks_api_v1_tasks_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -4553,6 +4675,50 @@ export interface components {
             reasonCode?: string | null;
             /** Sqlitefilecount */
             sqliteFileCount?: number | null;
+        };
+        /**
+         * GlossaryTerm
+         * @description F21：一条术语（term 不唯一——同词不同含义可并存）。
+         */
+        GlossaryTerm: {
+            /**
+             * Createdat
+             * @default
+             */
+            createdAt: string;
+            /** Definition */
+            definition: string;
+            /** Id */
+            id: string;
+            /** Sourceref */
+            sourceRef?: string | null;
+            /** Term */
+            term: string;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /**
+         * GlossaryTermCreate
+         * @description POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。
+         */
+        GlossaryTermCreate: {
+            /** Definition */
+            definition: string;
+            /** Sourceref */
+            sourceRef?: string | null;
+            /** Term */
+            term: string;
+        };
+        /** GlossaryTermList */
+        GlossaryTermList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["GlossaryTerm"][];
         };
         /**
          * GptDigestConfig
@@ -6647,6 +6813,38 @@ export interface components {
             suggestions: string[];
         };
         /**
+         * TaskRecord
+         * @description F35：一条后台任务记录（备份/日报/邮件摘要）。
+         */
+        TaskRecord: {
+            /** Error */
+            error?: string | null;
+            /** Finishedat */
+            finishedAt?: string | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
+            /**
+             * Startedat
+             * @default
+             */
+            startedAt: string;
+            /** Status */
+            status: string;
+        };
+        /** TaskRecordList */
+        TaskRecordList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["TaskRecord"][];
+        };
+        /**
          * TitleTranslateRequest
          * @description F23：目标语言（缺省回退 AI 设置的翻译目标语言）。
          */
@@ -8197,6 +8395,26 @@ export interface operations {
             };
         };
     };
+    export_lumi_data_api_v1_export_lumi_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     federated_favorites_api_v1_favorites_get: {
         parameters: {
             query?: never;
@@ -8348,6 +8566,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreshRssUiInfo"];
+                };
+            };
+        };
+    };
+    list_glossary_api_v1_glossary_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryTermList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_glossary_term_api_v1_glossary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlossaryTermCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryTerm"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_glossary_term_api_v1_glossary__term_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                term_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_glossary_term_api_v1_glossary__term_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                term_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlossaryTermCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryTerm"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8600,6 +8947,38 @@ export interface operations {
             };
         };
     };
+    compare_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     explain_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__explain_post: {
         parameters: {
             query?: never;
@@ -8650,6 +9029,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GptDigestPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_weekly_digest_api_v1_gpt_digest_configs__config_id__weekly_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -11943,6 +12353,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TagItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_tasks_api_v1_tasks_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRecordList"];
                 };
             };
             /** @description Validation Error */
