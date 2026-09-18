@@ -20,6 +20,7 @@ from lumirss.gpt_digest import (
     classify_material,
     explain_issue,
     generate_issue,
+    generate_weekly,
     parse_and_validate_output,
     render_issue_html,
     select_material,
@@ -666,6 +667,60 @@ def test_f05_explain_issue_creates_variant(client):
                 issue_key="2026-09-18",
             )
         )
+
+
+def test_f03_weekly_aggregates_recent_issues(client):
+    """F03：周报聚合最近 7 天日刊（含引用回溯）；空输入拒绝。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-16",
+            title="周一刊",
+            body_html="<p>a</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"进展A。","sourceIds":["s1"],"uncertainty":null}]}]',
+            refs_json='{"s1": {"title": "A", "url": "https://x.example.com/a", "feedTitle": "F1", "publishedAt": "2026-09-16T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-16T00:00:00+00:00",
+        )
+    )
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-17",
+            title="周二刊",
+            body_html="<p>b</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"进展B。","sourceIds":["s1"],"uncertainty":null}]}]',
+            refs_json='{"s1": {"title": "B", "url": "https://x.example.com/b", "feedTitle": "F1", "publishedAt": "2026-09-17T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-17T00:00:00+00:00",
+        )
+    )
+    provider = _FakeProvider(
+        '{"title":"一周回顾","sections":[{"heading":"演进","items":[{"summary":"A 之后出现 B。","sourceIds":["w1:s1","w2:s1"],"uncertainty":null}]}],"limitations":[]}'
+    )
+    config = run(_config_store().get_config(1))
+    row = run(
+        generate_weekly(
+            _config_store(),
+            issues,
+            config=config,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+            now=_fixed_now(),
+        )
+    )
+    assert row["issue_key"].startswith("2026-W")
+    refs = json.loads(row["refs_json"])
+    assert refs["w1:s1"]["issueKey"] == "2026-09-16"
+    assert refs["w2:s1"]["issueKey"] == "2026-09-17"
+    assert row["body_html"].count("https://x.example.com/") == 2
+
+    # 空输入：新建配置无日刊 → 422 no_material
+    empty = run(_config_store().create_config({"name": "空周报", "timezone": "UTC"}))
+    route = client.post(f"/api/v1/gpt-digest/configs/{empty['id']}/weekly")
+    assert route.status_code == 422
+    assert route.json()["error"]["type"] == "no_material"
 
 
 def test_issue_key_uses_configured_timezone():

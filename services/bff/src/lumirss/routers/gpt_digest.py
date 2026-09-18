@@ -361,6 +361,67 @@ async def explain_gpt_digest_issue(
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
+@router.post("/api/v1/gpt-digest/configs/{config_id}/weekly")
+async def generate_weekly_digest(config_id: int, request: Request) -> Response:
+    """F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。
+
+    期号 = 配置时区 ISO 周（2026-W38）；输入只含已发布日刊总结与引用
+    （来源可追溯）；空输入 422 no_material。"""
+    from lumirss.gpt_digest import (
+        DigestMaterialEmpty,
+        DigestOutputInvalid,
+        generate_weekly,
+    )
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    # 周报只读已发布日刊——不需要 FreshRSS 适配器（与日刊生成不同）。
+    from lumirss.gpt_digest import _build_ai_deps
+
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        row = await generate_weekly(
+            _config_store(request),
+            _issues(request),
+            config=config,
+            ai_settings=ai_settings,
+            provider_factory=provider_factory,
+        )
+    except DigestMaterialEmpty as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except DigestOutputInvalid as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"type": "generation_failed", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": {"type": "ai_not_configured", "message": "AI 未配置或配置不可用。"}
+                },
+            )
+        if name in {"AiRateLimited", "AiTimeout", "AiUpstreamError"}:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {"type": "ai_upstream", "message": "AI 上游暂时不可用。"}
+                },
+            )
+        raise
+    dto = _issues(request).issue_to_dto(row)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
 @router.get("/api/v1/gpt-digest/issues", response_model=GptDigestIssueList)
 async def list_gpt_digest_issues(
     request: Request, limit: int = 14

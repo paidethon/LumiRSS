@@ -17,6 +17,7 @@ import {
   useDeleteGptDigestConfigMutation,
   useExplainGptDigestIssueMutation,
   useGenerateConfigMutation,
+  useWeeklyDigestMutation,
   useGptDigestConfigs,
   useReviseGptDigestIssueMutation,
   useRotateGptDigestFeedMutation,
@@ -124,6 +125,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const issues = useConfigIssues(config.id)
   const feed = useConfigFeed(config.id)
   const rotate = useRotateGptDigestFeedMutation()
+  const weekly = useWeeklyDigestMutation()
 
   const [name, setName] = useState(config.name)
   const [hour, setHour] = useState(config.hour)
@@ -314,6 +316,14 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
         >
           {generate.isPending ? '生成中…' : '立即生成/修订今日'}
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={weekly.isPending}
+          onClick={() => weekly.mutate(config.id)}
+        >
+          {weekly.isPending ? '周报生成中…' : '生成周报'}
+        </Button>
         {config.id > 1 ? (
           <Button
             variant="ghost"
@@ -327,6 +337,11 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           </Button>
         ) : null}
       </div>
+      {weekly.isError && weekly.error instanceof ApiError ? (
+        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+          周报失败：{weekly.error.message}
+        </p>
+      ) : null}
       {generate.isError && generate.error instanceof ApiError ? (
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
           生成失败：{generate.error.message}

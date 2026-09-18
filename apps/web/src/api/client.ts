@@ -1519,6 +1519,17 @@ export async function revertSettingsHistory(historyId: number): Promise<Settings
   return (await response.json()) as SettingsRevertResult
 }
 
+/** F03：生成周报（聚合该配置最近 7 天日刊）。 */
+export async function generateWeeklyDigest(
+  configId: number,
+): Promise<{ issue: GptDigestIssue }> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/weekly`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { issue: GptDigestIssue }
+}
+
 /** F05：生成某期的初学者解释版（独立条目 key = {key}-x）。 */
 export async function explainGptDigestIssue(
   configId: number,

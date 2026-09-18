@@ -1419,6 +1419,7 @@ import {
   getConfigFeed,
   getGptDigestFeed,
   explainGptDigestIssue,
+  generateWeeklyDigest,
   snoozeReadLaterItem,
   getGptDigestSettings,
   listConfigIssues,
@@ -1680,6 +1681,17 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F03：生成周报。 */
+export function useWeeklyDigestMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (configId: number) => generateWeeklyDigest(configId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
   })
 }
 
