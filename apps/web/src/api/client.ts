@@ -1076,6 +1076,15 @@ export async function renameWorkspace(
   return (await response.json()) as Workspace
 }
 
+/** F27：导出工作区研究包（Markdown 文本；含条目/笔记/manifest）。 */
+export async function exportResearchPackMd(workspaceId: string): Promise<string> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/research-pack`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return await response.text()
+}
+
 /** P0-10：删除工作区及其成员关系（DELETE 204；保留工作区由 BFF 拒绝，
  * 不存在返回 404）。成员内容本身不受影响（只解除归属）。 */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {

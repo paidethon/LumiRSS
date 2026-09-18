@@ -1620,6 +1620,13 @@ class ReadLaterTimelineResponse(BaseModel):
     nextCursor: str | None = None
 
 
+class ResearchPackRequest(BaseModel):
+    """POST workspaces/{id}/research-pack — F27 导出选项。"""
+
+    title: str | None = None
+    includeNotes: bool = True
+
+
 class ReadLaterSnoozeRequest(BaseModel):
     """POST snooze — 延后到该 ISO 时刻（必须为未来）。"""
 

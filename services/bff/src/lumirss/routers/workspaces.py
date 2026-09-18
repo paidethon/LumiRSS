@@ -18,6 +18,7 @@ from lumirss.models import (
     ReadLaterSnoozeRequest,
     ReadLaterSnoozeResult,
     ReadLaterTimelineResponse,
+    ResearchPackRequest,
     ResolvedItem,
     ResolveRequest,
     Workspace,
@@ -36,6 +37,7 @@ from lumirss.sources import (
     resolve_item,
     stale_placeholder,
 )
+from lumirss.util import utc_now
 from lumirss.workspaces import (
     RESERVED_WORKSPACE_ID,
     WorkspaceInvalid,
@@ -43,7 +45,7 @@ from lumirss.workspaces import (
     WorkspaceStore,
 )
 
-from ..deps import _get_source_registry, _get_workspace_store
+from ..deps import _get_library_store, _get_source_registry, _get_workspace_store
 
 router = APIRouter()
 
@@ -254,6 +256,105 @@ async def workspace_contents(
         )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/research-pack",
+)
+async def export_research_pack(
+    workspace_id: str, payload: ResearchPackRequest, request: Request
+) -> Response:
+    """F27 研究包导出（Markdown + manifest；只读，可重现）。
+
+    条目小节 = 解析后的标题/链接/摘录（含书签笔记可选并入）；缺失来源
+    明确标注缺失原因，不冒充内容；文末附机器可读 manifest（条目数、缺
+    失数、生成时间）。路径安全：只输出文本与 URL。"""
+    import json as _json
+    from urllib.parse import quote
+
+    store = _get_workspace_store(request)
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    members = await store.list_items(workspace_id, limit=500)
+    registry = _get_source_registry(request)
+    resolved = list(
+        await asyncio.gather(
+            *(_resolve_bounded(registry, member.item_ref) for member in members)
+        )
+    )
+    notes_by_ref: dict[str, str] = {}
+    if payload.includeNotes:
+        library = _get_library_store(request)
+        for member in members:
+            if member.item_ref.startswith("library:"):
+                view = await library.get_library_item(
+                    member.item_ref.removeprefix("library:")
+                )
+                if view is not None and view.note:
+                    notes_by_ref[member.item_ref] = view.note
+
+    lines = [
+        f"# {payload.title or summary.name}（研究包）",
+        "",
+        f"- 生成时间：{utc_now()}",
+        f"- 工作区：{summary.name}" + (f"（{summary.description}）" if summary.description else ""),
+        f"- 条目数：{len(members)}",
+        "",
+        "## 条目",
+        "",
+    ]
+    manifest_entries = []
+    missing = 0
+    for member, view in zip(members, resolved, strict=True):
+        entry = {
+            "itemRef": member.item_ref,
+            "title": view.title,
+            "url": view.url,
+            "stale": view.stale,
+        }
+        if view.stale:
+            missing += 1
+            lines.append(f"### {view.title}（缺失：{view.staleReason or '来源不可用'}）")
+            lines.append("")
+            continue
+        lines.append(f"### {view.title}")
+        lines.append("")
+        if view.url:
+            lines.append(f"- 链接：{view.url}")
+        if view.excerpt:
+            lines.append(f"- 摘录：{view.excerpt}")
+        if member.item_ref in notes_by_ref:
+            lines.append(f"- 笔记：{notes_by_ref[member.item_ref]}")
+        lines.append("")
+        manifest_entries.append(entry)
+
+    manifest = {
+        "kind": "lumirss-research-pack",
+        "schemaVersion": 1,
+        "workspace": {"id": workspace_id, "name": summary.name},
+        "entryCount": len(members),
+        "missingCount": missing,
+        "generatedAt": utc_now(),
+        "includeNotes": payload.includeNotes,
+        "entries": manifest_entries,
+    }
+    lines.append("## Manifest（机器可读）")
+    lines.append("")
+    lines.append("```json")
+    lines.append(_json.dumps(manifest, ensure_ascii=False, indent=2))
+    lines.append("```")
+
+    text = "\n".join(lines)
+    filename = f"research-pack-{workspace_id}.md"
+    quoted = quote(filename)
+    return Response(
+        content=text,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted}"
+        },
+    )
 
 
 @router.post(

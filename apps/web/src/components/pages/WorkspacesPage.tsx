@@ -25,6 +25,7 @@ import {
   useWorkspaceContents,
   useWorkspaces,
 } from '../../api/queries'
+import { exportResearchPackMd } from '../../api/client'
 import type { ResolvedItem } from '../../api/types'
 import type { Workspace } from '../../api/types'
 import { Button } from '../ui/Button'
@@ -435,6 +436,7 @@ export default function WorkspacesPage() {
                     重命名
                   </>
                 ) },
+                { key: 'export', content: '导出研究包（Markdown）' },
                 { key: 'delete', content: (
                   <>
                     <Trash2 aria-hidden className="mr-2 inline size-3.5" />
@@ -445,6 +447,17 @@ export default function WorkspacesPage() {
               onSelect={(key) => {
                 if (key === 'rename') setRenameOpen(true)
                 if (key === 'delete') setDeleteOpen(true)
+                if (key === 'export') {
+                  void exportResearchPackMd(selectedWorkspace.id).then((text) => {
+                    const blob = new Blob([text], { type: 'text/markdown' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `research-pack-${selectedWorkspace.id}.md`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  })
+                }
               }}
             />
           )}

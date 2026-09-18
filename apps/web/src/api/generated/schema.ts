@@ -3390,6 +3390,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/research-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Research Pack
+         * @description F27 研究包导出（Markdown + manifest；只读，可重现）。
+         *
+         *     条目小节 = 解析后的标题/链接/摘录（含书签笔记可选并入）；缺失来源
+         *     明确标注缺失原因，不冒充内容；文末附机器可读 manifest（条目数、缺
+         *     失数、生成时间）。路径安全：只输出文本与 URL。
+         */
+        post: operations["export_research_pack_api_v1_workspaces__workspace_id__research_pack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feeds/gpt-digest/{spec}.atom": {
         parameters: {
             query?: never;
@@ -5934,6 +5958,19 @@ export interface components {
         RemoteBackupsResponse: {
             /** Backups */
             backups: components["schemas"]["RemoteBackup"][];
+        };
+        /**
+         * ResearchPackRequest
+         * @description POST workspaces/{id}/research-pack — F27 导出选项。
+         */
+        ResearchPackRequest: {
+            /**
+             * Includenotes
+             * @default true
+             */
+            includeNotes: boolean;
+            /** Title */
+            title?: string | null;
         };
         /**
          * ResolveRequest
@@ -12891,6 +12928,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_research_pack_api_v1_workspaces__workspace_id__research_pack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchPackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

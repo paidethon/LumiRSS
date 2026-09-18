@@ -5667,6 +5667,29 @@
     "title": "RemoteBackupsResponse",
     "type": "object"
    },
+   "ResearchPackRequest": {
+    "description": "POST workspaces/{id}/research-pack — F27 导出选项。",
+    "properties": {
+     "includeNotes": {
+      "default": true,
+      "title": "Includenotes",
+      "type": "boolean"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "title": "ResearchPackRequest",
+    "type": "object"
+   },
    "ResolveRequest": {
     "additionalProperties": false,
     "description": "POST /api/v1/resolve — resolve one or more ItemRefs.",
@@ -15438,6 +15461,54 @@
      }
     },
     "summary": "Remove Workspace Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/research-pack": {
+   "post": {
+    "description": "F27 研究包导出（Markdown + manifest；只读，可重现）。\n\n条目小节 = 解析后的标题/链接/摘录（含书签笔记可选并入）；缺失来源\n明确标注缺失原因，不冒充内容；文末附机器可读 manifest（条目数、缺\n失数、生成时间）。路径安全：只输出文本与 URL。",
+    "operationId": "export_research_pack_api_v1_workspaces__workspace_id__research_pack_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResearchPackRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Research Pack"
    }
   },
   "/feeds/gpt-digest/{spec}.atom": {
