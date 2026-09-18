@@ -56,6 +56,7 @@ from lumirss.routers import (
     storage,
     subscriptions,
     tags,
+    task_records,
     workspaces,
 )
 from lumirss.search_index import SearchIndexService
@@ -297,5 +298,6 @@ app.include_router(tags.router)
 app.include_router(gpt_digest.router)
 app.include_router(storage.router)
 app.include_router(lumi_export.router)
+app.include_router(task_records.router)
 
 register_error_handlers(app)

@@ -1417,6 +1417,21 @@ class StorageUsage(BaseModel):
     generatedAt: str
 
 
+class TaskRecord(BaseModel):
+    """F35：一条后台任务记录（备份/日报/邮件摘要）。"""
+
+    kind: str
+    status: str
+    startedAt: str = ""
+    finishedAt: str | None = None
+    error: str | None = None
+    ref: str = ""
+
+
+class TaskRecordList(BaseModel):
+    items: list[TaskRecord] = []
+
+
 class SourceOverrideResult(BaseModel):
     """F11/F13：单个来源的显示覆盖（null = 该维度未启用）。"""
 
