@@ -25,6 +25,7 @@ import {
   useSetSourceOverrideMutation,
   useSubscriptions,
 } from '../../api/queries'
+import { FirstRunChecklist, useFirstRunVisible } from '../FirstRunChecklist'
 import { VolumeOverview } from '../VolumeOverview'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
@@ -152,6 +153,9 @@ export default function SubscriptionsPage() {
   }, [subscriptions.data, categories.data, scope, selectScope])
 
   const overrideMutation = useSetSourceOverrideMutation()
+  // F40：首启向导（尚无任何订阅且未被关闭时显示）
+  const firstRunVisible = useFirstRunVisible()
+  const [firstRunDismissed, setFirstRunDismissed] = useState(false)
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -208,6 +212,10 @@ export default function SubscriptionsPage() {
         category={renameTarget}
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
+        {/* F40：首启向导（尚无订阅且未被关闭时显示；可整体关闭） */}
+        {firstRunVisible && !firstRunDismissed ? (
+          <FirstRunChecklist onClose={() => setFirstRunDismissed(true)} />
+        ) : null}
         {/* F12：收件量概览（可折叠；识别信息过载与异常停更） */}
         <VolumeOverview />
         {/* 搜索订阅源（本地过滤，文案诚实） */}
