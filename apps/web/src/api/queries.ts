@@ -1418,6 +1418,7 @@ import {
   generateConfigDigest,
   getConfigFeed,
   getGptDigestFeed,
+  compareGptDigestIssue,
   explainGptDigestIssue,
   generateWeeklyDigest,
   snoozeReadLaterItem,
@@ -1681,6 +1682,18 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F07：相邻对照。 */
+export function useCompareGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { configId: number; issueKey: string }) =>
+      compareGptDigestIssue(vars.configId, vars.issueKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
   })
 }
 

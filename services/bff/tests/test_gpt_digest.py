@@ -18,6 +18,7 @@ from lumirss.gpt_digest import (
     DigestOutputInvalid,
     GptDigestScheduler,
     classify_material,
+    compare_with_previous,
     explain_issue,
     generate_issue,
     generate_weekly,
@@ -721,6 +722,60 @@ def test_f03_weekly_aggregates_recent_issues(client):
     route = client.post(f"/api/v1/gpt-digest/configs/{empty['id']}/weekly")
     assert route.status_code == 422
     assert route.json()["error"]["type"] == "no_material"
+
+
+def test_f07_compare_with_previous(client):
+    """F07：对照上一期；引用可追溯（prev:/cur: 复合编号）；无上一期 422。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-16",
+            title="上一期",
+            body_html="<p>a</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"事项A。","sourceIds":["s1"],"uncertainty":null}]}]',
+            refs_json='{"s1": {"title": "A", "url": "https://x.example.com/a", "feedTitle": "F", "publishedAt": "2026-09-16T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-16T00:00:00+00:00",
+        )
+    )
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-17",
+            title="本期",
+            body_html="<p>b</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"事项A有新进展。","sourceIds":["s2"],"uncertainty":null}]}]',
+            refs_json='{"s2": {"title": "B", "url": "https://x.example.com/b", "feedTitle": "F", "publishedAt": "2026-09-17T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-17T00:00:00+00:00",
+        )
+    )
+    provider = _FakeProvider(
+        '{"title":"相邻对照","sections":[{"heading":"变化","items":[{"summary":"[新增] 事项A的新进展。","sourceIds":["prev:s1","cur:s2"],"uncertainty":null}]}],"limitations":[]}'
+    )
+    config = run(_config_store().get_config(1))
+    row = run(
+        compare_with_previous(
+            _config_store(),
+            issues,
+            config=config,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+            issue_key="2026-09-17",
+        )
+    )
+    assert row["issue_key"] == "2026-09-17-d"
+    assert row["title"].startswith("〔对照〕")
+    refs = json.loads(row["refs_json"])
+    assert refs["prev:s1"]["issueKey"] == "2026-09-16"
+    assert refs["cur:s2"]["issueKey"] == "2026-09-17"
+    assert row["body_html"].count("https://x.example.com/") == 2
+
+    # 无上一期 → 422
+    route = client.post("/api/v1/gpt-digest/configs/1/issues/2026-09-16/compare")
+    assert route.status_code == 422
+    assert route.json()["error"]["type"] == "no_previous"
 
 
 def test_issue_key_uses_configured_timezone():

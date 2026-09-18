@@ -13,6 +13,7 @@ import {
   useConfigFeed,
   useConfigIssues,
   useConfigPreviewMutation,
+  useCompareGptDigestIssueMutation,
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
   useExplainGptDigestIssueMutation,
@@ -426,11 +427,12 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
         <Skeleton className="h-9 w-full" />
       ) : issues.data && issues.data.items.length > 0 ? (
         <ul className="flex flex-col gap-1.5">
-          {issues.data.items.map((issue) => (
+          {issues.data.items.map((issue, index) => (
             <IssueRow
               key={issue.issueKey}
               configId={config.id}
               issue={issue}
+              hasPrevious={index < issues.data.items.length - 1}
             />
           ))}
         </ul>
@@ -443,9 +445,18 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
 
 /** F08：单期行 + 展开式修订编辑（标题与各条目总结；sourceIds 不可
  * 新增——保证引用真实性不受人工编辑影响）。 */
-function IssueRow({ configId, issue }: { configId: number; issue: GptDigestIssue }) {
+function IssueRow({
+  configId,
+  issue,
+  hasPrevious,
+}: {
+  configId: number
+  issue: GptDigestIssue
+  hasPrevious: boolean
+}) {
   const revise = useReviseGptDigestIssueMutation()
   const explain = useExplainGptDigestIssueMutation()
+  const compare = useCompareGptDigestIssueMutation()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [summaries, setSummaries] = useState<string[]>(
@@ -491,10 +502,27 @@ function IssueRow({ configId, issue }: { configId: number; issue: GptDigestIssue
               : '生成解释版'}
           </Button>
         )}
+        {issue.issueKey.endsWith('-x') || issue.issueKey.endsWith('-d') ? null : hasPrevious ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={compare.isPending}
+            onClick={() => compare.mutate({ configId, issueKey: issue.issueKey })}
+          >
+            {compare.isPending && compare.variables?.issueKey === issue.issueKey
+              ? '对照中…'
+              : '对照上一期'}
+          </Button>
+        ) : null}
         <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>
           {editing ? '收起' : '修订'}
         </Button>
       </div>
+      {compare.isError && compare.error instanceof ApiError && compare.variables?.issueKey === issue.issueKey ? (
+        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+          对照失败：{compare.error.message}
+        </p>
+      ) : null}
       {explain.isError && explain.error instanceof ApiError && explain.variables?.issueKey === issue.issueKey ? (
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
           解释版失败：{explain.error.message}
