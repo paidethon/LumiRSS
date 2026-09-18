@@ -17,6 +17,7 @@ maintain.
 from datetime import UTC
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
@@ -168,6 +169,48 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
     )
     return SourceOverrideResult(**result)
 
+
+@router.get("/api/v1/sources/replacement-preview")
+async def replacement_preview(feedUrl: str, request: Request) -> dict[str, object]:
+    """F14：失效来源替换预览——基于既有发现能力，只读。
+
+    从站点 URL 出发找候选 feed（排除当前 feed 自身）；不自动改订阅、
+    不判断"失效"（那由 FreshRSS 的 feed error 状态承载）。"""
+    from lumirss.deps import _get_discovery_service
+
+    if not feedUrl.startswith(("http://", "https://")):
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_url", "message": "需要 http(s) URL。"}},
+        )
+    service = _get_discovery_service(request)
+    try:
+        candidates = await service.discover(feedUrl)
+    except Exception as exc:  # noqa: BLE001 — 发现失败是正常分支
+        return JSONResponse(
+            status_code=200,
+            content={
+                "siteUrl": feedUrl,
+                "currentFeedUrl": feedUrl,
+                "candidates": [],
+                "note": f"发现失败：{exc}",
+            },
+        )
+    items = [
+        {
+            "feedUrl": candidate.feed_url,
+            "title": candidate.title or "",
+            "kind": candidate.format or candidate.source,
+        }
+        for candidate in candidates
+        if candidate.feed_url != feedUrl
+    ]
+    return {
+        "siteUrl": feedUrl,
+        "currentFeedUrl": feedUrl,
+        "candidates": items,
+        "note": "候选来自页面自动发现；替换需要用户确认后自行操作（本接口不改订阅）。",
+    }
 
 @router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)
 async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVolumeResponse:
