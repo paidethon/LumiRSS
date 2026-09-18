@@ -10652,6 +10652,53 @@
     "summary": "Compare Gpt Digest Issue"
    }
   },
+  "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare-facts": {
+   "post": {
+    "description": "F28：事实对照——对某期内的条目按时间/主张/分歧生成对照表。\n\n按需生成、不落库（返回渲染 HTML + 结构化 sections + refs）；矛盾\n并列不裁决。AI 未配置/失败映射稳定错误。",
+    "operationId": "compare_facts_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_facts_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "issue_key",
+      "required": true,
+      "schema": {
+       "title": "Issue Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compare Facts Gpt Digest Issue"
+   }
+  },
   "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
    "post": {
     "description": "F05：为某期生成初学者解释版（独立条目 key = {key}-x）。\n\n输入只含该期自身的总结与来源标题——不可能引入原文之外的新事实。\nAI 未配置/上游失败映射为稳定错误；原版不受影响。",

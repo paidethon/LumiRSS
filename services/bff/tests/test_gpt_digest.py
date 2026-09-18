@@ -18,6 +18,7 @@ from lumirss.gpt_digest import (
     DigestOutputInvalid,
     GptDigestScheduler,
     classify_material,
+    compare_facts,
     compare_with_previous,
     explain_issue,
     generate_issue,
@@ -776,6 +777,38 @@ def test_f07_compare_with_previous(client):
     route = client.post("/api/v1/gpt-digest/configs/1/issues/2026-09-16/compare")
     assert route.status_code == 422
     assert route.json()["error"]["type"] == "no_previous"
+
+
+def test_f28_compare_facts_on_demand(client):
+    """F28：期内条目对照——按需生成不落库；矛盾并列。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="对照期",
+            body_html="<p>原</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"来源一称 X 已发生。","sourceIds":["s1"],"uncertainty":null},{"summary":"来源二称 X 未发生。","sourceIds":["s2"],"uncertainty":null}]}]',
+            refs_json='{"s1": {"title": "A", "url": "https://x.example.com/a", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}, "s2": {"title": "B", "url": "https://x.example.com/b", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    provider = _FakeProvider(
+        '{"title":"事实对照","sections":[{"heading":"分歧","items":[{"summary":"两来源对 X 的陈述矛盾，并列存疑。","sourceIds":["2026-09-18:s1","2026-09-18:s2"],"uncertainty":"矛盾未裁决"}]}],"limitations":[]}'
+    )
+    result = run(
+        compare_facts(
+            issues,
+            config_id=1,
+            issue_key="2026-09-18",
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok(provider),
+        )
+    )
+    assert result["title"] == "事实对照"
+    assert result["bodyHtml"]
+    assert len(run(issues.recent_issues(1, 10))) == 1  # 不落库
 
 
 def test_issue_key_uses_configured_timezone():

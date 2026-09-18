@@ -478,6 +478,62 @@ async def compare_gpt_digest_issue(
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
+@router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare-facts")
+async def compare_facts_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> Response:
+    """F28：事实对照——对某期内的条目按时间/主张/分歧生成对照表。
+
+    按需生成、不落库（返回渲染 HTML + 结构化 sections + refs）；矛盾
+    并列不裁决。AI 未配置/失败映射稳定错误。"""
+    from lumirss.gpt_digest import (
+        DigestMaterialEmpty,
+        _build_ai_deps,
+        compare_facts,
+    )
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        return JSONResponse(
+            status_code=200,
+            content={
+                await compare_facts(
+                    _issues(request),
+                    config_id=config_id,
+                    issue_key=issue_key,
+                    ai_settings=ai_settings,
+                    provider_factory=provider_factory,
+                )
+            },
+        )
+    except DigestMaterialEmpty as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": {"type": "ai_not_configured", "message": "AI 未配置或配置不可用。"}
+                },
+            )
+        if name in {"AiRateLimited", "AiTimeout", "AiUpstreamError", "AiInvalidResponse"}:
+            return JSONResponse(
+                status_code=502,
+                content={"error": {"type": "ai_upstream", "message": str(exc)}},
+            )
+        raise
+
+
 @router.get("/api/v1/gpt-digest/issues", response_model=GptDigestIssueList)
 async def list_gpt_digest_issues(
     request: Request, limit: int = 14

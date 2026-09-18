@@ -1117,6 +1117,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/compare-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Facts Gpt Digest Issue
+         * @description F28：事实对照——对某期内的条目按时间/主张/分歧生成对照表。
+         *
+         *     按需生成、不落库（返回渲染 HTML + 结构化 sections + refs）；矛盾
+         *     并列不裁决。AI 未配置/失败映射稳定错误。
+         */
+        post: operations["compare_facts_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_facts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/explain": {
         parameters: {
             query?: never;
@@ -8948,6 +8971,38 @@ export interface operations {
         };
     };
     compare_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_facts_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__compare_facts_post: {
         parameters: {
             query?: never;
             header?: never;

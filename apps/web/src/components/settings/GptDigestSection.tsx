@@ -13,6 +13,7 @@ import {
   useConfigFeed,
   useConfigIssues,
   useConfigPreviewMutation,
+  useCompareFactsMutation,
   useCompareGptDigestIssueMutation,
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
@@ -457,6 +458,7 @@ function IssueRow({
   const revise = useReviseGptDigestIssueMutation()
   const explain = useExplainGptDigestIssueMutation()
   const compare = useCompareGptDigestIssueMutation()
+  const facts = useCompareFactsMutation()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [summaries, setSummaries] = useState<string[]>(
@@ -502,6 +504,18 @@ function IssueRow({
               : '生成解释版'}
           </Button>
         )}
+        {!issue.issueKey.endsWith('-x') && !issue.issueKey.endsWith('-d') ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={facts.isPending}
+            onClick={() => facts.mutate({ configId, issueKey: issue.issueKey })}
+          >
+            {facts.isPending && facts.variables?.issueKey === issue.issueKey
+              ? '对照中…'
+              : '事实对照'}
+          </Button>
+        ) : null}
         {issue.issueKey.endsWith('-x') || issue.issueKey.endsWith('-d') ? null : hasPrevious ? (
           <Button
             variant="ghost"
@@ -522,6 +536,13 @@ function IssueRow({
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
           对照失败：{compare.error.message}
         </p>
+      ) : null}
+      {facts.data && facts.variables?.issueKey === issue.issueKey ? (
+        <div
+          className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5 text-xs"
+          data-facts-compare
+          dangerouslySetInnerHTML={{ __html: facts.data.bodyHtml }}
+        />
       ) : null}
       {explain.isError && explain.error instanceof ApiError && explain.variables?.issueKey === issue.issueKey ? (
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">

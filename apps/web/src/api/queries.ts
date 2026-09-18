@@ -1418,6 +1418,7 @@ import {
   generateConfigDigest,
   getConfigFeed,
   getGptDigestFeed,
+  compareFactsGptDigestIssue,
   compareGptDigestIssue,
   explainGptDigestIssue,
   generateWeeklyDigest,
@@ -1682,6 +1683,14 @@ export function useConfigIssues(configId: number | null) {
     queryKey: ['gpt-digest', 'issues', configId],
     queryFn: ({ signal }) => listConfigIssues(configId as number, signal),
     enabled: configId !== null,
+  })
+}
+
+/** F28：期内事实对照（按需，不落库）。 */
+export function useCompareFactsMutation() {
+  return useMutation({
+    mutationFn: (vars: { configId: number; issueKey: string }) =>
+      compareFactsGptDigestIssue(vars.configId, vars.issueKey),
   })
 }
 
