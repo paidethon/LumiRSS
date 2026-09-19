@@ -29,6 +29,77 @@ import { useAppSettings } from '../store/app-settings'
 import { useReaderUi } from '../store/reader-ui'
 import type { EntryListItem } from '../api/types'
 
+// 本文件聚焦 EntryList 的列表级行为（分组/排序/多选/刷新），不测卡片
+// 内部——用轻量 stub 替代真实 EntryCard/EntryRow（每行真实卡片含菜单/
+// 手势/hooks，101 行渲染在 CI 2 核 runner 上会拖垮超时）。stub 保留
+// 本文件依赖的契约：标题/来源文本、selectMode 复选框、点行切换选中。
+vi.mock('../components/EntryCard', () => ({
+  default: function StubCard(props: {
+    item: EntryListItem
+    selected?: boolean
+    selectMode?: boolean
+    checked?: boolean
+    onToggleSelect?: (entryRef: string) => void
+  }) {
+    const { item, selected, selectMode, checked, onToggleSelect } = props
+    return (
+      <div
+        data-testid="stub-card"
+        data-entry-ref={item.entryRef}
+        onClick={() => {
+          if (selectMode) onToggleSelect?.(item.entryRef)
+        }}
+      >
+        {selectMode && (
+          <input
+            type="checkbox"
+            checked={checked ?? false}
+            onChange={() => onToggleSelect?.(item.entryRef)}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`选择「${item.title}」`}
+          />
+        )}
+        <span>{item.feedTitle}</span>
+        <button type="button">{item.title}</button>
+        {selected ? <span data-testid="stub-selected" /> : null}
+      </div>
+    )
+  },
+}))
+vi.mock('../components/EntryRow', () => ({
+  default: function StubRow(props: {
+    item: EntryListItem
+    selected?: boolean
+    selectMode?: boolean
+    checked?: boolean
+    onToggleSelect?: (entryRef: string) => void
+  }) {
+    const { item, selected, selectMode, checked, onToggleSelect } = props
+    return (
+      <div
+        data-testid="stub-row"
+        data-entry-ref={item.entryRef}
+        onClick={() => {
+          if (selectMode) onToggleSelect?.(item.entryRef)
+        }}
+      >
+        {selectMode && (
+          <input
+            type="checkbox"
+            checked={checked ?? false}
+            onChange={() => onToggleSelect?.(item.entryRef)}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`选择「${item.title}」`}
+          />
+        )}
+        <span>{item.feedTitle}</span>
+        <button type="button">{item.title}</button>
+        {selected ? <span data-testid="stub-selected" /> : null}
+      </div>
+    )
+  },
+}))
+
 function entry(ref: string, overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
     entryRef: ref,
@@ -291,9 +362,7 @@ describe('F07 多选批量', () => {
     expect(refCounts).toEqual({ 'e1.a': 2, 'e1.b': 1 })
   })
 
-  // 101 张卡片的 jsdom 渲染在并行 worker 高负载下可超默认 5s（单跑
-  // ~3s）——单独放宽本用例超时；断言本身不变（上限禁用 + 提示必须真实通过）。
-  it('批量上限 100：全选超过上限后动作禁用并提示', { timeout: 20_000 }, async () => {
+  it('批量上限 100：全选超过上限后动作禁用并提示', async () => {
     const many = Array.from({ length: 101 }, (_, i) => entry(`m${i}`))
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

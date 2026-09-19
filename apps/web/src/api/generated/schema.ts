@@ -2431,11 +2431,14 @@ export interface paths {
          * Search
          * @description Global search over the derived projection.
          *
-         *     ``q`` is required (1-200 chars, at most 4 whitespace-split terms).
+         *     ``q`` is required (1-200 characters, at most 4 whitespace-split terms).
          *     ``state`` accepts "unread" (default: all); ``favorite`` filters
          *     starred entries; ``from``/``to`` are inclusive/exclusive ISO dates
          *     (YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two
-         *     are mutually exclusive.
+         *     are mutually exclusive. F29 advanced conditions (optional):
+         *     ``intitle`` (title-only, ≤2 terms), ``phrase`` (exact phrase),
+         *     ``exclude`` (excluded terms, ≤2) — bound into the cursor scope so
+         *     pagination never drifts across changed conditions.
          *
          *     Each leg paginates independently: ``cursor`` keys the RSS leg,
          *     ``libraryCursor`` the library leg; both cursors are bound to the
@@ -11217,6 +11220,9 @@ export interface operations {
                 favorite?: boolean | null;
                 from_?: string | null;
                 to?: string | null;
+                intitle?: string | null;
+                phrase?: string | null;
+                exclude?: string | null;
             };
             header?: never;
             path?: never;

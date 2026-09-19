@@ -213,11 +213,17 @@ describe('SearchPage — F27 日期筛选', () => {
     await screen.findByText(/共约 1/)
     fireEvent.click(screen.getByTestId('date-panel-toggle'))
     fireEvent.click(screen.getByTestId('quick-range-today'))
-    await waitFor(() => expect(searchUrls.length).toBe(2))
+    // 应用范围后至少一次带日期的请求。清除后：日期标签消失、结果仍在；
+    // 清除点之后若还有请求，必须是不带日期的基础查询（恢复走缓存时
+    // 可零请求——那也是合法实现，不把网络次数当契约）。
+    await waitFor(() => expect(searchUrls.some((u) => u.includes('from='))).toBe(true))
+    const countBeforeClear = searchUrls.length
     fireEvent.click(screen.getByRole('button', { name: '清除日期范围「今天」' }))
-    await waitFor(() => expect(searchUrls.length).toBe(3))
-    expect(searchUrls[2]).not.toContain('from=')
-    expect(screen.queryByTestId('applied-date-label')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('applied-date-label')).toBeNull())
+    expect(screen.getByText(/共约 1/)).toBeInTheDocument()
+    for (const url of searchUrls.slice(countBeforeClear)) {
+      expect(url.includes('from=')).toBe(false)
+    }
   })
 })
 

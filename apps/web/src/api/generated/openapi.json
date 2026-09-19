@@ -13259,7 +13259,7 @@
   },
   "/api/v1/search": {
    "get": {
-    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 chars, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive.\n\nEach leg paginates independently: ``cursor`` keys the RSS leg,\n``libraryCursor`` the library leg; both cursors are bound to the\nquery scope and rejected (400) on mismatch. A ``null`` cursor next\nto a non-null ``libraryCursor`` means the RSS leg is exhausted.",
+    "description": "Global search over the derived projection.\n\n``q`` is required (1-200 characters, at most 4 whitespace-split terms).\n``state`` accepts \"unread\" (default: all); ``favorite`` filters\nstarred entries; ``from``/``to`` are inclusive/exclusive ISO dates\n(YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two\nare mutually exclusive. F29 advanced conditions (optional):\n``intitle`` (title-only, ≤2 terms), ``phrase`` (exact phrase),\n``exclude`` (excluded terms, ≤2) — bound into the cursor scope so\npagination never drifts across changed conditions.\n\nEach leg paginates independently: ``cursor`` keys the RSS leg,\n``libraryCursor`` the library leg; both cursors are bound to the\nquery scope and rejected (400) on mismatch. A ``null`` cursor next\nto a non-null ``libraryCursor`` means the RSS leg is exhausted.",
     "operationId": "search_api_v1_search_get",
     "parameters": [
      {
@@ -13407,6 +13407,54 @@
         }
        ],
        "title": "To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "intitle",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Intitle"
+      }
+     },
+     {
+      "in": "query",
+      "name": "phrase",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Phrase"
+      }
+     },
+     {
+      "in": "query",
+      "name": "exclude",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Exclude"
       }
      }
     ],
