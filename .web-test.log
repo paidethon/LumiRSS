@@ -1,0 +1,139 @@
+$ vitest run
+
+ RUN  v4.1.11 /home/zephyr/projects/LumiRSS/apps/web
+
+ ✓ src/__tests__/subscription-management.test.tsx (16 tests) 2216ms
+     ✓ 移动到已有分类：PATCH { categoryId } → invalidate → 列表同步  305ms
+ ✓ src/__tests__/mobile-navigation.test.tsx (12 tests) 2165ms
+     ✓ drawer 中点 Unread → view=unread、drawer 关闭、selection 清空  450ms
+ ✓ src/__tests__/acceptance-0014a.test.tsx (10 tests) 2335ms
+     ✓ 桌面 App：Sidebar 入口打开唯一对话框；订阅管理页管理动作（添加来源/导入/导出 OPML）保留  470ms
+     ✓ 收藏 → 点文章 → section 让位（max-lg:hidden）→ Reader 占用版面；back 返回收藏（section/view/scope 不变）  625ms
+ ✓ src/__tests__/reader.test.tsx (28 tests) 2656ms
+ ✓ src/__tests__/gate-f.test.tsx (20 tests) 2736ms
+     ✓ accent 色板选择 → store 更新（AC10）  396ms
+     ✓ 内置预设复制派生 → 出现自定义徽标 + 可删除（AC21）  372ms
+     ✓ 自定义 CSS 保存（合法）→ store；非法 → 错误提示（AC14）  447ms
+ ✓ src/__tests__/shell.test.tsx (11 tests) 2931ms
+     ✓ 真实渲染 title / feedTitle / read-unread / starred；正文不出现  392ms
+     ✓ 点击 Unread → 请求 view=unread；点击 Starred → view=starred  1128ms
+ ✓ src/__tests__/reader-features.test.tsx (27 tests) 4572ms
+     ✓ 滚动 → 顶部 3px 进度条按比例显示；回到顶部隐藏；开关关闭不渲染  409ms
+     ✓ 开始 → scrollTop 每帧增长且不误触发自动已读；暂停/继续/停止状态切换  594ms
+ ✓ src/__tests__/settings.test.tsx (7 tests) 1158ms
+     ✓ 左导航渲染 15 个分类（G4/G5 新增 API 来源/邮件简报）  345ms
+     ✓ 导航切换 → 内容区标题与设置行切换（aria-current）  324ms
+ ✓ src/__tests__/settings-groups.test.tsx (9 tests) 1471ms
+     ✓ 时间线排序 select：最新/最早优先，切换写回 store  306ms
+ ✓ src/__tests__/agent-graph-ui.test.tsx (8 tests) 1695ms
+     ✓ 会话列表渲染；发送 → POST 消息 → 轮询直到 assistant 回复渲染  1056ms
+ ✓ src/__tests__/mobile-reader.test.tsx (3 tests) 1240ms
+     ✓ 无选中：list 可见 / reader 隐藏；点 Entry 后反转  414ms
+     ✓ 点 ← 返回 → selectEntry(null)，list 立即从 cache 恢复；不重新请求 Detail  427ms
+     ✓ 手机布局中 Reader 仍加载 Detail、安全渲染、Read/Star 发出 set 语义 PATCH  398ms
+ ✓ src/__tests__/backup-ui.test.tsx (11 tests) 1206ms
+ ✓ src/__tests__/gate-b.test.tsx (17 tests) 1285ms
+     ✓ 渲染全部基础快捷键（与 SHORTCUTS 同源）  362ms
+ ✓ src/__tests__/primitives.test.tsx (31 tests) 1133ms
+ ✓ src/__tests__/source-discovery.test.tsx (12 tests) 1035ms
+ ✓ src/__tests__/rsshub-add.test.tsx (12 tests) 1118ms
+ ✓ src/__tests__/add-subscription.test.tsx (16 tests) 1019ms
+ ✓ src/__tests__/gate-e.test.tsx (14 tests) 1058ms
+ ✓ src/__tests__/p0-10-closures.test.tsx (9 tests) 984ms
+ ✓ src/__tests__/gate-c.test.tsx (10 tests) 882ms
+ ✓ src/__tests__/list-features.test.tsx (12 tests) 8463ms
+     ✓ 列表按来源分组渲染：组头计数（已加载口径）、组头折叠、只看此来源  497ms
+     ✓ 进入/退出多选；点行与复选框切换选中；批量已读逐条 PATCH 后清空退出  321ms
+     ✓ 批量上限 100：全选超过上限后动作禁用并提示  5377ms
+     ✓ 下拉达阈值释放 → refetch 一次 + 「已刷新」；未达阈值不触发  1547ms
+ ✓ src/__tests__/reader-translation-browser-engine.test.tsx (5 tests) 926ms
+ ✓ src/__tests__/g6-ui.test.tsx (15 tests) 899ms
+ ✓ src/__tests__/read-later.test.tsx (9 tests) 844ms
+     ✓ 渲染 timeline 端点的行（不是 view=all 本地过滤）；列表头计数  312ms
+ ✓ src/__tests__/ai-translation.test.tsx (4 tests) 848ms
+     ✓ 原文模式：渲染原文，零翻译请求（无 lookup / generate）  304ms
+ ✓ src/__tests__/reader-aa-panel.test.tsx (6 tests) 921ms
+     ✓ 「更多阅读设置」打开完整设置（同一 settings store）  421ms
+ ✓ src/__tests__/agent-fullwidth-layout.test.tsx (3 tests) 928ms
+     ✓ agent section：工作台挂载，Reader 空态与 Timeline 不渲染，无 entries 请求  778ms
+ ✓ src/__tests__/rss-scope.test.tsx (12 tests) 879ms
+ ✓ src/__tests__/gate1-navigation.test.tsx (10 tests) 899ms
+     ✓ 点「打开设置」→ 设置面板打开（同一入口承载桌面 Modal 与移动全屏页）  545ms
+ ✓ src/__tests__/article-pipeline.test.ts (32 tests) 773ms
+ ✓ src/__tests__/ai-settings-page.test.tsx (8 tests) 692ms
+ ✓ src/__tests__/library-ui.test.tsx (15 tests) 773ms
+stderr | src/__tests__/gate4-pages.test.tsx > SearchPage（0022 全局搜索正式功能） > Enter 提交 → 记录到历史 + 渲染真实结果
+Each child in a list should have a unique "key" prop.
+
+Check the render method of `div`. It was passed a child from SearchPage. See https://react.dev/link/warning-keys for more information.
+
+ ✓ src/__tests__/search-features.test.tsx (13 tests) 689ms
+ ✓ src/__tests__/p0-12-navigation.test.tsx (5 tests) 808ms
+     ✓ 端到端：requestOpenSettings 深链 → SettingsButton 拉起设置壳并直达分类  346ms
+ ✓ src/__tests__/gate4-pages.test.tsx (17 tests) 798ms
+ ✓ src/__tests__/clips-ui.test.tsx (9 tests) 611ms
+ ✓ src/__tests__/recent-reads.test.tsx (11 tests) 589ms
+     ✓ 普通点击 = 记录 + selectEntry；开关关闭 = 只 selectEntry 不记录  316ms
+ ✓ src/__tests__/reader-tools.test.tsx (33 tests) 642ms
+ ✓ src/__tests__/ai-conversation.test.tsx (7 tests) 576ms
+ ✓ src/__tests__/reading-position-reader.test.tsx (3 tests) 656ms
+     ✓ 返回已读文章时按保存的 ratio 恢复 scrollTop  355ms
+ ✓ src/__tests__/opml-import.test.tsx (10 tests) 634ms
+ ✓ src/__tests__/inbox-ui.test.tsx (9 tests) 621ms
+ ✓ src/__tests__/finish-read-reader.test.tsx (4 tests) 664ms
+ ✓ src/__tests__/gate3-pages.test.tsx (9 tests) 548ms
+ ✓ src/__tests__/scroll-mark-unread.test.tsx (5 tests) 468ms
+ ✓ src/__tests__/gpt-digest-ui.test.tsx (4 tests) 429ms
+ ✓ src/__tests__/settings-sync.test.ts (13 tests) 383ms
+ ✓ src/__tests__/operations-rsshub-ui.test.tsx (3 tests) 395ms
+ ✓ src/__tests__/reader-translation-gesture.test.tsx (7 tests) 444ms
+ ✓ src/__tests__/list-display.test.tsx (10 tests) 425ms
+ ✓ src/__tests__/command-palette.test.tsx (10 tests) 378ms
+ ✓ src/__tests__/timeline-height-regression.test.tsx (7 tests) 445ms
+ ✓ src/__tests__/card-swipe.test.tsx (9 tests) 360ms
+ ✓ src/__tests__/annotations.test.tsx (16 tests) 307ms
+ ✓ src/__tests__/rag-settings.test.tsx (5 tests) 259ms
+ ✓ src/__tests__/timeline-gate2.test.tsx (9 tests) 330ms
+ ✓ src/__tests__/auth-session.test.tsx (12 tests) 287ms
+ ✓ src/__tests__/search-cache-shape.test.tsx (3 tests) 298ms
+ ✓ src/__tests__/query-memory.test.tsx (5 tests) 297ms
+ ✓ src/__tests__/gate-d.test.tsx (6 tests) 249ms
+ ✓ src/__tests__/search-dual-cursor.test.tsx (2 tests) 234ms
+ ✓ src/__tests__/ai-summary.test.tsx (6 tests) 277ms
+ ✓ src/__tests__/reading-ruler.test.tsx (7 tests) 258ms
+ ✓ src/__tests__/data-saver-images.test.tsx (6 tests) 220ms
+ ✓ src/__tests__/source-aliases.test.tsx (9 tests) 221ms
+ ✓ src/__tests__/filter-dry-run.test.tsx (2 tests) 221ms
+ ✓ src/__tests__/mobile-tabbar.test.tsx (3 tests) 192ms
+ ✓ src/__tests__/slider.test.tsx (4 tests) 197ms
+ ✓ src/__tests__/preferences-migration.test.tsx (3 tests) 207ms
+ ✓ src/__tests__/pwa.test.tsx (17 tests) 158ms
+ ✓ src/__tests__/undo-snackbar.test.tsx (3 tests) 179ms
+ ✓ src/__tests__/provenance-card.test.tsx (2 tests) 146ms
+ ✓ src/__tests__/code-copy.test.ts (5 tests) 137ms
+ ✓ src/__tests__/finish-read.test.tsx (15 tests) 106ms
+ ✓ src/__tests__/sanitize-article-html.test.ts (12 tests) 99ms
+ ✓ src/__tests__/shortcuts-help.test.tsx (5 tests) 155ms
+ ✓ src/__tests__/reading-position.test.ts (8 tests) 79ms
+ ✓ src/__tests__/theme.test.ts (18 tests) 27ms
+ ✓ src/__tests__/article-toc.test.ts (8 tests) 49ms
+ ✓ src/__tests__/translation-blocks.test.ts (5 tests) 61ms
+ ✓ src/__tests__/reading-time.test.ts (15 tests) 33ms
+ ✓ src/__tests__/theme-system-watch.test.ts (1 test) 26ms
+ ✓ src/__tests__/app-settings.test.ts (28 tests) 40ms
+ ✓ src/__tests__/client.test.ts (30 tests) 20ms
+ ✓ src/__tests__/nav-history.test.tsx (10 tests) 24ms
+ ✓ src/__tests__/reader-fonts.test.ts (18 tests) 20ms
+ ✓ src/__tests__/theme-pack.test.ts (15 tests) 12ms
+ ✓ src/__tests__/local-translator.test.ts (16 tests) 15ms
+ ✓ src/__tests__/pwa-manifest.test.ts (11 tests) 6ms
+ ✓ src/__tests__/safe-external-http-url.test.ts (16 tests) 5ms
+ ✓ src/__tests__/reader-ui.test.ts (7 tests) 5ms
+ ✓ src/__tests__/csp-hash.test.ts (2 tests) 4ms
+ ✓ src/__tests__/stale-label.test.ts (3 tests) 2ms
+
+ Test Files  93 passed (93)
+      Tests  980 passed (980)
+   Start at  10:43:08
+   Duration  21.79s (transform 4.96s, setup 12.61s, import 24.43s, tests 69.76s, environment 53.95s)
+

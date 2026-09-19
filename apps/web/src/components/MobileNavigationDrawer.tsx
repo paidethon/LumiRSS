@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Command, History } from 'lucide-react'
 import { useReaderUi } from '../store/reader-ui'
 import { COMMAND_PALETTE_TOGGLE_EVENT } from '../lib/keyboard-shortcuts'
 import Sidebar from './Sidebar'
-import RecentReads from './RecentReads'
-import CommandPalette from './CommandPalette'
 import { Sheet } from './ui/Sheet'
+
+// Bundle guard（Phase K）：命令面板/最近阅读只在抽屉里用——懒加载分包，
+// 不占首屏预算（键盘事件监听在 CommandPalette 模块内部，首次交互前
+// 面板未挂载也不影响 toggle 事件的时序：事件由 keyboard-shortcuts 派发，
+// 面板挂载后即开始监听）。
+const RecentReads = lazy(() => import('./RecentReads'))
+const CommandPalette = lazy(() => import('./CommandPalette'))
 
 /** MobileNavigationDrawer — <1024px 导航抽屉（0007 创建；0011 Gate 2
  * 升级为完整 modal）。
@@ -97,10 +102,14 @@ export default function MobileNavigationDrawer() {
       </Sheet>
 
       {/* F10：最近阅读覆盖层（z 高于抽屉；Escape/遮罩/✕ 关闭） */}
-      <RecentReads open={recentReadsOpen} onClose={() => setRecentReadsOpen(false)} />
+      <Suspense fallback={null}>
+        <RecentReads open={recentReadsOpen} onClose={() => setRecentReadsOpen(false)} />
+      </Suspense>
 
       {/* F30：命令面板（常驻挂载监听 Ctrl/⌘+K 事件；关闭时零渲染） */}
-      <CommandPalette />
+      <Suspense fallback={null}>
+        <CommandPalette />
+      </Suspense>
     </div>
   )
 }

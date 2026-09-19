@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { EntryDetail } from '../api/types'
 import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
 import { deferImages } from '../lib/article-images'
@@ -8,7 +8,10 @@ import { TABLE_WIDE_EXTRA_PX } from '../lib/reader-tools'
 import { useAppSettings } from '../store/app-settings'
 import { prefersDarkScheme, resolveTheme } from '../lib/theme'
 import ArticleToc from './ArticleToc'
-import ArticleLightbox, { type LightboxImage } from './ArticleLightbox'
+import type { LightboxImage } from './ArticleLightbox'
+
+// Bundle guard：灯箱只在点击图片/表格展开时可见——懒加载分包。
+const ArticleLightbox = lazy(() => import('./ArticleLightbox'))
 
 /** ArticleContent — 正文渲染边界（0006 建立；0012 Gate 4 升级为
  * presentation pipeline）。
@@ -288,24 +291,29 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
           // withHeadingIds/deferImages 只在其上做属性级后处理）。
           dangerouslySetInnerHTML={htmlProp}
         />
-        {/* F14：图片灯箱（portal；焦点归还与滚动还原由本组件负责） */}
-        <ArticleLightbox
-          open={lightbox !== null}
-          images={lightbox?.images}
-          startIndex={lightbox?.index ?? 0}
-          onClose={closeLightbox}
-        />
-        {/* F16：表格展开面板（同一灯箱遮罩，内容模式） */}
-        <ArticleLightbox
-          open={tablePanel !== null}
-          label="表格查看"
-          onClose={closeTablePanel}
-        >
-          <div className="flex items-center justify-between border-b border-[var(--lumi-border)] px-4 py-2.5">
-            <p className="text-sm font-medium text-[var(--lumi-text-primary)]">表格（可横向滚动）</p>
-          </div>
-          <div ref={tableHostRef} data-lumi-table-host="" className="overflow-auto p-4" />
-        </ArticleLightbox>
+        {/* F14：图片灯箱（portal；焦点归还与滚动还原由本组件负责）。
+            F16：表格展开面板（同一灯箱遮罩，内容模式）。lazy+Suspense：
+            打开瞬间未加载完时渲染 null，随后自动出现。 */}
+        <Suspense fallback={null}>
+          <ArticleLightbox
+            open={lightbox !== null}
+            images={lightbox?.images}
+            startIndex={lightbox?.index ?? 0}
+            onClose={closeLightbox}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <ArticleLightbox
+            open={tablePanel !== null}
+            label="表格查看"
+            onClose={closeTablePanel}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--lumi-border)] px-4 py-2.5">
+              <p className="text-sm font-medium text-[var(--lumi-text-primary)]">表格（可横向滚动）</p>
+            </div>
+            <div ref={tableHostRef} data-lumi-table-host="" className="overflow-auto p-4" />
+          </ArticleLightbox>
+        </Suspense>
       </>
     )
   }

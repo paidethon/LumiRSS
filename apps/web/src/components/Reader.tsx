@@ -38,9 +38,16 @@ import ProvenanceCard from './ProvenanceCard'
 import EntryNotesBacklinks from './EntryNotesBacklinks'
 import ReaderTranslation from './ReaderTranslation'
 import ReaderProgress from './ReaderProgress'
-import ArticleFindBar from './ArticleFindBar'
-import { AnnotationsLayer } from './AnnotationsLayer'
-import { ReadingRuler } from './ReadingRuler'
+import { lazy, Suspense } from 'react'
+// Bundle guard：查找条/批注层/行辅助线非首读必需——懒加载分包
+// （查找条仅在工具栏打开时可见，Suspense 瞬时 null 无感）。
+const ArticleFindBar = lazy(() => import('./ArticleFindBar'))
+const AnnotationsLayer = lazy(() =>
+  import('./AnnotationsLayer').then((m) => ({ default: m.AnnotationsLayer })),
+)
+const ReadingRuler = lazy(() =>
+  import('./ReadingRuler').then((m) => ({ default: m.ReadingRuler })),
+)
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
@@ -578,7 +585,9 @@ const handleScroll = useCallback(() => {
       {/* F11：阅读进度条（滚动容器顶部；自挂原生 passive 监听） */}
       <ReaderProgress getContainer={getScrollContainer} enabled={readerShowReadingProgress} />
       {/* F13：文内查找条（工具栏 Search 按钮打开；Escape/× 关闭清高亮） */}
-      <ArticleFindBar open={findOpen} onClose={() => setFindOpen(false)} getRoot={getFindRoot} />
+      <Suspense fallback={null}>
+        <ArticleFindBar open={findOpen} onClose={() => setFindOpen(false)} getRoot={getFindRoot} />
+      </Suspense>
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，
@@ -659,9 +668,13 @@ const handleScroll = useCallback(() => {
         {/* F20：正文锚定高亮/批注（选区浮动条 + 批注卡；设备本地存储）。
             entryRef 必填；contentVersion 缺省时组件按正文文本自行派生，
             锚点失效诚实降级。 */}
-        <AnnotationsLayer entryRef={detail.entryRef} containerRef={articleScrollRef} />
+        <Suspense fallback={null}>
+          <AnnotationsLayer entryRef={detail.entryRef} containerRef={articleScrollRef} />
+        </Suspense>
         {/* R05：阅读行辅助线（默认关；正文右上角开关，pointer-events 不遮挡选择） */}
-        <ReadingRuler containerRef={articleScrollRef} />
+        <Suspense fallback={null}>
+          <ReadingRuler containerRef={articleScrollRef} />
+        </Suspense>
         {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏） */}
         <ArticleConversation
           key={`conversation-${detail.entryRef}`}
