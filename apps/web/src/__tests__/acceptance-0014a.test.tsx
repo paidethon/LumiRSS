@@ -149,8 +149,10 @@ describe('0014a Gate 1 — Desktop Add Source', () => {
     useReaderUi.setState({ section: 'subscriptions' })
     render(withProviders(<App />))
 
-    // 订阅管理页动作齐全（0014a：新增 导出 OPML）
-    const controls = await screen.findByRole('group', { name: '订阅管理动作' })
+    // 订阅管理页动作齐全（0014a：新增 导出 OPML）。
+    // 整个 <App /> 挂载的查询多，CI 2 核机上 feeds/subscriptions 解析
+    // 可能超 findByRole 默认 1s——放宽等待（超时内出现即为通过契约）。
+    const controls = await screen.findByRole('group', { name: '订阅管理动作' }, { timeout: 10_000 })
     expect(within(controls).getByRole('button', { name: /添加来源/ })).toBeEnabled()
     expect(within(controls).getByRole('button', { name: /导入 OPML/ })).toBeEnabled()
     expect(within(controls).getByRole('button', { name: /导出 OPML/ })).toBeEnabled()

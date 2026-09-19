@@ -200,9 +200,14 @@ describe('SearchPage — F27 日期筛选', () => {
     fireEvent.click(screen.getByTestId('date-panel-toggle'))
     fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-09-01' } })
     fireEvent.click(within(screen.getByTestId('date-panel')).getByRole('button', { name: '应用' }))
-    await waitFor(() => expect(searchUrls.length).toBe(2))
-    expect(searchUrls[1]).toContain('from=2026-09-01')
-    expect(searchUrls[1]).not.toContain('to=')
+    // 最终态契约：最近一次带日期的请求是 from=2026-09-01 且无 to（不做
+    // 精确计数——base/advanced 两条查询的触发顺序在慢机上有竞态）。
+    await waitFor(() => {
+      const dated = searchUrls.filter((u) => u.includes('from='))
+      expect(dated.length).toBeGreaterThan(0)
+      expect(dated[dated.length - 1]!.includes('from=2026-09-01')).toBe(true)
+      expect(dated[dated.length - 1]!.includes('to=')).toBe(false)
+    })
   })
 
   it('清除日期后恢复全部结果（基础查询接手）', async () => {
