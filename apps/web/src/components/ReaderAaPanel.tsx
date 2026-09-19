@@ -6,6 +6,9 @@
  *   拖动立即生效（WYSIWYG），与 Settings → 阅读 共用同一 settings
  *   store（AC12：禁止第二套 ReaderQuickSettingsStore）；
  * - 字体/背景/简繁为快捷 select；深度项在完整设置；
+ * - F15/F17/专注：代码自动换行 / 按屏翻页（settings store 键）；
+ *   专注阅读是 Reader 会话级开关（Reader 持有状态，经 props 传入——
+ *   settings store 无此键且禁止改 store）；
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
 import { useState, type Ref } from 'react'
@@ -23,12 +26,49 @@ import { Popover } from './ui/Popover'
 import { Sheet } from './ui/Sheet'
 import { Select } from './ui/Select'
 import { Slider } from './ui/Slider'
+import { Switch } from './ui/Switch'
 import { IconButton } from './ui/IconButton'
 
 const ROW = 'flex min-h-11 items-center justify-between gap-3'
 
+/** 开关行：可见标题 + Switch（labelledby 关联，点击标题即可切换）。 */
+function SwitchRow({
+  id,
+  title,
+  checked,
+  onChange,
+}: {
+  id: string
+  title: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div className={ROW}>
+      <span id={id} className="text-sm text-[var(--lumi-text-primary)]">
+        {title}
+      </span>
+      <Switch
+        labelledby={id}
+        id={`${id}-switch`}
+        checked={checked}
+        onCheckedChange={onChange}
+        label={title}
+      />
+    </div>
+  )
+}
+
 /** 快速控件组（Popover / Sheet 共用；同一 settings store）。 */
-function AaControls({ onOpenSettings }: { onOpenSettings: () => void }) {
+function AaControls({
+  onOpenSettings,
+  focusMode,
+  onFocusModeChange,
+}: {
+  onOpenSettings: () => void
+  focusMode?: boolean
+  onFocusModeChange?: (value: boolean) => void
+}) {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
 
@@ -141,6 +181,29 @@ function AaControls({ onOpenSettings }: { onOpenSettings: () => void }) {
             ]}
           />
         </div>
+        {/* F15：代码自动换行（settings：readerCodeWrap） */}
+        <SwitchRow
+          id="aa-code-wrap"
+          title="代码自动换行"
+          checked={settings.readerCodeWrap}
+          onChange={(v) => update({ readerCodeWrap: v })}
+        />
+        {/* F17：按屏翻页（settings：readerPagedMode；连续滚动不受影响） */}
+        <SwitchRow
+          id="aa-paged-mode"
+          title="按屏翻页"
+          checked={settings.readerPagedMode}
+          onChange={(v) => update({ readerPagedMode: v })}
+        />
+        {/* 专注阅读：Reader 会话级开关（props 传入；store 无此键） */}
+        {onFocusModeChange !== undefined && (
+          <SwitchRow
+            id="aa-focus-mode"
+            title="专注阅读"
+            checked={focusMode ?? false}
+            onChange={onFocusModeChange}
+          />
+        )}
         <div className="flex min-h-11 items-center">
           <button
             type="button"
@@ -156,7 +219,15 @@ function AaControls({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 /** 入口：桌面 Popover / 移动底部 Sheet。 */
-export default function ReaderAaPanel() {
+export default function ReaderAaPanel({
+  focusMode,
+  onFocusModeChange,
+}: {
+  /** 专注阅读当前值（Reader 持有；undefined = 不渲染该开关）。 */
+  focusMode?: boolean
+  /** 专注阅读切换（由 Reader 提供；undefined = 不渲染该开关）。 */
+  onFocusModeChange?: (value: boolean) => void
+} = {}) {
   const isMobile = useIsMobile()
   const [sheetOpen, setSheetOpen] = useState(false)
   // 完整设置入口的状态挂在本组件（避免 Popover/Sheet 卸载时丢失）
@@ -204,7 +275,11 @@ export default function ReaderAaPanel() {
                 onClick={() => setSheetOpen(false)}
               />
             </div>
-            <AaControls onOpenSettings={openSettings} />
+            <AaControls
+              onOpenSettings={openSettings}
+              focusMode={focusMode}
+              onFocusModeChange={onFocusModeChange}
+            />
           </Sheet>
         </>
       ) : (
@@ -218,7 +293,13 @@ export default function ReaderAaPanel() {
             })
           }
         >
-          {() => <AaControls onOpenSettings={openSettings} />}
+          {() => (
+            <AaControls
+              onOpenSettings={openSettings}
+              focusMode={focusMode}
+              onFocusModeChange={onFocusModeChange}
+            />
+          )}
         </Popover>
       )}
 

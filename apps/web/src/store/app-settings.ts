@@ -95,6 +95,19 @@ export type ReadLaterSort = 'newest' | 'oldest'
 /** 代码高亮：自动（含 code 文章按需加载 Shiki）/ 关闭 */
 export type ReaderCodeHighlight = 'auto' | 'off'
 
+// ---- 2026-09 移动端专项（P0-2 / P1 / F01–F17 新增 portable 键） ----
+
+/** P0-2：正文读到底自动标为已读 */
+export type GlassEffect = 'auto' | 'on' | 'off'
+/** F01：列表密度三档 */
+export type ListDensity = 'compact' | 'standard' | 'comfortable'
+/** F04：列表时间格式 */
+export type ListTimeFormat = 'relative' | 'absolute'
+/** F06：RSS 时间线排序 */
+export type TimelineOrder = 'newest' | 'oldest'
+/** F08：卡片滑动动作（非屏幕边缘区） */
+export type CardSwipeAction = 'none' | 'read' | 'readLater' | 'star'
+
 /** 自定义字体条目（IndexedDB 存储，settings 只存引用 id） */
 export interface ReaderCustomFont {
   id: string
@@ -191,6 +204,21 @@ export interface AppSettings {
   readerCodeTheme: string
   /** 实验性：词首强调（Bionic-style，默认关） */
   readerBionic: boolean
+  /** 2026-09 移动端专项新增（默认值来自 BFF PortableSettings 生成物） */
+  readerAutoMarkRead: boolean
+  glassEffect: GlassEffect
+  swipeBackGesture: boolean
+  listDensity: ListDensity
+  listShowSnippet: boolean
+  listShowCover: boolean
+  listTimeFormat: ListTimeFormat
+  listGroupByFeed: boolean
+  timelineOrder: TimelineOrder
+  cardSwipeAction: CardSwipeAction
+  readerShowReadingProgress: boolean
+  readerCodeWrap: boolean
+  readerPagedMode: boolean
+  searchHighlightMatches: boolean
   /** 布局（<1024 忽略；Gate C 接线） */
   sidebarWidth: number // clamp 220–300
   sidebarCollapsed: boolean
@@ -236,6 +264,12 @@ const READER_CODE_HIGHLIGHTS = SETTING_ENUMS.readerCodeHighlight
 const READ_LATER_SORTS = SETTING_ENUMS.readLaterSort
 /** Shiki 主题白名单（auto = 随 Reader 明暗切换；其余为单主题锁定） */
 const READER_CODE_THEMES = SETTING_ENUMS.readerCodeTheme
+// 2026-09 移动端专项枚举表（生成元数据派生）
+const GLASS_EFFECTS = SETTING_ENUMS.glassEffect
+const LIST_DENSITIES = SETTING_ENUMS.listDensity
+const LIST_TIME_FORMATS = SETTING_ENUMS.listTimeFormat
+const TIMELINE_ORDERS = SETTING_ENUMS.timelineOrder
+const CARD_SWIPE_ACTIONS = SETTING_ENUMS.cardSwipeAction
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -467,6 +501,51 @@ export function normalizeSettings(raw: unknown): AppSettings {
       DEFAULT_APP_SETTINGS.readerCodeTheme,
     ),
     readerBionic: pickBoolean(source.readerBionic, DEFAULT_APP_SETTINGS.readerBionic),
+    // 2026-09 移动端专项：逐字段校验（枚举回退默认；旧文档缺键 → 默认值）
+    readerAutoMarkRead: pickBoolean(
+      source.readerAutoMarkRead,
+      DEFAULT_APP_SETTINGS.readerAutoMarkRead,
+    ),
+    glassEffect: pickString(source.glassEffect, GLASS_EFFECTS, DEFAULT_APP_SETTINGS.glassEffect),
+    swipeBackGesture: pickBoolean(
+      source.swipeBackGesture,
+      DEFAULT_APP_SETTINGS.swipeBackGesture,
+    ),
+    listDensity: pickString(source.listDensity, LIST_DENSITIES, DEFAULT_APP_SETTINGS.listDensity),
+    listShowSnippet: pickBoolean(
+      source.listShowSnippet,
+      DEFAULT_APP_SETTINGS.listShowSnippet,
+    ),
+    listShowCover: pickBoolean(source.listShowCover, DEFAULT_APP_SETTINGS.listShowCover),
+    listTimeFormat: pickString(
+      source.listTimeFormat,
+      LIST_TIME_FORMATS,
+      DEFAULT_APP_SETTINGS.listTimeFormat,
+    ),
+    listGroupByFeed: pickBoolean(
+      source.listGroupByFeed,
+      DEFAULT_APP_SETTINGS.listGroupByFeed,
+    ),
+    timelineOrder: pickString(
+      source.timelineOrder,
+      TIMELINE_ORDERS,
+      DEFAULT_APP_SETTINGS.timelineOrder,
+    ),
+    cardSwipeAction: pickString(
+      source.cardSwipeAction,
+      CARD_SWIPE_ACTIONS,
+      DEFAULT_APP_SETTINGS.cardSwipeAction,
+    ),
+    readerShowReadingProgress: pickBoolean(
+      source.readerShowReadingProgress,
+      DEFAULT_APP_SETTINGS.readerShowReadingProgress,
+    ),
+    readerCodeWrap: pickBoolean(source.readerCodeWrap, DEFAULT_APP_SETTINGS.readerCodeWrap),
+    readerPagedMode: pickBoolean(source.readerPagedMode, DEFAULT_APP_SETTINGS.readerPagedMode),
+    searchHighlightMatches: pickBoolean(
+      source.searchHighlightMatches,
+      DEFAULT_APP_SETTINGS.searchHighlightMatches,
+    ),
     sidebarWidth: clamp(
       typeof source.sidebarWidth === 'number' ? source.sidebarWidth : DEFAULT_APP_SETTINGS.sidebarWidth,
       220,

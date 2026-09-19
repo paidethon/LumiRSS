@@ -829,6 +829,61 @@
       "title": "Accentcolor",
       "type": "string"
      },
+     "cardSwipeAction": {
+      "default": "read",
+      "enum": [
+       "none",
+       "read",
+       "readLater",
+       "star"
+      ],
+      "title": "Cardswipeaction",
+      "type": "string"
+     },
+     "glassEffect": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "on",
+       "off"
+      ],
+      "title": "Glasseffect",
+      "type": "string"
+     },
+     "listDensity": {
+      "default": "standard",
+      "enum": [
+       "compact",
+       "standard",
+       "comfortable"
+      ],
+      "title": "Listdensity",
+      "type": "string"
+     },
+     "listGroupByFeed": {
+      "default": false,
+      "title": "Listgroupbyfeed",
+      "type": "boolean"
+     },
+     "listShowCover": {
+      "default": true,
+      "title": "Listshowcover",
+      "type": "boolean"
+     },
+     "listShowSnippet": {
+      "default": true,
+      "title": "Listshowsnippet",
+      "type": "boolean"
+     },
+     "listTimeFormat": {
+      "default": "relative",
+      "enum": [
+       "relative",
+       "absolute"
+      ],
+      "title": "Listtimeformat",
+      "type": "string"
+     },
      "readLaterSort": {
       "default": "newest",
       "enum": [
@@ -837,6 +892,11 @@
       ],
       "title": "Readlatersort",
       "type": "string"
+     },
+     "readerAutoMarkRead": {
+      "default": true,
+      "title": "Readerautomarkread",
+      "type": "boolean"
      },
      "readerBackground": {
       "default": "follow",
@@ -889,6 +949,11 @@
       "title": "Readercodetheme",
       "type": "string"
      },
+     "readerCodeWrap": {
+      "default": false,
+      "title": "Readercodewrap",
+      "type": "boolean"
+     },
      "readerContentWidth": {
       "default": 760.0,
       "title": "Readercontentwidth",
@@ -940,10 +1005,20 @@
       "title": "Readerpagemargin",
       "type": "number"
      },
+     "readerPagedMode": {
+      "default": false,
+      "title": "Readerpagedmode",
+      "type": "boolean"
+     },
      "readerParagraphSpacing": {
       "default": 0.85,
       "title": "Readerparagraphspacing",
       "type": "number"
+     },
+     "readerShowReadingProgress": {
+      "default": true,
+      "title": "Readershowreadingprogress",
+      "type": "boolean"
      },
      "readerShowReadingTime": {
       "default": false,
@@ -979,8 +1054,18 @@
       "title": "Scrollmarkunread",
       "type": "boolean"
      },
+     "searchHighlightMatches": {
+      "default": true,
+      "title": "Searchhighlightmatches",
+      "type": "boolean"
+     },
      "stored": {
       "title": "Stored",
+      "type": "boolean"
+     },
+     "swipeBackGesture": {
+      "default": true,
+      "title": "Swipebackgesture",
       "type": "boolean"
      },
      "themeMode": {
@@ -991,6 +1076,15 @@
        "dark"
       ],
       "title": "Thememode",
+      "type": "string"
+     },
+     "timelineOrder": {
+      "default": "newest",
+      "enum": [
+       "newest",
+       "oldest"
+      ],
+      "title": "Timelineorder",
       "type": "string"
      },
      "uiFontSize": {
@@ -2297,6 +2391,17 @@
       "title": "Feedtitle",
       "type": "string"
      },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
      "publishedAt": {
       "anyOf": [
        {
@@ -2344,7 +2449,7 @@
     "type": "object"
    },
    "EntryListItem": {
-    "description": "One article in the entry list — never contains the body.",
+    "description": "One article in the entry list — never contains the body.\n\n2026-09 移动端专项 P2/F02/F03 enrich（列表级元数据，非正文）：\n- feedUrl：来源真实订阅 URL（标题→URL 映射解析；解析不到保持\n  None，前端该来源不可点击，诚实降级）；\n- snippet：列表摘要（html_to_text 前 160 字符，纯文本）；\n- coverUrl：封面图（正文首个 http(s) <img src>；仅元数据，是否\n  加载由前端图片模式控制）。",
     "properties": {
      "author": {
       "anyOf": [
@@ -2357,6 +2462,17 @@
       ],
       "title": "Author"
      },
+     "coverUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Coverurl"
+     },
      "entryRef": {
       "title": "Entryref",
       "type": "string"
@@ -2364,6 +2480,17 @@
      "feedTitle": {
       "title": "Feedtitle",
       "type": "string"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
      },
      "publishedAt": {
       "anyOf": [
@@ -2379,6 +2506,17 @@
      "read": {
       "title": "Read",
       "type": "boolean"
+     },
+     "snippet": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Snippet"
      },
      "starred": {
       "title": "Starred",

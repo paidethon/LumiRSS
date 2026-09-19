@@ -10,6 +10,7 @@
 import { create } from 'zustand'
 import type { UiView } from '../lib/read-later'
 import type { ContentScope } from '../lib/navigation'
+import { pushNavHistory } from '../lib/nav-history'
 
 /** 一级页面（0011 Spec §设计规格）：与视图/内容范围语义正交。
  * phase2 M1：+ bookmarks（书签）/ workspaces（工作区）——桌面渲染在
@@ -68,26 +69,31 @@ export const useReaderUi = create<ReaderUiState>((set) => ({
   selectedEntryRef: null,
   mobileSidebarOpen: false,
   // 切 section 不清空 home 的筛选——返回首页时恢复原状态。
-  selectSection: (section) =>
-    set((state) =>
-      state.section === section
-        ? state
-        : { section, selectedEntryRef: null },
-    ),
+  // P1.3（2026-09）：导航动作在 set 提交后 push 历史记录（快照必须
+  // 是新状态；popstate 恢复时 pushNavHistory 内部抑制）。
+  selectSection: (section) => {
+    if (useReaderUi.getState().section === section) return
+    set({ section, selectedEntryRef: null })
+    pushNavHistory()
+  },
   // 切 scope 清空 selection：旧选择可能已不属于新列表。
   // 幂等判定用结构相等（调用方每次传新字面量，不能只比引用）。
-  selectScope: (scope) =>
-    set((state) =>
-      scopeEquals(state.scope, scope)
-        ? state
-        : { scope, selectedEntryRef: null },
-    ),
+  selectScope: (scope) => {
+    if (scopeEquals(useReaderUi.getState().scope, scope)) return
+    set({ scope, selectedEntryRef: null })
+    pushNavHistory()
+  },
   // 工作区切换（稍后读/收藏）复用 view；切 view 时清 selection。
-  selectView: (view) =>
-    set((state) =>
-      state.view === view ? state : { view, selectedEntryRef: null },
-    ),
-  selectEntry: (entryRef) => set({ selectedEntryRef: entryRef }),
+  selectView: (view) => {
+    if (useReaderUi.getState().view === view) return
+    set({ view, selectedEntryRef: null })
+    pushNavHistory()
+  },
+  selectEntry: (entryRef) => {
+    if (useReaderUi.getState().selectedEntryRef === entryRef) return
+    set({ selectedEntryRef: entryRef })
+    pushNavHistory()
+  },
   openMobileSidebar: () => set({ mobileSidebarOpen: true }),
   closeMobileSidebar: () => set({ mobileSidebarOpen: false }),
 }))

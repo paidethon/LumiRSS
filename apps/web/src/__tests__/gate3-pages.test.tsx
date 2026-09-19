@@ -21,9 +21,6 @@ const FEEDS = [
 // 「今天」动态生成：分组断言（最近收藏 = 今天）依赖当天日期，固定日期会随时间过期
 const NOW = new Date()
 const TODAY_ISO = NOW.toISOString()
-const TODAY_MMDD = `${String(NOW.getMonth() + 1).padStart(2, '0')}/${String(
-  NOW.getDate(),
-).padStart(2, '0')}`
 
 function item(ref: string, overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
@@ -75,12 +72,12 @@ afterEach(() => {
 })
 
 describe('EntryCard（AC10）', () => {
-  it('真实字段层级：feedTitle + 日期 + 标题；未读 medium/已读 normal；动作区存在', () => {
+  it('真实字段层级：feedTitle + 时间 + 标题；未读 medium/已读 normal；动作区存在', () => {
     render(withProviders(<EntryCard item={item('e1.a')} selected={false} />))
-    // 卡根为 div：标题区按钮承载可访问名（含 feedTitle+时间）
-    const cardBtn = screen.getByRole('button', { name: /示例源 A/ })
-    expect(cardBtn.textContent).toContain('示例源 A')
-    expect(cardBtn.textContent).toContain(TODAY_MMDD) // 真实 publishedAt 格式化（本地时区）
+    // 2026-09 P2/F04 迁移：来源是独立元素（无 feedUrl 时纯文本），
+    // 时间默认相对格式（刚发布 =「刚刚」）；标题按钮打开文章。
+    expect(screen.getByText('示例源 A')).toBeInTheDocument()
+    expect(screen.getByText('刚刚')).toBeInTheDocument()
     const title = screen.getByText('文章 e1.a')
     expect(title.className).toContain('font-medium') // 未读
     // 动作区：稍后读 + 收藏按钮（§19）

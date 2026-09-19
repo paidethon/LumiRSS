@@ -23,6 +23,7 @@ import type { ReactNode } from 'react'
 import type { ResolvedItem } from '../api/types'
 import { useItemTags, useLibraryFavoriteToggle } from '../api/queries'
 import { formatPublishedAt } from '../lib/date-format'
+import { resolveSourceName } from '../lib/source-meta'
 import { isOpenable, openResolvedItem } from '../lib/open-item'
 import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { staleState } from '../lib/stale-label'
@@ -163,9 +164,10 @@ export function UnifiedContentCard({
         </span>
       </div>
 
-      {/* 诚实来源行：真实 source + 解析时间（缺失显示 —） */}
+      {/* 诚实来源行：真实 source（缺失降级「来源未知」，P2 统一语义，
+          不出现空串+裸分隔点）+ 解析时间（缺失显示 —） */}
       <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-[var(--lumi-text-tertiary)]">
-        {item.source !== '' && <span className="truncate">{item.source}</span>}
+        <span className="truncate">{resolveSourceName(item.source)}</span>
         <span aria-hidden>·</span>
         <span className="shrink-0">{formatPublishedAt(item.datetime ?? null)}</span>
       </p>

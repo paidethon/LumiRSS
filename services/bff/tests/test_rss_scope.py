@@ -110,6 +110,8 @@ async def test_category_stream_uses_label_path():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json={"subscriptions": []})
         assert "/stream/contents/user/-/label/" in request.url.path
         return httpx.Response(200, json={"items": [stream_item("1")]})
 
@@ -129,6 +131,8 @@ async def test_default_category_localized_label_falls_back():
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
         path = request.url.path
+        if path.endswith("/subscription/list"):
+            return httpx.Response(200, json={"subscriptions": []})
         calls.append(path)
         if path.endswith("/label/Uncategorized"):
             return httpx.Response(200, json={"items": [stream_item("1"), stream_item("2")]})
@@ -152,7 +156,8 @@ async def test_empty_category_no_infinite_retry():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
-        calls.append(request.url.path)
+        if not request.url.path.endswith("/subscription/list"):
+            calls.append(request.url.path)
         return httpx.Response(200, json={"items": []})
 
     adapter, _ = make_adapter(handler)

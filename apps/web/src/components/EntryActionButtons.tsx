@@ -45,6 +45,7 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  SEARCH_RESULTS_KEY,
   useAddWorkspaceItemMutation,
   useBookmarkRssRefs,
   useCreateBookmarkMutation,
@@ -157,7 +158,7 @@ export function EntryActionButtons({
         queryKey: ['entries'],
       }).map(([, d]) => d),
       ...queryClient.getQueriesData<{ pages: { items: EntryListItem[] }[] }>({
-        queryKey: ['search'],
+        queryKey: SEARCH_RESULTS_KEY,
       }).map(([, d]) => d),
     ].filter((d): d is { pages: { items: EntryListItem[] }[] } => d !== undefined)
     createBookmark.mutate({

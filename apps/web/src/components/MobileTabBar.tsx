@@ -46,8 +46,8 @@ export default function MobileTabBar() {
     <nav aria-label="底部导航" className="px-3 pb-2 lg:hidden" style={{ paddingBottom: 'calc(var(--safe-bottom) + 0.5rem)' }}>
       <div
         className={cx(
-          'flex rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)]',
-          'bg-[var(--lumi-elevated)] shadow-[var(--lumi-shadow-floating)]',
+          'lumi-glass flex rounded-[var(--lumi-radius-xl)] border border-[var(--lumi-border)]',
+          'shadow-[var(--lumi-shadow-floating)]',
         )}
       >
         {tabs.map((tab) => {

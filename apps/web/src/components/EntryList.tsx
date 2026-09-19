@@ -1,5 +1,5 @@
-import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose, Unplug } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef } from 'react'
+import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose, Unplug, CheckSquare, ChevronDown, X, RotateCw } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useEntries,
   useEntryStateMutation,
@@ -11,9 +11,10 @@ import {
 import type { UiView } from '../lib/read-later'
 import type { EntryListItem, ReadLaterItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
-import { scopeTitle } from '../lib/navigation'
+import { scopeKey, scopeTitle } from '../lib/navigation'
 import { useAppSettings } from '../store/app-settings'
 import { groupEntriesByDate } from '../lib/entry-groups'
+import { listAnchorKey, loadListAnchor, saveListAnchor } from '../lib/list-anchor'
 import { matchesFilterRules } from './settings/FilterRulesPage'
 import EntryCard from './EntryCard'
 import EntryRow from './EntryRow'
@@ -22,6 +23,7 @@ import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
 import { UnifiedContentCard } from './UnifiedContentCard'
 import { Skeleton } from './ui/Skeleton'
+import { cx } from './ui/cx'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
   all: { title: '这里还没有文章', description: '订阅源还没有内容，稍后再来看看。' },
@@ -66,6 +68,51 @@ function useInfiniteSentinel(
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, depsKey])
   return sentinelRef
+}
+
+/** P1.3 列表滚动锚点：离开/滚动时保存，挂载/换范围后数据到达时恢复
+ * （rAF 节流保存；恢复对 scrollHeight 有要求，等一拍重试）。 */
+function useListScrollAnchor(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  anchorKey: string,
+  loadedCount: number,
+) {
+  useEffect(() => {
+    const container = containerRef.current
+    if (container === null) return
+    const restore = (attempt: number) => {
+      const target = loadListAnchor(anchorKey)
+      if (target === null || target === 0) return
+      if (container.scrollHeight > target || attempt > 20) {
+        container.scrollTop = target
+      } else {
+        // 内容还没长到锚点位置（下一页仍在拉）：稍后重试。
+        requestAnimationFrame(() => restore(attempt + 1))
+      }
+    }
+    restore(0)
+  }, [anchorKey, loadedCount, containerRef])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (container === null) return
+    let scheduled = false
+    const onSave = () => {
+      if (scheduled) return
+      scheduled = true
+      requestAnimationFrame(() => {
+        scheduled = false
+        const el = containerRef.current
+        if (el !== null) saveListAnchor(anchorKey, el.scrollTop)
+      })
+    }
+    container.addEventListener('scroll', onSave, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', onSave)
+      const el = containerRef.current
+      if (el !== null) saveListAnchor(anchorKey, el.scrollTop)
+    }
+  }, [anchorKey, containerRef])
 }
 
 /** 列表尾部状态（加载中 / 可加载更多 / 到底；ref 由调用方传入——
@@ -144,6 +191,7 @@ function ListHeader({ view, loadedCount }: { view: UiView; loadedCount: number }
 function ReadLaterList() {
   const readLaterSort = useAppSettings((s) => s.settings.readLaterSort)
   const updateSettings = useAppSettings((s) => s.update)
+  const listDensity = useAppSettings((s) => s.settings.listDensity)
   const order: 'newest' | 'oldest' = readLaterSort
   const timeline = useReadLaterTimeline(order)
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = timeline
@@ -217,7 +265,7 @@ function ReadLaterList() {
         )}
 
         {rows.length > 0 && (
-          <ul className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
+          <ul data-density={listDensity} className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
             {rows.map((row) => (
               <ReadLaterRow key={row.itemRef} row={row} />
             ))}
@@ -330,11 +378,66 @@ function ReadLaterRow({ row }: { row: ReadLaterItem }) {
   )
 }
 
-/** entries 视图列表（all / unread / starred；read-later 走 ReadLaterList）。 */
+// ---- F05 按来源分组（纯函数，可单测） ----
+
+/** 来源分组：Map<feedTitle, items> 保持首次出现顺序；feedUrl 取组内
+ * 第一项的 feedUrl（可能为 null——组头「只看此来源」按钮据此禁用，
+ * 绝不用后续条目回填伪造目标）。 */
+export interface EntryFeedGroup {
+  feedTitle: string
+  feedUrl: string | null
+  items: EntryListItem[]
+}
+
+export function groupEntriesByFeed(entries: EntryListItem[]): EntryFeedGroup[] {
+  const map = new Map<string, EntryFeedGroup>()
+  for (const item of entries) {
+    const title =
+      item.feedTitle !== undefined && item.feedTitle !== null && item.feedTitle.trim() !== ''
+        ? item.feedTitle
+        : '来源未知'
+    const existing = map.get(title)
+    if (existing !== undefined) {
+      existing.items.push(item)
+    } else {
+      map.set(title, { feedTitle: title, feedUrl: item.feedUrl ?? null, items: [item] })
+    }
+  }
+  return [...map.values()]
+}
+
+// ---- F07 多选批量（类型与常量） ----
+
+type BatchKind = 'read' | 'star' | 'readLater'
+
+const BATCH_LABELS: Record<BatchKind, string> = {
+  read: '标为已读',
+  star: '收藏',
+  readLater: '加入稍后读',
+}
+
+/** 批量上限：超出后动作按钮禁用并诚实提示（防止一次发出过大的请求串）。 */
+const BATCH_LIMIT = 100
+
+// ---- F09 下拉刷新（常量） ----
+
+/** 触发刷新的下拉阈值（显示位移，非手指位移）。 */
+const PULL_THRESHOLD_PX = 60
+/** 跟手位移上限（指示区最大高度）。 */
+const PULL_MAX_PX = 64
+/** touchstart 允许进入下拉手势的顶部区域（相对滚动容器）。 */
+const PULL_START_ZONE_PX = 60
+
+/** entries 视图列表（all / unread / starred；read-later 走 ReadLaterList）。
+ *
+ * 2026-09 批次新增：F05 按来源分组 / F06 排序切换 / F07 多选批量 /
+ * F09 下拉刷新（均为列表展示层行为，不改服务端契约）。 */
 function EntriesList() {
   const view = useReaderUi((s) => s.view) as Exclude<UiView, 'read-later'>
   const scope = useReaderUi((s) => s.scope)
+  const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  const selectScope = useReaderUi((s) => s.selectScope)
   // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
   const scrollMarkUnread = useAppSettings((s) => s.settings.scrollMarkUnread)
   // 0010a Gate E（AC7）：按日期分组
@@ -342,23 +445,172 @@ function EntriesList() {
   // 0010a Gate F（AC24）：显示层过滤（全局规则，BFF 层 planned·0013）
   const filterRules = useAppSettings((s) => s.settings.filterRules)
   const filterEnabled = filterRules.some((r) => r.enabled)
+  // F01：列表密度（卡片/行内边距与行距；不缩小触控目标）
+  const listDensity = useAppSettings((s) => s.settings.listDensity)
+  // F05：按来源分组
+  const listGroupByFeed = useAppSettings((s) => s.settings.listGroupByFeed)
+  // F06：时间线排序（最新/最早优先）
+  const timelineOrder = useAppSettings((s) => s.settings.timelineOrder)
+  const updateSettings = useAppSettings((s) => s.update)
 
-  // feed scope 的列表头标题：用 feeds 数据补全真实 feed 名（§9）
-  const feedsTitle = useEntries(scope, view)
-  const { data, isPending, isError, error, refetch } = feedsTitle
+  const entriesQuery = useEntries(scope, view)
+  const { data, isPending, isError, error, refetch } = entriesQuery
+  const hasNextPage = entriesQuery.hasNextPage
+  const isFetchingNextPage = entriesQuery.isFetchingNextPage
+  const fetchNextPage = entriesQuery.fetchNextPage
+
   // useMemo：data 引用稳定时 entries 引用也稳定（避免 effect 依赖每渲染变化）
   // P0-01：read-later 客户端过滤已删除——本组件只服务 entries 视图。
+  // F06 有意为之的诚实降级：useEntries 不支持 order 参数（服务端分页
+  // 恒为最新优先）；oldest 时把已加载页在客户端 reverse，只对「当前已
+  // 加载范围」生效，列表头常驻标注说明这一点（测试断言该标注）。
   const entries = useMemo(() => {
     const all = data?.pages.flatMap((page) => page.items) ?? []
-    return filterEnabled
+    const filtered = filterEnabled
       ? all.filter((item) => matchesFilterRules(item.title, filterRules, null) === null)
       : all
-  }, [data, filterEnabled, filterRules])
-  const hasNextPage = feedsTitle.hasNextPage
-  const isFetchingNextPage = feedsTitle.isFetchingNextPage
-  const fetchNextPage = feedsTitle.fetchNextPage
+    return timelineOrder === 'oldest' ? [...filtered].reverse() : filtered
+  }, [data, filterEnabled, filterRules, timelineOrder])
+
+  // F05：按来源分组（仅在设置开启时计算）
+  const feedGroups = useMemo(
+    () => (listGroupByFeed ? groupEntriesByFeed(entries) : []),
+    [listGroupByFeed, entries],
+  )
+  // F05：折叠集合（会话内本地状态；fold 语义只影响展示）
+  const [collapsedFeeds, setCollapsedFeeds] = useState<Set<string>>(new Set())
+  const toggleFeedCollapse = (feedTitle: string) => {
+    setCollapsedFeeds((prev) => {
+      const next = new Set(prev)
+      if (next.has(feedTitle)) next.delete(feedTitle)
+      else next.add(feedTitle)
+      return next
+    })
+  }
+
+  // ---- F07 多选批量 ----
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
+  const [batch, setBatch] = useState<{ kind: BatchKind; running: boolean; failed: string[] } | null>(null)
+  const { mutateAsync: mutateEntryStateAsync } = useEntryStateMutation()
+  // 批量稍后读直接用底层成员 mutation（add 语义）：useToggleReadLater 的
+  // toggle 是「按服务端状态翻转」且不返回 Promise——批量场景下翻转会让
+  // 已在稍后读的条目被移除（违反「批量=加入」直觉），也无法逐条收集失败。
+  const readLaterMember = useReadLaterMemberMutation()
+  const overLimit = selectedRefs.size > BATCH_LIMIT
+  const batchRunning = batch?.running === true
+
+  const toggleSelect = useCallback((ref: string) => {
+    setSelectedRefs((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }, [])
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false)
+    setSelectedRefs(new Set())
+    setBatch(null)
+  }, [])
+
+  /** 批量执行：mutateAsync 串行（逐条 await，控制并发）；失败逐条记录，
+   * 全部成功后清空选择并退出多选，有失败则保留失败清单供重试。 */
+  const runBatch = async (kind: BatchKind, refs: string[]) => {
+    if (refs.length === 0 || overLimit || batchRunning) return
+    setBatch({ kind, running: true, failed: [] })
+    const failed: string[] = []
+    for (const ref of refs) {
+      try {
+        if (kind === 'read') {
+          await mutateEntryStateAsync({ entryRef: ref, patch: { read: true } })
+        } else if (kind === 'star') {
+          await mutateEntryStateAsync({ entryRef: ref, patch: { starred: true } })
+        } else {
+          await readLaterMember.mutateAsync({ itemRef: `rss:${ref}`, add: true })
+        }
+      } catch {
+        failed.push(ref)
+      }
+    }
+    if (failed.length > 0) {
+      setBatch({ kind, running: false, failed })
+    } else {
+      setBatch(null)
+      setSelectMode(false)
+      setSelectedRefs(new Set())
+    }
+  }
 
   const sentinelRef = useInfiniteSentinel(hasNextPage, isFetchingNextPage, fetchNextPage, entries.length)
+
+  // P1.3：列表滚动锚点（打开文章 → 返回原位置）。
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  useListScrollAnchor(
+    scrollContainerRef,
+    listAnchorKey({ section, view, scope: String(JSON.stringify(scopeKey(scope))) }),
+    entries.length,
+  )
+
+  // ---- F09 下拉刷新（刷新列表数据 refetch；绝不触发上游抓取） ----
+  const [pull, setPull] = useState<{ startY: number; offset: number } | null>(null)
+  const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle')
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current)
+    },
+    [],
+  )
+
+  const onTouchStart = (event: React.TouchEvent) => {
+    if (refreshState !== 'idle') return
+    const container = scrollContainerRef.current
+    const touch = event.touches[0]
+    if (container === null || touch === undefined) return
+    // 只在列表滚动到顶、且触点落在容器顶部 60px 内时进入下拉手势
+    if (container.scrollTop > 0) return
+    const rect = container.getBoundingClientRect()
+    if (touch.clientY - rect.top > PULL_START_ZONE_PX) return
+    setPull({ startY: touch.clientY, offset: 0 })
+  }
+  const onTouchMove = (event: React.TouchEvent) => {
+    setPull((prev) => {
+      if (prev === null) return prev
+      const touch = event.touches[0]
+      if (touch === undefined) return prev
+      const dy = touch.clientY - prev.startY
+      if (dy <= 0) return prev.offset === 0 ? prev : { ...prev, offset: 0 }
+      // 跟手阻尼：手指位移 × 0.4，上限 64px
+      return { ...prev, offset: Math.min(PULL_MAX_PX, Math.round(dy * 0.4)) }
+    })
+  }
+  const onTouchEnd = () => {
+    const current = pull
+    setPull(null)
+    if (current === null || current.offset < PULL_THRESHOLD_PX) return
+    void triggerRefresh()
+  }
+  const triggerRefresh = async () => {
+    if (refreshState !== 'idle') return
+    setRefreshState('refreshing')
+    try {
+      const result = await refetch()
+      // 刷新后回到顶部锚点（下拉手势只在 scrollTop===0 时可进入）
+      const container = scrollContainerRef.current
+      if (container !== null) container.scrollTop = 0
+      // TanStack v5：refetch 不 reject，错误在 result.error
+      if (result.error !== null && result.error !== undefined) {
+        setRefreshState('error') // 失败保留列表，指示条常驻直到下次下拉
+        return
+      }
+      setRefreshState('done')
+      refreshTimerRef.current = setTimeout(() => setRefreshState('idle'), 1500)
+    } catch {
+      setRefreshState('error')
+    }
+  }
 
   // ---- 滚动标记已读（0017 正式化）：IntersectionObserver + 保守策略 ----
   const { mutate: markReadMutate } = useEntryStateMutation()
@@ -465,12 +717,136 @@ function EntriesList() {
     })
   }, [filteredCount])
 
+  /** 行渲染（F05 两种分组模式共用；F07 多选 props 下发行组件）。 */
+  const renderRow = (item: EntryListItem) => (
+    <li
+      key={item.entryRef}
+      data-entry-row-ref={item.entryRef}
+      // Phase H/I：视口外行跳过 layout/paint（渲染成本
+      // 与视口成正比；DOM 保留，滚动恢复不受影响）。
+      className="lumi-row-cv"
+      ref={(el) => {
+        if (el) rowRefs.current.set(item.entryRef, el)
+        else rowRefs.current.delete(item.entryRef)
+      }}
+    >
+      {/* 0011 Gate 3：移动端卡片化（<1024）；桌面行保持 0009
+          密度（Spec R2：两套展示共存，CSS 分发） */}
+      <div className="max-lg:px-2 max-lg:py-1">
+        <div className="max-lg:hidden">
+          <EntryRow
+            item={item}
+            selected={item.entryRef === selectedEntryRef}
+            selectMode={selectMode}
+            checked={selectedRefs.has(item.entryRef)}
+            onToggleSelect={toggleSelect}
+          />
+        </div>
+        <div className="lg:hidden">
+          <EntryCard
+            item={item}
+            selected={item.entryRef === selectedEntryRef}
+            selectMode={selectMode}
+            checked={selectedRefs.has(item.entryRef)}
+            onToggleSelect={toggleSelect}
+          />
+        </div>
+      </div>
+    </li>
+  )
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ListHeader view={view} loadedCount={entries.length} />
 
+      {/* F06 排序切换 + F07 多选入口（列表工具行；移动端也有——列表头
+          仅桌面显示，这里是其唯一工具入口） */}
+      <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1">
+        {timelineOrder === 'oldest' && (
+          <p
+            role="note"
+            data-testid="timeline-order-note"
+            className="mr-auto text-xs text-[var(--lumi-text-tertiary)]"
+          >
+            最早优先（当前已加载范围内排序，服务端分页仍为最新优先）
+          </p>
+        )}
+        <button
+          type="button"
+          data-testid="timeline-order-toggle"
+          aria-pressed={timelineOrder === 'oldest'}
+          title="切换时间线排序（最新优先 / 最早优先）"
+          onClick={() => updateSettings({ timelineOrder: timelineOrder === 'newest' ? 'oldest' : 'newest' })}
+          className={cx(
+            'rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            timelineOrder === 'oldest'
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          {timelineOrder === 'oldest' ? '最早优先' : '最新优先'}
+        </button>
+        {selectMode ? (
+          <button
+            type="button"
+            onClick={exitSelectMode}
+            aria-label="退出多选"
+            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <X aria-hidden className="size-3.5" />
+            退出选择
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-testid="enter-select-mode"
+            aria-label="选择文章（进入多选）"
+            onClick={() => setSelectMode(true)}
+            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <CheckSquare aria-hidden className="size-3.5" />
+            选择
+          </button>
+        )}
+      </div>
+
       {/* 0011 修正补充：折叠态隐藏列表内容（窄栏仅 header） */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        data-testid="list-scroll-container"
+        className="min-h-0 flex-1 overflow-y-auto"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* F09 下拉刷新指示区（刷新列表数据 = refetch，不触发上游抓取） */}
+        {(pull !== null || refreshState !== 'idle') && (
+          <div
+            data-testid="pull-indicator"
+            role="status"
+            className="flex items-center justify-center gap-1.5 overflow-hidden py-1 text-xs text-[var(--lumi-text-tertiary)]"
+            style={pull !== null ? { height: `${pull.offset}px`, paddingTop: 0, paddingBottom: 0 } : undefined}
+          >
+            <RotateCw
+              aria-hidden
+              className={cx(
+                'size-3.5 shrink-0',
+                (refreshState === 'refreshing' || (pull !== null && pull.offset > 0)) && 'animate-spin',
+              )}
+            />
+            {refreshState === 'idle' &&
+              (pull !== null
+                ? pull.offset >= PULL_THRESHOLD_PX
+                  ? '释放刷新列表'
+                  : '下拉刷新列表'
+                : '')}
+            {refreshState === 'refreshing' && '刷新中…'}
+            {refreshState === 'done' && '已刷新'}
+            {refreshState === 'error' && '刷新失败'}
+          </div>
+        )}
+
         {/* 0011：卡片化后取消行分隔线（卡片自带圆角表面）；仍保留
             列表语义 ul/li（分组小节与滚动标记已读依赖）。 */}
         {isPending && (
@@ -508,56 +884,172 @@ function EntriesList() {
         )}
 
         {entries.length > 0 && (
-          <ul className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
-            {(groupByDate ? groupEntriesByDate(entries) : [{ label: null, items: entries }]).map(
-              (group) => (
-                <Fragment key={group.label ?? 'all'}>
-                  {group.label !== null && (
-                    <li
-                      aria-hidden="true"
-                      className="sticky top-0 z-[1] bg-[var(--lumi-surface)] px-4 pb-1 pt-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]"
-                    >
-                      {group.label}
-                    </li>
-                  )}
-                  {group.items.map((item: EntryListItem) => (
-                    <li
-                      key={item.entryRef}
-                      data-entry-row-ref={item.entryRef}
-                      // Phase H/I：视口外行跳过 layout/paint（渲染成本
-                      // 与视口成正比；DOM 保留，滚动恢复不受影响）。
-                      className="lumi-row-cv"
-                      ref={(el) => {
-                        if (el) rowRefs.current.set(item.entryRef, el)
-                        else rowRefs.current.delete(item.entryRef)
-                      }}
-                    >
-                      {/* 0011 Gate 3：移动端卡片化（<1024）；桌面行保持 0009
-                          密度（Spec R2：两套展示共存，CSS 分发） */}
-                      <div className="max-lg:px-2 max-lg:py-1">
-                        <div className="max-lg:hidden">
-                          <EntryRow item={item} selected={item.entryRef === selectedEntryRef} />
+          <ul data-density={listDensity} className="max-lg:divide-none lg:divide-y lg:divide-[var(--lumi-separator)]">
+            {listGroupByFeed ? (
+              <>
+                {/* F05：按来源分组（保持首次出现顺序；组头 sticky +
+                    折叠 + 计数标注（已加载条数，非服务端总数）） */}
+                {feedGroups.map((group) => {
+                  const collapsed = collapsedFeeds.has(group.feedTitle)
+                  return (
+                    <Fragment key={group.feedTitle}>
+                      <li className="sticky top-0 z-[1] bg-[var(--lumi-surface)] px-4 pb-1 pt-2.5">
+                        <div className="flex min-w-0 items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+                          <button
+                            type="button"
+                            onClick={() => toggleFeedCollapse(group.feedTitle)}
+                            aria-expanded={!collapsed}
+                            aria-label={`折叠/展开「${group.feedTitle}」分组`}
+                            className="flex min-h-6 min-w-0 items-center gap-1 rounded-[var(--lumi-radius-sm)] text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                          >
+                            <ChevronDown
+                              aria-hidden
+                              className={cx(
+                                'size-3 shrink-0 transition-transform duration-[var(--lumi-motion-fast)]',
+                                collapsed && '-rotate-90',
+                              )}
+                            />
+                            <span className="truncate">{group.feedTitle}</span>
+                          </button>
+                          {/* 计数是「已加载」口径，绝不冒充服务端总数 */}
+                          <span className="shrink-0 normal-case" data-loaded-count={group.items.length}>
+                            已加载 {group.items.length} 条
+                          </span>
+                          <button
+                            type="button"
+                            disabled={group.feedUrl === null}
+                            title={
+                              group.feedUrl === null
+                                ? '该来源缺少 feedUrl，无法过滤'
+                                : `只看「${group.feedTitle}」`
+                            }
+                            onClick={() => {
+                              if (group.feedUrl !== null) {
+                                selectScope({ kind: 'rss-feed', feedUrl: group.feedUrl })
+                              }
+                            }}
+                            className="shrink-0 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-1.5 py-0.5 text-[11px] normal-case transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-[var(--lumi-surface-hover)] enabled:hover:text-[var(--lumi-text-secondary)]"
+                          >
+                            只看此来源
+                          </button>
                         </div>
-                        <div className="lg:hidden">
-                          <EntryCard item={item} selected={item.entryRef === selectedEntryRef} />
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                  {/* 无限滚动哨兵（0011）：滚入视口自动拉下一页 */}
-                  {!isPending && !isError && (
-                    <SentinelState
-                      sentinelRef={sentinelRef}
-                      hasNextPage={hasNextPage}
-                      isFetchingNextPage={isFetchingNextPage}
-                    />
-                  )}
-                </Fragment>
-              ),
+                      </li>
+                      {!collapsed && group.items.map(renderRow)}
+                    </Fragment>
+                  )
+                })}
+                {!isPending && !isError && (
+                  <SentinelState
+                    sentinelRef={sentinelRef}
+                    hasNextPage={hasNextPage}
+                    isFetchingNextPage={isFetchingNextPage}
+                  />
+                )}
+              </>
+            ) : (
+              (groupByDate ? groupEntriesByDate(entries) : [{ label: null, items: entries }]).map(
+                (group) => (
+                  <Fragment key={group.label ?? 'all'}>
+                    {group.label !== null && (
+                      <li
+                        aria-hidden="true"
+                        className="sticky top-0 z-[1] bg-[var(--lumi-surface)] px-4 pb-1 pt-2.5 text-[11px] font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]"
+                      >
+                        {group.label}
+                      </li>
+                    )}
+                    {group.items.map((item: EntryListItem) => renderRow(item))}
+                    {/* 无限滚动哨兵（0011）：滚入视口自动拉下一页 */}
+                    {!isPending && !isError && (
+                      <SentinelState
+                        sentinelRef={sentinelRef}
+                        hasNextPage={hasNextPage}
+                        isFetchingNextPage={isFetchingNextPage}
+                      />
+                    )}
+                  </Fragment>
+                ),
+              )
             )}
           </ul>
         )}
       </div>
+
+      {/* F07 批量操作栏（固定于列表底部；处理中禁用全部动作） */}
+      {selectMode && (
+        <div
+          role="toolbar"
+          aria-label="批量操作"
+          data-testid="batch-bar"
+          className="border-t border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-3 py-2"
+          style={{ paddingBottom: 'max(0.5rem, var(--safe-bottom))' }}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-[var(--lumi-text-secondary)]" data-testid="selected-count">
+              已选 {selectedRefs.size} 条
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedRefs(new Set(entries.map((e) => e.entryRef)))}
+              disabled={batchRunning}
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              全选已加载
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRefs(new Set())}
+              disabled={selectedRefs.size === 0 || batchRunning}
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              清除
+            </button>
+            <span className="flex-1" />
+            {(['read', 'star', 'readLater'] as BatchKind[]).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                data-testid={`batch-${kind}`}
+                disabled={batchRunning || overLimit || selectedRefs.size === 0}
+                onClick={() => void runBatch(kind, [...selectedRefs])}
+                className="min-h-11 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-accent-soft)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {BATCH_LABELS[kind]}
+              </button>
+            ))}
+          </div>
+          {overLimit && (
+            <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+              一次最多批量处理 {BATCH_LIMIT} 条，请减少选择后再操作。
+            </p>
+          )}
+          {batchRunning && (
+            <p role="status" className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
+              处理中…（逐条提交，请勿离开）
+            </p>
+          )}
+          {batch !== null && !batch.running && batch.failed.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <p
+                role="alert"
+                data-testid="batch-failed"
+                className="min-w-0 flex-1 truncate text-xs text-[var(--lumi-danger)]"
+                title={batch.failed.join('、')}
+              >
+                {BATCH_LABELS[batch.kind]}失败 {batch.failed.length} 条：{batch.failed.join('、')}
+              </p>
+              <button
+                type="button"
+                data-testid="batch-retry"
+                onClick={() => void runBatch(batch.kind, batch.failed)}
+                className="min-h-11 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                重试失败项
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

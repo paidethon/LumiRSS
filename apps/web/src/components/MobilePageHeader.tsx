@@ -30,7 +30,7 @@ export default function MobilePageHeader({
 
   return (
     <header
-      className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-b border-[var(--lumi-separator)] bg-[var(--lumi-surface)] px-2 py-2 lg:hidden"
+      className="lumi-glass grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-b border-[var(--lumi-separator)] px-2 py-2 lg:hidden"
       style={{ paddingTop: 'var(--safe-top)' }}
     >
       <div className="flex min-h-11 items-center">

@@ -293,8 +293,15 @@ class SearchIndexService:
         starred_only: bool = False,
         published_from: str | None = None,
         published_to: str | None = None,
+        intitle: str | None = None,
+        phrase: str | None = None,
+        exclude: str | None = None,
     ) -> dict:
-        """One page of hits, newest first, with a safe plain-text excerpt."""
+        """One page of hits, newest first, with a safe plain-text excerpt.
+
+        F29 高级条件（可选）：``intitle`` 仅标题词条；``phrase`` 精确
+        短语；``exclude`` 排除词条（全部 whitespace-split、有界）。
+        """
         await self._db.migrate()
         terms = split_terms(query)
         if not terms:
@@ -303,6 +310,15 @@ class SearchIndexService:
             raise SearchQueryError(
                 f"Search supports at most {_MAX_SEARCH_TERMS} terms."
             )
+        intitle_terms = split_terms(intitle or "")
+        if len(intitle_terms) > 2:
+            raise SearchQueryError("intitle supports at most 2 terms.")
+        exclude_terms = split_terms(exclude or "")
+        if len(exclude_terms) > 2:
+            raise SearchQueryError("exclude supports at most 2 terms.")
+        clean_phrase = (phrase or "").strip()
+        if len(clean_phrase) > 120:
+            raise SearchQueryError("phrase is too long.")
         rows = await self._store.query(
             terms=terms,
             feed_url=feed_url,
@@ -313,6 +329,9 @@ class SearchIndexService:
             published_to=published_to,
             keyset=keyset,
             limit=limit,
+            intitle_terms=intitle_terms or None,
+            phrase=clean_phrase or None,
+            exclude_terms=exclude_terms or None,
         )
         has_more = len(rows) > limit
         rows = rows[:limit]

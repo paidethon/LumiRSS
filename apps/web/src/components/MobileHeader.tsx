@@ -2,6 +2,7 @@ import { ChevronLeft } from 'lucide-react'
 import { useFeeds } from '../api/queries'
 import type { UiView } from '../lib/read-later'
 import { scopeTitle } from '../lib/navigation'
+import { goBack } from '../lib/nav-history'
 import { useReaderUi, type AppSection } from '../store/reader-ui'
 import MobilePageHeader from './MobilePageHeader'
 
@@ -60,10 +61,14 @@ export default function MobileHeader() {
       left={
         readerOpen ? (
           // 图标按钮：Header 左列固定 44px（保证标题居中），图标+文字
-          // 会被挤压换行成竖排——纯 chevron，语义由 aria-label 承载
+          // 会被挤压换行成竖排——纯 chevron，语义由 aria-label 承载。
+          // P1.3：与浏览器后退/侧滑同一语义（goBack）；浮层打开时先关
+          // 浮层；根页面不误跳离应用。
           <button
             type="button"
-            onClick={() => selectEntry(null)}
+            onClick={() => {
+              if (!goBack()) selectEntry(null)
+            }}
             aria-label="返回文章列表"
             className="flex min-h-11 min-w-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-accent-text)] transition-colors hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
           >

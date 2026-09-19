@@ -3,6 +3,8 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
+import { initNavHistory } from './lib/nav-history'
+import { EdgeSwipeBack } from './lib/edge-swipe'
 
 /** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
  * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */
@@ -104,8 +106,21 @@ export default function App() {
   // useReadLaterRefs（服务端真源）按需拉取并共享缓存。
   // phase2 M2：PWA Share Target 落地（挂载一次）
   useEffect(handleShareTarget, [])
+  // P1.3：统一返回链初始化（必须在 Share Target 之后——replaceState
+  // 以净化后的 URL 为基线）。
+  useEffect(() => initNavHistory(), [])
 
   const settings = useAppSettings((s) => s.settings)
+  // P1.3：侧滑/玻璃效果设置（settings 声明之后读取）。
+  const swipeBackGesture = settings.swipeBackGesture
+  const reduceMotion = settings.reduceMotion
+  const glassEffect = settings.glassEffect
+  useEffect(() => {
+    const root = document.documentElement
+    if (glassEffect === 'on') root.dataset.glass = 'on'
+    else if (glassEffect === 'off') root.dataset.glass = 'off'
+    else root.dataset.glass = 'auto'
+  }, [glassEffect])
   const update = useAppSettings((s) => s.update)
 
   const sidebarCollapsed = settings.sidebarCollapsed
@@ -406,6 +421,11 @@ export default function App() {
 
       {/* Mobile 导航抽屉：仅 <1024 有意义；关闭时不渲染 */}
       <MobileNavigationDrawer />
+
+      {/* P1.3：移动端左缘侧滑返回（渐进增强；无全局 touch-action 改写） */}
+      {swipeBackGesture && mobileViewport && (
+        <EdgeSwipeBack disabled={reduceMotion} />
+      )}
 
       {/* F20：最近操作撤销条（单实例；无可撤销动作时零渲染） */}
       <UndoSnackbar />

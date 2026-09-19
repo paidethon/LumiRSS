@@ -35,9 +35,24 @@ export const PORTABLE_DEFAULTS = {
   readerCodeTheme: 'auto',
   scrollMarkUnread: false,
   readLaterSort: 'newest',
+  readerAutoMarkRead: true,
+  glassEffect: 'auto',
+  swipeBackGesture: true,
+  listDensity: 'standard',
+  listShowSnippet: true,
+  listShowCover: true,
+  listTimeFormat: 'relative',
+  listGroupByFeed: false,
+  timelineOrder: 'newest',
+  cardSwipeAction: 'read',
+  readerShowReadingProgress: true,
+  readerCodeWrap: false,
+  readerPagedMode: false,
+  searchHighlightMatches: true,
 } as const
 
 export const SETTING_ENUMS = {
+  schemaVersion: [1],
   themeMode: ['system', 'light', 'dark'],
   uiFontStack: ['default', 'sans', 'serif', 'mono'],
   uiFontSize: [15, 16, 18, 20],
@@ -49,6 +64,11 @@ export const SETTING_ENUMS = {
   readerCodeHighlight: ['auto', 'off'],
   readerCodeTheme: ['auto', 'github-light', 'github-dark', 'vitesse-light', 'vitesse-dark'],
   readLaterSort: ['newest', 'oldest'],
+  glassEffect: ['auto', 'on', 'off'],
+  listDensity: ['compact', 'standard', 'comfortable'],
+  listTimeFormat: ['relative', 'absolute'],
+  timelineOrder: ['newest', 'oldest'],
+  cardSwipeAction: ['none', 'read', 'readLater', 'star'],
 } as const
 
 export const NUMERIC_RANGES = {

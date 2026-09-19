@@ -87,6 +87,25 @@ def item_contents_response(items: list[dict]) -> dict:
     return {"id": "items", "updated": 1787270034, "items": items}
 
 
+# 2026-09 移动端专项 P2：订阅清单（标题→URL 映射，feedUrl enrich 用）。
+SUBSCRIPTION_LIST_FIXTURE = {
+    "subscriptions": [
+        {
+            "id": "feed/2",
+            "title": "阮一峰的网络日志",
+            "url": "https://www.ruanyifeng.com/blog/atom.xml",
+            "categories": [{"id": "user/-/label/tech", "label": "tech"}],
+        },
+        {
+            "id": "feed/1",
+            "title": "FreshRSS releases",
+            "url": "https://freshrss.org/feed",
+            "categories": [{"id": "user/-/label/tech", "label": "tech"}],
+        },
+    ]
+}
+
+
 def make_settings() -> FreshRSSSettings:
     """Explicit env, no .env file — tests must never read real secrets."""
     return FreshRSSSettings(
@@ -153,6 +172,8 @@ async def test_list_entries_requests_bounded_n_and_read_only_endpoints():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
         assert request.url.params["n"] == "20"
         return httpx.Response(200, json=READING_LIST_FIXTURE)
 
@@ -161,31 +182,118 @@ async def test_list_entries_requests_bounded_n_and_read_only_endpoints():
     await adapter.list_entries()
 
     paths = [r.url.path for r in requested]
+    # 2026-09 P2：enrich 在 stream 前取一次订阅清单（只读，TTL 缓存）。
     assert paths == [
         "/api/greader.php/accounts/ClientLogin",
+        "/api/greader.php/reader/api/0/subscription/list",
         "/api/greader.php/reader/api/0/stream/contents/reading-list",
     ]
     assert all(fragment not in path for path in paths for fragment in WRITE_ENDPOINTS)
 
 
-# --- Test B — list must not expose bodies -------------------------------
+# --- Test B — list never exposes the body (2026-09 迁移：bounded 摘要除外) ---
+
+LONG_BODY_FIXTURE = {
+    "id": "user/-/state/com.google/reading-list",
+    "updated": 1787270034,
+    "items": [
+        {
+            "id": "tag:google.com,2005:reader/item/000659e07aaee24d",
+            "title": "长文标题",
+            "published": 1787270034,
+            "summary": {
+                "content": (
+                    "<p>SECRET_BODY_ONE"
+                    + "很长的正文" * 80
+                    + "</p><img src=\"https://example.com/cover.jpg\">"
+                    "<img src=\"data:image/png;base64,AAAA\">"
+                )
+            },
+            "origin": {"streamId": "feed/2", "title": "阮一峰的网络日志"},
+            "categories": [],
+        }
+    ],
+}
 
 
 @pytest.mark.anyio
 async def test_list_entries_never_returns_body():
+    """正文契约（2026-09 有意迁移）：列表 DTO 不含 contentHtml/contentText；
+    snippet 是 ≤160 字符 + 省略号的纯文本摘要，长正文必须被截断；
+    封面只提取首个 http(s) img src（data: 协议被拒绝）。"""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
-        return httpx.Response(200, json=READING_LIST_FIXTURE)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
+        return httpx.Response(200, json=LONG_BODY_FIXTURE)
 
     adapter, _ = make_adapter(handler)
 
     entries = (await adapter.list_entries()).items
 
-    serialized = entries[0].model_dump_json() + entries[1].model_dump_json()
-    assert "SECRET_BODY_ONE" not in serialized
-    assert "SECRET_BODY_TWO" not in serialized
-    assert "content" not in entries[0].model_dump()
+    assert "contentHtml" not in entries[0].model_dump()
+    assert "contentText" not in entries[0].model_dump()
+    snippet = entries[0].snippet
+    assert snippet is not None
+    assert snippet.startswith("SECRET_BODY_ONE")
+    assert len(snippet) <= 161  # 160 字符 + 省略号
+    assert snippet.endswith("…")
+    assert "很长的正文" * 80 not in snippet  # 完整正文绝不出现在列表摘要里
+    # 封面提取：http(s) 才收；data: 被跳过。
+    assert entries[0].coverUrl == "https://example.com/cover.jpg"
+
+
+@pytest.mark.anyio
+async def test_list_entries_enrich_feed_url_by_title_and_fail_open():
+    """P2 feedUrl enrich：标题→URL 映射命中；未命中为 None；订阅清单
+    失败时 fail-open（列表照常返回，feedUrl=None）。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts/ClientLogin"):
+            return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
+        return httpx.Response(200, json=READING_LIST_FIXTURE)
+
+    adapter, _ = make_adapter(handler)
+    entries = (await adapter.list_entries()).items
+    by_title = {e.feedTitle: e for e in entries}
+    assert by_title["阮一峰的网络日志"].feedUrl == (
+        "https://www.ruanyifeng.com/blog/atom.xml"
+    )
+    assert by_title["FreshRSS releases"].feedUrl == "https://freshrss.org/feed"
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/accounts/ClientLogin"):
+            return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(503)
+        return httpx.Response(200, json=READING_LIST_FIXTURE)
+
+    adapter2, _ = make_adapter(failing_handler)
+    entries2 = (await adapter2.list_entries()).items
+    assert all(e.feedUrl is None for e in entries2)
+    assert len(entries2) == 2  # enrich 失败绝不阻塞列表
+
+
+@pytest.mark.anyio
+async def test_snippet_and_cover_helpers_pure():
+    from lumirss.adapters.freshrss import cover_url_of, list_snippet_of
+
+    assert list_snippet_of(None) is None
+    assert list_snippet_of("") is None
+    assert list_snippet_of("<p>短文</p>") == "短文"
+    assert list_snippet_of("<p>" + "字" * 300 + "</p>") == "字" * 160 + "…"
+    assert cover_url_of(None) is None
+    assert cover_url_of('<IMG SRC="https://a.example/x.png">') == "https://a.example/x.png"
+    assert cover_url_of('<img src="javascript:alert(1)">') is None
+    assert cover_url_of('<img src="/relative.png">') is None
+    assert (
+        cover_url_of('<img src="data:image/png;base64,AA"><img src="https://ok/2.png">')
+        == "https://ok/2.png"
+    )
 
 
 # --- Test F (list part) — missing optional fields ------------------------
@@ -255,14 +363,17 @@ async def test_list_entries_relogin_once_on_401():
             return login_ok(request)
         reading_calls.append(request.headers.get("Authorization"))
         if len(reading_calls) == 1:
-            return httpx.Response(401)  # stale token
+            return httpx.Response(401)  # stale token（首个读请求）
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
         return httpx.Response(200, json=READING_LIST_FIXTURE)
 
     adapter, _ = make_adapter(handler)
 
     entries = (await adapter.list_entries()).items
 
-    assert len(reading_calls) == 2
+    # 2026-09 P2：subscription/list（401→重登→成功）+ stream/contents。
+    assert len(reading_calls) == 3
     assert entries[0].title == "科技爱好者周刊（第 409 期）"
 
 
@@ -287,6 +398,8 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
         assert request.method == "POST"
         assert request.url.path.endswith("/stream/items/contents")
         return httpx.Response(200, json=item_contents_response([DETAIL_ITEM]))
@@ -304,6 +417,8 @@ async def test_get_entry_maps_fields_and_converts_html_to_text():
     assert detail.read is True  # fixture carries the read marker
     assert detail.starred is False  # ... but no starred marker
     assert detail.entryRef.startswith("e1.")
+    # P2 enrich：订阅清单标题命中 → 真实 feedUrl（未命中为 None）。
+    assert detail.feedUrl == "https://www.ruanyifeng.com/blog/atom.xml"
     # HTML is turned into plain text: no tags, entity decoded, script gone.
     assert "alert(1)" not in detail.contentText
     assert "<p>" not in detail.contentText
@@ -360,6 +475,8 @@ async def test_get_entry_sends_exactly_one_i():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/accounts/ClientLogin"):
             return login_ok(request)
+        if request.url.path.endswith("/subscription/list"):
+            return httpx.Response(200, json=SUBSCRIPTION_LIST_FIXTURE)
         seen_bodies.append(request.read().decode("utf-8"))
         return httpx.Response(200, json=item_contents_response([DETAIL_ITEM]))
 

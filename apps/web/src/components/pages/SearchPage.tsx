@@ -17,8 +17,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Search, X } from 'lucide-react'
+import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
+import { Calendar, Loader2, Search, SlidersHorizontal, X } from 'lucide-react'
 import {
+  SEARCH_RESULTS_KEY,
   useCreateSavedSearchViewMutation,
   useDeleteSavedSearchViewMutation,
   useFeeds,
@@ -27,11 +29,24 @@ import {
   useSearch,
 } from '../../api/queries'
 import { mergeUnique } from '../../lib/merge-unique'
+import {
+  EMPTY_ADVANCED_FILTER,
+  hasAdvancedText,
+  isAdvancedSearchActive,
+  quickRange,
+  searchEntriesAdvanced,
+  type AdvancedTextFilter,
+  type QuickDateRangeKind,
+} from '../../lib/search-advanced'
+import { HighlightText, splitTerms } from '../../lib/highlight-text'
 import type { LibrarySearchItem } from '../../api/client'
 import type { SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
+import { useAppSettings } from '../../store/app-settings'
+import { useSearchState } from '../../store/search-state'
 import { resolveAndOpen } from '../../lib/open-item'
-import { dateTimeFormatter, formatPublishedAt } from '../../lib/date-format'
+import { dateTimeFormatter, formatListTime } from '../../lib/date-format'
+import { SourceGlyph, SourceLabel } from '../../lib/source-meta'
 import {
   clearSearchHistory,
   pushSearchHistory,
@@ -50,6 +65,17 @@ const VIEW_CHIPS: { key: ViewFilter; label: string }[] = [
   { key: 'unread', label: '未读' },
   { key: 'starred', label: '收藏' },
 ]
+
+/** F27 快捷日期范围（label 同时作为已应用 chip 文案）。 */
+const QUICK_RANGE_LABELS: Record<QuickDateRangeKind, string> = {
+  today: '今天',
+  '7d': '近 7 天',
+  '30d': '近 30 天',
+}
+
+/** F28 命中高亮的 <mark> 样式（语义 token；不用硬编码颜色）。 */
+const HIGHLIGHT_MARK_CLS =
+  'rounded-[2px] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
 
 /** 防抖：输入停止 300ms 后才更新值（§23 250–350ms）。 */
 function useDebouncedValue(value: string, delayMs = 300): string {
@@ -183,63 +209,90 @@ function LibraryGroup({
   )
 }
 
-function ResultRow({ item }: { item: SearchItem }) {
+/** F28：RSS 结果行（标题与摘要接入安全高亮；terms 来自搜索词分词）。 */
+function ResultRow({
+  item,
+  terms,
+  highlightEnabled,
+}: {
+  item: SearchItem
+  terms: string[]
+  highlightEnabled: boolean
+}) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  const timeFormat = useAppSettings((s) => s.settings.listTimeFormat)
   const selected = selectedEntryRef === item.entryRef
   return (
     // Phase H/I：视口外行跳过 layout/paint（与 EntryList 同一策略）。
+    // P2：来源行与打开按钮平级（来源可点击进入该订阅范围，不嵌套按钮）。
     <li className="lumi-row-cv">
-      <button
-        type="button"
+      <div
         data-entry-ref={item.entryRef}
-        onClick={() => selectEntry(item.entryRef)}
-        aria-pressed={selected}
         className={cx(
           'flex w-full flex-col gap-1 rounded-[var(--lumi-radius-lg)] px-3.5 py-3 text-left',
           'transition-colors duration-[var(--lumi-motion-fast)]',
           selected
             ? 'bg-[var(--lumi-surface-selected)]'
             : 'hover:bg-[var(--lumi-surface-hover)] active:bg-[var(--lumi-surface-pressed)]',
-          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
         )}
       >
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
-          <span className="truncate">{item.feedTitle}</span>
-          <span aria-hidden>·</span>
-          <span className="shrink-0">{formatPublishedAt(item.publishedAt)}</span>
+        <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+          <SourceGlyph name={item.feedTitle} />
+          <SourceLabel
+            feedTitle={item.feedTitle}
+            feedUrl={item.feedUrl}
+            className="min-w-0 flex-1 text-left"
+          />
+          <span className="shrink-0">{formatListTime(item.publishedAt, timeFormat)}</span>
           {!item.read && (
             <span
               aria-label="未读"
-              className="ml-auto size-2 shrink-0 rounded-full bg-[var(--lumi-accent-text)]"
+              className="ml-1 size-2 shrink-0 rounded-full bg-[var(--lumi-accent-text)]"
             />
           )}
-        </span>
-        <span
+        </div>
+        <button
+          type="button"
+          onClick={() => selectEntry(item.entryRef)}
+          aria-pressed={selected}
           className={cx(
-            'line-clamp-2 text-sm',
-            item.read
-              ? 'text-[var(--lumi-text-secondary)]'
-              : 'font-medium text-[var(--lumi-text-primary)]',
+            'flex w-full flex-col gap-1 rounded-[var(--lumi-radius-md)] text-left',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
           )}
         >
-          {item.title}
-        </span>
-        {item.snippet !== '' && (
-          <span className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-            {item.snippet}
+          <span
+            className={cx(
+              'line-clamp-2 text-sm',
+              item.read
+                ? 'text-[var(--lumi-text-secondary)]'
+                : 'font-medium text-[var(--lumi-text-primary)]',
+            )}
+          >
+            <HighlightText text={item.title} terms={terms} enabled={highlightEnabled} markClassName={HIGHLIGHT_MARK_CLS} />
           </span>
-        )}
-      </button>
+          {item.snippet !== '' && (
+            <span className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              <HighlightText text={item.snippet} terms={terms} enabled={highlightEnabled} markClassName={HIGHLIGHT_MARK_CLS} />
+            </span>
+          )}
+        </button>
+      </div>
     </li>
   )
 }
 
 export default function SearchPage() {
-  const [input, setInput] = useState('')
-  const [submitted, setSubmitted] = useState('')
-  const [view, setView] = useState<ViewFilter>('all')
-  const [categoryKey, setCategoryKey] = useState<string>('')
+  // P1.3：搜索词/筛选提升到会话 store（浏览器返回/侧滑可恢复；桌面与
+  // 移动挂载点共享同一状态）。输入防抖仍是本地行为。
+  const input = useSearchState((s) => s.q)
+  const setInput = useSearchState((s) => s.setQ)
+  const submitted = useSearchState((s) => s.submitted)
+  const setSubmitted = useSearchState((s) => s.setSubmitted)
+  const view = useSearchState((s) => s.view)
+  const setView = useSearchState((s) => s.setView)
+  const categoryKey = useSearchState((s) => s.categoryKey)
+  const setCategoryKey = useSearchState((s) => s.setCategoryKey)
   const [history, setHistory] = useState<string[]>(() => readSearchHistory())
   const debounced = useDebouncedValue(input)
   // pool #09：保存的搜索视图（服务端持久化；存意图，应用时重新查询）。
@@ -268,12 +321,141 @@ export default function SearchPage() {
   }, [debounced])
 
   const trimmed = submitted.trim()
+  const hasQuery = trimmed.length > 0
+
+  // ---- F27 日期范围 / F29 高级条件（会话内本地状态：面板开关 + 草稿 +
+  //      已应用条件；search-state store 属禁改文件，且这两类条件不参与
+  //      浏览器返回恢复的既有契约，会话内丢失可接受） ----
+  const [datePanelOpen, setDatePanelOpen] = useState(false)
+  const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false)
+  const [dateRange, setDateRange] = useState<{ from: string | null; to: string | null; label: string } | null>(null)
+  const [advanced, setAdvanced] = useState<AdvancedTextFilter | null>(null)
+  const [draftFrom, setDraftFrom] = useState('')
+  const [draftTo, setDraftTo] = useState('')
+  const [draftAdvanced, setDraftAdvanced] = useState<AdvancedTextFilter>({ ...EMPTY_ADVANCED_FILTER })
+  const advancedMode = isAdvancedSearchActive(dateRange, advanced)
+
+  // F27/F29：清除条件后让基础搜索重新拉取——「清除恢复全部结果」是真实
+  // 请求而非沿用旧缓存（条件存在期间基础查询未卸载，单靠 remount 不会
+  // 重取）。predicate 排除 'advanced' 子空间：高级缓存随条件清除自然
+  // 失效，不参与重取（避免清除瞬间旧高级查询仍处于 enabled 视图状态时
+  // 被一并重发）。
+  const queryClient = useQueryClient()
+  const refreshSearchAfterClear = () => {
+    void queryClient.invalidateQueries({
+      queryKey: SEARCH_RESULTS_KEY,
+      predicate: (query) => query.queryKey[2] !== 'advanced',
+    })
+  }
+
+  const applyQuickRange = (kind: QuickDateRangeKind) => {
+    const range = quickRange(kind)
+    const label = QUICK_RANGE_LABELS[kind]
+    setDateRange({ ...range, label })
+    setDraftFrom(range.from ?? '')
+    setDraftTo(range.to ?? '')
+    setDatePanelOpen(false)
+  }
+  const applyCustomRange = () => {
+    const from = draftFrom.trim() === '' ? null : draftFrom.trim()
+    const to = draftTo.trim() === '' ? null : draftTo.trim()
+    if (from === null && to === null) return
+    setDateRange({
+      from,
+      to,
+      label:
+        from !== null && to !== null
+          ? `${from} ~ ${to}`
+          : `${from !== null ? `自 ${from}` : '…'} ~ ${to !== null ? `至 ${to}` : '…'}`,
+    })
+    setDatePanelOpen(false)
+  }
+  const clearDateRange = () => {
+    setDateRange(null)
+    setDraftFrom('')
+    setDraftTo('')
+    refreshSearchAfterClear()
+  }
+  const applyAdvanced = () => {
+    const next: AdvancedTextFilter = {
+      intitle: draftAdvanced.intitle.trim(),
+      phrase: draftAdvanced.phrase.trim(),
+      exclude: draftAdvanced.exclude.trim(),
+    }
+    if (!hasAdvancedText(next)) return
+    setAdvanced(next)
+    setAdvancedPanelOpen(false)
+  }
+  const clearAdvancedField = (field: keyof AdvancedTextFilter) => {
+    const becomesInactive =
+      advanced !== null && !hasAdvancedText({ ...advanced, [field]: '' })
+    setAdvanced((prev) => {
+      if (prev === null) return prev
+      const next = { ...prev, [field]: '' }
+      return hasAdvancedText(next) ? next : null
+    })
+    if (becomesInactive) refreshSearchAfterClear()
+  }
+
+  // F28：高亮 terms（搜索词分词）与开关（设置只读消费）
+  const searchHighlightMatches = useAppSettings((s) => s.settings.searchHighlightMatches)
+  const searchTerms = useMemo(() => splitTerms(trimmed), [trimmed])
+
   const search = useSearch(trimmed, {
     categoryId: categoryKey || null,
     state: view === 'unread' ? 'unread' : null,
     favorite: view === 'starred' ? true : null,
   })
-  const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = search
+
+  // ---- F27/F29 专用查询：日期/高级条件经 searchEntriesAdvanced 传递
+  //      （client.ts 未暴露 intitle/phrase/exclude 且属禁改文件）。只推进
+  //      RSS 腿（cursor），库腿不消费——结果区诚实标注。缓存挂在
+  //      ['search','results','advanced', …] 子空间下（遵守搜索缓存分层
+  //      纪律；searchFiltersOf 对该 key 布局返回 null → 状态写入只做
+  //      通用翻转补丁，不做 unread/starred 移除语义，可接受）。
+  const advancedSearch = useInfiniteQuery({
+    queryKey: [
+      ...SEARCH_RESULTS_KEY,
+      'advanced',
+      {
+        q: trimmed,
+        view,
+        categoryKey,
+        from: dateRange?.from ?? null,
+        to: dateRange?.to ?? null,
+        intitle: advanced?.intitle ?? '',
+        phrase: advanced?.phrase ?? '',
+        exclude: advanced?.exclude ?? '',
+      },
+    ],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      searchEntriesAdvanced(
+        {
+          q: trimmed,
+          cursor: pageParam,
+          categoryId: categoryKey || null,
+          state: view === 'unread' ? 'unread' : null,
+          favorite: view === 'starred' ? true : null,
+          from: dateRange?.from ?? null,
+          to: dateRange?.to ?? null,
+          intitle: advanced?.intitle ?? null,
+          phrase: advanced?.phrase ?? null,
+          exclude: advanced?.exclude ?? null,
+        },
+        signal,
+      ),
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor != null ? lastPage.nextCursor : undefined,
+    enabled: hasQuery && advancedMode,
+    placeholderData: keepPreviousData,
+    maxPages: 50,
+  })
+
+  // 两种模式的查询结果统一取用（高级/日期模式走专用查询，否则走 useSearch）
+  const activeQuery = advancedMode ? advancedSearch : search
+  const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    activeQuery
 
   // 多页合并按 ref 去重（merge-unique）：双腿独立 keyset 下同一 ref
   // 理论上只出现一次，但旧服务端会每页重发同一库腿切片。
@@ -322,8 +504,6 @@ export default function SearchPage() {
     setInput('')
     setSubmitted('')
   }
-
-  const hasQuery = trimmed.length > 0
 
   const saveCurrentView = () => {
     if (!hasQuery) return
@@ -423,7 +603,235 @@ export default function SearchPage() {
               ))}
             </select>
           )}
+
+          {/* F27 日期 / F29 高级：行内面板开关（aria-expanded；互斥展开） */}
+          <button
+            type="button"
+            data-testid="date-panel-toggle"
+            aria-expanded={datePanelOpen}
+            aria-pressed={dateRange !== null}
+            onClick={() => {
+              setDatePanelOpen((v) => !v)
+              setAdvancedPanelOpen(false)
+            }}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              dateRange !== null
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <Calendar aria-hidden className="size-3.5" />
+            日期
+          </button>
+          <button
+            type="button"
+            data-testid="advanced-panel-toggle"
+            aria-expanded={advancedPanelOpen}
+            aria-pressed={advanced !== null}
+            onClick={() => {
+              setAdvancedPanelOpen((v) => !v)
+              setDatePanelOpen(false)
+            }}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              advanced !== null
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <SlidersHorizontal aria-hidden className="size-3.5" />
+            高级
+          </button>
         </div>
+
+        {/* F27：日期范围行内面板（非 modal；快捷范围即时应用，自定义走应用） */}
+        {datePanelOpen && (
+          <div
+            data-testid="date-panel"
+            className="mt-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
+          >
+            <div role="group" aria-label="快捷日期范围" className="flex flex-wrap gap-1.5">
+              {(Object.keys(QUICK_RANGE_LABELS) as QuickDateRangeKind[]).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  data-testid={`quick-range-${kind}`}
+                  aria-pressed={dateRange?.label === QUICK_RANGE_LABELS[kind]}
+                  onClick={() => applyQuickRange(kind)}
+                  className={cx(
+                    'min-h-7 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+                    'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    dateRange?.label === QUICK_RANGE_LABELS[kind]
+                      ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                      : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+                  )}
+                >
+                  {QUICK_RANGE_LABELS[kind]}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                起
+                <input
+                  type="date"
+                  value={draftFrom}
+                  onChange={(e) => setDraftFrom(e.target.value)}
+                  aria-label="开始日期"
+                  className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                止
+                <input
+                  type="date"
+                  value={draftTo}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  aria-label="结束日期"
+                  className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                />
+              </label>
+              <Button size="sm" onClick={applyCustomRange}>
+                应用
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDatePanelOpen(false)
+                  setDraftFrom(dateRange?.from ?? '')
+                  setDraftTo(dateRange?.to ?? '')
+                }}
+              >
+                收起
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]">
+              按本地时区日期过滤（起含当天 00:00、止含当天末尾，inclusive/exclusive 由服务端解释）；只填其一 = 单边范围。
+            </p>
+          </div>
+        )}
+
+        {/* F29：高级条件行内面板（非 modal；服务端 q 必填，空查询时在
+            结果区诚实提示，这里不禁用面板） */}
+        {advancedPanelOpen && (
+          <div
+            data-testid="advanced-panel"
+            className="mt-2 flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
+          >
+            <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+              <span className="w-14 shrink-0">仅标题</span>
+              <input
+                type="text"
+                value={draftAdvanced.intitle}
+                onChange={(e) => setDraftAdvanced((prev) => ({ ...prev, intitle: e.target.value }))}
+                placeholder="标题包含…"
+                aria-label="仅标题"
+                className="min-h-7 w-full min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+              <span className="w-14 shrink-0">精确短语</span>
+              <input
+                type="text"
+                value={draftAdvanced.phrase}
+                onChange={(e) => setDraftAdvanced((prev) => ({ ...prev, phrase: e.target.value }))}
+                placeholder="完整短语"
+                aria-label="精确短语"
+                className="min-h-7 w-full min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+              <span className="w-14 shrink-0">排除词</span>
+              <input
+                type="text"
+                value={draftAdvanced.exclude}
+                onChange={(e) => setDraftAdvanced((prev) => ({ ...prev, exclude: e.target.value }))}
+                placeholder="逗号或空格分隔"
+                aria-label="排除词"
+                className="min-h-7 w-full min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              />
+            </label>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={applyAdvanced}>
+                应用
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAdvancedPanelOpen(false)
+                  setDraftAdvanced(advanced ?? { ...EMPTY_ADVANCED_FILTER })
+                }}
+              >
+                收起
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* F27/F29：已应用条件 chips（可逐个清除） */}
+        {(dateRange !== null || advanced !== null) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="已应用筛选">
+            {dateRange !== null && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span data-testid="applied-date-label">{dateRange.label}</span>
+                <button
+                  type="button"
+                  onClick={clearDateRange}
+                  aria-label={`清除日期范围「${dateRange.label}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
+            {advanced !== null && advanced.intitle !== '' && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span>标题: {advanced.intitle}</span>
+                <button
+                  type="button"
+                  onClick={() => clearAdvancedField('intitle')}
+                  aria-label={`清除标题条件「${advanced.intitle}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
+            {advanced !== null && advanced.phrase !== '' && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span>短语: “{advanced.phrase}”</span>
+                <button
+                  type="button"
+                  onClick={() => clearAdvancedField('phrase')}
+                  aria-label={`清除精确短语「${advanced.phrase}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
+            {advanced !== null && advanced.exclude !== '' && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span>排除: {advanced.exclude}</span>
+                <button
+                  type="button"
+                  onClick={() => clearAdvancedField('exclude')}
+                  aria-label={`清除排除词「${advanced.exclude}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -582,7 +990,12 @@ export default function SearchPage() {
             <>
               <ul className="mt-3 flex flex-col gap-1" aria-label="搜索结果">
                 {results.map((item) => (
-                  <ResultRow key={item.entryRef} item={item} />
+                  <ResultRow
+                    key={item.entryRef}
+                    item={item}
+                    terms={searchTerms}
+                    highlightEnabled={searchHighlightMatches}
+                  />
                 ))}
                 {isFetchingNextPage && (
                   <li className="flex justify-center py-3">
@@ -597,9 +1010,24 @@ export default function SearchPage() {
                   {hasNextPage ? '+ 条结果' : ' 条结果'}
                 </p>
               )}
-              <LibraryGroup items={libraryHits} error={libraryError} />
+              {advancedMode && (
+                <p role="note" className="px-1 pt-2 text-xs text-[var(--lumi-text-tertiary)]">
+                  高级筛选仅覆盖 RSS 结果
+                </p>
+              )}
+              {!advancedMode && <LibraryGroup items={libraryHits} error={libraryError} />}
             </>
           )
+        ) : advancedMode ? (
+          // F29 诚实约束：服务端 q 必填——空查询 + 仅高级/日期条件时
+          // 明确提示，不发请求、不禁用面板。
+          <div className="mt-6" role="status" data-testid="advanced-needs-query">
+            <EmptyState
+              icon={<SlidersHorizontal aria-hidden className="size-8" />}
+              title="请输入至少一个搜索词"
+              description="日期与高级条件需要配合搜索关键词使用（服务端要求 q 非空）。"
+            />
+          </div>
         ) : history.length === 0 ? (
           <div className="mt-8">
             <EmptyState

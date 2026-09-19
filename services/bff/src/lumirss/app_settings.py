@@ -49,6 +49,13 @@ READER_CODE_THEMES = (
     "vitesse-light",
     "vitesse-dark",
 )
+# 2026-09 移动端专项：玻璃效果 / 列表展示 / 阅读辅助 / 时间线排序 /
+# 卡片滑动 / 搜索高亮（与 Web 端 AppSettings 同一批新增的 portable 键）。
+GLASS_EFFECTS = ("auto", "on", "off")
+LIST_DENSITIES = ("compact", "standard", "comfortable")
+LIST_TIME_FORMATS = ("relative", "absolute")
+TIMELINE_ORDERS = ("newest", "oldest")
+CARD_SWIPE_ACTIONS = ("none", "read", "readLater", "star")
 
 # Continuous numeric reader ranges (0017 AD-0017-1). Steps live in the
 # frontend slider definitions; the server only enforces the bounds and
@@ -107,6 +114,30 @@ class PortableSettings(BaseModel):
     ] = "auto"
     scrollMarkUnread: bool = False
     readLaterSort: Literal["newest", "oldest"] = "newest"
+
+    # ---- 2026-09 移动端专项（默认值见各字段；迁移：旧文档缺键 → 默认） ----
+    # P0-2：正文读到底自动标为已读（新装默认开；正文末尾哨兵 + 主动推进
+    # + 前台 + 稳定停留才触发，手动未读后本次访问暂停）。
+    readerAutoMarkRead: bool = True
+    # P1：Liquid Glass 风格材质（auto = 支持 backdrop-filter 时启用）。
+    glassEffect: Literal["auto", "on", "off"] = "auto"
+    # P1：移动端左缘侧滑返回（渐进增强；关闭后仅按钮返回）。
+    swipeBackGesture: bool = True
+    # F01 列表密度 / F02 摘要 / F03 封面 / F04 时间格式 / F05 按来源分组。
+    listDensity: Literal["compact", "standard", "comfortable"] = "standard"
+    listShowSnippet: bool = True
+    listShowCover: bool = True
+    listTimeFormat: Literal["relative", "absolute"] = "relative"
+    listGroupByFeed: bool = False
+    # F06 RSS 时间线排序（服务端 keyset；切换 = 换游标重建分页）。
+    timelineOrder: Literal["newest", "oldest"] = "newest"
+    # F08 卡片滑动动作（屏幕边缘以外区域的横向滑动）。
+    cardSwipeAction: Literal["none", "read", "readLater", "star"] = "read"
+    # F11 阅读进度 / F15 代码换行 / F17 按屏翻页 / F28 搜索高亮。
+    readerShowReadingProgress: bool = True
+    readerCodeWrap: bool = False
+    readerPagedMode: bool = False
+    searchHighlightMatches: bool = True
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod
@@ -174,6 +205,21 @@ class PortableSettingsPatch(BaseModel):
     ] | None = None
     scrollMarkUnread: bool | None = None
     readLaterSort: Literal["newest", "oldest"] | None = None
+
+    readerAutoMarkRead: bool | None = None
+    glassEffect: Literal["auto", "on", "off"] | None = None
+    swipeBackGesture: bool | None = None
+    listDensity: Literal["compact", "standard", "comfortable"] | None = None
+    listShowSnippet: bool | None = None
+    listShowCover: bool | None = None
+    listTimeFormat: Literal["relative", "absolute"] | None = None
+    listGroupByFeed: bool | None = None
+    timelineOrder: Literal["newest", "oldest"] | None = None
+    cardSwipeAction: Literal["none", "read", "readLater", "star"] | None = None
+    readerShowReadingProgress: bool | None = None
+    readerCodeWrap: bool | None = None
+    readerPagedMode: bool | None = None
+    searchHighlightMatches: bool | None = None
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod

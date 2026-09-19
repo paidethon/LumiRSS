@@ -535,7 +535,7 @@ async def _read_later_card(request: Request, member: WorkspaceItem) -> ReadLater
                 entryRef=item_ref,
                 title=detail.title,
                 feedTitle=detail.feedTitle,
-                feedUrl="",
+                feedUrl=detail.feedUrl or "",
                 author=detail.author,
                 url=detail.url,
                 publishedAt=detail.publishedAt or "",

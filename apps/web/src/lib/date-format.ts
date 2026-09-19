@@ -43,3 +43,38 @@ export function formatTimestamp(value: string | null | undefined): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : dateTimeFormatter.format(date)
 }
+
+/** F04（2026-09 移动端专项）：相对时间（列表用）。
+ * 刚刚 / N 分钟前 / N 小时前 / 昨天 / M月D日；超过 7 天回退完整绝对
+ * 时间（相对语义失去信息量）。无效/缺失 → '—'（与既有列表行为一致）。 */
+export function formatRelativeTime(
+  value: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (value === null || value === undefined) return '—'
+  const date = new Date(value)
+  const time = date.getTime()
+  if (Number.isNaN(time)) return '—'
+  const diffMs = now.getTime() - time
+  if (diffMs < 0) return dateTimeFormatter.format(date) // 未来时间不做相对化
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return '刚刚'
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)} 分钟前`
+  if (diffMs < day) return `${Math.floor(diffMs / hour)} 小时前`
+  if (diffMs < 2 * day) return '昨天'
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)} 天前`
+  return dateTimeFormatter.format(date)
+}
+
+/** F04：列表时间文案（相对/绝对切换；绝对用列表短格式）。 */
+export function formatListTime(
+  value: string | null | undefined,
+  mode: 'relative' | 'absolute',
+  now: Date = new Date(),
+): string {
+  return mode === 'relative'
+    ? formatRelativeTime(value, now)
+    : formatPublishedAt(value, listDateTimeFormatter)
+}

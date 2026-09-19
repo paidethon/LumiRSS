@@ -266,7 +266,7 @@ export function useSearch(
 ) {
   const trimmed = q.trim()
   return useInfiniteQuery({
-    queryKey: ['search', { q: trimmed, ...filters }],
+    queryKey: [...SEARCH_RESULTS_KEY, { q: trimmed, ...filters }],
     // 双腿独立 keyset（pool #10）：RSS 腿与库腿各自推进；某腿耗尽后
     // 传 null，服务端据此跳过该腿（null cursor + 非 null
     // libraryCursor = RSS 腿已取完，只续库腿）。
@@ -303,7 +303,15 @@ export function useSearch(
   })
 }
 
-const SAVED_VIEWS_KEY = ['search', 'views'] as const
+/** 搜索缓存 key 分层（P0 2026-09-18）：分页结果与保存视图清单是两种
+ * 缓存形状（InfiniteData vs 普通 list）。曾共用 ['search'] 裸前缀，
+ * useEntryStateMutation 按 ['search'] 枚举时把清单误当 InfiniteData 调
+ * data.pages.map —— 服务端已 204，前端成功回调仍抛「n.pages.map
+ * undefined」并误报「状态更新失败」。此后任何搜索子缓存必须挂在
+ * ['search', <子空间>, …] 下，状态写入只枚举 results 子空间。 */
+export const SEARCH_RESULTS_KEY = ['search', 'results'] as const
+
+const SAVED_VIEWS_KEY = ['search', 'saved-views'] as const
 
 /** pool #09：保存的搜索视图清单（存查询+筛选意图，不是结果集）。 */
 export function useSavedSearchViews() {
@@ -371,9 +379,10 @@ function entriesViewOf(key: readonly unknown[]): UiView {
 function searchFiltersOf(
   key: readonly unknown[],
 ): { state: 'unread' | null; favorite: boolean | null } | null {
-  const second = key[1]
-  if (second instanceof Object && 'state' in second) {
-    return second as { state: 'unread' | null; favorite: boolean | null }
+  // key 布局固定为 ['search', 'results', { filters }]（见 SEARCH_RESULTS_KEY）。
+  const filters = key[2]
+  if (filters instanceof Object && 'state' in filters) {
+    return filters as { state: 'unread' | null; favorite: boolean | null }
   }
   return null
 }
@@ -392,7 +401,7 @@ type EntriesPages = { items: EntryListItem[]; nextCursor: string | null }
  * - 列表（['entries', …]）：all 视图翻转；unread 视图标记已读=移除；
  *   starred 视图取消收藏=移除；反向操作（需要重新插入列表的）只失效
  *   对应 view 的查询（罕见路径，下次挂载自然重拉）。
- * - 搜索缓存（['search', …]）：同样翻转/按过滤语义移除。 */
+ * - 搜索缓存（['search', 'results', …]）：同样翻转/按过滤语义移除。 */
 export function useEntryStateMutation() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -449,10 +458,11 @@ export function useEntryStateMutation() {
       }
 
       // 4) 搜索缓存：同样精确翻转/移除（unread/favorite 过滤的结果集
-      // 语义同上）。
+      // 语义同上）。只枚举 results 子空间——['search'] 裸前缀会把保存
+      // 视图清单（普通 query）误当 InfiniteData（P0 2026-09-18）。
       for (const [key, data] of queryClient.getQueriesData<{
         pages: { items: EntryListItem[]; nextCursor: string | null }[]
-      }>({ queryKey: ['search'] })) {
+      }>({ queryKey: SEARCH_RESULTS_KEY })) {
         if (!data) continue
         const filters = searchFiltersOf(key)
         queryClient.setQueryData(key, {

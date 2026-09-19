@@ -10,8 +10,9 @@
  * （旧实现定义了 motion token 但从未真正动画，此处补齐且尊重
  * prefers-reduced-motion / data-motion-reduce）。 */
 
-import { type ReactNode, useRef } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import { Drawer as BaseDrawer } from '@base-ui/react/drawer'
+import { registerOverlay, unregisterOverlay } from '../../lib/nav-history'
 import { cx } from './cx'
 
 export interface SheetProps {
@@ -40,6 +41,17 @@ const FOCUSABLE =
 
 export function Sheet({ open, onClose, label, children, side = 'left', panelClassName, id }: SheetProps) {
   const popupRef = useRef<HTMLDivElement>(null)
+  // P1.3：浮层参与统一返回链——打开时登记（push 一条浮层历史），关闭
+  // （UI/Escape/外点/程序化）时消耗自己的条目；浏览器后退只关最上层。
+  const overlayIdRef = useRef(`sheet-${id ?? Math.random().toString(36).slice(2)}`)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    if (!open) return
+    const overlayId = overlayIdRef.current
+    registerOverlay(overlayId, () => onCloseRef.current())
+    return () => unregisterOverlay(overlayId)
+  }, [open])
 
   return (
     <BaseDrawer.Root
@@ -86,7 +98,8 @@ export function Sheet({ open, onClose, label, children, side = 'left', panelClas
                 ),
               side === 'bottom' &&
                 cx(
-                  'max-h-[85dvh] w-full rounded-t-[var(--lumi-radius-xl)] border-t border-[var(--lumi-border)]',
+                  // P1.2：底部 sheet 用玻璃材质（顶栏/底栏同一套浮层语言）
+                  'lumi-glass max-h-[85dvh] w-full rounded-t-[var(--lumi-radius-xl)] border-t border-[var(--lumi-border)]',
                   'data-starting-style:translate-y-full data-ending-style:translate-y-full',
                 ),
               panelClassName,

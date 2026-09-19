@@ -44,7 +44,7 @@ async def build_lumi_data_export(db: Any) -> dict[str, Any]:
             }
         )
 
-    bookmarks = await library_store.list_all_bookmarks()
+    _bookmarks = await library_store.list_all_bookmarks()
     tags = await tag_store.list_tags()
     tag_bindings: list[dict[str, Any]] = []
     for tag in tags[:_MAX_TAG_REFS]:

@@ -19,7 +19,19 @@
  * 点 feed 主区域 → selectScope + section 回首页（与侧栏导航同一语义）。 */
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Download, MoreHorizontal, Plus, Rss, Search, Upload } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Download,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Plus,
+  Rss,
+  Search,
+  Upload,
+} from 'lucide-react'
 import {
   useCategories,
   useSetSourceOverrideMutation,
@@ -36,6 +48,7 @@ import MoveSubscriptionDialog from '../MoveSubscriptionDialog'
 import RenameCategoryDialog from '../RenameCategoryDialog'
 import UnsubscribeDialog from '../UnsubscribeDialog'
 import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { EmptyState } from '../ui/EmptyState'
 import { Menu } from '../ui/Menu'
 import { Skeleton } from '../ui/Skeleton'
@@ -97,6 +110,54 @@ function domainOf(feedUrl: string): string {
   }
 }
 
+// ---- F26 订阅置顶/排序（设备本地偏好，localStorage 单 key） ----
+
+/** 置顶存储 key 与上限（超过上限不再新增，诚实禁用而非挤掉最旧）。 */
+export const PINNED_FEEDS_STORAGE_KEY = 'lumirss-pinned-feeds'
+export const PINNED_FEEDS_LIMIT = 12
+
+/** 读取置顶列表（feedUrl 数组，顺序即展示顺序；corrupted 数据 → []）。 */
+export function readPinnedFeeds(storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage): string[] {
+  if (storage === null) return []
+  try {
+    const raw = storage.getItem(PINNED_FEEDS_STORAGE_KEY)
+    if (raw === null) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is string => typeof v === 'string' && v !== '')
+  } catch {
+    return []
+  }
+}
+
+function writePinnedFeeds(list: string[], storage: Storage | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+  if (storage === null) return
+  try {
+    storage.setItem(PINNED_FEEDS_STORAGE_KEY, JSON.stringify(list))
+  } catch {
+    // 写失败静默：置顶是本地增强数据
+  }
+}
+
+/** 置顶/取消置顶（已满 12 时新增 no-op——按钮侧同步禁用并给 title 提示）。 */
+export function togglePinnedFeed(list: string[], feedUrl: string): string[] {
+  if (list.includes(feedUrl)) return list.filter((u) => u !== feedUrl)
+  if (list.length >= PINNED_FEEDS_LIMIT) return list
+  return [...list, feedUrl]
+}
+
+/** 置顶区内上移/下移（相邻交换；越界原样返回——按钮侧同步 disabled）。 */
+export function movePinnedFeed(list: string[], feedUrl: string, direction: -1 | 1): string[] {
+  const index = list.indexOf(feedUrl)
+  const target = index + direction
+  if (index === -1 || target < 0 || target >= list.length) return list
+  const next = [...list]
+  const tmp = next[index]!
+  next[index] = next[target]!
+  next[target] = tmp
+  return next
+}
+
 export default function SubscriptionsPage() {
   const subscriptions = useSubscriptions()
   const categories = useCategories(true)
@@ -119,6 +180,23 @@ export default function SubscriptionsPage() {
   const [moveTarget, setMoveTarget] = useState<Subscription | null>(null)
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<Subscription | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ id: string; label: string } | null>(null)
+  // F26：置顶订阅（localStorage 持久；顺序即置顶区展示顺序）
+  const [pinned, setPinned] = useState<string[]>(() => readPinnedFeeds())
+
+  const togglePin = (feedUrl: string) => {
+    setPinned((prev) => {
+      const next = togglePinnedFeed(prev, feedUrl)
+      writePinnedFeeds(next)
+      return next
+    })
+  }
+  const movePin = (feedUrl: string, direction: -1 | 1) => {
+    setPinned((prev) => {
+      const next = movePinnedFeed(prev, feedUrl, direction)
+      writePinnedFeeds(next)
+      return next
+    })
+  }
 
   const filtered = useMemo(() => {
     const all = subscriptions.data ?? []
@@ -133,6 +211,14 @@ export default function SubscriptionsPage() {
   }, [subscriptions.data, query])
 
   const groups = useMemo(() => groupByCategory(filtered), [filtered])
+
+  // F26：置顶区数据（按 pinned 顺序取订阅；已取消订阅的残留 url 静默略过）
+  const pinnedSubs = useMemo(() => {
+    const all = filtered
+    return pinned
+      .map((feedUrl) => all.find((s) => s.feedUrl === feedUrl))
+      .filter((s): s is Subscription => s !== undefined)
+  }, [filtered, pinned])
 
   // scope reconciliation（Gate 3）：mutation → invalidate → server truth
   // 更新后，清掉指向已删除 feed / 已重命名旧 categoryId 的 stale scope，
@@ -280,6 +366,84 @@ export default function SubscriptionsPage() {
           </p>
         )}
 
+        {/* F26：置顶区（localStorage 持久；上移/下移 + 取消置顶；点主区域
+            进入该订阅范围，与分类区内行为一致；不修改上游订阅） */}
+        {pinnedSubs.length > 0 && (
+          <section
+            aria-label="置顶订阅"
+            data-testid="pinned-section"
+            className="mb-2 overflow-hidden rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]"
+          >
+            <h3 className="px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+              置顶
+            </h3>
+            <ul className="divide-y divide-[var(--lumi-separator)] border-t border-[var(--lumi-separator)]">
+              {pinnedSubs.map((subscription, index) => (
+                <li key={subscription.feedUrl} className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectSection('home')
+                      selectView('all')
+                      selectScope({ kind: 'rss-feed', feedUrl: subscription.feedUrl })
+                    }}
+                    className={cx(
+                      'flex min-h-14 min-w-0 flex-1 items-center gap-3 px-3.5 py-2.5 text-left',
+                      'transition-colors duration-[var(--lumi-motion-fast)]',
+                      'hover:bg-[var(--lumi-surface-hover)] active:bg-[var(--lumi-surface-pressed)]',
+                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-accent-text)]"
+                    >
+                      <Pin className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block truncate text-sm font-medium text-[var(--lumi-text-primary)]"
+                        title={subscription.title}
+                      >
+                        {subscription.title}
+                      </span>
+                      <span
+                        className="block truncate text-xs text-[var(--lumi-text-tertiary)]"
+                        title={subscription.feedUrl}
+                      >
+                        {domainOf(subscription.feedUrl)}
+                      </span>
+                    </span>
+                  </button>
+                  <IconButton
+                    icon={<ArrowUp aria-hidden className="size-4" />}
+                    label={`上移「${subscription.title}」`}
+                    size="sm"
+                    touch
+                    disabled={index === 0}
+                    onClick={() => movePin(subscription.feedUrl, -1)}
+                  />
+                  <IconButton
+                    icon={<ArrowDown aria-hidden className="size-4" />}
+                    label={`下移「${subscription.title}」`}
+                    size="sm"
+                    touch
+                    disabled={index === pinnedSubs.length - 1}
+                    onClick={() => movePin(subscription.feedUrl, 1)}
+                  />
+                  <IconButton
+                    icon={<PinOff aria-hidden className="size-4" />}
+                    label={`取消置顶「${subscription.title}」`}
+                    size="sm"
+                    touch
+                    onClick={() => togglePin(subscription.feedUrl)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* 真实分类分组（全部来自 FreshRSS；无硬编码分类名） */}
         {total === 0 ? (
           <EmptyState
@@ -399,6 +563,26 @@ export default function SubscriptionsPage() {
                               </span>
                             </span>
                           </button>
+                          {/* F26 置顶切换（aria-pressed；已满 12 且未置顶时
+                              禁用——不静默挤掉最旧的置顶） */}
+                          <IconButton
+                            icon={<Pin aria-hidden className="size-4" />}
+                            label={
+                              pinned.includes(subscription.feedUrl)
+                                ? `取消置顶「${subscription.title}」`
+                                : `置顶「${subscription.title}」`
+                            }
+                            aria-pressed={pinned.includes(subscription.feedUrl)}
+                            size="sm"
+                            touch
+                            disabled={!pinned.includes(subscription.feedUrl) && pinned.length >= PINNED_FEEDS_LIMIT}
+                            style={{
+                              color: pinned.includes(subscription.feedUrl)
+                                ? 'var(--lumi-accent)'
+                                : 'var(--lumi-text-tertiary)',
+                            }}
+                            onClick={() => togglePin(subscription.feedUrl)}
+                          />
                           {/* ⋯ Feed 操作菜单（不堆常驻按钮） */}
                           <Menu
                             trigger={({ triggerProps }) => (

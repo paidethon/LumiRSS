@@ -60,5 +60,18 @@ export default defineConfig({
     { name: 'mobile-430', use: { viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true } },
     { name: 'mobile-390', use: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } },
     { name: 'mobile-375', use: { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true } },
+    // 2026-09 移动端专项：WebKit 手机旅程（iPhone 类视口；真机表现仍需
+    // 人工验证——自动化 WebKit 不等于真机 Safari）。宿主缺 GTK4/GStreamer
+    // 库时此项目会在启动时报错（sudo 安装依赖见验收记录的环境阻塞节）。
+    {
+      name: 'webkit-mobile-390',
+      testIgnore: /desktop-journeys|a11y|webdav|print-view/,
+      use: {
+        browserName: 'webkit',
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      },
+    },
   ],
 })

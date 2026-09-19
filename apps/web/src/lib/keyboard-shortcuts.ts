@@ -37,6 +37,10 @@ function isModalOpen(): boolean {
   return document.querySelector('[aria-modal="true"]') !== null
 }
 
+/** F30：命令面板开关事件。keyboard-shortcuts 只派发事件，CommandPalette
+ * 挂载后监听并自持开关状态（解耦：快捷键模块不感知面板实现）。 */
+export const COMMAND_PALETTE_TOGGLE_EVENT = 'lumirss-command-palette-toggle'
+
 /** 快捷键速查表数据（设置中心「快捷键」页与「?」帮助弹窗只读展示同一份）。 */
 export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 'j / ↓', action: '下一篇' },
@@ -45,6 +49,7 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: 's', action: '收藏 / 取消收藏当前文章' },
   { keys: '/', action: '跳转搜索' },
   { keys: '?', action: '快捷键帮助' },
+  { keys: 'Ctrl / ⌘ K', action: '命令面板' },
   { keys: 'Escape', action: '关闭弹窗 / 抽屉' },
 ]
 
@@ -64,6 +69,15 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // F30：Ctrl/⌘+K 唤起/关闭命令面板（toggle）。既有纪律保持：输入框
+      // 聚焦时不劫持——命令面板自身输入框的 Ctrl+K 关闭由面板内部处理；
+      // 也不受 isModalOpen 门控（面板本身是浮层，toggle 语义自洽）。
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        if (isEditable(e.target)) return
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_TOGGLE_EVENT))
+        return
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return
       if (isEditable(e.target)) return
       // AUDIT-014：当真实模态（aria-modal）打开时，j/k/u/s 不得改动其

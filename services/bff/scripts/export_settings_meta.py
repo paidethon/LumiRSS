@@ -73,32 +73,39 @@ def ts_record(name: str, fields: dict[str, object], indent: str) -> str:
     return "\n".join(lines)
 
 
+def model_enum_fields() -> dict[str, list[object]]:
+    """Derive every Literal-annotated field (string/enum and int enums)
+    from PortableSettings so the enum list can never drift from the model."""
+    import typing
+    from typing import get_args, get_origin
+
+    literal_origins = {typing.Literal}
+    try:  # typing_extensions on older Pythons aliases the same object
+        import typing_extensions
+
+        literal_origins.add(typing_extensions.Literal)
+    except ImportError:
+        pass
+
+    fields: dict[str, list[object]] = {}
+    hints = PortableSettings.__annotations__
+    for key, annotation in hints.items():
+        origin = get_origin(annotation)
+        if origin is None or origin not in literal_origins:
+            continue
+        args = list(get_args(annotation))
+        if all(isinstance(v, str) for v in args) or all(
+            isinstance(v, int) and not isinstance(v, bool) for v in args
+        ):
+            fields[key] = args
+    return fields
+
+
 def main() -> None:
     document = PortableSettings()
     defaults = document.model_dump()
 
-    enum_fields = {
-        key: list(value)
-        for key, value in {
-            "themeMode": ("system", "light", "dark"),
-            "uiFontStack": ("default", "sans", "serif", "mono"),
-            "uiFontSize": (15, 16, 18, 20),
-            "readerFontFamily": ("system", "sans", "serif", "mono"),
-            "readerBackground": ("follow", "sepia", "warm", "paper", "mint", "custom"),
-            "readerImageMode": ("all", "grayscale", "hidden"),
-            "readerTextIndent": ("off", "2em"),
-            "readerChineseConversion": ("off", "s2t", "t2s", "tw", "hk"),
-            "readerCodeHighlight": ("auto", "off"),
-            "readerCodeTheme": (
-                "auto",
-                "github-light",
-                "github-dark",
-                "vitesse-light",
-                "vitesse-dark",
-            ),
-            "readLaterSort": ("newest", "oldest"),
-        }.items()
-    }
+    enum_fields = model_enum_fields()
     for key, values in enum_fields.items():
         if defaults.get(key) not in values:
             raise SystemExit(f"default for {key} missing from enum: {defaults.get(key)!r}")

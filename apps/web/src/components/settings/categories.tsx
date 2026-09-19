@@ -31,8 +31,13 @@ import {
 } from 'lucide-react'
 import { useAppSettings } from '../../store/app-settings'
 import type {
+  CardSwipeAction,
+  GlassEffect,
+  ListDensity,
+  ListTimeFormat,
   ReaderFontFamily,
   ReaderImageMode,
+  TimelineOrder,
   UiFontStack,
   UiFontSize,
 } from '../../store/app-settings'
@@ -86,6 +91,8 @@ import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 import { exportLumiData } from '../../api/client'
 import { StorageUsageSection } from './StorageUsageSection'
 import { SettingsHistorySection } from './SettingsHistorySection'
+// R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
+import { SourceAliasSettings } from '../SourceAliasSettings'
 
 // ---- 分类定义 ----
 
@@ -204,6 +211,26 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           onChange: (v) => update({ uiFontStack: v as UiFontStack }),
         },
         {
+          // P1.2（2026-09 移动端专项）：玻璃效果（Liquid Glass 风格浮层）
+          type: 'select',
+          label: '玻璃效果',
+          value: settings.glassEffect,
+          options: [
+            { value: 'auto', label: '自动（支持时启用）' },
+            { value: 'on', label: '开启' },
+            { value: 'off', label: '关闭（不透明）' },
+          ] satisfies { value: GlassEffect; label: string }[],
+          onChange: (v) => update({ glassEffect: v as GlassEffect }),
+        },
+        {
+          // R05 批次：侧滑返回手势（移动端；关闭后仅按钮返回）
+          type: 'toggle',
+          label: '侧滑返回',
+          description: '仅移动端生效；关闭后仅按钮返回。',
+          checked: settings.swipeBackGesture,
+          onCheckedChange: (v) => update({ swipeBackGesture: v }),
+        },
+        {
           // 0010a F1（AC13）：减少动效（与系统偏好取或）
           type: 'toggle',
           label: '减少动效',
@@ -264,6 +291,15 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'custom', node: <CodeHighlightSettings /> },
         { type: 'title', value: '阅读行为' },
         {
+          // P0-2（2026-09 移动端专项）：正文读到底自动已读
+          type: 'toggle',
+          label: '正文读到底自动已读',
+          description:
+            '在阅读页读到正文末尾并停留约 1 秒后自动标记为已读。只有主动滚动才算阅读进度（恢复上次位置、图片加载、自动滚屏不算）；短文提供「读完了」按钮；手动设为未读的文章本次访问不再自动标记。',
+          checked: settings.readerAutoMarkRead,
+          onCheckedChange: (v) => update({ readerAutoMarkRead: v }),
+        },
+        {
           // 0017：滚动标记已读正式化（默认关；保守条件 + 手动未读保护）
           type: 'toggle',
           label: '滚动时标记已读',
@@ -271,6 +307,30 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             '文章完全滚出列表上方后才自动标记为已读（离开后短暂停顿确认，手动设为未读的文章不会在同一轮滚动中被再次标记）。',
           checked: settings.scrollMarkUnread,
           onCheckedChange: (v) => update({ scrollMarkUnread: v }),
+        },
+        {
+          // 2026-09 移动端专项：阅读进度条（store 字段已存在，此处接入 UI）
+          type: 'toggle',
+          label: '显示阅读进度',
+          description: '阅读页顶部显示当前阅读进度条。',
+          checked: settings.readerShowReadingProgress,
+          onCheckedChange: (v) => update({ readerShowReadingProgress: v }),
+        },
+        {
+          // 2026-09 移动端专项：代码块自动换行（宽代码块不横向溢出）
+          type: 'toggle',
+          label: '代码自动换行',
+          description: '正文代码块长行自动换行（关闭时横向滚动）。',
+          checked: settings.readerCodeWrap,
+          onCheckedChange: (v) => update({ readerCodeWrap: v }),
+        },
+        {
+          // 2026-09 移动端专项：按屏翻页（实验性交互，默认关）
+          type: 'toggle',
+          label: '按屏翻页',
+          description: '正文按屏为单位翻页（默认连续滚动）。',
+          checked: settings.readerPagedMode,
+          onCheckedChange: (v) => update({ readerPagedMode: v }),
         },
         { type: 'title', value: '自定义' },
         // 0010a F7（AC14）：自定义 CSS（仅作用于正文，自动前缀）
@@ -299,6 +359,57 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         { type: 'title', value: '时间线' },
         {
+          // F01：列表密度（紧凑/标准/舒适；不缩小触控目标）
+          type: 'select',
+          label: '列表密度',
+          value: settings.listDensity,
+          options: [
+            { value: 'compact', label: '紧凑' },
+            { value: 'standard', label: '标准' },
+            { value: 'comfortable', label: '舒适' },
+          ] satisfies { value: ListDensity; label: string }[],
+          onChange: (v) => update({ listDensity: v as ListDensity }),
+        },
+        {
+          // F04：时间显示（相对/绝对）
+          type: 'select',
+          label: '时间显示',
+          value: settings.listTimeFormat,
+          options: [
+            { value: 'relative', label: '相对时间（3 小时前）' },
+            { value: 'absolute', label: '绝对时间（09/18 14:05）' },
+          ] satisfies { value: ListTimeFormat; label: string }[],
+          onChange: (v) => update({ listTimeFormat: v as ListTimeFormat }),
+        },
+        {
+          // F06：时间线排序（列表内也可临时切换，此处为默认值）
+          type: 'select',
+          label: '时间线排序',
+          description: '默认排序方向；列表内也可切换。',
+          value: settings.timelineOrder,
+          options: [
+            { value: 'newest', label: '最新优先' },
+            { value: 'oldest', label: '最早优先' },
+          ] satisfies { value: TimelineOrder; label: string }[],
+          onChange: (v) => update({ timelineOrder: v as TimelineOrder }),
+        },
+        {
+          // F02：列表摘要
+          type: 'toggle',
+          label: '显示摘要',
+          description: '在文章列表显示正文摘要（约两行，纯文本）。',
+          checked: settings.listShowSnippet,
+          onCheckedChange: (v) => update({ listShowSnippet: v }),
+        },
+        {
+          // F03：列表封面
+          type: 'toggle',
+          label: '显示封面',
+          description: '在文章卡片显示正文首个图片作为封面（关闭时不请求任何封面图片）。',
+          checked: settings.listShowCover,
+          onCheckedChange: (v) => update({ listShowCover: v }),
+        },
+        {
           type: 'toggle',
           label: '已读条目变暗',
           description: '已读条目整体降低不透明度（保留字重差异，不只靠颜色）。',
@@ -313,11 +424,42 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           onCheckedChange: (v) => update({ groupByDate: v }),
         },
         {
+          // F07：按来源分组（仅对已加载条目分组，诚实说明边界）
+          type: 'toggle',
+          label: '按来源分组',
+          description: '仅对已加载条目分组。',
+          checked: settings.listGroupByFeed,
+          onCheckedChange: (v) => update({ listGroupByFeed: v }),
+        },
+        {
+          // F08：卡片滑动动作（仅移动端触摸；左缘 24px 保留给返回手势）
+          type: 'select',
+          label: '卡片滑动操作',
+          description: '仅移动端触摸；屏幕左缘 24px 内是返回手势。',
+          value: settings.cardSwipeAction,
+          options: [
+            { value: 'none', label: '无' },
+            { value: 'read', label: '标为已读' },
+            { value: 'readLater', label: '加入稍后读' },
+            { value: 'star', label: '收藏' },
+          ] satisfies { value: CardSwipeAction; label: string }[],
+          onChange: (v) => update({ cardSwipeAction: v as CardSwipeAction }),
+        },
+        {
           type: 'toggle',
           label: '启动时仅看未读',
           description: '打开应用时默认进入未读视图（不影响会话内手动切换）。',
           checked: settings.unreadOnly,
           onCheckedChange: (v) => update({ unreadOnly: v }),
+        },
+        { type: 'title', value: '搜索' },
+        {
+          // F05：搜索命中高亮（默认开）
+          type: 'toggle',
+          label: '突出匹配词',
+          description: '搜索结果中高亮命中片段。',
+          checked: settings.searchHighlightMatches,
+          onCheckedChange: (v) => update({ searchHighlightMatches: v }),
         },
       ]
     case 'shortcuts':
@@ -365,6 +507,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // Q-P1-06：GET /api/v1/sources 的真实 UI——全部来源类型总览 +
         // 健康状态 + 深链到各自管理位置。
         { type: 'custom', node: <SourceRegistrySection /> },
+        { type: 'title', value: '来源显示别名' },
+        // R03：设备本地别名（仅展示层替换；真实订阅名不变）
+        { type: 'custom', node: <SourceAliasSettings /> },
       ]
     case 'api-sources':
       // phase2 G6：API 来源（JSON API → JMESPath → Atom → FreshRSS 订阅）

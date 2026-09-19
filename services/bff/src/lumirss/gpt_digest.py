@@ -1056,7 +1056,7 @@ async def compare_with_previous(
     provider = await provider_factory(base_url, model)
     refs: dict[str, dict[str, str]] = {}
     valid_ids: list[str] = []
-    for prefix, source_key, source_refs, sections in (
+    for prefix, source_key, source_refs, _sections in (
         ("prev", prev_key, prev_refs, prev_sections),
         ("cur", issue_key, cur_refs, cur_sections),
     ):

@@ -238,6 +238,82 @@ html[data-reader-images='hidden'] .article-content img {
   min-width: 0;
 }
 
+/* ---- F25：正文定位基础（Reader 滚动容器） ----
+ * overscroll-behavior: contain——滚动到顶/底时不再把剩余滚动量
+ * 泄漏给页面/body（移动端下拉刷新与桌面橡皮筋都被正文吞掉），
+ * 回到顶部/翻页/锚点定位的行为边界更可预期。 */
+.lumi-reader-scroll {
+  overscroll-behavior: contain;
+}
+
+/* ---- F13：文内查找高亮（CSS Custom Highlight API） ----
+ * registry 名由 lib/reader-find.ts 定义（lumi-find-all/current）；
+ * 不支持该 API 的浏览器不渲染高亮（查找条降级为计数 + 滚动定位）。 */
+::highlight(lumi-find-all) {
+  background-color: var(--lumi-accent-soft);
+}
+::highlight(lumi-find-current) {
+  background-color: var(--lumi-accent);
+  color: var(--lumi-accent-contrast);
+}
+
+/* ---- F14：图片灯箱接线标记 ---- */
+.article-content img[data-lumi-lightbox-ready] {
+  cursor: zoom-in;
+}
+
+/* ---- F15：代码自动换行（html[data-code-wrap]，Aa 面板开关） ----
+ * on：pre code 换行 + 长词断行；off：保持 pre 的横向滚动（默认）。 */
+html[data-code-wrap='on'] .article-content pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- F16：表格展开 ----
+ * 过宽表格包一层定位容器，「展开查看」悬浮按钮挂在右上角（浮在
+ * 表格上，不挤压正文流）。 */
+.lumi-table-wrap {
+  position: relative;
+}
+.lumi-table-expand-btn {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.375rem;
+  min-height: 28px;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--lumi-border);
+  border-radius: var(--lumi-radius-md);
+  background: var(--lumi-surface-elevated);
+  color: var(--lumi-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: var(--lumi-shadow-popover);
+  z-index: 1;
+}
+.lumi-table-expand-btn:hover {
+  color: var(--lumi-text-primary);
+  background: var(--lumi-surface-selected);
+}
+.lumi-table-expand-btn:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+}
+
+/* ---- 专注阅读模式（Reader 会话级开关，article[data-lumi-focus]） ----
+ * 视口中心块全亮，其余块降透明度；滚动帧内由 lib/reader-focus 打标。
+ * 减少动效偏好下不做过渡。 */
+.lumi-reader-article[data-lumi-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  opacity: 0.22;
+  transition: opacity var(--lumi-motion-slow, 200ms) var(--lumi-ease, ease);
+}
+.lumi-reader-article[data-lumi-focus='on'] .article-content [data-lumi-focus-active] {
+  opacity: 1;
+}
+html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  transition: none;
+}
+
 .article-content img {
   max-width: 100%; /* 图片适应 Reader 宽度 */
   height: auto;
@@ -360,13 +436,85 @@ html[data-reader-images='hidden'] .article-content img {
   contain-intrinsic-size: auto 88px;
 }
 
+/* ---- P1.2（2026-09 移动端专项）：Liquid Glass 风格材质层 ----
+ * Web 实现（半透明着色表面 + 背景模糊/饱和 + 细边缘高光 + 柔和阴影），
+ * 不是 Apple 原生材质 API。仅用于浮层（底部导航/顶栏/底部 sheet）；
+ * 正文与长列表保持稳定底色（可读性优先，不整页毛玻璃）。
+ * 作用域由 html[data-glass] 控制（app-settings.glassEffect 挂载）：
+ * - auto：支持 backdrop-filter 时启用；否则完整不透明回退；
+ * - on：强制启用（同样需要 @supports 回退）；
+ * - off：完整不透明方案（视觉不损坏）。
+ * 减少透明度偏好（支持的浏览器）→ 一律降级为不透明。 */
+.lumi-glass {
+  position: relative;
+  background: var(--lumi-elevated);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html:not([data-glass='off']) .lumi-glass {
+    background: color-mix(in srgb, var(--lumi-elevated) 72%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(18px) saturate(1.5);
+    /* 细边缘高光（上缘）+ 发丝线 + 柔和外阴影，同一 box-shadow 收口 */
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in srgb, white 22%, transparent),
+      0 8px 28px -12px rgb(0 0 0 / 0.32);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    html:not([data-glass='off']) .lumi-glass {
+      background: var(--lumi-elevated);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: 0 8px 28px -12px rgb(0 0 0 / 0.32);
+    }
+  }
+  html[data-glass='off'] .lumi-glass {
+    background: var(--lumi-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+/* 深色主题下的边缘高光对比减弱（避免刺眼白线）。 */
+html.dark:not([data-glass='off']) .lumi-glass {
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, white 10%, transparent),
+    0 8px 28px -12px rgb(0 0 0 / 0.5);
+}
+
+/* ---- F01（2026-09 移动端专项）：列表密度 ----
+ * 列表容器 data-density 驱动卡片/行的内边距与行距；动作按钮尺寸
+ * （44px 触控）不随密度缩小——密度只调节奏，不牺牲可达性。 */
+[data-density='compact'] .lumi-entry-card,
+[data-density='compact'] .lumi-entry-row {
+  padding-block: 0.3rem;
+  row-gap: 0.125rem;
+}
+[data-density='comfortable'] .lumi-entry-card,
+[data-density='comfortable'] .lumi-entry-row {
+  padding-block: 0.9rem;
+  row-gap: 0.4rem;
+}
+/* compact 模式下摘要行收紧为一行（信息密度优先）。 */
+[data-density='compact'] .lumi-entry-card p,
+[data-density='compact'] .lumi-entry-row p {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ---- F24：清洁打印视图 ----
  * 打印/导出 PDF 时只保留正文与元信息：顶层导航（MobilePageHeader 的
  * <header>、Sidebar 的 <aside>、底部/抽屉 <nav>）、main 的非末位子区
  * （时间线 / 移动 section 区 / 全宽页面区）与分隔条 div 一律隐藏；
  * 交互控件（按钮/目录/安装提示）不打印；正文链接追加可见 href，
- * 长代码块/表格不截断。 */
+ * 长代码块/表格不截断。
+ * F23 增强：@page 页边距 18mm；Reader 滚动容器在打印时展开为普通
+ * 文档流（去掉视口高度/滚动裁剪），正文（.lumi-reader-article 所在
+ * 分支）明确保留——其余 main 直接子元素仍按既有规则隐藏。 */
 @media print {
+  @page {
+    margin: 18mm;
+  }
   header,
   nav,
   aside,
@@ -377,6 +525,14 @@ html[data-reader-images='hidden'] .article-content img {
   main > div,
   main > section:not(:last-child) {
     display: none !important;
+  }
+  /* 正文保留：持有 .lumi-reader-article 的 Reader 分支取消隐藏，
+     滚动容器降级为静态文档流（长文完整分页打印）。 */
+  main > div:has(.lumi-reader-article),
+  main > div:has(.lumi-reader-article) .lumi-reader-scroll {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
   }
   html,
   body {

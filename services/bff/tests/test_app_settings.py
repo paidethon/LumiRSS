@@ -122,6 +122,59 @@ def test_patch_round_trips_and_reports_stored(tmp_path):
         assert reread.json()["readerFontSize"] == 20.0
 
 
+def test_patch_round_trips_2026_mobile_batch_keys(tmp_path):
+    """2026-09 移动端专项新增 portable 键：默认值 + PATCH 往返 + 枚举拒绝。"""
+    with TestClient(app) as client:
+        app.state.db = Database(tmp_path / "lumi.sqlite")
+        defaults = client.get("/api/v1/settings").json()
+        assert defaults["readerAutoMarkRead"] is True
+        assert defaults["glassEffect"] == "auto"
+        assert defaults["listDensity"] == "standard"
+        assert defaults["timelineOrder"] == "newest"
+
+        response = client.patch(
+            "/api/v1/settings",
+            json={
+                "readerAutoMarkRead": False,
+                "glassEffect": "off",
+                "swipeBackGesture": False,
+                "listDensity": "comfortable",
+                "listShowSnippet": False,
+                "listShowCover": False,
+                "listTimeFormat": "absolute",
+                "listGroupByFeed": True,
+                "timelineOrder": "oldest",
+                "cardSwipeAction": "readLater",
+                "readerShowReadingProgress": False,
+                "readerCodeWrap": True,
+                "readerPagedMode": True,
+                "searchHighlightMatches": False,
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["readerAutoMarkRead"] is False
+        assert body["glassEffect"] == "off"
+        assert body["swipeBackGesture"] is False
+        assert body["listDensity"] == "comfortable"
+        assert body["listShowSnippet"] is False
+        assert body["listShowCover"] is False
+        assert body["listTimeFormat"] == "absolute"
+        assert body["listGroupByFeed"] is True
+        assert body["timelineOrder"] == "oldest"
+        assert body["cardSwipeAction"] == "readLater"
+        assert body["readerShowReadingProgress"] is False
+        assert body["readerCodeWrap"] is True
+        assert body["readerPagedMode"] is True
+        assert body["searchHighlightMatches"] is False
+
+        # 枚举键拒绝越界值（invalid_app_settings → 400）。
+        rejected = client.patch("/api/v1/settings", json={"glassEffect": "sparkle"})
+        assert rejected.status_code == 400
+        rejected = client.patch("/api/v1/settings", json={"cardSwipeAction": "delete"})
+        assert rejected.status_code == 400
+
+
 def test_patch_is_partial_and_merge_keeps_prior_values(tmp_path):
     with TestClient(app) as client:
         app.state.db = Database(tmp_path / "lumi.sqlite")

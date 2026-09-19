@@ -3912,11 +3912,55 @@ export interface components {
              */
             accentColor: string;
             /**
+             * Cardswipeaction
+             * @default read
+             * @enum {string}
+             */
+            cardSwipeAction: "none" | "read" | "readLater" | "star";
+            /**
+             * Glasseffect
+             * @default auto
+             * @enum {string}
+             */
+            glassEffect: "auto" | "on" | "off";
+            /**
+             * Listdensity
+             * @default standard
+             * @enum {string}
+             */
+            listDensity: "compact" | "standard" | "comfortable";
+            /**
+             * Listgroupbyfeed
+             * @default false
+             */
+            listGroupByFeed: boolean;
+            /**
+             * Listshowcover
+             * @default true
+             */
+            listShowCover: boolean;
+            /**
+             * Listshowsnippet
+             * @default true
+             */
+            listShowSnippet: boolean;
+            /**
+             * Listtimeformat
+             * @default relative
+             * @enum {string}
+             */
+            listTimeFormat: "relative" | "absolute";
+            /**
              * Readlatersort
              * @default newest
              * @enum {string}
              */
             readLaterSort: "newest" | "oldest";
+            /**
+             * Readerautomarkread
+             * @default true
+             */
+            readerAutoMarkRead: boolean;
             /**
              * Readerbackground
              * @default follow
@@ -3946,6 +3990,11 @@ export interface components {
              * @enum {string}
              */
             readerCodeTheme: "auto" | "github-light" | "github-dark" | "vitesse-light" | "vitesse-dark";
+            /**
+             * Readercodewrap
+             * @default false
+             */
+            readerCodeWrap: boolean;
             /**
              * Readercontentwidth
              * @default 760
@@ -3989,10 +4038,20 @@ export interface components {
              */
             readerPageMargin: number;
             /**
+             * Readerpagedmode
+             * @default false
+             */
+            readerPagedMode: boolean;
+            /**
              * Readerparagraphspacing
              * @default 0.85
              */
             readerParagraphSpacing: number;
+            /**
+             * Readershowreadingprogress
+             * @default true
+             */
+            readerShowReadingProgress: boolean;
             /**
              * Readershowreadingtime
              * @default false
@@ -4022,14 +4081,30 @@ export interface components {
              * @default false
              */
             scrollMarkUnread: boolean;
+            /**
+             * Searchhighlightmatches
+             * @default true
+             */
+            searchHighlightMatches: boolean;
             /** Stored */
             stored: boolean;
+            /**
+             * Swipebackgesture
+             * @default true
+             */
+            swipeBackGesture: boolean;
             /**
              * Thememode
              * @default system
              * @enum {string}
              */
             themeMode: "system" | "light" | "dark";
+            /**
+             * Timelineorder
+             * @default newest
+             * @enum {string}
+             */
+            timelineOrder: "newest" | "oldest";
             /**
              * Uifontsize
              * @default 16
@@ -4538,6 +4613,8 @@ export interface components {
             entryRef: string;
             /** Feedtitle */
             feedTitle: string;
+            /** Feedurl */
+            feedUrl?: string | null;
             /** Publishedat */
             publishedAt?: string | null;
             /** Read */
@@ -4552,18 +4629,31 @@ export interface components {
         /**
          * EntryListItem
          * @description One article in the entry list — never contains the body.
+         *
+         *     2026-09 移动端专项 P2/F02/F03 enrich（列表级元数据，非正文）：
+         *     - feedUrl：来源真实订阅 URL（标题→URL 映射解析；解析不到保持
+         *       None，前端该来源不可点击，诚实降级）；
+         *     - snippet：列表摘要（html_to_text 前 160 字符，纯文本）；
+         *     - coverUrl：封面图（正文首个 http(s) <img src>；仅元数据，是否
+         *       加载由前端图片模式控制）。
          */
         EntryListItem: {
             /** Author */
             author?: string | null;
+            /** Coverurl */
+            coverUrl?: string | null;
             /** Entryref */
             entryRef: string;
             /** Feedtitle */
             feedTitle: string;
+            /** Feedurl */
+            feedUrl?: string | null;
             /** Publishedat */
             publishedAt?: string | null;
             /** Read */
             read: boolean;
+            /** Snippet */
+            snippet?: string | null;
             /** Starred */
             starred: boolean;
             /** Title */

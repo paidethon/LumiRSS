@@ -223,9 +223,22 @@ describe('SearchPage（0022 全局搜索正式功能）', () => {
     const input = screen.getByRole('searchbox', { name: '搜索' })
     fireEvent.change(input, { target: { value: 'Midjourney V7' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    // 结果行渲染（真实查询，不冒充）
-    expect(await screen.findByText('Midjourney V7 发布')).toBeInTheDocument()
-    expect(screen.getByText(/Midjourney V7 正式发布/)).toBeInTheDocument()
+    // 结果行渲染（真实查询，不冒充）。F28 高亮会把命中词切成 <mark>，
+    // 文本节点被打断 → 用 textContent 全等匹配（跨 mark 聚合）。
+    expect(
+      await screen.findByText((_, el) => el?.textContent === 'Midjourney V7 发布'),
+    ).toBeInTheDocument()
+    // 最内层元素：避免匹配器命中所有包含该文本的祖先。
+    expect(
+      screen.getByText((_, el) => {
+        if (el === null || !(el.textContent ?? '').includes('Midjourney V7 正式发布')) {
+          return false
+        }
+        return ![...el.children].some((child) =>
+          (child.textContent ?? '').includes('Midjourney V7 正式发布'),
+        )
+      }),
+    ).toBeInTheDocument()
     // 历史记录该词条（有查询时历史区块隐藏 → 断言持久化状态）
     expect(readSearchHistory()).toContain('Midjourney V7')
     // 查询参数：q=Midjourney V7（calls[0] 是 useFeeds 的 /feeds）

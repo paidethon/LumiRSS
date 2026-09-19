@@ -99,6 +99,10 @@ def test_entries_route_returns_items_envelope():
             "publishedAt": "2026-08-20T23:53:54Z",
             "read": False,
             "starred": False,
+            # 2026-09 移动端专项 P2/F02/F03 enrich（fake 未填 → null）。
+            "feedUrl": None,
+            "snippet": None,
+            "coverUrl": None,
         }
         # 0006 Test C — the list never carries any body fields.
         assert "contentHtml" not in body["items"][0]
@@ -158,6 +162,7 @@ def test_entry_detail_route_returns_detail():
             "starred": False,
             "contentText": "这里是文章正文纯文本。",
             "contentHtml": "<p>这里是文章正文纯文本。</p>",
+            "feedUrl": None,  # P2 enrich（fake 未填 → null）
         }
     finally:
         app.state.freshrss_adapter = None

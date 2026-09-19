@@ -61,14 +61,20 @@ async def search(
     favorite: bool | None = None,
     from_: str | None = None,
     to: str | None = None,
+    intitle: str | None = None,
+    phrase: str | None = None,
+    exclude: str | None = None,
 ) -> SearchResponse:
     """Global search over the derived projection.
 
-    ``q`` is required (1-200 chars, at most 4 whitespace-split terms).
+    ``q`` is required (1-200 characters, at most 4 whitespace-split terms).
     ``state`` accepts "unread" (default: all); ``favorite`` filters
     starred entries; ``from``/``to`` are inclusive/exclusive ISO dates
     (YYYY-MM-DD). ``categoryId``/``feedUrl`` scope the search; the two
-    are mutually exclusive.
+    are mutually exclusive. F29 advanced conditions (optional):
+    ``intitle`` (title-only, ≤2 terms), ``phrase`` (exact phrase),
+    ``exclude`` (excluded terms, ≤2) — bound into the cursor scope so
+    pagination never drifts across changed conditions.
 
     Each leg paginates independently: ``cursor`` keys the RSS leg,
     ``libraryCursor`` the library leg; both cursors are bound to the
@@ -103,6 +109,9 @@ async def search(
         "favorite": bool(favorite),
         "from": from_,
         "to": to,
+        "intitle": (intitle or "").strip() or None,
+        "phrase": (phrase or "").strip() or None,
+        "exclude": (exclude or "").strip() or None,
     }
     library_scope: dict[str, Any] = {"q": query, "favorite": bool(favorite)}
     # Cursor decoding happens outside the per-leg try blocks: a bad or
@@ -137,6 +146,9 @@ async def search(
             starred_only=bool(favorite),
             published_from=from_,
             published_to=to,
+            intitle=intitle,
+            phrase=phrase,
+            exclude=exclude,
         )
     next_cursor = None
     if result["hasMore"] and result["nextKeyset"] is not None:

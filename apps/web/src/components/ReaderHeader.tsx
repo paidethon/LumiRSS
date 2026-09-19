@@ -1,5 +1,9 @@
-import { useState } from 'react'
-import { Camera, Check, Clock, ExternalLink, Languages, Loader2, MessageSquare, Star } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
+  Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
+  Search, Share2, Square, Star, Volume2,
+} from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useAiSettings, useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
 import { getEntry } from '../api/client'
@@ -9,10 +13,30 @@ import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import { formatReadingTime, textFromHtml } from '../lib/reading-time'
 import { dateTimeFormatter as dateFormatter } from '../lib/date-format'
 import { localTranslatorAvailable } from '../lib/local-translator'
+import { SourceGlyph, SourceLabel } from '../lib/source-meta'
 import { useAppSettings } from '../store/app-settings'
 import { useUndo } from '../store/undo'
+import {
+  buildQuoteMarkdownText,
+  buildQuotePlainText,
+  fallbackShareUrl,
+  QUOTE_MAX_CHARS,
+  type AutoScrollState,
+} from '../lib/reader-tools'
+import {
+  SPEECH_RATES,
+  speakText,
+  speechSynthesisAvailable,
+  type SpeechRate,
+} from '../lib/reader-speech'
+import {
+  exportEntryAsHtml,
+  exportEntryAsMarkdown,
+  type ExportInput,
+} from '../lib/reader-export'
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
+import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Menu } from './ui/Menu'
 import { Tooltip } from './ui/Tooltip'
@@ -73,6 +97,289 @@ function SaveSnapshotButton({ url }: { url: string }) {
   )
 }
 
+/** F19 朗读：speechSynthesis 接线（能力缺失 = 按钮诚实禁用 + 原因）。
+ * 点击循环 空闲→朗读→暂停→继续；「停止朗读」cancel 并复位。
+ * collectText 由 Reader 提供（取视口顶部最近段落往后的全部正文）；
+ * 本组件按 entryRef 重挂载（ReaderHeader key），卸载即 cancel——
+ * 切文章自动停止朗读。 */
+function ReaderSpeechControl({ collectText }: { collectText: () => string | null }) {
+  const [state, setState] = useState<'idle' | 'speaking' | 'paused'>('idle')
+  const [rate, setRate] = useState<SpeechRate>(1)
+  const [error, setError] = useState<string | null>(null)
+  const textRef = useRef('')
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const available = speechSynthesisAvailable()
+
+  // 切文章（key 重挂载）/卸载：cancel 朗读，绝不跨文章延续。
+  useEffect(() => {
+    return () => {
+      if (speechSynthesisAvailable()) window.speechSynthesis.cancel()
+    }
+  }, [])
+
+  if (!available) {
+    return (
+      <Tooltip content="此浏览器不支持语音朗读（speechSynthesis 不可用）">
+        <IconButton
+          icon={<Volume2 aria-hidden />}
+          label="朗读"
+          touch
+          disabled
+          title="此浏览器不支持语音朗读（speechSynthesis 不可用）"
+        />
+      </Tooltip>
+    )
+  }
+
+  const speakCurrent = (nextRate: SpeechRate) => {
+    speakText(textRef.current, {
+      rate: nextRate,
+      onEnd: () => setState('idle'),
+      onError: (message) => {
+        setError(message)
+        setState('idle')
+      },
+    })
+    setState('speaking')
+  }
+
+  const toggle = () => {
+    setError(null)
+    if (state === 'idle') {
+      const text = collectText()
+      if (text === null || text.trim() === '') {
+        setError('没有可朗读的正文。')
+        return
+      }
+      textRef.current = text
+      speakCurrent(rate)
+      return
+    }
+    if (state === 'speaking') {
+      window.speechSynthesis.pause()
+      setState('paused')
+      return
+    }
+    window.speechSynthesis.resume()
+    setState('speaking')
+  }
+
+  const stop = () => {
+    window.speechSynthesis.cancel()
+    setState('idle')
+    setError(null)
+  }
+
+  const changeRate = (next: SpeechRate) => {
+    setRate(next)
+    // 朗读中调速：取消并按新语速从头重读同一段文本（诚实且立即可感）。
+    if (stateRef.current !== 'idle') speakCurrent(next)
+  }
+
+  return (
+    <>
+      <Tooltip
+        content={
+          state === 'idle' ? '朗读' : state === 'speaking' ? '暂停朗读' : '继续朗读'
+        }
+      >
+        <IconButton
+          icon={
+            state === 'speaking' ? (
+              <Pause aria-hidden />
+            ) : state === 'paused' ? (
+              <Play aria-hidden />
+            ) : (
+              <Volume2 aria-hidden />
+            )
+          }
+          label={state === 'idle' ? '朗读' : state === 'speaking' ? '暂停朗读' : '继续朗读'}
+          aria-pressed={state !== 'idle'}
+          touch
+          onClick={toggle}
+        />
+      </Tooltip>
+      {state !== 'idle' && (
+        <>
+          <Tooltip content="停止朗读">
+            <IconButton
+              icon={<Square aria-hidden />}
+              label="停止朗读"
+              touch
+              onClick={stop}
+            />
+          </Tooltip>
+          {/* 语速 segmented（0.75 / 1 / 1.25 / 1.5）；朗读中调速即重读 */}
+          <div
+            role="group"
+            aria-label="朗读语速"
+            className="hidden items-center gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5 lg:inline-flex"
+          >
+            {SPEECH_RATES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={rate === value}
+                onClick={() => changeRate(value)}
+                className={cx(
+                  'min-h-8 min-w-11 rounded-[var(--lumi-radius-sm)] px-1 text-xs tabular-nums transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  rate === value
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {value}x
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {error !== null && (
+        <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {error}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** F21 分享：navigator.share 可用 → 系统分享（AbortError=用户取消，
+ * 静默）；其它错误 → 回退复制链接；无 share 能力 → 直接复制链接。
+ * 复制结果以按钮旁即时文案反馈（成功「链接已复制」/失败可见）。 */
+function ShareButton({ title, url }: { title: string; url: string | null }) {
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+  const shareUrl = url ?? fallbackShareUrl()
+
+  const showFeedback = (message: string) => {
+    setFeedback(message)
+    window.setTimeout(() => setFeedback((current) => (current === message ? null : current)), 2000)
+  }
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      showFeedback('链接已复制')
+    } catch {
+      showFeedback('复制失败')
+    }
+  }
+
+  const onShare = async () => {
+    if (canShare) {
+      try {
+        await navigator.share({ title, url: shareUrl })
+        return
+      } catch (error) {
+        // AbortError = 用户取消分享系统面板，静默（不算失败）。
+        if ((error as { name?: string } | null)?.name === 'AbortError') return
+        // 其它错误 → 回退复制链接
+      }
+    }
+    await copyLink()
+  }
+
+  return (
+    <>
+      <Tooltip content={feedback ?? (canShare ? '分享' : '复制链接')}>
+        <IconButton
+          icon={<Share2 aria-hidden />}
+          label={canShare ? '分享' : '复制链接'}
+          touch
+          onClick={() => {
+            void onShare()
+          }}
+        />
+      </Tooltip>
+      {feedback !== null && (
+        <span aria-live="polite" data-lumi-share-feedback="" className="text-xs text-[var(--lumi-accent-text)]">
+          {feedback}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** F24 复制引用：无选区 = 标题+来源+链接；有选区附加引文（≤500 字）。
+ * 两种格式（纯文本 / Markdown）菜单二选一；成功按钮短暂变 Check；
+ * 失败展示可手动复制的只读文本框（诚实失败）。 */
+function QuoteCopyButton({
+  title,
+  source,
+  url,
+}: {
+  title: string
+  source: string
+  url: string | null
+}) {
+  const [copiedRecently, setCopiedRecently] = useState(false)
+  const [fallbackText, setFallbackText] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const copy = async (format: 'plain' | 'markdown') => {
+    const selection =
+      typeof window.getSelection === 'function' ? window.getSelection()?.toString() ?? '' : ''
+    const quote = selection.trim().slice(0, QUOTE_MAX_CHARS)
+    const input = { title, source, url, quote }
+    const text =
+      format === 'plain' ? buildQuotePlainText(input) : buildQuoteMarkdownText(input)
+    try {
+      await navigator.clipboard.writeText(text)
+      setFallbackText(null)
+      setCopiedRecently(true)
+      window.setTimeout(() => setCopiedRecently(false), 1200)
+    } catch {
+      setFallbackText(text)
+    }
+  }
+
+  return (
+    <>
+      <Menu
+        trigger={({ triggerProps }) => (
+          <Tooltip content="复制引用">
+            <IconButton
+              {...triggerProps}
+              icon={
+                copiedRecently ? (
+                  <Check aria-hidden className="text-[var(--lumi-accent-text)]" />
+                ) : (
+                  <Quote aria-hidden />
+                )
+              }
+              label="复制引用"
+              touch
+            />
+          </Tooltip>
+        )}
+        items={[
+          { key: 'plain', content: '复制为纯文本' },
+          { key: 'markdown', content: '复制为 Markdown' },
+        ]}
+        onSelect={(key) => {
+          void copy(key === 'markdown' ? 'markdown' : 'plain')
+        }}
+      />
+      {fallbackText !== null && (
+        <div className="flex w-full basis-full items-start gap-2" data-lumi-quote-fallback="">
+          <textarea
+            ref={textareaRef}
+            readOnly
+            value={fallbackText}
+            aria-label="复制失败的引用文本（可手动复制）"
+            rows={4}
+            className="w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-2 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          />
+          <Button size="sm" onClick={() => textareaRef.current?.select()}>
+            全选
+          </Button>
+        </div>
+      )}
+    </>
+  )
+}
+
 /** ReaderHeader — 标题 / 元信息 / 工具栏（0009 Gate 3 视觉重建）。
  *
  * 布局（Spec Task 12）：紧凑工具栏（IconButton 32px + Tooltip）+
@@ -84,7 +391,11 @@ function SaveSnapshotButton({ url }: { url: string }) {
  * 行为不变式（Spec 硬边界 3/5）：
  * - set 语义（PATCH 目标状态，非 toggle）；
  * - 打开原文只放行绝对 http/https（safeExternalHttpUrl），
- *   target=_blank + rel=noopener noreferrer。 */
+ *   target=_blank + rel=noopener noreferrer。
+ *
+ * Reader 工具类功能（F13/F18/F19/F21/F22/F23/F24）挂同一工具栏：
+ * 文内查找 / 朗读 / 分享 / 复制引用 / 打印 / 更多操作（自动滚屏、
+ * 导出 Markdown、导出 HTML）。 */
 /** Gate：语言视图三态控件（原文/双语/仅译文）。
  * 桌面 = 三段分段按钮；窄屏 = 紧凑 Menu（不遮挡/不挤出工具栏）。
  * 两态 Switch 表达不了三态，这里用显式的选项组。
@@ -175,6 +486,12 @@ export default function ReaderHeader({
   viewMode = 'original',
   onViewModeChange,
   onOpenAiConversation,
+  onOpenFind,
+  collectSpeechText,
+  autoScrollState = 'off',
+  onAutoScrollToggle,
+  focusMode,
+  onFocusModeChange,
 }: {
   detail: EntryDetail
   /** Gate：语言视图（由 Reader 持有；工具栏与内容区共享同一状态）。 */
@@ -182,6 +499,16 @@ export default function ReaderHeader({
   onViewModeChange?: (mode: ReaderViewMode) => void
   /** 0016：打开文章限定 AI 对话（由 Reader 持有面板开关状态）。 */
   onOpenAiConversation?: () => void
+  /** F13：打开文内查找（Reader 持有查找条状态）。 */
+  onOpenFind?: () => void
+  /** F19：收集「从视口顶部段落开始」的朗读文本（Reader 提供容器几何）。 */
+  collectSpeechText?: () => string | null
+  /** F18：自动滚屏状态 + 切换（Reader 持有 rAF 循环）。 */
+  autoScrollState?: AutoScrollState
+  onAutoScrollToggle?: () => void
+  /** 专注阅读（Reader 会话级状态，透传给 Aa 面板）。 */
+  focusMode?: boolean
+  onFocusModeChange?: (value: boolean) => void
 }) {
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
@@ -218,14 +545,31 @@ export default function ReaderHeader({
       )
     : null
 
+  // F22 导出输入：url 只放行 safeExternalHttpUrl 通过的地址（导出文件
+  // 不携带不可信协议链接）；日期用已格式化的本地时间。
+  const exportInput: ExportInput = {
+    title: detail.title,
+    source: detail.feedTitle,
+    date: published,
+    url: articleUrl,
+    text: detail.contentText,
+    html: detail.contentHtml ?? null,
+  }
+
   return (
     <header className="border-b border-[var(--lumi-separator)] pb-5">
-      {/* 元信息行（弱化）：来源 · 作者 · 时间 · 阅读时间 */}
-      <p className="text-xs text-[var(--lumi-text-tertiary)]">
-        {detail.feedTitle}
-        {detail.author !== null && <span> · {detail.author}</span>}
-        {published !== '' && <span> · {published}</span>}
-        {readingTime !== null && <span> · {readingTime}</span>}
+      {/* 元信息行（弱化）：来源（P2：可点击进入该订阅范围）· 作者 ·
+          时间 · 阅读时间。来源缺失降级「来源未知」。 */}
+      <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+        <SourceGlyph name={detail.feedTitle} />
+        <SourceLabel
+          feedTitle={detail.feedTitle}
+          feedUrl={detail.feedUrl}
+          className="min-w-0 max-w-[16rem] text-left"
+        />
+        {detail.author !== null && <span className="truncate">· {detail.author}</span>}
+        {published !== '' && <span>· {published}</span>}
+        {readingTime !== null && <span>· {readingTime}</span>}
       </p>
 
       {/* 强标题（Folo 锚点 27px/700；移动端略小） */}
@@ -393,9 +737,103 @@ export default function ReaderHeader({
           />
         )}
 
+        {/* F13：文内查找（Reader 持有查找条状态） */}
+        {onOpenFind !== undefined && (
+          <Tooltip content="文内查找">
+            <IconButton
+              icon={<Search aria-hidden />}
+              label="文内查找"
+              touch
+              onClick={onOpenFind}
+            />
+          </Tooltip>
+        )}
+
+        {/* F19：朗读（collectText 由 Reader 提供；未提供不渲染） */}
+        {collectSpeechText !== undefined && (
+          <ReaderSpeechControl collectText={collectSpeechText} />
+        )}
+
+        {/* F21：分享 / 复制链接（navigator.share 能力决定行为，回退诚实） */}
+        <ShareButton title={detail.title} url={articleUrl} />
+
+        {/* F24：复制引用（纯文本 / Markdown 格式菜单） */}
+        <QuoteCopyButton title={detail.title} source={detail.feedTitle} url={articleUrl} />
+
+        {/* F23：打印（window.print；不承诺 PDF） */}
+        <Tooltip content="打印">
+          <IconButton
+            icon={<Printer aria-hidden />}
+            label="打印"
+            touch
+            onClick={() => {
+              if (typeof window.print === 'function') window.print()
+            }}
+          />
+        </Tooltip>
+
+        {/* F18/F22：更多操作菜单（自动滚屏 / 导出 Markdown / 导出 HTML） */}
+        {(onAutoScrollToggle !== undefined) && (
+          <Menu
+            trigger={({ triggerProps }) => (
+              <Tooltip content="更多操作">
+                <IconButton
+                  {...triggerProps}
+                  icon={<MoreHorizontal aria-hidden />}
+                  label="更多操作"
+                  touch
+                />
+              </Tooltip>
+            )}
+            items={[
+              {
+                key: 'autoscroll',
+                content: (
+                  <span className="flex items-center gap-2">
+                    {autoScrollState === 'off' ? (
+                      <Play aria-hidden className="size-4" />
+                    ) : (
+                      <Pause aria-hidden className="size-4" />
+                    )}
+                    {autoScrollState === 'off'
+                      ? '自动滚屏'
+                      : autoScrollState === 'running'
+                        ? '暂停自动滚屏'
+                        : '继续自动滚屏'}
+                  </span>
+                ),
+              },
+              { key: 'export-md', content: (
+                <span className="flex items-center gap-2">
+                  <FileText aria-hidden className="size-4" />
+                  导出 Markdown
+                </span>
+              ) },
+              { key: 'export-html', content: (
+                <span className="flex items-center gap-2">
+                  <FileCode aria-hidden className="size-4" />
+                  导出 HTML
+                </span>
+              ) },
+            ]}
+            onSelect={(key) => {
+              if (key === 'autoscroll') {
+                onAutoScrollToggle?.()
+                return
+              }
+              if (key === 'export-md') {
+                exportEntryAsMarkdown(exportInput)
+                return
+              }
+              if (key === 'export-html') exportEntryAsHtml(exportInput)
+            }}
+          />
+        )}
+
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心
-            同一 settings source，不遮挡正文关键操作。 */}
-        <ReaderAaPanel />
+            同一 settings source，不遮挡正文关键操作。F15/F17/专注：
+            代码换行 / 按屏翻页 / 专注阅读开关挂同一面板。 */}
+        <ReaderAaPanel focusMode={focusMode} onFocusModeChange={onFocusModeChange} />
       </div>
 
       {mutation.isError && (

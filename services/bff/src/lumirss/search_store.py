@@ -12,6 +12,9 @@ from typing import Any
 from .storage import Database
 
 _MAX_SEARCH_TERMS = 4
+# F29（2026-09 移动端专项）：高级条件的最大槽位。
+_MAX_INTITLE_TERMS = 2
+_MAX_EXCLUDE_TERMS = 2
 
 
 def like_pattern(term: str) -> str:
@@ -23,9 +26,10 @@ def like_pattern(term: str) -> str:
 
 
 # Parameter order: four term slots x three columns (title, content,
-# author); then feed_url x2 (value + NULL guard), category x2, unread
-# guard, starred guard, from x2, to x2, keyset flag + keyset x3 (NULL
-# disables pagination), limit.
+# author); then intitle slots x2 (guard + pattern); phrase x3 (guard +
+# title + content); exclude slots x2 (guard + NOT LIKE x3); feed_url x2
+# (value + NULL guard), category x2, unread guard, starred guard, from
+# x2, to x2, keyset flag + keyset x3 (NULL disables pagination), limit.
 _SQL_SEARCH = (
     "SELECT s.item_id, s.entry_ref, s.title, s.feed_title, s.feed_url,"
     " s.author, s.url, s.published_at, s.read, s.starred,"
@@ -43,6 +47,19 @@ _SQL_SEARCH = (
     "   AND (s.title LIKE ? ESCAPE '\\'"
     "     OR s.content_text LIKE ? ESCAPE '\\'"
     "     OR s.author LIKE ? ESCAPE '\\')"
+    # F29 intitle：仅标题命中的词条（NULL = 该槽未用）。
+    " AND (? IS NULL OR s.title LIKE ? ESCAPE '\\')"
+    " AND (? IS NULL OR s.title LIKE ? ESCAPE '\\')"
+    # F29 phrase：精确短语（按子串匹配标题或正文；NULL = 未用）。
+    " AND (? IS NULL OR s.title LIKE ? ESCAPE '\\'"
+    "      OR s.content_text LIKE ? ESCAPE '\\')"
+    # F29 exclude：排除词（三个列都不得包含；NULL = 未用）。
+    " AND (? IS NULL OR (s.title NOT LIKE ? ESCAPE '\\'"
+    "      AND s.content_text NOT LIKE ? ESCAPE '\\'"
+    "      AND s.author NOT LIKE ? ESCAPE '\\'))"
+    " AND (? IS NULL OR (s.title NOT LIKE ? ESCAPE '\\'"
+    "      AND s.content_text NOT LIKE ? ESCAPE '\\'"
+    "      AND s.author NOT LIKE ? ESCAPE '\\'))"
     " AND (? IS NULL OR s.feed_url = ?)"
     " AND (? IS NULL OR EXISTS (SELECT 1 FROM search_feeds f"
     "      WHERE f.category_id = ? AND f.feed_url = s.feed_url))"
@@ -57,7 +74,7 @@ _SQL_SEARCH = (
 
 
 class SearchStore:
-    """Read path and metadata for the derived search projection."""
+    """Read path for the derived search projection."""
 
     def __init__(self, database: Database) -> None:
         self._db = database
@@ -74,15 +91,48 @@ class SearchStore:
         published_to: str | None,
         keyset: tuple[str, str] | None,
         limit: int,
+        intitle_terms: list[str] | None = None,
+        phrase: str | None = None,
+        exclude_terms: list[str] | None = None,
     ) -> list[Any]:
-        """One page of hits, newest first; limit+1 rows detect hasMore."""
+        """One page of hits, newest first; limit+1 rows detect hasMore.
+
+        F29 高级条件（全部可选、可组合）：``intitle_terms`` 仅标题命中；
+        ``phrase`` 精确短语（子串）；``exclude_terms`` 全列排除。
+        """
         params: list = []
         for term in terms:
             pattern = like_pattern(term)
             params.extend([pattern, pattern, pattern])
+        # 未用的基础词条槽 = 匹配一切（AND 上无害；与既有语义一致）。
         empty = like_pattern("")
         while len(params) < 3 * _MAX_SEARCH_TERMS:
             params.extend([empty, empty, empty])
+        # intitle 槽（NULL 关闭未用的槽位）。
+        intitle = list(intitle_terms or [])[:_MAX_INTITLE_TERMS]
+        while len(intitle) < _MAX_INTITLE_TERMS:
+            intitle.append("")
+        for term in intitle:
+            if term:
+                params.extend([like_pattern(term), like_pattern(term)])
+            else:
+                params.extend([None, None])
+        # phrase 槽。
+        if phrase:
+            pattern = like_pattern(phrase)
+            params.extend([pattern, pattern, pattern])
+        else:
+            params.extend([None, None, None])
+        # exclude 槽。
+        exclude = list(exclude_terms or [])[:_MAX_EXCLUDE_TERMS]
+        while len(exclude) < _MAX_EXCLUDE_TERMS:
+            exclude.append("")
+        for term in exclude:
+            if term:
+                pattern = like_pattern(term)
+                params.extend([pattern, pattern, pattern, pattern])
+            else:
+                params.extend([None, None, None, None])
         params.extend(
             [
                 feed_url,

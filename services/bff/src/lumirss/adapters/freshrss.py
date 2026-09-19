@@ -7,6 +7,8 @@ item-contents endpoints, the raw entry JSON shape, and the HTML-to-text
 extraction for contentText. Routes never see any of it.
 """
 
+import re
+import time
 import urllib.parse
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -25,6 +27,48 @@ from lumirss.models import (
 )
 
 EntryView = Literal["all", "unread", "starred"]
+
+# 2026-09 移动端专项 P2/F02/F03：列表级 enrich 常量。
+_LIST_SNIPPET_CHARS = 160
+_FIRST_IMG_SRC_RE = re.compile(
+    r"<img\b[^>]*?\bsrc=[\"']([^\"']+)[\"']", re.IGNORECASE
+)
+# 标题→订阅 URL 映射缓存窗口（显示级数据，短期陈旧无害）。
+_FEED_MAP_TTL_SECONDS = 120.0
+
+
+def list_snippet_of(content_html: str | None) -> str | None:
+    """列表摘要：html_to_text → 压缩空白 → 截断 160 字符（纯文本）。
+
+    Fail-open：上游 HTML 畸形（html_to_text 抛 UpstreamError）或为空时
+    返回 None —— 摘要绝不让列表页 500。
+    """
+    if not content_html:
+        return None
+    try:
+        text = html_to_text(content_html)
+    except AdapterError:
+        return None
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return None
+    if len(collapsed) <= _LIST_SNIPPET_CHARS:
+        return collapsed
+    return collapsed[:_LIST_SNIPPET_CHARS].rstrip() + "…"
+
+
+def cover_url_of(content_html: str | None) -> str | None:
+    """封面图：正文首个 http(s) <img src>（仅元数据，非正文投影）。
+
+    非安全协议（data:/javascript:/相对路径）一律不返回；找不到为 None。
+    """
+    if not content_html:
+        return None
+    for match in _FIRST_IMG_SRC_RE.finditer(content_html):
+        src = match.group(1)
+        if src.startswith(("http://", "https://")):
+            return src
+    return None
 
 
 class AdapterError(Exception):
@@ -401,6 +445,32 @@ class FreshRSSSession:
 class FreshRSSAdapter(FreshRSSSession):
     """Read-path adapter (feeds / entries / entry state)."""
 
+    def __init__(self, client: httpx.AsyncClient, settings: FreshRSSSettings) -> None:
+        super().__init__(client, settings)
+        # P2 enrich：标题→订阅 URL 映射缓存（TTL 见 _FEED_MAP_TTL_SECONDS）。
+        self._feed_title_to_url: dict[str, str] | None = None
+        self._feed_map_at: float = 0.0
+
+    async def _feed_url_map(self) -> dict[str, str]:
+        """feedTitle → feedUrl（订阅清单解析；带 TTL 缓存，fail-open）。
+
+        FreshRSS stream items 只带数字 streamId，不带订阅 URL —— 与
+        search_index._resolve_feed_url 同一决策：标题匹配，解析不到的
+        条目 feedUrl=None（前端来源不可点击，诚实降级）。任何上游失败
+        都收敛为空映射：enrich 是显示级增强，绝不阻塞列表页。
+        """
+        now = time.monotonic()
+        if self._feed_title_to_url is None or now - self._feed_map_at > _FEED_MAP_TTL_SECONDS:
+            try:
+                feeds = await self.list_feeds()
+                self._feed_title_to_url = {
+                    feed.title: feed.feed_url for feed in feeds if feed.title
+                }
+                self._feed_map_at = now
+            except AdapterError:
+                return self._feed_title_to_url or {}
+        return self._feed_title_to_url
+
     async def list_feeds(self) -> list[Feed]:
         """Return the LumiRSS feed list, logging in first if needed."""
         token = await self._get_auth_token()
@@ -442,6 +512,10 @@ class FreshRSSAdapter(FreshRSSSession):
           "Uncategorized" 再试一次（仅首页；见 _request_category_stream）。
         """
         token = await self._get_auth_token()
+        # P2 enrich：先取（TTL 缓存的）标题→URL 映射再拉 stream ——
+        # 顺序保证「最后一个请求是 stream/contents」的既有语义不变，
+        # 映射缺失时 fail-open 为空表，不阻塞列表。
+        feed_url_map = await self._feed_url_map()
         try:
             payload = await self._request_stream(
                 token, view, feed_url, category_id, continuation
@@ -457,6 +531,7 @@ class FreshRSSAdapter(FreshRSSSession):
             base = self._common_fields(item)
             if base is None:  # no id → cannot be referenced, skip the item
                 continue
+            content_html = base["content_html"]
             items.append(
                 EntryListItem(
                     entryRef=encode_entry_ref(base["item_id"]),
@@ -467,6 +542,9 @@ class FreshRSSAdapter(FreshRSSSession):
                     publishedAt=base["published_at"],
                     read=base["read"],
                     starred=base["starred"],
+                    feedUrl=feed_url_map.get(base["feed_title"]),
+                    snippet=list_snippet_of(content_html),
+                    coverUrl=cover_url_of(content_html),
                 )
             )
         return EntryPage(
@@ -559,6 +637,7 @@ class FreshRSSAdapter(FreshRSSSession):
         base = self._common_fields(items[0])
         if base is None:
             raise UpstreamError("FreshRSS items/contents item is missing its id.")
+        feed_url_map = await self._feed_url_map()
         return EntryDetail(
             entryRef=encode_entry_ref(base["item_id"]),
             title=base["title"],
@@ -571,6 +650,7 @@ class FreshRSSAdapter(FreshRSSSession):
             starred=base["starred"],
             contentText=html_to_text(base["content_html"]),
             contentHtml=base["content_html"] or None,
+            feedUrl=feed_url_map.get(base["feed_title"]),
         )
 
     async def set_entry_state(

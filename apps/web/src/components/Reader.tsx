@@ -1,14 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
-import { useEntryDetail } from '../api/queries'
+import { ArrowUp, ChevronDown, ChevronUp, History, Pause, Play, RefreshCw, Square } from 'lucide-react'
+import { useEntryDetail, useEntryStateMutation } from '../api/queries'
 import { ApiError } from '../api/client'
 import { useReaderUi } from '../store/reader-ui'
+import { useAppSettings } from '../store/app-settings'
 import {
   captureAnchorText,
   findAnchorElement,
   loadReadingPosition,
   saveReadingPosition,
 } from '../lib/reading-position'
+import { useFinishRead } from '../lib/finish-read'
+import {
+  AUTO_SCROLL_SPEEDS,
+  BACK_TO_TOP_THRESHOLD_PX,
+  pageTargetTop,
+  scrollContainerBy,
+  type AutoScrollSpeed,
+  type AutoScrollState,
+} from '../lib/reader-tools'
+import {
+  applyFocusActive,
+  clearFocusActive,
+} from '../lib/reader-focus'
+import {
+  findStartBlockIndex,
+  joinBlockTexts,
+  SPEECH_BLOCK_SELECTOR,
+  SPEECH_MAX_CHARS,
+} from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import ArticleConversation from './ArticleConversation'
 import ReaderHeader from './ReaderHeader'
@@ -17,8 +37,14 @@ import ReaderSummary from './ReaderSummary'
 import ProvenanceCard from './ProvenanceCard'
 import EntryNotesBacklinks from './EntryNotesBacklinks'
 import ReaderTranslation from './ReaderTranslation'
+import ReaderProgress from './ReaderProgress'
+import ArticleFindBar from './ArticleFindBar'
+import { AnnotationsLayer } from './AnnotationsLayer'
+import { ReadingRuler } from './ReadingRuler'
 import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
+import { cx } from './ui/cx'
 
 /** 段落锚点候选：正文容器内的常见内容元素（文档序遍历，取视口线上方
  * 最近的一个作为位置锚点）。 */
@@ -34,6 +60,82 @@ const ANCHOR_SELECTOR = [
   '.lumi-reader-article h5',
   '.lumi-reader-article h6',
 ].join(', ')
+
+/** F18 自动滚屏速度标签（chip 展示）。 */
+const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
+  slow: '慢',
+  medium: '中',
+  fast: '快',
+}
+
+/** F18 自动滚屏状态 chip：状态文字（aria-live）+ 三档速度 segmented +
+ * 暂停/继续 + 停止。rAF 循环在 Reader effect 中，chip 只做展示/操作。 */
+function AutoScrollChip({
+  state,
+  speed,
+  onSpeedChange,
+  onToggle,
+  onStop,
+}: {
+  state: Exclude<AutoScrollState, 'off'>
+  speed: AutoScrollSpeed
+  onSpeedChange: (speed: AutoScrollSpeed) => void
+  onToggle: () => void
+  onStop: () => void
+}) {
+  return (
+    <div
+      data-lumi-autoscroll-chip=""
+      className="absolute bottom-6 left-4 z-10 flex items-center gap-1.5 rounded-full border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] py-1 pe-1.5 ps-3 shadow-[var(--lumi-shadow-popover)]"
+    >
+      <span
+        aria-live="polite"
+        className="whitespace-nowrap text-xs text-[var(--lumi-text-secondary)]"
+      >
+        {state === 'running'
+          ? `自动滚屏 · ${AUTO_SCROLL_SPEED_LABELS[speed]}`
+          : '自动滚屏 · 已暂停'}
+      </span>
+      <div
+        role="group"
+        aria-label="自动滚屏速度"
+        className="flex items-center gap-0.5"
+      >
+        {(['slow', 'medium', 'fast'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={speed === value}
+            aria-label={`速度${AUTO_SCROLL_SPEED_LABELS[value]}`}
+            onClick={() => onSpeedChange(value)}
+            className={cx(
+              'min-h-8 min-w-8 rounded-[var(--lumi-radius-md)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              speed === value
+                ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+            )}
+          >
+            {AUTO_SCROLL_SPEED_LABELS[value]}
+          </button>
+        ))}
+      </div>
+      <IconButton
+        size="sm"
+        icon={state === 'running' ? <Pause aria-hidden className="size-4" /> : <Play aria-hidden className="size-4" />}
+        label={state === 'running' ? '暂停自动滚屏' : '继续自动滚屏'}
+        touch
+        onClick={onToggle}
+      />
+      <IconButton
+        size="sm"
+        icon={<Square aria-hidden className="size-4" />}
+        label="停止自动滚屏"
+        touch
+        onClick={onStop}
+      />
+    </div>
+  )
+}
 
 /** Reader — 右栏状态机（0006 行为 / 0009 Gate 3 视觉重建）：
  *
@@ -51,10 +153,25 @@ const ANCHOR_SELECTOR = [
  * - skeleton / error / 404 全部 token 化 + primitives。
  *
  * Reader 自己滚动；切换选择时恢复该文章的上次阅读位置（pool #01），
- * 无记录则回到顶部。 */
+ * 无记录则回到顶部。
+ *
+ * Reader 工具类功能（F11–F25）在成功分支集成：
+ * - F11 阅读进度条（滚动容器顶部，ReaderProgress 自挂原生监听）；
+ * - F13 文内查找（工具栏入口 + ArticleFindBar 浮层）；
+ * - F16/F14 灯箱与表格展开在 ArticleContent 内部；
+ * - F17 按屏翻页（readerPagedMode，右下角上一屏/下一屏）；
+ * - F18 自动滚屏（rAF 循环；每帧 noteProgrammaticScroll 续豁免窗口，
+ *   切文章/离开/页面 hidden 自动停止）；
+ * - F25 回到顶部 / 返回刚才位置（>600px 且未到底时出现；恢复滚动
+ *   先 noteProgrammaticScroll 豁免，不计主动推进）；
+ * - 专注阅读（会话级开关；视口中心块标记，其余降透明度）。 */
 export default function Reader() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const selectEntry = useReaderUi((s) => s.selectEntry)
+  const readerAutoMarkRead = useAppSettings((s) => s.settings.readerAutoMarkRead)
+  // F11：进度条开关；F17：按屏翻页开关（均来自 settings store）。
+  const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
+  const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
   // 0016：AI 对话面板开关（纯 UI 状态；面板内容跟随当前文章）。
   const [aiConversationOpen, setAiConversationOpen] = useState(false)
@@ -80,13 +197,43 @@ export default function Reader() {
   }, [selectedEntryRef])
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  /** F20/R05：正文容器 ref（AnnotationsLayer 选区监听 / ReadingRuler
+   * 指针跟随用；与 scrollRef 同一 DOM 节点，通过双写保持同步）。 */
+  const articleScrollRef = useRef<HTMLDivElement | null>(null)
+
+  // P0-2：正文读到底自动已读（与列表划过标读、位置保存严格区分）。
+  const stateMutation = useEntryStateMutation()
+  const finishRead = useFinishRead({
+    enabled: readerAutoMarkRead,
+    entryRef: selectedEntryRef,
+    read: data?.read ?? false,
+    markRead: (entryRef) =>
+      stateMutation.mutateAsync({ entryRef, patch: { read: true } }),
+  })
+
+  /** 容器 ref 双挂：位置保存/恢复用 scrollRef；读完判定挂原生滚动监听；
+   * F20/R05 的正文组件经 articleScrollRef 共享同一 DOM 节点。
+   * 只依赖 hook 的稳定函数成员（对象身份每渲染可能变化，ref 回调与
+   * 恢复效应不得随之重触发——否则会重置读完判定的进度基线）。 */
+  const finishSetContainer = finishRead.setContainer
+  const finishNoteProgrammatic = finishRead.noteProgrammaticScroll
+  const setScrollContainer = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node
+      articleScrollRef.current = node
+      finishSetContainer(node)
+    },
+    [finishSetContainer],
+  )
 
 // 阅读位置恢复（pool #01）：按 ItemRef 记录滚动比例 + 段落锚点，切换
 // 返回时恢复；锚点优先、ratio 回退，正文改版只会落在本篇内。只读滚动
 // 位置，绝不触碰已读状态。列表窗格滚动与正文互不影响。
+// P0-2：恢复属程序性滚动——先豁免，不计为主动阅读推进。
 const restorePosition = useCallback(() => {
   const container = scrollRef.current
   if (container === null || selectedEntryRef === null) return
+  finishNoteProgrammatic()
   const saved = loadReadingPosition(selectedEntryRef)
   if (saved === null) {
     container.scrollTop = 0
@@ -103,7 +250,7 @@ const restorePosition = useCallback(() => {
     const max = container.scrollHeight - container.clientHeight
     container.scrollTop = max > 0 ? Math.round(saved.ratio * max) : 0
   }
-}, [selectedEntryRef])
+}, [selectedEntryRef, finishNoteProgrammatic])
 
 useEffect(() => {
   restorePosition()
@@ -115,7 +262,202 @@ useEffect(() => {
   if (detailEntryRef !== null) restorePosition()
 }, [detailEntryRef, restorePosition])
 
+// ---- F11/F13/F17/F18/F25/专注：Reader 工具类状态 ----
+
+// F13：文内查找条开关。
+const [findOpen, setFindOpen] = useState(false)
+// 专注阅读：会话级开关（settings store 无此键；Aa 面板经 props 切换）。
+const [focusMode, setFocusMode] = useState(false)
+const focusModeRef = useRef(focusMode)
+focusModeRef.current = focusMode
+// F18：自动滚屏状态 + 速度（速度经 ref 读，避免 rAF 循环重启闪烁）。
+const [autoScroll, setAutoScroll] = useState<AutoScrollState>('off')
+const [autoSpeed, setAutoSpeed] = useState<AutoScrollSpeed>('medium')
+const autoSpeedRef = useRef(autoSpeed)
+autoSpeedRef.current = autoSpeed
+// F17/F25：滚动派生标志（翻页按钮可用性）。滚动帧内只在标志翻转时
+// setState——避免每帧重渲染整棵 Reader 子树（正文宿主元素被频繁更新
+// 会清掉渲染后 DOM 装饰）。回顶按钮可见性由 backMode 单独承载。
+interface ScrollFlags {
+  canUp: boolean
+  canDown: boolean
+}
+const [scrollFlags, setScrollFlags] = useState<ScrollFlags>({ canUp: false, canDown: false })
+const scrollFlagsRef = useRef(scrollFlags)
+const updateScrollFlags = useCallback((next: ScrollFlags) => {
+  const prev = scrollFlagsRef.current
+  if (prev.canUp === next.canUp && prev.canDown === next.canDown) return
+  scrollFlagsRef.current = next
+  setScrollFlags(next)
+}, [])
+const [backMode, setBackMode] = useState<'top' | 'return' | null>(null)
+const backSavedTopRef = useRef<number | null>(null)
+// 程序性滚动（回顶/恢复）产生的 scroll 事件不重置回顶按钮状态。
+const backSuppressRef = useRef(false)
+// 专注模式滚动 rAF 句柄。
+const focusTickRef = useRef<number | null>(null)
+
+const getScrollContainer = useCallback(() => scrollRef.current, [])
+/** F13 查找根：正文 article（标题/工具栏不参与查找）。 */
+const getFindRoot = useCallback(
+  () => (scrollRef.current?.querySelector('.lumi-reader-article') as HTMLElement | null) ?? null,
+  [],
+)
+
+// F19 朗读文本：视口顶部线所在段落往后（含）的全部正文文本。
+const collectSpeechText = useCallback(() => {
+  const container = scrollRef.current
+  const article = container?.querySelector('.lumi-reader-article')
+  if (container === null || article === undefined || article === null) return null
+  const blocks = Array.from(article.querySelectorAll(SPEECH_BLOCK_SELECTOR))
+  if (blocks.length === 0) return null
+  const containerTop = container.getBoundingClientRect().top
+  const tops = blocks.map((block) => block.getBoundingClientRect().top)
+  const start = findStartBlockIndex(tops, containerTop)
+  const joined = joinBlockTexts(
+    blocks.slice(start).map((block) => block.textContent ?? ''),
+  )
+  if (joined === '') return null
+  return joined.slice(0, SPEECH_MAX_CHARS)
+}, [])
+
+// F18：切文章自动停止（自动滚屏/查找/回顶状态一并复位）。
+useEffect(() => {
+  setAutoScroll('off')
+  setFindOpen(false)
+  setBackMode(null)
+  backSavedTopRef.current = null
+}, [selectedEntryRef])
+
+// F18：页面 hidden 自动停止（后台不偷滚）。
+useEffect(() => {
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') setAutoScroll('off')
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+  return () => document.removeEventListener('visibilitychange', onVisibility)
+}, [])
+
+// F17/F25：正文渲染后测一次容器（初始按钮 disabled 态无需等首次滚动；
+// 图片/译文展开后的余量变化仍由滚动帧内的 rAF 重测兜底）。
+useEffect(() => {
+  if (detailEntryRef === null) return
+  const container = scrollRef.current
+  if (container === null) return
+  const max = container.scrollHeight - container.clientHeight
+  const top = container.scrollTop
+  updateScrollFlags({
+    canUp: top > 0,
+    canDown: max > 0 && top < max - 1,
+  })
+}, [detailEntryRef, updateScrollFlags])
+
+// F18：自动滚屏 rAF 循环。每帧先 noteProgrammaticScroll() 续写豁免
+// 窗口——自动滚屏属程序性滚动，不计为 finish-read 的主动阅读推进
+//（直接写 programmaticUntil 不可行，finish-read 属他人模块；每帧调用
+// 官方入口等价续期）。到底自动停止。
+useEffect(() => {
+  if (autoScroll !== 'running') return
+  let raf = 0
+  let stopped = false
+  const step = () => {
+    if (stopped) return
+    const container = scrollRef.current
+    if (container === null) {
+      setAutoScroll('off')
+      return
+    }
+    finishNoteProgrammatic()
+    const max = container.scrollHeight - container.clientHeight
+    if (max <= 0 || container.scrollTop >= max) {
+      setAutoScroll('off')
+      return
+    }
+    container.scrollTop = Math.min(max, container.scrollTop + AUTO_SCROLL_SPEEDS[autoSpeedRef.current])
+    raf = requestAnimationFrame(step)
+  }
+  raf = requestAnimationFrame(step)
+  return () => {
+    stopped = true
+    cancelAnimationFrame(raf)
+  }
+}, [autoScroll, finishNoteProgrammatic])
+
+// 专注阅读：滚动帧内重算视口中心最近的块并打标（关闭时清理全部标记）。
+useEffect(() => {
+  if (!focusMode) return
+  const article = scrollRef.current?.querySelector('.lumi-reader-article')
+  if (!(article instanceof HTMLElement)) return
+  article.setAttribute('data-lumi-focus', 'on')
+  const applyNow = () => {
+    const container = scrollRef.current
+    const node = scrollRef.current?.querySelector('.lumi-reader-article')
+    if (container === null || !(node instanceof HTMLElement)) return
+    const rect = container.getBoundingClientRect()
+    applyFocusActive(node, rect.top + rect.height / 2)
+  }
+  applyNow()
+  const onScroll = () => {
+    if (focusTickRef.current !== null) return
+    focusTickRef.current = requestAnimationFrame(() => {
+      focusTickRef.current = null
+      applyNow()
+    })
+  }
+  const container = scrollRef.current
+  container?.addEventListener('scroll', onScroll, { passive: true })
+  return () => {
+    container?.removeEventListener('scroll', onScroll)
+    if (focusTickRef.current !== null) {
+      cancelAnimationFrame(focusTickRef.current)
+      focusTickRef.current = null
+    }
+    clearFocusActive(article)
+  }
+}, [focusMode, detailEntryRef])
+
+// F17：按屏翻页（±clientHeight×0.9，平滑滚动；翻页产生的滚动事件不
+// 豁免——计入 finish-read 主动推进，这正是「翻页也是阅读」的语义）。
+const pageBy = useCallback((direction: 1 | -1) => {
+  const container = scrollRef.current
+  if (container === null) return
+  const target = pageTargetTop(
+    container.scrollTop,
+    container.clientHeight,
+    container.scrollHeight - container.clientHeight,
+    direction,
+  )
+  scrollContainerBy(container, target - container.scrollTop)
+}, [])
+
+// F25：回到顶部（记录原位置 + 程序性豁免）；再次点击返回刚才位置。
+const handleBackToTop = useCallback(() => {
+  const container = scrollRef.current
+  if (container === null) return
+  backSuppressRef.current = true
+  finishNoteProgrammatic()
+  backSavedTopRef.current = container.scrollTop
+  container.scrollTop = 0
+  setBackMode('return')
+}, [finishNoteProgrammatic])
+
+const handleReturnToPosition = useCallback(() => {
+  const container = scrollRef.current
+  const saved = backSavedTopRef.current
+  if (container === null || saved === null) {
+    setBackMode(null)
+    return
+  }
+  backSuppressRef.current = true
+  // F25：恢复用的滚动必须先豁免——不计为主动阅读推进。
+  finishNoteProgrammatic()
+  container.scrollTop = saved
+  backSavedTopRef.current = null
+  setBackMode('top')
+}, [finishNoteProgrammatic])
+
 // 滚动保存：rAF 合并；锚点取视口顶 80px 线上方最近的正文段落。
+// 同一 rAF 内顺带更新 F17/F25 依赖的滚动指标（回顶按钮出现/重置）。
 const saveTickRef = useRef<number | null>(null)
 const handleScroll = useCallback(() => {
   if (saveTickRef.current !== null) return
@@ -124,7 +466,8 @@ const handleScroll = useCallback(() => {
     const container = scrollRef.current
     if (container === null || selectedEntryRef === null) return
     const max = container.scrollHeight - container.clientHeight
-    const ratio = max > 0 ? container.scrollTop / max : 0
+    const top = container.scrollTop
+    const ratio = max > 0 ? top / max : 0
     const containerTop = container.getBoundingClientRect().top
     let anchor: Element | null = null
     for (const el of container.querySelectorAll(ANCHOR_SELECTOR)) {
@@ -136,12 +479,28 @@ const handleScroll = useCallback(() => {
       anchorText: captureAnchorText(anchor),
       savedAt: new Date().toISOString(),
     })
+    // F17/F25：派生标志（只在翻转时 setState，见上方 ScrollFlags 注释）
+    updateScrollFlags({
+      canUp: top > 0,
+      canDown: max > 0 && top < max - 1,
+    })
+    // F25：程序性回顶/恢复的 scroll 事件不重置按钮状态；用户滚动则
+    // 重置为「回到顶部」（清掉旧的保存位置），到顶/到底时隐藏。
+    if (backSuppressRef.current) {
+      backSuppressRef.current = false
+      return
+    }
+    backSavedTopRef.current = null
+    setBackMode((current) => {
+      const next = top > BACK_TO_TOP_THRESHOLD_PX && max > 0 && top < max - 1 ? 'top' : null
+      return current === next ? current : next
+    })
   })
-}, [selectedEntryRef])
+}, [selectedEntryRef, updateScrollFlags])
 
   if (selectedEntryRef === null) {
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <ReaderPlaceholder />
       </div>
     )
@@ -149,7 +508,7 @@ const handleScroll = useCallback(() => {
 
   if (isPending) {
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="mx-auto flex max-w-[46rem] flex-col gap-3 p-8 max-lg:px-5" aria-label="文章加载中">
           <Skeleton className="h-3 w-2/5" />
           <Skeleton className="h-8 w-11/12" />
@@ -170,7 +529,7 @@ const handleScroll = useCallback(() => {
       error instanceof ApiError && error.status === 404
     if (isNotFound) {
       return (
-        <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+        <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
           <div className="flex h-full items-center justify-center p-8">
             <div className="max-w-sm text-center">
               <p className="text-base font-medium text-[var(--lumi-text-primary)]">
@@ -189,7 +548,7 @@ const handleScroll = useCallback(() => {
       )
     }
     return (
-      <div ref={scrollRef} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-sm text-center" role="alert">
             <p className="text-base font-medium text-[var(--lumi-text-primary)]">文章加载失败</p>
@@ -211,19 +570,28 @@ const handleScroll = useCallback(() => {
   }
 
   const detail = data
+  // F17 翻页按钮边界：到顶禁用上一屏、到底禁用下一屏（无滚动空间双禁）。
+  const pagedUpDisabled = !scrollFlags.canUp
+  const pagedDownDisabled = !scrollFlags.canDown
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
-    >
+    <div className="relative h-full bg-[var(--lumi-reader-bg)]">
+      {/* F11：阅读进度条（滚动容器顶部；自挂原生 passive 监听） */}
+      <ReaderProgress getContainer={getScrollContainer} enabled={readerShowReadingProgress} />
+      {/* F13：文内查找条（工具栏 Search 按钮打开；Escape/× 关闭清高亮） */}
+      <ArticleFindBar open={findOpen} onClose={() => setFindOpen(false)} getRoot={getFindRoot} />
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，
           移动端 CSS 钳制安全范围）；底部计入 safe area。
           AUDIT-002：同时提供稳定的 .lumi-reader 作用域根，使设置/主题包
           的自定义 CSS（prefixCustomCss 默认前缀 .lumi-reader）在正式 Reader
-          中生效（此前正式 Reader 只有 .lumi-reader-article，自定义 CSS 从不命中）。 */}
+          中生效（此前正式 Reader 只有 .lumi-reader-article，自定义 CSS 从不命中）。
+          F25：滚动容器带 .lumi-reader-scroll 定位基础类（打印/锚定样式）。 */}
+      <div
+        ref={setScrollContainer}
+        onScroll={handleScroll}
+        className="lumi-reader-scroll h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
+      >
       <article
         className="lumi-reader lumi-reader-article mx-auto py-6"
         style={{
@@ -240,6 +608,14 @@ const handleScroll = useCallback(() => {
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
           onOpenAiConversation={() => setAiConversationOpen(true)}
+          onOpenFind={() => setFindOpen(true)}
+          collectSpeechText={collectSpeechText}
+          autoScrollState={autoScroll}
+          onAutoScrollToggle={() =>
+            setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))
+          }
+          focusMode={focusMode}
+          onFocusModeChange={setFocusMode}
         />
         {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
             AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
@@ -257,6 +633,35 @@ const handleScroll = useCallback(() => {
           viewMode={viewMode}
           registerTranslationStart={registerTranslationStart}
         />
+        {/* P0-2：正文读完判定哨兵——在实际正文结束处（AI 对话/笔记等
+            面板之前），IntersectionObserver 以本滚动容器为 root。 */}
+        <div ref={finishRead.sentinelRef} aria-hidden="true" data-finish-sentinel="" className="h-px" />
+        {/* P0-2：短文（不足一屏）不自动判定——「读完了」明确按钮作为
+            主动确认路径；自动判定失败给可理解的提示与重试入口。 */}
+        {finishRead.needsExplicitConfirm && (
+          <div className="mt-4 flex justify-center">
+            <Button variant="secondary" size="sm" onClick={finishRead.confirmFinished}>
+              读完了
+            </Button>
+          </div>
+        )}
+        {finishRead.autoError !== null && (
+          <p
+            role="alert"
+            className="mt-3 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] px-3 py-2 text-xs text-[var(--lumi-danger)]"
+          >
+            自动标记已读失败：{finishRead.autoError}
+            <Button variant="secondary" size="sm" className="ml-2" onClick={finishRead.retry}>
+              重试
+            </Button>
+          </p>
+        )}
+        {/* F20：正文锚定高亮/批注（选区浮动条 + 批注卡；设备本地存储）。
+            entryRef 必填；contentVersion 缺省时组件按正文文本自行派生，
+            锚点失效诚实降级。 */}
+        <AnnotationsLayer entryRef={detail.entryRef} containerRef={articleScrollRef} />
+        {/* R05：阅读行辅助线（默认关；正文右上角开关，pointer-events 不遮挡选择） */}
+        <ReadingRuler containerRef={articleScrollRef} />
         {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏） */}
         <ArticleConversation
           key={`conversation-${detail.entryRef}`}
@@ -266,6 +671,58 @@ const handleScroll = useCallback(() => {
           onClose={() => setAiConversationOpen(false)}
         />
       </article>
+      </div>
+      {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响） */}
+      {readerPagedMode && (
+        <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-1.5" data-lumi-paged-nav="">
+          <IconButton
+            size="lg"
+            icon={<ChevronUp aria-hidden className="size-5" />}
+            label="上一屏"
+            disabled={pagedUpDisabled}
+            onClick={() => pageBy(-1)}
+            className="border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-popover)]"
+          />
+          <IconButton
+            size="lg"
+            icon={<ChevronDown aria-hidden className="size-5" />}
+            label="下一屏"
+            disabled={pagedDownDisabled}
+            onClick={() => pageBy(1)}
+            className="border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-popover)]"
+          />
+        </div>
+      )}
+      {/* F25：回到顶部 / 返回刚才位置（>600px 且未到底出现；用户滚动重置） */}
+      {backMode !== null && (
+        <div className="absolute bottom-6 right-4 z-10" data-lumi-back-nav="">
+          <IconButton
+            size="lg"
+            icon={
+              backMode === 'top' ? (
+                <ArrowUp aria-hidden className="size-5" />
+              ) : (
+                <History aria-hidden className="size-5" />
+              )
+            }
+            label={backMode === 'top' ? '回到顶部' : '返回刚才位置'}
+            onClick={backMode === 'top' ? handleBackToTop : handleReturnToPosition}
+            className="border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-popover)]"
+          />
+        </div>
+      )}
+      {/* F18：自动滚屏状态 chip（状态文字 + 三档速度 + 暂停/停止） */}
+      {autoScroll !== 'off' && (
+        <AutoScrollChip
+          state={autoScroll}
+          speed={autoSpeed}
+          onSpeedChange={setAutoSpeed}
+          onToggle={() =>
+            setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))
+          }
+          onStop={() => setAutoScroll('off')}
+        />
+      )}
     </div>
   )
 }

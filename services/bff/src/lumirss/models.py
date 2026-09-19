@@ -20,7 +20,15 @@ from lumirss.app_settings import PortableSettings
 
 
 class EntryListItem(BaseModel):
-    """One article in the entry list — never contains the body."""
+    """One article in the entry list — never contains the body.
+
+    2026-09 移动端专项 P2/F02/F03 enrich（列表级元数据，非正文）：
+    - feedUrl：来源真实订阅 URL（标题→URL 映射解析；解析不到保持
+      None，前端该来源不可点击，诚实降级）；
+    - snippet：列表摘要（html_to_text 前 160 字符，纯文本）；
+    - coverUrl：封面图（正文首个 http(s) <img src>；仅元数据，是否
+      加载由前端图片模式控制）。
+    """
 
     entryRef: str
     title: str
@@ -30,6 +38,9 @@ class EntryListItem(BaseModel):
     publishedAt: str | None = None
     read: bool
     starred: bool
+    feedUrl: str | None = None
+    snippet: str | None = None
+    coverUrl: str | None = None
 
 
 class EntryPage(BaseModel):
@@ -72,6 +83,8 @@ class EntryDetail(BaseModel):
     starred: bool
     contentText: str
     contentHtml: str | None = None
+    # P2：来源真实订阅 URL（解析不到为 None；阅读页来源点击用）。
+    feedUrl: str | None = None
 
 
 # ---------------------------------------------------------------------------
