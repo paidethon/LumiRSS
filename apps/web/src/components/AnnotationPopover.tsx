@@ -4,7 +4,10 @@
  * 定位抖动）。输入备注 + 三色选择 + 保存/取消；Escape 取消；
  * 控件满足 44px 触控目标。颜色只影响本设备上的高亮底色。 */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+
+import { clearDraft, loadDraftIfNewer, saveDraft, type DraftRecord } from '../lib/draft-store'
+import { DraftRestoreBar } from './DraftRestoreBar'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import type { AnnotationColor } from '../lib/annotations'
@@ -44,6 +47,18 @@ export function AnnotationPopover({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const noteId = useId()
   const groupId = useId()
+  // F119：批注备注草稿（白名单 'annotation-editor'；无「已保存版本」
+  // 基线 → savedAt=null，任何现存草稿都可恢复）。
+  const draft = useMemo<DraftRecord | null>(
+    () => loadDraftIfNewer('annotation-editor', null),
+    // 挂载时一次性判定
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const [draftVisible, setDraftVisible] = useState(draft !== null)
+  useEffect(() => {
+    saveDraft('annotation-editor', { note })
+  }, [note])
 
   // 打开即聚焦备注框；Escape 取消（不打断所在页面的其它行为）
   useEffect(() => {
@@ -64,6 +79,23 @@ export function AnnotationPopover({
       aria-label="批注"
       className="fixed inset-x-2 top-14 z-50 mx-auto max-w-md rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3 shadow-lg"
     >
+      {draftVisible && draft !== null ? (
+        <div className="mb-2">
+          <DraftRestoreBar
+            draft={draft}
+            current={{ note }}
+            onAdopt={() => {
+              setNote(draft.values.note ?? note)
+              clearDraft('annotation-editor')
+              setDraftVisible(false)
+            }}
+            onDiscard={() => {
+              clearDraft('annotation-editor')
+              setDraftVisible(false)
+            }}
+          />
+        </div>
+      ) : null}
       <div>
         <label
           htmlFor={noteId}
@@ -118,7 +150,10 @@ export function AnnotationPopover({
         <Button
           variant="primary"
           className="min-h-11"
-          onClick={() => onSave(note.trim(), color)}
+          onClick={() => {
+            clearDraft('annotation-editor')
+            onSave(note.trim(), color)
+          }}
         >
           保存批注
         </Button>

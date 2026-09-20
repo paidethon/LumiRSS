@@ -31,6 +31,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, Languages, Loader2, RefreshCw } from 'lucide-react'
 import type { EntryDetail, TranslationSegmentState } from '../api/types'
+import GlossaryHitsPanel from './GlossaryHitsPanel'
+import TranslationRevisionPanel from './TranslationRevisionPanel'
+import { BilingualExportSection } from './BilingualExportSection'
 import {
   useAiSettings,
   useGenerateTranslationSegmentsMutation,
@@ -39,6 +42,9 @@ import {
 import type { TranslationSegmentBlockInput } from '../api/client'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { DOCS_LINKS } from '../lib/docs-links'
+import { counterpartIndex, computeVisibleIndex, scrollToBlock, LoopGuard } from '../lib/linked-scroll'
+import { useAppSettings } from '../store/app-settings'
+import { Switch } from './ui/Switch'
 import {
   annotateBlocks,
   applyOverlay,
@@ -168,6 +174,36 @@ export default function ReaderTranslation({
   }, [active, detail.entryRef])
 
   const lookup = useTranslationSegments(detail.entryRef, blocks, active && serverEngine, targetLanguage)
+  // F053：双语关联滚动（默认关；记忆偏好；可「脱离关联」停止双向）。
+  const linkedScrollSetting = useAppSettings((s) => s.settings.translationLinkedScroll)
+  const updateSettings = useAppSettings((s) => s.update)
+  const [linkedDetached, setLinkedDetached] = useState(false)
+  const linkedActive = linkedScrollSetting && !linkedDetached && active
+  useEffect(() => {
+    if (!linkedActive) return
+    const container = document.querySelector<HTMLElement>('[data-reader-body]')
+    if (container === null) return
+    const guard = new LoopGuard()
+    let raf = 0
+    const onScroll = () => {
+      if (guard.allow(performance.now()) === false) return
+      if (raf !== 0) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        const visible = computeVisibleIndex(container)
+        if (visible === null) return
+        const own = container.querySelectorAll('[data-lb-index]').length
+        const counterpart = counterpartIndex(visible, own, own)
+        if (counterpart === null) return
+        scrollToBlock(container, counterpart)
+      })
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+      if (raf !== 0) cancelAnimationFrame(raf)
+    }
+  }, [linkedActive, detail.entryRef])
   const generate = useGenerateTranslationSegmentsMutation(detail.entryRef)
 
   // 切到 双语/仅译文 的那一次点击 = 显式请求：未生成的块自动生成一次
@@ -184,7 +220,7 @@ export default function ReaderTranslation({
     const signature = `${detail.entryRef}:${blocks.length}:${pending.length}`
     if (attemptedRef.current === signature) return
     attemptedRef.current = signature
-    generate.mutate(blocksToInputs(blocks))
+    generate.mutate({ blocks: blocksToInputs(blocks) })
     // failed 块只在用户点重试时重新生成（money rule：不自动重试）
     void failed
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,8 +359,11 @@ export default function ReaderTranslation({
       for (const [index, text] of localTexts) texts.set(index, text)
     } else {
       for (const s of serverSegments ?? []) {
-        if (s.status === 'success' && s.translatedText) {
-          texts.set(s.index, s.translatedText)
+        // F062：有手工修订的段优先展示修订（stale 也展示，诚实标注由
+        // 修订面板负责）。
+        const text = s.userRevision ?? s.translatedText
+        if (s.status === 'success' && text) {
+          texts.set(s.index, text)
         }
       }
     }
@@ -351,6 +390,23 @@ export default function ReaderTranslation({
     }
   }, [detail.entryRef])
 
+  // F068：当前可见段落（data-lb-index 与阅读视口相交的段）。
+  const getVisibleIndexes = useCallback((): number[] => {
+    const root = containerRef.current
+    if (root === null) return []
+    const container = document.querySelector<HTMLElement>('[data-reader-body]')
+    const rect = (container ?? root).getBoundingClientRect()
+    const visible: number[] = []
+    for (const el of root.querySelectorAll<HTMLElement>('[data-lb-index]')) {
+      const r = el.getBoundingClientRect()
+      if (r.bottom >= rect.top && r.top <= rect.bottom) {
+        const idx = Number(el.getAttribute('data-lb-index'))
+        if (Number.isFinite(idx)) visible.push(idx)
+      }
+    }
+    return visible
+  }, [])
+
   const retryFailed = () => {
     if (blocks === null) return
     const failedIndexes = new Set(
@@ -360,7 +416,7 @@ export default function ReaderTranslation({
     )
     const failedBlocks = blocks.filter((b) => failedIndexes.has(b.index))
     if (failedBlocks.length === 0) return
-    generate.mutate(blocksToInputs(failedBlocks))
+    generate.mutate({ blocks: blocksToInputs(failedBlocks) })
   }
 
   const segmentList = serverSegments ?? []
@@ -370,6 +426,29 @@ export default function ReaderTranslation({
 
   return (
     <div className={cx('pt-6', viewMode === 'bilingual' && 'reader-bilingual-active')}>
+      {/* F053：关联滚动开关（记忆偏好）+ 脱离关联（诚实停止双向） */}
+      {active && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+          <Switch
+            checked={linkedScrollSetting}
+            label="关联滚动"
+            onCheckedChange={(checked) => {
+              updateSettings({ translationLinkedScroll: checked })
+              setLinkedDetached(false)
+            }}
+          />
+          <span>关联滚动</span>
+          {linkedScrollSetting && !linkedDetached && (
+            <button
+              type="button"
+              onClick={() => setLinkedDetached(true)}
+              className="text-[var(--lumi-accent)] hover:underline"
+            >
+              脱离关联
+            </button>
+          )}
+        </div>
+      )}
       <div ref={containerRef}>
         <ArticleContent detail={detail} />
       </div>
@@ -400,6 +479,25 @@ export default function ReaderTranslation({
           onRetry={failedCount > 0 ? retryFailed : undefined}
         />
       )}
+      {/* F062：译文手工修订（服务端引擎；编辑/撤销/失配标记/重生成选择） */}
+      {active && serverEngine && (
+        <TranslationRevisionPanel
+          entryRef={detail.entryRef}
+          segments={segmentList}
+          blocks={blocks}
+        />
+      )}
+      {/* F068：双语对照导出（范围选择→预览条数→下载） */}
+      {active && serverEngine && blocks !== null && blocks.length > 0 && (
+        <BilingualExportSection
+          detail={detail}
+          segments={segmentList}
+          blocks={blocks}
+          getVisibleIndexes={getVisibleIndexes}
+        />
+      )}
+      {/* F029：术语命中（折叠列表：术语/译法/次数；按需加载） */}
+      <GlossaryHitsPanel entryRef={detail.entryRef} />
     </div>
   )
 }

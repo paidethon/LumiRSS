@@ -67,11 +67,17 @@ function renderApp() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const errs: string[] = []
+  const origError = console.error
+  console.error = (...a: unknown[]) => { errs.push(a.map(String).join(' ').slice(0, 500)) }
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>,
   )
+  console.error = origError
+  queueMicrotask(() => console.log('DBG_ERRS', JSON.stringify(errs.slice(0, 3))))
+  return result
 }
 
 // 打开抽屉后按钮被 Base UI 模态隔离 inert + aria-hidden，role 查询不可见；
@@ -95,7 +101,9 @@ afterEach(() => {
 describe('Test A — Drawer closed by default', () => {
   it('初始 drawer 不渲染，menu button 可用且 aria-expanded=false', () => {
     vi.stubGlobal('fetch', mockApi())
-    renderApp()
+    const { container } = renderApp()
+    console.log('DBG_LEN', container.innerHTML.length)
+    console.log('DBG_HEAD', container.innerHTML.slice(0, 200))
 
     expect(menuButton()).toBeInTheDocument()
     expect(menuButton()).toHaveAttribute('aria-expanded', 'false')

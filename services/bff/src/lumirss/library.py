@@ -182,11 +182,55 @@ class LibraryStore:
         return _bookmark_from_row(row)
 
     async def delete_bookmark(self, item_uuid: str) -> bool:
-        """Delete a bookmark, its identity row and projection atomically."""
+        """F019：软删（回收站）——标记 deleted_at 并移除搜索投影。
+
+        身份行（library_items）与其标签/工作区关联原样保留；恢复时
+        原样回到书签列表并重新入搜索索引。永久删除走 purge_bookmark。"""
+        ref = f"{LIBRARY_DOMAIN}:{item_uuid}"
+        now = utc_now()
+
+        def _tx(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                "UPDATE library_items SET deleted_at = ? WHERE uuid = ? AND kind = 'bookmark' AND deleted_at IS NULL",
+                (now, item_uuid),
+            )
+            if cursor.rowcount:
+                delete_search_row(conn, ref)
+            return cursor.rowcount
+
+        return await transaction(self._db, _tx) > 0
+
+    async def restore_bookmark(self, item_uuid: str) -> bool:
+        """F019：从回收站恢复（清除标记 + 重新入搜索索引）。"""
+        await self._db.migrate()
+        view = await self.get_bookmark_any(item_uuid)
+        if view is None:
+            return False
+
+        def _tx(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                "UPDATE library_items SET deleted_at = NULL WHERE uuid = ? AND kind = 'bookmark' AND deleted_at IS NOT NULL",
+                (item_uuid,),
+            )
+            if cursor.rowcount:
+                upsert_search_row(
+                    conn,
+                    ref=view.ref,
+                    kind="bookmark",
+                    title=view.title,
+                    body=(view.note or "")[:4000],
+                    url=view.url,
+                    now=utc_now(),
+                )
+            return cursor.rowcount
+
+        return await transaction(self._db, _tx) > 0
+
+    async def purge_bookmark(self, item_uuid: str) -> bool:
+        """F019：永久删除（身份行级联书签行 + 投影），不可恢复。"""
         ref = f"{LIBRARY_DOMAIN}:{item_uuid}"
 
         def _tx(conn: sqlite3.Connection) -> int:
-            # library_items is the identity root; bookmarks cascade via FK.
             cursor = conn.execute(
                 "DELETE FROM library_items WHERE uuid = ? AND kind = 'bookmark'",
                 (item_uuid,),
@@ -196,6 +240,14 @@ class LibraryStore:
             return cursor.rowcount
 
         return await transaction(self._db, _tx) > 0
+
+    async def get_bookmark_any(self, item_uuid: str) -> BookmarkView | None:
+        """读取书签（含已软删——恢复路径需要完整数据）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE b.item_uuid = ?", (item_uuid,))
+        if row is None:
+            return None
+        return _bookmark_from_row(row)
 
     async def update_bookmark(
         self, item_uuid: str, title: str | None, note: str | None
@@ -234,7 +286,7 @@ class LibraryStore:
         like = f"%{_escape_like(needle)}%" if needle else None
         key_created = keyset[0] if keyset else None
         key_uuid = keyset[1] if keyset else None
-        rows = await self._db.fetch_all("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE (? IS NULL OR b.title LIKE ? ESCAPE '\\' OR b.url LIKE ? ESCAPE '\\' OR b.note LIKE ? ESCAPE '\\') AND (? IS NULL OR b.created_at < ? OR (b.created_at = ? AND b.item_uuid < ?)) ORDER BY b.created_at DESC, b.item_uuid DESC LIMIT ?", (like, like, like, like, key_created, key_created, key_created, key_uuid, limit + 1))
+        rows = await self._db.fetch_all("SELECT b.item_uuid, b.item_type, b.url, b.rss_item_ref, b.title, b.note, b.created_at FROM library_bookmarks b WHERE NOT EXISTS (SELECT 1 FROM library_items i WHERE i.uuid = b.item_uuid AND i.deleted_at IS NOT NULL) AND (? IS NULL OR b.title LIKE ? ESCAPE '\\' OR b.url LIKE ? ESCAPE '\\' OR b.note LIKE ? ESCAPE '\\') AND (? IS NULL OR b.created_at < ? OR (b.created_at = ? AND b.item_uuid < ?)) ORDER BY b.created_at DESC, b.item_uuid DESC LIMIT ?", (like, like, like, like, key_created, key_created, key_created, key_uuid, limit + 1))
         has_more = len(rows) > limit
         rows = rows[:limit]
         items = [_bookmark_from_row(row) for row in rows]

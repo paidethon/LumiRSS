@@ -10,6 +10,7 @@ RSS 域数据的影子拷贝；引用条目只保存服务端已解析的 title/
 产生一个逻辑发布结果。
 """
 
+import asyncio
 import secrets as _secrets_mod
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
+from lumirss.token_hash import hash_token, is_token_hash
 from lumirss.util import utc_now
 
 _DEFAULT_LIMIT = 12
@@ -25,6 +27,7 @@ _MIN_WINDOW_HOURS = 1
 _MAX_WINDOW_HOURS = 72
 _MAX_PER_SOURCE_CAP = 5
 FEED_TOKEN_KEY = "gpt_digest_feed_token"
+FEED_TOKEN_ROTATED_AT_KEY = "gpt_digest_feed_rotated_at"
 
 
 def gpt_digest_settings_defaults() -> dict[str, Any]:
@@ -102,18 +105,94 @@ class GptDigestStore:
     def feed_token(self) -> str | None:
         return self._secrets.get(FEED_TOKEN_KEY)
 
-    def ensure_feed_token(self) -> str:
+    def ensure_feed_token(self) -> str | None:
+        """§13.4：secrets 文件只存 SHA-256（单向验证）。
+
+        返回**原始 token** 仅当本次调用刚刚创建它（响应一次性展示订阅
+        地址）；已存在（哈希或旧明文）→ 原地升级为哈希并返回 None——
+        「再次查看」从此不可用，新地址经轮换一次性获取。"""
         token = self._secrets.get(FEED_TOKEN_KEY)
         if token:
-            return token
+            if not is_token_hash(token):
+                self._secrets.set(FEED_TOKEN_KEY, hash_token(token))
+            return None
         token = _secrets_mod.token_urlsafe(24)
-        self._secrets.set(FEED_TOKEN_KEY, token)
+        self._secrets.set(FEED_TOKEN_KEY, hash_token(token))
+        _stamp_rotated_at(self._db)
         return token
 
-    def rotate_feed_token(self) -> str:
+    def rotate_feed_token(self, *, dry_run: bool = False) -> str | None:
+        """F103：dry_run=True 时零变更（只读现 token，供影响预览）；
+        False 执行轮换并记录时刻（旧链接立即失效的语义不变）。"""
+        if dry_run:
+            return None
+        # §13.4：落盘哈希；明文仅在轮换响应出现一次（旧链接立即失效）。
         token = _secrets_mod.token_urlsafe(24)
-        self._secrets.set(FEED_TOKEN_KEY, token)
+        self._secrets.set(FEED_TOKEN_KEY, hash_token(token))
+        _stamp_rotated_at(self._db)
         return token
+
+
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _stamp_rotated_at(db: Database) -> None:
+    """记录 token 写入时刻（尽力而为：失败不影响 token 本身）。"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(_write_rotated_at(db))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _write_rotated_at(db: Database) -> None:
+    import json as _json
+
+    await db.migrate()
+    await db.execute(
+        "INSERT INTO lumi_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (FEED_TOKEN_ROTATED_AT_KEY, _json.dumps(utc_now()), utc_now()),
+    )
+
+
+async def feed_token_impact(secrets: SecretsStore, db: Database) -> dict[str, Any]:
+    """F103 dry-run 影响报告：现 token 的写入时刻与年龄（天，按墙钟
+    截断；无记录 → None——诚实报未知，不编造）。零变更。"""
+    import json as _json
+    from datetime import datetime as _dt
+
+    token = secrets.get(FEED_TOKEN_KEY)
+    await db.migrate()
+    row = await db.fetch_one(
+        "SELECT value FROM lumi_settings WHERE key = ?",
+        (FEED_TOKEN_ROTATED_AT_KEY,),
+    )
+    rotated_at: str | None = None
+    age_days: int | None = None
+    if row is not None:
+        try:
+            rotated_at = str(_json.loads(str(row["value"])))
+        except ValueError:
+            rotated_at = str(row["value"]) or None
+    if rotated_at:
+        try:
+            stamp = _dt.fromisoformat(rotated_at.replace("Z", "+00:00"))
+            age_days = max(
+                0,
+                int(
+                    (_dt.now(stamp.tzinfo) - stamp).total_seconds() // 86400
+                ),
+            )
+        except ValueError:
+            age_days = None
+    return {
+        "tokenExists": bool(token),
+        "tokenRotatedAt": rotated_at,
+        "ageDays": age_days,
+        "note": "轮换后旧链接立即失效；订阅方需更新。",
+    }
 
     def now_utc(self) -> str:
         return utc_now()

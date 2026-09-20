@@ -81,6 +81,8 @@ class SummaryState:
     generated_at: str | None = None
     failure_type: str | None = None
     cached: bool = False
+    input_chars: int | None = None
+    truncated: bool = False
 
 
 class SummaryService(CachedAiArtifactService):
@@ -115,7 +117,14 @@ class SummaryService(CachedAiArtifactService):
             identity.row_params(),
         )
 
-    def _state_from_row(self, row, *, cached: bool) -> SummaryState:
+    def _state_from_row(
+        self,
+        row,
+        *,
+        cached: bool,
+        full_text: str | None = None,
+        max_chars: int | None = None,
+    ) -> SummaryState:
         status = row["status"]
         if status == STATUS_GENERATING and is_stale_generating(row["updated_at"]):
             return SummaryState(
@@ -127,6 +136,21 @@ class SummaryService(CachedAiArtifactService):
                 generated_at=None,
                 failure_type=FAILURE_INTERRUPTED,
             )
+        if status == STATUS_SUCCESS:
+            try:
+                stored_chars = row["input_chars"]
+                stored_truncated = row["truncated"]
+            except (IndexError, KeyError):
+                stored_chars, stored_truncated = None, None
+            if stored_chars is not None:
+                input_chars = int(stored_chars)
+                truncated = bool(stored_truncated)
+            elif full_text is not None:
+                _, input_chars, truncated = self._scope(full_text, max_chars)
+            else:
+                input_chars, truncated = None, False
+        else:
+            input_chars, truncated = None, False
         return SummaryState(
             status=status,
             summary=row["summary_text"] if status == STATUS_SUCCESS else None,
@@ -137,6 +161,8 @@ class SummaryService(CachedAiArtifactService):
             generated_at=row["updated_at"] if status == STATUS_SUCCESS else None,
             failure_type=row["failure_type"] if status == STATUS_FAILED else None,
             cached=cached,
+            input_chars=input_chars,
+            truncated=truncated,
         )
 
     def _not_generated(self, identity: CacheIdentity) -> SummaryState:
@@ -156,23 +182,42 @@ class SummaryService(CachedAiArtifactService):
             return self._not_generated(identity)
         return self._state_from_row(row, cached=True)
 
-    async def generate_summary(self, entry_ref: str) -> SummaryState:
-        """Explicit generation: provider call only on a cache miss."""
+    async def generate_summary(
+        self, entry_ref: str, max_chars: int | None = None
+    ) -> SummaryState:
+        """Explicit generation: provider call only on a cache miss.
+
+        F025：max_chars（512–50000）限定实际发送给 Provider 的正文范围
+        （诚实截断，绝不估算 token）；None = 现行为（12000 上界的全文）。
+        """
         normalized, identity = await self._resolve(entry_ref)
         row = await self._fetch_row(identity)
         if row is not None and row["status"] == STATUS_SUCCESS:
-            return self._state_from_row(row, cached=True)
+            return self._state_from_row(
+                row, cached=True, full_text=normalized, max_chars=max_chars
+            )
         async with self._lock_for(identity):
             row = await self._fetch_row(identity)
             if row is not None and row["status"] == STATUS_SUCCESS:
-                return self._state_from_row(row, cached=True)
-            return await self._generate(normalized, identity)
+                return self._state_from_row(
+                    row, cached=True, full_text=normalized, max_chars=max_chars
+                )
+            return await self._generate(normalized, identity, max_chars)
+
+    @staticmethod
+    def _scope(normalized: str, max_chars: int | None) -> tuple[str, int, bool]:
+        """(effective_text, input_chars, truncated)；截断永远诚实。"""
+        effective = normalized[:max_chars] if max_chars else normalized
+        return effective, len(effective), len(effective) < len(normalized)
 
     def _lock_for(self, identity: AiCacheIdentity) -> asyncio.Lock:
         return self._locks.lock_for(identity.row_params())
 
     async def _generate(
-        self, normalized: str, identity: CacheIdentity
+        self,
+        normalized: str,
+        identity: CacheIdentity,
+        max_chars: int | None = None,
     ) -> SummaryState:
         await self._db.migrate()
         settings = await self._settings.load()
@@ -186,12 +231,13 @@ class SummaryService(CachedAiArtifactService):
             "summary_text = NULL, updated_at = excluded.updated_at",
             (*identity.row_params(), STATUS_GENERATING, _utc_now(), _utc_now()),
         )
+        effective, input_chars, truncated = self._scope(normalized, max_chars)
         provider = await self._provider_factory(
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
         try:
             summary = await provider.summarize(
-                text=normalized, language=identity.language
+                text=effective, language=identity.language
             )
         except AiProviderError as exc:
             if isinstance(exc, AiNotConfigured):
@@ -217,10 +263,26 @@ class SummaryService(CachedAiArtifactService):
             raise
         await self._db.execute(
             "UPDATE ai_summaries SET status = 'success', summary_text = ?, "
-            "failure_type = NULL, updated_at = ? "
+            "failure_type = NULL, input_chars = ?, truncated = ?, updated_at = ? "
             "WHERE entry_ref = ? AND content_hash = ? AND provider = ? "
             "AND model = ? AND prompt_version = ? AND language = ?",
-            (summary, _utc_now(), *identity.row_params()),
+            (
+                summary,
+                input_chars,
+                1 if truncated else 0,
+                _utc_now(),
+                *identity.row_params(),
+            ),
+        )
+        # F027：成功生成才落一版（失败不产生新版本；重生成保留旧版）。
+        from lumirss.ai_summary_versions import SummaryVersionStore
+
+        await SummaryVersionStore(self._db).record_version(
+            entry_ref=identity.entry_ref,
+            content_hash=identity.content_hash,
+            summary=summary,
+            provider=identity.provider,
+            model=identity.model,
         )
         row = await self._fetch_row(identity)
         assert row is not None  # just written

@@ -8,6 +8,7 @@
  * - 非 portable 变更（布局/过滤规则）不产生设置 PATCH。 */
 
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { useSettingsConflict } from '../store/settings-conflict'
 import { useAppSettings, SETTINGS_STORAGE_KEY } from '../store/app-settings'
 import {
   flushSettingsSyncForTests,
@@ -332,33 +333,44 @@ describe('resetReader — 只重置 Reader 子集并同步默认值', () => {
 })
 
 describe('0021 — baseRevision 乐观并发', () => {
-  it('PATCH 携带服务端最近 revision；冲突时 re-hydrate 并重试一次', async () => {
+  it('F116：PATCH 携带服务端最近 revision；冲突时登记决策快照，绝不静默重试覆盖', async () => {
     const server = makeServer()
     server.doc = { themeMode: 'light', accentColor: '#111111' }
     server.stored = true
-    server.conflictsRemaining = 1 // 第一次 PATCH 冲突，之后放行
+    server.conflictsRemaining = 1 // 第一次 PATCH 冲突
     const fetchMock = stubFetch(server)
 
     initSettingsSync({ debounceMs: 0 })
-    await flush() // hydration 完成：serverRevision = 0
+    // 等 hydration 完成：服务端值已合并进本地（serverRevision=0 的旁证）
+    await vi.waitFor(() =>
+      expect(useAppSettings.getState().settings.themeMode).toBe('light'),
+    )
 
     useAppSettings.getState().update({ accentColor: '#abcdef' })
     await flush()
 
-    await vi.waitFor(() =>
-      expect(
-        fetchMock.mock.calls.filter(
-          ([, init]) => (init?.method ?? 'GET') === 'PATCH',
-        ).length,
-      ).toBeGreaterThanOrEqual(3),
-    )
+    await vi.waitFor(() => {
+      // 冲突快照登记进独立 store（对话框数据源）：服务端当前值+本地候选
+      const conflict = useSettingsConflict.getState().conflict
+      expect(conflict).not.toBeNull()
+      const serverState = conflict?.serverState ?? {}
+      const localPending = conflict?.localPending ?? {}
+      expect(serverState['accentColor']).toBe('#111111')
+      expect(conflict?.serverRevision).toBe(0)
+      expect(localPending['accentColor']).toBe('#abcdef')
+    })
 
-    const patchBodies = server.patchCalls
-    // 重试成功：最终值落库，且带上了服务端当前 revision
-    const last = patchBodies[patchBodies.length - 1]
-    expect(last.accentColor).toBe('#abcdef')
-    expect(typeof last.baseRevision).toBe('number')
-    // 本地状态与脏键最终一致（冲突路径不吞用户变更）
+    // 冲突后不再自动重发 PATCH（用户决策前钉住）；全部 PATCH 调用恰 1 次
+    const patches = fetchMock.mock.calls.filter(
+      ([, init]) => (init?.method ?? 'GET') === 'PATCH',
+    )
+    expect(patches.length).toBe(1)
+    // 冲突处理拉取了服务端快照（GET ≥2：初次 hydration + 冲突快照）
+    const gets = fetchMock.mock.calls.filter(
+      ([url, init]) => String(url).includes('/settings') && (init?.method ?? 'GET') === 'GET',
+    )
+    expect(gets.length).toBeGreaterThanOrEqual(2)
+    // 本地状态不回滚（用户输入保留，等待对话框决策）
     expect(useAppSettings.getState().settings.accentColor).toBe('#abcdef')
   })
 })

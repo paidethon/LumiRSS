@@ -48,6 +48,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/threads/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Threads
+         * @description F095：会话消息搜索（每线程扫描 ≤200 条、总结果 ≤50）。
+         */
+        get: operations["search_threads_api_v1_agent_threads_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -62,7 +82,11 @@ export interface paths {
         delete: operations["delete_thread_api_v1_agent_threads__thread_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Thread Settings
+         * @description F094/F098：会话设置（scope / toolPolicy / 标题）。下轮生效。
+         */
+        patch: operations["update_thread_settings_api_v1_agent_threads__thread_id__patch"];
         trace?: never;
     };
     "/api/v1/agent/threads/{thread_id}/approvals": {
@@ -76,6 +100,46 @@ export interface paths {
         put?: never;
         /** Decide Approval */
         post: operations["decide_approval_api_v1_agent_threads__thread_id__approvals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Approval
+         * @description F097：写操作预演（零业务写入；预演不改变审批流）。
+         */
+        post: operations["preview_approval_api_v1_agent_threads__thread_id__approvals__approval_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Branch Thread
+         * @description F099：从指定消息分支（可见上下文快照；工具不重放、审批不复制）。
+         */
+        post: operations["branch_thread_api_v1_agent_threads__thread_id__branch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -126,6 +190,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/threads/{thread_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Thread
+         * @description F096：会话导出（角色轮次 + 工具/审批标注 + 机密剥离）。
+         */
+        get: operations["export_thread_api_v1_agent_threads__thread_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads/{thread_id}/messages": {
         parameters: {
             query?: never;
@@ -150,6 +234,96 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Ai Tasks */
+        get: operations["list_ai_tasks_api_v1_ai_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/tasks/{task_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Ai Task */
+        post: operations["retry_ai_task_api_v1_ai_tasks__task_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Annotations */
+        get: operations["list_annotations_api_v1_annotations_get"];
+        put?: never;
+        /** Create Annotation */
+        post: operations["create_annotation_api_v1_annotations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Annotations
+         * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。
+         */
+        post: operations["export_annotations_api_v1_annotations_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/{annotation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Annotation */
+        delete: operations["delete_annotation_api_v1_annotations__annotation_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Annotation */
+        patch: operations["update_annotation_api_v1_annotations__annotation_id__patch"];
         trace?: never;
     };
     "/api/v1/api-sources": {
@@ -182,6 +356,14 @@ export interface paths {
         /**
          * Preview Source
          * @description Fetch + map WITHOUT saving anything; ≤5 items, honest errors.
+         *
+         *     F041: ``atomPreview`` shows the first ≤3 entries in their final
+         *     Atom-rendered shape (stable urn ids, RFC 3339 timestamps, bounded
+         *     content excerpts) via the exact production pipeline. F042:
+         *     ``dryRunPagination`` walks the configured pagination against the
+         *     live upstream and reports {pages, stopReason} — still zero writes.
+         *     Upstream response headers are never echoed (the response model has
+         *     no such field by construction).
          */
         post: operations["preview_source_api_v1_api_sources_preview_post"];
         delete?: never;
@@ -215,6 +397,30 @@ export interface paths {
         head?: never;
         /** Update Source */
         patch: operations["update_source_api_v1_api_sources__source_uuid__patch"];
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/confirm-schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Schema
+         * @description F043: re-snapshot the user-confirmed structure baseline.
+         *
+         *     Fetches the upstream once (single-shot, bounded), maps with the
+         *     saved mapping and stores the observed field schema as the baseline;
+         *     drift warnings clear with it. Nothing else changes.
+         */
+        post: operations["confirm_schema_api_v1_api_sources__source_uuid__confirm_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/auth/login": {
@@ -326,6 +532,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Auth Sessions
+         * @description 活跃会话（当前标记「本机」）；响应绝不含 token/hash 字段。
+         */
+        get: operations["list_auth_sessions_api_v1_auth_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Auth Session
+         * @description 撤销一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。
+         */
+        delete: operations["revoke_auth_session_api_v1_auth_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Authors */
+        get: operations["list_authors_api_v1_authors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authors/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Author Aliases */
+        get: operations["list_author_aliases_api_v1_authors_aliases_get"];
+        put?: never;
+        /** Create Author Alias */
+        post: operations["create_author_alias_api_v1_authors_aliases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authors/aliases/{alias}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Author Alias */
+        delete: operations["delete_author_alias_api_v1_authors_aliases__alias__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/authors/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Author Items */
+        get: operations["author_items_api_v1_authors_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups": {
         parameters: {
             query?: never;
@@ -365,6 +680,28 @@ export interface paths {
         get: operations["backup_capabilities_api_v1_backups_capabilities_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backups/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Backups
+         * @description F115：两份本地备份的 manifest 差异比较（只读——只开 zip 读句柄，
+         *     不改文件、不触碰 mtime）。相同 → identical=true；不同类别计数逐条
+         *     delta；未知段名（旧格式）进 incomparable——绝不显示为 0。
+         */
+        post: operations["compare_backups_api_v1_backups_compare_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -603,6 +940,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/ask-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask Batch Entries
+         * @description 多篇共同问答（F065）：上下文只含所选条目（标题+截断正文，明确
+         *     分隔）；模型输出 [n] 引用编号，服务端过滤越界引用（citations 恒为
+         *     所选 refs 的子集）；单篇缺失诚实 skipped，至少 1 篇可用才继续。
+         *     F064 配额事前拦截；F063 任务埋点（kind=ask_batch）。
+         */
+        post: operations["ask_batch_entries_api_v1_entries_ask_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backlog Apply
+         * @description 确认执行：逐条走既有 set-read 管线（set 语义）；单条失败进
+         *     failed[]；token 校验失败（过期/条件漂移）→ 409。
+         */
+        post: operations["backlog_apply_api_v1_entries_backlog_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backlog Preview
+         * @description 真实计数 + 前 20 条样本 + 一次性 token（30s）。零写入。
+         */
+        post: operations["backlog_preview_api_v1_entries_backlog_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Entries
+         * @description 多文观点对照（F067）：材料=去重后 2..4 篇；模型要求输出结构化
+         *     JSON；解析/schema 失败 → 502 comparison_invalid（诚实报错，不造
+         *     结构）；evidence quote 与条目正文比对，不匹配 → verified:false。
+         *     单篇缺失诚实 skipped；可用材料 <2 → 422 material_insufficient。
+         */
+        post: operations["compare_entries_api_v1_entries_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}": {
         parameters: {
             query?: never;
@@ -614,6 +1038,10 @@ export interface paths {
          * Entry Detail
          * @description One entry as plain text. Invalid refs are rejected before FreshRSS;
          *     reading a detail never marks anything as read (read-only milestone).
+         *
+         *     F048：来源覆盖 extract_policy='web' 时，经安全有界抓取层抓原文正文
+         *     （article_extract + SSRF 校验，≤2MB，不执行 JS），结果缓存于
+         *     entry_extract_cache；失败回退 RSS 正文并置 extractionFailed=true。
          */
         get: operations["entry_detail_api_v1_entries__entry_ref__get"];
         put?: never;
@@ -667,6 +1095,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/glossary-hits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Glossary Hits For Entry
+         * @description 现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。
+         */
+        post: operations["glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/knowledge-cards/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Knowledge Cards
+         * @description 生成候选知识卡（F070）：证据核验同 F069 口径；不合格整卡丢弃。
+         */
+        post: operations["preview_knowledge_cards_api_v1_entries__entry_ref__knowledge_cards_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/knowledge-cards/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Knowledge Cards
+         * @description 保存卡片（幂等）：同 (entry_ref, concept) 已存在 → skipped；
+         *     服务端重新核验 quote；逐条汇报，坏结构不拖垮整批。
+         */
+        post: operations["save_knowledge_cards_api_v1_entries__entry_ref__knowledge_cards_save_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Entry Quiz
+         * @description 文章自测（F069）：正文 <400 字 → 422 material_insufficient；
+         *     模型题目逐条核验（结构 + evidence 存在于正文），不合格整题丢弃；
+         *     全部被丢 → 422。响应只含题目（无答案——负向契约）。
+         */
+        post: operations["generate_entry_quiz_api_v1_entries__entry_ref__quiz_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/state": {
         parameters: {
             query?: never;
@@ -710,8 +1221,30 @@ export interface paths {
          * Generate Entry Summary
          * @description Explicit summary generation. An exact cache hit costs nothing;
          *     otherwise exactly one bounded provider call is made (synchronously).
+         *     F025：maxChars 限定发送范围（诚实截断，绝不估算 token）。
          */
         post: operations["generate_entry_summary_api_v1_entries__entry_ref__summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/summary/versions/{version_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Summary Version
+         * @description F027：切换展示版本（把所选版本写回当前成功行；版本本身全部
+         *     保留）。版本或当前行不存在 → 404。
+         */
+        post: operations["activate_summary_version_api_v1_entries__entry_ref__summary_versions__version_id__activate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -809,6 +1342,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Translation Segment Revision
+         * @description F062：保存一段的手工修订（锚定当前源段 hash；源文后续变化 →
+         *     读取侧标 stale，修订不误删）。该段无任何缓存行 → 404。
+         */
+        put: operations["put_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_put"];
+        post?: never;
+        /**
+         * Delete Translation Segment Revision
+         * @description F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。
+         */
+        delete: operations["delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/export/lumi-data": {
         parameters: {
             query?: never;
@@ -872,6 +1430,62 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed-filter-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rules */
+        get: operations["list_rules_api_v1_feed_filter_rules_get"];
+        put?: never;
+        /** Create Rule */
+        post: operations["create_rule_api_v1_feed_filter_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed-filter-rules/trial": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trial Rule
+         * @description 试跑：对样例标题/作者按当前启用规则求值（首条命中优先）。
+         */
+        post: operations["trial_rule_api_v1_feed_filter_rules_trial_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed-filter-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Rule */
+        delete: operations["delete_rule_api_v1_feed_filter_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Rule */
+        patch: operations["update_rule_api_v1_feed_filter_rules__rule_id__patch"];
         trace?: never;
     };
     "/api/v1/feed-preview": {
@@ -963,6 +1577,46 @@ export interface paths {
         put?: never;
         /** Create Glossary Term */
         post: operations["create_glossary_term_api_v1_glossary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/glossary/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Glossary
+         * @description JSON 文件下载（application/json；Content-Disposition attachment）。
+         */
+        get: operations["export_glossary_api_v1_glossary_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/glossary/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Glossary
+         * @description 批量导入（skip/overwrite；非法条目逐条 errors，不整体失败）。
+         */
+        post: operations["import_glossary_api_v1_glossary_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1163,6 +1817,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Gpt Digest Issue
+         * @description F031：草稿审阅后显式发布（幂等：已 published 再发布 200 不变）。
+         *
+         *     发布前复用既有引用校验（sections 中的 sourceId 必须存在于生成时的
+         *     引用集）：校验失败保留 draft 并报 422，绝不半发布。
+         */
+        post: operations["publish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/missing-dates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Missing Digest Dates
+         * @description F032：按配置计划（时区）列出最近 `days` 天内缺失期号的日期。
+         *
+         *     已有期号（含草稿）的日期排除；未来日期（今天及以后）不算缺失。
+         */
+        get: operations["missing_digest_dates_api_v1_gpt_digest_configs__config_id__missing_dates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/pool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Digest Pool */
+        get: operations["list_digest_pool_api_v1_gpt_digest_configs__config_id__pool_get"];
+        put?: never;
+        /**
+         * Add Digest Pool Entry
+         * @description 加入素材池。重复 → 409；AI 禁用来源的条目 → 422（F066 负向语义：
+         *     服务端拒绝，不只靠 UI 隐藏）。
+         */
+        post: operations["add_digest_pool_entry_api_v1_gpt_digest_configs__config_id__pool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Digest Pool */
+        patch: operations["reorder_digest_pool_api_v1_gpt_digest_configs__config_id__pool_patch"];
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/pool/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Digest Pool Entry */
+        delete: operations["remove_digest_pool_entry_api_v1_gpt_digest_configs__config_id__pool__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gpt-digest/configs/{config_id}/preview": {
         parameters: {
             query?: never;
@@ -1170,7 +1909,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Preview Config Digest */
+        /**
+         * Preview Config Digest
+         * @description F06/F101：选材预览；``putBack``（可重复参数）为本次显式放回的
+         *     材料身份——与生成请求共用同一选材函数，预览即所得。
+         */
         get: operations["preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get"];
         put?: never;
         post?: never;
@@ -1233,7 +1976,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate Gpt Digest Feed */
+        /**
+         * Rotate Gpt Digest Feed
+         * @description F103：轮换订阅 token。``dryRun=true`` → 影响预览（零变更：
+         *     token、secrets、时刻戳都不动）；省略/false → 执行轮换（现有语义：
+         *     旧链接立即失效）。
+         */
         post: operations["rotate_gpt_digest_feed_api_v1_gpt_digest_feed_rotate_post"];
         delete?: never;
         options?: never;
@@ -1339,6 +2087,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/graph/path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find Graph Path
+         * @description 两节点间路径（F077）：paths ≤5（节点序列+边类型序列）；
+         *     环安全；不可达 → {paths: [], reachable: false}。
+         */
+        post: operations["find_graph_path_api_v1_graph_path_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/graph/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Graph Views */
+        get: operations["list_graph_views_api_v1_graph_views_get"];
+        put?: never;
+        /** Create Graph View */
+        post: operations["create_graph_view_api_v1_graph_views_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/graph/views/{view_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Graph View */
+        delete: operations["delete_graph_view_api_v1_graph_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/events/{event_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Inbox Event
+         * @description F107：失败事件重放（复用原载荷 + 既有 (source, guid) 幂等）。
+         *
+         *     delivered/duplicate → 409 not_replayable；来源已删除 → 404；
+         *     载荷缺失（历史事件/被裁剪）→ 409 payload_missing（诚实）。
+         */
+        post: operations["replay_inbox_event_api_v1_inbox_events__event_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox/ingest/{source_uuid}": {
         parameters: {
             query?: never;
@@ -1355,6 +2182,7 @@ export interface paths {
          *     Idempotent on (source, guid): replaying an item returns ``exists``
          *     with 200 instead of duplicating. Unknown source and wrong secret are
          *     indistinguishable (404) so the endpoint does not leak existence.
+         *     F107：每次投递落一条事件（delivered/duplicate/failed），失败可重放。
          */
         post: operations["ingest_inbox_item_api_v1_inbox_ingest__source_uuid__post"];
         delete?: never;
@@ -1396,6 +2224,82 @@ export interface paths {
         post?: never;
         /** Delete Inbox Item */
         delete: operations["delete_inbox_item_api_v1_inbox_items__item_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Inbox Rules */
+        get: operations["list_inbox_rules_api_v1_inbox_rules_get"];
+        put?: never;
+        /** Create Inbox Rule */
+        post: operations["create_inbox_rule_api_v1_inbox_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/rules/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Inbox Rule
+         * @description 样本试跑：纯读、不落库；返回第一条命中规则与解释。
+         */
+        post: operations["dry_run_inbox_rule_api_v1_inbox_rules_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Inbox Rule */
+        delete: operations["delete_inbox_rule_api_v1_inbox_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Inbox Rule */
+        patch: operations["patch_inbox_rule_api_v1_inbox_rules__rule_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/inbox/rules/{rule_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Inbox Rule
+         * @description priority 上下移（应用顺序 = 列表顺序）。
+         */
+        post: operations["move_inbox_rule_api_v1_inbox_rules__rule_id__move_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1444,6 +2348,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox/sources/{source_uuid}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Inbox Events */
+        get: operations["list_inbox_events_api_v1_inbox_sources__source_uuid__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}/ingest/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Inbox Ingest
+         * @description F108：与正式 ingest 同一校验函数（prepare_ingest_item）的零写入
+         *     契约试跑：{valid, errors, wouldCreate, notes}。未知字段不 422——
+         *     逐条列进 notes（策略 = 忽略 + 告知）；嵌套超限同样入 notes。
+         */
+        post: operations["dry_run_inbox_ingest_api_v1_inbox_sources__source_uuid__ingest_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox/sources/{source_uuid}/rotate": {
         parameters: {
             query?: never;
@@ -1462,6 +2405,40 @@ export interface paths {
          */
         post: operations["rotate_inbox_source_secret_api_v1_inbox_sources__source_uuid__rotate_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Knowledge Cards */
+        get: operations["list_knowledge_cards_api_v1_knowledge_cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-cards/{card_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Knowledge Card */
+        delete: operations["delete_knowledge_card_api_v1_knowledge_cards__card_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1489,6 +2466,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/batch-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Edit Apply
+         * @description 逐条应用（部分失败可重试：失败项逐项汇报 error）。
+         */
+        post: operations["batch_edit_apply_api_v1_library_batch_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/batch-edit/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Edit Preview
+         * @description 逐项 before/after（预览零写入；失效 ref 以 before=None 呈现）。
+         */
+        post: operations["batch_edit_preview_api_v1_library_batch_edit_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/bookmarks": {
         parameters: {
             query?: never;
@@ -1507,6 +2524,29 @@ export interface paths {
          * @description Create a url bookmark or an rss-ref bookmark (idempotent on url/ref).
          */
         post: operations["create_bookmark_api_v1_library_bookmarks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/bookmarks/check-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Bookmark Links
+         * @description F087：并发≤4 探测书签 URL；绝不改写书签（redirect 只报告 finalUrl）。
+         *
+         *     仅 url 型书签可探测；rss 引用与未知 ref 原样返回 network_error
+         *     （ref 不变、URL 不动——「检查」是纯读操作）。
+         */
+        post: operations["check_bookmark_links_api_v1_library_bookmarks_check_links_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1666,6 +2706,251 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/clips/{item_uuid}/full": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clip Full
+         * @description F089 详情：content（当前展示）+ original（原始，不可变）+ revised。
+         */
+        get: operations["get_clip_full_api_v1_library_clips__item_uuid__full_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clip Blocks
+         * @description 块清单（修订 UI 的勾选来源；基于当前展示版本切分）。
+         */
+        get: operations["get_clip_blocks_api_v1_library_clips__item_uuid__revision_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Discard Clip Revision
+         * @description 恢复原始（删修订：四列清空 + 搜索投影回到原文）。
+         */
+        delete: operations["discard_clip_revision_api_v1_library_clips__item_uuid__revision_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Save Clip Revision
+         * @description 保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。
+         */
+        patch: operations["save_clip_revision_api_v1_library_clips__item_uuid__revision_patch"];
+        trace?: never;
+    };
+    "/api/v1/library/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Duplicates */
+        get: operations["list_duplicates_api_v1_library_duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/duplicates/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Duplicates */
+        post: operations["scan_duplicates_api_v1_library_duplicates_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/duplicates/{pair_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Duplicate */
+        post: operations["confirm_duplicate_api_v1_library_duplicates__pair_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/duplicates/{pair_id}/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ignore Duplicate */
+        post: operations["ignore_duplicate_api_v1_library_duplicates__pair_id__ignore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/duplicates/{pair_id}/whitelist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Whitelist Duplicate */
+        post: operations["whitelist_duplicate_api_v1_library_duplicates__pair_id__whitelist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/import-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Import Batches */
+        get: operations["list_import_batches_api_v1_library_import_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/import-batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Import Batch */
+        get: operations["get_import_batch_api_v1_library_import_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/import-batches/{batch_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Import Batch
+         * @description 仅重试失败项（F049）。幂等：已存在的目标记 skipped，不覆盖。
+         */
+        post: operations["retry_import_batch_api_v1_library_import_batches__batch_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge Apply */
+        post: operations["merge_apply_api_v1_library_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge Preview */
+        post: operations["merge_preview_api_v1_library_merge_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes
+         * @description F020：笔记列表（title/updated_at/摘要首行；workspace 过滤可选）。
+         */
+        get: operations["list_notes_api_v1_library_notes_get"];
+        put?: never;
+        /**
+         * Create Note
+         * @description 手动创建笔记（contentMd ≤100KB；同步入搜索投影）。
+         */
+        post: operations["create_note_api_v1_library_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/notes-by-entry/{entry_ref}": {
         parameters: {
             query?: never;
@@ -1688,6 +2973,51 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/notes/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Notes
+         * @description 批量入库 Markdown 文件（幂等；部分失败不中断整批）。
+         */
+        post: operations["import_notes_api_v1_library_notes_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Note */
+        get: operations["get_note_api_v1_library_notes__note_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Note
+         * @description 软删（回收站 kind=note；搜索投影同步移除）。
+         */
+        delete: operations["delete_note_api_v1_library_notes__note_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Note
+         * @description 更新（baseUpdatedAt 乐观锁 → 409 note_conflict）。
+         */
+        patch: operations["update_note_api_v1_library_notes__note_id__patch"];
         trace?: never;
     };
     "/api/v1/library/snapshots": {
@@ -1715,11 +3045,159 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Snapshot Detail
+         * @description 快照详情（含资源状态诊断；ok/failed/skipped 如实回显）。
+         */
+        get: operations["snapshot_detail_api_v1_library_snapshots__asset_uuid__get"];
         put?: never;
         post?: never;
         /** Delete Snapshot */
         delete: operations["delete_snapshot_api_v1_library_snapshots__asset_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Failed Resources
+         * @description 仅对 failed 资源重采（走既有 SSRF 防护采集层，私网/元数据地址
+         *     在 validate 层拒绝）；无失败 → no-op 返回 0（幂等）。
+         */
+        post: operations["retry_failed_resources_api_v1_library_snapshots__asset_uuid__retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Snapshot Versions */
+        get: operations["list_snapshot_versions_api_v1_library_snapshots__asset_uuid__versions_get"];
+        put?: never;
+        /**
+         * Create Snapshot Version
+         * @description F034：重新采集当前 URL 为新版本（≤5 版 FIFO；与最新版内容
+         *     相同 → deduped 跳过）。采集失败不影响旧版（记录前即抛出）。
+         */
+        post: operations["create_snapshot_version_api_v1_library_snapshots__asset_uuid__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Snapshot Version
+         * @description 旧版查看（净化后纯文本）。
+         */
+        get: operations["get_snapshot_version_api_v1_library_snapshots__asset_uuid__versions__version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}/versions/{version_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff Snapshot Versions
+         * @description 逐行 unified 文本差异（stdlib difflib；纯文本输出）。
+         */
+        get: operations["diff_snapshot_versions_api_v1_library_snapshots__asset_uuid__versions__version_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Trash
+         * @description F019：回收站列表（可选 type 过滤；新删除在前）。
+         */
+        get: operations["list_trash_api_v1_library_trash_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/trash/{item_uuid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Purge Trash Item
+         * @description F019：永久删除——必须显式 permanent=true（UI 二次确认的契约），
+         *     缺失时拒绝（409 confirm_required），绝不静默清空。
+         */
+        delete: operations["purge_trash_item_api_v1_library_trash__item_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/trash/{item_uuid}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Trash Item
+         * @description F019：恢复（按身份行 kind 分派到书签/剪辑存储）。
+         */
+        post: operations["restore_trash_item_api_v1_library_trash__item_uuid__restore_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1755,6 +3233,26 @@ export interface paths {
         post?: never;
         /** Delete Bridge List */
         delete: operations["delete_bridge_list_api_v1_mail_bridge_lists__list_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/imap/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backfill Mail Imap
+         * @description F106：历史邮件回填（试运行或执行；同步有界 ≤200 封）。
+         */
+        post: operations["backfill_mail_imap_api_v1_mail_imap_backfill_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1820,6 +3318,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/parse-debug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mail Parse Debug
+         * @description F104：单封邮件的「解析对照」（只读）：结构快照、主题/发件人脱敏
+         *     展示、正文长度、HTML part 有无、条目标题一致性、外链图片拦截计数。
+         *     不重复发布——本端点零写入。
+         */
+        get: operations["mail_parse_debug_api_v1_mail_lists__list_uuid__messages__message_id__parse_debug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mail Thread
+         * @description F110：同列表内沿 In-Reply-To/References 组装的有序会话链。
+         */
+        get: operations["mail_thread_api_v1_mail_lists__list_uuid__messages__message_id__thread_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mail Rules */
+        get: operations["list_mail_rules_api_v1_mail_lists__list_uuid__rules_get"];
+        put?: never;
+        /** Create Mail Rule */
+        post: operations["create_mail_rule_api_v1_mail_lists__list_uuid__rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/rules/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Mail Rule
+         * @description F105：样本试跑（纯读）：{field, value} → 首条命中规则 + 解释。
+         */
+        post: operations["dry_run_mail_rule_api_v1_mail_lists__list_uuid__rules_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Mail Rule */
+        delete: operations["delete_mail_rule_api_v1_mail_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Mail Rule */
+        patch: operations["patch_mail_rule_api_v1_mail_rules__rule_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/mail/rules/{rule_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Mail Rule */
+        post: operations["move_mail_rule_api_v1_mail_rules__rule_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/notes": {
         parameters: {
             query?: never;
@@ -1846,6 +3459,40 @@ export interface paths {
         };
         /** Get Note */
         get: operations["get_note_api_v1_obsidian_notes__note_uuid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/notes/{note_uuid}/backlinks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Note Backlinks */
+        get: operations["list_note_backlinks_api_v1_obsidian_notes__note_uuid__backlinks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/notes/{note_uuid}/broken-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Note Broken Links */
+        get: operations["list_note_broken_links_api_v1_obsidian_notes__note_uuid__broken_links_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1911,6 +3558,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operations Diagnostics
+         * @description F039 脱敏诊断包：结构与布尔存在性，绝不含任何秘密值/正文/token。
+         *
+         *     - deps 复用 operations/status 的状态字符串（不探测比 status 更多）；
+         *     - error_counts_by_type：近 24h 有界（backup_jobs + 日报/邮件任务账本）；
+         *     - config_presence 只回布尔（freshrss / rsshub / ai_key / imap / obsidian）；
+         *     - counts：feeds / entries_indexed / library_items。
+         */
+        get: operations["operations_diagnostics_api_v1_operations_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/status": {
         parameters: {
             query?: never;
@@ -1923,6 +3595,31 @@ export interface paths {
          * @description Redacted, real dependency status for the operations UI (no fake metrics).
          */
         get: operations["operations_status_api_v1_operations_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operations Timeline
+         * @description F118：合并 task_records + ai_task_log + import_batches + 日报发布
+         *     的统一时间线（时间倒序，上限 100）。
+         *
+         *     只含 kind/status/摘要（计数与类型名）——绝不包含凭据、正文或任何
+         *     秘密值（构造含秘密的库内 fixture 响应 grep 不到，负向测试覆盖）。
+         *     失败与部分失败如实保留（不美化）。
+         */
+        get: operations["operations_timeline_api_v1_operations_timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1946,6 +3643,11 @@ export interface paths {
          *     credentials. The document contains no settings dump, no API keys, no
          *     read history and no favorites — only the subscription outline tree
          *     FreshRSS itself produces.
+         *
+         *     F003：可选 subscription_refs / category_ids（可重复的查询参数）限定
+         *     导出集合——按选中集合在 BFF 侧重建 OPML（保留分类结构，XML 转义）；
+         *     两个参数都缺省 = 全库导出，保持既有上游透传行为完全向后兼容。
+         *     非法/不存在的 subscriptionRef → 400 opml_invalid。
          */
         get: operations["opml_export_api_v1_opml_export_get"];
         put?: never;
@@ -1975,6 +3677,10 @@ export interface paths {
          *     upstream timeouts) are reported honestly in the result; the file is
          *     re-parsed and the subscription list re-read at import time, so the
          *     preview is advisory, never a stale contract.
+         *
+         *     F002：selected_indexes（查询参数，逗号分隔的逐项预览 index）只导入
+         *     勾选的条目；缺省 = 全部（向后兼容）。格式非法 → 400。未选中/重复/
+         *     不可用的条目进入 skipped，不产生任何写。
          */
         post: operations["opml_import_api_v1_opml_import_post"];
         delete?: never;
@@ -2003,6 +3709,59 @@ export interface paths {
          *     POST /api/v1/opml/import.
          */
         post: operations["opml_import_preview_api_v1_opml_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/qa-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Qa Templates */
+        get: operations["list_qa_templates_api_v1_qa_templates_get"];
+        put?: never;
+        /** Create Qa Template */
+        post: operations["create_qa_template_api_v1_qa_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/qa-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Qa Template */
+        delete: operations["delete_qa_template_api_v1_qa_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Qa Template */
+        patch: operations["update_qa_template_api_v1_qa_templates__template_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/quiz/{quiz_id}/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grade Quiz */
+        post: operations["grade_quiz_api_v1_quiz__quiz_id__grade_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2052,6 +3811,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Exclusions
+         * @description F091：来源列表 + 排除状态 + 受影响分块计数预览。
+         */
+        get: operations["rag_exclusions_api_v1_rag_exclusions_get"];
+        /**
+         * Put Rag Exclusion
+         * @description F091：设置来源排除；排除即移除该源现有分块（mark_stale 路径）。
+         */
+        put: operations["put_rag_exclusion_api_v1_rag_exclusions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/inconsistencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Inconsistencies
+         * @description F100：版本失配清单（content_hash / embedding_model 两种依据）。
+         */
+        get: operations["rag_inconsistencies_api_v1_rag_inconsistencies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/rebuild": {
         parameters: {
             query?: never;
@@ -2063,6 +3866,66 @@ export interface paths {
         put?: never;
         /** Rag Rebuild */
         post: operations["rag_rebuild_api_v1_rag_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Rebuild Pause
+         * @description F093：请求暂停（当前批完成后停；游标持久化）。
+         */
+        post: operations["rag_rebuild_pause_api_v1_rag_rebuild_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/rebuild/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Rebuild Resume
+         * @description F093：从持久化游标继续（幂等；重启后仍可续）。
+         */
+        post: operations["rag_rebuild_resume_api_v1_rag_rebuild_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Repair
+         * @description F100：有界修复（重分块受影响条目；逐项诚实汇报）。
+         */
+        post: operations["rag_repair_api_v1_rag_repair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2102,6 +3965,59 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reading-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reading Progress */
+        get: operations["list_reading_progress_api_v1_reading_progress_get"];
+        /** Put Reading Progress */
+        put: operations["put_reading_progress_api_v1_reading_progress_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Relations */
+        get: operations["list_relations_api_v1_relations_get"];
+        put?: never;
+        /** Create Relation */
+        post: operations["create_relation_api_v1_relations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/relations/{relation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Relation */
+        delete: operations["delete_relation_api_v1_relations__relation_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2173,6 +4089,58 @@ export interface paths {
          * @description Validate a backup package and return a preview + restoreSessionId.
          */
         post: operations["restore_preview_api_v1_restore_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Review Queue */
+        get: operations["list_review_queue_api_v1_review_queue_get"];
+        put?: never;
+        /** Add Review Queue Item */
+        post: operations["add_review_queue_item_api_v1_review_queue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-queue/{queue_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Review Queue Item */
+        post: operations["complete_review_queue_item_api_v1_review_queue__queue_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-queue/{queue_id}/postpone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Postpone Review Queue Item */
+        post: operations["postpone_review_queue_item_api_v1_review_queue__queue_id__postpone_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2454,6 +4422,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Search Results
+         * @description 引用清单导出（F073）：keyset 全量迭代（cap 上限 2000，诚实截断）。
+         *
+         *     dryRun=true → 只返回 {total, capped}（UI 范围预览）。文件导出时
+         *     截断标注在 X-Lumi-Truncated / X-Lumi-Total 响应头。导出仅含选中
+         *     字段（excerpt ≤200 字），绝不含正文全文。
+         */
+        post: operations["export_search_results_api_v1_search_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/rebuild": {
         parameters: {
             query?: never;
@@ -2472,6 +4464,62 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/synonyms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Synonyms */
+        get: operations["list_synonyms_api_v1_search_synonyms_get"];
+        put?: never;
+        /** Create Synonym */
+        post: operations["create_synonym_api_v1_search_synonyms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/synonyms/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Synonyms
+         * @description 与实际搜索同一扩展口径：返回命中同义词与扩展后的有效词表。
+         */
+        post: operations["preview_synonyms_api_v1_search_synonyms_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/synonyms/{synonym_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Synonym */
+        delete: operations["delete_synonym_api_v1_search_synonyms__synonym_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Synonym */
+        patch: operations["update_synonym_api_v1_search_synonyms__synonym_id__patch"];
         trace?: never;
     };
     "/api/v1/search/views": {
@@ -2495,6 +4543,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/views/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Saved Search Views
+         * @description 两视图对照（F075）：common/onlyA/onlyB（refs ≤200）+ 完整计数 +
+         *     complete（任一视图超 2000 上界 → false，诚实不完整）。纯读取零写入；
+         *     视图缺失 → 404。
+         */
+        post: operations["compare_saved_search_views_api_v1_search_views_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/pinned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pinned Views */
+        get: operations["list_pinned_views_api_v1_search_views_pinned_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/views/{view_id}": {
         parameters: {
             query?: never;
@@ -2511,6 +4598,119 @@ export interface paths {
         head?: never;
         /** Rename Saved Search View */
         patch: operations["rename_saved_search_view_api_v1_search_views__view_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count Saved Search View
+         * @description 固定视图徽标的真实计数；来源失效等查询失败 → error 态而非 0。
+         */
+        get: operations["count_saved_search_view_api_v1_search_views__view_id__count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin Saved Search View */
+        post: operations["pin_saved_search_view_api_v1_search_views__view_id__pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/pin-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Reorder Pinned View */
+        patch: operations["reorder_pinned_view_api_v1_search_views__view_id__pin_order_patch"];
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/token/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable View Feed Token
+         * @description F061：首次启用私有 Atom 订阅，生成 secret（完整路径仅本次返回）。
+         *
+         *     已启用 → 409 token_already_active（地址无法二次查看，只能轮换）。
+         */
+        post: operations["enable_view_feed_token_api_v1_search_views__view_id__token_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate View Feed Token
+         * @description F061：轮换 secret —— 旧订阅地址立即失效；新地址仅本次返回。
+         */
+        post: operations["rotate_view_feed_token_api_v1_search_views__view_id__token_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/unpin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpin Saved Search View */
+        post: operations["unpin_saved_search_view_api_v1_search_views__view_id__unpin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/settings": {
@@ -2716,6 +4916,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ai/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ai Quota
+         * @description F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。
+         */
+        get: operations["get_ai_quota_api_v1_settings_ai_quota_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/history": {
         parameters: {
             query?: never;
@@ -2861,10 +5081,11 @@ export interface paths {
         get: operations["list_source_overrides_api_v1_sources_overrides_get"];
         /**
          * Set Source Override
-         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom）。
+         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
          *
          *     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
-         *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）。
+         *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
+         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。
          */
         put: operations["set_source_override_api_v1_sources_overrides_put"];
         post?: never;
@@ -2897,6 +5118,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/stale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stale Sources
+         * @description F001：按各自阈值超期的来源列表（只读，无任何写副作用）。
+         *
+         *     口径（诚实标注，绝不把发布时间标成抓取成功）：
+         *     - FreshRSS greader subscription/list 在本仓库的适配层不透传
+         *       feed 最近抓取/更新元数据（adapters 现有能力已核实），因此
+         *       basis 恒为 latest_entry（search_entries 派生投影的最新发布时间）
+         *       或 unknown（投影中该 feed 无任何条目——未知 ≠ 超期，不误报）；
+         *     - threshold：全局兜底阈值（小时），仅对未单独配置 staleAlertHours
+         *       的来源生效；缺省时只评估单独配置过的来源。
+         */
+        get: operations["stale_sources_api_v1_sources_stale_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/volume": {
         parameters: {
             query?: never;
@@ -2918,6 +5167,66 @@ export interface paths {
         get: operations["subscription_volume_api_v1_sources_volume_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Storage Retention */
+        get: operations["get_storage_retention_api_v1_storage_retention_get"];
+        /** Put Storage Retention */
+        put: operations["put_storage_retention_api_v1_storage_retention_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Storage Retention
+         * @description F114：应用（有界删除：逐类 LIMIT 500/批；边界 = now-days）。
+         */
+        post: operations["apply_storage_retention_api_v1_storage_retention_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/storage/retention/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Storage Retention
+         * @description F114：预览（只读）——各类将清理的记录数与估算字节（分开口径）；
+         *     保护类如实列出（entries/annotations/notes/cards/credentials/
+         *     running jobs 永不清理）。
+         */
+        post: operations["preview_storage_retention_api_v1_storage_retention_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2974,6 +5283,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/subscriptions/batch-move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Move Subscriptions
+         * @description F006：批量分类迁移（逐项执行、逐项汇报；失败不中断整批）。
+         *
+         *     语义（文档化）：refs 只包含本次请求显式给定的订阅——「跨页选择」
+         *     由前端只提交当前选中的 refs（不全库隐含）；同一 ref 重复出现只执行
+         *     一次（幂等：移动到已所在分类是 no-op）。targetCategoryId 必须已存在
+         *     （新建分类走既有单移动的 newCategoryLabel 通道）。
+         */
+        post: operations["batch_move_subscriptions_api_v1_subscriptions_batch_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/duplicate-suspects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Duplicate Suspects
+         * @description F004：重复订阅候选（只读；只展示，无删除/合并副作用）。
+         *
+         *     受控规范化（见 lumirss.url_normalize）：小写 host、去尾斜杠、忽略
+         *     http/https、丢弃已知追踪参数（utm_*\/fbclid/gclid 等）；签名参数绝不
+         *     丢弃、路径不同绝不合并（保守，宁可漏报不误报）。
+         */
+        get: operations["duplicate_suspects_api_v1_subscriptions_duplicate_suspects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/health-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Health Check
+         * @description F050 批量检查台：并发 ≤4 探测每源 feed URL（HEAD 失败降级有界 GET
+         *     ≤256KB）。纯诊断——结果不写任何配置（负向契约由测试固定）。
+         *
+         *     分类：ok / auth_error / not_found / rate_limited / timeout /
+         *     bad_content / network_error；重复 ref 去重（保持首个）。
+         */
+        post: operations["health_check_api_v1_subscriptions_health_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Notes
+         * @description F005：备注列表（可选 note_search 关键词子串过滤，后端执行）。
+         */
+        get: operations["list_source_notes_api_v1_subscriptions_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/subscriptions/{subscription_ref}": {
         parameters: {
             query?: never;
@@ -2987,6 +5389,9 @@ export interface paths {
         /**
          * Delete Subscription
          * @description Unsubscribe (destructive; confirmation belongs to the Web UI).
+         *
+         *     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
+         *     FreshRSS RSS 域数据不在此路径触碰。
          */
         delete: operations["delete_subscription_api_v1_subscriptions__subscription_ref__delete"];
         options?: never;
@@ -3001,6 +5406,59 @@ export interface paths {
          *     already exist (404 otherwise).
          */
         patch: operations["update_subscription_api_v1_subscriptions__subscription_ref__patch"];
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_ref}/migrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Migrate Subscription
+         * @description F044 RSS 地址迁移（能力内路径，诚实文案）。
+         *
+         *     FreshRSS (greader) 没有"原位改 feed URL"端点——迁移 = 校验新地址
+         *     → 新建订阅 → Lumi 备注/覆盖/静音设置随迁 → 旧订阅打 replaced_by
+         *     标记（不删除、已读/收藏不动，用户确认后可自行退订旧源）。
+         *
+         *     校验失败（422）与同 URL（409）不产生任何变更。
+         */
+        post: operations["migrate_subscription_api_v1_subscriptions__subscription_ref__migrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_ref}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Notes
+         * @description F005：单个订阅的备注/理由/维护记录（无记录 → 全 null）。
+         */
+        get: operations["get_source_notes_api_v1_subscriptions__subscription_ref__notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Source Notes
+         * @description F005：更新备注/理由/维护记录（sentinel：缺席=不改，null=清空）。
+         *
+         *     存原文不消毒——XSS 由 Web 渲染层转义（React 默认转义），与
+         *     「Article HTML: transforms → DOMPurify」管线无关（本字段不进文章管线）。
+         */
+        patch: operations["update_source_notes_api_v1_subscriptions__subscription_ref__notes_patch"];
         trace?: never;
     };
     "/api/v1/tags": {
@@ -3239,6 +5697,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Archived Workspaces
+         * @description F084 归档列表入口（默认导航隐藏，这里显式可见）。
+         */
+        get: operations["list_archived_workspaces_api_v1_workspace_archive_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_workspace_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Template */
+        delete: operations["delete_template_api_v1_workspace_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -3251,6 +5763,23 @@ export interface paths {
         put?: never;
         /** Create Workspace */
         post: operations["create_workspace_api_v1_workspaces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/from-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create From Template */
+        post: operations["create_from_template_api_v1_workspaces_from_template_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3347,8 +5876,51 @@ export interface paths {
         delete: operations["delete_workspace_api_v1_workspaces__workspace_id__delete"];
         options?: never;
         head?: never;
-        /** Rename Workspace */
+        /**
+         * Rename Workspace
+         * @description F084：PATCH 扩展——archived=true 归档 / false 恢复；name/description
+         *     缺省 = 不修改（与归档可同请求组合）。
+         */
         patch: operations["rename_workspace_api_v1_workspaces__workspace_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Workspace Archive
+         * @description F084：archived=true 归档 / false 恢复（本路由不改名——与既有
+         *     PATCH /workspaces/{id} 分工明确）。
+         */
+        patch: operations["patch_workspace_archive_api_v1_workspaces__workspace_id__archive_patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Board */
+        get: operations["get_board_api_v1_workspaces__workspace_id__board_get"];
+        /** Put Board */
+        put: operations["put_board_api_v1_workspaces__workspace_id__board_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/workspaces/{workspace_id}/contents": {
@@ -3369,6 +5941,25 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Goal */
+        get: operations["get_goal_api_v1_workspaces__workspace_id__goal_get"];
+        /** Put Goal */
+        put: operations["put_goal_api_v1_workspaces__workspace_id__goal_put"];
+        post?: never;
+        /** Delete Goal */
+        delete: operations["delete_goal_api_v1_workspaces__workspace_id__goal_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3440,6 +6031,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/research-pack/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Research Pack
+         * @description F088：资料包预览（计数 + 体积估算 + 可选快照清单；缺失诚实跳过）。
+         */
+        post: operations["preview_research_pack_api_v1_workspaces__workspace_id__research_pack_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/save-as-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save As Template */
+        post: operations["save_as_template_api_v1_workspaces__workspace_id__save_as_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feeds/gpt-digest/{spec}.atom": {
         parameters: {
             query?: never;
@@ -3477,6 +6105,26 @@ export interface paths {
          *     author (From header).
          */
         get: operations["serve_mail_atom_feeds_mail__list_uuid___secret__atom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feeds/views/{view_id}.{secret}.atom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved View Atom
+         * @description 保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。
+         */
+        get: operations["saved_view_atom_feeds_views__view_id___secret__atom_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3571,6 +6219,14 @@ export interface components {
             decision: string;
         };
         /**
+         * AgentBranchRequest
+         * @description F099 从指定消息分支。
+         */
+        AgentBranchRequest: {
+            /** Messageindex */
+            messageIndex: number;
+        };
+        /**
          * AgentMessageCreate
          * @description POST /api/v1/agent/threads/{id}/messages.
          */
@@ -3597,6 +6253,34 @@ export interface components {
         AgentThreadListResponse: {
             /** Items */
             items: components["schemas"]["AgentThread"][];
+        };
+        /**
+         * AgentThreadUpdate
+         * @description F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
+         *
+         *     scope=None 显式清除范围锁定；键缺省 = 不修改。
+         */
+        AgentThreadUpdate: {
+            /**
+             * Clearscope
+             * @default false
+             */
+            clearScope: boolean;
+            /**
+             * Cleartoolpolicy
+             * @default false
+             */
+            clearToolPolicy: boolean;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Title */
+            title?: string | null;
+            /** Toolpolicy */
+            toolPolicy?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * AiProfile
@@ -3723,6 +6407,10 @@ export interface components {
             model?: string | null;
             /** Provider */
             provider?: "openai_compatible" | null;
+            /** Quotamaxcalls */
+            quotaMaxCalls?: number | null;
+            /** Quotawindow */
+            quotaWindow?: ("" | "day" | "month") | null;
             /** Summarylanguage */
             summaryLanguage?: ("zh-CN" | "en") | null;
             /** Translationengine */
@@ -3763,6 +6451,17 @@ export interface components {
                 [key: string]: string;
             };
             /**
+             * Quotamaxcalls
+             * @default 0
+             */
+            quotaMaxCalls: number;
+            /**
+             * Quotawindow
+             * @default
+             * @enum {string}
+             */
+            quotaWindow: "" | "day" | "month";
+            /**
              * Summarylanguage
              * @enum {string}
              */
@@ -3779,12 +6478,60 @@ export interface components {
             translationLanguage: "zh-CN" | "en";
         };
         /**
+         * AnnotationCreate
+         * @description POST /api/v1/annotations body。
+         */
+        AnnotationCreate: {
+            /** Anchor */
+            anchor: {
+                [key: string]: unknown;
+            };
+            /**
+             * Color
+             * @default yellow
+             */
+            color: string;
+            /** Entryref */
+            entryRef: string;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * AnnotationExportRequest
+         * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。
+         */
+        AnnotationExportRequest: {
+            /** Entryrefs */
+            entryRefs?: string[] | null;
+            /** Q */
+            q?: string | null;
+        };
+        /**
+         * AnnotationUpdate
+         * @description PATCH /api/v1/annotations/{id} body。
+         */
+        AnnotationUpdate: {
+            /** Color */
+            color?: string | null;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
          * ApiSource
          * @description One API source config (secret/atomPath only on create).
          */
         ApiSource: {
             /** Atompath */
             atomPath?: string | null;
+            /**
+             * Confirmedschema
+             * @default false
+             */
+            confirmedSchema: boolean;
             /** Createdat */
             createdAt: string;
             /** Enabled */
@@ -3805,12 +6552,30 @@ export interface components {
             lastSuccessAt?: string | null;
             /** Name */
             name: string;
+            /** Pagination */
+            pagination?: {
+                [key: string]: unknown;
+            } | null;
+            /** Schemadrift */
+            schemaDrift?: {
+                [key: string]: string[];
+            } | null;
             /** Secret */
             secret?: string | null;
             /** Subscribeerror */
             subscribeError?: string | null;
             /** Uuid */
             uuid: string;
+        };
+        /**
+         * ApiSourceConfirmSchemaResult
+         * @description F043: baseline confirmation outcome.
+         */
+        ApiSourceConfirmSchemaResult: {
+            /** Confirmed */
+            confirmed: boolean;
+            /** Sampleditems */
+            sampledItems: number;
         };
         /**
          * ApiSourceCreate
@@ -3827,6 +6592,10 @@ export interface components {
             itemsExpr: string;
             /** Name */
             name: string;
+            /** Pagination */
+            pagination?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Subscribe
              * @default true
@@ -3842,10 +6611,27 @@ export interface components {
             items: components["schemas"]["ApiSource"][];
         };
         /**
+         * ApiSourcePaginationDryRun
+         * @description F042: bounded pagination walk against the sample (no writes).
+         */
+        ApiSourcePaginationDryRun: {
+            /** Pages */
+            pages: {
+                [key: string]: unknown;
+            }[];
+            /** Stopreason */
+            stopReason: string;
+        };
+        /**
          * ApiSourcePreviewRequest
          * @description POST /api/v1/api-sources/preview — nothing is saved.
          */
         ApiSourcePreviewRequest: {
+            /**
+             * Dryrunpagination
+             * @default false
+             */
+            dryRunPagination: boolean;
             /** Endpoint */
             endpoint: string;
             /** Fieldmap */
@@ -3854,16 +6640,28 @@ export interface components {
             };
             /** Itemsexpr */
             itemsExpr: string;
+            /** Pagination */
+            pagination?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ApiSourcePreviewResult
-         * @description Bounded preview (≤5 mapped items).
+         * @description Bounded preview (≤5 mapped items + F041 Atom-form preview).
          */
         ApiSourcePreviewResult: {
+            /**
+             * Atompreview
+             * @default []
+             */
+            atomPreview: {
+                [key: string]: unknown;
+            }[];
             /** Items */
             items: {
                 [key: string]: unknown;
             }[];
+            paginationDryRun?: components["schemas"]["ApiSourcePaginationDryRun"] | null;
             /** Totalavailable */
             totalAvailable: number;
         };
@@ -3884,6 +6682,10 @@ export interface components {
             itemsExpr?: string | null;
             /** Name */
             name?: string | null;
+            /** Pagination */
+            pagination?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ApiVersionInfo
@@ -4122,6 +6924,53 @@ export interface components {
             uiFontStack: "default" | "sans" | "serif" | "mono";
         };
         /**
+         * AskBatchBody
+         * @description POST /api/v1/entries/ask-batch body（F065）。
+         */
+        AskBatchBody: {
+            /** Entryrefs */
+            entryRefs: string[];
+            /**
+             * Maxcharsperentry
+             * @default 8000
+             */
+            maxCharsPerEntry: number;
+            /** Question */
+            question: string;
+        };
+        /**
+         * AskBatchCitation
+         * @description 一条引用：编号（1 起）+ 对应 entryRef。
+         */
+        AskBatchCitation: {
+            /** Entryref */
+            entryRef: string;
+            /** Index */
+            index: number;
+        };
+        /**
+         * AskBatchResult
+         * @description 多篇共同问答结果：answer 纯文本 + citations（refs 子集）。
+         */
+        AskBatchResult: {
+            /** Answer */
+            answer: string;
+            /** Citations */
+            citations: components["schemas"]["AskBatchCitation"][];
+            /** Skipped */
+            skipped: components["schemas"]["AskBatchSkipped"][];
+        };
+        /**
+         * AskBatchSkipped
+         * @description 诚实跳过的一篇（缺失/不可用/空正文）。
+         */
+        AskBatchSkipped: {
+            /** Entryref */
+            entryRef: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * AuthStatus
          * @description Login / session-status payload; expiresAt is an ISO-8601 instant.
          *
@@ -4141,6 +6990,138 @@ export interface components {
              */
             mode: "basic" | "session";
         };
+        /** AuthorAlias */
+        AuthorAlias: {
+            /** Alias */
+            alias: string;
+            /** Canonical */
+            canonical: string;
+            /** Createdat */
+            createdAt: string;
+        };
+        /**
+         * AuthorAliasCreate
+         * @description POST /api/v1/authors/aliases body — explicit user merge only.
+         */
+        AuthorAliasCreate: {
+            /** Alias */
+            alias: string;
+            /** Canonical */
+            canonical: string;
+        };
+        /** AuthorAliasList */
+        AuthorAliasList: {
+            /** Items */
+            items: components["schemas"]["AuthorAlias"][];
+        };
+        /**
+         * AuthorItemsResponse
+         * @description Items of one canonical author (aliases folded in).
+         */
+        AuthorItemsResponse: {
+            /** Author */
+            author: string;
+            /** Hasmore */
+            hasMore: boolean;
+            /** Items */
+            items: components["schemas"]["EntryListItem"][];
+        };
+        /** AuthorList */
+        AuthorList: {
+            /** Items */
+            items: components["schemas"]["AuthorSummary"][];
+        };
+        /**
+         * AuthorSummary
+         * @description One aggregated author: canonical display name + item count (aliases
+         *     folded into the canonical count only via explicit user aliases).
+         */
+        AuthorSummary: {
+            /** Author */
+            author: string;
+            /** Count */
+            count: number;
+        };
+        /**
+         * BacklogApplyRequest
+         * @description POST /api/v1/entries/backlog-apply body — must carry the one-shot
+         *     preview token (30s) so the applied condition cannot drift.
+         */
+        BacklogApplyRequest: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Confirmpreviewtoken */
+            confirmPreviewToken: string;
+            /**
+             * Excludereadlater
+             * @default true
+             */
+            excludeReadLater: boolean;
+            /**
+             * Excludestarred
+             * @default true
+             */
+            excludeStarred: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** Olderthandays */
+            olderThanDays: number;
+        };
+        /** BacklogApplyResponse */
+        BacklogApplyResponse: {
+            /** Applied */
+            applied: number;
+            /** Effectiveexclusions */
+            effectiveExclusions: string[];
+            /** Failed */
+            failed: components["schemas"]["BacklogSampleItem"][];
+        };
+        /**
+         * BacklogPreviewRequest
+         * @description POST /api/v1/entries/backlog-preview body.
+         *
+         *     starred / read-later are ALWAYS excluded server-side — passing false
+         *     does not disable the protection (the response echoes effective
+         *     exclusions).
+         */
+        BacklogPreviewRequest: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /**
+             * Excludereadlater
+             * @default true
+             */
+            excludeReadLater: boolean;
+            /**
+             * Excludestarred
+             * @default true
+             */
+            excludeStarred: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** Olderthandays */
+            olderThanDays: number;
+        };
+        /** BacklogPreviewResponse */
+        BacklogPreviewResponse: {
+            /** Confirmpreviewtoken */
+            confirmPreviewToken: string;
+            /** Count */
+            count: number;
+            /** Effectiveexclusions */
+            effectiveExclusions: string[];
+            /** Sample */
+            sample: components["schemas"]["BacklogSampleItem"][];
+        };
+        /** BacklogSampleItem */
+        BacklogSampleItem: {
+            /** Publishedat */
+            publishedAt?: string | null;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+        };
         /**
          * BackupCapabilities
          * @description GET /api/v1/backups/capabilities — what a full backup can honestly
@@ -4154,6 +7135,16 @@ export interface components {
             includes: string[];
             /** Lumidatabaseavailable */
             lumiDatabaseAvailable: boolean;
+        };
+        /**
+         * BackupCompareBody
+         * @description POST /api/v1/backups/compare 体：两份本地备份的任务 id。
+         */
+        BackupCompareBody: {
+            /** Aid */
+            aId: string;
+            /** Bid */
+            bId: string;
         };
         /** BackupCreate */
         BackupCreate: {
@@ -4221,6 +7212,148 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** BatchEditApplyItem */
+        BatchEditApplyItem: {
+            /** Error */
+            error?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Ref */
+            ref: string;
+        };
+        /** BatchEditApplyRequest */
+        BatchEditApplyRequest: {
+            patch: components["schemas"]["BatchEditPatch"];
+            /** Refs */
+            refs: string[];
+        };
+        /** BatchEditApplyResponse */
+        BatchEditApplyResponse: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /** Items */
+            items: components["schemas"]["BatchEditApplyItem"][];
+        };
+        /** BatchEditItemState */
+        BatchEditItemState: {
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /** Title */
+            title: string;
+            /**
+             * Workspaceids
+             * @default []
+             */
+            workspaceIds: string[];
+        };
+        /**
+         * BatchEditPatch
+         * @description F081 批量元数据编辑补丁——字段缺省（None）= 未勾选，保持原值。
+         *
+         *     titleSuffix 只允许追加模式；tags add/remove 幂等；workspaceId =
+         *     移动目标（记录原工作区）。仅作用于 Lumi 自有字段。
+         */
+        BatchEditPatch: {
+            /** Tagsadd */
+            tagsAdd?: string[] | null;
+            /** Tagsremove */
+            tagsRemove?: string[] | null;
+            /** Titlesuffix */
+            titleSuffix?: string | null;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /** BatchEditPreviewItem */
+        BatchEditPreviewItem: {
+            after: components["schemas"]["BatchEditItemState"];
+            before: components["schemas"]["BatchEditItemState"];
+            /** Ref */
+            ref: string;
+        };
+        /** BatchEditPreviewRequest */
+        BatchEditPreviewRequest: {
+            patch: components["schemas"]["BatchEditPatch"];
+            /** Refs */
+            refs: string[];
+        };
+        /** BatchEditPreviewResponse */
+        BatchEditPreviewResponse: {
+            /** Items */
+            items: components["schemas"]["BatchEditPreviewItem"][];
+        };
+        /**
+         * BatchMoveItem
+         * @description F006：单条迁移结果（失败项带稳定错误码，不中断整批）。
+         */
+        BatchMoveItem: {
+            /** Error */
+            error?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * BatchMoveRequest
+         * @description POST /api/v1/subscriptions/batch-move — 全部 refs 逐项执行。
+         */
+        BatchMoveRequest: {
+            /** Refs */
+            refs: string[];
+            /** Targetcategoryid */
+            targetCategoryId: string;
+        };
+        /** BatchMoveResult */
+        BatchMoveResult: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["BatchMoveItem"][];
+            /**
+             * Moved
+             * @default 0
+             */
+            moved: number;
+        };
+        /**
+         * BoardColumn
+         * @description F085 看板一列（前 50 条 + 真实总数）。
+         */
+        BoardColumn: {
+            /**
+             * Items
+             * @default []
+             */
+            items: {
+                [key: string]: unknown;
+            }[];
+            /** Status */
+            status: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /** BoardUpdateRequest */
+        BoardUpdateRequest: {
+            /** Itemref */
+            itemRef: string;
+            /** Status */
+            status: string;
+        };
         /**
          * Bookmark
          * @description One bookmark in the library domain (never carries RSS bodies).
@@ -4240,6 +7373,37 @@ export interface components {
             title: string;
             /** Url */
             url?: string | null;
+        };
+        /** BookmarkCheckItem */
+        BookmarkCheckItem: {
+            /** Checkedat */
+            checkedAt: string;
+            /** Error */
+            error?: string | null;
+            /** Finalurl */
+            finalUrl?: string | null;
+            /** Httpstatus */
+            httpStatus?: number | null;
+            /** Ref */
+            ref: string;
+            /** Status */
+            status: string;
+        };
+        /**
+         * BookmarkCheckRequest
+         * @description F087 书签失效检查（≤30 个，重复 ref 去重）。
+         */
+        BookmarkCheckRequest: {
+            /** Refs */
+            refs: string[];
+        };
+        /** BookmarkCheckResponse */
+        BookmarkCheckResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["BookmarkCheckItem"][];
         };
         /**
          * BookmarkCreate
@@ -4301,6 +7465,71 @@ export interface components {
             note?: string | null;
             /** Title */
             title?: string | null;
+        };
+        /** CardCandidate */
+        CardCandidate: {
+            /** Concept */
+            concept: string;
+            /** Explanation */
+            explanation: string;
+            /** Sourcequote */
+            sourceQuote: string;
+            /** Verified */
+            verified: boolean;
+        };
+        /** CardPreviewBody */
+        CardPreviewBody: {
+            /**
+             * Max
+             * @default 5
+             */
+            max: number;
+        };
+        /** CardPreviewResult */
+        CardPreviewResult: {
+            /**
+             * Cards
+             * @default []
+             */
+            cards: components["schemas"]["CardCandidate"][];
+            /** Entryref */
+            entryRef: string;
+        };
+        /** CardSaveBody */
+        CardSaveBody: {
+            /** Cards */
+            cards: components["schemas"]["CardSaveItem"][];
+        };
+        /** CardSaveItem */
+        CardSaveItem: {
+            /** Concept */
+            concept: string;
+            /** Explanation */
+            explanation: string;
+            /**
+             * Sourcequote
+             * @default
+             */
+            sourceQuote: string;
+        };
+        /** CardSaveResult */
+        CardSaveResult: {
+            /**
+             * Results
+             * @default []
+             */
+            results: components["schemas"]["CardSaveResultItem"][];
+        };
+        /** CardSaveResultItem */
+        CardSaveResultItem: {
+            /** Cardid */
+            cardId?: string | null;
+            /** Concept */
+            concept: string;
+            /** Reason */
+            reason?: string | null;
+            /** Status */
+            status: string;
         };
         /**
          * Category
@@ -4428,6 +7657,105 @@ export interface components {
             nextCursor: string | null;
         };
         /**
+         * ClipRevisionRequest
+         * @description F089 剪藏手工修订（保留块 id 列表；全移除需 force）。
+         */
+        ClipRevisionRequest: {
+            /** Basecontenthash */
+            baseContentHash?: string | null;
+            /** Blocks */
+            blocks: string[];
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * CompareBody
+         * @description POST /api/v1/entries/compare body（F067）。
+         */
+        CompareBody: {
+            /** Entryrefs */
+            entryRefs: string[];
+        };
+        /** CompareCitation */
+        CompareCitation: {
+            /** Entryref */
+            entryRef: string;
+            /** Index */
+            index: number;
+            /** Title */
+            title: string;
+        };
+        /** CompareDifference */
+        CompareDifference: {
+            /**
+             * Positions
+             * @default []
+             */
+            positions: components["schemas"]["ComparePosition"][];
+            /** Topic */
+            topic: string;
+        };
+        /** CompareEvidence */
+        CompareEvidence: {
+            /** Entry */
+            entry: number;
+            /** Quote */
+            quote: string;
+            /**
+             * Verified
+             * @default false
+             */
+            verified: boolean;
+        };
+        /** ComparePosition */
+        ComparePosition: {
+            /** Claim */
+            claim: string;
+            /** Entry */
+            entry: number;
+        };
+        /**
+         * CompareResult
+         * @description 对照结果：编号（entry，1 起）对应材料顺序；quote 经核验标注。
+         */
+        CompareResult: {
+            /**
+             * Commonpoints
+             * @default []
+             */
+            commonPoints: string[];
+            /**
+             * Differences
+             * @default []
+             */
+            differences: components["schemas"]["CompareDifference"][];
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: components["schemas"]["CompareEvidence"][];
+            /**
+             * Materials
+             * @default []
+             */
+            materials: components["schemas"]["CompareCitation"][];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: components["schemas"]["AskBatchSkipped"][];
+            /**
+             * Uncertainties
+             * @default []
+             */
+            uncertainties: string[];
+        };
+        /**
          * ComponentError
          * @description Redacted component error detail (only ``type`` ever leaves the BFF).
          */
@@ -4460,6 +7788,8 @@ export interface components {
          *     work (422 via FastAPI validation).
          */
         ConversationQuestion: {
+            /** Maxchars */
+            maxChars?: number | null;
             /** Question */
             question: string;
         };
@@ -4514,6 +7844,8 @@ export interface components {
             lastSentAt?: string | null;
             /** Limitcount */
             limitCount: number;
+            /** Nextsendat */
+            nextSendAt?: string | null;
             /**
              * Passwordconfigured
              * @default false
@@ -4564,6 +7896,19 @@ export interface components {
             toAddr?: string | null;
         };
         /**
+         * DigestTargetDateBody
+         * @description POST …/generate 可选体：补刊指定缺失日期 / F101 显式放回列表。
+         *
+         *     ``putBack`` 为材料身份（url 或 title: 前缀键，来自预览响应）；
+         *     本次生成显式放回，不影响后续期号的去重。
+         */
+        DigestTargetDateBody: {
+            /** Putback */
+            putBack?: string[] | null;
+            /** Targetdate */
+            targetDate?: string | null;
+        };
+        /**
          * DiscoveryCandidate
          * @description One discovered feed candidate (declared = not prefetched).
          */
@@ -4579,6 +7924,51 @@ export interface components {
             source: "declared" | "probed";
             /** Title */
             title?: string | null;
+        };
+        /**
+         * DuplicateSuspectGroup
+         * @description F004：一组重复候选（成员 ≥2；key 为受控规范化 URL）。
+         */
+        DuplicateSuspectGroup: {
+            /**
+             * Differences
+             * @default []
+             */
+            differences: string[];
+            /** Key */
+            key: string;
+            /**
+             * Members
+             * @default []
+             */
+            members: components["schemas"]["DuplicateSuspectMember"][];
+        };
+        /**
+         * DuplicateSuspectMember
+         * @description F004：重复候选组内的一个订阅成员。
+         */
+        DuplicateSuspectMember: {
+            /** Categorylabel */
+            categoryLabel?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** Title */
+            title: string;
+        };
+        /** DuplicateSuspectsResponse */
+        DuplicateSuspectsResponse: {
+            /**
+             * Checked
+             * @default 0
+             */
+            checked: number;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["DuplicateSuspectGroup"][];
         };
         /**
          * EntryConversation
@@ -4612,8 +8002,14 @@ export interface components {
             contentText: string;
             /** Crawledat */
             crawledAt?: string | null;
+            /** Enclosure */
+            enclosure?: components["schemas"]["EntryEnclosure"][];
             /** Entryref */
             entryRef: string;
+            /** Extractpolicy */
+            extractPolicy?: string | null;
+            /** Extractionfailed */
+            extractionFailed?: boolean | null;
             /** Feedtitle */
             feedTitle: string;
             /** Feedurl */
@@ -4628,6 +8024,26 @@ export interface components {
             title: string;
             /** Url */
             url?: string | null;
+        };
+        /**
+         * EntryEnclosure
+         * @description F011：一个媒体附件（原样来自 FreshRSS 响应，仅取 href/type）。
+         */
+        EntryEnclosure: {
+            /** Href */
+            href: string;
+            /** Type */
+            type?: string | null;
+        };
+        /**
+         * EntryHiddenByRule
+         * @description F045：命中并屏蔽本条的服务端规则（include_hidden 时附带）。
+         */
+        EntryHiddenByRule: {
+            /** Reason */
+            reason: string;
+            /** Ruleid */
+            ruleId: string;
         };
         /**
          * EntryListItem
@@ -4651,6 +8067,7 @@ export interface components {
             feedTitle: string;
             /** Feedurl */
             feedUrl?: string | null;
+            hiddenByRule?: components["schemas"]["EntryHiddenByRule"] | null;
             /** Publishedat */
             publishedAt?: string | null;
             /** Read */
@@ -4669,6 +8086,8 @@ export interface components {
          * @description Envelope for GET /api/v1/entries.
          */
         EntryListResponse: {
+            /** Filteredcount */
+            filteredCount?: number | null;
             /** Items */
             items: components["schemas"]["EntryListItem"][];
             /** Nextcursor */
@@ -4687,16 +8106,20 @@ export interface components {
             starred?: boolean | null;
         };
         /**
-         * EntrySummary
-         * @description GET/POST /api/v1/entries/{entryRef}/summary (browser-safe view).
+         * EntrySummaryVersions
+         * @description GET/POST summary response + version history (旧→新).
          */
-        EntrySummary: {
+        EntrySummaryVersions: {
+            /** Activeversionid */
+            activeVersionId?: string | null;
             /** Cached */
             cached: boolean;
             /** Failuretype */
             failureType?: string | null;
             /** Generatedat */
             generatedAt?: string | null;
+            /** Inputchars */
+            inputChars?: number | null;
             /** Language */
             language?: string | null;
             /** Model */
@@ -4712,6 +8135,13 @@ export interface components {
             status: "not_generated" | "generating" | "success" | "failed";
             /** Summary */
             summary?: string | null;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Versions */
+            versions?: components["schemas"]["SummaryVersionView"][];
         };
         /**
          * EntryTranslation
@@ -4782,6 +8212,71 @@ export interface components {
             label: string;
         };
         /**
+         * FeedFilterRule
+         * @description F045：一条服务端屏蔽规则。
+         */
+        FeedFilterRule: {
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Feedurl */
+            feedUrl: string;
+            /** Field */
+            field: string;
+            /** Id */
+            id: string;
+            /** Op */
+            op: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * FeedFilterRuleCreate
+         * @description POST /api/v1/feed-filter-rules body.
+         */
+        FeedFilterRuleCreate: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feedurl */
+            feedUrl: string;
+            /** Field */
+            field: string;
+            /** Op */
+            op: string;
+            /** Value */
+            value: string;
+        };
+        /** FeedFilterRuleList */
+        FeedFilterRuleList: {
+            /** Items */
+            items: components["schemas"]["FeedFilterRule"][];
+        };
+        /**
+         * FeedFilterRuleTrial
+         * @description POST /api/v1/feed-filter-rules/trial —— 试跑（不写库）。
+         */
+        FeedFilterRuleTrial: {
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** Sampleauthor */
+            sampleAuthor?: string | null;
+            /** Sampletitle */
+            sampleTitle: string;
+        };
+        /** FeedFilterRuleTrialResult */
+        FeedFilterRuleTrialResult: {
+            /** Matched */
+            matched: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Ruleid */
+            ruleId?: string | null;
+        };
+        /**
          * FeedPreviewRequest
          * @description POST /api/v1/feed-preview body (0013 Gate 2).
          */
@@ -4838,6 +8333,52 @@ export interface components {
             reasonCode?: string | null;
             /** Sqlitefilecount */
             sqliteFileCount?: number | null;
+        };
+        /** FromTemplateRequest */
+        FromTemplateRequest: {
+            /** Examplerefs */
+            exampleRefs?: string[];
+            /**
+             * Includeexampleitems
+             * @default false
+             */
+            includeExampleItems: boolean;
+            /** Name */
+            name: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * GlossaryImportBody
+         * @description POST /api/v1/glossary/import body。
+         */
+        GlossaryImportBody: {
+            /**
+             * Mode
+             * @default skip
+             * @enum {string}
+             */
+            mode: "skip" | "overwrite";
+            /** Terms */
+            terms: unknown[];
+        };
+        /** GlossaryImportResult */
+        GlossaryImportResult: {
+            /** Errors */
+            errors: components["schemas"]["GlossaryImportTermError"][];
+            /** Imported */
+            imported: number;
+            /** Overwritten */
+            overwritten: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** GlossaryImportTermError */
+        GlossaryImportTermError: {
+            /** Index */
+            index: number;
+            /** Reason */
+            reason: string;
         };
         /**
          * GlossaryTerm
@@ -4916,6 +8457,11 @@ export interface components {
              * @default 12
              */
             limitCount: number;
+            /**
+             * Lookbackdays
+             * @default 7
+             */
+            lookbackDays: number;
             /** Name */
             name: string;
             /**
@@ -4965,6 +8511,8 @@ export interface components {
             hour?: number | null;
             /** Limitcount */
             limitCount?: number | null;
+            /** Lookbackdays */
+            lookbackDays?: number | null;
             /** Name */
             name?: string | null;
             /** Persourcecap */
@@ -4989,6 +8537,8 @@ export interface components {
             hour?: number | null;
             /** Limitcount */
             limitCount?: number | null;
+            /** Lookbackdays */
+            lookbackDays?: number | null;
             /** Name */
             name: string;
             /** Persourcecap */
@@ -5001,6 +8551,29 @@ export interface components {
             timezone?: string | null;
             /** Windowhours */
             windowHours?: number | null;
+        };
+        /**
+         * GptDigestExcludedRecent
+         * @description F101：被「近期已刊用」去重排除的一条材料明细。
+         */
+        GptDigestExcludedRecent: {
+            /**
+             * Feedtitle
+             * @default
+             */
+            feedTitle: string;
+            /**
+             * Reason
+             * @default recent_issue
+             */
+            reason: string;
+            /** Title */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
         };
         /**
          * GptDigestFeedInfo
@@ -5089,6 +8662,16 @@ export interface components {
             uncertainty?: string | null;
         };
         /**
+         * GptDigestPoolInvalid
+         * @description F102：素材池失效条目（原文删除 / 引用非法）。
+         */
+        GptDigestPoolInvalid: {
+            /** Entryref */
+            entryRef: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * GptDigestPreview
          * @description GET /api/v1/gpt-digest/preview — 无副作用选材预览。
          */
@@ -5108,6 +8691,11 @@ export interface components {
                 [key: string]: string;
             }[];
             /**
+             * Excludedrecent
+             * @default []
+             */
+            excludedRecent: components["schemas"]["GptDigestExcludedRecent"][];
+            /**
              * Missingsources
              * @default []
              */
@@ -5123,6 +8711,11 @@ export interface components {
             perSource: {
                 [key: string]: number;
             };
+            /**
+             * Poolinvalid
+             * @default []
+             */
+            poolInvalid: components["schemas"]["GptDigestPoolInvalid"][];
             /**
              * Selected
              * @default []
@@ -5144,6 +8737,11 @@ export interface components {
             feedUrl: string;
             /** Publishedat */
             publishedAt: string;
+            /**
+             * Source
+             * @default auto
+             */
+            source: string;
             /** Sourceid */
             sourceId: string;
             /** Title */
@@ -5263,6 +8861,21 @@ export interface components {
             ref: string;
         };
         /**
+         * GraphPathBody
+         * @description POST /api/v1/graph/path body（F077）。
+         */
+        GraphPathBody: {
+            /** Dstref */
+            dstRef: string;
+            /**
+             * Maxdepth
+             * @default 4
+             */
+            maxDepth: number;
+            /** Srcref */
+            srcRef: string;
+        };
+        /**
          * GraphResponse
          * @description Envelope for GET /api/v1/graph (truncation reported honestly).
          *
@@ -5285,10 +8898,48 @@ export interface components {
             /** Truncated */
             truncated: boolean;
         };
+        /**
+         * GraphViewBody
+         * @description POST /api/v1/graph/views body（F076）。
+         */
+        GraphViewBody: {
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            } | null;
+            /** Focusnode */
+            focusNode?: string | null;
+            /** Layout */
+            layout?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            } | null;
+            /** Name */
+            name: string;
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HealthCheckRequest
+         * @description POST /api/v1/subscriptions/health-check body (F050)。
+         */
+        HealthCheckRequest: {
+            /** Refs */
+            refs: string[];
+            /**
+             * Timeouts
+             * @default 5
+             */
+            timeoutS: number;
         };
         /**
          * HealthStatus
@@ -5361,6 +9012,94 @@ export interface components {
             /** Sourceuuid */
             sourceUuid: string;
         };
+        /** InboxRule */
+        InboxRule: {
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Field */
+            field: string;
+            /** Id */
+            id: number;
+            /** Operator */
+            operator: string;
+            /** Priority */
+            priority: number;
+            /** Targetworkspaceid */
+            targetWorkspaceId: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * InboxRuleCreate
+         * @description POST /api/v1/inbox/rules body.
+         */
+        InboxRuleCreate: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "source" | "title";
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "contains" | "equals";
+            /** Priority */
+            priority?: number | null;
+            /** Targetworkspaceid */
+            targetWorkspaceId: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * InboxRuleDryRun
+         * @description POST /api/v1/inbox/rules/dry-run body — never persists anything.
+         */
+        InboxRuleDryRun: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "source" | "title";
+            /** Source */
+            source?: string | null;
+            /** Value */
+            value: string;
+        };
+        /** InboxRuleDryRunResult */
+        InboxRuleDryRunResult: {
+            /** Explanation */
+            explanation: string;
+            matchedRule?: components["schemas"]["InboxRule"] | null;
+        };
+        /** InboxRuleList */
+        InboxRuleList: {
+            /** Items */
+            items: components["schemas"]["InboxRule"][];
+        };
+        /**
+         * InboxRuleUpdate
+         * @description PATCH /api/v1/inbox/rules/{id} body — partial.
+         */
+        InboxRuleUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Field */
+            field?: ("source" | "title") | null;
+            /** Operator */
+            operator?: ("contains" | "equals") | null;
+            /** Targetworkspaceid */
+            targetWorkspaceId?: string | null;
+            /** Value */
+            value?: string | null;
+        };
         /**
          * InboxSource
          * @description One inbox connector without its secret.
@@ -5403,6 +9142,35 @@ export interface components {
             secret: string;
             /** Uuid */
             uuid: string;
+        };
+        /** KnowledgeCardList */
+        KnowledgeCardList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["KnowledgeCardView"][];
+        };
+        /** KnowledgeCardView */
+        KnowledgeCardView: {
+            /** Concept */
+            concept: string;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef: string;
+            /** Entrytitle */
+            entryTitle: string | null;
+            /** Explanation */
+            explanation: string;
+            /** Id */
+            id: string;
+            /** Quoteverified */
+            quoteVerified: boolean;
+            /** Sourcequote */
+            sourceQuote: string;
+            /** Stale */
+            stale: boolean;
         };
         /**
          * LibraryFavoriteRequest
@@ -5461,6 +9229,68 @@ export interface components {
         LoginRequest: {
             /** Password */
             password: string;
+        };
+        /**
+         * LumiNoteCreate
+         * @description F090 手动创建笔记（contentMd ≤100KB）。
+         */
+        LumiNoteCreate: {
+            /** Contentmd */
+            contentMd: string;
+            /** Title */
+            title: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /** LumiNoteDetail */
+        LumiNoteDetail: {
+            /** Contentmd */
+            contentMd: string;
+            /** Createdat */
+            createdAt: string;
+            /** Title */
+            title: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Uuid */
+            uuid: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /** LumiNoteList */
+        LumiNoteList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["LumiNoteView"][];
+        };
+        /** LumiNoteUpdate */
+        LumiNoteUpdate: {
+            /** Baseupdatedat */
+            baseUpdatedAt?: string | null;
+            /** Contentmd */
+            contentMd?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * LumiNoteView
+         * @description F020：笔记列表项（摘要首行，≤160 字）。
+         */
+        LumiNoteView: {
+            /** Createdat */
+            createdAt: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Title */
+            title: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Uuid */
+            uuid: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
         };
         /**
          * MailBridgeList
@@ -5533,6 +9363,11 @@ export interface components {
              */
             configured: boolean;
             /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
              * Folder
              * @default INBOX
              */
@@ -5578,6 +9413,8 @@ export interface components {
          * @description PUT /api/v1/mail/imap/settings — partial; password write-only.
          */
         MailImapSettingsUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
             /** Folder */
             folder?: string | null;
             /** Host */
@@ -5624,6 +9461,137 @@ export interface components {
             status: string;
             /** Subject */
             subject?: string | null;
+        };
+        /** MergeFieldCompare */
+        MergeFieldCompare: {
+            /** Duplicate */
+            duplicate?: unknown;
+            /** Field */
+            field: string;
+            /** Primary */
+            primary?: unknown;
+        };
+        /**
+         * MergePolicy
+         * @description F082 合并策略——逐字段保留选择；tags 恒并集、workspace 恒取
+         *     primary（规格固定，不进 policy）。
+         */
+        MergePolicy: {
+            /**
+             * Note
+             * @default primary
+             */
+            note: string;
+            /**
+             * Title
+             * @default primary
+             */
+            title: string;
+        };
+        /** MergePreviewRequest */
+        MergePreviewRequest: {
+            /** Duplicateref */
+            duplicateRef: string;
+            /** Primaryref */
+            primaryRef: string;
+        };
+        /** MergePreviewResponse */
+        MergePreviewResponse: {
+            /**
+             * Annotationcount
+             * @default 0
+             */
+            annotationCount: number;
+            /**
+             * Assetuuids
+             * @default []
+             */
+            assetUuids: string[];
+            /** Duplicateref */
+            duplicateRef: string;
+            /** Fields */
+            fields: components["schemas"]["MergeFieldCompare"][];
+            /** Primaryref */
+            primaryRef: string;
+        };
+        /** MergeRequest */
+        MergeRequest: {
+            /** Duplicateref */
+            duplicateRef: string;
+            policy?: components["schemas"]["MergePolicy"];
+            /** Primaryref */
+            primaryRef: string;
+        };
+        /** MergeResult */
+        MergeResult: {
+            /** Mergedref */
+            mergedRef: string;
+            /**
+             * Movedannotations
+             * @default 0
+             */
+            movedAnnotations: number;
+            /** Removedref */
+            removedRef: string;
+            /**
+             * Tagsunion
+             * @default []
+             */
+            tagsUnion: string[];
+            /**
+             * Trashed
+             * @default true
+             */
+            trashed: boolean;
+        };
+        /**
+         * NoteImportFile
+         * @description F020：一个待入库的 Markdown 文件。
+         */
+        NoteImportFile: {
+            /** Content */
+            content: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * NoteImportRequest
+         * @description POST /api/v1/library/notes/import — 逐文件校验、逐项汇报。
+         */
+        NoteImportRequest: {
+            /** Files */
+            files: components["schemas"]["NoteImportFile"][];
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /** NoteImportResult */
+        NoteImportResult: {
+            /**
+             * Imported
+             * @default 0
+             */
+            imported: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["NoteImportResultItem"][];
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+        };
+        /** NoteImportResultItem */
+        NoteImportResultItem: {
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Uuid */
+            uuid?: string | null;
         };
         /**
          * NoteListResponse
@@ -5860,6 +9828,11 @@ export interface components {
             duplicates: number;
             /** Invalidentries */
             invalidEntries: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["OpmlImportPreviewItem"][];
             /** Newfeeds */
             newFeeds: number;
             /** Totalfeeds */
@@ -5876,6 +9849,27 @@ export interface components {
             label: string;
         };
         /**
+         * OpmlImportPreviewItem
+         * @description F002：逐项预览行（status: new|duplicate|invalid|category_conflict）。
+         */
+        OpmlImportPreviewItem: {
+            /** Category */
+            category?: string | null;
+            /** Index */
+            index: number;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Xmlurl */
+            xmlUrl: string;
+        };
+        /**
          * OpmlImportResult
          * @description POST /api/v1/opml/import (merge-only: duplicates are never touched).
          */
@@ -5888,6 +9882,23 @@ export interface components {
             duplicates: components["schemas"]["OpmlImportDuplicate"][];
             /** Failed */
             failed: components["schemas"]["OpmlImportFailed"][];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: components["schemas"]["OpmlImportSkipped"][];
+        };
+        /**
+         * OpmlImportSkipped
+         * @description F002：一个未参与导入的条目（诚实汇报跳过原因）。
+         */
+        OpmlImportSkipped: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Reason */
+            reason: string;
+            /** Title */
+            title: string;
         };
         /**
          * PasswordChangeRequest
@@ -5900,6 +9911,131 @@ export interface components {
             newPassword: string;
         };
         /**
+         * PoolAddBody
+         * @description POST …/pool 体：一条读者条目引用（rss: 前缀）。
+         */
+        PoolAddBody: {
+            /** Entryref */
+            entryRef: string;
+        };
+        /**
+         * PoolReorderBody
+         * @description PATCH …/pool 体：全量提交后的 id 顺序。
+         */
+        PoolReorderBody: {
+            /** Orderedids */
+            orderedIds: number[];
+        };
+        /** QaTemplate */
+        QaTemplate: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * QaTemplateCreate
+         * @description POST /api/v1/qa-templates body。
+         */
+        QaTemplateCreate: {
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
+        };
+        /** QaTemplateList */
+        QaTemplateList: {
+            /** Items */
+            items: components["schemas"]["QaTemplate"][];
+        };
+        /**
+         * QaTemplateUpdate
+         * @description PATCH /api/v1/qa-templates/{id} body（重命名 + 可选改文本）。
+         */
+        QaTemplateUpdate: {
+            /** Name */
+            name: string;
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * QuizGenerateBody
+         * @description POST /api/v1/entries/{ref}/quiz body。
+         */
+        QuizGenerateBody: {
+            /**
+             * Count
+             * @default 3
+             */
+            count: number;
+        };
+        /**
+         * QuizGradeBody
+         * @description POST /api/v1/quiz/{id}/grade body：按题序作答的下标（可缺省=未答）。
+         */
+        QuizGradeBody: {
+            /**
+             * Answers
+             * @default []
+             */
+            answers: (number | null)[];
+        };
+        /** QuizGradeItem */
+        QuizGradeItem: {
+            /** Answerindex */
+            answerIndex: number;
+            /** Chosen */
+            chosen: number | null;
+            /** Correct */
+            correct: boolean;
+            /** Evidencequote */
+            evidenceQuote: string;
+            /** Explanation */
+            explanation: string;
+            /** Index */
+            index: number;
+        };
+        /** QuizGradeResult */
+        QuizGradeResult: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["QuizGradeItem"][];
+            /** Quizid */
+            quizId: string;
+        };
+        /**
+         * QuizQuestionView
+         * @description 对外题目视图：绝不含答案/解析/证据字段。
+         */
+        QuizQuestionView: {
+            /** Index */
+            index: number;
+            /** Options */
+            options: string[];
+            /** Question */
+            question: string;
+        };
+        /** QuizSessionView */
+        QuizSessionView: {
+            /** Entryref */
+            entryRef: string;
+            /**
+             * Questions
+             * @default []
+             */
+            questions: components["schemas"]["QuizQuestionView"][];
+            /** Quizid */
+            quizId: string;
+        };
+        /**
          * RagEnableResult
          * @description Explicit model-enable acknowledgement.
          */
@@ -5908,28 +10044,115 @@ export interface components {
             enabled: boolean;
         };
         /**
+         * RagExclusionItem
+         * @description F091 单来源索引排除状态（含受影响分块计数预览）。
+         */
+        RagExclusionItem: {
+            /**
+             * Affectedchunks
+             * @default 0
+             */
+            affectedChunks: number;
+            /** Aidisabled */
+            aiDisabled: boolean;
+            /** Feedurl */
+            feedUrl: string;
+            /** Ragexcluded */
+            ragExcluded: boolean;
+        };
+        /** RagExclusionList */
+        RagExclusionList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RagExclusionItem"][];
+        };
+        /** RagExclusionPut */
+        RagExclusionPut: {
+            /** Excluded */
+            excluded: boolean;
+            /** Feedref */
+            feedRef: string;
+        };
+        /**
+         * RagInconsistencyItem
+         * @description F100 版本失配条目（basis: content_hash | embedding_model）。
+         */
+        RagInconsistencyItem: {
+            /** Basis */
+            basis: string;
+            /** Currenthash */
+            currentHash?: string | null;
+            /** Ref */
+            ref: string;
+            /** Storedhash */
+            storedHash?: string | null;
+        };
+        /** RagInconsistencyList */
+        RagInconsistencyList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RagInconsistencyItem"][];
+            /** Modelid */
+            modelId: string;
+        };
+        /**
          * RagRebuildResult
-         * @description Bounded rebuild report.
+         * @description Bounded rebuild report（F093 起为作业感知：jobId/status）。
          */
         RagRebuildResult: {
             /** Chunks */
             chunks: number;
             /** Elapsedms */
             elapsedMs: number;
+            /** Jobid */
+            jobId?: string | null;
+            /** Status */
+            status?: string | null;
+        };
+        /** RagRepairRequest */
+        RagRepairRequest: {
+            /** Refs */
+            refs: string[];
+        };
+        /** RagRepairResult */
+        RagRepairResult: {
+            /**
+             * Failed
+             * @default []
+             */
+            failed: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Repaired
+             * @default []
+             */
+            repaired: string[];
         };
         /**
          * RagSearchItem
          * @description One fused retrieval hit (ref resolves to real content).
+         *
+         *     F092：title/modelId 为后端如实返回；score 缺失时前端显示「—」
+         *     绝不编造百分比。
          */
         RagSearchItem: {
             /** Kind */
             kind: string;
+            /** Modelid */
+            modelId?: string | null;
             /** Ref */
             ref: string;
             /** Score */
             score: number;
             /** Text */
             text: string;
+            /** Title */
+            title?: string | null;
         };
         /**
          * RagSearchResponse
@@ -6058,6 +10281,67 @@ export interface components {
             status: "ok" | "unavailable";
         };
         /**
+         * ReadingProgressPut
+         * @description PUT /api/v1/reading-progress body。
+         */
+        ReadingProgressPut: {
+            /**
+             * Devicelabel
+             * @default
+             */
+            deviceLabel: string;
+            /** Entryref */
+            entryRef: string;
+            /** Paraid */
+            paraId: string;
+            /** Pct */
+            pct: number;
+        };
+        /**
+         * RelationCreate
+         * @description POST /api/v1/relations body.
+         */
+        RelationCreate: {
+            /** Dstref */
+            dstRef: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Srcref */
+            srcRef: string;
+        };
+        /** RelationList */
+        RelationList: {
+            /** Items */
+            items: components["schemas"]["RelationView"][];
+        };
+        /**
+         * RelationView
+         * @description One manual relation with BOTH ends resolved; ``stale`` is true when
+         *     either end no longer resolves (the relation itself is kept).
+         */
+        RelationView: {
+            /** Createdat */
+            createdAt: string;
+            dst: components["schemas"]["ResolvedRefView"];
+            /** Dstref */
+            dstRef: string;
+            /** Id */
+            id: number;
+            /** Note */
+            note: string;
+            src: components["schemas"]["ResolvedRefView"];
+            /** Srcref */
+            srcRef: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
+        /**
          * RemoteBackup
          * @description One backup archive on WebDAV (flat name + size, no secret values).
          */
@@ -6074,6 +10358,14 @@ export interface components {
         RemoteBackupsResponse: {
             /** Backups */
             backups: components["schemas"]["RemoteBackup"][];
+        };
+        /**
+         * ResearchPackPreviewRequest
+         * @description F088 资料包预览（可选纳入快照资产）。
+         */
+        ResearchPackPreviewRequest: {
+            /** Includesnapshots */
+            includeSnapshots?: string[];
         };
         /**
          * ResearchPackRequest
@@ -6116,6 +10408,35 @@ export interface components {
             payload: {
                 [key: string]: unknown;
             };
+            /** Ref */
+            ref: string;
+            /** Source */
+            source: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Stalereason */
+            staleReason?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * ResolvedRefView
+         * @description Relation end resolved through the source registry (stale-safe).
+         */
+        ResolvedRefView: {
+            /** Datetime */
+            datetime?: string | null;
+            /** Domain */
+            domain: string;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Kind */
+            kind: string;
             /** Ref */
             ref: string;
             /** Source */
@@ -6230,6 +10551,24 @@ export interface components {
             lumiRestored: boolean;
             /** Safetybackupid */
             safetyBackupId?: string | null;
+        };
+        /**
+         * ReviewQueueAdd
+         * @description POST /api/v1/review-queue body。
+         */
+        ReviewQueueAdd: {
+            /** Annotationid */
+            annotationId: string;
+            /** Dueat */
+            dueAt: string;
+        };
+        /**
+         * ReviewQueuePostpone
+         * @description POST /api/v1/review-queue/{id}/postpone body。
+         */
+        ReviewQueuePostpone: {
+            /** Dueat */
+            dueAt: string;
         };
         /**
          * RssHubCatalog
@@ -6428,6 +10767,26 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** SaveAsTemplateRequest */
+        SaveAsTemplateRequest: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * SavedSearchCount
+         * @description GET …/views/{id}/count — 服务端真实计数（有界）。
+         */
+        SavedSearchCount: {
+            /**
+             * Capped
+             * @default false
+             */
+            capped: boolean;
+            /** Count */
+            count: number;
+            /** Error */
+            error?: string | null;
+        };
         /**
          * SavedSearchCreate
          * @description POST /api/v1/search/views.
@@ -6438,6 +10797,10 @@ export interface components {
              * @default
              */
             categoryKey: string;
+            /** Filters */
+            filters?: {
+                [key: string]: string | boolean | null;
+            } | null;
             /** Name */
             name: string;
             /** Query */
@@ -6455,6 +10818,14 @@ export interface components {
         SavedSearchList: {
             /** Items */
             items: components["schemas"]["SavedSearchView"][];
+        };
+        /**
+         * SavedSearchPinOrder
+         * @description PATCH …/views/{id}/pin-order body。
+         */
+        SavedSearchPinOrder: {
+            /** Pinorder */
+            pinOrder: number;
         };
         /**
          * SavedSearchRename
@@ -6477,10 +10848,26 @@ export interface components {
             categoryKey: string;
             /** Createdat */
             createdAt: string;
+            /** Filters */
+            filters?: {
+                [key: string]: string | boolean | null;
+            } | null;
+            /**
+             * Hasfeedtoken
+             * @default false
+             */
+            hasFeedToken: boolean;
             /** Id */
             id: string;
             /** Name */
             name: string;
+            /** Pinorder */
+            pinOrder?: number | null;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
             /** Query */
             query: string;
             /** Updatedat */
@@ -6490,6 +10877,68 @@ export interface components {
              * @default all
              */
             view: string;
+        };
+        /**
+         * SearchExportBody
+         * @description POST /api/v1/search/export body：与 GET /search 同参 + 导出选项。
+         */
+        SearchExportBody: {
+            /**
+             * Cap
+             * @default 500
+             */
+            cap: number;
+            /** Categoryid */
+            categoryId?: string | null;
+            /**
+             * Dryrun
+             * @default false
+             */
+            dryRun: boolean;
+            /**
+             * Excerptchars
+             * @default 160
+             */
+            excerptChars: number;
+            /** Exclude */
+            exclude?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /**
+             * Fields
+             * @default [
+             *       "title",
+             *       "source",
+             *       "date",
+             *       "url"
+             *     ]
+             */
+            fields: ("title" | "source" | "date" | "url" | "excerpt")[];
+            /**
+             * Format
+             * @default csv
+             * @enum {string}
+             */
+            format: "csv" | "markdown";
+            /** From */
+            from?: string | null;
+            /** Hassummary */
+            hasSummary?: boolean | null;
+            /** Intitle */
+            intitle?: string | null;
+            /** Phrase */
+            phrase?: string | null;
+            /** Q */
+            q: string;
+            /** State */
+            state?: string | null;
+            /** To */
+            to?: string | null;
         };
         /**
          * SearchIndexInfo
@@ -6522,6 +10971,10 @@ export interface components {
             feedTitle: string;
             /** Feedurl */
             feedUrl: string;
+            /** Matchpositions */
+            matchPositions?: {
+                [key: string]: string | number;
+            }[] | null;
             /** Matchedfields */
             matchedFields: string[];
             /** Publishedat */
@@ -6591,6 +11044,31 @@ export interface components {
         SecretValuePut: {
             /** Value */
             value: string;
+        };
+        /**
+         * SegmentRevisionBody
+         * @description PUT …/translation/segments/{index}/revision body（F062）。
+         */
+        SegmentRevisionBody: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * SegmentRevisionResult
+         * @description F062：修订保存/撤销后的该段修订态。
+         */
+        SegmentRevisionResult: {
+            /** Index */
+            index: number;
+            /** Revisedat */
+            revisedAt?: string | null;
+            /**
+             * Revisionstale
+             * @default false
+             */
+            revisionStale: boolean;
+            /** Userrevision */
+            userRevision?: string | null;
         };
         /**
          * SettingsHistoryEntry
@@ -6709,6 +11187,43 @@ export interface components {
             /** Candidates */
             candidates: components["schemas"]["DiscoveryCandidate"][];
         };
+        /** SourceNotesList */
+        SourceNotesList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceNotesView"][];
+        };
+        /**
+         * SourceNotesUpdate
+         * @description PATCH /api/v1/subscriptions/{ref}/notes — sentinel：缺席=不改，
+         *     null=清空，字符串=覆盖原文（有界截断）。
+         */
+        SourceNotesUpdate: {
+            /** Maintenancelog */
+            maintenanceLog?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * SourceNotesView
+         * @description F005：一个订阅的备注/理由/维护记录（原文存储，渲染转义）。
+         */
+        SourceNotesView: {
+            /** Maintenancelog */
+            maintenanceLog?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Subscriptionref */
+            subscriptionRef: string;
+            /** Updatedat */
+            updatedAt?: string | null;
+        };
         /** SourceOverrideList */
         SourceOverrideList: {
             /**
@@ -6719,15 +11234,31 @@ export interface components {
         };
         /**
          * SourceOverrideResult
-         * @description F11/F13：单个来源的显示覆盖（null = 该维度未启用）。
+         * @description F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。
          */
         SourceOverrideResult: {
+            /**
+             * Aidisabled
+             * @default false
+             */
+            aiDisabled: boolean;
+            /**
+             * Extractpolicy
+             * @default rss
+             */
+            extractPolicy: string;
             /** Feedurl */
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Readerstyle */
+            readerStyle?: {
+                [key: string]: unknown;
+            } | null;
             /** Showfrom */
             showFrom?: string | null;
+            /** Stalealerthours */
+            staleAlertHours?: number | null;
             /**
              * Updatedat
              * @default
@@ -6739,12 +11270,22 @@ export interface components {
          * @description PUT /api/v1/sources/overrides — sentinel：缺席=不改，null=清除。
          */
         SourceOverrideUpdate: {
+            /** Aidisabled */
+            aiDisabled?: boolean | null;
+            /** Extractpolicy */
+            extractPolicy?: string | null;
             /** Feedurl */
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Readerstyle */
+            readerStyle?: {
+                [key: string]: unknown;
+            } | null;
             /** Showfrom */
             showFrom?: string | null;
+            /** Stalealerthours */
+            staleAlertHours?: number | null;
         };
         /**
          * SourceRegistryEntry
@@ -6774,6 +11315,51 @@ export interface components {
             generatedAt: string;
             /** Sources */
             sources: components["schemas"]["SourceRegistryEntry"][];
+        };
+        /**
+         * StaleSourceItem
+         * @description F001：一个超期来源（basis 诚实标注判定依据，绝不把发布时间
+         *     冒充抓取成功；无条目投影的来源 basis=unknown 且不判超期）。
+         */
+        StaleSourceItem: {
+            /** Agehours */
+            ageHours?: number | null;
+            /**
+             * Basis
+             * @default latest_entry
+             */
+            basis: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Lastactivityat */
+            lastActivityAt?: string | null;
+            /** Stalealerthours */
+            staleAlertHours: number;
+            /** Subscriptionref */
+            subscriptionRef?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /** StaleSourcesResponse */
+        StaleSourcesResponse: {
+            /**
+             * Checked
+             * @default 0
+             */
+            checked: number;
+            /**
+             * Generatedat
+             * @default
+             */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["StaleSourceItem"][];
         };
         /**
          * StorageUsage
@@ -6833,6 +11419,14 @@ export interface components {
             title?: string | null;
         };
         /**
+         * SubscriptionMigrate
+         * @description POST /api/v1/subscriptions/{ref}/migrate body (F044).
+         */
+        SubscriptionMigrate: {
+            /** Newurl */
+            newUrl: string;
+        };
+        /**
          * SubscriptionPatch
          * @description PATCH /api/v1/subscriptions/{ref} body: move to another category.
          *
@@ -6881,6 +11475,51 @@ export interface components {
             items: components["schemas"]["SubscriptionVolumeItem"][];
             /** Since */
             since: string;
+        };
+        /**
+         * SummaryScopeBody
+         * @description POST …/summary 可选体：F025 输入范围（512–50000 字符）。
+         */
+        SummaryScopeBody: {
+            /** Maxchars */
+            maxChars?: number | null;
+        };
+        /** SummaryVersionView */
+        SummaryVersionView: {
+            /** Createdat */
+            createdAt: string;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Summary */
+            summary: string;
+            /** Versionid */
+            versionId: string;
+        };
+        /** SynonymBody */
+        SynonymBody: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Expansions */
+            expansions: string[];
+            /** Term */
+            term: string;
+        };
+        /** SynonymPatch */
+        SynonymPatch: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Expansions */
+            expansions?: string[] | null;
+        };
+        /** SynonymPreviewBody */
+        SynonymPreviewBody: {
+            /** Q */
+            q: string;
         };
         /**
          * TagAssignRequest
@@ -7077,6 +11716,13 @@ export interface components {
             failureType?: string | null;
             /** Index */
             index: number;
+            /** Revisedat */
+            revisedAt?: string | null;
+            /**
+             * Revisionstale
+             * @default false
+             */
+            revisionStale: boolean;
             /**
              * Status
              * @enum {string}
@@ -7084,6 +11730,8 @@ export interface components {
             status: "success" | "failed" | "not_generated";
             /** Translatedtext */
             translatedText?: string | null;
+            /** Userrevision */
+            userRevision?: string | null;
         };
         /**
          * TranslationSegmentsBody
@@ -7092,6 +11740,11 @@ export interface components {
         TranslationSegmentsBody: {
             /** Blocks */
             blocks: components["schemas"]["TranslationSegmentBlockIn"][];
+            /**
+             * Overwriterevisions
+             * @default false
+             */
+            overwriteRevisions: boolean;
         };
         /**
          * TranslationSegmentsView
@@ -7108,6 +11761,31 @@ export interface components {
             /** Targetlanguage */
             targetLanguage: string;
         };
+        /**
+         * TrashItem
+         * @description F019：回收站条目（kind: bookmark | clip）。30 天过期由既有清理
+         *     机制承担；当前若无调度器则仅在文档标注，不新建调度器。
+         */
+        TrashItem: {
+            /** Deletedat */
+            deletedAt: string;
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+            /** Uuid */
+            uuid: string;
+        };
+        /** TrashList */
+        TrashList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["TrashItem"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -7120,6 +11798,62 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * ViewCompareBody
+         * @description POST /api/v1/search/views/compare body（F075）。
+         */
+        ViewCompareBody: {
+            /** Aid */
+            aId: string;
+            /** Bid */
+            bId: string;
+        };
+        /** ViewCompareResult */
+        ViewCompareResult: {
+            /**
+             * Common
+             * @default []
+             */
+            common: string[];
+            /**
+             * Complete
+             * @default true
+             */
+            complete: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Onlya
+             * @default []
+             */
+            onlyA: string[];
+            /**
+             * Onlyb
+             * @default []
+             */
+            onlyB: string[];
+        };
+        /**
+         * ViewFeedTokenResult
+         * @description F061：启用/轮换私有 Atom 订阅的响应。
+         *
+         *     ``atomPath`` 是带 secret 的完整路径，仅在此响应中出现一次；
+         *     之后只显示"已隐藏，可轮换"。
+         */
+        ViewFeedTokenResult: {
+            /** Atompath */
+            atomPath: string;
+            /**
+             * Hasfeedtoken
+             * @default true
+             */
+            hasFeedToken: boolean;
         };
         /**
          * WebDavSettingsPut
@@ -7182,6 +11916,13 @@ export interface components {
          */
         Workspace: {
             /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /** Archivedat */
+            archivedAt?: string | null;
+            /**
              * Description
              * @default
              */
@@ -7197,6 +11938,16 @@ export interface components {
             /** Reserved */
             reserved: boolean;
         };
+        /** WorkspaceBoardResponse */
+        WorkspaceBoardResponse: {
+            /**
+             * Columns
+             * @default []
+             */
+            columns: components["schemas"]["BoardColumn"][];
+            /** Workspaceid */
+            workspaceId: string;
+        };
         /**
          * WorkspaceCreate
          * @description POST /api/v1/workspaces.
@@ -7206,6 +11957,27 @@ export interface components {
             description?: string | null;
             /** Name */
             name: string;
+        };
+        /** WorkspaceFromTemplateResult */
+        WorkspaceFromTemplateResult: {
+            /**
+             * Addedexamplerefs
+             * @default []
+             */
+            addedExampleRefs: string[];
+            /**
+             * Skippedexamplerefs
+             * @default []
+             */
+            skippedExampleRefs: string[];
+            workspace: components["schemas"]["Workspace"];
+        };
+        /** WorkspaceGoalPut */
+        WorkspaceGoalPut: {
+            /** Deadline */
+            deadline?: string | null;
+            /** Targetcount */
+            targetCount: number;
         };
         /**
          * WorkspaceItem
@@ -7252,14 +12024,18 @@ export interface components {
             items: components["schemas"]["Workspace"][];
         };
         /**
-         * WorkspaceRename
-         * @description PATCH /api/v1/workspaces/{id}（description 缺省 = 不修改说明）。
+         * WorkspacePatch
+         * @description PATCH /api/v1/workspaces/{id}（F084 扩展：archive/restore）。
+         *
+         *     name/description 缺省 = 不修改；archived=True 归档、False 恢复。
          */
-        WorkspaceRename: {
+        WorkspacePatch: {
+            /** Archived */
+            archived?: boolean | null;
             /** Description */
             description?: string | null;
             /** Name */
-            name: string;
+            name?: string | null;
         };
         /**
          * WorkspaceReorderRequest
@@ -7268,6 +12044,33 @@ export interface components {
         WorkspaceReorderRequest: {
             /** Itemrefs */
             itemRefs: string[];
+        };
+        /**
+         * WorkspaceTemplate
+         * @description F083 工作区模板（config 不含条目内容/凭据）。
+         */
+        WorkspaceTemplate: {
+            /**
+             * Config
+             * @default {}
+             */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** WorkspaceTemplateList */
+        WorkspaceTemplateList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceTemplate"][];
         };
     };
     responses: never;
@@ -7349,6 +12152,37 @@ export interface operations {
             };
         };
     };
+    search_threads_api_v1_agent_threads_search_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_thread_api_v1_agent_threads__thread_id__delete: {
         parameters: {
             query?: never;
@@ -7378,6 +12212,41 @@ export interface operations {
             };
         };
     };
+    update_thread_settings_api_v1_agent_threads__thread_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentThreadUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     decide_approval_api_v1_agent_threads__thread_id__approvals_post: {
         parameters: {
             query?: never;
@@ -7390,6 +12259,73 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AgentApprovalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_approval_api_v1_agent_threads__thread_id__approvals__approval_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    branch_thread_api_v1_agent_threads__thread_id__branch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentBranchRequest"];
             };
         };
         responses: {
@@ -7477,6 +12413,40 @@ export interface operations {
             };
         };
     };
+    export_thread_api_v1_agent_threads__thread_id__export_get: {
+        parameters: {
+            query?: {
+                rounds?: number;
+                format?: string;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_messages_api_v1_agent_threads__thread_id__messages_get: {
         parameters: {
             query?: {
@@ -7527,6 +12497,233 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_ai_tasks_api_v1_ai_tasks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_ai_task_api_v1_ai_tasks__task_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_annotations_api_v1_annotations_get: {
+        parameters: {
+            query?: {
+                entryRef?: string | null;
+                q?: string | null;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_annotation_api_v1_annotations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_annotations_api_v1_annotations_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_annotation_api_v1_annotations__annotation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_annotation_api_v1_annotations__annotation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7695,6 +12892,37 @@ export interface operations {
             };
         };
     };
+    confirm_schema_api_v1_api_sources__source_uuid__confirm_schema_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceConfirmSchemaResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -7821,6 +13049,204 @@ export interface operations {
             };
         };
     };
+    list_auth_sessions_api_v1_auth_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    revoke_auth_session_api_v1_auth_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_authors_api_v1_authors_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_author_aliases_api_v1_authors_aliases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorAliasList"];
+                };
+            };
+        };
+    };
+    create_author_alias_api_v1_authors_aliases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorAliasCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorAlias"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_author_alias_api_v1_authors_aliases__alias__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    author_items_api_v1_authors_items_get: {
+        parameters: {
+            query: {
+                author: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorItemsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_backups_api_v1_backups_get: {
         parameters: {
             query?: never;
@@ -7890,6 +13316,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackupCapabilities"];
+                };
+            };
+        };
+    };
+    compare_backups_api_v1_backups_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupCompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8185,6 +13646,7 @@ export interface operations {
                 sourceType?: string | null;
                 categoryId?: string | null;
                 cursor?: string | null;
+                includeHidden?: boolean;
             };
             header?: never;
             path?: never;
@@ -8212,9 +13674,143 @@ export interface operations {
             };
         };
     };
-    entry_detail_api_v1_entries__entry_ref__get: {
+    ask_batch_entries_api_v1_entries_ask_batch_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskBatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskBatchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_apply_api_v1_entries_backlog_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacklogApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_preview_api_v1_entries_backlog_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacklogPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_entries_api_v1_entries_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompareResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_detail_api_v1_entries__entry_ref__get: {
+        parameters: {
+            query?: {
+                extractOnce?: boolean;
+            };
             header?: never;
             path: {
                 entry_ref: string;
@@ -8309,6 +13905,144 @@ export interface operations {
             };
         };
     };
+    glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_knowledge_cards_api_v1_entries__entry_ref__knowledge_cards_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardPreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_knowledge_cards_api_v1_entries__entry_ref__knowledge_cards_save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardSaveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardSaveResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_entry_quiz_api_v1_entries__entry_ref__quiz_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizGenerateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     entry_state_api_v1_entries__entry_ref__state_patch: {
         parameters: {
             query?: never;
@@ -8359,7 +14093,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EntrySummary"];
+                    "application/json": components["schemas"]["EntrySummaryVersions"];
                 };
             };
             /** @description Validation Error */
@@ -8382,6 +14116,42 @@ export interface operations {
             };
             cookie?: never;
         };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SummaryScopeBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntrySummaryVersions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_summary_version_api_v1_entries__entry_ref__summary_versions__version_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
@@ -8390,7 +14160,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EntrySummary"];
+                    "application/json": components["schemas"]["EntrySummaryVersions"];
                 };
             };
             /** @description Validation Error */
@@ -8571,6 +14341,72 @@ export interface operations {
             };
         };
     };
+    put_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SegmentRevisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentRevisionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_lumi_data_api_v1_export_lumi_data_get: {
         parameters: {
             query?: never;
@@ -8661,6 +14497,165 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rules_api_v1_feed_filter_rules_get: {
+        parameters: {
+            query?: {
+                feedUrl?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedFilterRuleList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rule_api_v1_feed_filter_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedFilterRuleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedFilterRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trial_rule_api_v1_feed_filter_rules_trial_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedFilterRuleTrial"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedFilterRuleTrialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rule_api_v1_feed_filter_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rule_api_v1_feed_filter_rules__rule_id__patch: {
+        parameters: {
+            query?: {
+                enabled?: boolean | null;
+            };
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedFilterRule"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -8798,6 +14793,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GlossaryTerm"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_glossary_api_v1_glossary_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    import_glossary_api_v1_glossary_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlossaryImportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryImportResult"];
                 };
             };
             /** @description Validation Error */
@@ -9032,7 +15080,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DigestTargetDateBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -9219,9 +15271,213 @@ export interface operations {
             };
         };
     };
-    preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get: {
+    publish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__publish_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    missing_digest_dates_api_v1_gpt_digest_configs__config_id__missing_dates_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_digest_pool_api_v1_gpt_digest_configs__config_id__pool_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_digest_pool_entry_api_v1_gpt_digest_configs__config_id__pool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolAddBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_digest_pool_api_v1_gpt_digest_configs__config_id__pool_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolReorderBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_digest_pool_entry_api_v1_gpt_digest_configs__config_id__pool__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_config_digest_api_v1_gpt_digest_configs__config_id__preview_get: {
+        parameters: {
+            query?: {
+                putBack?: string[] | null;
+            };
             header?: never;
             path: {
                 config_id: number;
@@ -9303,7 +15559,9 @@ export interface operations {
     };
     rotate_gpt_digest_feed_api_v1_gpt_digest_feed_rotate_post: {
         parameters: {
-            query?: never;
+            query?: {
+                dryRun?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9316,7 +15574,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GptDigestFeedInfo"];
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9477,6 +15744,154 @@ export interface operations {
             };
         };
     };
+    find_graph_path_api_v1_graph_path_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphPathBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_graph_views_api_v1_graph_views_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_graph_view_api_v1_graph_views_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphViewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_graph_view_api_v1_graph_views__view_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replay_inbox_event_api_v1_inbox_events__event_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ingest_inbox_item_api_v1_inbox_ingest__source_uuid__post: {
         parameters: {
             query?: never;
@@ -9578,6 +15993,189 @@ export interface operations {
             };
         };
     };
+    list_inbox_rules_api_v1_inbox_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxRuleList"];
+                };
+            };
+        };
+    };
+    create_inbox_rule_api_v1_inbox_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxRuleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_inbox_rule_api_v1_inbox_rules_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxRuleDryRun"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxRuleDryRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_inbox_rule_api_v1_inbox_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_inbox_rule_api_v1_inbox_rules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxRuleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_inbox_rule_api_v1_inbox_rules__rule_id__move_post: {
+        parameters: {
+            query?: {
+                direction?: string;
+            };
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxRule"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_inbox_sources_api_v1_inbox_sources_get: {
         parameters: {
             query?: never;
@@ -9664,6 +16262,74 @@ export interface operations {
             };
         };
     };
+    list_inbox_events_api_v1_inbox_sources__source_uuid__events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_inbox_ingest_api_v1_inbox_sources__source_uuid__ingest_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rotate_inbox_source_secret_api_v1_inbox_sources__source_uuid__rotate_post: {
         parameters: {
             query?: never;
@@ -9695,6 +16361,66 @@ export interface operations {
             };
         };
     };
+    list_knowledge_cards_api_v1_knowledge_cards_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeCardList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_knowledge_card_api_v1_knowledge_cards__card_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     serve_snapshot_api_v1_library_assets__asset_uuid__page_html_get: {
         parameters: {
             query?: never;
@@ -9713,6 +16439,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_edit_apply_api_v1_library_batch_edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchEditApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchEditApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_edit_preview_api_v1_library_batch_edit_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchEditPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchEditPreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9779,6 +16571,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Bookmark"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_bookmark_links_api_v1_library_bookmarks_check_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookmarkCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkCheckResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10085,6 +16910,503 @@ export interface operations {
             };
         };
     };
+    get_clip_full_api_v1_library_clips__item_uuid__full_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clip_blocks_api_v1_library_clips__item_uuid__revision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_clip_revision_api_v1_library_clips__item_uuid__revision_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_clip_revision_api_v1_library_clips__item_uuid__revision_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_duplicates_api_v1_library_duplicates_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_duplicates_api_v1_library_duplicates_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    confirm_duplicate_api_v1_library_duplicates__pair_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ignore_duplicate_api_v1_library_duplicates__pair_id__ignore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    whitelist_duplicate_api_v1_library_duplicates__pair_id__whitelist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_import_batches_api_v1_library_import_batches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_import_batch_api_v1_library_import_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_import_batch_api_v1_library_import_batches__batch_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_apply_api_v1_library_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_preview_api_v1_library_merge_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notes_api_v1_library_notes_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LumiNoteList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_note_api_v1_library_notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LumiNoteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LumiNoteDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_notes_by_entry_api_v1_library_notes_by_entry__entry_ref__get: {
         parameters: {
             query?: never;
@@ -10103,6 +17425,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BookmarkListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_notes_api_v1_library_notes_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_note_api_v1_library_notes__note_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LumiNoteDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_note_api_v1_library_notes__note_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_note_api_v1_library_notes__note_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LumiNoteUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LumiNoteDetail"];
                 };
             };
             /** @description Validation Error */
@@ -10169,12 +17619,305 @@ export interface operations {
             };
         };
     };
+    snapshot_detail_api_v1_library_snapshots__asset_uuid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_snapshot_api_v1_library_snapshots__asset_uuid__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_resources_api_v1_library_snapshots__asset_uuid__retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_snapshot_versions_api_v1_library_snapshots__asset_uuid__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_snapshot_version_api_v1_library_snapshots__asset_uuid__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_snapshot_version_api_v1_library_snapshots__asset_uuid__versions__version_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_snapshot_versions_api_v1_library_snapshots__asset_uuid__versions__version_id__diff_get: {
+        parameters: {
+            query?: {
+                against?: number;
+            };
+            header?: never;
+            path: {
+                asset_uuid: string;
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_trash_api_v1_library_trash_get: {
+        parameters: {
+            query?: {
+                type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_trash_item_api_v1_library_trash__item_uuid__delete: {
+        parameters: {
+            query?: {
+                permanent?: boolean;
+            };
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_trash_item_api_v1_library_trash__item_uuid__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
             };
             cookie?: never;
         };
@@ -10280,6 +18023,26 @@ export interface operations {
             };
         };
     };
+    backfill_mail_imap_api_v1_mail_imap_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     poll_mail_imap_api_v1_mail_imap_poll_post: {
         parameters: {
             query?: never;
@@ -10373,6 +18136,256 @@ export interface operations {
             };
         };
     };
+    mail_parse_debug_api_v1_mail_lists__list_uuid__messages__message_id__parse_debug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_thread_api_v1_mail_lists__list_uuid__messages__message_id__thread_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mail_rules_api_v1_mail_lists__list_uuid__rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mail_rule_api_v1_mail_lists__list_uuid__rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_mail_rule_api_v1_mail_lists__list_uuid__rules_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_mail_rule_api_v1_mail_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_mail_rule_api_v1_mail_rules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_mail_rule_api_v1_mail_rules__rule_id__move_post: {
+        parameters: {
+            query?: {
+                direction?: string;
+            };
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_notes_api_v1_obsidian_notes_get: {
         parameters: {
             query?: {
@@ -10423,6 +18436,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_note_backlinks_api_v1_obsidian_notes__note_uuid__backlinks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_note_broken_links_api_v1_obsidian_notes__note_uuid__broken_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10509,6 +18584,28 @@ export interface operations {
             };
         };
     };
+    operations_diagnostics_api_v1_operations_diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     operations_status_api_v1_operations_status_get: {
         parameters: {
             query?: never;
@@ -10529,9 +18626,45 @@ export interface operations {
             };
         };
     };
+    operations_timeline_api_v1_operations_timeline_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     opml_export_api_v1_opml_export_get: {
         parameters: {
-            query?: never;
+            query?: {
+                subscription_refs?: string[] | null;
+                category_ids?: string[] | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10547,11 +18680,22 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     opml_import_api_v1_opml_import_post: {
         parameters: {
-            query?: never;
+            query?: {
+                selected_indexes?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10565,6 +18709,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10585,6 +18738,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpmlImportPreview"];
+                };
+            };
+        };
+    };
+    list_qa_templates_api_v1_qa_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaTemplateList"];
+                };
+            };
+        };
+    };
+    create_qa_template_api_v1_qa_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_qa_template_api_v1_qa_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_qa_template_api_v1_qa_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grade_quiz_api_v1_quiz__quiz_id__grade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quiz_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizGradeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizGradeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10629,6 +18934,79 @@ export interface operations {
             };
         };
     };
+    rag_exclusions_api_v1_rag_exclusions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagExclusionList"];
+                };
+            };
+        };
+    };
+    put_rag_exclusion_api_v1_rag_exclusions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagExclusionPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagExclusionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_inconsistencies_api_v1_rag_inconsistencies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagInconsistencyList"];
+                };
+            };
+        };
+    };
     rag_rebuild_api_v1_rag_rebuild_post: {
         parameters: {
             query?: never;
@@ -10645,6 +19023,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagRebuildResult"];
+                };
+            };
+        };
+    };
+    rag_rebuild_pause_api_v1_rag_rebuild_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    rag_rebuild_resume_api_v1_rag_rebuild_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRebuildResult"];
+                };
+            };
+        };
+    };
+    rag_repair_api_v1_rag_repair_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagRepairRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagRepairResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10700,6 +19151,161 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    list_reading_progress_api_v1_reading_progress_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_reading_progress_api_v1_reading_progress_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingProgressPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_relations_api_v1_relations_get: {
+        parameters: {
+            query: {
+                itemRef: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelationList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_relation_api_v1_relations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RelationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_relation_api_v1_relations__relation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                relation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10790,6 +19396,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RestorePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_review_queue_api_v1_review_queue_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_review_queue_item_api_v1_review_queue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewQueueAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_review_queue_item_api_v1_review_queue__queue_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    postpone_review_queue_item_api_v1_review_queue__queue_id__postpone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewQueuePostpone"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -11223,6 +19959,8 @@ export interface operations {
                 intitle?: string | null;
                 phrase?: string | null;
                 exclude?: string | null;
+                hasSummary?: boolean | null;
+                expandSynonyms?: boolean;
             };
             header?: never;
             path?: never;
@@ -11237,6 +19975,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_search_results_api_v1_search_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchExportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -11266,6 +20037,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchRebuildResult"];
+                };
+            };
+        };
+    };
+    list_synonyms_api_v1_search_synonyms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_synonym_api_v1_search_synonyms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SynonymBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_synonyms_api_v1_search_synonyms_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SynonymPreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_synonym_api_v1_search_synonyms__synonym_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                synonym_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_synonym_api_v1_search_synonyms__synonym_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                synonym_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SynonymPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -11323,6 +20248,59 @@ export interface operations {
             };
         };
     };
+    compare_saved_search_views_api_v1_search_views_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewCompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewCompareResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pinned_views_api_v1_search_views_pinned_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchList"];
+                };
+            };
+        };
+    };
     delete_saved_search_view_api_v1_search_views__view_id__delete: {
         parameters: {
             query?: never;
@@ -11366,6 +20344,196 @@ export interface operations {
                 "application/json": components["schemas"]["SavedSearchRename"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    count_saved_search_view_api_v1_search_views__view_id__count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchCount"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_saved_search_view_api_v1_search_views__view_id__pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_pinned_view_api_v1_search_views__view_id__pin_order_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedSearchPinOrder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_view_feed_token_api_v1_search_views__view_id__token_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewFeedTokenResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_view_feed_token_api_v1_search_views__view_id__token_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewFeedTokenResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpin_saved_search_view_api_v1_search_views__view_id__unpin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -11783,6 +20951,28 @@ export interface operations {
             };
         };
     };
+    get_ai_quota_api_v1_settings_ai_quota_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     get_settings_history_api_v1_settings_history_get: {
         parameters: {
             query?: {
@@ -12053,6 +21243,37 @@ export interface operations {
             };
         };
     };
+    stale_sources_api_v1_sources_stale_get: {
+        parameters: {
+            query?: {
+                threshold?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleSourcesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     subscription_volume_api_v1_sources_volume_get: {
         parameters: {
             query?: {
@@ -12080,6 +21301,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_storage_retention_api_v1_storage_retention_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_storage_retention_api_v1_storage_retention_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apply_storage_retention_api_v1_storage_retention_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    preview_storage_retention_api_v1_storage_retention_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -12157,6 +21466,123 @@ export interface operations {
             };
         };
     };
+    batch_move_subscriptions_api_v1_subscriptions_batch_move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchMoveResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_suspects_api_v1_subscriptions_duplicate_suspects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateSuspectsResponse"];
+                };
+            };
+        };
+    };
+    health_check_api_v1_subscriptions_health_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HealthCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_notes_api_v1_subscriptions_notes_get: {
+        parameters: {
+            query?: {
+                note_search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceNotesList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_subscription_api_v1_subscriptions__subscription_ref__delete: {
         parameters: {
             query?: never;
@@ -12207,6 +21633,107 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    migrate_subscription_api_v1_subscriptions__subscription_ref__migrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionMigrate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_notes_api_v1_subscriptions__subscription_ref__notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceNotesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_notes_api_v1_subscriptions__subscription_ref__notes_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceNotesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceNotesView"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -12661,6 +22188,75 @@ export interface operations {
             };
         };
     };
+    list_archived_workspaces_api_v1_workspace_archive_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown[];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_workspace_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTemplateList"];
+                };
+            };
+        };
+    };
+    delete_template_api_v1_workspace_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspaces_api_v1_workspaces_get: {
         parameters: {
             query?: never;
@@ -12701,6 +22297,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_from_template_api_v1_workspaces_from_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FromTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceFromTemplateResult"];
                 };
             };
             /** @description Validation Error */
@@ -12902,7 +22531,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WorkspaceRename"];
+                "application/json": components["schemas"]["WorkspacePatch"];
             };
         };
         responses: {
@@ -12913,6 +22542,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_workspace_archive_api_v1_workspaces__workspace_id__archive_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspacePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_board_api_v1_workspaces__workspace_id__board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBoardResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_board_api_v1_workspaces__workspace_id__board_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -12947,6 +22677,101 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkspaceItemsResolvedResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_goal_api_v1_workspaces__workspace_id__goal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_goal_api_v1_workspaces__workspace_id__goal_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceGoalPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_goal_api_v1_workspaces__workspace_id__goal_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -13094,7 +22919,9 @@ export interface operations {
     };
     export_research_pack_api_v1_workspaces__workspace_id__research_pack_post: {
         parameters: {
-            query?: never;
+            query?: {
+                format?: string | null;
+            };
             header?: never;
             path: {
                 workspace_id: string;
@@ -13114,6 +22941,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_research_pack_api_v1_workspaces__workspace_id__research_pack_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchPackPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_as_template_api_v1_workspaces__workspace_id__save_as_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAsTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTemplate"];
                 };
             };
             /** @description Validation Error */
@@ -13164,6 +23061,38 @@ export interface operations {
             header?: never;
             path: {
                 list_uuid: string;
+                secret: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_view_atom_feeds_views__view_id___secret__atom_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
                 secret: string;
             };
             cookie?: never;

@@ -1,7 +1,23 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { EntryDetail } from '../api/types'
 import { renderArticleHtmlCached, sanitizeArticleHtmlCached } from '../lib/article-pipeline'
+import 'katex/dist/katex.min.css'
+import { readFootnoteDefinition } from '../lib/footnotes'
+import { getEntryExtractPreview } from '../api/client'
+import { Button } from './ui/Button'
+import { useMutation } from '@tanstack/react-query'
 import { deferImages } from '../lib/article-images'
+import {
+  blockRemoteImages,
+  decorateBlockedRemoteImages,
+} from '../lib/remote-images'
+import { attachExternalLinkMenu, CleanLinkPreviewDialog } from './CleanLinkCopy'
+import { WideTablePanel } from './WideTablePanel'
+import {
+  buildParaLink,
+  paraStableId,
+  takeParaTargetForEntry,
+} from '../lib/para-anchor'
 import { withHeadingIds } from '../lib/article-toc'
 import { decorateCodeCopyButtons } from '../lib/code-copy'
 import { TABLE_WIDE_EXTRA_PX } from '../lib/reader-tools'
@@ -51,6 +67,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // imagesAllowed 是单篇覆盖（点「加载图片」后恢复本篇的真实地址）。
   // Reader 按 entryRef 重挂载（既定架构），覆盖状态天然不跨文章泄漏。
   const imageMode = useAppSettings((s) => s.settings.readerImageMode)
+  // F009：默认不加载远程图片（本地/快照资源不受影响；单图点击恢复）
+  const blockRemote = useAppSettings((s) => s.settings.readerBlockRemoteImages)
   const [imagesAllowed, setImagesAllowed] = useState(false)
   useEffect(() => {
     setImagesAllowed(false)
@@ -59,12 +77,32 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // F14：图片灯箱状态；F16：表格展开面板状态。打开前保存滚动容器
   // scrollTop，关闭后还原（面板不改变正文阅读位置）。
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null)
+  // F059：脚注弹层状态（Escape 关闭；「返回引用」滚动回触发标记）。
+  const [footnotePopover, setFootnotePopover] = useState<{
+    number: string
+    html: string
+    returnSeq: string
+    anchor: HTMLElement
+  } | null>(null)
+  useEffect(() => {
+    if (footnotePopover === null) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFootnotePopover(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [footnotePopover])
   const [tablePanel, setTablePanel] = useState<{ table: HTMLTableElement } | null>(null)
   const savedScrollRef = useRef<number | null>(null)
   const lastImageRef = useRef<HTMLImageElement | null>(null)
-  const tableHostRef = useRef<HTMLDivElement | null>(null)
 
-  const rawHtml = detail.contentHtml ?? null
+  // F048：web 策略失败徽标 + 未启用策略时的单篇「试读」（临时预览，不改来源策略）。
+  const extractOnceMutation = useMutation({
+    mutationFn: () => getEntryExtractPreview(detail.entryRef),
+  })
+  const showExtractBadge = detail.extractionFailed === true
+  const rawHtml =
+    extractOnceMutation.data?.contentHtml ?? detail.contentHtml ?? null
   const hasHtml = rawHtml !== null && rawHtml.trim() !== ''
   // 同步初值：管线关闭时直接 sanitize（零额外开销）；开启时先渲染
   // sanitize 基线、transform 完成后替换——加载期间正文可见不空白。
@@ -100,6 +138,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       conversion,
       bionic,
       codeTheme: resolvedCodeTheme,
+      footnotes: true,
+      math: true,
     }).then((out) => {
       if (!cancelled) setHtml(out)
     })
@@ -123,11 +163,16 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     if (!hasHtml || html === '') return { html, toc: [], deferredImageCount: 0 }
     const withIds = withHeadingIds(html)
     if (imageMode !== 'hidden' || imagesAllowed) {
+      // F009：只拦截远程 http(s) 图（本地/快照/data:/blob: 原样保留）
+      if (blockRemote) {
+        const blocked = blockRemoteImages(withIds.html)
+        return { html: blocked.html, toc: withIds.toc, deferredImageCount: 0 }
+      }
       return { html: withIds.html, toc: withIds.toc, deferredImageCount: 0 }
     }
     const deferred = deferImages(withIds.html)
     return { html: deferred.html, toc: withIds.toc, deferredImageCount: deferred.imageCount }
-  }, [html, hasHtml, imageMode, imagesAllowed])
+  }, [html, hasHtml, imageMode, imagesAllowed, blockRemote])
 
   // dangerouslySetInnerHTML 的 props 对象必须引用稳定：内联字面量在每次
   // 渲染都是新对象，React 更新该宿主元素时会重设 innerHTML——渲染后
@@ -148,6 +193,87 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     const container = contentRef.current
     if (container === null || !hasHtml) return
     decorateCodeCopyButtons(container)
+    // F009：占位 img → 「加载本图」按钮（渲染后装饰，幂等）
+    decorateBlockedRemoteImages(container)
+    // F010：外链右键/长按菜单（复制链接 / 复制干净链接）
+    const cleanupMenu = attachExternalLinkMenu(container, (url, x, y) => {
+      setLinkMenu({ url, x, y })
+    })
+    return cleanupMenu
+  }, [htmlWithIds, hasHtml])
+
+  // F010：外链菜单与「复制干净链接」预览对话框状态
+  const [linkMenu, setLinkMenu] = useState<{ url: string; x: number; y: number } | null>(null)
+  const [cleanDialogUrl, setCleanDialogUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (linkMenu === null) return
+    const close = () => setLinkMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [linkMenu])
+
+  // F015：段落定位缺失提示（诚实：正文变化 → 不跳错段）
+  const [paraMissing, setParaMissing] = useState(false)
+
+  // F015：段落 id 注入 + hover「复制段落链接」装饰；消费段落定位目标
+  // （滚动 + 2.5s 高亮；目标段落不存在 → 诚实提示，不跳错段）。
+  useEffect(() => {
+    const container = contentRef.current
+    if (container === null || !hasHtml) return
+    const paragraphs = Array.from(container.querySelectorAll(':scope > p'))
+    paragraphs.forEach((p, index) => {
+      const text = (p.textContent ?? '').trim()
+      if (text === '') return
+      if (!p.id) p.id = paraStableId(text, index)
+      if (p.querySelector(':scope > button.lumi-para-link') !== null) return
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'lumi-para-link'
+      button.textContent = '复制段落链接'
+      button.setAttribute(
+        'aria-label',
+        '复制段落链接',
+      )
+      button.addEventListener('click', () => {
+        void navigator.clipboard
+          .writeText(buildParaLink(window.location.origin, detail.entryRef, p.id))
+          .catch(() => {})
+      })
+      p.appendChild(button)
+    })
+    const target = takeParaTargetForEntry(detail.entryRef)
+    if (target !== null) {
+      const el = container.querySelector(`#${CSS.escape(target)}`)
+      if (el !== null) {
+        el.scrollIntoView({ block: 'center' })
+        el.classList.add('lumi-para-highlight')
+        window.setTimeout(() => el.classList.remove('lumi-para-highlight'), 2500)
+      } else {
+        setParaMissing(true)
+        window.setTimeout(() => setParaMissing(false), 3000)
+      }
+    }
+  }, [htmlWithIds, hasHtml, detail.entryRef])
+
+  // F026：摘要证据定位（ReaderSummary 点击句子 → 此处定位 + 高亮 2s；
+  // 找不到由发起方显示诚实「未在原文定位」徽标，这里不做任何臆造）。
+  useEffect(() => {
+    const container = contentRef.current
+    if (container === null || !hasHtml) return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { sentence?: string } | null
+      const sentence = detail?.sentence
+      if (typeof sentence !== 'string' || sentence === '') return
+      import('../lib/locate-sentence').then(({ highlightSentenceInContainer }) => {
+        highlightSentenceInContainer(container, sentence)
+      }).catch(() => {})
+    }
+    document.addEventListener('lumi:locate-evidence', handler)
+    return () => document.removeEventListener('lumi:locate-evidence', handler)
   }, [htmlWithIds, hasHtml])
 
   // Reader 滚动容器 = .lumi-reader-article 的父级（结构契约见 Reader）。
@@ -201,6 +327,25 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
       if (target === null) return
+      // F059：脚注引用按钮 → 弹层显示净化后的定义内容。
+      const fnButton = target.closest<HTMLElement>('[data-lumi-fn-ref]')
+      if (fnButton !== null) {
+        const key = fnButton.getAttribute('data-lumi-fn-key') ?? ''
+        const number = fnButton.getAttribute('data-lumi-fn-ref') ?? ''
+        const raw = readFootnoteDefinition(container, key)
+        setFootnotePopover(
+          raw === null
+            ? null
+            : {
+                number,
+                html: sanitizeArticleHtmlCached(raw),
+                returnSeq: fnButton.getAttribute('data-lumi-fn-return') ?? '',
+                anchor: fnButton,
+              },
+        )
+        fnButton.focus()
+        return
+      }
       const expandButton = target.closest('[data-lumi-table-expand]')
       if (expandButton !== null) {
         const table = expandButton
@@ -234,19 +379,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     return () => container.removeEventListener('click', onClick)
   }, [htmlWithIds, hasHtml])
 
-  // F16：面板打开时把表格克隆进面板（cloneNode 保语义 table/th/td；
-  // 面板内横向滚动，原表格不动）。
-  useEffect(() => {
-    if (tablePanel === null) return
-    const host = tableHostRef.current
-    if (host === null) return
-    const clone = tablePanel.table.cloneNode(true) as HTMLTableElement
-    clone.removeAttribute('data-table-wide')
-    host.appendChild(clone)
-    return () => {
-      clone.remove()
-    }
-  }, [tablePanel])
+
 
   const closeLightbox = () => {
     setLightbox(null)
@@ -270,7 +403,35 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   if (hasHtml) {
     return (
       <>
+        {/* F015：段落定位失败 → 诚实提示（不跳错段） */}
+        {paraMissing && (
+          <p
+            role="status"
+            data-testid="para-missing"
+            className="mb-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
+          >
+            原文已变化，无法定位
+          </p>
+        )}
         <ArticleToc toc={toc} />
+        {/* F048：提取失败诚实徽标 / 单篇「用提取正文试读」（不启用策略时临时预览） */}
+        {(showExtractBadge || detail.extractPolicy !== 'web') && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+            {showExtractBadge && (
+              <span role="status" className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[var(--lumi-text-secondary)]">
+                提取失败，显示 RSS 正文
+              </span>
+            )}
+            {detail.extractPolicy !== 'web' && (
+              <Button size="sm" variant="ghost" disabled={extractOnceMutation.isPending} onClick={() => extractOnceMutation.mutate()}>
+                {extractOnceMutation.isPending ? '提取中…' : '用提取正文试读'}
+              </Button>
+            )}
+            {extractOnceMutation.data?.extractionFailed === true && (
+              <span role="alert" className="text-[var(--lumi-danger)]">试读提取失败，仍显示 RSS 正文。</span>
+            )}
+          </div>
+        )}
         {deferredImageCount > 0 ? (
           <div className="flex items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
             <span>省流模式：{deferredImageCount} 张图片未加载</span>
@@ -284,12 +445,93 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
           </div>
         ) : null}
         <div
+          {...(showExtractBadge ? { 'data-extract-failed': 'true' } : {})}
           ref={contentRef}
           className="article-content"
           // 注入的字符串永远是 DOMPurify 输出（唯一清洗点在
           // sanitize-article-html.ts；transforms 发生在 sanitize 之前；
           // withHeadingIds/deferImages 只在其上做属性级后处理）。
           dangerouslySetInnerHTML={htmlProp}
+        />
+        {/* F059：脚注弹层（净化后的定义内容；返回引用滚动回触发标记） */}
+        {footnotePopover !== null && (
+          <div
+            role="dialog"
+            aria-label={`脚注 ${footnotePopover.number}`}
+            className="rounded-[var(--lumi-radius-md)] absolute z-30 max-w-sm border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] p-3 text-xs leading-relaxed shadow-lg"
+            style={{
+              left: Math.min(footnotePopover.anchor.getBoundingClientRect().left, 320),
+            }}
+          >
+            <div
+              className="footnote-body text-[var(--lumi-text-secondary)]"
+              dangerouslySetInnerHTML={{ __html: footnotePopover.html }}
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                className="text-[var(--lumi-accent)] hover:underline"
+                onClick={() => {
+                  const returnTarget = contentRef.current?.querySelector(
+                    `[data-lumi-fn-return="${footnotePopover.returnSeq}"]`,
+                  )
+                  if (returnTarget instanceof HTMLElement) {
+                    returnTarget.scrollIntoView({ block: 'center' })
+                    returnTarget.focus()
+                  }
+                  setFootnotePopover(null)
+                }}
+              >
+                返回引用
+              </button>
+              <button
+                type="button"
+                className="text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-primary)]"
+                onClick={() => setFootnotePopover(null)}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        )}
+        {/* F010：外链右键/长按菜单（复制链接 / 复制干净链接） */}
+        {linkMenu !== null && (
+          <div
+            role="menu"
+            aria-label="链接操作"
+            className="fixed z-[var(--lumi-z-dialog)] flex flex-col overflow-hidden rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-dialog)]"
+            style={{ left: linkMenu.x, top: linkMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="min-h-11 px-3 py-2 text-left text-sm text-[var(--lumi-text-primary)] hover:bg-[var(--lumi-surface-hover)]"
+              onClick={() => {
+                void navigator.clipboard.writeText(linkMenu.url).catch(() => {})
+                setLinkMenu(null)
+              }}
+            >
+              复制链接
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="copy-clean-link"
+              className="min-h-11 px-3 py-2 text-left text-sm text-[var(--lumi-text-primary)] hover:bg-[var(--lumi-surface-hover)]"
+              onClick={() => {
+                setCleanDialogUrl(linkMenu.url)
+                setLinkMenu(null)
+              }}
+            >
+              复制干净链接…
+            </button>
+          </div>
+        )}
+        <CleanLinkPreviewDialog
+          open={cleanDialogUrl !== null}
+          url={cleanDialogUrl}
+          onClose={() => setCleanDialogUrl(null)}
         />
         {/* F14：图片灯箱（portal；焦点归还与滚动还原由本组件负责）。
             F16：表格展开面板（同一灯箱遮罩，内容模式）。lazy+Suspense：
@@ -308,10 +550,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
             label="表格查看"
             onClose={closeTablePanel}
           >
-            <div className="flex items-center justify-between border-b border-[var(--lumi-border)] px-4 py-2.5">
-              <p className="text-sm font-medium text-[var(--lumi-text-primary)]">表格（可横向滚动）</p>
-            </div>
-            <div ref={tableHostRef} data-lumi-table-host="" className="overflow-auto p-4" />
+            {tablePanel !== null && <WideTablePanel table={tablePanel.table} />}
           </ArticleLightbox>
         </Suspense>
       </>

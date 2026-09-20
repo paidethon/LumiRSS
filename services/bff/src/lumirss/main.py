@@ -30,25 +30,40 @@ from lumirss.obsidian import ObsidianService
 from lumirss.routers import (
     agent,
     ai_settings,
+    ai_tasks,
+    annotations,
     api_sources,
     auth,
+    authors,
     backup,
     clips,
     discovery,
+    duplicates,
     entries,
     entry_ai,
+    feed_filters,
     feeds,
     glossary,
     gpt_digest,
+    graph_views,
     health,
+    import_batches,
     inbox,
+    knowledge,
     library,
+    library_trash,
+    library_w5,
     lumi_export,
+    lumi_notes,
     mail,
     obsidian,
     operations,
     opml,
+    qa_templates,
+    quiz,
     rag,
+    reading_extras,
+    relations,
     rsshub,
     search,
     settings,
@@ -58,7 +73,12 @@ from lumirss.routers import (
     subscriptions,
     tags,
     task_records,
+    view_feed,
+    workspace_w5,
     workspaces,
+)
+from lumirss.routers import (
+    synonyms as search_synonyms,
 )
 from lumirss.search_index import SearchIndexService
 from lumirss.secrets_store import SecretsStore
@@ -82,6 +102,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
     app.state.secrets_store = SecretsStore(LumiSettings().secrets_path)
+    # §13.4：存量明文凭据的一次性哈希回填（幂等；四表 + gpt_digest
+    # feed token）。失败不阻塞启动——校验层 verify_token 对旧明文行
+    # 永远兼容，回填只是把「静态明文」收敛为「静态哈希」。
+    try:
+        from lumirss.token_backfill import (
+          backfill_token_hashes,
+          upgrade_digest_feed_token,
+        )
+
+        migrated = await backfill_token_hashes(app.state.db)
+        upgraded = upgrade_digest_feed_token(app.state.secrets_store)
+        if any(migrated.values()) or upgraded:
+            _logger.info(
+                "token hash backfill done: %s digest_token_upgraded=%s",
+                migrated,
+                upgraded,
+            )
+    except Exception:  # noqa: BLE001 — never block startup on the upgrade
+        _logger.exception("token hash backfill failed (legacy verify stays compatible)")
     app.state.ai_settings_store = None
     app.state.ai_profile_store = None
     app.state.app_settings_store = None
@@ -117,8 +156,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agent_store = None
     app.state.agent_loop = None
     app.state.agent_tasks = set()
+    app.state.agent_dry_run = None  # F097 写操作预演执行器（惰性构建）。
     app.state.tag_store = None
     app.state.saved_search_store = None
+    # W2（F021–F040）新增服务槽位：与上方同一惰性构建约定。
+    app.state.item_relation_store = None
+    app.state.inbox_rule_store = None
+    app.state.author_alias_store = None
+    app.state.qa_template_store = None
+    app.state.summary_version_store = None
     # P0-06: digest scheduler + IMAP poll loop. Both factories return
     # self-disabling tasks (sleeping no-ops while unconfigured), so the
     # tasks exist unconditionally and settings drive actual behavior.
@@ -274,17 +320,26 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(feeds.router)
 app.include_router(entries.router)
+app.include_router(feed_filters.router)
+app.include_router(annotations.router)
+app.include_router(reading_extras.router)
+app.include_router(import_batches.router)
 app.include_router(subscriptions.router)
 app.include_router(discovery.router)
+app.include_router(duplicates.router)
 app.include_router(rsshub.router)
 app.include_router(opml.router)
 app.include_router(ai_settings.router)
+app.include_router(ai_tasks.router)
 app.include_router(entry_ai.router)
 app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
 app.include_router(search.router)
+app.include_router(search_synonyms.router)
+app.include_router(view_feed.router)
 app.include_router(library.router)
+app.include_router(library_trash.router)
 app.include_router(workspaces.router)
 app.include_router(clips.router)
 app.include_router(snapshots.router)
@@ -296,10 +351,20 @@ app.include_router(sources.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
+app.include_router(authors.router)
 app.include_router(gpt_digest.router)
+app.include_router(graph_views.router)
 app.include_router(glossary.router)
+app.include_router(knowledge.router)
 app.include_router(storage.router)
 app.include_router(lumi_export.router)
+app.include_router(lumi_notes.router)
+app.include_router(relations.router)
+app.include_router(qa_templates.router)
+app.include_router(quiz.router)
 app.include_router(task_records.router)
+# W5 (F081–F100)
+app.include_router(library_w5.router)
+app.include_router(workspace_w5.router)
 
 register_error_handlers(app)

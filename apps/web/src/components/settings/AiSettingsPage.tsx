@@ -49,6 +49,8 @@ import type {
   AiSettings,
 } from '../../api/types'
 import type { ApiError } from '../../api/client'
+import { AiQuotaCard } from './AiQuotaCard'
+import { AiTaskCenterPanel } from './AiTaskCenterPanel'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Skeleton } from '../ui/Skeleton'
@@ -871,6 +873,10 @@ export function AiSettingsSection() {
       <ProfilesSection profiles={profiles.data} />
       <DefaultKeyCard settings={data} />
       <GlobalSettingsCard settings={data} />
+      {/* F064：用量限制（窗口+上限+当前窗口已用/剩余） */}
+      <AiQuotaCard />
+      {/* F063：AI 任务中心（最近任务 + 失败摘要重试） */}
+      <AiTaskCenterPanel />
 
       <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
         <ShieldCheck aria-hidden className="mt-0.5 size-3.5 shrink-0" />

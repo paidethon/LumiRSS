@@ -57,6 +57,13 @@ function baseHandler(url: string, init?: RequestInit): Response | Promise<Respon
   if (url.endsWith('/issues?limit=14') || /\/configs\/\d+\/issues/.test(url)) {
     return jsonResponse({ items: [] })
   }
+  // W6（F102）：素材池 / 缺失日期面板挂进设置页后的静态空态
+  if (/\/configs\/\d+\/pool$/.test(url) && (!init?.method || init.method === 'GET')) {
+    return jsonResponse({ items: [], used: [] })
+  }
+  if (/\/configs\/\d+\/missing-dates/.test(url)) {
+    return jsonResponse({ missing: [], existing: [] })
+  }
   if (/\/configs\/\d+\/feed/.test(url)) return jsonResponse({ atomPath: `/feeds/gpt-digest/x.atom` })
   if (url.endsWith('/gpt-digest/feed')) return jsonResponse({ atomPath: '/feeds/gpt-digest/tok.atom' })
   throw new Error(`unexpected fetch: ${url}`)

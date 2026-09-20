@@ -113,11 +113,21 @@ class SnapshotJobRunner:
             record, deduped = await self._assets.save_snapshot(
                 data=data, mime="text/html", url=url
             )
+            # F033/F034：资源状态（页面 ok + 子资源 skipped，有界去重）
+            # 与原始字节随采集结果一并返回（版本文本提取由路由层做）。
+            from lumirss.snapshot_versions import extract_resource_urls
+
+            diagnostics = extract_resource_urls(
+                data.decode("utf-8", errors="replace"), url
+            )
             return {
                 "asset": record.to_dict(),
                 "deduplicated": deduped,
                 "capturedAt": utc_now(),
                 "url": url,
+                "resources": diagnostics["resources"],
+                "resourcesTruncated": diagnostics["truncated"],
+                "_data": data,
             }
 
     async def _capture(self, binary: str, url: str, proxy) -> bytes:

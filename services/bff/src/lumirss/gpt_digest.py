@@ -130,24 +130,187 @@ async def saved_material_docs(
     return docs
 
 
+def _material_identity(doc: dict[str, Any]) -> str:
+    """F101 材料身份：URL 优先（同内容不同引用 = 同 URL 命中去重）；
+    无 URL 退化为规范化标题。与期刊 refs 的身份判定共用（见
+    :func:`_ref_identity`）。"""
+    url = str(doc.get("url") or "").strip()
+    if url:
+        return f"url:{url}"
+    title = " ".join(str(doc.get("title") or "").split()).lower()[:200]
+    return f"title:{title}"
+
+
+def _ref_identity(ref: dict[str, Any]) -> str:
+    url = str(ref.get("url") or "").strip()
+    if url:
+        return f"url:{url}"
+    title = " ".join(str(ref.get("title") or "").split()).lower()[:200]
+    return f"title:{title}"
+
+
+async def recent_used_keys(
+    db: Any, config_id: int, lookback_days: int, now: datetime
+) -> set[str]:
+    """F101：回看窗口内「已发布」期号引用过的材料身份集。
+
+    草稿不算已用（status='published' 过滤——负向语义测试覆盖）；
+    lookback_days=0 或 db 缺失 = 去重关闭（空集）。"""
+    if db is None or int(lookback_days) <= 0:
+        return set()
+    await db.migrate()
+    cutoff = _canonical_utc((now - timedelta(days=int(lookback_days))).isoformat())
+    if cutoff is None:
+        return set()
+    try:
+        rows = await db.fetch_all(
+            "SELECT refs_json, published_at FROM gpt_digest_issues WHERE config_id = ? AND status = 'published' ORDER BY issue_key DESC LIMIT 90",
+            (config_id,),
+        )
+    except Exception:  # noqa: BLE001 — 去重是增强，失败不阻断选材
+        return set()
+    keys: set[str] = set()
+    for row in rows:
+        stamp = _canonical_utc(str(row["published_at"] or ""))
+        if stamp is None or stamp < cutoff:
+            continue  # 已出回看窗口的期号不再参与去重
+        try:
+            refs = json.loads(str(row["refs_json"] or "{}"))
+        except ValueError:
+            continue
+        for value in refs.values():
+            if isinstance(value, dict):
+                keys.add(_ref_identity(value))
+    return keys
+
+
+async def resolve_pool_docs(
+    adapter: Any, pool: Any, config_id: int
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """F102：解析素材池待用条目 → (docs, invalid)。
+
+    原文删除 / 引用非法 → invalid（预览标注失效，生成跳过——绝不虚构
+    材料）。doc 带 manual=True 与 poolRef（消费回写用）。"""
+    from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+
+    docs: list[dict[str, Any]] = []
+    invalid: list[dict[str, str]] = []
+    for row in await pool.pending_refs(config_id):
+        ref = str(row.get("entryRef") or "")
+        if not ref.startswith("e1."):
+            # 目前池仅收录 FreshRSS 条目（opaque e1.* 引用）
+            invalid.append({"entryRef": ref, "reason": "unsupported_ref"})
+            continue
+        try:
+            item_id = decode_entry_ref(ref.removeprefix("rss:"))
+            detail = await adapter.get_entry(item_id)
+        except InvalidEntryReference:
+            invalid.append({"entryRef": ref, "reason": "invalid_ref"})
+            continue
+        except Exception:  # noqa: BLE001 — 单条失效不拖垮整期
+            invalid.append({"entryRef": ref, "reason": "source_missing"})
+            continue
+        docs.append(
+            {
+                "item_id": detail.entryRef,
+                "entryRef": detail.entryRef,
+                "feedUrl": "",
+                "feedTitle": detail.feedTitle,
+                "title": detail.title,
+                "url": detail.url,
+                "publishedAt": detail.publishedAt or "",
+                "read": detail.read,
+                "starred": detail.starred,
+                "contentText": detail.contentText,
+                "manual": True,
+                "poolRef": ref,
+            }
+        )
+    return docs, invalid
+
+
+async def consume_pool_for_issue(
+    adapter: Any, pool: Any, config_id: int, issue_row: dict[str, Any]
+) -> int:
+    """F102：把「该期引用」命中的素材池待用条目标记已用。
+
+    发布时消费：解析 refs_json 的引用身份，与当前池内待用条目的身份
+    匹配（URL 优先）；草稿期调用不产生效果由调用方时机保证（仅发布
+    后调用）。返回标记条数。"""
+    import json as _json
+
+    try:
+        refs = _json.loads(str(issue_row.get("refs_json") or "{}"))
+    except ValueError:
+        return 0
+    keys = {
+        _ref_identity(value)
+        for value in refs.values()
+        if isinstance(value, dict)
+    }
+    if not keys:
+        return 0
+    docs, _invalid = await resolve_pool_docs(adapter, pool, config_id)
+    consumed = [
+        str(doc.get("poolRef")) for doc in docs if _material_identity(doc) in keys
+    ]
+    return await pool.mark_used(config_id, consumed, str(issue_row.get("issue_key") or ""))
+
+
 async def select_material_for_config(
-    config: dict[str, Any], adapter: Any, db: Any, now: datetime
-) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int], str, str]:
+    config: dict[str, Any],
+    adapter: Any,
+    db: Any,
+    now: datetime,
+    *,
+    put_back: list[str] | None = None,
+    pool: Any | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int], str, str, list[dict[str, str]], list[dict[str, str]]]:
     """按 source_kind 取材料并分类；返回 (selected, counts, perSource,
-    window_start, window_end)。保存类来源用全时间窗 + 无白名单。"""
+    window_start, window_end, excluded_recent, pool_invalid)。
+
+    F101：lookbackDays>0 时排除回看窗口内已发布期号引用过的材料；
+    ``put_back`` 为本次生成显式放回的身份列表（preview 与生成请求共用
+    本函数——材料一致性由此保证）。F102：素材池待用条目并入候选。"""
     source_kind = str(config.get("sourceKind") or "window")
+    # F066：AI 禁用来源的条目不进入选材（含保存类来源）。
+    from lumirss.source_ai_gate import ai_disabled_feed_set, disabled_entry_refs
+
+    disabled_feeds = await ai_disabled_feed_set(db)
+    used_keys = await recent_used_keys(
+        db, int(config.get("id") or 1), int(config.get("lookbackDays") or 0), now
+    )
+    drop_keys = {str(k) for k in (put_back or [])}
+    pool_docs: list[dict[str, Any]] = []
+    pool_invalid: list[dict[str, str]] = []
+    if pool is not None:
+        pool_docs, pool_invalid = await resolve_pool_docs(
+            adapter, pool, int(config.get("id") or 1)
+        )
     if source_kind == "window":
         page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
+        docs = [
+            doc.model_dump() if hasattr(doc, "model_dump") else dict(doc)
+            for doc in page.documents
+        ]
+        if disabled_feeds:
+            docs = [
+                doc for doc in docs
+                if str(doc.get("feedUrl") or "") not in disabled_feeds
+            ]
+        docs = docs + pool_docs
         window_start, window_end = window_bounds(
             now, config["timezone"], config["windowHours"]
         )
         verdict = classify_material(
-            [doc.model_dump() for doc in page.documents],
+            docs,
             window_start,
             window_end,
             int(config["limitCount"]),
             int(config.get("perSourceCap") or 0),
             parse_allow_list(config.get("feedUrlAllow") or ""),
+            used_keys=used_keys,
+            put_back=drop_keys,
         )
         return (
             verdict["selected"],
@@ -155,14 +318,24 @@ async def select_material_for_config(
             verdict["perSource"],
             window_start,
             window_end,
+            verdict["excludedRecent"],
+            pool_invalid,
         )
     docs = await saved_material_docs(adapter, db, source_kind, int(config["limitCount"]))
+    if docs:
+        disabled_refs = await disabled_entry_refs(
+            db, [str(doc.get("entryRef") or "") for doc in docs]
+        )
+        docs = [doc for doc in docs if str(doc.get("entryRef") or "") not in disabled_refs]
+    docs = docs + pool_docs
     verdict = classify_material(
         docs,
         _WINDOW_OPEN,
         _WINDOW_FAR,
         int(config["limitCount"]),
         0,  # 保存类不做单源配额（用户显式选择的集合，量本来就小）
+        used_keys=used_keys,
+        put_back=drop_keys,
     )
     return (
         verdict["selected"],
@@ -170,6 +343,8 @@ async def select_material_for_config(
         verdict["perSource"],
         _WINDOW_OPEN,
         _WINDOW_FAR,
+        verdict["excludedRecent"],
+        pool_invalid,
     )
 
 
@@ -200,15 +375,21 @@ def classify_material(
     limit: int,
     per_source_cap: int = 0,
     allow_list: list[str] | None = None,
+    *,
+    used_keys: set[str] | None = None,
+    put_back: set[str] | None = None,
 ) -> dict[str, Any]:
-    """F06/F01：带原因的确定性选材。
+    """F06/F01/F101：带原因的确定性选材。
 
     - selected：按发布时间倒序、受 limitCount 与单源配额约束的入选集
       （顺序即生成时的 source id 顺序，同一输入可复现）；
     - counts：每类排除原因的数量（窗口外 / 自有 feed / 重复 /
-      超单源配额 / 超总量 / 来源不在白名单），未知不当零；
+      超单源配额 / 超总量 / 来源不在白名单 / 近期已刊用），未知不当零；
+    - excludedRecent：F101 被近期去重排除的材料明细（预览逐条展示）；
     - perSource：入选集的来源分布（供配额调整参考）。
-    排序键稳定：publishedAt 倒序 + item_id 兜底，避免同刻抖动。"""
+    排序键稳定：publishedAt 倒序 + item_id 兜底，避免同刻抖动。
+    ``manual=True`` 的文档（F102 素材池）绕过窗口/自有 feed/白名单，
+    但仍受近期去重、重复、配额与上限约束。"""
     seen: set[str] = set()
     counts = {
         "outsideWindow": 0,
@@ -217,25 +398,51 @@ def classify_material(
         "perSourceCapped": 0,
         "overLimit": 0,
         "notAllowed": 0,
+        "recentIssue": 0,
     }
+    excluded_recent: list[dict[str, str]] = []
+    used = used_keys or set()
+    dropped = put_back or set()
     rules = allow_list or []
     canon_start = _canonical_utc(window_start)
     canon_end = _canonical_utc(window_end)
     if canon_start is None or canon_end is None:
-        return {"selected": [], "counts": counts, "perSource": {}}
+        return {
+            "selected": [],
+            "counts": counts,
+            "perSource": {},
+            "excludedRecent": [],
+        }
     eligible: list[dict[str, Any]] = []
     for doc in documents:
-        published = _canonical_utc(doc.get("publishedAt"))
-        if published is None or not (canon_start <= published < canon_end):
-            counts["outsideWindow"] += 1
+        manual = bool(doc.get("manual"))
+        identity = _material_identity(doc)
+        if used and identity in used and identity not in dropped:
+            counts["recentIssue"] += 1
+            if len(excluded_recent) < 50:
+                excluded_recent.append(
+                    {
+                        "title": _clip(doc.get("title") or "(无标题)", 300),
+                        "feedTitle": _clip(doc.get("feedTitle") or "", 200),
+                        "url": str(doc.get("url") or ""),
+                        "reason": "recent_issue",
+                    }
+                )
             continue
-        feed_url = str(doc.get("feedUrl") or "")
-        if _SELF_FEED_MARKER in feed_url:
-            counts["selfFeed"] += 1
-            continue  # 本实例生成的 Atom 已被 FreshRSS 订阅时不再作为输入
-        if rules and not any(rule in feed_url.lower() for rule in rules):
-            counts["notAllowed"] += 1
-            continue  # F01：来源白名单之外的订阅不进入本配置
+        if manual:
+            pass  # 手工条目：用户显式指定，不受窗口/自有 feed/白名单约束
+        else:
+            published = _canonical_utc(doc.get("publishedAt"))
+            if published is None or not (canon_start <= published < canon_end):
+                counts["outsideWindow"] += 1
+                continue
+            feed_url = str(doc.get("feedUrl") or "")
+            if _SELF_FEED_MARKER in feed_url:
+                counts["selfFeed"] += 1
+                continue  # 本实例生成的 Atom 已被 FreshRSS 订阅时不再作为输入
+            if rules and not any(rule in feed_url.lower() for rule in rules):
+                counts["notAllowed"] += 1
+                continue  # F01：来源白名单之外的订阅不进入本配置
         item_id = str(doc.get("item_id") or doc.get("entryRef") or "")
         if not item_id or item_id in seen:
             counts["duplicate"] += 1
@@ -265,6 +472,7 @@ def classify_material(
         "perSource": dict(
             sorted(per_source_tally.items(), key=lambda kv: (-kv[1], kv[0]))
         ),
+        "excludedRecent": excluded_recent,
     }
 
 
@@ -446,13 +654,16 @@ async def generate_issue(
     db: Any | None = None,
     plan: RunPlan | None = None,
     now: datetime | None = None,
+    draft: bool = False,
+    put_back: list[str] | None = None,
 ) -> dict[str, Any]:
     """生成（或修订）该配置指定期号；返回 issue 行 dict。
 
     ``plan`` 来自 :func:`plan_run`（调度/显式生成的共同决策点）；
     未提供时按单时点历史语义现算。生成失败抛类型化异常并记该配置的
     last_error；上一份有效发布物保持不变。远程调用不持有写事务——
-    先完成选材与调用，最后才 upsert。"""
+    先完成选材与调用，最后才 upsert。``put_back``（F101）与选材预览
+    共用同一 :func:`select_material_for_config`——预览材料 == 生成材料。"""
     config_id = int(config["id"])
     await configs.mark_error(config_id, "")  # 触发迁移（失败路径也要能写库）
     now = now or datetime.now().astimezone()
@@ -460,8 +671,13 @@ async def generate_issue(
         issue_key = issue_key_for(now, config["timezone"])
     else:
         issue_key = plan.issue_key
-    material, _, _, _, _ = await select_material_for_config(
-        config, adapter, db, now
+    pool = None
+    if db is not None:
+        from lumirss.gpt_digest_pool import DigestMaterialPoolStore
+
+        pool = DigestMaterialPoolStore(db)
+    material, _, _, _, _, _, _ = await select_material_for_config(
+        config, adapter, db, now, put_back=put_back, pool=pool
     )
     if not material:
         await configs.mark_error(
@@ -491,6 +707,8 @@ async def generate_issue(
         raise
     refs = build_refs(material)
     body_html = render_issue_html(output, refs)
+    # F031：显式生成的新期号 = 草稿（人工审阅后发布）；调度自动发布
+    # 保持 published（无人值守）。修订已有期号不改状态。
     row = await issues.upsert_issue(
         config_id=config_id,
         issue_key=issue_key,
@@ -500,8 +718,17 @@ async def generate_issue(
         refs_json=json.dumps(refs, ensure_ascii=False),
         model=model,
         published_at=utc_now(),
+        status_for_new="draft" if draft else "published",
     )
     await configs.mark_published(config_id, issue_key)
+    if not draft and pool is not None:
+        # F102：直接发布（调度路径）→ 本轮实际消费的池条目标记已用；
+        # 草稿不消费（审阅发布时由路由显式消费）。标记失败不影响发布。
+        consumed = [str(doc.get("poolRef")) for doc in material if doc.get("manual")]
+        try:
+            await pool.mark_used(config_id, consumed, issue_key)
+        except Exception:  # noqa: BLE001 — 尽力而为
+            logger.warning("digest pool mark_used failed", exc_info=True)
     return row
 
 
@@ -510,19 +737,32 @@ async def build_preview(
     config: dict[str, Any],
     db: Any | None = None,
     now: datetime | None = None,
+    *,
+    put_back: list[str] | None = None,
 ) -> dict[str, Any]:
     """F06/R05：无副作用选材预览（不调用模型、不写库）。
 
-    sourceId 顺序与 generate_issue 的实际选材一一对应；material 为空的
-    原因由 counts 诚实解释，note 说明窗口与配额。"""
+    sourceId 顺序与 generate_issue 的实际选材一一对应（同一选材函数
+    ——F101 语义：put_back 生效时两者一致）；material 为空的原因由
+    counts 诚实解释，note 说明窗口与配额。F101：逐条列出近期已刊用
+    的排除明细；F102：素材池条目标 source="manual"、失效条目单列。"""
     now = now or datetime.now().astimezone()
+    pool = None
+    if db is not None:
+        from lumirss.gpt_digest_pool import DigestMaterialPoolStore
+
+        pool = DigestMaterialPoolStore(db)
     (
         selected,
         counts,
         per_source,
         window_start,
         window_end,
-    ) = await select_material_for_config(config, adapter, db, now)
+        excluded_recent,
+        pool_invalid,
+    ) = await select_material_for_config(
+        config, adapter, db, now, put_back=put_back, pool=pool
+    )
     items = []
     for index, doc in enumerate(selected, start=1):
         items.append(
@@ -533,6 +773,7 @@ async def build_preview(
                 "feedUrl": str(doc.get("feedUrl") or ""),
                 "url": str(doc.get("url") or ""),
                 "publishedAt": str(doc.get("publishedAt") or ""),
+                "source": "manual" if doc.get("manual") else "auto",
             }
         )
     # R05：来源覆盖与遗漏——本配置的订阅里，哪些在窗口内有入选材料、
@@ -575,6 +816,8 @@ async def build_preview(
         "perSource": per_source,
         "coveredSources": covered_list,
         "missingSources": missing,
+        "excludedRecent": excluded_recent,
+        "poolInvalid": pool_invalid,
         "note": note,
     }
 
@@ -747,6 +990,7 @@ async def _scheduled_generate(
         provider_factory=provider_factory,
         db=app_state.db,
         plan=plan,
+        draft=False,
     )
 
 

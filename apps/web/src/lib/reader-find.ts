@@ -19,7 +19,7 @@ export const FIND_ALL_HIGHLIGHT_NAME = 'lumi-find-all'
 export const FIND_CURRENT_HIGHLIGHT_NAME = 'lumi-find-current'
 
 /** 查找时跳过的子树（不可见/非正文本）。 */
-const SKIP_SELECTOR = 'script, style, noscript, .code-copy-btn'
+const SKIP_SELECTOR = 'script, style, noscript, .code-copy-btn, [data-lumi-find-exclude]'
 
 /** 能力检测：CSS Custom Highlight API 是否可用（运行时逐级探测，
  * jsdom / 旧浏览器返回 false → 调用方走降级路径）。 */

@@ -1,5 +1,7 @@
 """Obsidian read-only library routes (phase2 G6) + federated favorites."""
 
+from typing import Any
+
 from fastapi import APIRouter, Request, Response
 
 from lumirss.favorites import FavoriteInvalid
@@ -131,3 +133,22 @@ async def remove_library_favorite(
     service = _get_favorites_service(request)
     await service.remove_favorite(payload.ref)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# F080：反链/断链查询。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/v1/obsidian/notes/{note_uuid}/backlinks")
+async def list_note_backlinks(note_uuid: str, request: Request) -> Any:
+    from lumirss.obsidian_backlinks import backlinks_for
+
+    return {"items": await backlinks_for(request.app.state.db, note_uuid)}
+
+
+@router.get("/api/v1/obsidian/notes/{note_uuid}/broken-links")
+async def list_note_broken_links(note_uuid: str, request: Request) -> Any:
+    from lumirss.obsidian_backlinks import broken_links_for
+
+    return {"items": await broken_links_for(request.app.state.db, note_uuid)}

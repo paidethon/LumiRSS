@@ -36,6 +36,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from lumirss.agent_session import evaluate_policy
 from lumirss.agent_store import (
     CANCELLED_TEXT,
     AgentStore,
@@ -98,14 +99,37 @@ class AgentLoop:
         store: AgentStore,
         registry: ToolRegistry,
         provider_factory: Callable[[], Awaitable[Any]],
+        *,
+        session_loader: Callable[[str], Awaitable[dict]] | None = None,
     ) -> None:
         self._store = store
         self._registry = registry
         self._provider_factory = provider_factory
+        # F094/F098：会话设置加载器（scope + toolPolicy），None = 旧装配。
+        self._session_loader = session_loader
         self._thread_locks: dict[str, asyncio.Lock] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._cancel_requested: set[str] = set()
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
+
+    async def _thread_context(self, thread_id: str) -> dict[str, Any]:
+        """读取会话范围/工具权限（F094/F098）；加载失败按未锁定处理。"""
+        if self._session_loader is None:
+            return {}
+        try:
+            settings = await self._session_loader(thread_id)
+        except Exception:  # noqa: BLE001 — 设置读取失败不阻断回合
+            return {}
+        return {
+            "scope": settings.get("scope") or None,
+            "policy": settings.get("toolPolicy") or None,
+        }
+
+    def _effective_tool_cap(self, policy: dict | None) -> int:
+        """F098：maxOpsPerTurn（1–50）覆盖默认每回合工具预算。"""
+        if policy and isinstance(policy.get("maxOpsPerTurn"), int):
+            return max(1, min(int(policy["maxOpsPerTurn"]), 50))
+        return MAX_TOOL_CALLS_PER_TURN
 
     # -- run lifecycle (P0-08c/e) -------------------------------------------
 
@@ -220,6 +244,12 @@ class AgentLoop:
 
     async def run_turn(self, thread_id: str, user_text: str) -> dict[str, Any]:
         """Process one user message end-to-end (may suspend on approval)."""
+        context = await self._thread_context(thread_id)
+        policy: dict | None = context.get("policy")
+        # F094：范围注入到 registry——search/rag_search 工具执行处服务端
+        # 过滤（下一轮生效：本回合开始时读取的设置）。
+        self._registry.set_context(context)
+        tool_cap = self._effective_tool_cap(policy)
         user_row = await self._store.append_message(
             thread_id, role="user", content={"text": user_text}
         )
@@ -266,7 +296,16 @@ class AgentLoop:
                         thread_id, call_id, name, "unknown_tool"
                     )
                     continue
-                if tool_calls_used >= MAX_TOOL_CALLS_PER_TURN:
+                # F098：工具权限在执行前服务端拒绝（非 UI 隐藏）。
+                denied_reason = evaluate_policy(
+                    policy, name, is_write=self._registry.is_write(name)
+                )
+                if denied_reason is not None:
+                    await self._append_tool_error(
+                        thread_id, call_id, name, "tool_denied"
+                    )
+                    continue
+                if tool_calls_used >= tool_cap:
                     await self._append_tool_error(
                         thread_id, call_id, name, "tool_budget_exhausted"
                     )
@@ -419,6 +458,31 @@ class AgentLoop:
             self._publish(thread_id, {"type": "message", "message": rejection})
             return {"status": "rejected", "message": rejection}
         taken = await self._store.take_approval(thread_id, approval_id)
+        # F098：审批不能复活被禁工具——执行前再查会话权限（收窄后
+        # 既有已批准的 write 审批同样被拒）。
+        context = await self._thread_context(thread_id)
+        denied_reason = evaluate_policy(
+            context.get("policy"),
+            taken["tool"],
+            is_write=True,
+        )
+        if denied_reason is not None:
+            denied = await self._store.append_message(
+                thread_id,
+                role="tool",
+                content={
+                    "callId": taken["callId"],
+                    "name": taken["tool"],
+                    "error": "tool_denied",
+                },
+            )
+            self._publish(thread_id, {"type": "message", "message": denied})
+            await self._store.append_message(
+                thread_id,
+                role="assistant",
+                content={"text": "该写入工具已被会话权限禁止，未执行。"},
+            )
+            return {"status": "tool_denied", "reason": denied_reason}
         result = await self._registry.invoke_write(taken["tool"], taken["args"])
         await self._store.append_message(
             thread_id,

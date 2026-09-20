@@ -29,6 +29,11 @@ import {
   useUpdateDigestSettingsMutation,
   useUpdateMailImapSettingsMutation,
 } from '../../api/queries'
+import {
+  BackfillWizard,
+  MailRulesPanel,
+  MessageIdGateDialog,
+} from './MailToolsPanels'
 import type { DigestSettings, MailBridgeListCreated, MailImapSettings } from '../../api/client'
 import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
@@ -100,6 +105,9 @@ function BridgeListsBlock() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [name, setName] = useState('')
   const [created, setCreated] = useState<MailBridgeListCreated | null>(null)
+  // W6：F104/F105/F110 工具面板状态
+  const [rulesList, setRulesList] = useState<string | null>(null)
+  const [toolTarget, setToolTarget] = useState<{ kind: 'parse' | 'thread'; listUuid: string } | null>(null)
 
   const closeDialog = () => {
     setDialogOpen(false)
@@ -173,6 +181,31 @@ function BridgeListsBlock() {
                   {item.createdAt !== '' && ` · 创建于 ${formatTimestamp(item.createdAt)}`}
                 </p>
               </div>
+              {/* W6：接收规则 / 解析对照 / 查看会话 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                data-mail-rules-open={item.uuid}
+                onClick={() => setRulesList(item.uuid)}
+              >
+                接收规则
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-mail-parse-open={item.uuid}
+                onClick={() => setToolTarget({ kind: 'parse', listUuid: item.uuid })}
+              >
+                解析对照
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-mail-thread-open={item.uuid}
+                onClick={() => setToolTarget({ kind: 'thread', listUuid: item.uuid })}
+              >
+                查看会话
+              </Button>
               <IconButton
                 icon={<Trash2 aria-hidden className="size-4" />}
                 label={`删除 ${item.name}`}
@@ -183,6 +216,15 @@ function BridgeListsBlock() {
             </li>
           ))}
         </ul>
+      )}
+
+      {rulesList !== null && <MailRulesPanel listUuid={rulesList} onClose={() => setRulesList(null)} />}
+      {toolTarget !== null && (
+        <MessageIdGateDialog
+          kind={toolTarget.kind}
+          listUuid={toolTarget.listUuid}
+          onClose={() => setToolTarget(null)}
+        />
       )}
 
       <Dialog
@@ -287,6 +329,7 @@ interface DigestFormState {
   smtpUser: string
   fromAddr: string
   toAddr: string
+  timezone: string
   smtpPassword: string
 }
 
@@ -301,6 +344,7 @@ function formStateOf(settings: DigestSettings): DigestFormState {
     smtpUser: settings.smtpUser,
     fromAddr: settings.fromAddr,
     toAddr: settings.toAddr,
+    timezone: settings.timezone ?? '',
     smtpPassword: '', // write-only：密码永不回显，留空 = 不改动
   }
 }
@@ -335,6 +379,7 @@ function DigestForm({ settings }: { settings: DigestSettings }) {
       smtpUser: form.smtpUser,
       fromAddr: form.fromAddr,
       toAddr: form.toAddr,
+      timezone: form.timezone,
       ...(form.smtpPassword !== '' ? { smtpPassword: form.smtpPassword } : {}),
     })
   }
@@ -402,6 +447,20 @@ function DigestForm({ settings }: { settings: DigestSettings }) {
             aria-label="条数上限"
             value={Number.isNaN(form.limitCount) ? '' : form.limitCount}
             onChange={(e) => update('limitCount', Number(e.target.value))}
+            className={inputCls}
+          />
+        </div>
+        {/* F008：IANA 时区输入（非法名称保存时透出后端 422 invalid_timezone） */}
+        <div>
+          <label htmlFor="digest-timezone" className="mb-1 block text-xs font-medium text-[var(--lumi-text-primary)]">
+            发送时区（IANA，留空 = 服务器本地）
+          </label>
+          <input
+            id="digest-timezone"
+            value={form.timezone}
+            onChange={(e) => update('timezone', e.target.value)}
+            placeholder="Asia/Shanghai"
+            aria-label="发送时区（IANA，留空 = 服务器本地）"
             className={inputCls}
           />
         </div>
@@ -574,6 +633,12 @@ function DigestBlock() {
           <DigestForm key={JSON.stringify(settings.data)} settings={settings.data} />
           <p role="status" className="mt-3 text-xs text-[var(--lumi-text-tertiary)]">
             上次发送：{formatTimestamp(settings.data.lastSentAt) === '' ? '从未发送' : formatTimestamp(settings.data.lastSentAt)}
+            {/* F008：下次发送时间（enabled 时后端按配置时区给出） */}
+            {settings.data.nextSendAt != null && settings.data.nextSendAt !== '' && (
+              <>
+                {' · '}下次发送：{formatTimestamp(settings.data.nextSendAt)}
+              </>
+            )}
           </p>
           {settings.data.lastError != null && settings.data.lastError !== '' && (
             <p role="alert" className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
@@ -629,6 +694,7 @@ function ImapForm({ server }: { server: MailImapSettings }) {
   const [ssl, setSsl] = useState(server.ssl)
   const [listUuid, setListUuid] = useState(server.listUuid)
   const [interval, setIntervalSeconds] = useState(String(server.intervalSeconds))
+  const [enabled, setEnabled] = useState(server.enabled)
   const [password, setPassword] = useState('')
 
   const save = () => {
@@ -640,6 +706,7 @@ function ImapForm({ server }: { server: MailImapSettings }) {
         folder: folder.trim() || 'INBOX',
         ssl,
         listUuid,
+        enabled,
         intervalSeconds: Number.parseInt(interval, 10) || undefined,
         // write-only：留空 = 不改动已存密码
         password: password === '' ? undefined : password,
@@ -661,7 +728,11 @@ function ImapForm({ server }: { server: MailImapSettings }) {
               : 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-tertiary)]',
           )}
         >
-          {server.configured ? `已配置 · 每 ${server.intervalSeconds}s 轮询` : '未配置'}
+          {!server.configured
+            ? '未配置'
+            : server.enabled === false
+              ? '已停用'
+              : `已配置 · 每 ${server.intervalSeconds}s 轮询`}
         </span>
       </div>
       <p className="mt-1 text-xs text-[var(--lumi-text-tertiary)]">
@@ -705,6 +776,17 @@ function ImapForm({ server }: { server: MailImapSettings }) {
         <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)] sm:mt-5">
           <input type="checkbox" checked={ssl} onChange={(e) => setSsl(e.target.checked)} className="size-3.5 accent-[var(--lumi-accent)]" />
           使用 SSL/TLS
+        </label>
+        {/* F007：IMAP 抓取启停开关（关闭后轮询与手动拉取直接跳过） */}
+        <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)] sm:mt-5">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            aria-label="启用 IMAP 抓取"
+            className="size-3.5 accent-[var(--lumi-accent)]"
+          />
+          启用 IMAP 抓取
         </label>
       </div>
 
@@ -755,6 +837,8 @@ function ImapForm({ server }: { server: MailImapSettings }) {
       {update.isError && (
         <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">保存失败：{update.error instanceof Error ? update.error.message : '请稍后重试。'}</p>
       )}
+      {/* F106：历史回填向导（范围 → 试运行 → 执行） */}
+      {server.configured && <BackfillWizard />}
     </section>
   )
 }

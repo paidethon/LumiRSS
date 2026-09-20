@@ -48,6 +48,8 @@ class WorkspaceSummary:
     item_count: int
     reserved: bool
     description: str = ""
+    archived: bool = False
+    archived_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +59,8 @@ class WorkspaceSummary:
             "itemCount": self.item_count,
             "reserved": self.reserved,
             "description": self.description,
+            "archived": self.archived,
+            "archivedAt": self.archived_at,
         }
 
 
@@ -115,12 +119,16 @@ class WorkspaceStore:
         row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM workspaces")
         return int(row["n"]) if row is not None else 0
 
-    async def list_workspaces(self) -> list[WorkspaceSummary]:
+    async def list_workspaces(
+        self, *, include_archived: bool = False
+    ) -> list[WorkspaceSummary]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT w.id, w.name, w.description, w.position, COUNT(wi.item_ref) AS n"
+            "SELECT w.id, w.name, w.description, w.position, w.archived_at, COUNT(wi.item_ref) AS n"
             " FROM workspaces w LEFT JOIN workspace_items wi ON wi.workspace_id = w.id"
-            " GROUP BY w.id, w.name, w.description, w.position ORDER BY w.position ASC, w.id ASC"
+            " WHERE (? = 1 OR w.archived_at IS NULL)"
+            " GROUP BY w.id, w.name, w.description, w.position, w.archived_at ORDER BY w.position ASC, w.id ASC",
+            (1 if include_archived else 0,),
         )
         return [
             WorkspaceSummary(
@@ -130,12 +138,15 @@ class WorkspaceStore:
                 item_count=int(row["n"]),
                 reserved=str(row["id"]) == RESERVED_WORKSPACE_ID,
                 description=str(row["description"] or ""),
+                archived=row["archived_at"] is not None,
+                archived_at=str(row["archived_at"]) if row["archived_at"] else None,
             )
             for row in rows
         ]
 
     async def get_workspace(self, workspace_id: str) -> WorkspaceSummary | None:
-        for summary in await self.list_workspaces():
+        # F084：深链接可命中已归档工作区（archived 过滤只作用于列表）。
+        for summary in await self.list_workspaces(include_archived=True):
             if summary.id == workspace_id:
                 return summary
         return None

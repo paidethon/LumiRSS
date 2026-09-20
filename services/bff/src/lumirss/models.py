@@ -19,6 +19,13 @@ from lumirss.app_settings import PortableSettings
 # ---------------------------------------------------------------------------
 
 
+class EntryHiddenByRule(BaseModel):
+    """F045：命中并屏蔽本条的服务端规则（include_hidden 时附带）。"""
+
+    ruleId: str
+    reason: str
+
+
 class EntryListItem(BaseModel):
     """One article in the entry list — never contains the body.
 
@@ -40,6 +47,8 @@ class EntryListItem(BaseModel):
     starred: bool
     feedUrl: str | None = None
     snippet: str | None = None
+    # F045：includeHidden=true 时附带的服务端屏蔽标记（其余情况为 None）。
+    hiddenByRule: EntryHiddenByRule | None = None
     coverUrl: str | None = None
 
 
@@ -59,6 +68,59 @@ class EntryListResponse(BaseModel):
 
     items: list[EntryListItem]
     nextCursor: str | None
+    # F045：本页被屏蔽未返回的条数（include_hidden=false 时如实上报）。
+    filteredCount: int | None = None
+
+
+class FeedFilterRule(BaseModel):
+    """F045：一条服务端屏蔽规则。"""
+
+    id: str
+    feedUrl: str
+    field: str
+    op: str
+    value: str
+    enabled: bool
+    createdAt: str
+
+
+class FeedFilterRuleList(BaseModel):
+    items: list[FeedFilterRule]
+
+
+class FeedFilterRuleCreate(BaseModel):
+    """POST /api/v1/feed-filter-rules body."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str
+    field: str
+    op: str
+    value: str
+    enabled: bool = True
+
+
+class FeedFilterRuleTrial(BaseModel):
+    """POST /api/v1/feed-filter-rules/trial —— 试跑（不写库）。"""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str | None = None
+    sampleTitle: str = Field(min_length=1, max_length=2000)
+    sampleAuthor: str | None = None
+
+
+class FeedFilterRuleTrialResult(BaseModel):
+    matched: bool
+    ruleId: str | None = None
+    reason: str | None = None
+
+
+class EntryEnclosure(BaseModel):
+    """F011：一个媒体附件（原样来自 FreshRSS 响应，仅取 href/type）。"""
+
+    href: str
+    type: str | None = None
 
 
 class EntryDetail(BaseModel):
@@ -85,6 +147,13 @@ class EntryDetail(BaseModel):
     contentHtml: str | None = None
     # P2：来源真实订阅 URL（解析不到为 None；阅读页来源点击用）。
     feedUrl: str | None = None
+    # F048：per-source 提取策略与结果（web 策略失败回退 RSS 时诚实标记）。
+    extractPolicy: str | None = None
+    extractionFailed: bool | None = None
+    # F011：原样透传的 enclosure[]（audio/video 等媒体附件；greader
+    # items 响应中的 enclosure 数组，形状异常的元素保守丢弃）。
+    enclosure: list[EntryEnclosure] = Field(default_factory=list)
+
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +384,17 @@ class OpmlImportPreviewCategory(BaseModel):
     feedCount: int
 
 
+class OpmlImportPreviewItem(BaseModel):
+    """F002：逐项预览行（status: new|duplicate|invalid|category_conflict）。"""
+
+    index: int
+    title: str = ""
+    xmlUrl: str
+    category: str | None = None
+    status: str
+    note: str | None = None
+
+
 class OpmlImportPreview(BaseModel):
     """POST /api/v1/opml/import/preview (strictly non-mutating)."""
 
@@ -323,6 +403,7 @@ class OpmlImportPreview(BaseModel):
     duplicates: int
     invalidEntries: int
     categories: list[OpmlImportPreviewCategory]
+    items: list[OpmlImportPreviewItem] = []
 
 
 class OpmlImportAdded(BaseModel):
@@ -349,13 +430,92 @@ class OpmlImportFailed(BaseModel):
     error: str
 
 
+class OpmlImportSkipped(BaseModel):
+    """F002：一个未参与导入的条目（诚实汇报跳过原因）。"""
+
+    feedUrl: str
+    title: str
+    reason: str  # not_selected | invalid
+
+
 class OpmlImportResult(BaseModel):
     """POST /api/v1/opml/import (merge-only: duplicates are never touched)."""
 
     added: list[OpmlImportAdded]
     duplicates: list[OpmlImportDuplicate]
     failed: list[OpmlImportFailed]
+    skipped: list[OpmlImportSkipped] = []
     categoriesCreated: list[str]
+
+
+# ---------------------------------------------------------------------------
+# F004 重复订阅检查器 / F005 来源备注 / F006 批量分类迁移
+# ---------------------------------------------------------------------------
+
+
+class DuplicateSuspectMember(BaseModel):
+    """F004：重复候选组内的一个订阅成员。"""
+
+    subscriptionRef: str
+    title: str
+    feedUrl: str
+    categoryLabel: str | None = None
+
+
+class DuplicateSuspectGroup(BaseModel):
+    """F004：一组重复候选（成员 ≥2；key 为受控规范化 URL）。"""
+
+    key: str
+    members: list[DuplicateSuspectMember] = []
+    differences: list[str] = []
+
+
+class DuplicateSuspectsResponse(BaseModel):
+    groups: list[DuplicateSuspectGroup] = []
+    checked: int = 0
+
+
+class SourceNotesView(BaseModel):
+    """F005：一个订阅的备注/理由/维护记录（原文存储，渲染转义）。"""
+
+    subscriptionRef: str
+    note: str | None = None
+    reason: str | None = None
+    maintenanceLog: str | None = None
+    updatedAt: str | None = None
+
+
+class SourceNotesList(BaseModel):
+    items: list[SourceNotesView] = []
+
+
+class SourceNotesUpdate(BaseModel):
+    """PATCH /api/v1/subscriptions/{ref}/notes — sentinel：缺席=不改，
+    null=清空，字符串=覆盖原文（有界截断）。"""
+
+    note: str | None = None
+    reason: str | None = None
+    maintenanceLog: str | None = None
+
+
+class BatchMoveRequest(BaseModel):
+    """POST /api/v1/subscriptions/batch-move — 全部 refs 逐项执行。"""
+
+    refs: list[str] = Field(min_length=1)
+    targetCategoryId: str = Field(min_length=1)
+
+
+class BatchMoveItem(BaseModel):
+    """F006：单条迁移结果（失败项带稳定错误码，不中断整批）。"""
+
+    ref: str
+    ok: bool
+    error: str | None = None
+
+
+class BatchMoveResult(BaseModel):
+    items: list[BatchMoveItem] = []
+    moved: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +527,63 @@ class FreshRssUiInfo(BaseModel):
     """GET /api/v1/freshrss-ui (null url = not configured, UI hides it)."""
 
     url: str | None = None
+
+
+class TrashItem(BaseModel):
+    """F019：回收站条目（kind: bookmark | clip）。30 天过期由既有清理
+    机制承担；当前若无调度器则仅在文档标注，不新建调度器。"""
+
+    uuid: str
+    kind: str
+    title: str
+    url: str | None = None
+    deletedAt: str
+
+
+class TrashList(BaseModel):
+    items: list[TrashItem] = []
+
+
+class NoteImportFile(BaseModel):
+    """F020：一个待入库的 Markdown 文件。"""
+
+    name: str = Field(min_length=1, max_length=500)
+    content: str
+
+
+class NoteImportRequest(BaseModel):
+    """POST /api/v1/library/notes/import — 逐文件校验、逐项汇报。"""
+
+    files: list[NoteImportFile] = Field(min_length=1, max_length=50)
+    workspaceId: str | None = None
+
+
+class NoteImportResultItem(BaseModel):
+    name: str
+    ok: bool
+    uuid: str | None = None
+    reason: str | None = None
+
+
+class NoteImportResult(BaseModel):
+    items: list[NoteImportResultItem] = []
+    imported: int = 0
+    skipped: int = 0
+
+
+class LumiNoteView(BaseModel):
+    """F020：笔记列表项（摘要首行，≤160 字）。"""
+
+    uuid: str
+    title: str
+    workspaceId: str | None = None
+    excerpt: str
+    createdAt: str
+    updatedAt: str
+
+
+class LumiNoteList(BaseModel):
+    items: list[LumiNoteView] = []
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +658,9 @@ class AiSettingsView(BaseModel):
     defaultKeyConfigured: bool
     purposes: dict[str, str]
     purposeStatus: dict[str, AiPurposeStatus]
+    # F064：用量限制（window "" = 不限；maxCalls 0 = 不限）。
+    quotaWindow: Literal["", "day", "month"] = ""
+    quotaMaxCalls: int = 0
 
 
 class AiProfile(BaseModel):
@@ -577,6 +797,10 @@ class TranslationSegmentState(BaseModel):
     translatedText: str | None = None
     failureType: str | None = None
     cached: bool = False
+    # F062：手工修订（存在时 UI 优先展示；stale = 保存修订后源段已变化）。
+    userRevision: str | None = None
+    revisedAt: str | None = None
+    revisionStale: bool = False
 
 
 class TranslationSegmentsView(BaseModel):
@@ -780,6 +1004,8 @@ class SearchItem(BaseModel):
     starred: bool
     snippet: str
     matchedFields: list[str]
+    # F072：正文命中偏移（前 ≤10 处；老客户端可选；仅标题命中 → 空表）
+    matchPositions: list[dict[str, str | int]] | None = None
 
 
 class SearchIndexInfo(BaseModel):
@@ -827,12 +1053,28 @@ class SavedSearchView(BaseModel):
     categoryKey: str = ""
     createdAt: str
     updatedAt: str
+    # F035：固定视图 + 构建器完整意图（向后兼容：老视图无 filters）。
+    pinned: bool = False
+    pinOrder: int | None = None
+    filters: dict[str, str | bool | None] | None = None
+    # F061：私有 Atom 订阅是否已启用（布尔；token 本身绝不返回）。
+    hasFeedToken: bool = False
 
 
 class SavedSearchList(BaseModel):
     """GET /api/v1/search/views."""
 
     items: list[SavedSearchView]
+
+
+class ViewFeedTokenResult(BaseModel):
+    """F061：启用/轮换私有 Atom 订阅的响应。
+
+    ``atomPath`` 是带 secret 的完整路径，仅在此响应中出现一次；
+    之后只显示"已隐藏，可轮换"。"""
+
+    atomPath: str
+    hasFeedToken: bool = True
 
 
 class SavedSearchCreate(BaseModel):
@@ -844,6 +1086,8 @@ class SavedSearchCreate(BaseModel):
     query: str
     view: str = "all"
     categoryKey: str = ""
+    # F035：构建器完整意图（可选；None = 只存 q 解析路径）。
+    filters: dict[str, str | bool | None] | None = None
 
 
 class SavedSearchRename(BaseModel):
@@ -943,6 +1187,9 @@ class Workspace(BaseModel):
     reserved: bool
     # F25：工作区说明（纯文本；空串 = 未设置）
     description: str = ""
+    # F084：归档状态（默认导航隐藏；深链接仍可打开）
+    archived: bool = False
+    archivedAt: str | None = None
 
 
 class WorkspaceListResponse(BaseModel):
@@ -1114,6 +1361,7 @@ class ApiSourceCreate(BaseModel):
     endpoint: str
     itemsExpr: str
     fieldMap: dict[str, str]
+    pagination: dict[str, object] | None = None
     subscribe: bool = True
 
 
@@ -1126,6 +1374,7 @@ class ApiSourceUpdate(BaseModel):
     endpoint: str | None = None
     itemsExpr: str | None = None
     fieldMap: dict[str, str] | None = None
+    pagination: dict[str, object] | None = None
     enabled: bool | None = None
 
 
@@ -1145,6 +1394,10 @@ class ApiSource(BaseModel):
     secret: str | None = None
     atomPath: str | None = None
     subscribeError: str | None = None
+    # F042: pagination sampling config; F043: structure baseline state.
+    pagination: dict[str, object] | None = None
+    confirmedSchema: bool = False
+    schemaDrift: dict[str, list[str]] | None = None
 
 
 class ApiSourceListResponse(BaseModel):
@@ -1161,13 +1414,31 @@ class ApiSourcePreviewRequest(BaseModel):
     endpoint: str
     itemsExpr: str
     fieldMap: dict[str, str]
+    pagination: dict[str, object] | None = None
+    dryRunPagination: bool = False
+
+
+class ApiSourcePaginationDryRun(BaseModel):
+    """F042: bounded pagination walk against the sample (no writes)."""
+
+    pages: list[dict[str, object]]
+    stopReason: str
 
 
 class ApiSourcePreviewResult(BaseModel):
-    """Bounded preview (≤5 mapped items)."""
+    """Bounded preview (≤5 mapped items + F041 Atom-form preview)."""
 
     items: list[dict[str, object]]
     totalAvailable: int
+    atomPreview: list[dict[str, object]] = []
+    paginationDryRun: ApiSourcePaginationDryRun | None = None
+
+
+class ApiSourceConfirmSchemaResult(BaseModel):
+    """F043: baseline confirmation outcome."""
+
+    confirmed: bool
+    sampledItems: int
 
 
 # ---------------------------------------------------------------------------
@@ -1226,6 +1497,8 @@ class DigestSettings(BaseModel):
     toAddr: str
     # IANA 名称（'' = 服务器本地，历史语义）；调度与 nextSend 按此解释。
     timezone: str = ""
+    # F008：enabled 时给出下次发送时间（配置时区墙钟；'' = 服务器本地）
+    nextSendAt: str | None = None
     lastSentAt: str | None = None
     lastError: str | None = None
     passwordConfigured: bool = False
@@ -1347,6 +1620,24 @@ class GptDigestPreviewItem(BaseModel):
     feedUrl: str
     url: str
     publishedAt: str
+    # F102：manual = 素材池条目（用户显式指定），auto = 自动选材。
+    source: str = "auto"
+
+
+class GptDigestExcludedRecent(BaseModel):
+    """F101：被「近期已刊用」去重排除的一条材料明细。"""
+
+    title: str
+    feedTitle: str = ""
+    url: str = ""
+    reason: str = "recent_issue"
+
+
+class GptDigestPoolInvalid(BaseModel):
+    """F102：素材池失效条目（原文删除 / 引用非法）。"""
+
+    entryRef: str
+    reason: str
 
 
 class GptDigestPreview(BaseModel):
@@ -1359,6 +1650,8 @@ class GptDigestPreview(BaseModel):
     perSource: dict[str, int] = {}
     coveredSources: list[dict[str, str]] = []
     missingSources: list[dict[str, str]] = []
+    excludedRecent: list[GptDigestExcludedRecent] = []
+    poolInvalid: list[GptDigestPoolInvalid] = []
     note: str | None = None
 
 
@@ -1399,6 +1692,8 @@ class GptDigestConfig(BaseModel):
     windowHours: int = 24
     limitCount: int = 12
     perSourceCap: int = 2
+    # F101：回看去重窗口（天；0=关，默认 7，上限 90）。
+    lookbackDays: int = 7
     feedUrlAllow: str = ""
     # F04：材料源（window=订阅窗口 / read_later=稍后读 / starred=收藏）
     sourceKind: str = "window"
@@ -1421,6 +1716,7 @@ class GptDigestCreate(BaseModel):
     windowHours: int | None = None
     limitCount: int | None = None
     perSourceCap: int | None = None
+    lookbackDays: int | None = None
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
@@ -1436,6 +1732,7 @@ class GptDigestConfigUpdate(BaseModel):
     windowHours: int | None = None
     limitCount: int | None = None
     perSourceCap: int | None = None
+    lookbackDays: int | None = None
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
@@ -1469,11 +1766,17 @@ class TaskRecordList(BaseModel):
 
 
 class SourceOverrideResult(BaseModel):
-    """F11/F13：单个来源的显示覆盖（null = 该维度未启用）。"""
+    """F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
 
     feedUrl: str
     hiddenUntil: str | None = None
     showFrom: str | None = None
+    staleAlertHours: int | None = None
+    # F048/F055：per-source 提取策略与阅读样式覆盖（默认随全局）。
+    extractPolicy: str = "rss"
+    readerStyle: dict[str, object] | None = None
+    # F066：per-source AI 禁用（派生数据保留，仅不再更新/不被 AI 消费）。
+    aiDisabled: bool = False
     updatedAt: str = ""
 
 
@@ -1487,6 +1790,29 @@ class SourceOverrideUpdate(BaseModel):
     feedUrl: str
     hiddenUntil: str | None = None
     showFrom: str | None = None
+    staleAlertHours: int | None = Field(default=None, ge=1, le=8760)
+    extractPolicy: str | None = None  # F048：'rss' | 'web'
+    readerStyle: dict[str, object] | None = None  # F055：fontSize/lineHeight/width 子集
+    aiDisabled: bool | None = None  # F066：per-source AI 禁用
+
+
+class StaleSourceItem(BaseModel):
+    """F001：一个超期来源（basis 诚实标注判定依据，绝不把发布时间
+    冒充抓取成功；无条目投影的来源 basis=unknown 且不判超期）。"""
+
+    feedUrl: str
+    subscriptionRef: str | None = None
+    title: str = ""
+    staleAlertHours: int
+    lastActivityAt: str | None = None
+    ageHours: float | None = None
+    basis: str = "latest_entry"
+
+
+class StaleSourcesResponse(BaseModel):
+    checked: int = 0
+    items: list[StaleSourceItem] = []
+    generatedAt: str = ""
 
 
 class SettingsHistoryEntry(BaseModel):
@@ -1733,12 +2059,17 @@ class AgentApprovalDecision(BaseModel):
 
 
 class RagSearchItem(BaseModel):
-    """One fused retrieval hit (ref resolves to real content)."""
+    """One fused retrieval hit (ref resolves to real content).
+
+    F092：title/modelId 为后端如实返回；score 缺失时前端显示「—」
+    绝不编造百分比。"""
 
     ref: str
     kind: str
     text: str
     score: float
+    title: str | None = None
+    modelId: str | None = None
 
 
 class RagSearchResponse(BaseModel):
@@ -1750,10 +2081,12 @@ class RagSearchResponse(BaseModel):
 
 
 class RagRebuildResult(BaseModel):
-    """Bounded rebuild report."""
+    """Bounded rebuild report（F093 起为作业感知：jobId/status）。"""
 
     chunks: int
     elapsedMs: int
+    jobId: str | None = None
+    status: str | None = None
 
 
 class RagEnableResult(BaseModel):
@@ -1895,6 +2228,7 @@ class MailImapSettings(BaseModel):
     ssl: bool = True
     listUuid: str = ""
     intervalSeconds: int = 300
+    enabled: bool = True
     passwordConfigured: bool = False
 
 
@@ -1910,6 +2244,7 @@ class MailImapSettingsUpdate(BaseModel):
     ssl: bool | None = None
     listUuid: str | None = None
     intervalSeconds: int | None = None
+    enabled: bool | None = None
     password: str | None = None
 
 
@@ -2078,3 +2413,634 @@ class SourceRegistryEntry(BaseModel):
 class SourceRegistryResponse(BaseModel):
     sources: list[SourceRegistryEntry]
     generatedAt: str
+
+
+# ---------------------------------------------------------------------------
+# F021 手工关联内容
+# ---------------------------------------------------------------------------
+
+
+class ResolvedRefView(BaseModel):
+    """Relation end resolved through the source registry (stale-safe)."""
+
+    ref: str
+    domain: str
+    kind: str
+    title: str
+    source: str
+    datetime: str | None = None
+    excerpt: str | None = None
+    url: str | None = None
+    stale: bool = False
+    staleReason: str | None = None
+
+
+class RelationCreate(BaseModel):
+    """POST /api/v1/relations body."""
+
+    model_config = {"extra": "forbid"}
+
+    srcRef: str = Field(min_length=1, max_length=600)
+    dstRef: str = Field(min_length=1, max_length=600)
+    note: str = Field(default="", max_length=500)
+
+
+class RelationView(BaseModel):
+    """One manual relation with BOTH ends resolved; ``stale`` is true when
+    either end no longer resolves (the relation itself is kept)."""
+
+    id: int
+    srcRef: str
+    dstRef: str
+    note: str
+    createdAt: str
+    src: ResolvedRefView
+    dst: ResolvedRefView
+    stale: bool = False
+
+
+class RelationList(BaseModel):
+    items: list[RelationView]
+
+
+class SavedSearchPinOrder(BaseModel):
+    """PATCH …/views/{id}/pin-order body。"""
+
+    model_config = {"extra": "forbid"}
+
+    pinOrder: int = Field(ge=0, le=200)
+
+
+class SavedSearchCount(BaseModel):
+    """GET …/views/{id}/count — 服务端真实计数（有界）。"""
+
+    count: int
+    capped: bool = False
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# F022 收件箱归类规则
+# ---------------------------------------------------------------------------
+
+
+class InboxRuleCreate(BaseModel):
+    """POST /api/v1/inbox/rules body."""
+
+    model_config = {"extra": "forbid"}
+
+    field: Literal["source", "title"]
+    operator: Literal["contains", "equals"]
+    value: str = Field(min_length=1, max_length=200)
+    targetWorkspaceId: str = Field(min_length=1, max_length=200)
+    enabled: bool = True
+    priority: int | None = None
+
+
+class InboxRuleUpdate(BaseModel):
+    """PATCH /api/v1/inbox/rules/{id} body — partial."""
+
+    model_config = {"extra": "forbid"}
+
+    field: Literal["source", "title"] | None = None
+    operator: Literal["contains", "equals"] | None = None
+    value: str | None = Field(default=None, min_length=1, max_length=200)
+    targetWorkspaceId: str | None = Field(default=None, min_length=1, max_length=200)
+    enabled: bool | None = Field(default=None, strict=True)
+
+
+class InboxRule(BaseModel):
+    id: int
+    priority: int
+    field: str
+    operator: str
+    value: str
+    targetWorkspaceId: str
+    enabled: bool
+    createdAt: str
+
+
+class InboxRuleList(BaseModel):
+    items: list[InboxRule]
+
+
+class InboxRuleDryRun(BaseModel):
+    """POST /api/v1/inbox/rules/dry-run body — never persists anything."""
+
+    model_config = {"extra": "forbid"}
+
+    field: Literal["source", "title"]
+    value: str = Field(min_length=1, max_length=200)
+    source: str | None = Field(default=None, max_length=200)
+
+
+class InboxRuleDryRunResult(BaseModel):
+    matchedRule: InboxRule | None = None
+    explanation: str
+
+
+# ---------------------------------------------------------------------------
+# F023 跨来源作者聚合
+# ---------------------------------------------------------------------------
+
+
+class AuthorSummary(BaseModel):
+    """One aggregated author: canonical display name + item count (aliases
+    folded into the canonical count only via explicit user aliases)."""
+
+    author: str
+    count: int
+
+
+class AuthorList(BaseModel):
+    items: list[AuthorSummary]
+
+
+class AuthorAliasCreate(BaseModel):
+    """POST /api/v1/authors/aliases body — explicit user merge only."""
+
+    model_config = {"extra": "forbid"}
+
+    alias: str = Field(min_length=1, max_length=200)
+    canonical: str = Field(min_length=1, max_length=200)
+
+
+class AuthorAlias(BaseModel):
+    alias: str
+    canonical: str
+    createdAt: str
+
+
+class AuthorAliasList(BaseModel):
+    items: list[AuthorAlias]
+
+
+class AuthorItemsResponse(BaseModel):
+    """Items of one canonical author (aliases folded in)."""
+
+    author: str
+    items: list[EntryListItem]
+    hasMore: bool
+
+
+# ---------------------------------------------------------------------------
+# F024 积压整理助手
+# ---------------------------------------------------------------------------
+
+
+class BacklogPreviewRequest(BaseModel):
+    """POST /api/v1/entries/backlog-preview body.
+
+    starred / read-later are ALWAYS excluded server-side — passing false
+    does not disable the protection (the response echoes effective
+    exclusions)."""
+
+    model_config = {"extra": "forbid"}
+
+    olderThanDays: int = Field(ge=1, le=3650)
+    feedUrl: str | None = Field(default=None, max_length=2048)
+    categoryId: str | None = Field(default=None, max_length=200)
+    excludeStarred: bool = True
+    excludeReadLater: bool = True
+
+
+class BacklogSampleItem(BaseModel):
+    ref: str
+    title: str
+    publishedAt: str | None = None
+
+
+class BacklogPreviewResponse(BaseModel):
+    count: int
+    sample: list[BacklogSampleItem]
+    effectiveExclusions: list[str]
+    confirmPreviewToken: str
+
+
+class BacklogApplyRequest(BaseModel):
+    """POST /api/v1/entries/backlog-apply body — must carry the one-shot
+    preview token (30s) so the applied condition cannot drift."""
+
+    model_config = {"extra": "forbid"}
+
+    olderThanDays: int = Field(ge=1, le=3650)
+    feedUrl: str | None = Field(default=None, max_length=2048)
+    categoryId: str | None = Field(default=None, max_length=200)
+    excludeStarred: bool = True
+    excludeReadLater: bool = True
+    confirmPreviewToken: str = Field(min_length=16, max_length=128)
+
+
+class BacklogApplyResponse(BaseModel):
+    applied: int
+    failed: list[BacklogSampleItem]
+    effectiveExclusions: list[str]
+
+
+# ---------------------------------------------------------------------------
+# F025 AI 输入预览与范围控制
+# ---------------------------------------------------------------------------
+
+
+class AiInputScope(BaseModel):
+    """Optional request scope for AI generation endpoints."""
+
+    model_config = {"extra": "forbid"}
+
+    maxChars: int | None = Field(default=None, ge=512, le=50_000)
+
+
+# ---------------------------------------------------------------------------
+# F027 AI 结果版本
+# ---------------------------------------------------------------------------
+
+
+class SummaryVersionView(BaseModel):
+    versionId: str
+    summary: str
+    provider: str
+    model: str
+    createdAt: str
+
+
+class SummaryVersionsInfo(BaseModel):
+    versions: list[SummaryVersionView]
+    activeVersionId: str | None = None
+
+
+class EntrySummaryVersions(EntrySummary):
+    """GET/POST summary response + version history (旧→新)."""
+
+    inputChars: int | None = None
+    truncated: bool = False
+    versions: list[SummaryVersionView] = Field(default_factory=list)
+    activeVersionId: str | None = None
+
+
+
+# ---------------------------------------------------------------------------
+# F030 问答模板
+# ---------------------------------------------------------------------------
+
+
+class QaTemplate(BaseModel):
+    id: str
+    name: str
+    text: str
+    createdAt: str
+    updatedAt: str
+
+
+class QaTemplateList(BaseModel):
+    items: list[QaTemplate]
+
+
+# ---------------------------------------------------------------------------
+# W5: F081–F100
+# ---------------------------------------------------------------------------
+
+
+class BatchEditPatch(BaseModel):
+    """F081 批量元数据编辑补丁——字段缺省（None）= 未勾选，保持原值。
+
+    titleSuffix 只允许追加模式；tags add/remove 幂等；workspaceId =
+    移动目标（记录原工作区）。仅作用于 Lumi 自有字段。"""
+
+    model_config = {"extra": "forbid"}
+
+    titleSuffix: str | None = None
+    tagsAdd: list[str] | None = None
+    tagsRemove: list[str] | None = None
+    workspaceId: str | None = None
+
+
+class BatchEditItemState(BaseModel):
+    title: str
+    tags: list[str] = []
+    workspaceIds: list[str] = []
+
+
+class BatchEditPreviewItem(BaseModel):
+    ref: str
+    before: BatchEditItemState
+    after: BatchEditItemState
+
+
+class BatchEditPreviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] = Field(min_length=1, max_length=50)
+    patch: BatchEditPatch
+
+
+class BatchEditPreviewResponse(BaseModel):
+    items: list[BatchEditPreviewItem]
+
+
+class BatchEditApplyItem(BaseModel):
+    ref: str
+    ok: bool
+    error: str | None = None
+
+
+class BatchEditApplyRequest(BatchEditPreviewRequest):
+    pass
+
+
+class BatchEditApplyResponse(BaseModel):
+    items: list[BatchEditApplyItem]
+    applied: int = 0
+    failed: int = 0
+
+
+class MergePolicy(BaseModel):
+    """F082 合并策略——逐字段保留选择；tags 恒并集、workspace 恒取
+    primary（规格固定，不进 policy）。"""
+
+    model_config = {"extra": "forbid"}
+
+    title: str = "primary"
+    note: str = "primary"
+
+
+class MergePreviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    primaryRef: str
+    duplicateRef: str
+
+
+class MergeFieldCompare(BaseModel):
+    field: str
+    primary: object = None
+    duplicate: object = None
+
+
+class MergePreviewResponse(BaseModel):
+    primaryRef: str
+    duplicateRef: str
+    fields: list[MergeFieldCompare]
+    annotationCount: int = 0
+    assetUuids: list[str] = []
+
+
+class MergeRequest(MergePreviewRequest):
+    policy: MergePolicy = Field(default_factory=MergePolicy)
+
+
+class MergeResult(BaseModel):
+    mergedRef: str
+    removedRef: str
+    tagsUnion: list[str] = []
+    movedAnnotations: int = 0
+    trashed: bool = True
+
+
+class WorkspaceTemplate(BaseModel):
+    """F083 工作区模板（config 不含条目内容/凭据）。"""
+
+    id: str
+    name: str
+    config: dict = {}
+    createdAt: str
+
+
+class WorkspaceTemplateList(BaseModel):
+    items: list[WorkspaceTemplate] = []
+
+
+class SaveAsTemplateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(min_length=1, max_length=50)
+
+
+class FromTemplateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    templateId: str
+    name: str
+    includeExampleItems: bool = False
+    exampleRefs: list[str] = Field(default_factory=list, max_length=5)
+
+
+class WorkspaceFromTemplateResult(BaseModel):
+    workspace: Workspace
+    addedExampleRefs: list[str] = []
+    skippedExampleRefs: list[str] = []
+
+
+class WorkspacePatch(BaseModel):
+    """PATCH /api/v1/workspaces/{id}（F084 扩展：archive/restore）。
+
+    name/description 缺省 = 不修改；archived=True 归档、False 恢复。"""
+
+    model_config = {"extra": "forbid"}
+
+    name: str | None = None
+    description: str | None = None
+    archived: bool | None = None
+
+
+class BoardColumn(BaseModel):
+    """F085 看板一列（前 50 条 + 真实总数）。"""
+
+    status: str
+    items: list[dict] = []
+    total: int = 0
+
+
+class WorkspaceBoardResponse(BaseModel):
+    workspaceId: str
+    columns: list[BoardColumn] = []
+
+
+class BoardUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+    status: str
+
+
+class WorkspaceGoalView(BaseModel):
+    """F086 阅读目标（进度 = 看板 done 去重条目数，真实事件驱动）。"""
+
+    workspaceId: str
+    targetCount: int
+    deadline: str | None = None
+    doneCount: int = 0
+    createdAt: str
+
+
+class WorkspaceGoalPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    targetCount: int = Field(ge=1)
+    deadline: str | None = None
+
+
+class BookmarkCheckRequest(BaseModel):
+    """F087 书签失效检查（≤30 个，重复 ref 去重）。"""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] = Field(min_length=1, max_length=30)
+
+
+class BookmarkCheckItem(BaseModel):
+    ref: str
+    status: str
+    httpStatus: int | None = None
+    finalUrl: str | None = None
+    checkedAt: str
+    error: str | None = None
+
+
+class BookmarkCheckResponse(BaseModel):
+    items: list[BookmarkCheckItem] = []
+
+
+class ResearchPackPreviewRequest(BaseModel):
+    """F088 资料包预览（可选纳入快照资产）。"""
+
+    model_config = {"extra": "forbid"}
+
+    includeSnapshots: list[str] = Field(default_factory=list, max_length=50)
+
+
+class SnapshotBrief(BaseModel):
+    uuid: str
+    title: str
+    bytes: int
+
+
+class ResearchPackPreviewResponse(BaseModel):
+    entryCount: int
+    missingCount: int
+    estBytes: int
+    snapshots: list[SnapshotBrief] = []
+
+
+class ClipRevisionRequest(BaseModel):
+    """F089 剪藏手工修订（保留块 id 列表；全移除需 force）。"""
+
+    model_config = {"extra": "forbid"}
+
+    blocks: list[str] = Field(max_length=500)
+    note: str | None = None
+    force: bool = False
+    baseContentHash: str | None = None
+
+
+class ClipRevisionInfo(BaseModel):
+    revisedAt: str
+    note: str | None = None
+    baseContentHash: str | None = None
+
+
+class ClipDetailResponse(BaseModel):
+    """GET 剪藏详情（含原始与修订后内容）。"""
+
+    ref: str
+    url: str
+    title: str
+    byline: str | None = None
+    fetchedAt: str
+    createdAt: str
+    original: dict = {}
+    revised: ClipRevisionInfo | None = None
+    content: dict = {}
+
+
+class LumiNoteCreate(BaseModel):
+    """F090 手动创建笔记（contentMd ≤100KB）。"""
+
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=500)
+    contentMd: str = Field(max_length=100 * 1024)
+    workspaceId: str | None = None
+
+
+class LumiNoteUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str | None = Field(default=None, max_length=500)
+    contentMd: str | None = Field(default=None, max_length=100 * 1024)
+    baseUpdatedAt: str | None = None
+
+
+class LumiNoteDetail(BaseModel):
+    uuid: str
+    title: str
+    contentMd: str
+    workspaceId: str | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class RagExclusionItem(BaseModel):
+    """F091 单来源索引排除状态（含受影响分块计数预览）。"""
+
+    feedUrl: str
+    ragExcluded: bool
+    aiDisabled: bool
+    affectedChunks: int = 0
+
+
+class RagExclusionList(BaseModel):
+    items: list[RagExclusionItem] = []
+
+
+class RagExclusionPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    feedRef: str
+    excluded: bool
+
+
+class RagInconsistencyItem(BaseModel):
+    """F100 版本失配条目（basis: content_hash | embedding_model）。"""
+
+    ref: str
+    storedHash: str | None = None
+    currentHash: str | None = None
+    basis: str
+
+
+class RagInconsistencyList(BaseModel):
+    modelId: str
+    items: list[RagInconsistencyItem] = []
+
+
+class RagRepairRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] = Field(min_length=1, max_length=50)
+
+
+class RagRepairResult(BaseModel):
+    repaired: list[str] = []
+    failed: list[dict] = []
+
+
+class AgentThreadUpdate(BaseModel):
+    """F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
+
+    scope=None 显式清除范围锁定；键缺省 = 不修改。"""
+
+    model_config = {"extra": "forbid"}
+
+    title: str | None = None
+    scope: dict | None = None
+    clearScope: bool = False
+    toolPolicy: dict | None = None
+    clearToolPolicy: bool = False
+
+
+class AgentBranchRequest(BaseModel):
+    """F099 从指定消息分支。"""
+
+    model_config = {"extra": "forbid"}
+
+    messageIndex: int = Field(ge=0)

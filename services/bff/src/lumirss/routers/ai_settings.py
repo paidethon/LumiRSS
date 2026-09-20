@@ -15,6 +15,8 @@ from lumirss.ai_settings import (
     KEY_LIBRETRANSLATE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
+    KEY_QUOTA_MAX_CALLS,
+    KEY_QUOTA_WINDOW,
     KEY_SUMMARY_LANGUAGE,
     KEY_TRANSLATION_ENGINE,
     KEY_TRANSLATION_LANGUAGE,
@@ -63,6 +65,8 @@ async def _ai_settings_json(
         "translationLanguage": values[KEY_TRANSLATION_LANGUAGE],
         "translationEngine": values[KEY_TRANSLATION_ENGINE],
         "libretranslateUrl": values[KEY_LIBRETRANSLATE_URL],
+        "quotaWindow": values[KEY_QUOTA_WINDOW],
+        "quotaMaxCalls": int(values[KEY_QUOTA_MAX_CALLS] or "0"),
         "libretranslateKeyConfigured": bool(
             (secrets.get(LIBRETRANSLATE_KEY_NAME) or "").strip()
         ),
@@ -127,6 +131,17 @@ async def put_ai_settings(
     return await _ai_settings_json(
         await store.save(update), profiles, _get_secrets_store(request)
     )
+
+
+@router.get("/api/v1/settings/ai/quota")
+async def get_ai_quota(request: Request) -> dict[str, object]:
+    """F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。"""
+    from lumirss.ai_quota import usage_snapshot
+
+    values = await _get_ai_settings_store(request).load()
+    window = values[KEY_QUOTA_WINDOW]
+    max_calls = int(values[KEY_QUOTA_MAX_CALLS] or "0")
+    return await usage_snapshot(request.app.state.db, window, max_calls)
 
 
 class SecretValuePut(BaseModel):

@@ -19,6 +19,7 @@ import type { ConversationMessage } from '../api/types'
 import { useEntryConversation, useSendConversationMessageMutation } from '../api/queries'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
+import QaTemplateBar from './QaTemplateBar'
 import { Skeleton } from './ui/Skeleton'
 import { Sheet } from './ui/Sheet'
 import { cx } from './ui/cx'
@@ -180,6 +181,8 @@ export default function ArticleConversation({
           submit()
         }}
       >
+        {/* F030：问答模板（选择填入 / 存为模板 / 管理；与文章无关） */}
+        <QaTemplateBar draft={draft} onPick={(text) => setDraft(text)} />
         {send.isError && (
           <p role="alert" className="mb-2 flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
             <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />

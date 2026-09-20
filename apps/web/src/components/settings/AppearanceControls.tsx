@@ -5,6 +5,11 @@
 import { useId } from 'react'
 import { normalizeSettings, useAppSettings } from '../../store/app-settings'
 import { prefixCustomCss, READER_BACKGROUNDS } from '../../lib/reader-style'
+import {
+  backupCurrentCustomCss,
+  loadBackupCustomCss,
+  validateCustomCss,
+} from '../../lib/custom-css'
 import { RadioGroup, RadioOption } from '../ui/RadioGroup'
 import { cx } from '../ui/cx'
 
@@ -174,12 +179,13 @@ export function ReaderBackgroundPicker() {
   )
 }
 
-/** CustomCssEditor — 自定义 CSS（0010a F7，AC14/AC22）。
+/** CustomCssEditor — 自定义 CSS（0010a F7，AC14/AC22；F112 收尾）。
  * Miniflux/CommaFeed 验证的自托管逃生舱模式（inspired）：
  * textarea + 变量提示 + 保存注入（选择器自动前缀 .lumi-reader，
- * 解析失败拒绝并提示）。 */
-
-import { useState } from 'react'
+ * 解析失败拒绝并提示）。
+ * F112：实时预览沙盒（隔离 class 命名空间 + 示例文章复刻）、
+ * @import/绝对 url() 拦截（白名单仅相对/#）、上一有效版本恢复
+ * （备份键 lumirss-custom-css-last-valid，device-local）。 */
 
 export function CustomCssEditor() {
   const customCss = useAppSettings((s) => s.settings.customCss)
@@ -187,6 +193,8 @@ export function CustomCssEditor() {
   const [draft, setDraft] = useState(customCss)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [backup, setBackup] = useState<string | null>(() => loadBackupCustomCss(customCss))
 
   // 外部变化（导入备份/重置）同步到草稿
   const [lastExternal, setLastExternal] = useState(customCss)
@@ -194,6 +202,11 @@ export function CustomCssEditor() {
     setLastExternal(customCss)
     setDraft(customCss)
   }
+
+  // F112：预览沙盒——同一段前缀化 CSS 只作用于沙盒内的示例文章
+  //（.lumi-reader 命名空间隔离，样式不逃逸到设置页）。
+  const previewCss = draft.trim() !== '' ? prefixCustomCss(draft) : null
+  const draftValid = previewCss !== null
 
   return (
     <div className="py-3">
@@ -205,6 +218,7 @@ export function CustomCssEditor() {
         前缀（如写 <code className="font-mono">p</code> 即{' '}
         <code className="font-mono">.lumi-reader p</code>）。可用变量：
         --lumi-reader-font-size / -line-height / -content-width 等。
+        @import 与绝对 url() 会被拦截（白名单：相对路径 / # 片段）。
       </p>
       <textarea
         value={draft}
@@ -219,25 +233,52 @@ export function CustomCssEditor() {
         placeholder={'p { margin-bottom: 1.2em; }\nimg { border-radius: 8px; }'}
         className="mt-2 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3 font-mono text-xs leading-relaxed text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
       />
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => {
-            {
-              const result = draft.trim() ? prefixCustomCss(draft) : ''
-              if (result === null) {
-                setError('无法解析这段 CSS（花括号不配对或空选择器）——请修正后重试')
-              } else {
-                update({ customCss: draft })
-                setError(null)
-                setSaved(true)
-              }
+            const problem = validateCustomCss(draft)
+            if (problem !== null) {
+              setError(problem)
+              setSaved(false)
+              return
             }
+            // 成功保存前备份「当前生效值」——出问题可一键恢复
+            if (customCss !== draft) backupCurrentCustomCss(customCss)
+            update({ customCss: draft })
+            setError(null)
+            setSaved(true)
+            setBackup(loadBackupCustomCss(draft))
           }}
           className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent)] px-3 py-1.5 text-xs font-medium text-[var(--lumi-accent-contrast)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-accent-hover)]"
         >
           保存
         </button>
+        <button
+          type="button"
+          data-css-preview-toggle=""
+          aria-pressed={previewOpen}
+          onClick={() => setPreviewOpen((v) => !v)}
+          className="rounded-[var(--lumi-radius-md)] px-3 py-1.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+        >
+          {previewOpen ? '隐藏预览' : '预览'}
+        </button>
+        {backup !== null && (
+          <button
+            type="button"
+            data-css-restore-backup=""
+            onClick={() => {
+              setDraft(backup)
+              update({ customCss: backup })
+              setError(null)
+              setSaved(true)
+              setBackup(loadBackupCustomCss(backup))
+            }}
+            className="rounded-[var(--lumi-radius-md)] px-3 py-1.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+          >
+            恢复上一有效版本
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -249,33 +290,106 @@ export function CustomCssEditor() {
         >
           清除
         </button>
-        {error && <span className="text-xs text-[var(--lumi-danger)]">{error}</span>}
+        {error && (
+          <span className="text-xs text-[var(--lumi-danger)]" role="alert" data-css-error="">
+            {error}
+          </span>
+        )}
         {!error && saved && (
           <span className="text-xs text-[var(--lumi-text-tertiary)]">已保存并生效</span>
         )}
       </div>
+
+      {/* F112 预览沙盒：示例文章复刻 + 草稿 CSS（前缀化后仅命中沙盒）。
+          非法草稿不渲染样式（避免半解析产物逃逸）。 */}
+      {previewOpen ? (
+        <div className="mt-2" data-css-preview-sandbox="">
+          {!draftValid && draft.trim() !== '' ? (
+            <p className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs text-[var(--lumi-text-tertiary)]">
+              当前草稿无法解析——预览不可用。
+            </p>
+          ) : (
+            <>
+              {previewCss !== null && <style>{previewCss}</style>}
+              <div className="lumi-reader rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3">
+                <h2 className="text-base font-semibold">示例文章：深空里的信标</h2>
+                <p className="mt-1 text-sm leading-relaxed">
+                  这是一段示例正文，用于预览自定义 CSS 的实际效果——字号、行高、
+                  边距与圆角都会在这里如实呈现。
+                </p>
+                <p className="mt-1 text-sm">
+                  <a href="#" onClick={(event) => event.preventDefault()}>
+                    一个示例链接
+                  </a>{' '}
+                  与 <code className="font-mono text-xs">行内代码</code>。
+                </p>
+                <blockquote className="mt-2 border-l-2 border-[var(--lumi-border)] pl-2 text-sm text-[var(--lumi-text-secondary)]">
+                  引用块：检查缩进与颜色是否如预期。
+                </blockquote>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 /** ReaderPresetPicker — 排版预设（0010a F7，AC20/AC21/AC22）。
- * 内置 5 套一键切换；用户预设可导出/导入/删除；内置可「复制派生」。 */
+ * 内置 5 套一键切换；用户预设可导出/导入/删除；内置可「复制派生」。
+ * F036 收尾：预设编辑器暴露 宽度/栏数/设备适用（lib/reader-preset-device
+ * 的 v2 逻辑），desktop-only 预设移动端应用时诚实标注「桌面端生效」。 */
 
 import { Check, Copy, Download, Trash2, Upload } from 'lucide-react'
 import { BUILTIN_READER_PRESETS } from '../../lib/reader-style'
-import type { ReaderPreset } from '../../store/app-settings'
-import { useRef } from 'react'
+import type { AppSettings, ReaderPreset } from '../../store/app-settings'
+import { READER_NUMERIC_RANGES } from '../../store/app-settings'
+import { applyPresetForDevice, type PresetVarsV2 } from '../../lib/reader-preset-device'
+import { useIsMobile } from '../../lib/use-is-mobile'
+import { useRef, useState } from 'react'
 
 export function ReaderPresetPicker() {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
   const fileRef = useRef<HTMLInputElement>(null)
+  const isMobile = useIsMobile()
+  const [deviceNotice, setDeviceNotice] = useState<string | null>(null)
 
   const allPresets: ReaderPreset[] = [...BUILTIN_READER_PRESETS, ...settings.readerPresets]
+  const selected = allPresets.find((p) => p.id === settings.readerPresetId) ?? null
 
-  /** 应用预设 = 把预设 vars 写入当前设置（AC20：一键切换）。 */
+  /** 应用预设 = 把预设 vars 写入当前设置（AC20：一键切换）。
+   * F036：经 applyPresetForDevice —— 移动端应用 desktop-only 预设时
+   * 忽略宽度/栏数并诚实标注「桌面端生效」。 */
   const applyPreset = (p: ReaderPreset) => {
-    update({ readerPresetId: p.id, ...p.vars })
+    const result = applyPresetForDevice(p.vars as PresetVarsV2, isMobile)
+    const v = result.vars
+    const patch: Partial<AppSettings> = { readerPresetId: p.id }
+    if (v.readerFontFamily !== undefined) {
+      patch.readerFontFamily = v.readerFontFamily as AppSettings['readerFontFamily']
+    }
+    if (v.readerFontSize !== undefined) patch.readerFontSize = Number(v.readerFontSize)
+    if (v.readerLineHeight !== undefined) patch.readerLineHeight = Number(v.readerLineHeight)
+    if (v.readerBackground !== undefined) {
+      patch.readerBackground = v.readerBackground as AppSettings['readerBackground']
+    }
+    if (v.readerParagraphSpacing !== undefined) {
+      patch.readerParagraphSpacing = Number(v.readerParagraphSpacing)
+    }
+    if (typeof v.readerJustify === 'boolean') patch.readerJustify = v.readerJustify
+    if (v.readerContentWidth !== undefined) patch.readerContentWidth = v.readerContentWidth
+    update(patch)
+    setDeviceNotice(result.notice)
+  }
+
+  /** 编辑当前用户预设的 v2 字段（内置只读——复制派生后可编辑）。 */
+  const editSelectedVars = (patch: Partial<ReaderPreset['vars']>) => {
+    if (selected === null || selected.builtin) return
+    update({
+      readerPresets: settings.readerPresets.map((p) =>
+        p.id === selected.id ? { ...p, vars: { ...p.vars, ...patch } } : p,
+      ),
+    })
   }
 
   const exportPreset = () => {
@@ -399,6 +513,11 @@ export function ReaderPresetPicker() {
           </div>
         ))}
       </div>
+      {deviceNotice && (
+        <p role="status" className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+          {deviceNotice}
+        </p>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
@@ -427,6 +546,107 @@ export function ReaderPresetPicker() {
           }}
         />
       </div>
+      <PresetLayoutEditor
+        selected={selected}
+        onEdit={editSelectedVars}
+      />
+    </div>
+  )
+}
+
+/** F036 预设编辑器：宽度 / 栏数 / 设备适用（v2 字段）。
+ * 仅用户预设可编辑（内置只读，提示先复制派生）；desktop-only
+ * 附「桌面端生效」诚实标注。 */
+function PresetLayoutEditor({
+  selected,
+  onEdit,
+}: {
+  selected: ReaderPreset | null
+  onEdit: (patch: Partial<ReaderPreset['vars']>) => void
+}) {
+  if (selected === null) return null
+  const width = READER_NUMERIC_RANGES.readerContentWidth
+  if (selected.builtin) {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+        内置预设只读——「复制为自定义预设」后可编辑布局宽度、栏数与设备适用。
+      </p>
+    )
+  }
+  const scope = selected.vars.deviceScope === 'desktop' ? 'desktop' : 'all'
+  const columns = selected.vars.readerColumns ?? 1
+  return (
+    <div className="mt-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3">
+      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">
+        预设布局（{selected.name}）
+      </p>
+      <label
+        htmlFor="preset-width-range"
+        className="mt-3 flex items-center justify-between text-xs text-[var(--lumi-text-secondary)]"
+      >
+        布局宽度
+        <span className="font-mono text-[var(--lumi-text-primary)]">
+          {selected.vars.readerContentWidth ?? width.default}px
+        </span>
+      </label>
+      <input
+        id="preset-width-range"
+        type="range"
+        min={width.min}
+        max={width.max}
+        step={width.step}
+        value={selected.vars.readerContentWidth ?? width.default}
+        onChange={(e) => onEdit({ readerContentWidth: Number(e.target.value) })}
+        className="mt-1 w-full accent-[var(--lumi-accent)]"
+      />
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-xs text-[var(--lumi-text-secondary)]">栏数</span>
+        {[1, 2, 3].map((n) => (
+          <button
+            key={n}
+            type="button"
+            aria-pressed={columns === n}
+            onClick={() => onEdit({ readerColumns: n })}
+            className={cx(
+              'rounded-[var(--lumi-radius-sm)] border px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+              columns === n
+                ? 'border-[var(--lumi-accent)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                : 'border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-xs text-[var(--lumi-text-secondary)]">设备适用</span>
+        {(
+          [
+            { value: 'all', label: '全部设备' },
+            { value: 'desktop', label: '仅桌面端' },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={scope === opt.value}
+            onClick={() => onEdit({ deviceScope: opt.value })}
+            className={cx(
+              'rounded-[var(--lumi-radius-sm)] border px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+              scope === opt.value
+                ? 'border-[var(--lumi-accent)] bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                : 'border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {scope === 'desktop' && (
+        <p className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+          桌面端生效：移动端应用此预设时忽略布局宽度与栏数。
+        </p>
+      )}
     </div>
   )
 }

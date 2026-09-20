@@ -25,6 +25,7 @@ import type { ApiError } from '../../api/client'
 import {
   OpmlErrorCard,
   OpmlPreviewCard,
+  OpmlPreviewItemsCard,
   OpmlResultCard,
 } from '../OpmlImportFlow'
 import { useFreshRssUiUrl } from '../../api/queries'
@@ -47,7 +48,7 @@ function OpmlExportBlock() {
         从 FreshRSS 导出全部订阅与分类。文件只包含订阅列表，不含设置、密钥、阅读记录或收藏。
       </p>
       <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" onClick={exportOnce} disabled={busy}>
+        <Button size="sm" onClick={() => exportOnce()} disabled={busy}>
           <Download aria-hidden className="size-3.5" />
           {busy ? '导出中…' : '导出 OPML'}
         </Button>
@@ -72,7 +73,7 @@ function OpmlExportBlock() {
 function OpmlImportBlock() {
   const flow = useOpmlImportFlow()
   const canConfirm =
-    flow.file !== null && flow.preview !== null && flow.preview.newFeeds > 0 && !flow.busy
+    flow.file !== null && flow.preview !== null && flow.selectedCount > 0 && !flow.busy
 
   return (
     <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
@@ -117,6 +118,16 @@ function OpmlImportBlock() {
           <OpmlErrorCard title={flow.error.title} detail={flow.error.detail} />
         )}
         {!flow.result && flow.preview !== null && <OpmlPreviewCard preview={flow.preview} />}
+        {/* F002：逐项勾选（与订阅页对话框同一卡片） */}
+        {!flow.result && flow.preview !== null && (
+          <OpmlPreviewItemsCard
+            preview={flow.preview}
+            selected={flow.selected}
+            onToggleItem={flow.toggleItem}
+            onToggleAll={flow.toggleAll}
+            onInvert={flow.invertSelection}
+          />
+        )}
         {flow.importPending && (
           <p role="status" className="text-sm text-[var(--lumi-text-secondary)]">
             正在导入，请稍候…

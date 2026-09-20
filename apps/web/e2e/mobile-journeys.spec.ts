@@ -11,9 +11,23 @@ import {
   ensureMockDefaultAiKey,
   expectNoHorizontalOverflow,
   openMobileSettings,
+  resolveBridgeIp,
 } from './helpers'
+import { createAiMockServer } from './mock-servers.mjs'
 
 test.describe.configure({ mode: 'serial' })
+
+const BRIDGE = resolveBridgeIp()
+const AI_PORT = 18082
+let aiServer: import('node:http').Server
+
+test.beforeAll(async () => {
+  aiServer = await createAiMockServer(AI_PORT, '0.0.0.0')
+})
+
+test.afterAll(async () => {
+  aiServer?.close()
+})
 
 test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'mobile-only journeys')
 
@@ -37,7 +51,9 @@ test('M1 — 底部导航与抽屉：一级入口 / 搜索诚实 / 设置触达'
   const searchInput = page.getByRole('searchbox').first()
   await searchInput.fill('不存在的查询词')
   await searchInput.press('Enter')
-  await expect(page.getByText(/没有找到与「不存在的查询词」相关的内容/)).toBeVisible()
+  await expect(
+      page.getByText(/没有找到与「不存在的查询词」相关的内容/).filter({ visible: true }).first(),
+    ).toBeVisible()
   const bodyText = await page.locator('body').innerText()
   expect(bodyText).not.toMatch(/共 \d+ 条结果|条相关结果/)
 
@@ -53,8 +69,9 @@ test('M2 — 时间线与全屏 Reader：打开 / 全屏 / 返回 / 已读收藏
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
   await entryTitle.click()
 
-  // 全屏 Reader：正文可见，无横向溢出
-  await expect(page.getByText(/正文内容/).first()).toBeVisible()
+  // 全屏 Reader：正文可见，无横向溢出（隐藏列位/译文中也含正文文本——
+  // 只认可见元素，避开 strict/hidden 误配）。
+  await expect(page.getByText(/正文内容/).filter({ visible: true }).first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   // Reader 内显式收藏（幂等：若上次运行已收藏则先取消）。
@@ -69,15 +86,30 @@ test('M2 — 时间线与全屏 Reader：打开 / 全屏 / 返回 / 已读收藏
 
   // 返回列表（列表仍在，section/view/scope 不变）
   await page.getByRole('button', { name: '返回文章列表' }).click()
-  await expect(page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()).toBeVisible()
+  await expect(
+    page
+      .locator('div[data-entry-ref] button[aria-pressed]')
+      .filter({ visible: true })
+      .filter({ hasText: /\S/ })
+      .filter({ hasText: /alpha|beta|gamma/ })
+      .first(),
+  ).toBeVisible()
 })
 
 test('M3 — AI 摘要（mock provider）：Reader 内生成或读取缓存', async ({ page }) => {
-  // 自建前置（幂等，同 J4）：provider 调用需要非空 key；mock 配置
-  // （Base URL/Model）仍由 desktop-journeys 先行写入。
+  // 自建前置（幂等）：不再依赖 desktop-journeys 先行——栈预置的
+  // provider baseUrl 指向宿主网关 :18082（seed 值；PUT http URL 会被
+  // SSRF allow-list 拒绝，因此不改配置只补服务）。beforeAll 已在该端口
+  // 启动 mock AI；ensureMockDefaultAiKey 保证 Bearer key 非空。
   await ensureMockDefaultAiKey(page)
   await page.goto('/')
-  const entryTitle = page.getByRole('button', { name: /文章 beta/ }).first()
+  // 标题按钮 = 行内带文本的 aria-pressed 按钮（rapid-selection 同款约定）
+  const entryTitle = page
+    .locator('div[data-entry-ref] button[aria-pressed]')
+    .filter({ visible: true })
+    .filter({ hasText: /\S/ })
+    .filter({ hasText: /beta/ })
+    .first()
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
   await entryTitle.click()
   // 等待摘要卡进入稳定态：已缓存展示 / 未生成按钮 / 失败重试（上轮

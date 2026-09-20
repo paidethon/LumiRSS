@@ -173,7 +173,8 @@ describe('F13 — 文内查找', () => {
 
     // 入口：ReaderHeader 工具栏（jsdom 无 CSS.highlights → 降级路径）
     fireEvent.click(screen.getByRole('button', { name: '文内查找' }))
-    const input = screen.getByLabelText('查找正文')
+    // 查找条为懒加载 chunk：等待挂载（修复慢机竞态，与 bcfe0a6 同类）
+    const input = await screen.findByLabelText('查找正文')
     fireEvent.change(input, { target: { value: '术语' } })
     expect(await screen.findByText('1/2 处命中')).toBeInTheDocument()
 

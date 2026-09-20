@@ -83,6 +83,9 @@ class ConversationMessage:
 class ConversationState:
     status: str
     messages: tuple[ConversationMessage, ...]
+    # F025：本条回复实际进入模型输入的正文范围（诚实口径；GET 历史时为 None）。
+    input_chars: int | None = None
+    truncated: bool = False
 
 
 class ConversationService:
@@ -152,8 +155,13 @@ class ConversationService:
             messages=messages,
         )
 
-    async def send_message(self, entry_ref: str, question: str) -> ConversationState:
-        """Ask one question: persist + provider call + persist reply."""
+    async def send_message(
+        self, entry_ref: str, question: str, max_chars: int | None = None
+    ) -> ConversationState:
+        """Ask one question: persist + provider call + persist reply.
+
+        F025：max_chars（512–50000，None = 现行为 8000）限定进入上下文
+        的正文范围；响应诚实上报 input_chars / truncated。"""
         clean_question = normalize_content(question)[:MAX_QUESTION_CHARS]
         if not clean_question:
             raise ValueError("question must not be empty")
@@ -176,7 +184,7 @@ class ConversationService:
             history = await self._load_messages(conversation_id)
             settings = await self._settings.load()
             require_ai_configured(settings)
-            reply = await self._ask_provider(
+            reply, input_chars, truncated = await self._ask_provider(
                 settings=settings,
                 title=title,
                 feed_title=feed_title,
@@ -185,6 +193,7 @@ class ConversationService:
                 hash_value=hash_value,
                 history=history,
                 question=clean_question,
+                max_chars=max_chars,
             )
             # Only persist AFTER a successful provider call: a failed
             # question stays in the UI input for a clean retry.
@@ -203,7 +212,12 @@ class ConversationService:
                 (_utc_now(), conversation_id),
             )
             messages = await self._load_messages(conversation_id)
-            return ConversationState(status=_STATUS_ACTIVE, messages=messages)
+            return ConversationState(
+                status=_STATUS_ACTIVE,
+                messages=messages,
+                input_chars=input_chars,
+                truncated=truncated,
+            )
 
     async def _ask_provider(
         self,
@@ -216,8 +230,11 @@ class ConversationService:
         hash_value: str,
         history: tuple[ConversationMessage, ...],
         question: str,
-    ) -> str:
+        max_chars: int | None = None,
+    ) -> tuple[str, int, bool]:
         summary_context = await self._cached_summary(entry_ref, hash_value)
+        content_limit = max_chars if max_chars is not None else MAX_CHAT_CONTEXT_CHARS
+        scoped_content = content[:content_limit]
         language = settings[KEY_SUMMARY_LANGUAGE]
         language_instruction = (
             "The requested reply language is: zh-CN (Simplified Chinese)."
@@ -231,7 +248,7 @@ class ConversationService:
         if summary_context:
             context_parts.append(f"【AI 摘要】\n{summary_context}")
         context_parts.append(
-            f"【文章正文】\n{content[:MAX_CHAT_CONTEXT_CHARS]}"
+            f"【文章正文】\n{scoped_content}"
         )
         messages: list[dict[str, str]] = [
             {
@@ -247,10 +264,12 @@ class ConversationService:
             settings[KEY_BASE_URL], settings[KEY_MODEL]
         )
         try:
-            return await provider.complete(messages=messages)
+            reply = await provider.complete(messages=messages)
         except AiProviderError:
             # Nothing persisted yet; the caller propagates the stable error.
             raise
+        # F025 诚实口径：本次实际随问题发送的正文字符数（历史/标题不计入）。
+        return reply, len(scoped_content), len(content) > len(scoped_content)
 
     async def _cached_summary(self, entry_ref: str, hash_value: str) -> str | None:
         """Latest successful cached summary for this exact article version."""

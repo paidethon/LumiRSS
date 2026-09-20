@@ -8,8 +8,9 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../api/client'
-import type { GptDigestConfig, GptDigestIssue } from '../../api/client'
+import type { DigestPoolEntry, GptDigestConfig, GptDigestIssue } from '../../api/client'
 import {
+  useAddDigestPoolEntryMutation,
   useConfigFeed,
   useConfigIssues,
   useConfigPreviewMutation,
@@ -17,14 +18,22 @@ import {
   useCompareGptDigestIssueMutation,
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
+  useDigestPool,
   useExplainGptDigestIssueMutation,
   useGenerateConfigMutation,
   useWeeklyDigestMutation,
   useGptDigestConfigs,
+  useGenerateDigestForDateMutation,
+  useMissingDigestDates,
+  usePublishGptDigestIssueMutation,
+  useRemoveDigestPoolEntryMutation,
+  useReorderDigestPoolMutation,
   useReviseGptDigestIssueMutation,
+  useRotateGptDigestDryRunMutation,
   useRotateGptDigestFeedMutation,
   useUpdateGptDigestConfigMutation,
 } from '../../api/queries'
+import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
@@ -127,6 +136,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const issues = useConfigIssues(config.id)
   const feed = useConfigFeed(config.id)
   const rotate = useRotateGptDigestFeedMutation()
+  const rotateDry = useRotateGptDigestDryRunMutation()
   const weekly = useWeeklyDigestMutation()
 
   const [name, setName] = useState(config.name)
@@ -137,8 +147,14 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const [perSourceCap, setPerSourceCap] = useState(config.perSourceCap)
   const [feedUrlAllow, setFeedUrlAllow] = useState(config.feedUrlAllow)
   const [sourceKind, setSourceKind] = useState(config.sourceKind)
+  // F101：回看去重窗口（0 = 关闭，1–90 天）
+  const [lookbackDays, setLookbackDays] = useState(config.lookbackDays)
   // F02：多时点（逗号分隔小时；空 = 单时点 hour）
   const [slotsText, setSlotsText] = useState(config.slots.join(','))
+  // F101：本次预览显式放回的材料身份集合（url:/title: 前缀键）
+  const [putBackKeys, setPutBackKeys] = useState<string[]>([])
+  // F103：轮换两步确认（step: idle → 影响确认 → 已轮换展示新地址）
+  const [rotateStep, setRotateStep] = useState<'idle' | 'confirm' | 'done'>('idle')
 
   useEffect(() => {
     setName(config.name)
@@ -149,7 +165,10 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     setPerSourceCap(config.perSourceCap)
     setFeedUrlAllow(config.feedUrlAllow)
     setSourceKind(config.sourceKind)
+    setLookbackDays(config.lookbackDays)
     setSlotsText(config.slots.join(','))
+    setPutBackKeys([])
+    setRotateStep('idle')
   }, [config])
 
   const parsedSlots = slotsText
@@ -170,9 +189,28 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     config.perSourceCap !== perSourceCap ||
     config.feedUrlAllow !== feedUrlAllow ||
     config.sourceKind !== sourceKind ||
+    config.lookbackDays !== lookbackDays ||
     slotsChanged
 
-  const feedUrl = feed.data ? `${window.location.origin}${feed.data.atomPath}` : ''
+  // §13.4：token 只存哈希——atomPath 为空 = 订阅地址已隐藏（明文不可
+  // 重建），新地址经「轮换 token」一次性获取；UI 诚实呈现，不显示坏链。
+  const feedUrl =
+    feed.data && feed.data.atomPath !== ''
+      ? `${window.location.origin}${feed.data.atomPath}`
+      : ''
+  const feedHidden = feed.data !== undefined && feed.data.atomPath === ''
+
+  /** F101 放回：把材料身份加入 putBack 并以该列表重跑预览（预览即所得）。 */
+  const putBackAndRepreview = (identity: string) => {
+    const next = putBackKeys.includes(identity) ? putBackKeys : [...putBackKeys, identity]
+    setPutBackKeys(next)
+    preview.mutate({ configId: config.id, putBack: next })
+  }
+
+  const runPreview = () => {
+    setPutBackKeys([])
+    preview.mutate({ configId: config.id })
+  }
 
   return (
     <div className="flex flex-col gap-1">
@@ -223,6 +261,17 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           className={numberInputCls}
           value={windowHours}
           onChange={(e) => setWindowHours(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="近期已刊用去重（F101）" hint="回看天数（0–90）：窗口内已发布期刊引用过的材料不再入选；0 = 关闭；草稿不计入">
+        <input
+          aria-label="回看去重天数"
+          type="number"
+          min={0}
+          max={90}
+          className={numberInputCls}
+          value={lookbackDays}
+          onChange={(e) => setLookbackDays(Number(e.target.value))}
         />
       </Row>
       <Row label="单期条目上限（1–40）">
@@ -295,6 +344,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
                 perSourceCap,
                 feedUrlAllow,
                 sourceKind,
+                lookbackDays,
                 slots: slotsText.trim() === '' ? [] : parsedSlots,
               },
             })
@@ -306,7 +356,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           variant="secondary"
           size="sm"
           disabled={preview.isPending}
-          onClick={() => preview.mutate(config.id)}
+          onClick={runPreview}
         >
           {preview.isPending ? '预览中…' : '预览选材'}
         </Button>
@@ -314,7 +364,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           variant="secondary"
           size="sm"
           disabled={generate.isPending}
-          onClick={() => generate.mutate(config.id)}
+          onClick={() => generate.mutate({ configId: config.id, putBack: putBackKeys })}
         >
           {generate.isPending ? '生成中…' : '立即生成/修订今日'}
         </Button>
@@ -368,24 +418,81 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
         <p className="text-xs text-[var(--lumi-text-tertiary)]">最近发布期号：{config.lastIssueKey}</p>
       ) : null}
       {preview.data ? (
-        <div className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5">
+        <div className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5" data-lumi-digest-preview="">
           <p className="text-xs text-[var(--lumi-text-secondary)]">{preview.data.note}</p>
           <ul className="flex flex-col gap-0.5">
             {preview.data.selected.map((item) => (
               <li key={item.sourceId} className="text-xs text-[var(--lumi-text-secondary)]">
                 <span className="font-medium text-[var(--lumi-text-primary)]">[{item.sourceId}]</span> {item.title}{' '}
                 · {item.feedTitle}
+                {/* F102：manual = 来自素材池的显式候选 */}
+                {item.source === 'manual' ? (
+                  <span
+                    className="ml-1.5 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-accent-text)]"
+                    data-lumi-pool-manual-badge=""
+                  >
+                    素材池
+                  </span>
+                ) : null}
               </li>
             ))}
             {preview.data.selected.length === 0 ? (
               <li className="text-xs text-[var(--lumi-text-tertiary)]">窗口内没有入选条目。</li>
             ) : null}
           </ul>
+          {/* F101：近期已刊用明细 + 单条放回（放回仅作用于本次预览/生成） */}
+          {preview.data.excludedRecent.length > 0 ? (
+            <div className="flex flex-col gap-0.5" data-lumi-excluded-recent="">
+              <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+                近期已刊用（{preview.data.counts.recentIssue ?? preview.data.excludedRecent.length}，回看{' '}
+                {lookbackDays} 天内已发布期刊引用过）：
+              </p>
+              <ul className="flex flex-col gap-0.5">
+                {preview.data.excludedRecent.map((item) => {
+                  const identity =
+                    item.url !== '' ? `url:${item.url}` : `title:${item.title.trim().toLowerCase()}`
+                  const putBack = putBackKeys.includes(identity)
+                  return (
+                    <li key={identity} className="flex items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+                      <span className="min-w-0 flex-1 truncate">
+                        <span
+                          className="mr-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px]"
+                          data-lumi-recent-badge=""
+                        >
+                          近期已刊用
+                        </span>
+                        {item.title}
+                        {item.feedTitle !== '' ? ` · ${item.feedTitle}` : ''}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-lumi-putback={identity}
+                        disabled={putBack || preview.isPending}
+                        onClick={() => putBackAndRepreview(identity)}
+                      >
+                        {putBack ? '已放回' : '放回本次'}
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ) : null}
+          {/* F102：失效素材池条目（原文删除/引用非法）诚实列出 */}
+          {preview.data.poolInvalid.length > 0 ? (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-pool-invalid="">
+              素材池失效条目（已跳过）：{preview.data.poolInvalid.map((item) => `${item.entryRef}（${item.reason}）`).join('、')}
+            </p>
+          ) : null}
           <p className="text-xs text-[var(--lumi-text-tertiary)]">
             排除：窗口外 {preview.data.counts.outsideWindow ?? 0} · 白名单外{' '}
             {preview.data.counts.notAllowed ?? 0} · 自有 feed {preview.data.counts.selfFeed ?? 0} · 重复{' '}
             {preview.data.counts.duplicate ?? 0} · 超单源配额 {preview.data.counts.perSourceCapped ?? 0} · 超总量{' '}
             {preview.data.counts.overLimit ?? 0}
+            {preview.data.counts.recentIssue !== undefined
+              ? ` · 近期已刊用 ${preview.data.counts.recentIssue}`
+              : ''}
           </p>
           {/* R05：来源覆盖与遗漏（只陈述事实，不做推断） */}
           {preview.data.missingSources.length > 0 ? (
@@ -404,6 +511,10 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
       <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">订阅本日报</h3>
       {feed.isPending ? (
         <Skeleton className="h-9 w-full" />
+      ) : feedHidden ? (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-feed-hidden="">
+          订阅地址已隐藏（token 只存哈希，无法再次查看）；点下方「轮换 token」获取一次新地址。
+        </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
@@ -417,11 +528,77 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
       <p className="text-xs text-[var(--lumi-text-tertiary)]">
         订阅地址含私密 token（持有即访问）；所有配置共享同一 token，轮换后旧地址立即失效。
       </p>
-      <div>
-        <Button variant="ghost" size="sm" onClick={() => rotate.mutate()}>
-          轮换 token
-        </Button>
+      {/* F103：轮换两步——先拉影响报告（零变更），确认后才执行 */}
+      <div data-lumi-digest-rotate="">
+        {rotateStep === 'idle' ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={rotateDry.isPending}
+            onClick={() => rotateDry.mutate(undefined, { onSuccess: () => setRotateStep('confirm') })}
+          >
+            {rotateDry.isPending ? '读取影响中…' : '轮换 token'}
+          </Button>
+        ) : rotateStep === 'confirm' ? (
+          <div
+            className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+            data-lumi-digest-rotate-confirm=""
+          >
+            <p className="text-xs font-medium text-[var(--lumi-text-primary)]">确认轮换订阅 token？</p>
+            {rotateDry.data ? (
+              <p className="text-xs text-[var(--lumi-text-secondary)]">
+                当前 token 建于{' '}
+                {rotateDry.data.impact.tokenRotatedAt != null && rotateDry.data.impact.tokenRotatedAt !== ''
+                  ? `${formatTimestamp(rotateDry.data.impact.tokenRotatedAt)}${
+                      rotateDry.data.impact.ageDays != null ? `（${rotateDry.data.impact.ageDays} 天前）` : ''
+                    }`
+                  : '（时间未知）'}
+                ；所有配置共享同一 token。
+              </p>
+            ) : null}
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              轮换后旧链接立即失效，所有订阅方需更新地址；已发布期刊不受影响。
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={rotate.isPending}
+                onClick={() =>
+                  rotate.mutate(undefined, { onSuccess: () => setRotateStep('done') })
+                }
+              >
+                {rotate.isPending ? '轮换中…' : '确认轮换'}
+              </Button>
+              <Button variant="ghost" size="sm" disabled={rotate.isPending} onClick={() => setRotateStep('idle')}>
+                取消
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1" data-lumi-digest-rotate-done="" role="status">
+            <p className="text-xs text-[var(--lumi-text-secondary)]">
+              已轮换。新订阅地址（旧地址已失效，请更新订阅方）：
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-pressed)] px-2 py-1.5 text-xs text-[var(--lumi-text-secondary)]">
+                {rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '—'}
+              </code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void navigator.clipboard?.writeText(rotate.data ? `${window.location.origin}${rotate.data.atomPath}` : '')}
+              >
+                复制
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+
+      <MissingDatesPanel configId={config.id} />
+
+      <MaterialPoolPanel configId={config.id} onMergePreview={runPreview} />
 
       <h3 className="mt-4 text-sm font-semibold text-[var(--lumi-text-primary)]">最近期刊</h3>
       {issues.isPending ? (
@@ -456,6 +633,7 @@ function IssueRow({
   hasPrevious: boolean
 }) {
   const revise = useReviseGptDigestIssueMutation()
+  const publish = usePublishGptDigestIssueMutation()
   const explain = useExplainGptDigestIssueMutation()
   const compare = useCompareGptDigestIssueMutation()
   const facts = useCompareFactsMutation()
@@ -492,6 +670,31 @@ function IssueRow({
         <span className="min-w-0 flex-1 truncate">
           {issue.issueKey} · {issue.title}
         </span>
+        {issue.status === 'draft' ? (
+          <>
+            <span
+              className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]"
+              data-lumi-digest-draft-badge=""
+            >
+              草稿
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              data-lumi-digest-publish=""
+              disabled={publish.isPending}
+              onClick={() => publish.mutate({ configId, issueKey: issue.issueKey })}
+            >
+              {publish.isPending && publish.variables?.issueKey === issue.issueKey
+                ? '发布中…'
+                : '审阅并发布'}
+            </Button>
+          </>
+        ) : (
+          <span className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
+            已发布
+          </span>
+        )}
         {issue.issueKey.endsWith('-x') ? null : (
           <Button
             variant="ghost"
@@ -602,4 +805,229 @@ function IssueRow({
       ) : null}
     </li>
   )
+}
+
+/** F032：补刊缺失日期面板（缺失列表 + 单选 + 生成）。 */
+function MissingDatesPanel({ configId }: { configId: number }) {
+  const missing = useMissingDigestDates(configId)
+  const generate = useGenerateDigestForDateMutation(configId)
+  const [selected, setSelected] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  if (missing.isPending || missing.isError) return null
+  const dates = missing.data?.missing ?? []
+  if (dates.length === 0) return null
+  return (
+    <div
+      className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-3 py-2"
+      data-lumi-digest-missing=""
+    >
+      <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+        补刊缺失日期（最近 30 天，{dates.length} 天缺失）
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+        <select
+          aria-label="选择缺失日期"
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="min-h-8 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5"
+        >
+          <option value="">选择日期…</option>
+          {dates.map((date: string) => (
+            <option key={date} value={date}>
+              {date}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!selected || generate.isPending}
+          onClick={() => {
+            setError(null)
+            generate.mutate(selected, {
+              onError: (err: unknown) =>
+                setError(
+                  err instanceof Error && /409/.test(err.message)
+                    ? '该日期已有期号，不可覆盖。'
+                    : '生成失败（可能无材料或 AI 未配置）。',
+                ),
+            })
+          }}
+        >
+          {generate.isPending ? '生成中…' : '补刊生成'}
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** F102：素材池面板——手工候选的列表/排序/移除 + 按 ref 加入（「加入日
+ * 报待编」简化入口）+ 合并预览（与生成共用同一选材函数）。 */
+function MaterialPoolPanel({
+  configId,
+  onMergePreview,
+}: {
+  configId: number
+  onMergePreview: () => void
+}) {
+  const pool = useDigestPool(configId)
+  const add = useAddDigestPoolEntryMutation(configId)
+  const remove = useRemoveDigestPoolEntryMutation(configId)
+  const reorder = useReorderDigestPoolMutation(configId)
+  const [refInput, setRefInput] = useState('')
+  const [addError, setAddError] = useState<string | null>(null)
+
+  const pending = pool.data?.items ?? []
+  const used = pool.data?.used ?? []
+
+  const submitAdd = () => {
+    const ref = refInput.trim()
+    if (ref === '') return
+    setAddError(null)
+    add.mutate(ref, {
+      onSuccess: () => setRefInput(''),
+      onError: (error) => {
+        if (error instanceof ApiError) {
+          setAddError(error.type === 'duplicate' ? '该条目已在素材池中。' : error.message)
+        } else {
+          setAddError('加入失败，请稍后重试。')
+        }
+      },
+    })
+  }
+
+  /** 上移/下移：与相邻条目交换后全量提交新顺序。 */
+  const move = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= pending.length) return
+    const ids = pending.map((entry: DigestPoolEntry) => entry.id)
+    const swapped = [...ids]
+    ;[swapped[index], swapped[target]] = [swapped[target], swapped[index]]
+    reorder.mutate(swapped)
+  }
+
+  return (
+    <div
+      className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+      data-lumi-digest-pool=""
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold text-[var(--lumi-text-primary)]">素材池（手工候选）</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          disabled={previewBusy(pool) || pending.length === 0}
+          onClick={onMergePreview}
+          data-lumi-pool-merge-preview=""
+        >
+          合并预览
+        </Button>
+      </div>
+      <p className="mt-0.5 text-xs text-[var(--lumi-text-tertiary)]">
+        池内条目按顺序优先并入每期选材（source=manual）；生成消耗后移入「已刊用」。条目须来自本站订阅
+        （rss: 前缀）；来源禁用 AI 时服务端会拒绝。
+      </p>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          aria-label="按条目引用加入素材池"
+          placeholder="rss:…（条目引用）"
+          value={refInput}
+          onChange={(e) => setRefInput(e.target.value)}
+          className="min-h-8 min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-xs text-[var(--lumi-text-primary)]"
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          data-lumi-pool-add=""
+          disabled={refInput.trim() === '' || add.isPending}
+          onClick={submitAdd}
+        >
+          {add.isPending ? '加入中…' : '加入日报待编'}
+        </Button>
+      </div>
+      {addError ? (
+        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger-text, #b3261e)]">
+          {addError}
+        </p>
+      ) : null}
+
+      {pool.isPending ? (
+        <Skeleton className="mt-2 h-16 w-full" />
+      ) : pool.isError ? (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger-text, #b3261e)]">
+          素材池加载失败：{pool.error instanceof Error ? pool.error.message : '请稍后重试。'}
+        </p>
+      ) : pending.length === 0 ? (
+        <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]" data-lumi-pool-empty="">
+          池为空：粘贴条目引用加入，或直接使用自动选材。
+        </p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1" data-lumi-pool-list="">
+          {pending.map((entry, index) => (
+            <li
+              key={entry.id}
+              className="flex items-center gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2 py-1.5"
+              data-lumi-pool-entry={entry.entryRef}
+            >
+              <span className="min-w-0 flex-1 truncate text-xs text-[var(--lumi-text-secondary)]" title={entry.entryRef}>
+                {index + 1}. {entry.entryRef}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`上移 ${entry.entryRef}`}
+                disabled={index === 0 || reorder.isPending}
+                onClick={() => move(index, -1)}
+              >
+                ↑
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`下移 ${entry.entryRef}`}
+                disabled={index === pending.length - 1 || reorder.isPending}
+                onClick={() => move(index, 1)}
+              >
+                ↓
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`移出素材池 ${entry.entryRef}`}
+                data-lumi-pool-remove={entry.entryRef}
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(entry.id)}
+              >
+                移除
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {used.length > 0 ? (
+        <div className="mt-2" data-lumi-pool-used="">
+          <p className="text-xs font-medium text-[var(--lumi-text-tertiary)]">已刊用（{used.length}）：</p>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {used.map((entry) => (
+              <li key={entry.id} className="truncate text-xs text-[var(--lumi-text-tertiary)]">
+                {entry.entryRef} · 期号 {entry.usedIssueKey}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function previewBusy(pool: { isFetching: boolean }): boolean {
+  return pool.isFetching
 }

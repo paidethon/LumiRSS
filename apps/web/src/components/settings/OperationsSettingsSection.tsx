@@ -1,3 +1,4 @@
+import { useState } from 'react'
 /** OperationsSettingsSection — 0018 Gate 9：设置 → 账户与服务。
  *
  * 用 /api/v1/operations/status 的真实结果渲染 LumiRSS / FreshRSS / RSSHub /
@@ -6,9 +7,10 @@
  */
 
 import { AlertCircle, CheckCircle2, Database, Rss, Satellite, Server } from 'lucide-react'
-import { useOperationsStatus } from '../../api/queries'
+import { useDiagnostics, useOperationsStatus } from '../../api/queries'
 import { formatTimestamp } from '../../lib/date-format'
 import { Skeleton } from '../ui/Skeleton'
+import { Button } from '../ui/Button'
 import { cx } from '../ui/cx'
 
 const LABELS: Record<string, string> = {
@@ -153,6 +155,51 @@ export function OperationsSettingsSection() {
         FreshRSS / RSSHub 状态来自服务端真实探测；RSSHub 不可用不影响已抓取内容的阅读。
         详细配置请在「RSSHub」「订阅与来源」「备份与恢复」分类中管理。
       </p>
+      {/* F039：脱敏诊断包（预览字段列表 → 确认 → 下载 JSON；绝不含秘密值） */}
+<DiagnosticsExport />
+</div>
+  )
+}
+
+/** F039：脱敏诊断包导出（预览字段列表 → 确认 → 下载 JSON）。
+ * 预览展示与下载同一份数据形状；响应只有布尔/计数，绝不含秘密值。 */
+function DiagnosticsExport() {
+  const diag = useDiagnostics()
+  const [previewing, setPreviewing] = useState(false)
+
+  function download() {
+    if (diag.data === undefined) return
+    const blob = new Blob([JSON.stringify(diag.data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lumirss-diagnostics-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5" data-lumi-diagnostics="">
+      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">诊断包（脱敏）</p>
+      {previewing && diag.data ? (
+        <>
+          <ul className="mt-1.5 flex flex-col gap-0.5 text-xs text-[var(--lumi-text-secondary)]">
+            <li>· 版本 / schema 版本 / 认证模式 / 运行时长</li>
+            <li>· 依赖状态：{diag.data.deps.map((dep) => dep.name).join('、')}（仅状态）</li>
+            <li>· 近 24h 错误计数（按类型）</li>
+            <li>· 配置存在性：freshrss / rsshub / ai_key / imap / obsidian（仅是/否）</li>
+            <li>· 计数：订阅 {diag.data.counts.feeds} · 索引条目 {diag.data.counts.entriesIndexed} · 库条目 {diag.data.counts.libraryItems}</li>
+          </ul>
+          <div className="mt-1.5 flex gap-2">
+            <Button size="sm" variant="primary" onClick={download}>确认下载 JSON</Button>
+            <Button size="sm" variant="ghost" onClick={() => setPreviewing(false)}>取消</Button>
+          </div>
+        </>
+      ) : (
+        <Button size="sm" variant="secondary" className="mt-1" onClick={() => setPreviewing(true)} disabled={diag.isPending}>
+          导出诊断包
+        </Button>
+      )}
     </div>
   )
 }

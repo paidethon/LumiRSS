@@ -16,14 +16,15 @@
  * 过滤器、滚动位置不变。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Loader2, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Calendar, GitCompare, Loader2, Rss, Search, SlidersHorizontal, X } from 'lucide-react'
 import {
   SEARCH_RESULTS_KEY,
   useCreateSavedSearchViewMutation,
   useDeleteSavedSearchViewMutation,
   useFeeds,
+  useSubscriptions,
   useRenameSavedSearchViewMutation,
   useSavedSearchViews,
   useSearch,
@@ -35,16 +36,27 @@ import {
   isAdvancedSearchActive,
   quickRange,
   searchEntriesAdvanced,
+  describeAdvancedQuery,
+  EMPTY_BUILDER_FILTERS,
+  hasBuilderFilters,
   type AdvancedTextFilter,
+  type BuilderFilters,
   type QuickDateRangeKind,
 } from '../../lib/search-advanced'
 import { HighlightText, splitTerms } from '../../lib/highlight-text'
 import type { LibrarySearchItem } from '../../api/client'
-import type { SearchItem } from '../../api/types'
+import type { SavedSearchView, SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
 import { useAppSettings } from '../../store/app-settings'
 import { useSearchState } from '../../store/search-state'
 import { resolveAndOpen } from '../../lib/open-item'
+import { stashSearchHits } from '../../lib/search-hit-locate'
+import { MatchExplainBadges } from '../MatchExplain'
+import { ViewFeedTokenDialog } from '../ViewFeedTokenDialog'
+import { SearchExportDialog } from '../SearchExportDialog'
+import { SynonymsControls, readExpandSynonyms } from '../SynonymsControls'
+import { isHistoryPaused } from '../../lib/search-history'
+import { ViewCompareDialog } from '../ViewCompareDialog'
 import { dateTimeFormatter, formatListTime } from '../../lib/date-format'
 import { SourceGlyph, SourceLabel } from '../../lib/source-meta'
 import {
@@ -57,6 +69,8 @@ import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
+
+const AuthorAggregatesPanelLazy = lazy(() => import('../AuthorAggregatesPanel'))
 
 type ViewFilter = 'all' | 'unread' | 'starred'
 
@@ -214,10 +228,14 @@ function ResultRow({
   item,
   terms,
   highlightEnabled,
+  lastSyncedAt,
+  libraryError,
 }: {
   item: SearchItem
   terms: string[]
   highlightEnabled: boolean
+  lastSyncedAt: string | null
+  libraryError: string | null
 }) {
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
@@ -252,9 +270,23 @@ function ResultRow({
             />
           )}
         </div>
+        {/* F074：命中解释徽标 +「为什么匹配」popover */}
+        {(item.matchedFields?.length ?? 0) > 0 && (
+          <MatchExplainBadges
+            item={item}
+            terms={terms}
+            lastSyncedAt={lastSyncedAt}
+            libraryError={libraryError}
+          />
+        )}
         <button
           type="button"
-          onClick={() => selectEntry(item.entryRef)}
+          onClick={() => {
+            // F072：打开前暂存正文命中偏移（Reader 定位用）
+            const hits = (item as SearchItem & { matchPositions?: { offset: number; term: string }[] | null }).matchPositions
+            stashSearchHits(item.entryRef, hits ?? [])
+            selectEntry(item.entryRef)
+          }}
           aria-pressed={selected}
           className={cx(
             'flex w-full flex-col gap-1 rounded-[var(--lumi-radius-md)] text-left',
@@ -294,6 +326,8 @@ export default function SearchPage() {
   const categoryKey = useSearchState((s) => s.categoryKey)
   const setCategoryKey = useSearchState((s) => s.setCategoryKey)
   const [history, setHistory] = useState<string[]>(() => readSearchHistory())
+  // F079：暂停记录开关（持久化）+ 读取条目化历史（{q, filters}）。
+  const [historyPaused, setHistoryPaused] = useState(() => isHistoryPaused())
   const debounced = useDebouncedValue(input)
   // pool #09：保存的搜索视图（服务端持久化；存意图，应用时重新查询）。
   const savedViews = useSavedSearchViews()
@@ -302,8 +336,19 @@ export default function SearchPage() {
   const renameView = useRenameSavedSearchViewMutation()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  // F061：视图私有 Atom 订阅管理对话框（per-view）。
+  const [feedTokenView, setFeedTokenView] = useState<SavedSearchView | null>(null)
+  // F073：引用清单导出对话框。
+  const [exportOpen, setExportOpen] = useState(false)
+  // F075：视图对照对话框（base=点击「比较」的视图）。
+  const [compareBase, setCompareBase] = useState<SavedSearchView | null>(null)
 
   const feeds = useFeeds()
+  // F017：订阅列表（构建器「来源」选项来自真实订阅；非数组响应容错）
+  const subscriptionsRaw = useSubscriptions()
+  const subscriptions = {
+    data: Array.isArray(subscriptionsRaw.data) ? subscriptionsRaw.data : [],
+  }
   const categories = useMemo(() => {
     const feedList = Array.isArray(feeds.data) ? feeds.data : []
     const map = new Map<string, string>()
@@ -333,7 +378,11 @@ export default function SearchPage() {
   const [draftFrom, setDraftFrom] = useState('')
   const [draftTo, setDraftTo] = useState('')
   const [draftAdvanced, setDraftAdvanced] = useState<AdvancedTextFilter>({ ...EMPTY_ADVANCED_FILTER })
+  // F017：条件构建器维度（来源 / 未读 / 收藏 / 仅摘要有无）
+  const [builder, setBuilder] = useState<BuilderFilters>({ ...EMPTY_BUILDER_FILTERS })
+  const [draftBuilder, setDraftBuilder] = useState<BuilderFilters>({ ...EMPTY_BUILDER_FILTERS })
   const advancedMode = isAdvancedSearchActive(dateRange, advanced)
+  const builderActive = hasBuilderFilters(builder)
 
   // F27/F29：清除条件后让基础搜索重新拉取——「清除恢复全部结果」是真实
   // 请求而非沿用旧缓存（条件存在期间基础查询未卸载，单靠 remount 不会
@@ -382,10 +431,24 @@ export default function SearchPage() {
       phrase: draftAdvanced.phrase.trim(),
       exclude: draftAdvanced.exclude.trim(),
     }
-    if (!hasAdvancedText(next)) return
+    setBuilder({ ...draftBuilder })
+    if (!hasAdvancedText(next) && !hasBuilderFilters(draftBuilder)) return
     setAdvanced(next)
     setAdvancedPanelOpen(false)
   }
+  // F017：生成的查询语义（面板内实时预览）
+  const builderSemantic = describeAdvancedQuery({
+    q: trimmed || '…',
+    sourceLabel:
+      (subscriptions.data ?? []).find((sub) => sub.feedUrl === draftBuilder.sourceFeedUrl)?.title ??
+      (draftBuilder.sourceFeedUrl !== null ? draftBuilder.sourceFeedUrl : null),
+    unread: draftBuilder.unread,
+    favorite: draftBuilder.favorite,
+    hasSummary: draftBuilder.hasSummary,
+    intitle: draftAdvanced.intitle.trim() || null,
+    phrase: draftAdvanced.phrase.trim() || null,
+    exclude: draftAdvanced.exclude.trim() || null,
+  })
   const clearAdvancedField = (field: keyof AdvancedTextFilter) => {
     const becomesInactive =
       advanced !== null && !hasAdvancedText({ ...advanced, [field]: '' })
@@ -401,10 +464,13 @@ export default function SearchPage() {
   const searchHighlightMatches = useAppSettings((s) => s.settings.searchHighlightMatches)
   const searchTerms = useMemo(() => splitTerms(trimmed), [trimmed])
 
+  // F078：同义词扩展开关（客户端默认开；关闭立即恢复原结果）。
+  const [expandSynonyms, setExpandSynonyms] = useState(readExpandSynonyms())
   const search = useSearch(trimmed, {
     categoryId: categoryKey || null,
     state: view === 'unread' ? 'unread' : null,
     favorite: view === 'starred' ? true : null,
+    expandSynonyms,
   })
 
   // ---- F27/F29 专用查询：日期/高级条件经 searchEntriesAdvanced 传递
@@ -426,6 +492,10 @@ export default function SearchPage() {
         intitle: advanced?.intitle ?? '',
         phrase: advanced?.phrase ?? '',
         exclude: advanced?.exclude ?? '',
+        sourceFeedUrl: builder.sourceFeedUrl,
+        unread: builder.unread,
+        favoriteB: builder.favorite,
+        hasSummary: builder.hasSummary,
       },
     ],
     initialPageParam: null as string | null,
@@ -435,25 +505,31 @@ export default function SearchPage() {
           q: trimmed,
           cursor: pageParam,
           categoryId: categoryKey || null,
-          state: view === 'unread' ? 'unread' : null,
-          favorite: view === 'starred' ? true : null,
           from: dateRange?.from ?? null,
           to: dateRange?.to ?? null,
           intitle: advanced?.intitle ?? null,
           phrase: advanced?.phrase ?? null,
           exclude: advanced?.exclude ?? null,
+          feedUrl: builder.sourceFeedUrl,
+          // F017 构建器维度覆盖视图级 state/favorite（仅在勾选时生效）
+          state: builder.unread === true ? 'unread' : view === 'unread' ? 'unread' : null,
+          favorite:
+            builder.favorite === true || view === 'starred'
+              ? true
+              : null,
+          hasSummary: builder.hasSummary,
         },
         signal,
       ),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor != null ? lastPage.nextCursor : undefined,
-    enabled: hasQuery && advancedMode,
+    enabled: hasQuery && (advancedMode || builderActive),
     placeholderData: keepPreviousData,
     maxPages: 50,
   })
 
   // 两种模式的查询结果统一取用（高级/日期模式走专用查询，否则走 useSearch）
-  const activeQuery = advancedMode ? advancedSearch : search
+  const activeQuery = advancedMode || builderActive ? advancedSearch : search
   const { data, isPending, isError, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     activeQuery
 
@@ -497,7 +573,10 @@ export default function SearchPage() {
     if (!q) return
     setSubmitted(q)
     setInput(q)
-    setHistory((prev) => pushSearchHistory(prev, q))
+    // F079：暂停中不落盘（pushSearchHistoryEntry 内部诚实处理）。
+    if (!historyPaused) {
+      setHistory((prev) => pushSearchHistory(prev, q))
+    }
   }
 
   const cancel = () => {
@@ -526,6 +605,19 @@ export default function SearchPage() {
     setSubmitted(restored)
     setHistory((prev) => pushSearchHistory(prev, restored))
   }
+
+  // F120：命令面板「保存的视图」数据源的动作通道——palette 侧 dispatch
+  // `lumirss-open-saved-view`，这里应用（ref 持最新闭包，避免陈旧 state）。
+  const applySavedViewRef = useRef(applySavedView)
+  applySavedViewRef.current = applySavedView
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ query: string; view: string; categoryKey: string }>).detail
+      if (detail) applySavedViewRef.current(detail)
+    }
+    window.addEventListener('lumirss-open-saved-view', onOpen)
+    return () => window.removeEventListener('lumirss-open-saved-view', onOpen)
+  }, [])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -724,6 +816,55 @@ export default function SearchPage() {
             data-testid="advanced-panel"
             className="mt-2 flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
           >
+            {/* F017：条件构建器（来源 / 未读 / 收藏 / 仅摘要有无） */}
+            <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+              <span className="w-14 shrink-0">来源</span>
+              <select
+                value={draftBuilder.sourceFeedUrl ?? ''}
+                onChange={(e) =>
+                  setDraftBuilder((prev) => ({
+                    ...prev,
+                    sourceFeedUrl: e.target.value === '' ? null : e.target.value,
+                  }))
+                }
+                aria-label="来源筛选"
+                className="min-h-7 w-full min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)]"
+              >
+                <option value="">全部来源</option>
+                {(subscriptions.data ?? []).map((sub) => (
+                  <option key={sub.subscriptionRef} value={sub.feedUrl}>{sub.title}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex flex-wrap gap-3 text-xs text-[var(--lumi-text-secondary)]" role="group" aria-label="状态维度">
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={draftBuilder.unread === true}
+                  onChange={(e) => setDraftBuilder((prev) => ({ ...prev, unread: e.target.checked ? true : null }))}
+                  className="size-3.5 accent-[var(--lumi-accent)]"
+                />
+                仅未读
+              </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={draftBuilder.favorite === true}
+                  onChange={(e) => setDraftBuilder((prev) => ({ ...prev, favorite: e.target.checked ? true : null }))}
+                  className="size-3.5 accent-[var(--lumi-accent)]"
+                />
+                仅收藏
+              </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={draftBuilder.hasSummary === true}
+                  onChange={(e) => setDraftBuilder((prev) => ({ ...prev, hasSummary: e.target.checked ? true : null }))}
+                  className="size-3.5 accent-[var(--lumi-accent)]"
+                />
+                仅摘要有内容
+              </label>
+            </div>
             <label className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
               <span className="w-14 shrink-0">仅标题</span>
               <input
@@ -757,6 +898,12 @@ export default function SearchPage() {
                 className="min-h-7 w-full min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
               />
             </label>
+            <p
+              data-testid="query-semantic"
+              className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2 py-1 text-[11px] leading-relaxed text-[var(--lumi-text-secondary)]"
+            >
+              查询语义：{builderSemantic}
+            </p>
             <div className="flex gap-2">
               <Button size="sm" onClick={applyAdvanced}>
                 应用
@@ -835,6 +982,23 @@ export default function SearchPage() {
 
         {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <SynonymsControls expanded={expandSynonyms} onToggle={setExpandSynonyms} />
+          <button
+            type="button"
+            data-testid="search-export-open"
+            onClick={() => setExportOpen(true)}
+            disabled={!hasQuery}
+            className={cx(
+              'min-h-7 rounded-[var(--lumi-radius-full)] border border-dashed border-[var(--lumi-border)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              hasQuery
+                ? 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]'
+                : 'cursor-not-allowed text-[var(--lumi-text-tertiary)] opacity-60',
+            )}
+          >
+            导出清单
+          </button>
           <button
             type="button"
             onClick={saveCurrentView}
@@ -887,6 +1051,24 @@ export default function SearchPage() {
               )}
               <button
                 type="button"
+                onClick={() => setCompareBase(saved)}
+                aria-label={`视图「${saved.name}」比较`}
+                title="比较"
+                className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <GitCompare aria-hidden className="size-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeedTokenView(saved)}
+                aria-label={`视图「${saved.name}」私有订阅`}
+                title="私有订阅"
+                className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <Rss aria-hidden className="size-3" />
+              </button>
+              <button
+                type="button"
                 onClick={() => deleteView.mutate(saved.id)}
                 aria-label={`删除视图「${saved.name}」`}
                 className="relative flex size-6 items-center justify-center rounded-full text-[var(--lumi-accent-text)] transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
@@ -902,6 +1084,9 @@ export default function SearchPage() {
           )}
         </div>
 
+        {/* F023：作者聚合面板（计数/合并/取消合并；显式别名） */}
+        <Suspense fallback={null}><AuthorAggregatesPanelLazy /></Suspense>
+
         {/* 搜索历史（本地 UI 数据；上限 10；无查询时展示） */}
         {!hasQuery && history.length > 0 && (
           <section className="mt-5" aria-label="搜索历史">
@@ -909,6 +1094,17 @@ export default function SearchPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
                 搜索历史
               </h2>
+              {/* F079：暂停记录开关 */}
+              <label className="flex items-center gap-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="暂停记录搜索历史"
+                  checked={historyPaused}
+                  onChange={(e) => setHistoryPaused(e.target.checked)}
+                />
+                暂停记录
+              </label>
               <button
                 type="button"
                 onClick={() => setHistory(clearSearchHistory(history))}
@@ -995,6 +1191,8 @@ export default function SearchPage() {
                     item={item}
                     terms={searchTerms}
                     highlightEnabled={searchHighlightMatches}
+                    lastSyncedAt={indexInfo?.lastSyncedAt ?? null}
+                    libraryError={libraryError}
                   />
                 ))}
                 {isFetchingNextPage && (
@@ -1038,6 +1236,33 @@ export default function SearchPage() {
           </div>
         ) : null}
       </div>
+      {/* F061：视图私有 Atom 订阅（启用/复制仅展示一次/轮换） */}
+      {/* F073：引用清单导出 */}
+      <SearchExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        query={debounced}
+      />
+      {/* F075：视图对照（选第二视图→三区面板） */}
+      <ViewCompareDialog
+        open={compareBase !== null}
+        onClose={() => setCompareBase(null)}
+        baseView={compareBase}
+        otherViews={savedViews.data?.items ?? []}
+      />
+      <ViewFeedTokenDialog
+        open={feedTokenView !== null}
+        onClose={() => setFeedTokenView(null)}
+        view={
+          feedTokenView !== null
+            ? {
+                id: feedTokenView.id,
+                name: feedTokenView.name,
+                hasFeedToken: feedTokenView.hasFeedToken,
+              }
+            : null
+        }
+      />
     </div>
   )
 }

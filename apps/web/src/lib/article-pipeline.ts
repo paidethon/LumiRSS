@@ -25,6 +25,8 @@
 
 import { sanitizeArticleHtml } from './sanitize-article-html'
 import { containsCodeBlock, highlightCodeBlocks } from './code-highlight'
+import { transformFootnotes } from './footnotes'
+import { renderMathInDom } from './katex-render'
 import type { ReaderChineseConversion } from '../store/app-settings'
 
 // ---- 有界展示缓存（性能：Reader 按 entryRef 重挂载是防泄漏的既定架构，
@@ -216,6 +218,10 @@ export interface ArticlePipelineOptions {
   bionic: boolean
   /** 代码高亮：null = 关闭；否则为已解析的 shiki 主题名 */
   codeTheme: string | null
+  /** F059：脚注往返（引用标记 → 受控按钮 + 隐藏定义容器）。默认开。 */
+  footnotes?: boolean
+  /** F060：数学公式渲染（KaTeX 动态加载）。默认开。 */
+  math?: boolean
 }
 
 /** raw RSS HTML → inert DOM → transforms → DOMPurify 终点。
@@ -230,13 +236,17 @@ export async function renderArticleHtml(
   // 无 code 文章不加载 shiki（性能预算：不用 → 不加载）
   const needsHighlight =
     options.codeTheme !== null && containsCodeBlock(rawHtml)
-  if (!needsConversion && !needsBionic && !needsHighlight) {
+  const needsFootnotes = options.footnotes !== false
+  const needsMath = options.math !== false && containsMathMarkerSafe(rawHtml)
+  if (!needsConversion && !needsBionic && !needsHighlight && !needsFootnotes && !needsMath) {
     return sanitizeArticleHtml(rawHtml)
   }
 
   // DOMParser 产出 inert document：不执行 script、不加载资源
   const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
 
+  if (needsFootnotes) transformFootnotes(doc)
+  if (needsMath) await renderMathInDom(doc.body)
   if (needsConversion) {
     const converter = await getConverter(options.conversion)
     if (converter !== null) convertTextNodes(doc.body, converter)
@@ -249,6 +259,11 @@ export async function renderArticleHtml(
   // 最终安全边界：transform 后的整个 DOM serialize → DOMPurify。
   // transforms 可能引入的任何意外标记在这里被统一清洗。
   return sanitizeArticleHtml(doc.body.innerHTML)
+}
+
+/** 轻量探测：rawHtml 含 '$' 才可能含公式（避免为大多数文章构建 DOM）。 */
+function containsMathMarkerSafe(html: string): boolean {
+  return html.includes('$')
 }
 
 /** 测试用：清空展示缓存（与 clearConverterCache 同一模式）。 */

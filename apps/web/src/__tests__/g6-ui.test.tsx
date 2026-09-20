@@ -97,6 +97,7 @@ function apiSourceFixture(over: Partial<ApiSource> = {}): ApiSource {
     itemsExpr: 'items',
     fieldMap: { id: 'id', title: 'title', url: 'url', published: 'time', body: 'text' },
     enabled: true,
+    confirmedSchema: false,
     createdAt: '2026-09-01T08:00:00Z',
     lastStatus: 'ok',
     lastError: null,

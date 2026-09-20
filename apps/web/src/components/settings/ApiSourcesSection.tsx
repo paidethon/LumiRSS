@@ -13,7 +13,7 @@
  * TanStack Query（loading / empty / error 三态齐备）。 */
 
 import { useState } from 'react'
-import { AlertCircle, CheckCircle2, Copy, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Copy, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import {
   useApiSourcePreviewMutation,
   useApiSources,
@@ -21,7 +21,13 @@ import {
   useDeleteApiSourceMutation,
   useUpdateApiSourceMutation,
 } from '../../api/queries'
-import type { ApiSource, ApiSourcePreviewResult } from '../../api/client'
+import type {
+  ApiSource,
+  ApiSourcePaginationInput,
+  ApiSourcePreviewResult,
+} from '../../api/client'
+import { confirmApiSourceSchema } from '../../api/client'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { dateTimeFormatter } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -166,6 +172,211 @@ function PreviewTable({ preview }: { preview: ApiSourcePreviewResult }) {
   )
 }
 
+/** F042：分页采样配置块 —— mode/参数 + dry-run 按钮 + {pages, stopReason} 结果。 */
+const STOP_REASON_LABELS: Record<string, string> = {
+  single: '单次抓取',
+  empty_page: '空页停止',
+  cursor_missing: '游标缺失停止',
+  cursor_repeat: '游标重复停止',
+  max_pages: '达到页数上限',
+  max_items: '达到条数上限',
+}
+
+function PaginationConfigBlock({
+  value,
+  onChange,
+  dryRun,
+  dryRunPending,
+  dryRunError,
+  onDryRun,
+  canDryRun,
+}: {
+  value: ApiSourcePaginationInput
+  onChange: (next: ApiSourcePaginationInput) => void
+  dryRun: ApiSourcePreviewResult | null
+  dryRunPending: boolean
+  dryRunError: string | null
+  onDryRun: () => void
+  canDryRun: boolean
+}) {
+  const inputCls =
+    'w-24 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)]'
+  return (
+    <fieldset className="mt-3 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3">
+      <legend className="px-1 text-xs font-medium text-[var(--lumi-text-primary)]">
+        分页采样（F042）
+      </legend>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+          模式
+          <select
+            aria-label="分页模式"
+            value={value.mode}
+            onChange={(e) => {
+              const mode = e.target.value as ApiSourcePaginationInput['mode']
+              onChange({ mode, ...(mode === 'none' ? {} : { max_pages: 5, max_items: 200 }) })
+            }}
+            className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-xs text-[var(--lumi-text-primary)]"
+          >
+            <option value="none">不分页</option>
+            <option value="page">页码 ?page=N</option>
+            <option value="cursor">游标 ?cursor=</option>
+          </select>
+        </label>
+        {value.mode === 'page' && (
+          <>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+              页参数名
+              <input
+                aria-label="页参数名"
+                value={value.page_param ?? ''}
+                onChange={(e) => onChange({ ...value, page_param: e.target.value })}
+                className={inputCls}
+                placeholder="page"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+              起始页
+              <input
+                aria-label="起始页"
+                type="number"
+                min={1}
+                value={value.first_page ?? 1}
+                onChange={(e) =>
+                  onChange({ ...value, first_page: Math.max(1, Number(e.target.value) || 1) })
+                }
+                className={inputCls}
+              />
+            </label>
+          </>
+        )}
+        {value.mode === 'cursor' && (
+          <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+            游标路径（JMESPath）
+            <input
+              aria-label="游标路径"
+              value={value.cursor_path ?? ''}
+              onChange={(e) => onChange({ ...value, cursor_path: e.target.value })}
+              className={inputCls}
+              placeholder="meta.next"
+            />
+          </label>
+        )}
+        {value.mode !== 'none' && (
+          <>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+              最多页数
+              <input
+                aria-label="最多页数"
+                type="number"
+                min={1}
+                max={50}
+                value={value.max_pages ?? 5}
+                onChange={(e) => onChange({ ...value, max_pages: Number(e.target.value) || 5 })}
+                className={inputCls}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+              最多条数
+              <input
+                aria-label="最多条数"
+                type="number"
+                min={1}
+                max={1000}
+                value={value.max_items ?? 200}
+                onChange={(e) => onChange({ ...value, max_items: Number(e.target.value) || 200 })}
+                className={inputCls}
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onDryRun}
+              disabled={!canDryRun || dryRunPending}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {dryRunPending ? '试跑中…' : '分页试跑'}
+            </Button>
+          </>
+        )}
+      </div>
+      {value.mode !== 'none' && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
+          中途失败（如 429/超时）时本次不发布任何条目；空页、游标缺失或重复、达到上限则如实停止。
+        </p>
+      )}
+      {dryRunError !== null && (
+        <p role="alert" className="mt-1.5 text-xs text-[var(--lumi-danger)]">
+          {dryRunError}
+        </p>
+      )}
+      {dryRun?.paginationDryRun != null && (
+        <div className="mt-2 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-hover)] p-2 text-xs">
+          <p className="font-medium text-[var(--lumi-text-primary)]">
+            试跑：{dryRun.paginationDryRun.pages.length} 页 ·{' '}
+            {STOP_REASON_LABELS[dryRun.paginationDryRun.stopReason] ??
+              dryRun.paginationDryRun.stopReason}{' '}
+            · 共约 {dryRun.totalAvailable} 条
+          </p>
+          <p className="mt-0.5 text-[var(--lumi-text-tertiary)]">
+            {dryRun.paginationDryRun.pages
+              .map((p) => `第 ${String(p.index)} 页 ${String(p.mappedItems)} 条`)
+              .join('，')}
+          </p>
+        </div>
+      )}
+    </fieldset>
+  )
+}
+
+/** F041：Atom 预览折叠区 —— 前 ≤3 条 entry 的最终形态（urn id / RFC3339 /
+ * 链接 / 内容摘要），与 FreshRSS 实际摄取的渲染管线一致。 */
+function AtomPreviewSection({ preview }: { preview: ApiSourcePreviewResult }) {
+  const [open, setOpen] = useState(false)
+  if (preview.atomPreview.length === 0) return null
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-[var(--lumi-radius-md)] px-2 py-1 text-xs font-medium text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+      >
+        <ChevronDown
+          aria-hidden
+          className={cx('size-3.5 transition-transform duration-[var(--lumi-motion-fast)]', open && 'rotate-180')}
+        />
+        Atom 预览（前 {preview.atomPreview.length} 条最终形态）
+      </button>
+      {open && (
+        <dl className="mt-2 flex flex-col gap-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3">
+          {preview.atomPreview.map((entry) => (
+            <div key={String(entry.id)} className="flex flex-col gap-0.5">
+              <dt className="truncate text-xs font-medium text-[var(--lumi-text-primary)]">
+                {String(entry.title)}
+              </dt>
+              <dd className="font-mono text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
+                id {String(entry.id)}
+                {entry.published ? ` · ${String(entry.published)}` : ''}
+              </dd>
+              {entry.link !== null && entry.link !== undefined && (
+                <dd className="truncate text-[11px] text-[var(--lumi-text-secondary)]">
+                  {String(entry.link)}
+                </dd>
+              )}
+              {typeof entry.contentExcerpt === 'string' && entry.contentExcerpt !== '' && (
+                <dd className="line-clamp-2 text-[11px] leading-relaxed text-[var(--lumi-text-secondary)]">
+                  {entry.contentExcerpt}
+                </dd>
+              )}
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
 /** 新增流程：表单 + 预览 + 保存；成功后切换为一次性 atomPath 面板。 */
 function CreateApiSourceDialog({
   open,
@@ -178,6 +389,7 @@ function CreateApiSourceDialog({
   const [endpoint, setEndpoint] = useState('')
   const [itemsExpr, setItemsExpr] = useState('')
   const [fieldMap, setFieldMap] = useState<ApiSourceFieldMapState>(EMPTY_FIELD_MAP)
+  const [pagination, setPagination] = useState<ApiSourcePaginationInput>({ mode: 'none' })
   const [preview, setPreview] = useState<ApiSourcePreviewResult | null>(null)
   const [created, setCreated] = useState<ApiSource | null>(null)
 
@@ -192,6 +404,7 @@ function CreateApiSourceDialog({
     setEndpoint('')
     setItemsExpr('')
     setFieldMap(EMPTY_FIELD_MAP)
+    setPagination({ mode: 'none' })
     setPreview(null)
     setCreated(null)
     createMutation.reset()
@@ -215,6 +428,22 @@ function CreateApiSourceDialog({
     )
   }
 
+  // F042：分页 dry-run（对样本响应走页，不入库）
+  const [dryRun, setDryRun] = useState<ApiSourcePreviewResult | null>(null)
+  const dryRunMutation = useApiSourcePreviewMutation()
+  const runDryRun = () => {
+    dryRunMutation.mutate(
+      {
+        endpoint: endpoint.trim(),
+        itemsExpr: itemsExpr.trim(),
+        fieldMap: { ...fieldMap },
+        pagination: { ...pagination },
+        dryRunPagination: true,
+      },
+      { onSuccess: (result) => setDryRun(result) },
+    )
+  }
+
   const save = () => {
     createMutation.mutate(
       {
@@ -222,6 +451,7 @@ function CreateApiSourceDialog({
         endpoint: endpoint.trim(),
         itemsExpr: itemsExpr.trim(),
         fieldMap: { ...fieldMap },
+        pagination: { ...pagination },
       },
       { onSuccess: (source) => setCreated(source) },
     )
@@ -347,6 +577,16 @@ function CreateApiSourceDialog({
             </div>
           </fieldset>
 
+          <PaginationConfigBlock
+            value={pagination}
+            onChange={setPagination}
+            dryRun={dryRun}
+            dryRunPending={dryRunMutation.isPending}
+            dryRunError={dryRunMutation.error instanceof Error ? dryRunMutation.error.message : null}
+            onDryRun={runDryRun}
+            canDryRun={canPreview}
+          />
+
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -364,7 +604,12 @@ function CreateApiSourceDialog({
               {previewMutation.error.message}
             </p>
           )}
-          {preview !== null && !previewMutation.isError && <PreviewTable preview={preview} />}
+          {preview !== null && !previewMutation.isError && (
+            <>
+              <PreviewTable preview={preview} />
+              <AtomPreviewSection preview={preview} />
+            </>
+          )}
           {createMutation.isError && (
             <p role="alert" className="flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]">
               <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
@@ -374,6 +619,98 @@ function CreateApiSourceDialog({
         </div>
       )}
     </Dialog>
+  )
+}
+
+/** F043：结构漂移徽标 + 「数据结构」面板（基线 vs 当前 diff + 重新确认）。 */
+function SchemaDriftPanel({ source }: { source: ApiSource }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const confirm = useMutation({
+    mutationFn: () => confirmApiSourceSchema(source.uuid),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['api-sources'] })
+    },
+  })
+  const drift = source.schemaDrift
+  const hasDrift =
+    drift !== null && drift !== undefined && (drift.missing.length > 0 || drift.type_changed.length > 0)
+  if (!source.confirmedSchema && !hasDrift) return null
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-[var(--lumi-radius-md)] px-1.5 py-0.5 text-[11px] text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+      >
+        <ChevronDown
+          aria-hidden
+          className={cx('size-3 transition-transform duration-[var(--lumi-motion-fast)]', open && 'rotate-180')}
+        />
+        数据结构
+        {hasDrift ? (
+          <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-danger-soft,rgba(220,80,80,0.15))] px-1.5 py-0.5 text-[10px] text-[var(--lumi-danger)]">
+            <AlertCircle aria-hidden className="size-3" />
+            结构已变化
+          </span>
+        ) : (
+          <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-tertiary)]">
+            基线已确认
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs">
+          {!source.confirmedSchema && (
+            <p className="text-[var(--lumi-text-tertiary)]">尚未确认结构基线。</p>
+          )}
+          {source.confirmedSchema && !hasDrift && (
+            <p className="text-[var(--lumi-text-secondary)]">
+              当前数据与确认基线一致（可选新增字段：
+              {drift?.new_optional.length ?? 0}）。
+            </p>
+          )}
+          {hasDrift && (
+            <div className="flex flex-col gap-1 text-[var(--lumi-text-secondary)]">
+              {(drift?.missing.length ?? 0) > 0 && (
+                <p>
+                  缺失必需字段：
+                  <span className="font-mono text-[var(--lumi-danger)]">{drift?.missing.join('、')}</span>
+                </p>
+              )}
+              {(drift?.type_changed.length ?? 0) > 0 && (
+                <p>
+                  类型变化：
+                  <span className="font-mono text-[var(--lumi-danger)]">{drift?.type_changed.join('、')}</span>
+                </p>
+              )}
+              {(drift?.new_optional.length ?? 0) > 0 && (
+                <p className="text-[var(--lumi-text-tertiary)]">
+                  新增可选字段（仅提示）：{drift?.new_optional.join('、')}
+                </p>
+              )}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => confirm.mutate()}
+              disabled={confirm.isPending}
+            >
+              <RefreshCw aria-hidden className="size-3.5" />
+              {confirm.isPending ? '确认中…' : '修订映射并重新确认'}
+            </Button>
+            {confirm.isError && (
+              <span role="alert" className="text-[var(--lumi-danger)]">
+                {confirm.error instanceof Error ? confirm.error.message : '确认失败'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -390,6 +727,7 @@ function ApiSourceRow({ source }: { source: ApiSource }) {
           <StatusBadge source={source} />
           <span>上次成功：{formatRelative(source.lastSuccessAt)}</span>
         </p>
+        <SchemaDriftPanel source={source} />
         {/* P0-05f：409 unsubscribe_failed —— FreshRSS 退订失败时服务端
             保留来源（防止死订阅继续轮询），这里诚实透出原因 + 重试提示，
             不假装删除成功。 */}

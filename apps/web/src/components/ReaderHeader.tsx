@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
-  Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
+  Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
   Search, Share2, Square, Star, Volume2,
 } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
@@ -487,6 +487,7 @@ export default function ReaderHeader({
   onViewModeChange,
   onOpenAiConversation,
   onOpenFind,
+  onOpenLinks,
   collectSpeechText,
   autoScrollState = 'off',
   onAutoScrollToggle,
@@ -501,6 +502,8 @@ export default function ReaderHeader({
   onOpenAiConversation?: () => void
   /** F13：打开文内查找（Reader 持有查找条状态）。 */
   onOpenFind?: () => void
+  /** F054：文中链接清单（Reader 持有面板状态）。 */
+  onOpenLinks?: () => void
   /** F19：收集「从视口顶部段落开始」的朗读文本（Reader 提供容器几何）。 */
   collectSpeechText?: () => string | null
   /** F18：自动滚屏状态 + 切换（Reader 持有 rAF 循环）。 */
@@ -746,6 +749,13 @@ export default function ReaderHeader({
               touch
               onClick={onOpenFind}
             />
+          </Tooltip>
+        )}
+
+        {/* F054：文中链接清单 */}
+        {onOpenLinks !== undefined && (
+          <Tooltip content="文中链接">
+            <IconButton icon={<Link2 aria-hidden />} label="文中链接" touch onClick={onOpenLinks} />
           </Tooltip>
         )}
 

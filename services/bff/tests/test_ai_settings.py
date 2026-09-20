@@ -58,6 +58,8 @@ def _expected_default_body():
             "translation": dict(_PURPOSE_DEFAULTS),
             "chat": dict(_PURPOSE_DEFAULTS),
         },
+        "quotaWindow": "",
+        "quotaMaxCalls": 0,
     }
 
 

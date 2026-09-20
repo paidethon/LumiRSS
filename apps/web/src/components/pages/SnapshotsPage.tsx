@@ -8,8 +8,9 @@
  * 打开、无法执行脚本（title 说明）。
  */
 
-import { useState } from 'react'
-import { Archive, Loader2, Trash2 } from 'lucide-react'
+import { useState, Suspense, lazy } from 'react'
+import {
+  Activity, Archive, Loader2, Trash2 } from 'lucide-react'
 import {
   useCreateSnapshotMutation,
   useDeleteSnapshotMutation,
@@ -40,6 +41,7 @@ function formatBytes(bytes: number): string {
 
 /** 快照行：uuid 短码 + 原文 url + 大小/时间 + 沙箱快照外链 + 删除。 */
 function SnapshotRow({ snapshot }: { snapshot: SnapshotView }) {
+  const [diagOpen, setDiagOpen] = useState(false)
   const del = useDeleteSnapshotMutation()
 
   return (
@@ -77,6 +79,14 @@ function SnapshotRow({ snapshot }: { snapshot: SnapshotView }) {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <IconButton
+              icon={<Activity aria-hidden className="size-4" />}
+              label="资源诊断与版本"
+              size="sm"
+              touch
+              aria-pressed={diagOpen}
+              onClick={() => setDiagOpen((v) => !v)}
+            />
+            <IconButton
               icon={
                 del.isPending ? (
                   <Loader2 aria-hidden className="size-4 animate-spin" />
@@ -93,9 +103,16 @@ function SnapshotRow({ snapshot }: { snapshot: SnapshotView }) {
           </div>
         </div>
       </article>
+      {diagOpen && (
+        <Suspense fallback={null}>
+          <SnapshotDiagnosticsPanelLazy uuid={snapshot.uuid} />
+        </Suspense>
+      )}
     </li>
   )
 }
+
+const SnapshotDiagnosticsPanelLazy = lazy(() => import('../SnapshotDiagnosticsPanel'))
 
 export default function SnapshotsPage() {
   const [url, setUrl] = useState('')

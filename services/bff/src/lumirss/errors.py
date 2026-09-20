@@ -29,6 +29,12 @@ from lumirss.adapters.freshrss_control import (
     SubscriptionNotFound,
 )
 from lumirss.agent import AgentProviderUnavailable
+from lumirss.agent_export import ExportInvalid
+from lumirss.agent_session import (
+    BranchInvalid,
+    SearchInvalid,
+    ThreadSettingsInvalid,
+)
 from lumirss.agent_store import (
     ApprovalInvalid,
     NoActiveRun,
@@ -36,6 +42,7 @@ from lumirss.agent_store import (
     ThreadNotFound,
     ToolDenied,
 )
+from lumirss.agent_tools import DryRunUnsupported
 from lumirss.ai_profiles import (
     AiProfileNotFound,
 )
@@ -52,6 +59,7 @@ from lumirss.ai_settings import (
     InvalidAiSettings,
 )
 from lumirss.ai_summary import AiContentUnavailable
+from lumirss.ai_summary_versions import SummaryVersionNotFound
 from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
@@ -60,6 +68,7 @@ from lumirss.api_sources import (
     ApiSourceFetchFailed,
     ApiSourceInvalid,
     ApiSourceNotFound,
+    ApiSourcePreviewError,
 )
 from lumirss.app_settings import (
     AppSettingsConflict,
@@ -70,6 +79,8 @@ from lumirss.auth_store import (
     PasswordNotInitialized,
     WeakPassword,
 )
+from lumirss.author_aggregates import AuthorAliasInvalid, AuthorAliasNotFound
+from lumirss.backlog import BacklogConflict
 from lumirss.backup import (
     BackupBusy,
     BackupChecksumMismatch,
@@ -80,6 +91,7 @@ from lumirss.backup import (
 )
 from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
+from lumirss.clip_revision import MustKeepOne, RevisionConflict
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
 from lumirss.favorites import FavoriteInvalid
@@ -90,10 +102,16 @@ from lumirss.feed_preview import (
     UnsafeFeedUrl,
 )
 from lumirss.glossary import GlossaryInvalid, GlossaryNotFound
+from lumirss.inbox_rules import InboxRuleInvalid, InboxRuleNotFound
 from lumirss.inbox_store import (
     InboxItemNotFound,
     InboxSourceNotFound,
     InvalidInboxPayload,
+)
+from lumirss.item_relations import (
+    RelationDuplicate,
+    RelationInvalid,
+    RelationNotFound,
 )
 from lumirss.itemref import InvalidItemRef
 from lumirss.library import (
@@ -101,7 +119,16 @@ from lumirss.library import (
     BookmarkNotFound,
 )
 from lumirss.library_assets import AssetNotFound, AssetQuotaExceeded, AssetTooLarge
+from lumirss.library_batch_edit import BatchEditInvalid
 from lumirss.library_clips import ClipInvalid, ClipNotFound
+from lumirss.library_merge import MergedAlready, MergeInvalid
+from lumirss.lumi_notes_lifecycle import (
+    NoteConflict,
+    NoteInvalid,
+)
+from lumirss.lumi_notes_lifecycle import (
+    NoteNotFound as LumiNoteNotFound,
+)
 from lumirss.mail_bridge import (
     MailBridgeInvalid,
     MailBridgeNotFound,
@@ -123,7 +150,9 @@ from lumirss.opml import (
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
 from lumirss.rag import RagModelUnavailable, RagRebuildBusy
+from lumirss.research_pack_zip import ZipInvalid, ZipTooLarge
 from lumirss.restore import (
     RestoreConfirmationRequired,
     RestoreFailed,
@@ -159,6 +188,17 @@ from lumirss.subscriptionref import (
 )
 from lumirss.tags import TagInvalid, TagNotFound
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
+from lumirss.workspace_archive import (
+    ArchivedWorkspace,
+    ProtectedWorkspace,
+)
+from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
+from lumirss.workspace_goals import GoalInvalid
+from lumirss.workspace_templates import (
+    TemplateExists,
+    TemplateInvalid,
+    TemplateNotFound,
+)
 from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
@@ -272,6 +312,7 @@ _ERROR_RESPONSES = {
     ApiSourceInvalid: (400, "invalid_api_source"),
     ApiSourceNotFound: (404, "api_source_not_found"),
     ApiSourceExpressionError: (400, "invalid_expression"),
+    ApiSourcePreviewError: (422, "preview_expression_failed"),
     ApiSourceFetchFailed: (502, "fetch_failed"),
     # phase2 G5 mail
     MailBridgeInvalid: (400, "invalid_mail_payload"),
@@ -305,6 +346,47 @@ _ERROR_RESPONSES = {
     InvalidInboxPayload: (400, "invalid_inbox_payload"),
     InboxSourceNotFound: (404, "inbox_source_not_found"),
     InboxItemNotFound: (404, "inbox_item_not_found"),
+    # F021 手工关联内容
+    RelationInvalid: (422, "invalid_relation"),
+    RelationDuplicate: (409, "relation_duplicate"),
+    RelationNotFound: (404, "relation_not_found"),
+    # F022 收件箱归类规则
+    InboxRuleNotFound: (404, "inbox_rule_not_found"),
+    InboxRuleInvalid: (422, "invalid_inbox_rule"),
+    # F023 作者聚合别名
+    AuthorAliasInvalid: (422, "invalid_author_alias"),
+    AuthorAliasNotFound: (404, "author_alias_not_found"),
+    # F024 积压整理助手
+    BacklogConflict: (409, "backlog_conflict"),
+    # F027 摘要版本
+    SummaryVersionNotFound: (404, "summary_version_not_found"),
+    # F030 问答模板
+    QaTemplateNotFound: (404, "qa_template_not_found"),
+    QaTemplateInvalid: (422, "invalid_qa_template"),
+    # W5: F081–F100
+    BatchEditInvalid: (422, "invalid_batch_edit"),
+    MergeInvalid: (422, "invalid_merge"),
+    MergedAlready: (409, "merged_already"),
+    TemplateInvalid: (422, "invalid_template"),
+    TemplateExists: (409, "template_exists"),
+    TemplateNotFound: (404, "template_not_found"),
+    ProtectedWorkspace: (409, "protected_workspace"),
+    ArchivedWorkspace: (409, "archived_workspace"),
+    BoardInvalid: (422, "invalid_board_status"),
+    BoardItemNotFound: (404, "board_item_not_found"),
+    GoalInvalid: (422, "invalid_goal"),
+    RevisionConflict: (409, "base_mismatch"),
+    MustKeepOne: (422, "must_keep_one"),
+    NoteInvalid: (422, "invalid_note"),
+    NoteConflict: (409, "note_conflict"),
+    LumiNoteNotFound: (404, "note_not_found"),
+    SearchInvalid: (422, "invalid_search_query"),
+    ThreadSettingsInvalid: (422, "invalid_thread_settings"),
+    BranchInvalid: (422, "invalid_branch_request"),
+    ExportInvalid: (422, "invalid_export_request"),
+    DryRunUnsupported: (422, "dry_run_unsupported"),
+    ZipInvalid: (422, "invalid_research_pack_request"),
+    ZipTooLarge: (413, "research_pack_too_large"),
 }
 
 
@@ -422,6 +504,41 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(InvalidInboxPayload)
     @app.exception_handler(InboxSourceNotFound)
     @app.exception_handler(InboxItemNotFound)
+    @app.exception_handler(RelationInvalid)
+    @app.exception_handler(RelationDuplicate)
+    @app.exception_handler(RelationNotFound)
+    @app.exception_handler(InboxRuleNotFound)
+    @app.exception_handler(InboxRuleInvalid)
+    @app.exception_handler(AuthorAliasInvalid)
+    @app.exception_handler(AuthorAliasNotFound)
+    @app.exception_handler(BacklogConflict)
+    @app.exception_handler(SummaryVersionNotFound)
+    @app.exception_handler(QaTemplateNotFound)
+    @app.exception_handler(QaTemplateInvalid)
+    # W5: F081–F100
+    @app.exception_handler(BatchEditInvalid)
+    @app.exception_handler(MergeInvalid)
+    @app.exception_handler(MergedAlready)
+    @app.exception_handler(TemplateInvalid)
+    @app.exception_handler(TemplateExists)
+    @app.exception_handler(TemplateNotFound)
+    @app.exception_handler(ProtectedWorkspace)
+    @app.exception_handler(ArchivedWorkspace)
+    @app.exception_handler(BoardInvalid)
+    @app.exception_handler(BoardItemNotFound)
+    @app.exception_handler(GoalInvalid)
+    @app.exception_handler(RevisionConflict)
+    @app.exception_handler(MustKeepOne)
+    @app.exception_handler(NoteInvalid)
+    @app.exception_handler(NoteConflict)
+    @app.exception_handler(LumiNoteNotFound)
+    @app.exception_handler(SearchInvalid)
+    @app.exception_handler(ThreadSettingsInvalid)
+    @app.exception_handler(BranchInvalid)
+    @app.exception_handler(ExportInvalid)
+    @app.exception_handler(DryRunUnsupported)
+    @app.exception_handler(ZipInvalid)
+    @app.exception_handler(ZipTooLarge)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

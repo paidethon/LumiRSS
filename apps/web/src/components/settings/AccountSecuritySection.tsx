@@ -13,6 +13,7 @@ import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../../api/client'
 import { useAuthStore } from '../../store/auth'
+import { useAuthSessions, useRevokeSessionMutation } from '../../api/queries'
 import { Button } from '../ui/Button'
 
 const MIN_PASSWORD = 8
@@ -197,6 +198,48 @@ export function AccountSecuritySection() {
           </Button>
         </div>
       </div>
+      <SessionsPanel />
     </section>
+  )
+}
+
+/** F038：会话管理（当前标记「本机」+ 其余「撤销」+ 确认；响应绝不含 token）。 */
+function SessionsPanel() {
+  const sessions = useAuthSessions()
+  const revoke = useRevokeSessionMutation()
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  if (sessions.isPending || sessions.isError) return null
+  const items = sessions.data ?? []
+  if (items.length === 0) return null
+  return (
+    <div className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5" data-lumi-sessions-panel="">
+      <p className="text-xs font-medium text-[var(--lumi-text-primary)]">登录会话（{items.length}）</p>
+      <ul className="mt-1.5 flex flex-col gap-1.5">
+        {items.map((session) => (
+          <li key={session.id} className="flex items-center gap-2 text-xs" data-lumi-session-row="">
+            <span className="font-mono text-[var(--lumi-text-tertiary)]">{session.id}</span>
+            <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-secondary)]">
+              {session.userAgent ?? '未知设备'}
+            </span>
+            {session.current ? (
+              <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
+                本机
+              </span>
+            ) : confirmId === session.id ? (
+              <>
+                <Button size="sm" variant="danger" onClick={() => { revoke.mutate(session.id); setConfirmId(null) }}>
+                  确认撤销
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmId(null)}>取消</Button>
+              </>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={() => setConfirmId(session.id)}>
+                撤销
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      </div>
   )
 }

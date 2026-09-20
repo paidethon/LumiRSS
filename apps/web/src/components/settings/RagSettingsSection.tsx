@@ -12,12 +12,22 @@
  * - lastError：danger 小字诚实展示。
  * 所有 HTTP 经 src/api/client.ts；loading / error 态齐备。 */
 
-import { AlertCircle, CheckCircle2, Database, Loader2, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Database, Loader2, Pause, Play, RefreshCw } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  pauseRagRebuild,
+  resumeRagRebuild,
+} from '../../api/client'
 import {
   useEnableRagMutation,
   useRagStatus,
   useRebuildRagMutation,
 } from '../../api/queries'
+import {
+  RagConsistencyPanel,
+  RagExclusionsPanel,
+  RagTrySearchPanel,
+} from '../RagW5Panels'
 import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Skeleton } from '../ui/Skeleton'
@@ -27,6 +37,18 @@ export function RagSettingsSection() {
   const status = useRagStatus()
   const enable = useEnableRagMutation()
   const rebuild = useRebuildRagMutation()
+  // F093：暂停 / 断点续建（批间安全点；重启后仍可 resume）。
+  const queryClient = useQueryClient()
+  const pause = useMutation({
+    mutationFn: () => pauseRagRebuild(),
+  })
+  const resume = useMutation({
+    mutationFn: () => resumeRagRebuild(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rag-status'] })
+    },
+  })
+  const jobPaused = (status.data as { job?: { status?: string } | null } | undefined)?.job?.status === 'paused'
 
   if (status.isPending) {
     return (
@@ -126,6 +148,56 @@ export function RagSettingsSection() {
             上次重建：{rebuild.data.chunks} 块 · {(rebuild.data.elapsedMs / 1000).toFixed(1)}s
           </span>
         )}
+        {/* F093：暂停（当前批完成后停）/ 从游标续建。 */}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pause.isPending}
+          onClick={() => pause.mutate()}
+        >
+          <Pause aria-hidden className="size-3.5" />
+          暂停
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={resume.isPending}
+          onClick={() => resume.mutate()}
+        >
+          <Play aria-hidden className="size-3.5" />
+          续建
+        </Button>
+        {pause.data !== undefined && (
+          <span role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+            {pause.data.paused ? '将在当前批完成后暂停。' : '当前没有进行中的重建。'}
+          </span>
+        )}
+        {resume.data !== undefined && !resume.isPending && (
+          <span role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+            续建完成：{resume.data.chunks} 块{jobPaused ? '' : ''}
+          </span>
+        )}
+        {resume.isError && (
+          <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+            续建失败：{resume.error instanceof Error ? resume.error.message : '请稍后重试。'}
+          </span>
+        )}
+      </div>
+
+      {/* W5 面板：F091 索引范围 / F092 试检索 / F100 版本一致性 */}
+      <div className="flex flex-col gap-4 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3">
+        <section aria-label="索引范围" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">索引范围</h4>
+          <RagExclusionsPanel />
+        </section>
+        <section aria-label="试检索" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">试检索</h4>
+          <RagTrySearchPanel enabled={data.enabled} />
+        </section>
+        <section aria-label="版本一致性" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">版本一致性</h4>
+          <RagConsistencyPanel />
+        </section>
       </div>
 
       {!data.fastembedAvailable && (

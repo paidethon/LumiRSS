@@ -10,11 +10,7 @@
  * - 失败静默（不打扰用户、不回滚 UI）；下一次变更自然重试；
  *   pagehide 时用 keepalive 补发最终值（不丢最后一次调整）。 */
 
-import { ApiError } from '../api/client'
-import {
-  getServerSettings,
-  patchServerSettings,
-} from '../api/client'
+import { ApiError, getServerSettings, patchServerSettings } from '../api/client'
 import { useAuthStore, type AuthGateStatus } from './auth'
 import {
   portableSettings,
@@ -23,6 +19,7 @@ import {
   type AppSettings,
   type PortableValues,
 } from './app-settings'
+import { reportSettingsConflict } from './settings-conflict'
 
 const DEFAULT_DEBOUNCE_MS = 600
 /** AUDIT-010：未解决的 dirty portable 键持久化于此，跨重载存活；
@@ -51,8 +48,6 @@ let unsubscribeAuth: (() => void) | null = null
 /** 0021：最近一次见到的服务端 revision（乐观并发）。null = 未知
  * （旧服务端 / 尚未读取）→ PATCH 不带 baseRevision，行为与历史一致。 */
 let serverRevision: number | null = null
-/** 0021：一次 flush 内因 409 冲突自动重试的次数上限（防循环）。 */
-const MAX_CONFLICT_RETRIES = 1
 
 export interface SettingsSyncOptions {
   /** 测试注入：debounce 时长（0 = 立即）。 */
@@ -124,23 +119,21 @@ async function flush(): Promise<void> {
     })
     .catch(async (error: unknown) => {
       if (isSettingsConflict(error) && serverRevision !== null) {
-        // 冲突：丢弃对 revision 的认知，re-hydrate 让服务端值合并回
-        // 本地（dirty 键保留），随后立刻重试一次（带上新 revision）。
+        // F116：冲突不再静默 rehydrate + 覆盖重试——登记 {serverState,
+        // localPending} 快照并触发 ConflictDialog，由用户逐字段决策。
+        // 排队中的自动 flush 必须丢弃：否则登记后仍会静默重发本地候选，
+        // 等于绕过用户决策覆盖服务端（dirty 键保留，由对话框显式提交）。
+        queuedFlush = false
         serverRevision = null
-        await hydrate()
-        for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES; attempt += 1) {
-          try {
-            const retryPayload = portableSettings(
-              useAppSettings.getState().settings,
-            )
-            const retryRevision = await sendPatch(retryPayload)
-            if (typeof retryRevision === 'number') serverRevision = retryRevision
-            for (const key of sending) dirtyKeys.delete(key)
-            persistDirtyKeys()
-            return
-          } catch {
-            /* 重试仍失败：dirty 键保留，等下一次变更/联网/重载 */
-          }
+        try {
+          const server = await getServerSettings()
+          reportSettingsConflict(
+            server as unknown as Record<string, unknown>,
+            typeof server.revision === 'number' ? server.revision : null,
+            payload as unknown as Record<string, unknown>,
+          )
+        } catch {
+          /* 服务端快照也拿不到：dirty 键保留，等下一次变更/联网/重载 */
         }
         return
       }

@@ -28,6 +28,7 @@ from lumirss.models import (
     ClipFetchArticleResult,
     ClipFetchRequest,
     ClipListResponse,
+    ClipRevisionRequest,
 )
 
 from ..deps import _get_clip_store
@@ -144,3 +145,82 @@ async def delete_clip(item_uuid: str, request: Request) -> Response:
 
 
 _ = ClipFetchError  # referenced by the error envelope table
+
+
+# ---------------------------------------------------------------------------
+# F089 剪藏手工修订（原始 content_html 永不覆盖）
+# ---------------------------------------------------------------------------
+
+
+def _revision_store(request: Request):
+    from lumirss.clip_revision import ClipRevisionStore
+
+    return ClipRevisionStore(request.app.state.db, _get_clip_store(request))
+
+
+@router.get("/api/v1/library/clips/{item_uuid}/full")
+async def get_clip_full(item_uuid: str, request: Request):
+    """F089 详情：content（当前展示）+ original（原始，不可变）+ revised。"""
+    from fastapi.responses import JSONResponse
+
+    detail = await _revision_store(request).detail(item_uuid)
+    if detail is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+    return detail
+
+
+@router.get("/api/v1/library/clips/{item_uuid}/revision")
+async def get_clip_blocks(item_uuid: str, request: Request):
+    """块清单（修订 UI 的勾选来源；基于当前展示版本切分）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.clip_revision import content_hash_of
+
+    store = _revision_store(request)
+    try:
+        blocks = await store.blocks(item_uuid)
+    except ClipNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+    row = await store._row(item_uuid)  # noqa: SLF001 — 同模块族协作
+    return {
+        "blocks": blocks,
+        "baseContentHash": content_hash_of(store.display_html(row)),
+    }
+
+
+@router.patch("/api/v1/library/clips/{item_uuid}/revision")
+async def save_clip_revision(
+    item_uuid: str, payload: ClipRevisionRequest, request: Request
+):
+    """保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。"""
+    store = _revision_store(request)
+    result = await store.save_revision(
+        item_uuid,
+        keep_ids=payload.blocks,
+        note=payload.note,
+        force=payload.force,
+        base_content_hash=payload.baseContentHash,
+    )
+    return result
+
+
+@router.delete("/api/v1/library/clips/{item_uuid}/revision", status_code=204)
+async def discard_clip_revision(item_uuid: str, request: Request) -> Response:
+    """恢复原始（删修订：四列清空 + 搜索投影回到原文）。"""
+    from fastapi.responses import JSONResponse
+
+    discarded = await _revision_store(request).discard_revision(item_uuid)
+    if not discarded:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {"type": "revision_not_found", "message": "无修订可恢复。"}
+            },
+        )
+    return Response(status_code=204)

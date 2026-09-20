@@ -570,6 +570,12 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._read: dict[str, dict[str, Any]] = {}
         self._write: dict[str, dict[str, Any]] = {}
+        # F094/F098：当前回合的会话上下文（scope / toolPolicy），由
+        # AgentLoop 在每轮开始时注入；工具执行处读取（服务端过滤）。
+        self.context: dict[str, Any] = {}
+
+    def set_context(self, context: dict[str, Any]) -> None:
+        self.context = context or {}
 
     def register_read(
         self, name: str, description: str, schema: dict, execute: ReadToolFn

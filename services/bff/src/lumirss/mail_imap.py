@@ -24,6 +24,7 @@ from lumirss.secrets_store import SecretsStore
 # the encrypted-at-rest secrets file, never in source or logs).
 _IMAP_CONFIG_ENTRY = "mail_imap"
 _IMAP_PASSWORD_ENTRY = "mail_imap_password"
+_UIDVALIDITY_ENTRY = "mail_imap_uidvalidity"  # F106：回填一致性标记
 
 _POLL_LOCK = asyncio.Lock()
 _INTERVAL_FLOOR_SECONDS = 60
@@ -46,6 +47,7 @@ class ImapConfig:
     use_ssl: bool
     list_uuid: str = ""
     interval_seconds: int = _DEFAULT_INTERVAL_SECONDS
+    enabled: bool = True  # F007：False = 轮询与手动拉信均直接跳过
 
     @classmethod
     def from_dict(cls, value: dict) -> "ImapConfig":
@@ -65,6 +67,7 @@ class ImapConfig:
             use_ssl=bool(value.get("ssl", True)),
             list_uuid=str(value.get("listUuid", "")),
             interval_seconds=max(interval, _INTERVAL_FLOOR_SECONDS),
+            enabled=bool(value.get("enabled", True)),
         )
 
 
@@ -173,10 +176,14 @@ class ImapAdapter:
 
     async def poll_once(self, list_uuid: str) -> dict:
         """One bounded poll; honest report (not-configured = disabled
-        feature, reported as an error type the UI can explain)."""
+        feature, reported as an error type the UI can explain).
+
+        F007：enabled=False → 直接跳过（返回 skipped 状态，不触碰邮箱）。"""
         config = load_imap_config(self._secrets)
         if config is None:
             raise ImapNotConfigured("IMAP 未配置。")
+        if not config.enabled:
+            return {"fetched": 0, "ingested": [], "skipped": True}
         password = self._secrets.get(_IMAP_PASSWORD_ENTRY) or ""
         target = await self._bridge.get_list(list_uuid)
         if target is None:
@@ -212,8 +219,8 @@ async def mail_imap_poll_loop(app_state: Any) -> None:
             config.interval_seconds if config else _DEFAULT_INTERVAL_SECONDS
         )
         await asyncio.sleep(max(interval, _INTERVAL_FLOOR_SECONDS))
-        if config is None or not config.list_uuid:
-            continue
+        if config is None or not config.list_uuid or not config.enabled:
+            continue  # F007：enabled=False 调度入口同样直接跳过
         try:
             adapter = ImapAdapter(
                 app_state.secrets_store, MailBridgeStore(app_state.db)
@@ -229,3 +236,182 @@ def build_mail_imap_task(app_state: Any) -> asyncio.Task:
     """Lifespan wiring factory — main.py creates the task in TWO lines
     (see the phase2 recovery report for the exact diff)."""
     return asyncio.create_task(mail_imap_poll_loop(app_state))
+
+
+# ---- F106 邮件历史回填 ------------------------------------------------------
+
+BackfillFetcher = Callable[
+    [str, int, str, str, str, bool, str, tuple[int, int] | None],
+    Awaitable[tuple[str, list[tuple[int, bytes]]]],
+]
+"""(host, port, user, password, folder, ssl, since_iso, uid_range) →
+(uidvalidity, [(uid, raw_bytes)]). 有界：实现负责数量上限。"""
+
+_MAX_BACKFILL = 200
+_MAX_SAMPLE = 20
+
+
+def _default_backfill_fetcher(
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    folder: str,
+    use_ssl: bool,
+    since: str,
+    uid_range: tuple[int, int] | None,
+) -> Awaitable[tuple[str, list[tuple[int, bytes]]]]:
+    """imaplib-based bounded fetch by date or UID range (real creds only)."""
+    import imaplib
+
+    async def _run() -> tuple[str, list[tuple[int, bytes]]]:
+        def _sync() -> tuple[str, list[tuple[int, bytes]]]:
+            client = (
+                imaplib.IMAP4_SSL(host, port) if use_ssl else imaplib.IMAP4(host, port)
+            )
+            try:
+                client.login(user, password)
+                status, _data = client.select(folder, readonly=True)
+                if status != "OK":
+                    return "", []
+                # UIDVALIDITY 出现在 SELECT 的 untagged 响应里（imaplib 暂存）。
+                uidvalidity = ""
+                untagged = getattr(client, "untagged_responses", {}) or {}
+                values = untagged.get("UIDVALIDITY") or untagged.get(b"UIDVALIDITY") or []
+                if values:
+                    last = values[-1]
+                    uidvalidity = last.decode() if isinstance(last, bytes) else str(last)
+                if uid_range is not None:
+                    query = f"UID {uid_range[0]}:{uid_range[1]}"
+                else:
+                    query = f"SINCE {since}" if since else "ALL"
+                status, found = client.uid("search", None, query)
+                if status != "OK":
+                    return uidvalidity, []
+                messages: list[tuple[int, bytes]] = []
+                for chunk in found:
+                    for number in chunk.split()[:_MAX_BACKFILL]:
+                        status, parts = client.uid("fetch", number, "(RFC822)")
+                        if status != "OK":
+                            continue
+                        for part in parts:
+                            if isinstance(part, tuple) and part[1]:
+                                messages.append((int(number), part[1]))
+                return uidvalidity, messages[:_MAX_BACKFILL]
+            finally:
+                with contextlib.suppress(Exception):
+                    client.logout()
+
+        return await asyncio.to_thread(_sync)
+
+    return _run()
+
+
+async def _load_uidvalidity(secrets: SecretsStore) -> str:
+    value = secrets.get(_UIDVALIDITY_ENTRY)
+    return str(value or "")
+
+
+def _store_uidvalidity(secrets: SecretsStore, uidvalidity: str) -> None:
+    if uidvalidity:
+        secrets.set(_UIDVALIDITY_ENTRY, uidvalidity)
+
+
+async def backfill_mail_history(
+    secrets: SecretsStore,
+    bridge: MailBridgeStore,
+    *,
+    since: str | None = None,
+    uids: list[int] | None = None,
+    dry_run: bool = False,
+    fetcher: BackfillFetcher | None = None,
+) -> dict[str, Any]:
+    """F106：历史邮件回填。dry_run → 采样 ≤20（uid/主题/日期）零写入；
+    执行 → 逐封走既有幂等身份（Message-ID）入桥。UIDVALIDITY 与上次
+    记录不一致 → 中止（诚实：服务器邮箱可能已重建，UID 语义已失效）。
+    同步有界（≤200 封）；坏邮件计入 failed 不中断。"""
+    config = load_imap_config(secrets)
+    if config is None or not config.list_uuid:
+        raise ImapNotConfigured("IMAP 未配置或未绑定 bridge 列表。")
+    uid_range: tuple[int, int] | None = None
+    if uids is not None:
+        clean_uids = sorted({int(u) for u in uids})[:_MAX_BACKFILL]
+        if clean_uids:
+            uid_range = (clean_uids[0], clean_uids[-1])
+    target = await bridge.get_list(config.list_uuid)
+    if target is None:
+        from lumirss.mail_bridge import MailBridgeNotFound
+
+        raise MailBridgeNotFound(config.list_uuid)
+    fetch = fetcher or _default_backfill_fetcher
+    uidvalidity, messages = await fetch(
+        config.host,
+        config.port,
+        config.user,
+        imap_password(secrets),
+        config.folder,
+        config.use_ssl,
+        since or "",
+        uid_range,
+    )
+    stored_validity = await _load_uidvalidity(secrets)
+    validity_note: str | None = None
+    if uidvalidity and stored_validity and str(uidvalidity) != str(stored_validity):
+        if not dry_run:
+            return {
+                "aborted": True,
+                "reason": "uidvalidity_changed",
+                "storedUidvalidity": stored_validity,
+                "currentUidvalidity": str(uidvalidity),
+                "processed": 0,
+                "created": 0,
+                "skippedDup": 0,
+                "failed": [],
+            }
+        validity_note = "uidvalidity_changed"
+    import email as _email
+    import email.policy as _policy
+
+    def _headers(raw: bytes) -> tuple[str, str]:
+        try:
+            message = _email.message_from_bytes(raw, policy=_policy.default)
+            subject = str(message.get("Subject", "") or "")[:200]
+            date = str(message.get("Date", "") or "")[:80]
+            return subject, date
+        except Exception:  # noqa: BLE001 — 坏载荷诚实占位，不中断采样
+            return "(解析失败)", ""
+
+    if dry_run:
+        sample = []
+        for uid, raw in messages[:_MAX_SAMPLE]:
+            subject, date = _headers(raw)
+            sample.append({"uid": uid, "subject": subject, "date": date})
+        return {
+            "dryRun": True,
+            "sample": sample,
+            "matched": len(messages),
+            "uidvalidity": str(uidvalidity or "") or None,
+            "note": validity_note,
+        }
+    created = 0
+    skipped_dup = 0
+    failed: list[dict[str, str]] = []
+    processed = 0
+    for uid, raw in messages[:_MAX_BACKFILL]:
+        processed += 1
+        try:
+            result = await bridge.ingest(target, raw)
+        except Exception as exc:  # noqa: BLE001 — 坏邮件诚实计数，不中断
+            failed.append({"uid": str(uid), "reason": str(exc)[:50] or "parse_failed"})
+            continue
+        if result.get("status") == "accepted":
+            created += 1
+        else:
+            skipped_dup += 1
+    _store_uidvalidity(secrets, str(uidvalidity))
+    return {
+        "processed": processed,
+        "created": created,
+        "skippedDup": skipped_dup,
+        "failed": failed[:50],
+    }

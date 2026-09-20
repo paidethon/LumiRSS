@@ -24,6 +24,38 @@ import {
   createRssHubCredential,
   createSnapshot,
   createWorkspace,
+  activateSummaryVersion,
+  applyBacklog,
+  createAuthorAlias,
+  createInboxRule,
+  createQaTemplate,
+  createRelation,
+  deleteAuthorAlias,
+  deleteInboxRule,
+  getAuthorAliases,
+  getDiagnostics,
+  getPinnedViewCount,
+  getPinnedViews,
+  getAuthorItems,
+  getAuthors,
+  getGlossaryHits,
+  getMissingDigestDates,
+  generateDigestForDate,
+  generateEntrySummaryScoped,
+  previewBacklog,
+  publishGptDigestIssue,
+  deleteQaTemplate,
+  deleteRelation,
+  getQaTemplates,
+  patchQaTemplate,
+  pinSavedView,
+  revokeAuthSession,
+  unpinSavedView,
+  getInboxRules,
+  moveInboxRule,
+  patchInboxRule,
+  listAuthSessions,
+  listRelationsForItem,
   deleteAiProfile,
   deleteBookmark,
   deleteClip,
@@ -38,6 +70,12 @@ import {
   mergeTags,
   executeRestore,
   fetchClipArticle,
+  fetchDuplicateSuspects,
+  fetchStaleSources,
+  getSourceNotes,
+  listSourceNotes,
+  updateSourceNotes,
+  batchMoveSubscriptions,
   generateEntrySummary,
   generateEntryTranslation,
   generateTranslationSegments,
@@ -119,9 +157,36 @@ import {
   updateAiSettings,
   updateBookmark,
   updateWebDavSettings,
+  enableViewFeedToken,
+  rotateViewFeedToken,
+  deleteTranslationSegmentRevision,
+  putTranslationSegmentRevision,
+  addDigestPoolEntry,
+  applyStorageRetention,
+  backfillMailImap,
+  createMailRule,
+  deleteMailRule,
+  dryRunInboxIngest,
+  dryRunMailRule,
+  getMailParseDebug,
+  getMailThread,
+  getStorageRetention,
+  listDigestPool,
+  listInboxEvents,
+  listMailRules,
+  moveMailRule,
+  patchMailRule,
+  previewStorageRetention,
+  putStorageRetention,
+  removeDigestPoolEntry,
+  replayInboxEvent,
+  reorderDigestPool,
+  rotateGptDigestFeedDryRun,
+  rotateInboxSource,
 } from './client'
 import type {
   AiProfileInput,
+  MailRuleCreateInput,
   ClipInput,
   FavoritesResponse,
   GptDigestConfigUpdate,
@@ -132,6 +197,7 @@ import type {
   TranslationSegmentBlockInput,
 } from './client'
 import type { AiPurposeKey } from './types'
+import type { BacklogCondition } from './client'
 import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
@@ -262,6 +328,8 @@ export function useSearch(
     categoryId?: string | null
     state?: 'unread' | null
     favorite?: boolean | null
+    /** F078：同义词扩展（客户端默认开，可本次关闭）。 */
+    expandSynonyms?: boolean
   },
 ) {
   const trimmed = q.trim()
@@ -284,6 +352,7 @@ export function useSearch(
           categoryId: filters.categoryId ?? null,
           state: filters.state ?? null,
           favorite: filters.favorite ?? null,
+          expandSynonyms: filters.expandSynonyms,
         },
         signal,
       ),
@@ -348,6 +417,19 @@ export function useDeleteSavedSearchViewMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => deleteSavedSearchView(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
+    },
+  })
+}
+
+/** F061：启用/轮换视图私有 Atom 订阅 token；成功后失效视图列表
+ * （hasFeedToken 布尔更新）。atomPath 仅在响应中出现一次。 */
+export function useViewFeedTokenMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: 'enable' | 'rotate' }) =>
+      action === 'enable' ? enableViewFeedToken(id) : rotateViewFeedToken(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: SAVED_VIEWS_KEY })
     },
@@ -565,11 +647,13 @@ export function useOpmlPreviewMutation() {
 }
 
 /** 0013 Gate 4：确认 OPML 导入（merge；server-confirmed 后统一失效
- * 订阅相关 server state，与其它订阅 mutation 同一策略）。 */
+ * 订阅相关 server state，与其它订阅 mutation 同一策略）。
+ * F002：vars 可携带 selectedIndexes（仅导入勾选项）。 */
 export function useOpmlImportMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => importOpml(file),
+    mutationFn: (vars: { file: File; selectedIndexes?: number[] }) =>
+      importOpml(vars.file, vars.selectedIndexes),
     onSuccess: () => invalidateSubscriptionState(queryClient),
   })
 }
@@ -965,8 +1049,36 @@ export function useTranslationSegments(
 export function useGenerateTranslationSegmentsMutation(entryRef: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (blocks: TranslationSegmentBlockInput[]) =>
-      generateTranslationSegments(entryRef, blocks),
+    mutationFn: ({
+      blocks,
+      overwriteRevisions,
+    }: {
+      blocks: TranslationSegmentBlockInput[]
+      /** F062：显式覆盖 = 撤销手工修订段并重新生成。 */
+      overwriteRevisions?: boolean
+    }) => generateTranslationSegments(entryRef, blocks, { overwriteRevisions }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['translation-segments', entryRef],
+      })
+    },
+  })
+}
+
+/** F062：保存/撤销一段译文的手工修订；成功后失效该篇的段查询。 */
+export function useTranslationSegmentRevisionMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      blockIndex,
+      text,
+    }: {
+      blockIndex: number
+      text: string | null
+    }) =>
+      text === null
+        ? deleteTranslationSegmentRevision(entryRef, blockIndex).then(() => null)
+        : putTranslationSegmentRevision(entryRef, blockIndex, text),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['translation-segments', entryRef],
@@ -1677,13 +1789,17 @@ export function useConfigFeed(configId: number | null) {
 }
 
 export function useConfigPreviewMutation() {
-  return useMutation({ mutationFn: (configId: number) => previewConfigDigest(configId) })
+  return useMutation({
+    mutationFn: (input: { configId: number; putBack?: string[] }) =>
+      previewConfigDigest(input.configId, input.putBack),
+  })
 }
 
 export function useGenerateConfigMutation() {
   const invalidate = useInvalidateGptDigest()
   return useMutation({
-    mutationFn: (configId: number) => generateConfigDigest(configId),
+    mutationFn: (input: { configId: number; putBack?: string[] }) =>
+      generateConfigDigest(input.configId, input.putBack),
     onSuccess: invalidate,
   })
 }
@@ -1734,7 +1850,7 @@ export function useTitleTranslationMutation() {
   })
 }
 
-/** F11/F13：设置来源显示覆盖（隐藏期/阅读起点）。 */
+/** F11/F13/F001：设置来源显示覆盖（隐藏期/阅读起点/新鲜度预警阈值）。 */
 export function useSetSourceOverrideMutation() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -1742,9 +1858,79 @@ export function useSetSourceOverrideMutation() {
       feedUrl: string
       hiddenUntil?: string | null
       showFrom?: string | null
+      staleAlertHours?: number | null
     }) => setSourceOverride(patch),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['entries'] })
+      await queryClient.invalidateQueries({ queryKey: ['stale-sources'] })
+    },
+  })
+}
+
+/** F001：超期来源列表（面板打开时才拉取）。 */
+export function useStaleSourcesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['stale-sources'],
+    queryFn: ({ signal }) => fetchStaleSources(signal),
+    enabled,
+  })
+}
+
+/** F004：重复订阅候选（面板打开时才拉取）。 */
+export function useDuplicateSuspectsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['duplicate-suspects'],
+    queryFn: ({ signal }) => fetchDuplicateSuspects(signal),
+    enabled,
+  })
+}
+
+/** F005：单订阅备注（对话框打开时拉取）。 */
+export function useSourceNotesQuery(subscriptionRef: string | null) {
+  return useQuery({
+    queryKey: ['source-notes', subscriptionRef],
+    queryFn: ({ signal }) => getSourceNotes(subscriptionRef as string, signal),
+    enabled: subscriptionRef !== null,
+  })
+}
+
+/** F005：备注列表（可选关键词过滤）。 */
+export function useSourceNotesListQuery(noteSearch: string | null) {
+  return useQuery({
+    queryKey: ['source-notes-list', noteSearch],
+    queryFn: ({ signal }) => listSourceNotes(noteSearch ?? undefined, signal),
+    enabled: noteSearch !== null,
+  })
+}
+
+/** F005：保存备注（成功后失效备注缓存）。 */
+export function useUpdateSourceNotesMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      subscriptionRef: string
+      note?: string | null
+      reason?: string | null
+      maintenanceLog?: string | null
+    }) => {
+      const { subscriptionRef, ...body } = vars
+      return updateSourceNotes({ subscriptionRef, ...body })
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-notes'] })
+      await queryClient.invalidateQueries({ queryKey: ['source-notes-list'] })
+    },
+  })
+}
+
+/** F006：批量分类迁移（成功后失效订阅相关 server state）。 */
+export function useBatchMoveMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { refs: string[]; targetCategoryId: string }) =>
+      batchMoveSubscriptions(vars),
+    onSuccess: async () => {
+      invalidateSubscriptionState(queryClient)
     },
   })
 }
@@ -2305,4 +2491,445 @@ export function usePollMailImapMutation() {
       void queryClient.invalidateQueries({ queryKey: ['mail'] })
     },
   })
+}
+
+// ==== W2（F021–F040）净新增 hooks ===========================================
+
+// ---- F021 手工关联内容 ----
+
+export function useItemRelations(itemRef: string | null | undefined) {
+  return useQuery({
+    queryKey: ['item-relations', itemRef],
+    queryFn: ({ signal }) => listRelationsForItem(itemRef as string, signal),
+    enabled: Boolean(itemRef),
+  })
+}
+
+export function useCreateRelationMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: createRelation,
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['item-relations', variables.srcRef] })
+      void queryClient.invalidateQueries({ queryKey: ['item-relations', variables.dstRef] })
+    },
+  })
+}
+
+export function useDeleteRelationMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: deleteRelation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['item-relations'] })
+    },
+  })
+}
+
+// ---- F022 收件箱归类规则 ----
+
+export function useInboxRules() {
+  return useQuery({ queryKey: ['inbox-rules'], queryFn: ({ signal }) => getInboxRules(signal) })
+}
+
+export function useInboxRuleMutations() {
+  const queryClient = useQueryClient()
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['inbox-rules'] })
+  const create = useMutation({ mutationFn: createInboxRule, onSuccess: invalidate })
+  const patch = useMutation({
+    mutationFn: (input: { id: number; body: Parameters<typeof patchInboxRule>[1] }) =>
+      patchInboxRule(input.id, input.body),
+    onSuccess: invalidate,
+  })
+  const move = useMutation({
+    mutationFn: (input: { id: number; direction: 'up' | 'down' }) => moveInboxRule(input.id, input.direction),
+    onSuccess: invalidate,
+  })
+  const remove = useMutation({ mutationFn: deleteInboxRule, onSuccess: invalidate })
+  return { create, patch, move, remove }
+}
+
+// ---- F023 跨来源作者聚合 ----
+
+export function useAuthors() {
+  return useQuery({ queryKey: ['authors'], queryFn: ({ signal }) => getAuthors(signal) })
+}
+
+export function useAuthorItems(author: string | null) {
+  return useQuery({
+    queryKey: ['author-items', author],
+    queryFn: ({ signal }) => getAuthorItems(author as string, 0, 20, signal),
+    enabled: Boolean(author),
+  })
+}
+
+export function useAuthorAliases() {
+  return useQuery({
+    queryKey: ['author-aliases'],
+    queryFn: ({ signal }) => getAuthorAliases(signal),
+  })
+}
+
+export function useAuthorAliasMutations() {
+  const queryClient = useQueryClient()
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['authors'] })
+    void queryClient.invalidateQueries({ queryKey: ['author-aliases'] })
+    void queryClient.invalidateQueries({ queryKey: ['author-items'] })
+  }
+  const create = useMutation({ mutationFn: createAuthorAlias, onSuccess: invalidate })
+  const remove = useMutation({ mutationFn: deleteAuthorAlias, onSuccess: invalidate })
+  return { create, remove }
+}
+
+// ---- F024 积压整理助手 ----
+
+export function useBacklogMutations() {
+  const queryClient = useQueryClient()
+  return {
+    preview: useMutation({
+      mutationFn: (condition: BacklogCondition) => previewBacklog(condition),
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['entries'] })
+      },
+    }),
+    apply: useMutation({
+      mutationFn: (input: { condition: BacklogCondition; token: string }) =>
+        applyBacklog(input.condition, input.token),
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['entries'] })
+        void queryClient.invalidateQueries({ queryKey: ['search'] })
+      },
+    }),
+  }
+}
+
+// ---- F025/F027：范围生成 + 版本切换 ----
+
+export function useGenerateSummaryScopedMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (maxChars: number | undefined) =>
+      generateEntrySummaryScoped(entryRef, maxChars),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['entry-summary', entryRef], data)
+    },
+  })
+}
+
+export function useActivateSummaryVersionMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (versionId: string) => activateSummaryVersion(entryRef, versionId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['entry-summary', entryRef], data)
+    },
+  })
+}
+
+// ---- F030 问答模板 ----
+
+export function useQaTemplates() {
+  return useQuery({
+    queryKey: ['qa-templates'],
+    queryFn: ({ signal }) => getQaTemplates(signal),
+  })
+}
+
+export function useQaTemplateMutations() {
+  const queryClient = useQueryClient()
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['qa-templates'] })
+  return {
+    create: useMutation({ mutationFn: createQaTemplate, onSuccess: invalidate }),
+    patch: useMutation({
+      mutationFn: (input: { id: string; body: { name: string; text?: string } }) =>
+        patchQaTemplate(input.id, input.body),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({ mutationFn: deleteQaTemplate, onSuccess: invalidate }),
+  }
+}
+
+// ---- F029 术语命中预览 ----
+
+export function useGlossaryHits(entryRef: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['glossary-hits', entryRef],
+    queryFn: ({ signal }) => getGlossaryHits(entryRef, signal),
+    enabled,
+  })
+}
+
+// ---- F031/F032 日报草稿审阅 + 缺失日期补刊 ----
+
+export function usePublishGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { configId: number; issueKey: string }) =>
+      publishGptDigestIssue(input.configId, input.issueKey),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['gpt-digest-issues'] })
+    },
+  })
+}
+
+export function useMissingDigestDates(configId: number) {
+  return useQuery({
+    queryKey: ['gpt-digest-missing', configId],
+    queryFn: ({ signal }) => getMissingDigestDates(configId, signal),
+  })
+}
+
+export function useGenerateDigestForDateMutation(configId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (targetDate: string) => generateDigestForDate(configId, targetDate),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['gpt-digest-issues'] })
+      void queryClient.invalidateQueries({ queryKey: ['gpt-digest-missing', configId] })
+    },
+  })
+}
+
+// ---- F038/F039/F035 hooks ----
+
+export function useAuthSessions() {
+  return useQuery({ queryKey: ['auth-sessions'], queryFn: ({ signal }) => listAuthSessions(signal) })
+}
+
+export function useRevokeSessionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: revokeAuthSession,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-sessions'] }),
+  })
+}
+
+export function useDiagnostics() {
+  return useQuery({ queryKey: ['diagnostics'], queryFn: ({ signal }) => getDiagnostics(signal) })
+}
+
+export function usePinnedViews() {
+  return useQuery({ queryKey: ['pinned-views'], queryFn: ({ signal }) => getPinnedViews(signal) })
+}
+
+export function usePinnedViewCount(id: string | null) {
+  return useQuery({
+    queryKey: ['pinned-view-count', id],
+    queryFn: ({ signal }) => getPinnedViewCount(id as string, signal),
+    enabled: Boolean(id),
+  })
+}
+
+export function usePinMutations() {
+  const queryClient = useQueryClient()
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['pinned-views'] })
+    void queryClient.invalidateQueries({ queryKey: ['saved-views'] })
+  }
+  return {
+    pin: useMutation({ mutationFn: pinSavedView, onSuccess: invalidate }),
+    unpin: useMutation({ mutationFn: unpinSavedView, onSuccess: invalidate }),
+  }
+}
+
+// ==== W6（F101–F115）=========================================================
+
+// ---- F101/F102：日报素材池 ----
+
+/** 素材池列表（待用按 position 升序；used 分列）。 */
+export function useDigestPool(configId: number) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'pool', configId],
+    queryFn: ({ signal }) => listDigestPool(configId, signal),
+  })
+}
+
+function invalidateDigestPool(queryClient: ReturnType<typeof useQueryClient>, configId: number) {
+  return async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['gpt-digest', 'pool', configId] }),
+      queryClient.invalidateQueries({ queryKey: ['gpt-digest', 'configs'] }),
+    ])
+  }
+}
+
+export function useAddDigestPoolEntryMutation(configId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (entryRef: string) => addDigestPoolEntry(configId, entryRef),
+    onSuccess: invalidateDigestPool(queryClient, configId),
+  })
+}
+
+export function useRemoveDigestPoolEntryMutation(configId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (entryId: number) => removeDigestPoolEntry(configId, entryId),
+    onSuccess: invalidateDigestPool(queryClient, configId),
+  })
+}
+
+export function useReorderDigestPoolMutation(configId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (orderedIds: number[]) => reorderDigestPool(configId, orderedIds),
+    onSuccess: invalidateDigestPool(queryClient, configId),
+  })
+}
+
+// ---- F103：订阅 token 轮换两步（dry-run → 执行） ----
+
+export function useRotateGptDigestDryRunMutation() {
+  return useMutation({ mutationFn: () => rotateGptDigestFeedDryRun() })
+}
+
+// ---- F104/F110：邮件解析对照 / 会话（按需拉取，不预热） ----
+
+export function useMailParseDebugMutation() {
+  return useMutation({
+    mutationFn: (input: { listUuid: string; messageId: string }) =>
+      getMailParseDebug(input.listUuid, input.messageId),
+  })
+}
+
+export function useMailThreadMutation() {
+  return useMutation({
+    mutationFn: (input: { listUuid: string; messageId: string }) =>
+      getMailThread(input.listUuid, input.messageId),
+  })
+}
+
+// ---- F105：邮件接收规则 ----
+
+export function useMailRules(listUuid: string | null | undefined) {
+  return useQuery({
+    queryKey: ['mail', 'rules', listUuid ?? ''],
+    queryFn: ({ signal }) => listMailRules(listUuid as string, signal),
+    enabled: typeof listUuid === 'string' && listUuid !== '',
+  })
+}
+
+function invalidateMailRules(queryClient: ReturnType<typeof useQueryClient>, listUuid: string) {
+  return async () => {
+    await queryClient.invalidateQueries({ queryKey: ['mail', 'rules', listUuid] })
+  }
+}
+
+export function useCreateMailRuleMutation(listUuid: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MailRuleCreateInput) => createMailRule(listUuid, input),
+    onSuccess: invalidateMailRules(queryClient, listUuid),
+  })
+}
+
+export function usePatchMailRuleMutation(listUuid: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { ruleId: number; patch: { enabled?: boolean; value?: string; action?: string } }) =>
+      patchMailRule(input.ruleId, input.patch),
+    onSuccess: invalidateMailRules(queryClient, listUuid),
+  })
+}
+
+export function useMoveMailRuleMutation(listUuid: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { ruleId: number; direction: 'up' | 'down' }) =>
+      moveMailRule(input.ruleId, input.direction),
+    onSuccess: invalidateMailRules(queryClient, listUuid),
+  })
+}
+
+export function useDeleteMailRuleMutation(listUuid: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ruleId: number) => deleteMailRule(ruleId),
+    onSuccess: invalidateMailRules(queryClient, listUuid),
+  })
+}
+
+export function useDryRunMailRuleMutation(listUuid: string) {
+  return useMutation({
+    mutationFn: (sample: { field: 'from' | 'subject'; value: string }) =>
+      dryRunMailRule(listUuid, sample),
+  })
+}
+
+// ---- F106：IMAP 历史回填（dry-run → 执行） ----
+
+export function useMailBackfillMutation() {
+  return useMutation({ mutationFn: (body: { since?: string; uids?: number[]; dryRun: boolean }) => backfillMailImap(body) })
+}
+
+// ---- F107：收件投递事件 / 重放 ----
+
+export function useInboxEvents(sourceUuid: string | null | undefined) {
+  return useQuery({
+    queryKey: ['inbox', 'events', sourceUuid ?? ''],
+    queryFn: ({ signal }) => listInboxEvents(sourceUuid as string, signal),
+    enabled: typeof sourceUuid === 'string' && sourceUuid !== '',
+  })
+}
+
+export function useReplayInboxEventMutation(sourceUuid: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (eventId: number) => replayInboxEvent(eventId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inbox', 'events', sourceUuid] }),
+        queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
+      ])
+    },
+  })
+}
+
+// ---- F108：接入检查（零写入试跑；按需触发不进缓存） ----
+
+export function useIngestDryRunMutation(sourceUuid: string) {
+  return useMutation({
+    mutationFn: (payloadJson: string) => dryRunInboxIngest(sourceUuid, payloadJson),
+  })
+}
+
+// ---- F109：收件连接器凭据轮换（一次性 secret，同创建语义） ----
+
+export function useRotateInboxSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (uuid: string) => rotateInboxSource(uuid),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inbox', 'sources'] })
+    },
+  })
+}
+
+// ---- F114：存储保留策略 ----
+
+export function useStorageRetention() {
+  return useQuery({
+    queryKey: ['storage', 'retention'],
+    queryFn: ({ signal }) => getStorageRetention(signal),
+  })
+}
+
+export function useSaveStorageRetentionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (values: { enabled?: boolean; aiVersionsDays?: number | null; taskLogDays?: number | null }) =>
+      putStorageRetention(values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['storage', 'retention'] })
+    },
+  })
+}
+
+export function useRetentionPreviewMutation() {
+  return useMutation({ mutationFn: () => previewStorageRetention() })
+}
+
+export function useRetentionApplyMutation() {
+  return useMutation({ mutationFn: () => applyStorageRetention() })
 }

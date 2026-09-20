@@ -33,6 +33,12 @@ const PREVIEW_BODY = {
   duplicates: 1,
   invalidEntries: 0,
   categories: [{ label: 'Tech', feedCount: 2 }],
+  // F002：逐项数组（new×2 默认勾选，duplicate 默认不选）
+  items: [
+    { index: 0, title: 'Feed A', xmlUrl: 'https://a.example/rss', category: 'Tech', status: 'new', note: null },
+    { index: 1, title: 'Feed B', xmlUrl: 'https://b.example/rss', category: null, status: 'new', note: null },
+    { index: 2, title: 'Existing Feed', xmlUrl: 'https://existing.example/rss', category: 'Tech', status: 'duplicate', note: '已订阅（或在文件内重复），导入时跳过' },
+  ],
 }
 
 const IMPORT_BODY = {
@@ -62,7 +68,9 @@ function makeFetch(routes: Record<string, () => Response>): FetchState {
   const fn = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
-    const handler = routes[`${method} ${url}`]
+    // F002：URL 可带查询参数——先精确匹配，再回退「路径前缀」匹配
+    const pathOnly = url.split('?')[0] ?? url
+    const handler = routes[`${method} ${url}`] ?? routes[`${method} ${pathOnly}`]
     if (handler === undefined) {
       throw new Error(`unexpected fetch: ${method} ${url}`)
     }
@@ -134,7 +142,8 @@ describe('OpmlImportDialog（订阅页外壳）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
     await waitFor(() => {
-      expect(fetchState.calls.some((c) => c.url === '/api/v1/opml/import')).toBe(true)
+      // F002：import 请求带 selected_indexes 查询参数，用前缀匹配
+      expect(fetchState.calls.some((c) => c.url.startsWith('/api/v1/opml/import'))).toBe(true)
     })
     // server-confirmed 结果如实展示（added / failed / 新建分类）
     expect(await screen.findByText(/已导入 2 个订阅源/)).toBeInTheDocument()
@@ -203,7 +212,12 @@ describe('OpmlImportDialog（订阅页外壳）', () => {
   })
 
   it('全部重复 → 确认禁用（无事可做，绝不强制导入）', async () => {
-    const allDuplicates = { ...PREVIEW_BODY, newFeeds: 0, duplicates: 3 }
+    const allDuplicates = {
+      ...PREVIEW_BODY,
+      newFeeds: 0,
+      duplicates: 3,
+      items: PREVIEW_BODY.items.map((i) => ({ ...i, status: 'duplicate' as const })),
+    }
     const fetchState = makeFetch({
       'POST /api/v1/opml/import/preview': () => jsonResponse(allDuplicates),
     })
@@ -311,5 +325,86 @@ describe('SourcesSettingsSection（设置外壳）', () => {
     expect(link).toHaveAttribute('href', 'https://rss.example.com')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+})
+
+describe('F002 OPML 逐项勾选导入', () => {
+  it('F002: 预览到达后默认勾选 new，duplicate/invalid 默认不选；提交载荷仅含选中项', async () => {
+    const fetchState = makeFetch({
+      'POST /api/v1/opml/import/preview': () => jsonResponse(PREVIEW_BODY),
+      'POST /api/v1/opml/import': () => jsonResponse(IMPORT_BODY),
+      'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
+      'GET /api/v1/categories': () => jsonResponse([]),
+      'GET /api/v1/feeds': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetchState.fn)
+    render(withProviders(<OpmlImportDialog open onClose={() => {}} />))
+
+    selectFile(makeFile('<opml><body/></opml>'))
+    // 逐项表渲染：3 行；默认勾选 index 0/1（new），duplicate 未勾选
+    const box0 = (await screen.findByLabelText('选择 Feed A')) as HTMLInputElement
+    const box1 = screen.getByLabelText('选择 Feed B') as HTMLInputElement
+    const box2 = screen.getByLabelText('选择 Existing Feed') as HTMLInputElement
+    expect(box0.checked).toBe(true)
+    expect(box1.checked).toBe(true)
+    expect(box2.checked).toBe(false)
+    expect(screen.getByText(/已选 2\/3/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
+    await screen.findByText(/已导入 2 个订阅源/)
+    const importCall = fetchState.calls.find(
+      (c) => c.url.startsWith('/api/v1/opml/import') && !c.url.includes('/preview'),
+    )
+    expect(importCall).toBeDefined()
+    const query = (importCall!.url as string).split('?')[1] ?? ''
+    const picked = query.replace('selected_indexes=', '').split(',').sort().join(',')
+    expect(picked).toBe('0,1')
+  })
+
+  it('F002: 反选/单项切换生效；全部取消勾选后确认禁用', async () => {
+    const fetchState = makeFetch({
+      'POST /api/v1/opml/import/preview': () => jsonResponse(PREVIEW_BODY),
+    })
+    vi.stubGlobal('fetch', fetchState.fn)
+    render(withProviders(<OpmlImportDialog open onClose={() => {}} />))
+
+    selectFile(makeFile('<opml><body/></opml>'))
+    await screen.findByLabelText('选择 Feed A')
+    // 反选：0/1 → 2
+    fireEvent.click(screen.getByRole('button', { name: '反选' }))
+    expect((screen.getByLabelText('选择 Existing Feed') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('选择 Feed A') as HTMLInputElement).checked).toBe(false)
+    // 取消最后一项 → 确认禁用（无选中不提交）
+    fireEvent.click(screen.getByLabelText('选择 Existing Feed'))
+    expect(screen.getByRole('button', { name: '确认导入' })).toBeDisabled()
+    // 重新勾选 → 可提交，载荷仅含 2
+    fireEvent.click(screen.getByLabelText('选择 Existing Feed'))
+    expect(screen.getByRole('button', { name: '确认导入' })).not.toBeDisabled()
+  })
+
+  it('F002: 结果卡按成功/跳过/失败汇报（skipped 汇总未勾选与无效项）', async () => {
+    const resultWithSkipped = {
+      ...IMPORT_BODY,
+      skipped: [
+        { feedUrl: 'https://existing.example/rss', title: 'Existing Feed', reason: 'not_selected' },
+        { feedUrl: 'notaurl', title: 'Bad', reason: 'invalid' },
+      ],
+    }
+    const fetchState = makeFetch({
+      'POST /api/v1/opml/import/preview': () => jsonResponse(PREVIEW_BODY),
+      'POST /api/v1/opml/import': () => jsonResponse(resultWithSkipped),
+      'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
+      'GET /api/v1/categories': () => jsonResponse([]),
+      'GET /api/v1/feeds': () => jsonResponse([]),
+    })
+    vi.stubGlobal('fetch', fetchState.fn)
+    render(withProviders(<OpmlImportDialog open onClose={() => {}} />))
+
+    selectFile(makeFile('<opml><body/></opml>'))
+    await screen.findByLabelText('选择 Feed A')
+    fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
+    expect(await screen.findByText(/未导入 2 个/)).toBeInTheDocument()
+    expect(screen.getByText(/Existing Feed（未勾选）/)).toBeInTheDocument()
+    expect(screen.getByText(/Bad（无效）/)).toBeInTheDocument()
   })
 })

@@ -239,6 +239,104 @@ class RestoreExecuteBody(BaseModel):
     confirmation: str = Field(min_length=1)
 
 
+class BackupCompareBody(BaseModel):
+    """POST /api/v1/backups/compare 体：两份本地备份的任务 id。"""
+
+    aId: str = Field(min_length=1)
+    bId: str = Field(min_length=1)
+
+
+async def _read_backup_manifest(job_id: str, request: Request) -> dict[str, object]:
+    """读本地备份 zip 里的 manifest.json（只读）。损坏/缺失 → 该侧
+    incomparable 原因（诚实降级，绝不冒充可比）。"""
+    import zipfile
+
+    jobs = _get_backup_jobs(request)
+    job = await jobs.get(job_id)
+    if job is None:
+        raise BackupNotFound("Backup job not found.")
+    if job["status"] != "succeeded":
+        raise BackupNotFound("Only succeeded backups can be compared.")
+    local_path = None
+    summary = job.get("summary")
+    if isinstance(summary, str) and summary:
+        try:
+            local_path = json.loads(summary).get("localPath")
+        except json.JSONDecodeError:
+            local_path = None
+    if not local_path:
+        raise BackupNotFound("This backup has no local file.")
+    path = Path(local_path)
+    if not path.is_file():
+        raise BackupNotFound("The local backup file is missing.")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            raw = archive.read("manifest.json")
+        manifest = json.loads(raw.decode("utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest is not an object")
+    except Exception as exc:  # noqa: BLE001 — 损坏如实报告（该侧不可比）
+        return {"ok": False, "reason": f"manifest 损坏或缺失：{type(exc).__name__}"}
+    return {"ok": True, "manifest": manifest}
+
+
+@router.post("/api/v1/backups/compare")
+async def compare_backups(body: BackupCompareBody, request: Request) -> dict[str, object]:
+    """F115：两份本地备份的 manifest 差异比较（只读——只开 zip 读句柄，
+    不改文件、不触碰 mtime）。相同 → identical=true；不同类别计数逐条
+    delta；未知段名（旧格式）进 incomparable——绝不显示为 0。"""
+    side_a = await _read_backup_manifest(body.aId, request)
+    side_b = await _read_backup_manifest(body.bId, request)
+    incomparable: list[str] = []
+    if not side_a.get("ok"):
+        incomparable.append(f"A（{body.aId[:12]}）：{side_a.get('reason')}")
+    if not side_b.get("ok"):
+        incomparable.append(f"B（{body.bId[:12]}）：{side_b.get('reason')}")
+    if incomparable:
+        return {"identical": False, "categories": [], "schemaVersions": None, "incomparable": incomparable}
+    manifest_a: dict = side_a["manifest"]  # type: ignore[assignment]
+    manifest_b: dict = side_b["manifest"]  # type: ignore[assignment]
+    counts_a: dict[str, int] = {
+        str(k)[:80]: int(v)
+        for k, v in (manifest_a.get("componentCounts") or {}).items()
+        if isinstance(v, (int, float))
+    }
+    counts_b: dict[str, int] = {
+        str(k)[:80]: int(v)
+        for k, v in (manifest_b.get("componentCounts") or {}).items()
+        if isinstance(v, (int, float))
+    }
+    # 恶意/未知 manifest 键名不进比较面（转义/截断后仅作 incomparable 提示）
+    unknown = sorted((set(counts_a) | set(counts_b)) - {"lumi.sqlite", "freshrss-data"})
+    categories = [
+        {
+            "name": name,
+            "aCount": counts_a.get(name, 0) if name in counts_a else None,
+            "bCount": counts_b.get(name, 0) if name in counts_b else None,
+            "delta": (counts_a.get(name, 0) if name in counts_a else 0)
+            - (counts_b.get(name, 0) if name in counts_b else 0),
+        }
+        for name in sorted(set(counts_a) | set(counts_b))
+        if name not in unknown
+    ]
+    schema_a = manifest_a.get("lumiDbSchemaVersion")
+    schema_b = manifest_b.get("lumiDbSchemaVersion")
+    if unknown:
+        incomparable.append("未知/旧格式段名：" + "、".join(unknown[:10]))
+    identical = (
+        not unknown
+        and counts_a == counts_b
+        and schema_a == schema_b
+        and manifest_a.get("backupSchemaVersion") == manifest_b.get("backupSchemaVersion")
+    )
+    return {
+        "identical": identical,
+        "categories": categories,
+        "schemaVersions": {"a": schema_a, "b": schema_b},
+        "incomparable": incomparable,
+    }
+
+
 async def _locate_backup_package(
     body: RestorePreviewBody, request: Request
 ) -> tuple[Path, str]:

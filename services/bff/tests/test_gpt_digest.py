@@ -192,12 +192,22 @@ def test_store_defaults_clamps_and_timezone_fallback(client):
 
 
 def test_feed_token_roundtrip(client):
+    """§13.4：secrets 文件只存 SHA-256——ensure/rotate 返回的原始 token
+    与存储值不同但校验等价；轮换后旧 token 立即失效。"""
+    from lumirss.token_hash import is_token_hash, verify_token
+
     store = _store()
     token = store.ensure_feed_token()
-    assert token and store.feed_token() == token
+    assert token
+    stored = store.feed_token()
+    assert stored and is_token_hash(stored)  # 库（文件）里无明文
+    assert verify_token(token, stored)  # 校验=sha256(呈递)==存储
     rotated = store.rotate_feed_token()
     assert rotated != token
-    assert store.feed_token() == rotated
+    stored2 = store.feed_token()
+    assert stored2 and is_token_hash(stored2) and stored2 != stored
+    assert verify_token(rotated, stored2)
+    assert not verify_token(token, stored2)  # 旧 token 失效
 
 
 def test_issue_upsert_is_revision_not_duplicate(client):
@@ -310,12 +320,16 @@ def test_f01_configs_crud_isolation_and_same_day_no_collision(client):
     assert run(issues.recent_issues(tech["id"], 10)) == []
     assert run(issues.recent_issues(oss["id"], 10)), "其它配置的期刊不受级联影响"
 
-    # API 面：列表 + 指定配置订阅路径 + 错误 token 404
+    # API 面：列表 + 指定配置订阅路径 + 错误 token 404。
+    # §13.4：首次 GET 创建 token 并一次性返回地址；再次 GET atomPath 为
+    # 空（token 只存哈希，明文不可重建——诚实降级），公开 feed 照常可读。
     listing = client.get("/api/v1/gpt-digest/configs").json()
     assert {c["name"] for c in listing["items"]} >= {"默认日报", "开源日报"}
-    token = client.get("/api/v1/gpt-digest/feed").json()["atomPath"].split("/")[-1][: -len(".atom")]
-    oss_feed = client.get(f"/api/v1/gpt-digest/configs/{oss['id']}/feed").json()["atomPath"]
-    assert oss_feed == f"/feeds/gpt-digest/{oss['id']}.{token}.atom"
+    atom_path = client.get("/api/v1/gpt-digest/feed").json()["atomPath"]
+    assert atom_path.startswith("/feeds/gpt-digest/")
+    token = atom_path.split("/")[-1][: -len(".atom")]
+    assert client.get("/api/v1/gpt-digest/feed").json()["atomPath"] == ""
+    oss_feed = f"/feeds/gpt-digest/{oss['id']}.{token}.atom"
     body = client.get(oss_feed)
     assert body.status_code == 200
     assert "开源日报" in body.text

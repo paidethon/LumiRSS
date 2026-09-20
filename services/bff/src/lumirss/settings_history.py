@@ -14,17 +14,31 @@ from lumirss.util import utc_now
 
 _HISTORY_LIMIT = 20
 
+# F111 防御性护栏：便携设置按设计不含秘密，但若未来误入以下命名模式
+# 的键，diff 只记键名 + ***（值绝不落历史）。
+SECRET_KEY_PATTERNS = ("api_key", "password", "secret", "token")
+
+
+def _is_secret_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(pattern in lowered for pattern in SECRET_KEY_PATTERNS)
+
 
 def compute_diff(
     before: dict[str, Any], after: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """只含实际变化键的差异（schemaVersion 永不参与）。"""
+    """只含实际变化键的差异（schemaVersion 永不参与）。
+
+    F111：秘密键护栏——命中 SECRET_KEY_PATTERNS 的键只记 ``***``。"""
     diff: dict[str, dict[str, Any]] = {}
     for key in after:
         if key == "schemaVersion":
             continue
         if key not in before or before[key] != after[key]:
-            diff[key] = {"before": before.get(key), "after": after[key]}
+            if _is_secret_key(key):
+                diff[key] = {"before": "***", "after": "***"}
+            else:
+                diff[key] = {"before": before.get(key), "after": after[key]}
     return diff
 
 

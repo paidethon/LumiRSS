@@ -23,6 +23,14 @@ import type { Bookmark as BookmarkItem } from '../../api/types'
 import { formatTimestamp } from '../../lib/date-format'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import { Button } from '../ui/Button'
+import { LibraryTrashPanel } from '../LibraryTrashPanel'
+import { AnnotationsManager } from '../AnnotationsManager'
+import { KnowledgeCardsManager } from '../KnowledgeCardsManager'
+import { DuplicatesDialog } from '../DuplicatesDialog'
+import { BatchEditDialog } from '../BatchEditDialog'
+import { CheckLinksDialog } from '../CheckLinksDialog'
+import { MergeDialog, type MergeCandidate } from '../MergeDialog'
+import { NotesManager } from '../NotesManager'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
@@ -170,8 +178,16 @@ function BookmarkFormDialog({
 }
 
 /** 单条书签行：标题外链（仅 url 类型且绝对 http/https）+ url / 备注 /
- * 收藏时间 + 编辑 / 立即删除（无二次确认，与时间线诚实语义一致）。 */
-function BookmarkRow({ bookmark }: { bookmark: BookmarkItem }) {
+ * 收藏时间 + 多选（F081/F087）+ 编辑 / 立即删除（无二次确认）。 */
+function BookmarkRow({
+  bookmark,
+  selected,
+  onToggleSelect,
+}: {
+  bookmark: BookmarkItem
+  selected: boolean
+  onToggleSelect: (ref: string) => void
+}) {
   const [editing, setEditing] = useState(false)
   const del = useDeleteBookmarkMutation()
   const safeUrl =
@@ -184,6 +200,13 @@ function BookmarkRow({ bookmark }: { bookmark: BookmarkItem }) {
         className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5"
       >
         <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(bookmark.ref)}
+            aria-label={`选择书签：${bookmark.title}`}
+            className="mt-1 size-4 shrink-0 accent-[var(--lumi-accent)]"
+          />
           <div className="min-w-0 flex-1">
             {safeUrl !== null ? (
               <a
@@ -265,13 +288,142 @@ export default function BookmarksPage() {
     [data],
   )
   const hasQuery = q !== ''
+  // F019：回收站面板开关
+  const [trashOpen, setTrashOpen] = useState(false)
+  // F051：批注页签（书签/批注双页签；管理器组件承载检索与复习队列）
+  // F070：四页签（书签/批注/知识卡片/笔记）。
+  const [pageTab, setPageTab] = useState<'bookmarks' | 'annotations' | 'knowledge' | 'notes'>('bookmarks')
+  // F071：疑似重复审核对话框。F082：合并对话框。
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false)
+  const [mergeOpen, setMergeOpen] = useState(false)
+  // F081/F087：多选批量操作。
+  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
+  const [batchEditOpen, setBatchEditOpen] = useState(false)
+  const [checkLinksOpen, setCheckLinksOpen] = useState(false)
+
+  function toggleSelect(ref: string) {
+    setSelectedRefs((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }
+
+  if (pageTab === 'knowledge') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">知识卡片</h1>
+          <div className="flex items-center gap-1.5" role="group" aria-label="页签">
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('bookmarks')}>
+              书签
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('annotations')}>
+              批注
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('notes')}>
+              笔记
+            </Button>
+            <Button size="sm" variant="primary">知识卡片</Button>
+          </div>
+        </div>
+        <KnowledgeCardsManager />
+      </div>
+    )
+  }
+
+  if (pageTab === 'annotations') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5" role="group" aria-label="页签">
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('bookmarks')}>
+              书签
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('bookmarks')}>
+              批注
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('notes')}>
+              笔记
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('knowledge')}>
+              知识卡片
+            </Button>
+          </div>
+        </div>
+        <AnnotationsManager />
+      </div>
+    )
+  }
+
+  if (pageTab === 'notes') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">笔记</h1>
+          <div className="flex items-center gap-1.5" role="group" aria-label="页签">
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('bookmarks')}>
+              书签
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('annotations')}>
+              批注
+            </Button>
+            <Button size="sm" variant="primary">笔记</Button>
+            <Button size="sm" variant="ghost" onClick={() => setPageTab('knowledge')}>
+              知识卡片
+            </Button>
+          </div>
+        </div>
+        <NotesManager />
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <DuplicatesDialog open={duplicatesOpen} onClose={() => setDuplicatesOpen(false)} />
+      {batchEditOpen && selectedRefs.size > 0 && (
+        <BatchEditDialog refs={[...selectedRefs]} onClose={() => { setBatchEditOpen(false); setSelectedRefs(new Set()) }} />
+      )}
+      {checkLinksOpen && selectedRefs.size > 0 && (
+        <CheckLinksDialog refs={[...selectedRefs]} onClose={() => { setCheckLinksOpen(false); setSelectedRefs(new Set()) }} />
+      )}
+      {mergeOpen && (
+        <MergeDialog
+          items={bookmarks.map((b): MergeCandidate => ({ ref: b.ref, title: b.title }))}
+          onClose={() => setMergeOpen(false)}
+        />
+      )}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
-        {/* 头部：标题 + 导入 / 导出 / 新建 */}
+        {/* 头部：标题 + 页签 + 导入 / 导出 / 新建 */}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">书签</h1>
+          <Button size="sm" variant="ghost" onClick={() => setPageTab('annotations')}>
+            批注
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPageTab('knowledge')}>
+            知识卡片
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setDuplicatesOpen(true)}>
+            整理
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setMergeOpen(true)}>
+            合并
+          </Button>
+          {selectedRefs.size > 0 && (
+            <>
+              <span data-selection-count="" className="text-xs text-[var(--lumi-text-secondary)]">
+                已选 {selectedRefs.size} 条
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => setBatchEditOpen(true)}>
+                批量编辑
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setCheckLinksOpen(true)}>
+                检查链接
+              </Button>
+            </>
+          )}
           <div className="ml-auto flex items-center gap-1.5">
             {/* 导入：原始 Netscape HTML 文件上传（BFF 解析）。sr-only input
                 保持可聚焦（键盘可操作）；label 承载视觉按钮。 */}
@@ -308,10 +460,20 @@ export default function BookmarksPage() {
             >
               导出
             </a>
+            <button
+              type="button"
+              aria-pressed={trashOpen}
+              onClick={() => setTrashOpen((v) => !v)}
+              className="min-h-7 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+            >
+              回收站
+            </button>
             <NewBookmarkButton />
           </div>
         </div>
 
+        {/* F019：回收站面板 */}
+        {trashOpen && <LibraryTrashPanel />}
         {/* 导入结果 / 错误（诚实计数 + 前几条失败原因） */}
         {importMutation.isError && (
           <div role="alert" className="mt-2 text-sm text-[var(--lumi-danger)]">
@@ -415,7 +577,12 @@ export default function BookmarksPage() {
           <>
             <ul className="mt-3 flex flex-col gap-2" aria-label="书签列表">
               {bookmarks.map((bookmark) => (
-                <BookmarkRow key={bookmark.ref} bookmark={bookmark} />
+                <BookmarkRow
+                  key={bookmark.ref}
+                  bookmark={bookmark}
+                  selected={selectedRefs.has(bookmark.ref)}
+                  onToggleSelect={toggleSelect}
+                />
               ))}
             </ul>
             {hasNextPage && (

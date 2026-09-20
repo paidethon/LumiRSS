@@ -9,9 +9,82 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createGlossaryTerm,
   deleteGlossaryTerm,
+  exportGlossaryJson,
+  importGlossaryTerms,
   listGlossary,
+  parseGlossaryImportText,
 } from '../../api/client'
+import type { GlossaryImportOutcome } from '../../api/client'
 import { Button } from '../ui/Button'
+
+/** F028：导入面板（粘贴 JSON → 预览条数/冲突数 → skip/overwrite 提交）。 */
+function GlossaryImportBox({ onDone }: { onDone: () => void }) {
+  const [text, setText] = useState('')
+  const [mode, setMode] = useState<'skip' | 'overwrite'>('skip')
+  const [outcome, setOutcome] = useState<GlossaryImportOutcome | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const parsed = text.trim() !== '' ? parseGlossaryImportText(text) : null
+
+  async function submit() {
+    if (parsed === null || parsed.terms.length === 0) return
+    setError(null)
+    try {
+      setOutcome(await importGlossaryTerms(parsed.terms, mode))
+      onDone()
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : '导入失败，请稍后重试。')
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5" data-glossary-import-box="">
+      <textarea
+        aria-label="粘贴术语 JSON"
+        placeholder='{"terms": [{"term": "LLM", "translation": "大语言模型"}]}'
+        rows={3}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className="w-full max-w-72 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 py-1.5 text-xs"
+      />
+      {parsed?.parseError ? (
+        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+          {parsed.parseError}
+        </p>
+      ) : null}
+      {parsed !== null ? (
+        <p className="mt-1 text-xs text-[var(--lumi-text-secondary)]" data-glossary-import-preview="">
+          共 {parsed.terms.length} 条可导入
+        </p>
+      ) : null}
+      <div className="mt-1.5 flex items-center gap-2">
+        <select
+          aria-label="导入模式"
+          value={mode}
+          onChange={(e) => setMode(e.target.value === 'overwrite' ? 'overwrite' : 'skip')}
+          className="min-h-8 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 text-xs"
+        >
+          <option value="skip">跳过已有术语</option>
+          <option value="overwrite">覆盖已有术语</option>
+        </select>
+        <Button size="sm" variant="secondary" disabled={parsed === null || parsed.terms.length === 0} onClick={() => void submit()}>
+          导入
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-1 text-xs text-[var(--lumi-danger)]">
+          {error}
+        </p>
+      ) : null}
+      {outcome ? (
+        <p className="mt-1 text-xs text-[var(--lumi-text-secondary)]" data-glossary-import-outcome="">
+          导入 {outcome.imported} · 跳过 {outcome.skipped} · 覆盖 {outcome.overwritten}
+          {outcome.errors.length > 0 ? ` · ${outcome.errors.length} 条错误` : ''}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 export function GlossarySection() {
   const queryClient = useQueryClient()
@@ -19,6 +92,8 @@ export function GlossarySection() {
   const [term, setTerm] = useState('')
   const [definition, setDefinition] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const glossary = useQuery({
     queryKey: ['glossary', filter],
@@ -71,8 +146,34 @@ export function GlossarySection() {
           <Button variant="secondary" size="sm" disabled={!term.trim() || !definition.trim()} onClick={submit}>
             添加术语
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-2"
+            aria-pressed={importOpen}
+            onClick={() => setImportOpen((v) => !v)}
+          >
+            导入
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-1"
+            onClick={() => {
+              setExportError(null)
+              exportGlossaryJson().catch(() => setExportError('导出失败，请稍后重试。'))
+            }}
+          >
+            导出
+          </Button>
         </div>
       </div>
+      {importOpen ? <GlossaryImportBox onDone={invalidate} /> : null}
+      {exportError ? (
+        <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {exportError}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-[var(--lumi-danger)]">
           {error}

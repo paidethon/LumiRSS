@@ -564,3 +564,44 @@ html.dark:not([data-glass='off']) .lumi-glass {
     color: #444;
   }
 }
+
+/* F015：段落定位高亮（2.5s 自动移除，由 ArticleContent 控制） */
+.lumi-para-highlight {
+  animation: lumi-para-highlight-fade 2.5s ease-out;
+  border-radius: 4px;
+}
+@keyframes lumi-para-highlight-fade {
+  0%,
+  40% {
+    background: var(--lumi-accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* F009：远程图片拦截占位按钮（受控 DOM 构造的可见 affordance） */
+button.lumi-blocked-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  margin: 4px 0;
+  border: 1px dashed var(--lumi-border);
+  border-radius: var(--lumi-radius-md);
+  background: var(--lumi-surface-selected);
+  color: var(--lumi-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+button.lumi-blocked-image:hover {
+  background: var(--lumi-surface-hover);
+}
+
+/* F026：摘要证据定位高亮（2s 自动移除；语义 token，不硬编码色值） */
+.lumi-evidence-highlight {
+  background: var(--lumi-accent-soft);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--lumi-accent-soft);
+}

@@ -147,6 +147,10 @@ export interface ReaderPreset {
     readerBackground: ReaderBackground
     readerParagraphSpacing: ReaderParagraphSpacing
     readerJustify: boolean
+    /** F036 预设 v2：布局宽度 / 栏数 / 设备适用（可选，随预设存储）。 */
+    readerContentWidth?: number
+    readerColumns?: number
+    deviceScope?: 'all' | 'desktop'
   }
 }
 
@@ -161,6 +165,12 @@ export interface AppSettings {
   scrollMarkUnread: boolean
   /** 稍后读时间线排序（pool #14；服务器可持久化偏好） */
   readLaterSort: ReadLaterSort
+  /** F045：临时显示被屏蔽条目（include_hidden 查询参数，设备本地偏好）。 */
+  includeHiddenEntries: boolean
+  /** F056：暂停阅读进度记录（设备本地偏好）。 */
+  pauseReadingProgress: boolean
+  /** F053：双语关联滚动（默认关；记忆偏好）。 */
+  translationLinkedScroll: boolean
   /** 外观（0010a F1，Folo UISettings inspired） */
   accentColor: string // #RRGGBB
   uiFontSize: UiFontSize
@@ -204,6 +214,8 @@ export interface AppSettings {
   readerCodeTheme: string
   /** 实验性：词首强调（Bionic-style，默认关） */
   readerBionic: boolean
+  /** F009：默认不加载远程图片（device-local；本地/快照资源不受影响） */
+  readerBlockRemoteImages: boolean
   /** 2026-09 移动端专项新增（默认值来自 BFF PortableSettings 生成物） */
   readerAutoMarkRead: boolean
   glassEffect: GlassEffect
@@ -239,10 +251,14 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerPresets: [],
   filterRules: [],
   filterStats: { totalFiltered: 0, lastFilteredAt: null, lastMatchedRule: null },
+  includeHiddenEntries: false,
+  pauseReadingProgress: false,
+  translationLinkedScroll: false,
   readerCustomFontId: null,
   readerFontUrl: null,
   readerFontUrlName: '',
   readerBionic: false,
+  readerBlockRemoteImages: false,
   sidebarWidth: 240,
   sidebarCollapsed: false,
   timelineWidth: 400,
@@ -363,6 +379,7 @@ function normalizePresets(raw: unknown): ReaderPreset[] {
   if (!Array.isArray(raw)) return []
   const out: ReaderPreset[] = []
   const ids = new Set<string>(BUILTIN_READER_PRESETS.map((p) => p.id))
+  const widthRange = READER_NUMERIC_RANGES.readerContentWidth
   for (const item of raw) {
     if (typeof item !== 'object' || item === null) continue
     const p = item as Record<string, unknown>
@@ -371,6 +388,17 @@ function normalizePresets(raw: unknown): ReaderPreset[] {
     const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 32) : null
     if (!id || !name) continue
     ids.add(id)
+    // F036 v2 字段：非法/缺失 → 不写入该键（与「可选扩展」语义一致）。
+    const v2: Partial<ReaderPreset['vars']> = {}
+    if (typeof v.readerContentWidth === 'number') {
+      v2.readerContentWidth = clamp(v.readerContentWidth, widthRange.min, widthRange.max)
+    }
+    if (typeof v.readerColumns === 'number') {
+      v2.readerColumns = clamp(v.readerColumns, 1, 3)
+    }
+    if (v.deviceScope === 'desktop' || v.deviceScope === 'all') {
+      v2.deviceScope = v.deviceScope
+    }
     out.push({
       id,
       name,
@@ -382,6 +410,7 @@ function normalizePresets(raw: unknown): ReaderPreset[] {
         readerBackground: pickString(v.readerBackground, READER_BG_VALUES, 'follow'),
         readerParagraphSpacing: pickReaderNumber('readerParagraphSpacing', v.readerParagraphSpacing),
         readerJustify: v.readerJustify === true,
+        ...v2,
       },
     })
   }
@@ -442,6 +471,9 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? source.readerPresetId
         : 'default',
     readerPresets: normalizePresets(source.readerPresets),
+    includeHiddenEntries: pickBoolean(source.includeHiddenEntries, false),
+    pauseReadingProgress: pickBoolean(source.pauseReadingProgress, false),
+    translationLinkedScroll: pickBoolean(source.translationLinkedScroll, false),
     filterRules: normalizeFilterRules(source.filterRules),
     filterStats: {
       totalFiltered:
@@ -501,6 +533,10 @@ export function normalizeSettings(raw: unknown): AppSettings {
       DEFAULT_APP_SETTINGS.readerCodeTheme,
     ),
     readerBionic: pickBoolean(source.readerBionic, DEFAULT_APP_SETTINGS.readerBionic),
+    readerBlockRemoteImages: pickBoolean(
+      source.readerBlockRemoteImages,
+      DEFAULT_APP_SETTINGS.readerBlockRemoteImages,
+    ),
     // 2026-09 移动端专项：逐字段校验（枚举回退默认；旧文档缺键 → 默认值）
     readerAutoMarkRead: pickBoolean(
       source.readerAutoMarkRead,
@@ -771,6 +807,7 @@ const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
   'readerCodeHighlight',
   'readerCodeTheme',
   'readerBionic',
+  'readerBlockRemoteImages',
   'scrollMarkUnread',
   'readLaterSort',
 ]

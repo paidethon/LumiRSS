@@ -1,16 +1,43 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type Plugin } from 'vitest/config'
+import { writeFileSync } from 'node:fs'
 
 // 构建溯源（关于页展示，与 BFF GET /api/v1/version 对照判断 Web/BFF 版本错配）：
 // Docker/CI 构建时通过 VITE_GIT_COMMIT 注入；本地 dev 留空。
 const gitCommit = process.env.VITE_GIT_COMMIT ?? ''
 
+// F117：构建 ID = commit（有则）+ 构建时间戳；dev 下为 'dev'（与
+// public/version.json 一致 → dev/preview 不提示更新）。
+const appBuild =
+  process.env.NODE_ENV === 'production'
+    ? `${gitCommit ? gitCommit.slice(0, 12) + '.' : ''}${Date.now().toString(36)}`
+    : 'dev'
+
+/** 构建尾声把 build id 写进 dist/version.json（dev 不写——检查端 404 静默跳过）。 */
+function versionJsonPlugin(build: string): Plugin {
+  return {
+    name: 'lumi-version-json',
+    apply: 'build',
+    closeBundle() {
+      try {
+        writeFileSync(
+          new URL('./dist/version.json', import.meta.url),
+          JSON.stringify({ build, generatedAt: new Date().toISOString() }),
+        )
+      } catch {
+        // 尽力而为：缺失时前端检查端 404 静默跳过
+      }
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), versionJsonPlugin(appBuild)],
   define: {
     'import.meta.env.VITE_GIT_COMMIT': JSON.stringify(gitCommit),
+    __APP_BUILD__: JSON.stringify(appBuild),
   },
   server: {
     proxy: {
