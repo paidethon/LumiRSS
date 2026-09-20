@@ -312,6 +312,15 @@ async def backlog_apply(payload: BacklogApplyRequest, request: Request) -> dict:
         category_id=payload.categoryId,
         limit=_BACKLOG_APPLY_CAP,
     )
+    # 候选集是纯投影（search_entries）；零候选 = 幂等 no-op，不需要也不
+    # 触上游（FreshRSS 未配置的 CI/降级环境重复 apply 仍是 200/0）。
+    # 只有真有候选要写上游时才要求适配器（未配置 → 诚实 503）。
+    if not rows:
+        return {
+            "applied": 0,
+            "failed": [],
+            "effectiveExclusions": _effective_exclusions(payload),
+        }
     adapter = _get_adapter(request)
     search = _get_search_service(request)
     applied = 0

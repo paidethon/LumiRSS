@@ -60,7 +60,7 @@ describe('F113 隐私遮罩', () => {
     expect(document.getElementById('p-open')?.textContent).toBe('这段不遮')
   })
 
-  it('F113: 关闭恢复原文；后续新增的 data-privacy-text 节点也被遮蔽', () => {
+  it('F113: 关闭恢复原文；后续新增的 data-privacy-text 节点也被遮蔽', async () => {
     seedPrivacyDom()
     const cleanup = enablePrivacyMask()
     try {
@@ -69,19 +69,20 @@ describe('F113 隐私遮罩', () => {
       disablePrivacyMask()
       expect(title.textContent).toBe('我的私密文章标题')
 
-      // MutationObserver：开启后新增节点同样遮蔽
+      // MutationObserver：开启后新增节点同样遮蔽。await 在 try 内完成——
+      // （旧写法 sync return waitFor + 外层 finally 同步 disable 会在轮询
+      // 开始前断开观察器，轮询永不收敛。）
       enablePrivacyMask()
       const added = document.createElement('span')
       added.setAttribute('data-privacy-text', '')
       added.textContent = '后加的秘密'
       document.body.appendChild(added)
-      return waitFor(() => {
+      await waitFor(() => {
         expect(added.textContent).toMatch(/^▮+$/)
         expect(document.body.textContent).not.toContain('后加的秘密')
-      }).finally(() => {
-        cleanup()
       })
     } finally {
+      cleanup()
       disablePrivacyMask()
     }
   })

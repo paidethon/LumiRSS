@@ -690,6 +690,9 @@ def _get_source_registry(request: Request) -> dict:
                 except (ConfigError, ValidationError):
                     adapter = None
             if adapter is None:
+                # 投影与上游都不可解析（FreshRSS 未配置）→ 确定性 stale
+                # 语义：not_found（与适配器 404 路径同因；环境差异不再
+                # 让 staleReason 在 None/'unsupported' 间漂移）。
                 return ResolvedItem(
                     ref=f"rss:{entry_ref}",
                     domain="rss",
@@ -697,6 +700,7 @@ def _get_source_registry(request: Request) -> dict:
                     title="RSS 未配置",
                     source="rss",
                     stale=True,
+                    staleReason="not_found",
                 )
             try:
                 # The adapter speaks upstream item ids; refs arrive as

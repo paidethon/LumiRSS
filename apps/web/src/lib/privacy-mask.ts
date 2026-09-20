@@ -12,6 +12,9 @@ export const PRIVACY_CLASS = 'lumi-privacy-on'
 const MASK_CHAR = '▮'
 /** key → 原文（关闭时恢复；刷新即丢弃）。 */
 const originals = new Map<Element, { text: string; ariaLabel: string | null }>()
+/** 当前活跃观察器（模块级持有：关闭/清理时统一断开——测试环境里
+ * 泄漏的观察器会在后续文件的 React commit 期间被触发，跨文件污染）。 */
+let activeObserver: MutationObserver | null = null
 
 export function isPrivacyEnabled(): boolean {
   if (typeof localStorage === 'undefined') return false
@@ -41,31 +44,53 @@ function applyMask(root: ParentNode): void {
   }
 }
 
-/** 开启：挂根 class + 遮蔽现有 DOM；返回清理函数（MutationObserver）。 */
+/** 元素鸭子判断：不用 instanceof HTMLElement——测试环境拆卸后该全局
+ * 可能已不存在，instanceof 会抛 ReferenceError 并打断 React commit。 */
+function isElementNode(node: Node): boolean {
+  return node.nodeType === 1
+}
+
+/** 开启：挂根 class + 遮蔽现有 DOM；返回清理函数（MutationObserver）。
+ * 观察器回调整体 try/catch——遮罩是纯展示增强，任何失败（含环境拆卸
+ * 竞态）都绝不外溢。 */
 export function enablePrivacyMask(): () => void {
   if (typeof document === 'undefined') return () => {}
   document.documentElement.classList.add(PRIVACY_CLASS)
-  applyMask(document)
+  try {
+    applyMask(document)
+  } catch {
+    /* 遮罩失败静默 */
+  }
+  activeObserver?.disconnect()
   const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node instanceof HTMLElement) {
-          if (node.hasAttribute('data-privacy-text')) applySingle(node)
-          applyMask(node)
+    try {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (isElementNode(node) && node instanceof Element) {
+            const el = node as HTMLElement
+            if (el.hasAttribute('data-privacy-text')) applySingle(el)
+            applyMask(el)
+          }
+        }
+        const target = mutation.target
+        if (
+          isElementNode(target) &&
+          target instanceof Element &&
+          target.hasAttribute('data-privacy-text') &&
+          !originals.has(target)
+        ) {
+          applySingle(target as HTMLElement)
         }
       }
-      if (
-        mutation.target instanceof HTMLElement &&
-        mutation.target.hasAttribute('data-privacy-text') &&
-        !originals.has(mutation.target)
-      ) {
-        applySingle(mutation.target)
-      }
+    } catch {
+      /* 遮罩失败静默（绝不打断宿主渲染/commit） */
     }
   })
   observer.observe(document.body, { childList: true, subtree: true })
+  activeObserver = observer
   return () => {
     observer.disconnect()
+    if (activeObserver === observer) activeObserver = null
   }
 }
 
@@ -78,10 +103,13 @@ function applySingle(node: HTMLElement): void {
   node.removeAttribute('aria-label')
 }
 
-/** 关闭：恢复已遮蔽元素的原文（同一次会话内）；刷新则天然恢复。 */
+/** 关闭：恢复已遮蔽元素的原文（同一次会话内）；断开活跃观察器；刷新
+ * 则天然恢复。 */
 export function disablePrivacyMask(): void {
   if (typeof document === 'undefined') return
   document.documentElement.classList.remove(PRIVACY_CLASS)
+  activeObserver?.disconnect()
+  activeObserver = null
   for (const [node, original] of originals) {
     node.textContent = original.text
     if (original.ariaLabel !== null) node.setAttribute('aria-label', original.ariaLabel)
