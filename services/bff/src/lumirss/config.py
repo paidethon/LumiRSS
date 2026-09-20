@@ -156,6 +156,10 @@ class LumiSettings(BaseSettings):
     # "session" activates BFF-side login: bcrypt password check, long-lived
     # random session cookies, sliding renewal (see auth_store.py).
     LUMIRSS_AUTH_MODE: Literal["basic", "session"] = "basic"
+    # 登录限流的可信代理网段（逗号分隔 CIDR；空=loopback+私网+链路本地）。
+    # 仅这些网段的直连 peer 会被采纳 X-Forwarded-For 最后一跳做限流分桶，
+    # 其余 peer 的 XFF 一律忽略（防伪造刷桶/锁死）。见 middleware.py。
+    LUMIRSS_TRUSTED_PROXY_NETWORKS: str = ""
     # Absolute inactivity window for a session; regular use slides it forward
     # so an actively-used device effectively never re-prompts.
     LUMIRSS_SESSION_MAX_AGE_DAYS: int = 180

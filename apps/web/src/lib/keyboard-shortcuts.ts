@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useReaderUi } from '../store/reader-ui'
 import { scopeKey, type ContentScope } from './navigation'
 import { useEntryStateMutation } from '../api/queries'
+import { effectiveBinding, formatCombo, loadCustomShortcuts } from './custom-shortcuts'
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -41,21 +42,76 @@ function isModalOpen(): boolean {
  * 挂载后监听并自持开关状态（解耦：快捷键模块不感知面板实现）。 */
 export const COMMAND_PALETTE_TOGGLE_EVENT = 'lumirss-command-palette-toggle'
 
-/** 快捷键速查表数据（设置中心「快捷键」页与「?」帮助弹窗只读展示同一份）。 */
-export const SHORTCUTS: { keys: string; action: string }[] = [
-  { keys: 'j / ↓', action: '下一篇' },
-  { keys: 'k / ↑', action: '上一篇' },
-  { keys: 'u', action: '切换未读视图' },
-  { keys: 's', action: '收藏 / 取消收藏当前文章' },
-  { keys: '/', action: '跳转搜索' },
-  { keys: '?', action: '快捷键帮助' },
-  { keys: 'Ctrl / ⌘ K', action: '命令面板' },
-  { keys: 'Escape', action: '关闭弹窗 / 抽屉' },
+/** 快捷键动作注册表（单一真源）：actionId → 默认组合 + 展示文案。
+ * F037：帮助弹窗 / 设置页 / 实际按键匹配都从这里派生；用户覆盖
+ * （lib/custom-shortcuts）经 effectiveBinding 优先于默认组合。 */
+export interface ShortcutActionDef {
+  id: string
+  keys: string
+  action: string
+}
+
+export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
+  { id: 'next', keys: 'j / ↓', action: '下一篇' },
+  { id: 'prev', keys: 'k / ↑', action: '上一篇' },
+  { id: 'toggleUnread', keys: 'u', action: '切换未读视图' },
+  { id: 'toggleStar', keys: 's', action: '收藏 / 取消收藏当前文章' },
+  { id: 'search', keys: '/', action: '跳转搜索' },
+  { id: 'help', keys: '?', action: '快捷键帮助' },
+  { id: 'commandPalette', keys: 'Ctrl / ⌘ K', action: '命令面板' },
+  { id: 'closeOverlay', keys: 'Escape', action: '关闭弹窗 / 抽屉' },
 ]
+
+/** 默认绑定（combo 归一化 token；'j / ↓' 双绑定以主键为覆盖目标）。 */
+export const DEFAULT_BINDINGS: Record<string, string> = {
+  next: 'j',
+  prev: 'k',
+  toggleUnread: 'u',
+  toggleStar: 's',
+  search: '/',
+  help: '?',
+  commandPalette: 'mod+k',
+  closeOverlay: 'escape',
+}
+
+/** 快捷键速查表数据（设置中心「快捷键」页与「?」帮助弹窗只读展示同一份）。
+ * F037：传入用户覆盖时返回生效绑定（覆盖项 keys 替换 + overridden 标记）。 */
+export function effectiveShortcuts(custom: Record<string, string> = {}): (ShortcutActionDef & { overridden: boolean })[] {
+  return SHORTCUT_ACTIONS.map((def) => {
+    const override = custom[def.id]
+    if (typeof override === 'string' && override !== '') {
+      return { ...def, keys: formatCombo(override), overridden: true }
+    }
+    return { ...def, overridden: false }
+  })
+}
+
+/** 兼容旧消费方（静态展示）；新代码请用 effectiveShortcuts。 */
+export const SHORTCUTS: { keys: string; action: string }[] = SHORTCUT_ACTIONS.map(
+  ({ keys, action }) => ({ keys, action }),
+)
 
 export interface ShortcutOptions {
   /** 「?」按下时回调（App 挂帮助弹窗；不传则该键不生效）。 */
   onShowShortcutsHelp?: () => void
+}
+
+/** F037：把 KeyboardEvent 折叠成与绑定表同构的 combo token。
+ * e.key 已是移位后的字符（如 '?'、'/'），单字符非字母时不再叠加 shift。 */
+function pressedCombo(e: KeyboardEvent): string {
+  const mods: string[] = []
+  if (e.ctrlKey || e.metaKey) mods.push('mod')
+  if (e.altKey) mods.push('alt')
+  const key = e.key.toLowerCase()
+  if (e.shiftKey && !(key.length === 1 && !/[a-z0-9]/i.test(key))) mods.push('shift')
+  const ARROWS: Record<string, string> = {
+    arrowup: 'up',
+    arrowdown: 'down',
+    arrowleft: 'left',
+    arrowright: 'right',
+  }
+  const token = ARROWS[key] ?? key
+  return [...mods, token].join('+')
 }
 
 export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
@@ -68,11 +124,15 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
   helpCallbackRef.current = options.onShowShortcutsHelp
 
   useEffect(() => {
+    // F037：用户覆盖优先于默认（每次 effect 重读 localStorage 覆盖表）
+    const custom = loadCustomShortcuts()
+    const bind = (id: string) => effectiveBinding(id, DEFAULT_BINDINGS, custom)
     const onKeyDown = (e: KeyboardEvent) => {
-      // F30：Ctrl/⌘+K 唤起/关闭命令面板（toggle）。既有纪律保持：输入框
-      // 聚焦时不劫持——命令面板自身输入框的 Ctrl+K 关闭由面板内部处理；
-      // 也不受 isModalOpen 门控（面板本身是浮层，toggle 语义自洽）。
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const pressed = pressedCombo(e)
+      // F30：Ctrl/⌘+K 唤起/关闭命令面板（toggle，可用 mod+k 覆盖）。既有纪律
+      // 保持：输入框聚焦时不劫持——命令面板自身输入框的 Ctrl+K 关闭由面板
+      // 内部处理；也不受 isModalOpen 门控（面板本身是浮层，toggle 语义自洽）。
+      if (pressed === bind('commandPalette')) {
         if (isEditable(e.target)) return
         e.preventDefault()
         window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_TOGGLE_EVENT))
@@ -85,17 +145,19 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
       // 自行处理，本处理器只抑制全局导航/收藏键。
       if (isModalOpen()) return
 
-      const key = e.key.toLowerCase()
       const state = useReaderUi.getState()
+      // j/k 的方向键副绑定（默认表展示 'j / ↓'；覆盖主键后副键仍可用）
+      const matchWithAlias = (id: string, alias: string) =>
+        pressed === bind(id) || (bind(id) !== alias && pressed === alias)
 
       // 「?」= Shift+/（e.key 即 '?'）：任何页面唤起帮助。
-      if (e.key === '?') {
+      if (matchWithAlias('help', '?')) {
         e.preventDefault()
         helpCallbackRef.current?.()
         return
       }
       // 「/」= 跳转搜索：不在搜索页则先切 section，再聚焦输入框。
-      if (key === '/') {
+      if (pressed === bind('search')) {
         e.preventDefault()
         if (state.section !== 'search') selectSection('search')
         requestAnimationFrame(() => {
@@ -107,7 +169,7 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
         })
         return
       }
-      if (key === 'j' || e.key === 'ArrowDown') {
+      if (matchWithAlias('next', 'down')) {
         e.preventDefault()
         const next = findSiblingEntry(queryClient, state, +1)
         if (next !== null) {
@@ -116,7 +178,7 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
         }
         return
       }
-      if (key === 'k' || e.key === 'ArrowUp') {
+      if (matchWithAlias('prev', 'up')) {
         e.preventDefault()
         const prev = findSiblingEntry(queryClient, state, -1)
         if (prev !== null) {
@@ -125,13 +187,13 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
         }
         return
       }
-      if (key === 'u') {
+      if (pressed === bind('toggleUnread')) {
         e.preventDefault()
         // 在 all ↔ unread 间切换（其它视图先回到 all，再切 unread）
         selectView(state.view === 'unread' ? 'all' : 'unread')
         return
       }
-      if (key === 's') {
+      if (pressed === bind('toggleStar')) {
         if (state.selectedEntryRef === null) return
         e.preventDefault()
         // 走既有 mutation：set 语义 + invalidation；starred 取当前缓存状态

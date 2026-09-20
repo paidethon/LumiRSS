@@ -24,6 +24,7 @@ import asyncio
 import contextlib
 import json
 import time
+from typing import Any
 
 from lumirss.cursor import InvalidCursor
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
@@ -296,6 +297,9 @@ class SearchIndexService:
         intitle: str | None = None,
         phrase: str | None = None,
         exclude: str | None = None,
+        has_summary: bool | None = None,
+        expand_synonyms: bool = False,
+        synonym_map: dict | None = None,
     ) -> dict:
         """One page of hits, newest first, with a safe plain-text excerpt.
 
@@ -310,6 +314,23 @@ class SearchIndexService:
             raise SearchQueryError(
                 f"Search supports at most {_MAX_SEARCH_TERMS} terms."
             )
+        # F078：同义词单层扩展（命中 term 并入 expansions；不递归；
+        # expand_synonyms=False 或无命中 → 原词原样）。
+        matched_synonyms: list[dict] = []
+        added_expansions: list[str] = []
+        if expand_synonyms:
+            from lumirss.search_synonyms import expand_terms
+            MAX_EFFECTIVE_TERMS = 100
+
+            synonym_map = synonym_map if synonym_map is not None else await self._load_synonym_map()
+            lowered = [t.casefold() for t in terms]
+            for term_folded, expansions in synonym_map.items():
+                if term_folded in lowered:
+                    matched_synonyms.append({"term": term_folded, "expansions": expansions})
+            if matched_synonyms:
+                original_terms = list(terms)
+                terms = expand_terms(terms, synonym_map)[:MAX_EFFECTIVE_TERMS]
+                added_expansions = [t for t in terms if t.casefold() not in {x.casefold() for x in original_terms}]
         intitle_terms = split_terms(intitle or "")
         if len(intitle_terms) > 2:
             raise SearchQueryError("intitle supports at most 2 terms.")
@@ -332,9 +353,36 @@ class SearchIndexService:
             intitle_terms=intitle_terms or None,
             phrase=clean_phrase or None,
             exclude_terms=exclude_terms or None,
+            has_summary=has_summary,
         )
         has_more = len(rows) > limit
-        rows = rows[:limit]
+        primary_rows = rows[:limit]
+        # F078：扩展词 OR 合并——原词条走主查询（分页契约不变），每个
+        # 扩展词单独一次有界查询，去重后并入首页（诚实：扩展命中标注
+        # cached 语义不变；主查询的 keyset/hasMore 不受影响）。
+        extra_rows: list = []
+        seen_ids = {str(r["item_id"]) for r in primary_rows}
+        if added_expansions:
+            expansions: list[str] = list(added_expansions)
+            for expansion in expansions[: max(0, 100 - len(terms))]:
+                expansion_rows = await self._store.query(
+                    terms=split_terms(expansion),
+                    feed_url=feed_url,
+                    category_id=category_id,
+                    unread_only=unread_only,
+                    starred_only=starred_only,
+                    published_from=published_from,
+                    published_to=published_to,
+                    keyset=None,
+                    limit=250,
+                    has_summary=has_summary,
+                )
+                for row in expansion_rows:
+                    item_id = str(row["item_id"])
+                    if item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        extra_rows.append(row)
+        rows = primary_rows + extra_rows[: max(0, limit * 2 - len(primary_rows))]
         terms_folded = [term.casefold() for term in terms]
         items = []
         for row in rows:
@@ -353,6 +401,10 @@ class SearchIndexService:
                         row["content_text"], terms_folded
                     ),
                     "matchedFields": matched_fields(row, terms_folded),
+                    # F072：命中偏移（老客户端可选字段；仅正文命中时非空）
+                    "matchPositions": match_positions(
+                        row["content_text"], terms_folded
+                    ),
                 }
             )
         next_keyset = None
@@ -363,7 +415,17 @@ class SearchIndexService:
             "rows": items,
             "hasMore": has_more,
             "nextKeyset": next_keyset,
+            # F078：本次命中的同义词（preview/解释用；未开启扩展 → 空表）
+            "matchedSynonyms": matched_synonyms,
         }
+
+    async def _load_synonym_map(self) -> dict:
+        from lumirss.search_synonyms import SynonymStore
+
+        try:
+            return await SynonymStore(self._db).load_enabled_map()
+        except Exception:  # noqa: BLE001 — 同义词加载失败 fail-open（不扩展）
+            return {}
 
     # -- write-through ------------------------------------------------------
 
@@ -460,6 +522,40 @@ def matched_fields(row, terms_folded: list[str]) -> list[str]:
     if any(term in content for term in terms_folded):
         fields.append("content")
     return fields or ["content"]
+
+
+def match_positions(
+    content: str, terms_folded: list[str], limit: int = 10
+) -> list[dict[str, Any]]:
+    """F072 命中定位：term 在 content_text 中的前 ≤limit 处偏移。
+
+    复用 build_snippet 的 casefold 口径；按偏移升序合并全部 term 的
+    命中（同一偏移去重）；无正文命中 → 空列表（仅标题命中 → 不启用
+    定位条，诚实降级）。"""
+    lowered = (content or "").casefold()
+    found: list[tuple[int, str]] = []
+    for term in terms_folded:
+        if not term:
+            continue
+        start = 0
+        hits_for_term = 0
+        while hits_for_term < limit:
+            index = lowered.find(term, start)
+            if index < 0:
+                break
+            found.append((index, term))
+            start = index + len(term)
+            hits_for_term += 1
+    seen_offsets: set[int] = set()
+    result: list[dict[str, Any]] = []
+    for offset, term in sorted(found):
+        if offset in seen_offsets:
+            continue
+        seen_offsets.add(offset)
+        result.append({"offset": offset, "term": term})
+        if len(result) >= limit:
+            break
+    return result
 
 
 def build_snippet(content: str, terms_folded: list[str], width: int = 80) -> str:

@@ -26,9 +26,23 @@ import { goBack, registerOverlay, unregisterOverlay } from '../lib/nav-history'
 import { COMMAND_PALETTE_TOGGLE_EVENT } from '../lib/keyboard-shortcuts'
 import {
   buildCommands,
-  filterCommands,
+  buildContextCommands,
+  filterCommandsFuzzy,
   type Command,
 } from '../lib/command-registry'
+import { useSubscriptions, useSavedSearchViews } from '../api/queries'
+import { getEntry } from '../api/client'
+import {
+  buildMarkdownExport,
+  downloadTextFile,
+  sanitizeFileName,
+} from '../lib/reader-export'
+import {
+  SPEECH_MAX_CHARS,
+  speakText,
+  speechSynthesisAvailable,
+} from '../lib/reader-speech'
+import { isPrivacyEnabled } from '../lib/privacy-mask'
 import { cx } from './ui/cx'
 
 const OVERLAY_ID = 'command-palette'
@@ -38,6 +52,8 @@ export default function CommandPalette() {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  // F120：关闭回焦——打开时记住触发元素，关闭后把焦点还给它
+  const returnFocusRef = useRef<HTMLElement | null>(null)
 
   const section = useReaderUi((s) => s.section)
   const view = useReaderUi((s) => s.view)
@@ -54,10 +70,17 @@ export default function CommandPalette() {
 
   // 全局唤起：Ctrl/⌘+K（keyboard-shortcuts 派发）与抽屉按钮共用同一事件
   useEffect(() => {
-    const onToggle = () => toggle()
+    const onToggle = () => {
+      // F120：打开瞬间记录回焦目标（autofocus 抢占 activeElement 之前）
+      if (!open) {
+        returnFocusRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
+      toggle()
+    }
     window.addEventListener(COMMAND_PALETTE_TOGGLE_EVENT, onToggle)
     return () => window.removeEventListener(COMMAND_PALETTE_TOGGLE_EVENT, onToggle)
-  }, [toggle])
+  }, [toggle, open])
 
   // 返回链：打开登记浮层（后退只关这一层），关闭消耗自己的条目
   useEffect(() => {
@@ -66,30 +89,136 @@ export default function CommandPalette() {
     return () => unregisterOverlay(OVERLAY_ID)
   }, [open, close])
 
-  // 打开时重置查询与选中项；关闭还原
+  // 打开时重置查询与选中项；关闭时把焦点还给触发元素（F120 回焦）
   useEffect(() => {
     if (open) {
       setQuery('')
       setActiveIndex(0)
+      return
     }
+    const target = returnFocusRef.current
+    returnFocusRef.current = null
+    if (target !== null && typeof target.focus === 'function') target.focus()
   }, [open])
 
-  const commands = useMemo(
-    () =>
-      buildCommands(
-        { section, view, themeMode, glassEffect, listDensity, listTimeFormat },
-        {
-          selectSection,
-          selectView,
-          updateSettings,
-          goBack: () => {
-            goBack()
-          },
+  // F120：数据源（订阅来源 / 保存的视图）与上下文动作所需的 reader 状态
+  const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  const selectScope = useReaderUi((s) => s.selectScope)
+  const subscriptions = useSubscriptions()
+  const savedViews = useSavedSearchViews()
+
+  const commands = useMemo(() => {
+    const base = buildCommands(
+      {
+        section,
+        view,
+        themeMode,
+        glassEffect,
+        listDensity,
+        listTimeFormat,
+        capabilities: {
+          privacyDemoOn: isPrivacyEnabled(),
+          speechEnabled: speechSynthesisAvailable(),
         },
-      ),
-    [section, view, themeMode, glassEffect, listDensity, listTimeFormat, selectSection, selectView, updateSettings],
-  )
-  const filtered = useMemo(() => filterCommands(commands, query), [commands, query])
+        // 防御：mock/降级上下文里缓存可能不是数组——形状不符按空处理，
+        // 不让面板把异常抛到全局（缓存形状回归 A 同类教训）。
+        subscriptions: (Array.isArray(subscriptions.data) ? subscriptions.data : []).map((sub) => ({
+          id: sub.subscriptionRef,
+          title: sub.title,
+          open: () => {
+            selectScope({ kind: 'rss-feed', feedUrl: sub.feedUrl })
+            selectSection('home')
+          },
+        })),
+        savedViews: (savedViews.data?.items ?? []).map((saved) => ({
+          id: saved.id,
+          title: saved.name,
+          open: () => {
+            selectSection('search')
+            window.dispatchEvent(
+              new CustomEvent('lumirss-open-saved-view', {
+                detail: {
+                  query: saved.query,
+                  view: saved.view,
+                  categoryKey: saved.categoryKey,
+                },
+              }),
+            )
+          },
+        })),
+      },
+      {
+        selectSection,
+        selectView,
+        updateSettings,
+        goBack: () => {
+          goBack()
+        },
+      },
+    )
+    // F120：section 上下文动作（导出/朗读当前文章；无选中文章/privacy
+    // 开启/语音不可用时不装配）
+    const context = buildContextCommands(
+      {
+        section,
+        view,
+        themeMode,
+        glassEffect,
+        listDensity,
+        listTimeFormat,
+        capabilities: {
+          privacyDemoOn: isPrivacyEnabled(),
+          speechEnabled: speechSynthesisAvailable(),
+        },
+      },
+      {
+        exportReader:
+          selectedEntryRef !== null
+            ? () => {
+                void getEntry(selectedEntryRef).then((detail) => {
+                  downloadTextFile(
+                    `${sanitizeFileName(detail.title) || 'article'}.md`,
+                    buildMarkdownExport({
+                      title: detail.title,
+                      source: detail.feedTitle,
+                      date: (detail.publishedAt ?? '').slice(0, 10),
+                      url: detail.url ?? null,
+                      text: detail.contentText,
+                      html: detail.contentHtml ?? null,
+                    }),
+                    'text/markdown',
+                  )
+                })
+              }
+            : undefined,
+        speakReader:
+          selectedEntryRef !== null && speechSynthesisAvailable()
+            ? () => {
+                void getEntry(selectedEntryRef).then((detail) => {
+                  speakText(detail.contentText.slice(0, SPEECH_MAX_CHARS), { rate: 1 })
+                })
+              }
+            : undefined,
+      },
+    )
+    return [...base, ...context]
+  }, [
+    section,
+    view,
+    themeMode,
+    glassEffect,
+    listDensity,
+    listTimeFormat,
+    selectSection,
+    selectView,
+    selectScope,
+    updateSettings,
+    selectedEntryRef,
+    subscriptions.data,
+    savedViews.data,
+  ])
+  // F120：子序列模糊打分（连续命中 > 分隔命中），同分保持原顺序
+  const filtered = useMemo(() => filterCommandsFuzzy(commands, query), [commands, query])
 
   // 过滤结果变化时把选中项拉回界内
   useEffect(() => {

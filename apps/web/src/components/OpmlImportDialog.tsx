@@ -12,6 +12,7 @@ import { Upload } from 'lucide-react'
 import {
   OpmlErrorCard,
   OpmlPreviewCard,
+  OpmlPreviewItemsCard,
   OpmlResultCard,
 } from './OpmlImportFlow'
 import { useOpmlImportFlow } from '../lib/opml-import'
@@ -41,7 +42,7 @@ export default function OpmlImportDialog({
   }
 
   const canConfirm =
-    flow.file !== null && flow.preview !== null && flow.preview.newFeeds > 0 && !flow.busy
+    flow.file !== null && flow.preview !== null && flow.selectedCount > 0 && !flow.busy
 
   return (
     <Dialog
@@ -120,6 +121,17 @@ export default function OpmlImportDialog({
         )}
 
         {!flow.result && flow.preview !== null && <OpmlPreviewCard preview={flow.preview} />}
+
+        {/* F002：逐项勾选（预览后可全选/反选/单项切换） */}
+        {!flow.result && flow.preview !== null && (
+          <OpmlPreviewItemsCard
+            preview={flow.preview}
+            selected={flow.selected}
+            onToggleItem={flow.toggleItem}
+            onToggleAll={flow.toggleAll}
+            onInvert={flow.invertSelection}
+          />
+        )}
 
         {flow.importPending && (
           <p role="status" className="text-sm text-[var(--lumi-text-secondary)]">

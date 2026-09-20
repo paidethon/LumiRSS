@@ -278,11 +278,16 @@ export async function searchEntries(
     favorite?: boolean | null
     from?: string | null
     to?: string | null
+    /** F078：同义词扩展（服务端默认开；显式 false 关闭）。 */
+    expandSynonyms?: boolean
   },
   signal?: AbortSignal,
 ): Promise<SearchResponse> {
   const query = new URLSearchParams()
   query.set('q', params.q)
+  if (params.expandSynonyms === false) {
+    query.set('expandSynonyms', 'false')
+  }
   if (params.cursor != null) {
     // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
     query.set('cursor', params.cursor)
@@ -390,9 +395,18 @@ export async function renameCategory(categoryId: string, label: string): Promise
 }
 
 /** 0013 Gate 4：导出 OPML（BFF 代理 FreshRSS subscription/export；
- * 浏览器不接触 FreshRSS 凭据）。成功即触发下载；失败抛 ApiError。 */
-export async function exportOpml(): Promise<void> {
-  const response = await rawRequest(`${API_BASE}/opml/export`)
+ * 浏览器不接触 FreshRSS 凭据）。成功即触发下载；失败抛 ApiError。
+ * F003：selection 非空时按所选导出（BFF 重建 OPML，保留分类结构）。 */
+export async function exportOpml(selection?: {
+  subscriptionRefs?: string[]
+  categoryIds?: string[]
+}): Promise<void> {
+  const params = new URLSearchParams()
+  for (const ref of selection?.subscriptionRefs ?? []) params.append('subscription_refs', ref)
+  for (const id of selection?.categoryIds ?? []) params.append('category_ids', id)
+  const query = params.toString()
+  const suffix = query !== '' ? `?${query}` : ''
+  const response = await rawRequest(`${API_BASE}/opml/export` + suffix)
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -415,9 +429,17 @@ export async function previewOpmlImport(file: File): Promise<OpmlImportPreview> 
 }
 
 /** 0013 Gate 4：确认导入（merge 语义；文件重新上传、服务端重新解析
- * 并重新读取 FreshRSS，预览仅供参考）。成功后由调用方 invalidate。 */
-export async function importOpml(file: File): Promise<OpmlImportResult> {
-  const response = await rawRequest(`${API_BASE}/opml/import`, {
+ * 并重新读取 FreshRSS，预览仅供参考）。成功后由调用方 invalidate。
+ * F002：selectedIndexes 非空时仅导入勾选的逐项预览 index。 */
+export async function importOpml(
+  file: File,
+  selectedIndexes?: number[],
+): Promise<OpmlImportResult> {
+  const qs =
+    selectedIndexes !== undefined && selectedIndexes.length > 0
+      ? `?selected_indexes=${selectedIndexes.join(',')}`
+      : ''
+  const response = await rawRequest(`${API_BASE}/opml/import` + qs, {
     method: 'POST',
     body: file,
     contentType: file.type || 'application/xml',
@@ -761,13 +783,47 @@ export async function lookupTranslationSegments(
 export async function generateTranslationSegments(
   entryRef: string,
   blocks: TranslationSegmentBlockInput[],
-  signal?: AbortSignal,
+  opts?: { overwriteRevisions?: boolean; signal?: AbortSignal },
 ): Promise<TranslationSegmentsView> {
   const response = await rawRequest(
     `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/generate`,
-    { method: 'POST', body: JSON.stringify({ blocks }), signal, contentType: 'application/json' },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        blocks,
+        ...(opts?.overwriteRevisions ? { overwriteRevisions: true } : {}),
+      }),
+      signal: opts?.signal,
+      contentType: 'application/json',
+    },
   )
   return (await response.json()) as TranslationSegmentsView
+}
+
+/** F062：保存一段译文的手工修订（锚定当前源段 hash）。 */
+export async function putTranslationSegmentRevision(
+  entryRef: string,
+  blockIndex: number,
+  text: string,
+): Promise<{ index: number; userRevision: string; revisedAt: string; revisionStale: boolean }> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/revision`,
+    { method: 'PUT', body: JSON.stringify({ text }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { index: number; userRevision: string; revisedAt: string; revisionStale: boolean }
+}
+
+/** F062：撤销一段译文的手工修订。 */
+export async function deleteTranslationSegmentRevision(
+  entryRef: string,
+  blockIndex: number,
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/revision`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
 }
 
 export async function saveLibreTranslateKey(value: string): Promise<void> {
@@ -1266,11 +1322,22 @@ export interface ApiSourceFieldMapInput {
   body: string
 }
 
+/** F042：分页采样配置（none=单次抓取；page=?page=N；cursor=?cursor=）。 */
+export interface ApiSourcePaginationInput {
+  mode: 'none' | 'page' | 'cursor'
+  page_param?: string
+  first_page?: number
+  cursor_path?: string
+  max_pages?: number
+  max_items?: number
+}
+
 export interface ApiSourceCreateInput {
   name: string
   endpoint: string
   itemsExpr: string
   fieldMap: ApiSourceFieldMapInput
+  pagination?: ApiSourcePaginationInput
   subscribe?: boolean
 }
 
@@ -1278,6 +1345,8 @@ export interface ApiSourcePreviewInput {
   endpoint: string
   itemsExpr: string
   fieldMap: ApiSourceFieldMapInput
+  pagination?: ApiSourcePaginationInput
+  dryRunPagination?: boolean
 }
 
 export interface ApiSourceUpdateInput {
@@ -1285,7 +1354,17 @@ export interface ApiSourceUpdateInput {
   endpoint?: string | null
   itemsExpr?: string | null
   fieldMap?: ApiSourceFieldMapInput | null
+  pagination?: ApiSourcePaginationInput | null
   enabled?: boolean | null
+}
+
+/** F043：重新确认结构基线（重新快照并解除漂移告警）。 */
+export async function confirmApiSourceSchema(uuid: string): Promise<{ confirmed: boolean; sampledItems: number }> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}/confirm-schema`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { confirmed: boolean; sampledItems: number }
 }
 
 /** API 来源列表（GET 语义）。 */
@@ -1448,19 +1527,38 @@ export async function getConfigFeed(configId: number): Promise<GptDigestFeedInfo
 }
 
 /** 指定配置的选材预览（F06）。 */
-export async function previewConfigDigest(configId: number): Promise<GptDigestPreview> {
-  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/preview`, {
+export async function previewConfigDigest(
+  configId: number,
+  putBack?: string[],
+): Promise<GptDigestPreview> {
+  // F101：putBack 为本次显式放回的材料身份（url:/title: 前缀键，可重复）。
+  // `?` 内联进字面量：契约测试按路径形状比对，尾随 ${qs} 会被折叠成
+  // 多余参数段（/preview{} → stale-BFF 404 类误报）。
+  const query =
+    putBack !== undefined && putBack.length > 0
+      ? putBack.map((key) => `putBack=${encodeURIComponent(key)}`).join('&')
+      : ''
+  const path = query
+    ? `${API_BASE}/gpt-digest/configs/${configId}/preview?${query}`
+    : `${API_BASE}/gpt-digest/configs/${configId}/preview`
+  const response = await rawRequest(path, {
     method: 'GET',
   })
   return (await response.json()) as GptDigestPreview
 }
 
-/** 指定配置的立即生成/修订。 */
+/** 指定配置的立即生成/修订（putBack 可选：本次显式放回的材料身份）。 */
 export async function generateConfigDigest(
   configId: number,
+  putBack?: string[],
 ): Promise<{ issue: GptDigestIssue; promptVersion: string }> {
   const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/generate`, {
     method: 'POST',
+    body:
+      putBack !== undefined && putBack.length > 0
+        ? JSON.stringify({ putBack })
+        : undefined,
+    contentType: putBack !== undefined && putBack.length > 0 ? 'application/json' : undefined,
   })
   return (await response.json()) as { issue: GptDigestIssue; promptVersion: string }
 }
@@ -1577,11 +1675,21 @@ export async function explainGptDigestIssue(
   return (await response.json()) as { issue: GptDigestIssue }
 }
 
-/** F11/F13：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+/** 来源覆盖列表（F046 静音列表 / F048/F055 来源设置消费）。 */
+export async function listSourceOverrides(): Promise<{ items: SourceOverrideResult[] }> {
+  return request<{ items: SourceOverrideResult[] }>(`${API_BASE}/sources/overrides`)
+}
+
+/** F11/F13/F001：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
 export async function setSourceOverride(patch: {
   feedUrl: string
   hiddenUntil?: string | null
   showFrom?: string | null
+  staleAlertHours?: number | null
+  extractPolicy?: string | null
+  readerStyle?: Record<string, number> | null
+  /** F066：per-source AI 禁用（服务端执行点统一判定）。 */
+  aiDisabled?: boolean
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -1589,6 +1697,172 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+/** F001：按各自阈值超期的来源（basis 诚实标注判定依据）。 */
+export type StaleSourceItem = {
+  feedUrl: string
+  subscriptionRef: string | null
+  title: string
+  staleAlertHours: number
+  lastActivityAt: string | null
+  ageHours: number | null
+  basis: 'latest_entry' | 'fetch_time' | 'unknown'
+}
+
+export type StaleSourcesResponse = {
+  checked: number
+  items: StaleSourceItem[]
+  generatedAt: string
+}
+
+export async function fetchStaleSources(
+  signal?: AbortSignal,
+): Promise<StaleSourcesResponse> {
+  return request<StaleSourcesResponse>(`${API_BASE}/sources/stale`, signal)
+}
+
+
+/** F019：回收站条目。 */
+export type TrashItem = {
+  uuid: string
+  kind: 'bookmark' | 'clip'
+  title: string
+  url: string | null
+  deletedAt: string
+}
+
+/** F019：回收站列表（type 可选过滤）。 */
+export async function listTrash(
+  type?: 'bookmark' | 'clip',
+  signal?: AbortSignal,
+): Promise<{ items: TrashItem[] }> {
+  const qs = type !== undefined ? `?type=${type}` : ''
+  return request(`${API_BASE}/library/trash` + qs, signal)
+}
+
+/** F019：从回收站恢复。 */
+export async function restoreTrashItem(uuid: string): Promise<void> {
+  await rawRequest(`${API_BASE}/library/trash/${encodeURIComponent(uuid)}/restore`, {
+    method: 'POST',
+  })
+}
+
+/** F019：永久删除（UI 必须先二次确认；后端要求显式 permanent=true）。 */
+export async function purgeTrashItem(uuid: string): Promise<void> {
+  await rawRequest(`${API_BASE}/library/trash/${encodeURIComponent(uuid)}?permanent=true`, {
+    method: 'DELETE',
+  })
+}
+
+
+/** F020：Markdown 批量入库（BFF 逐文件校验 + content_hash 幂等）。 */
+export type NoteImportResult = {
+  items: { name: string; ok: boolean; uuid: string | null; reason: string | null }[]
+  imported: number
+  skipped: number
+}
+
+export async function importLumiNotes(payload: {
+  files: { name: string; content: string }[]
+  workspaceId?: string | null
+}): Promise<NoteImportResult> {
+  const body: Record<string, unknown> = { files: payload.files }
+  if (payload.workspaceId != null) body.workspaceId = payload.workspaceId
+  const response = await rawRequest(`${API_BASE}/library/notes/import`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as NoteImportResult
+}
+
+/** F020：笔记列表（摘要首行）。 */
+export async function listLumiNotes(
+  workspaceId?: string | null,
+  signal?: AbortSignal,
+): Promise<{ items: { uuid: string; title: string; excerpt: string; updatedAt: string }[] }> {
+  const qs = workspaceId != null ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ''
+  return request(`${API_BASE}/library/notes` + qs, signal)
+}
+
+/** F004：重复订阅候选（只读，仅展示）。 */
+export type DuplicateSuspectGroup = {
+  key: string
+  members: {
+    subscriptionRef: string
+    title: string
+    feedUrl: string
+    categoryLabel: string | null
+  }[]
+  differences: string[]
+}
+
+export async function fetchDuplicateSuspects(
+  signal?: AbortSignal,
+): Promise<{ groups: DuplicateSuspectGroup[]; checked: number }> {
+  return request(`${API_BASE}/subscriptions/duplicate-suspects`, signal)
+}
+
+/** F005：来源备注视图。 */
+export type SourceNotesView = {
+  subscriptionRef: string
+  note: string | null
+  reason: string | null
+  maintenanceLog: string | null
+  updatedAt: string | null
+}
+
+export async function getSourceNotes(
+  subscriptionRef: string,
+  signal?: AbortSignal,
+): Promise<SourceNotesView> {
+  return request(
+    `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/notes`,
+    signal,
+  )
+}
+
+/** F005：备注列表（可选 note_search 后端过滤）。 */
+export async function listSourceNotes(
+  noteSearch?: string,
+  signal?: AbortSignal,
+): Promise<{ items: SourceNotesView[] }> {
+  const qs = noteSearch ? `?note_search=${encodeURIComponent(noteSearch)}` : ''
+  return request(`${API_BASE}/subscriptions/notes` + qs, signal)
+}
+
+/** F005：更新备注（sentinel：undefined=不改，null=清空）。 */
+export async function updateSourceNotes(patch: {
+  subscriptionRef: string
+  note?: string | null
+  reason?: string | null
+  maintenanceLog?: string | null
+}): Promise<SourceNotesView> {
+  const { subscriptionRef, ...body } = patch
+  const response = await rawRequest(
+    `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/notes`,
+    { method: 'PATCH', body: JSON.stringify(body), contentType: 'application/json' },
+  )
+  return (await response.json()) as SourceNotesView
+}
+
+/** F006：批量分类迁移（逐项执行、逐项汇报）。 */
+export type BatchMoveResult = {
+  items: { ref: string; ok: boolean; error: string | null }[]
+  moved: number
+}
+
+export async function batchMoveSubscriptions(payload: {
+  refs: string[]
+  targetCategoryId: string
+}): Promise<BatchMoveResult> {
+  const response = await rawRequest(`${API_BASE}/subscriptions/batch-move`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BatchMoveResult
 }
 
 /** F23：单条标题按需翻译（缓存优先；原题保留）。 */
@@ -2121,6 +2395,32 @@ export async function deleteSavedSearchView(id: string): Promise<void> {
   if (!response.ok) throw await toApiError(response)
 }
 
+/** F061：私有 Atom 订阅 token 结果（atomPath 带 secret，仅此一次返回）。 */
+export interface ViewFeedTokenResult {
+  atomPath: string
+  hasFeedToken: boolean
+}
+
+/** F061：首次启用视图私有 Atom 订阅（已启用 → 409 token_already_active）。 */
+export async function enableViewFeedToken(id: string): Promise<ViewFeedTokenResult> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}/token/enable`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ViewFeedTokenResult
+}
+
+/** F061：轮换订阅 token（旧地址立即失效；新地址仅本次返回）。 */
+export async function rotateViewFeedToken(id: string): Promise<ViewFeedTokenResult> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}/token/rotate`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ViewFeedTokenResult
+}
+
 /** P0-01：服务端稍后读时间线（order: newest（默认）| oldest（pool #14）；
  * cursor opaque 原样透传，绑定排序方向；悬挂成员以 stale=true 行可见
  * 而非消失）。 */
@@ -2226,6 +2526,8 @@ export interface MailImapSettingsUpdate {
   ssl?: boolean
   listUuid?: string
   intervalSeconds?: number
+  /** F007：False = 轮询与手动拉取直接跳过。 */
+  enabled?: boolean
   /** write-only：GET 永不回显。 */
   password?: string
 }
@@ -2261,4 +2563,2387 @@ export async function testMailImap(): Promise<MailImapTestResult> {
 export async function pollMailImap(): Promise<MailImapPollResult> {
   const response = await rawRequest(`${API_BASE}/mail/imap/poll`, { method: 'POST' })
   return (await response.json()) as MailImapPollResult
+}
+
+// ==== W2（F021–F040）净新增功能 API =========================================
+
+// ---- F021 手工关联内容 ----
+
+export interface RelationEndView {
+  ref: string
+  domain: string
+  kind: string
+  title: string
+  source: string
+  datetime?: string | null
+  excerpt?: string | null
+  url?: string | null
+  stale: boolean
+  staleReason?: string | null
+}
+
+export interface ItemRelationView {
+  id: number
+  srcRef: string
+  dstRef: string
+  note: string
+  createdAt: string
+  src: RelationEndView
+  dst: RelationEndView
+  stale: boolean
+}
+
+/** F021：双向列出某条目的手工关联（失效端 stale=true，绝不抛错吞掉）。 */
+export async function listRelationsForItem(
+  itemRef: string,
+  signal?: AbortSignal,
+): Promise<{ items: ItemRelationView[] }> {
+  const query = new URLSearchParams({ itemRef })
+  return request<{ items: ItemRelationView[] }>(
+    `${API_BASE}/relations?${query}`,
+    signal,
+  )
+}
+
+/** F021：创建手工关联（自关联/无效引用 → 422；同向不同备注 → 409）。 */
+export async function createRelation(body: {
+  srcRef: string
+  dstRef: string
+  note?: string
+}): Promise<ItemRelationView> {
+  const response = await rawRequest(`${API_BASE}/relations`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ItemRelationView
+}
+
+/** F021：解除关联（幂等语义由 404 表达）。 */
+export async function deleteRelation(id: number): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/relations/${encodeURIComponent(String(id))}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F022 收件箱归类规则 ----
+
+export interface InboxRuleView {
+  id: number
+  priority: number
+  field: 'source' | 'title'
+  operator: 'contains' | 'equals'
+  value: string
+  targetWorkspaceId: string
+  enabled: boolean
+  createdAt: string
+}
+
+export interface InboxRuleDryRunResultView {
+  matchedRule: InboxRuleView | null
+  explanation: string
+}
+
+export async function getInboxRules(signal?: AbortSignal): Promise<{ items: InboxRuleView[] }> {
+  return request<{ items: InboxRuleView[] }>(`${API_BASE}/inbox/rules`, signal)
+}
+
+export async function createInboxRule(body: {
+  field: string
+  operator: string
+  value: string
+  targetWorkspaceId: string
+  enabled?: boolean
+}): Promise<InboxRuleView> {
+  const response = await rawRequest(`${API_BASE}/inbox/rules`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as InboxRuleView
+}
+
+export async function patchInboxRule(
+  id: number,
+  body: Partial<{ field: string; operator: string; value: string; targetWorkspaceId: string; enabled: boolean }>,
+): Promise<InboxRuleView> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/rules/${encodeURIComponent(String(id))}`,
+    { method: 'PATCH', body: JSON.stringify(body), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as InboxRuleView
+}
+
+export async function moveInboxRule(id: number, direction: 'up' | 'down'): Promise<InboxRuleView> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/rules/${encodeURIComponent(String(id))}/move?direction=${direction}`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as InboxRuleView
+}
+
+export async function deleteInboxRule(id: number): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/rules/${encodeURIComponent(String(id))}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+export async function dryRunInboxRule(body: {
+  field: string
+  value: string
+  source?: string
+}): Promise<InboxRuleDryRunResultView> {
+  const response = await rawRequest(`${API_BASE}/inbox/rules/dry-run`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as InboxRuleDryRunResultView
+}
+
+// ---- F023 跨来源作者聚合 ----
+
+export interface AuthorSummaryView {
+  author: string
+  count: number
+}
+
+export interface AuthorAliasView {
+  alias: string
+  canonical: string
+  createdAt: string
+}
+
+export interface AuthorItemsView {
+  author: string
+  items: Array<{
+    entryRef: string
+    title: string
+    feedTitle: string
+    author?: string | null
+    url?: string | null
+    publishedAt: string
+    read: boolean
+    starred: boolean
+  }>
+  hasMore: boolean
+}
+
+export async function getAuthors(
+  signal?: AbortSignal,
+  limit = 50,
+): Promise<{ items: AuthorSummaryView[] }> {
+  return request<{ items: AuthorSummaryView[] }>(
+    `${API_BASE}/authors?limit=${limit}`,
+    signal,
+  )
+}
+
+export async function getAuthorItems(
+  author: string,
+  offset = 0,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<AuthorItemsView> {
+  const query = new URLSearchParams({
+    author,
+    limit: String(limit),
+    offset: String(offset),
+  })
+  return request<AuthorItemsView>(`${API_BASE}/authors/items?${query}`, signal)
+}
+
+export async function getAuthorAliases(
+  signal?: AbortSignal,
+): Promise<{ items: AuthorAliasView[] }> {
+  return request<{ items: AuthorAliasView[] }>(`${API_BASE}/authors/aliases`, signal)
+}
+
+export async function createAuthorAlias(body: {
+  alias: string
+  canonical: string
+}): Promise<AuthorAliasView> {
+  const response = await rawRequest(`${API_BASE}/authors/aliases`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AuthorAliasView
+}
+
+export async function deleteAuthorAlias(alias: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/authors/aliases/${encodeURIComponent(alias)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F024 积压整理助手 ----
+
+export interface BacklogSampleItemView {
+  ref: string
+  title: string
+  publishedAt?: string | null
+}
+
+export interface BacklogPreviewView {
+  count: number
+  sample: BacklogSampleItemView[]
+  effectiveExclusions: string[]
+  confirmPreviewToken: string
+}
+
+export interface BacklogApplyView {
+  applied: number
+  failed: BacklogSampleItemView[]
+  effectiveExclusions: string[]
+}
+
+export interface BacklogCondition {
+  olderThanDays: number
+  feedUrl?: string | null
+  categoryId?: string | null
+}
+
+/** F024：预览（真实 count + 前 20 样本 + 一次性 token；零写入）。 */
+export async function previewBacklog(
+  condition: BacklogCondition,
+  signal?: AbortSignal,
+): Promise<BacklogPreviewView> {
+  const response = await rawRequest(`${API_BASE}/entries/backlog-preview`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...condition,
+      excludeStarred: true,
+      excludeReadLater: true,
+    }),
+    contentType: 'application/json',
+    signal,
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as BacklogPreviewView
+}
+
+/** F024：确认执行（必须带 preview 的 token，防条件漂移）。 */
+export async function applyBacklog(
+  condition: BacklogCondition,
+  confirmPreviewToken: string,
+): Promise<BacklogApplyView> {
+  const response = await rawRequest(`${API_BASE}/entries/backlog-apply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...condition,
+      excludeStarred: true,
+      excludeReadLater: true,
+      confirmPreviewToken,
+    }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as BacklogApplyView
+}
+
+// ---- F025/F026/F027：AI 输入范围 + 摘要证据 + 版本 ----
+
+/** F025：生成摘要（可选 maxChars 限定发送范围；响应含 inputChars/truncated）。 */
+export async function generateEntrySummaryScoped(
+  entryRef: string,
+  maxChars?: number,
+): Promise<EntrySummary> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/summary`,
+    {
+      method: 'POST',
+      ...(maxChars !== undefined
+        ? { body: JSON.stringify({ maxChars }), contentType: 'application/json' }
+        : {}),
+    },
+  )
+  return (await response.json()) as EntrySummary
+}
+
+/** F027：切换展示的摘要版本。 */
+export async function activateSummaryVersion(
+  entryRef: string,
+  versionId: string,
+): Promise<EntrySummary> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/summary/versions/${encodeURIComponent(versionId)}/activate`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as EntrySummary
+}
+
+/** F030：发送对话消息（可选 maxChars）。 */
+export async function sendConversationMessageScoped(
+  entryRef: string,
+  question: string,
+  maxChars?: number,
+): Promise<EntryConversation> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/conversation/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify(
+        maxChars !== undefined ? { question, maxChars } : { question },
+      ),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as EntryConversation
+}
+
+/** F027：摘要版本视图（summary 响应的 versions 字段）。 */
+export interface SummaryVersionItem {
+  versionId: string
+  summary: string
+  provider: string
+  model: string
+  createdAt: string
+}
+
+// ---- F030 问答模板 ----
+
+export interface QaTemplateView {
+  id: string
+  name: string
+  text: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getQaTemplates(signal?: AbortSignal): Promise<{ items: QaTemplateView[] }> {
+  return request<{ items: QaTemplateView[] }>(`${API_BASE}/qa-templates`, signal)
+}
+
+export async function createQaTemplate(body: { name: string; text: string }): Promise<QaTemplateView> {
+  const response = await rawRequest(`${API_BASE}/qa-templates`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QaTemplateView
+}
+
+export async function patchQaTemplate(
+  id: string,
+  body: { name: string; text?: string },
+): Promise<QaTemplateView> {
+  const response = await rawRequest(
+    `${API_BASE}/qa-templates/${encodeURIComponent(id)}`,
+    { method: 'PATCH', body: JSON.stringify(body), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QaTemplateView
+}
+
+export async function deleteQaTemplate(id: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/qa-templates/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F028 术语表批量导入导出 ----
+
+export interface GlossaryImportOutcome {
+  imported: number
+  skipped: number
+  overwritten: number
+  errors: Array<{ index: number; reason: string }>
+}
+
+/** F028：批量导入（skip / overwrite；非法条目逐条 errors）。 */
+export async function importGlossaryTerms(
+  terms: Array<{ term: string; translation: string }>,
+  mode: 'skip' | 'overwrite',
+): Promise<GlossaryImportOutcome> {
+  const response = await rawRequest(`${API_BASE}/glossary/import`, {
+    method: 'POST',
+    body: JSON.stringify({ terms, mode }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as GlossaryImportOutcome
+}
+
+/** F028：解析导入内容（纯前端预览：条数 + 冲突计数）。 */
+export function parseGlossaryImportText(text: string): {
+  terms: Array<{ term: string; translation: string }>
+  parseError: string | null
+} {
+  try {
+    const data = JSON.parse(text) as { terms?: unknown }
+    if (data === null || typeof data !== 'object' || !Array.isArray(data.terms)) {
+      return { terms: [], parseError: 'JSON 结构应为 { "terms": [...] }。' }
+    }
+    const terms: Array<{ term: string; translation: string }> = []
+    let invalid = 0
+    for (const raw of data.terms) {
+      if (
+        raw !== null &&
+        typeof raw === 'object' &&
+        typeof (raw as { term?: unknown }).term === 'string' &&
+        typeof (raw as { translation?: unknown }).translation === 'string'
+      ) {
+        terms.push({
+          term: (raw as { term: string }).term,
+          translation: (raw as { translation: string }).translation,
+        })
+      } else {
+        invalid += 1
+      }
+    }
+    return {
+      terms,
+      parseError: invalid > 0 ? `${invalid} 条结构非法（将在导入时逐条报错）。` : null,
+    }
+  } catch {
+    return { terms: [], parseError: '不是合法的 JSON。' }
+  }
+}
+
+/** F028：导出为 JSON 下载。 */
+export async function exportGlossaryJson(): Promise<void> {
+  const response = await fetch(`${API_BASE}/glossary/export`)
+  if (!response.ok) throw await toApiError(response)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = 'lumirss-glossary.json'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+// ---- F029 术语命中预览 ----
+
+export interface GlossaryHitItem {
+  term: string
+  translation: string
+  count: number
+}
+
+/** F029：现役 glossary 在本文正文的命中（服务端预览；与生成 prompt 同源）。 */
+export async function getGlossaryHits(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<{ hits: GlossaryHitItem[]; promptBlock: string }> {
+  const response = await fetch(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/glossary-hits`,
+    { method: 'POST', signal },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { hits: GlossaryHitItem[]; promptBlock: string }
+}
+
+// ---- F031/F032 日报草稿审阅 + 缺失日期补刊 ----
+
+/** F031：审阅后显式发布（幂等；校验失败 422 保留草稿）。 */
+export async function publishGptDigestIssue(
+  configId: number,
+  issueKey: string,
+): Promise<GptDigestIssue> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/publish`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const body = (await response.json()) as { issue: GptDigestIssue }
+  return body.issue
+}
+
+export interface MissingDigestDates {
+  missing: string[]
+  existing: string[]
+}
+
+/** F032：最近 N 天缺失期号的日期（含草稿排除）。 */
+export async function getMissingDigestDates(
+  configId: number,
+  signal?: AbortSignal,
+): Promise<MissingDigestDates> {
+  return request<MissingDigestDates>(
+    `${API_BASE}/gpt-digest/configs/${configId}/missing-dates?days=30`,
+    signal,
+  )
+}
+
+/** F032：补刊指定缺失日期（已有期号 409 protected；无材料 422）。 */
+export async function generateDigestForDate(
+  configId: number,
+  targetDate: string,
+): Promise<GptDigestIssue> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/generate`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ targetDate }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const body = (await response.json()) as { issue: GptDigestIssue }
+  return body.issue
+}
+
+// ---- F033/F034 快照资源诊断 + 版本 ----
+
+export interface SnapshotResource {
+  url: string
+  status: 'ok' | 'failed' | 'skipped'
+  error?: string | null
+}
+
+export interface SnapshotDetail extends SnapshotView {
+  resources: SnapshotResource[]
+  resourcesTruncated: boolean
+}
+
+export interface SnapshotVersionMeta {
+  versionId: number
+  snapshotUuid: string
+  sha256: string
+  sha8: string
+  text: string | null
+  createdAt: string
+}
+
+/** F033：快照详情（含资源状态诊断）。 */
+export async function getSnapshotDetail(
+  uuid: string,
+  signal?: AbortSignal,
+): Promise<SnapshotDetail> {
+  return request<SnapshotDetail>(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}`,
+    signal,
+  )
+}
+
+/** F033：仅重试 failed 资源（无失败 → retried 0）。 */
+export async function retryFailedSnapshotResources(uuid: string): Promise<{
+  retried: number
+  resources: SnapshotResource[]
+}> {
+  const response = await rawRequest(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/retry-failed`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { retried: number; resources: SnapshotResource[] }
+}
+
+/** F034：重新采集为新版本（相同内容 → deduplicated）。 */
+export async function createSnapshotVersion(uuid: string): Promise<{
+  deduplicated: boolean
+  versions: SnapshotVersionMeta[]
+}> {
+  const response = await rawRequest(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/versions`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { deduplicated: boolean; versions: SnapshotVersionMeta[] }
+}
+
+/** F034：版本列表（时间 + hash 前 8）。 */
+export async function listSnapshotVersions(
+  uuid: string,
+  signal?: AbortSignal,
+): Promise<{ versions: SnapshotVersionMeta[] }> {
+  return request<{ versions: SnapshotVersionMeta[] }>(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/versions`,
+    signal,
+  )
+}
+
+/** F034：两版本 unified 文本差异。 */
+export async function diffSnapshotVersions(
+  uuid: string,
+  versionId: number,
+  against: number,
+): Promise<{ diff: string }> {
+  return request<{ diff: string }>(
+    `${API_BASE}/library/snapshots/${encodeURIComponent(uuid)}/versions/${versionId}/diff?against=${against}`,
+  )
+}
+
+// ---- F038 会话管理 ----
+
+export interface AuthSessionView {
+  id: string
+  createdAt: number
+  lastSeenAt: number
+  expiresAt: number
+  userAgent?: string | null
+  current: boolean
+}
+
+/** F038：活跃会话（绝不含 token/hash 字段）。 */
+export async function listAuthSessions(signal?: AbortSignal): Promise<AuthSessionView[]> {
+  return request<AuthSessionView[]>(`${API_BASE}/auth/sessions`, signal)
+}
+
+/** F038：撤销会话（撤销当前会话 = 登出）。 */
+export async function revokeAuthSession(id: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/auth/sessions/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F039 脱敏诊断包 ----
+
+export interface DiagnosticsPayload {
+  version: string
+  schemaVersion: number
+  authMode: string
+  uptimeS: number
+  deps: Array<{ name: string; status: string }>
+  errorCountsByType: Record<string, number>
+  configPresence: Record<string, boolean>
+  counts: { feeds: number; entriesIndexed: number; libraryItems: number }
+}
+
+/** F039：获取脱敏诊断（仅布尔/计数；绝不含秘密值）。 */
+export async function getDiagnostics(signal?: AbortSignal): Promise<DiagnosticsPayload> {
+  return request<DiagnosticsPayload>(`${API_BASE}/operations/diagnostics`, signal)
+}
+
+// ---- F035 固定保存视图 ----
+
+export async function getPinnedViews(
+  signal?: AbortSignal,
+): Promise<{ items: SavedSearchView[] }> {
+  return request<{ items: SavedSearchView[] }>(`${API_BASE}/search/views/pinned`, signal)
+}
+
+/** F035：固定视图服务端真实计数（失效视图 error 态显示 '—'）。 */
+export async function getPinnedViewCount(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ count: number; capped: boolean; error?: string | null }> {
+  return request<{ count: number; capped: boolean; error?: string | null }>(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}/count`,
+    signal,
+  )
+}
+
+export async function pinSavedView(id: string): Promise<SavedSearchView> {
+  const response = await rawRequest(`${API_BASE}/search/views/${encodeURIComponent(id)}/pin`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SavedSearchView
+}
+
+export async function unpinSavedView(id: string): Promise<SavedSearchView> {
+  const response = await rawRequest(`${API_BASE}/search/views/${encodeURIComponent(id)}/unpin`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SavedSearchView
+}
+
+// ---- W3（F044-F052/F056/F058）新增端点 ---------------------------------
+
+/** F044：RSS 地址迁移（FreshRSS 无原位改 URL；新建订阅+元数据随迁）。 */
+export interface SubscriptionMigrateResult {
+  oldSubscriptionRef: string
+  oldFeedUrl: string
+  newSubscriptionRef: string | null
+  newFeedUrl: string
+  newTitle: string | null
+  copiedNotes: boolean
+  copiedOverrides: boolean
+  note: string
+}
+
+export async function migrateSubscription(
+  subscriptionRef: string,
+  newUrl: string,
+): Promise<SubscriptionMigrateResult> {
+  const response = await rawRequest(
+    `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/migrate`,
+    { method: 'POST', body: JSON.stringify({ newUrl }), contentType: 'application/json' },
+  )
+  return (await response.json()) as SubscriptionMigrateResult
+}
+
+/** F045：服务端屏蔽规则。 */
+export interface FeedFilterRule {
+  id: string
+  feedUrl: string
+  field: 'title' | 'author'
+  op: 'contains' | 'equals'
+  value: string
+  enabled: boolean
+  createdAt: string
+}
+
+export async function listFeedFilterRules(feedUrl?: string): Promise<{ items: FeedFilterRule[] }> {
+  const path = feedUrl !== undefined ? `/feed-filter-rules?feedUrl=${encodeURIComponent(feedUrl)}` : '/feed-filter-rules'
+  return request<{ items: FeedFilterRule[] }>(`${API_BASE}${path}`)
+}
+
+export async function createFeedFilterRule(input: {
+  feedUrl: string
+  field: 'title' | 'author'
+  op: 'contains' | 'equals'
+  value: string
+  enabled?: boolean
+}): Promise<FeedFilterRule> {
+  const response = await rawRequest(`${API_BASE}/feed-filter-rules`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as FeedFilterRule
+}
+
+export async function deleteFeedFilterRule(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/feed-filter-rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function trialFeedFilterRule(input: {
+  feedUrl?: string
+  sampleTitle: string
+  sampleAuthor?: string | null
+}): Promise<{ matched: boolean; ruleId: string | null; reason: string | null }> {
+  const response = await rawRequest(`${API_BASE}/feed-filter-rules/trial`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as { matched: boolean; ruleId: string | null; reason: string | null }
+}
+
+/** F050：批量检查台（纯诊断，不改配置）。 */
+export interface HealthCheckItem {
+  ref: string
+  status: 'ok' | 'auth_error' | 'not_found' | 'rate_limited' | 'timeout' | 'bad_content' | 'network_error'
+  httpStatus?: number
+  checkedAt: string
+}
+
+export async function runHealthCheck(refs: string[], timeoutS = 5): Promise<{ items: HealthCheckItem[] }> {
+  const response = await rawRequest(`${API_BASE}/subscriptions/health-check`, {
+    method: 'POST',
+    body: JSON.stringify({ refs, timeoutS }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as { items: HealthCheckItem[] }
+}
+
+/** F049：导入批次。 */
+export interface ImportBatch {
+  id: string
+  kind: 'opml' | 'bookmarks' | 'md_notes'
+  createdAt: string
+  counts: { imported?: number; skipped?: number; failed?: number }
+  errors: { items: { url?: string; reason?: string }[]; truncated: boolean }
+  retryPayload: { url?: string; title?: string | null }[]
+}
+
+export async function listImportBatches(limit = 20): Promise<{ items: ImportBatch[] }> {
+  return request<{ items: ImportBatch[] }>(`${API_BASE}/library/import-batches?limit=${limit}`)
+}
+
+export async function retryImportBatch(
+  batchId: string,
+): Promise<{ batchId: string; imported: number; skipped: number; failed: number; errors: { url?: string; reason?: string }[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/library/import-batches/${encodeURIComponent(batchId)}/retry`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as {
+    batchId: string
+    imported: number
+    skipped: number
+    failed: number
+    errors: { url?: string; reason?: string }[]
+  }
+}
+
+/** F051：批注（服务端真源；localStorage 降级为离线缓存）。 */
+export interface Annotation {
+  id: string
+  entryRef: string
+  anchor: Record<string, unknown>
+  anchorHash: string
+  excerpt: string
+  note: string
+  color: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function listAnnotations(params: {
+  entryRef?: string
+  q?: string
+  cursor?: string
+}): Promise<{ items: Annotation[]; nextCursor: string | null }> {
+  const search = new URLSearchParams()
+  if (params.entryRef) search.set('entryRef', params.entryRef)
+  if (params.q) search.set('q', params.q)
+  if (params.cursor) search.set('cursor', params.cursor)
+  return request<{ items: Annotation[]; nextCursor: string | null }>(
+    `${API_BASE}/annotations?${search.toString()}`,
+  )
+}
+
+export async function createAnnotation(input: {
+  entryRef: string
+  anchor: Record<string, unknown>
+  excerpt?: string | null
+  note?: string | null
+  color?: string
+}): Promise<Annotation> {
+  const response = await rawRequest(`${API_BASE}/annotations`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Annotation
+}
+
+export async function updateAnnotation(
+  id: string,
+  patch: { note?: string; excerpt?: string; color?: string },
+): Promise<Annotation> {
+  const response = await rawRequest(`${API_BASE}/annotations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as Annotation
+}
+
+export async function deleteAnnotation(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/annotations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** F048：单篇「用提取正文试读」（extractOnce 临时预览，不改来源策略）。 */
+export async function getEntryExtractPreview(entryRef: string): Promise<{
+  contentHtml: string | null
+  extractionFailed: boolean | null
+}> {
+  return request<{ contentHtml: string | null; extractionFailed: boolean | null }>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}?extractOnce=true`,
+  )
+}
+
+/** F052：批注汇编导出（Markdown 下载）。 */
+export async function exportAnnotations(input: {
+  entryRefs?: string[]
+  q?: string
+}): Promise<Blob> {
+  const response = await rawRequest(`${API_BASE}/annotations/export`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return await response.blob()
+}
+
+/** F056：跨设备继续阅读。 */
+export interface ReadingProgressItem {
+  entryRef: string
+  paraId: string
+  pct: number
+  deviceLabel: string
+  updatedAt: string
+}
+
+export async function putReadingProgress(input: {
+  entryRef: string
+  paraId: string
+  pct: number
+  deviceLabel: string
+}): Promise<void> {
+  await rawRequest(`${API_BASE}/reading-progress`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+}
+
+export async function listReadingProgress(limit = 5): Promise<{ items: ReadingProgressItem[] }> {
+  return request<{ items: ReadingProgressItem[] }>(`${API_BASE}/reading-progress?limit=${limit}`)
+}
+
+/** F058：批注复习队列。 */
+export interface ReviewQueueItem {
+  id: string
+  annotationId: string
+  entryRef: string
+  dueAt: string
+  completedAt: string | null
+  due: boolean | null
+  excerpt: string
+  note: string
+}
+
+export async function addReviewQueueItem(input: {
+  annotationId: string
+  dueAt: string
+}): Promise<{ id: string; rescheduled: boolean }> {
+  const response = await rawRequest(`${API_BASE}/review-queue`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as { id: string; rescheduled: boolean }
+}
+
+export async function listReviewQueue(status: 'due' | 'done'): Promise<{ items: ReviewQueueItem[] }> {
+  return request<{ items: ReviewQueueItem[] }>(`${API_BASE}/review-queue?status=${status}`)
+}
+
+export async function completeReviewQueueItem(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/review-queue/${encodeURIComponent(id)}/complete`, { method: 'POST' })
+}
+
+export async function postponeReviewQueueItem(id: string, dueAt: string): Promise<void> {
+  await rawRequest(`${API_BASE}/review-queue/${encodeURIComponent(id)}/postpone`, {
+    method: 'POST',
+    body: JSON.stringify({ dueAt }),
+    contentType: 'application/json',
+  })
+}
+
+/** F063：AI 任务中心 — 最近任务列表（默认/上限 50）。 */
+export interface AiTaskRecord {
+  id: string
+  kind: string
+  entryRef: string | null
+  status: 'done' | 'failed'
+  model: string
+  durationMs: number
+  inputChars: number | null
+  errorType: string | null
+  createdAt: string
+}
+
+export async function listAiTasks(limit = 50): Promise<{ items: AiTaskRecord[] }> {
+  return request<{ items: AiTaskRecord[] }>(`${API_BASE}/ai/tasks?limit=${limit}`)
+}
+
+/** F063：重试任务（仅服务端可重建输入的类型；原记录不变，返回新任务）。 */
+export async function retryAiTask(id: string): Promise<{ task: AiTaskRecord | null; originalId: string }> {
+  const response = await rawRequest(`${API_BASE}/ai/tasks/${encodeURIComponent(id)}/retry`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { task: AiTaskRecord | null; originalId: string }
+}
+
+/** F064：AI 用量限制（当前窗口已用/剩余/重置时间；本地时区口径）。 */
+export interface AiQuotaUsage {
+  window: '' | 'day' | 'month'
+  maxCalls: number
+  used: number
+  remaining: number
+  windowStart: string
+  windowReset: string
+  retryAfter: number
+}
+
+export async function getAiQuota(): Promise<AiQuotaUsage> {
+  return request<AiQuotaUsage>(`${API_BASE}/settings/ai/quota`)
+}
+
+/** F065：多篇共同问答（上下文仅所选条目；citations 为 refs 子集）。 */
+export interface AskBatchResult {
+  answer: string
+  citations: { index: number; entryRef: string }[]
+  skipped: { entryRef: string; reason: string }[]
+}
+
+export async function askBatchEntries(body: {
+  entryRefs: string[]
+  question: string
+  maxCharsPerEntry?: number
+}): Promise<AskBatchResult> {
+  const response = await rawRequest(`${API_BASE}/entries/ask-batch`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AskBatchResult
+}
+
+/** F067：多文观点对照（模型 JSON 结构服务端校验；quote 核验标注）。 */
+export interface CompareResult {
+  commonPoints: string[]
+  differences: { topic: string; positions: { entry: number; claim: string }[] }[]
+  evidence: { entry: number; quote: string; verified: boolean }[]
+  uncertainties: string[]
+  materials: { index: number; entryRef: string; title: string }[]
+  skipped: { entryRef: string; reason: string }[]
+}
+
+export async function compareEntries(body: { entryRefs: string[] }): Promise<CompareResult> {
+  const response = await rawRequest(`${API_BASE}/entries/compare`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CompareResult
+}
+
+/** F069：文章自测（生成响应只含题目，绝不含答案）。 */
+export interface QuizSession {
+  quizId: string
+  entryRef: string
+  questions: { index: number; question: string; options: string[] }[]
+}
+
+export async function generateQuiz(entryRef: string, count: number): Promise<QuizSession> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/quiz`,
+    { method: 'POST', body: JSON.stringify({ count }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QuizSession
+}
+
+/** F069：评分（服务端只读答案表）。 */
+export interface QuizGradeResult {
+  quizId: string
+  items: {
+    index: number
+    chosen: number | null
+    correct: boolean
+    answerIndex: number
+    explanation: string
+    evidenceQuote: string
+  }[]
+}
+
+export async function gradeQuiz(quizId: string, answers: (number | null)[]): Promise<QuizGradeResult> {
+  const response = await rawRequest(`${API_BASE}/quiz/${encodeURIComponent(quizId)}/grade`, {
+    method: 'POST',
+    body: JSON.stringify({ answers }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QuizGradeResult
+}
+
+/** F070：知识卡片（预览候选 / 幂等保存 / 检索 / 删除）。 */
+export interface KnowledgeCard {
+  id: string
+  entryRef: string
+  concept: string
+  explanation: string
+  sourceQuote: string
+  quoteVerified: boolean
+  createdAt: string
+  entryTitle: string | null
+  stale: boolean
+}
+
+export async function previewKnowledgeCards(
+  entryRef: string,
+  max: number,
+): Promise<{ entryRef: string; cards: { concept: string; explanation: string; sourceQuote: string; verified: boolean }[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/knowledge-cards/preview`,
+    { method: 'POST', body: JSON.stringify({ max }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { entryRef: string; cards: { concept: string; explanation: string; sourceQuote: string; verified: boolean }[] }
+}
+
+export async function saveKnowledgeCards(
+  entryRef: string,
+  cards: { concept: string; explanation: string; sourceQuote: string }[],
+): Promise<{ results: { concept: string; status: 'created' | 'skipped' | 'error'; reason?: string | null; cardId?: string | null }[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/knowledge-cards/save`,
+    { method: 'POST', body: JSON.stringify({ cards }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { results: { concept: string; status: 'created' | 'skipped' | 'error'; reason?: string | null; cardId?: string | null }[] }
+}
+
+export async function listKnowledgeCards(q?: string): Promise<{ items: KnowledgeCard[] }> {
+  // ? 号内联在字面量里：契约测试按 `?` 截断路径，变量携带的查询串
+  // 会被折叠成形状错误的多余参数段。
+  const path =
+    q && q.trim() !== ''
+      ? `${API_BASE}/knowledge-cards?q=${encodeURIComponent(q.trim())}`
+      : `${API_BASE}/knowledge-cards`
+  return request<{ items: KnowledgeCard[] }>(path)
+}
+
+export async function deleteKnowledgeCard(id: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/knowledge-cards/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** F071：疑似重复审核（扫描/队列/确认/忽略/白名单）。 */
+export interface DuplicatePair {
+  id: string
+  aRef: string
+  bRef: string
+  reason: string
+  status: 'pending' | 'confirmed' | 'ignored' | 'whitelisted'
+  createdAt: string
+  aTitle: string | null
+  bTitle: string | null
+  aUrl: string | null
+  bUrl: string | null
+}
+
+export async function scanDuplicates(): Promise<{ scanned: number; created: number; pending: number }> {
+  const response = await rawRequest(`${API_BASE}/library/duplicates/scan`, { method: 'POST' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { scanned: number; created: number; pending: number }
+}
+
+export async function listDuplicates(status = 'pending'): Promise<{ items: DuplicatePair[] }> {
+  return request<{ items: DuplicatePair[] }>(`${API_BASE}/library/duplicates?status=${status}`)
+}
+
+export async function duplicateAction(id: string, action: 'confirm' | 'ignore' | 'whitelist'): Promise<DuplicatePair> {
+  // action 必须内联为字面量后缀：api 契约测试按路径形状比对
+  // （/duplicates/{}/confirm 形状），变量拼接会被视作多余参数段。
+  const path =
+    action === 'confirm'
+      ? `${API_BASE}/library/duplicates/${encodeURIComponent(id)}/confirm`
+      : action === 'ignore'
+        ? `${API_BASE}/library/duplicates/${encodeURIComponent(id)}/ignore`
+        : `${API_BASE}/library/duplicates/${encodeURIComponent(id)}/whitelist`
+  const response = await rawRequest(path, { method: 'POST' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as DuplicatePair
+}
+
+/** F073：引用清单导出（返回文件内容与诚实标注头）。 */
+export interface SearchExportResult {
+  content: string
+  total: number
+  truncated: boolean
+  contentType: string
+}
+
+export async function exportSearchList(body: {
+  q: string
+  format: 'csv' | 'markdown'
+  includeExcerpt?: boolean
+  cap?: number
+}): Promise<SearchExportResult> {
+  const response = await rawRequest(`${API_BASE}/search/export`, {
+    method: 'POST',
+    body: JSON.stringify({
+      q: body.q,
+      format: body.format,
+      fields: body.includeExcerpt
+        ? ['title', 'source', 'date', 'url', 'excerpt']
+        : ['title', 'source', 'date', 'url'],
+    }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return {
+    content: await response.text(),
+    total: Number(response.headers.get('x-lumi-total') ?? '0'),
+    truncated: response.headers.get('x-lumi-truncated') === '1',
+    contentType: response.headers.get('content-type') ?? 'text/plain',
+  }
+}
+
+/** F075：两视图对照（纯读取；common/onlyA/onlyB refs ≤200 + 完整计数）。 */
+export interface ViewCompareResult {
+  common: string[]
+  onlyA: string[]
+  onlyB: string[]
+  counts: { a: number; b: number; common: number; onlyA: number; onlyB: number }
+  complete: boolean
+}
+
+export async function compareSavedViews(aId: string, bId: string): Promise<ViewCompareResult> {
+  const response = await rawRequest(`${API_BASE}/search/views/compare`, {
+    method: 'POST',
+    body: JSON.stringify({ aId, bId }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ViewCompareResult
+}
+
+/** F076：图谱命名视图（layout ≤200 节点位置；同名覆盖需 overwrite）。 */
+export interface GraphViewPayload {
+  id: string
+  name: string
+  layout: Record<string, { x: number; y: number }>
+  filters: Record<string, unknown>
+  focusNode: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export async function listGraphViews(): Promise<{ items: GraphViewPayload[] }> {
+  return request<{ items: GraphViewPayload[] }>(`${API_BASE}/graph/views`)
+}
+
+export async function saveGraphView(body: {
+  name: string
+  layout?: Record<string, { x: number; y: number }>
+  filters?: Record<string, unknown>
+  focusNode?: string | null
+  overwrite?: boolean
+}): Promise<GraphViewPayload> {
+  const response = await rawRequest(`${API_BASE}/graph/views`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as GraphViewPayload
+}
+
+export async function deleteGraphView(id: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/graph/views/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** F077：关系路径查找（BFS 于派生图；paths ≤5）。 */
+export interface GraphPathResult {
+  paths: { nodes: { ref: string; label: string; kind: string }[]; edgeKinds: string[] }[]
+  reachable: boolean
+}
+
+export async function findGraphPath(body: {
+  srcRef: string
+  dstRef: string
+  maxDepth?: number
+}): Promise<GraphPathResult> {
+  const response = await rawRequest(`${API_BASE}/graph/path`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as GraphPathResult
+}
+
+/** F078：检索同义词（单层扩展；expansions ≤8×50）。 */
+export interface SearchSynonym {
+  id: string
+  term: string
+  expansions: string[]
+  enabled: boolean
+}
+
+export async function listSynonyms(): Promise<{ items: SearchSynonym[] }> {
+  return request<{ items: SearchSynonym[] }>(`${API_BASE}/search/synonyms`)
+}
+
+export async function createSynonym(term: string, expansions: string[]): Promise<SearchSynonym> {
+  const response = await rawRequest(`${API_BASE}/search/synonyms`, {
+    method: 'POST',
+    body: JSON.stringify({ term, expansions }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as SearchSynonym
+}
+
+export async function deleteSynonym(id: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/search/synonyms/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await toApiError(response)
+}
+
+export async function previewSynonyms(q: string): Promise<{ matched: { term: string; expansions: string[] }[]; effectiveTerms: string[] }> {
+  const response = await rawRequest(`${API_BASE}/search/synonyms/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ q }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { matched: { term: string; expansions: string[] }[]; effectiveTerms: string[] }
+}
+
+/** F080：Obsidian 反链/断链。 */
+export async function listNoteBacklinks(uuid: string): Promise<{ items: { fromUuid: string; title: string; alias: string | null }[] }> {
+  return request<{ items: { fromUuid: string; title: string; alias: string | null }[] }>(
+    `${API_BASE}/obsidian/notes/${encodeURIComponent(uuid)}/backlinks`,
+  )
+}
+
+export async function listNoteBrokenLinks(uuid: string): Promise<{ items: { raw: string; reason: string }[] }> {
+  return request<{ items: { raw: string; reason: string }[] }>(
+    `${API_BASE}/obsidian/notes/${encodeURIComponent(uuid)}/broken-links`,
+  )
+}
+
+// ===========================================================================
+// W5：F081–F100（批量编辑 / 合并 / 模板 / 归档 / 看板 / 目标 / 失效检查 /
+// 资料包 ZIP / 剪藏修订 / 笔记生命周期 / RAG 排除·作业·一致性 /
+// Agent 范围·权限·搜索·导出·预演·分支）。类型为本地 interface 对照 BFF
+// routers 维护（与 AgentMessage 同惯例：补 response_model 后换生成别名）。
+// ===========================================================================
+
+// ---- F081 批量元数据编辑 ---------------------------------------------------
+
+/** patch 字段缺省（undefined）= 未勾选，保持原值。 */
+export interface BatchEditPatch {
+  titleSuffix?: string
+  tagsAdd?: string[]
+  tagsRemove?: string[]
+  workspaceId?: string
+}
+
+export interface BatchEditItemState {
+  title: string
+  tags: string[]
+  workspaceIds: string[]
+}
+
+export interface BatchEditPreviewItem {
+  ref: string
+  before: BatchEditItemState
+  after: BatchEditItemState
+}
+
+export interface BatchEditApplyItem {
+  ref: string
+  ok: boolean
+  error?: string | null
+}
+
+export async function previewBatchEdit(
+  refs: string[],
+  patch: BatchEditPatch,
+): Promise<{ items: BatchEditPreviewItem[] }> {
+  const response = await rawRequest(`${API_BASE}/library/batch-edit/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ refs, patch }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: BatchEditPreviewItem[] }
+}
+
+export async function applyBatchEdit(
+  refs: string[],
+  patch: BatchEditPatch,
+): Promise<{ items: BatchEditApplyItem[]; applied: number; failed: number }> {
+  const response = await rawRequest(`${API_BASE}/library/batch-edit`, {
+    method: 'POST',
+    body: JSON.stringify({ refs, patch }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    items: BatchEditApplyItem[]
+    applied: number
+    failed: number
+  }
+}
+
+// ---- F082 重复资料合并 -----------------------------------------------------
+
+export interface MergeFieldCompare {
+  field: string
+  primary: unknown
+  duplicate: unknown
+}
+
+export interface MergePreview {
+  primaryRef: string
+  duplicateRef: string
+  fields: MergeFieldCompare[]
+  annotationCount: number
+  assetUuids: string[]
+}
+
+export interface MergeResult {
+  mergedRef: string
+  removedRef: string
+  tagsUnion: string[]
+  movedAnnotations: number
+  trashed: boolean
+}
+
+export async function previewMerge(
+  primaryRef: string,
+  duplicateRef: string,
+): Promise<MergePreview> {
+  const response = await rawRequest(`${API_BASE}/library/merge/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ primaryRef, duplicateRef }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as MergePreview
+}
+
+export async function applyMerge(
+  primaryRef: string,
+  duplicateRef: string,
+  policy: { title: 'primary' | 'duplicate'; note: 'primary' | 'append' },
+): Promise<MergeResult> {
+  const response = await rawRequest(`${API_BASE}/library/merge`, {
+    method: 'POST',
+    body: JSON.stringify({ primaryRef, duplicateRef, policy }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as MergeResult
+}
+
+// ---- F083 工作区模板 -------------------------------------------------------
+
+export interface WorkspaceTemplateView {
+  id: string
+  name: string
+  config: Record<string, unknown>
+  createdAt: string
+}
+
+export async function saveWorkspaceAsTemplate(
+  workspaceId: string,
+  name: string,
+): Promise<WorkspaceTemplateView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/save-as-template`,
+    { method: 'POST', body: JSON.stringify({ name }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceTemplateView
+}
+
+export async function createWorkspaceFromTemplate(body: {
+  templateId: string
+  name: string
+  includeExampleItems: boolean
+  exampleRefs?: string[]
+}): Promise<{ workspace: Workspace; addedExampleRefs: string[]; skippedExampleRefs: string[] }> {
+  const response = await rawRequest(`${API_BASE}/workspaces/from-template`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    workspace: Workspace
+    addedExampleRefs: string[]
+    skippedExampleRefs: string[]
+  }
+}
+
+export async function listWorkspaceTemplates(): Promise<{ items: WorkspaceTemplateView[] }> {
+  return request<{ items: WorkspaceTemplateView[] }>(`${API_BASE}/workspace-templates`)
+}
+
+export async function deleteWorkspaceTemplate(templateId: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/workspace-templates/${encodeURIComponent(templateId)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F084 工作区归档 -------------------------------------------------------
+
+export async function patchWorkspaceArchive(
+  workspaceId: string,
+  archived: boolean,
+): Promise<Workspace> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/archive`,
+    { method: 'PATCH', body: JSON.stringify({ archived }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as Workspace
+}
+
+export async function listArchivedWorkspaces(): Promise<Workspace[]> {
+  return request<Workspace[]>(`${API_BASE}/workspace-archive`)
+}
+
+// ---- F085 看板 / F086 目标 --------------------------------------------------
+
+export type BoardStatus = 'todo' | 'reading' | 'done'
+
+export interface BoardCard {
+  itemRef: string
+  status: BoardStatus
+  updatedAt: string
+}
+
+export interface BoardColumnView {
+  status: BoardStatus
+  items: BoardCard[]
+  total: number
+}
+
+export async function getWorkspaceBoard(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<{ workspaceId: string; columns: BoardColumnView[] }> {
+  return request(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/board`,
+    signal,
+  )
+}
+
+export async function setBoardStatus(
+  workspaceId: string,
+  itemRef: string,
+  status: BoardStatus,
+): Promise<{ itemRef: string; status: BoardStatus; updatedAt: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/board`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemRef, status }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { itemRef: string; status: BoardStatus; updatedAt: string }
+}
+
+export interface WorkspaceGoalView {
+  exists?: boolean
+  workspaceId?: string
+  targetCount?: number
+  deadline?: string | null
+  doneCount?: number
+  createdAt?: string
+}
+
+export async function getWorkspaceGoal(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceGoalView> {
+  return request(`${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/goal`, signal)
+}
+
+export async function putWorkspaceGoal(
+  workspaceId: string,
+  targetCount: number,
+  deadline?: string | null,
+): Promise<WorkspaceGoalView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/goal`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ targetCount, deadline: deadline ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceGoalView
+}
+
+export async function deleteWorkspaceGoal(workspaceId: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/goal`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F087 书签失效检查 -------------------------------------------------------
+
+export type BookmarkLinkStatus =
+  | 'ok'
+  | 'redirect'
+  | 'not_found'
+  | 'auth_required'
+  | 'rate_limited'
+  | 'timeout'
+  | 'network_error'
+  | 'blocked_ssrf'
+
+export interface BookmarkCheckItem {
+  ref: string
+  status: BookmarkLinkStatus
+  httpStatus?: number | null
+  finalUrl?: string | null
+  checkedAt: string
+  error?: string | null
+}
+
+export async function checkBookmarkLinks(
+  refs: string[],
+): Promise<{ items: BookmarkCheckItem[] }> {
+  const response = await rawRequest(`${API_BASE}/library/bookmarks/check-links`, {
+    method: 'POST',
+    body: JSON.stringify({ refs }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: BookmarkCheckItem[] }
+}
+
+// ---- F088 资料包导出增强（ZIP） ----------------------------------------------
+
+export interface ResearchPackPreviewW5 {
+  entryCount: number
+  missingCount: number
+  estBytes: number
+  snapshots: { uuid: string; title: string; bytes: number }[]
+}
+
+export async function previewResearchPackW5(
+  workspaceId: string,
+  includeSnapshots: string[],
+): Promise<ResearchPackPreviewW5> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/research-pack/preview`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ includeSnapshots }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ResearchPackPreviewW5
+}
+
+/** ZIP 导出：POST 返回二进制附件（由调用方触发下载；错误时仍可能是 JSON）。 */
+export async function exportResearchPackZip(
+  workspaceId: string,
+  includeSnapshots: string[],
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/research-pack`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ format: 'zip', includeSnapshots }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `research-pack-${workspaceId}.zip`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+// ---- F089 剪藏手工修订 -------------------------------------------------------
+
+export interface ClipRevisionPayload {
+  revisedAt: string
+  note: string | null
+  baseContentHash: string | null
+}
+
+export interface ClipDetailW5 {
+  ref: string
+  url: string
+  title: string
+  byline: string | null
+  fetchedAt: string
+  createdAt: string
+  original: Record<string, unknown>
+  revised: ClipRevisionPayload | null
+  content: Record<string, unknown>
+}
+
+export async function saveClipRevision(
+  uuid: string,
+  body: { blocks: string[]; note?: string | null; force?: boolean; baseContentHash?: string | null },
+): Promise<ClipDetailW5> {
+  const response = await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/revision`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ClipDetailW5
+}
+
+export async function discardClipRevision(uuid: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/revision`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** F089 块清单（修订 UI 的勾选来源；id 形如 b1/b2…）。 */
+export async function getClipBlocks(
+  uuid: string,
+  signal?: AbortSignal,
+): Promise<{ blocks: { id: string; text: string }[] }> {
+  return request(`${API_BASE}/library/clips/${encodeURIComponent(uuid)}/revision`, signal)
+}
+
+// ---- F090 Lumi 笔记全生命周期 ------------------------------------------------
+// 列表沿用 F020 的 listLumiNotes（workspaceId 过滤版）；这里补全
+// 详情 / 创建 / 编辑（乐观锁）/ 软删四个生命周期端点。
+
+export interface LumiNoteDetail {
+  uuid: string
+  title: string
+  contentMd: string
+  workspaceId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getLumiNote(uuid: string, signal?: AbortSignal): Promise<LumiNoteDetail> {
+  return request(`${API_BASE}/library/notes/${encodeURIComponent(uuid)}`, signal)
+}
+
+export async function createLumiNote(body: {
+  title: string
+  contentMd: string
+  workspaceId?: string | null
+}): Promise<LumiNoteDetail> {
+  const response = await rawRequest(`${API_BASE}/library/notes`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as LumiNoteDetail
+}
+
+export async function updateLumiNote(
+  uuid: string,
+  body: { title?: string; contentMd?: string; baseUpdatedAt?: string },
+): Promise<LumiNoteDetail> {
+  const response = await rawRequest(
+    `${API_BASE}/library/notes/${encodeURIComponent(uuid)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as LumiNoteDetail
+}
+
+export async function deleteLumiNote(uuid: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/library/notes/${encodeURIComponent(uuid)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await toApiError(response)
+}
+
+// ---- F091 RAG 索引排除 / F093 作业 / F100 一致性 ------------------------------
+
+export interface RagExclusionItem {
+  feedUrl: string
+  ragExcluded: boolean
+  aiDisabled: boolean
+  affectedChunks: number
+}
+
+export async function listRagExclusions(signal?: AbortSignal): Promise<{ items: RagExclusionItem[] }> {
+  return request(`${API_BASE}/rag/exclusions`, signal)
+}
+
+export async function setRagExclusion(
+  feedRef: string,
+  excluded: boolean,
+): Promise<{ items: RagExclusionItem[] }> {
+  const response = await rawRequest(`${API_BASE}/rag/exclusions`, {
+    method: 'PUT',
+    body: JSON.stringify({ feedRef, excluded }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: RagExclusionItem[] }
+}
+
+export async function pauseRagRebuild(): Promise<{ paused: boolean; jobId: string | null; status?: string }> {
+  const response = await rawRequest(`${API_BASE}/rag/rebuild/pause`, { method: 'POST' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { paused: boolean; jobId: string | null; status?: string }
+}
+
+export async function resumeRagRebuild(): Promise<{
+  chunks: number
+  elapsedMs: number
+  jobId?: string | null
+  status?: string | null
+}> {
+  const response = await rawRequest(`${API_BASE}/rag/rebuild/resume`, { method: 'POST' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    chunks: number
+    elapsedMs: number
+    jobId?: string | null
+    status?: string | null
+  }
+}
+
+export interface RagInconsistencyItem {
+  ref: string
+  storedHash: string | null
+  currentHash: string | null
+  basis: 'content_hash' | 'embedding_model'
+}
+
+export async function listRagInconsistencies(): Promise<{
+  modelId: string
+  items: RagInconsistencyItem[]
+}> {
+  return request(`${API_BASE}/rag/inconsistencies`)
+}
+
+/** F092 试检索：GET /rag/search（q + k；score 缺失时 UI 显示「—」绝不编造）。 */
+export async function ragTrySearch(
+  q: string,
+  k = 6,
+  signal?: AbortSignal,
+): Promise<{ items: { ref: string; kind: string; text: string; score?: number | null; title?: string | null; modelId?: string | null }[]; semanticUsed: boolean; semanticError: string | null }> {
+  const query = new URLSearchParams({ q, k: String(k) })
+  return request(`${API_BASE}/rag/search?${query.toString()}`, signal)
+}
+
+export async function repairRagRefs(
+  refs: string[],
+): Promise<{ repaired: string[]; failed: { ref: string; error: string }[] }> {
+  const response = await rawRequest(`${API_BASE}/rag/repair`, {
+    method: 'POST',
+    body: JSON.stringify({ refs }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { repaired: string[]; failed: { ref: string; error: string }[] }
+}
+
+// ---- F094/F095/F096/F097/F098/F099 Agent 会话 --------------------------------
+
+/** F094/F098 会话设置（下轮生效；scope=null + clearScope 显式清除）。 */
+export interface AgentThreadSettingsPatch {
+  title?: string
+  scope?: { workspaceId?: string; entryRefs?: string[] } | null
+  clearScope?: boolean
+  toolPolicy?: {
+    mode: 'all' | 'readonly'
+    allowedTools?: string[]
+    maxOpsPerTurn?: number
+  } | null
+  clearToolPolicy?: boolean
+}
+
+export async function updateAgentThreadSettings(
+  threadId: string,
+  patch: AgentThreadSettingsPatch,
+): Promise<{ id: string; title: string; scope: unknown; toolPolicy: unknown; branchOf: string | null }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    id: string
+    title: string
+    scope: unknown
+    toolPolicy: unknown
+    branchOf: string | null
+  }
+}
+
+export interface AgentThreadSearchHit {
+  threadId: string
+  threadTitle: string
+  messageIndex: number
+  role: string
+  snippet: string
+}
+
+export async function searchAgentThreads(
+  q: string,
+  signal?: AbortSignal,
+): Promise<{ items: AgentThreadSearchHit[]; truncated: boolean }> {
+  const query = new URLSearchParams({ q })
+  return request(`${API_BASE}/agent/threads/search?${query.toString()}`, signal)
+}
+
+/** F096 导出：返回 markdown 文本（调用方触发下载）。 */
+export async function exportAgentThreadMarkdown(
+  threadId: string,
+  rounds: number,
+): Promise<string> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/export?rounds=${rounds}&format=md`,
+    { method: 'GET' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return await response.text()
+}
+
+export interface ApprovalPreviewChange {
+  field: string
+  from: unknown
+  to: unknown
+}
+
+export interface ApprovalPreview {
+  approvalId: string
+  tool: string
+  target: unknown
+  changes: ApprovalPreviewChange[]
+  uncertain: unknown[]
+}
+
+export async function previewAgentApproval(
+  threadId: string,
+  approvalId: string,
+): Promise<ApprovalPreview> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/approvals/${encodeURIComponent(approvalId)}/preview`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ApprovalPreview
+}
+
+export async function branchAgentThread(
+  threadId: string,
+  messageIndex: number,
+): Promise<{ thread: AgentThread; branchOf: string; copiedMessages: number; truncated: boolean }> {
+  const response = await rawRequest(
+    `${API_BASE}/agent/threads/${encodeURIComponent(threadId)}/branch`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ messageIndex }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    thread: AgentThread
+    branchOf: string
+    copiedMessages: number
+    truncated: boolean
+  }
+}
+
+// ---- W6：F101–F115（素材池 / 轮换 / 邮件工具 / 收件箱事件 / 保留 / 比较） ----
+
+/** F102：素材池条目（usedIssueKey 非空 = 已被某期刊消费）。 */
+export interface DigestPoolEntry {
+  id: number
+  entryRef: string
+  addedAt: string
+  position: number
+  usedIssueKey: string | null
+}
+
+/** GET …/pool：items = 待用（按 position 升序），used = 已消费。 */
+export interface DigestPoolList {
+  items: DigestPoolEntry[]
+  used?: DigestPoolEntry[]
+}
+
+/** F102：素材池列表（待用 + 已消费分列）。 */
+export async function listDigestPool(
+  configId: number,
+  signal?: AbortSignal,
+): Promise<DigestPoolList> {
+  return request<DigestPoolList>(
+    `${API_BASE}/gpt-digest/configs/${configId}/pool`,
+    signal,
+  )
+}
+
+/** F102：加入素材池。409 duplicate / 422 ai_disabled_source 由调用方处理。 */
+export async function addDigestPoolEntry(
+  configId: number,
+  entryRef: string,
+): Promise<DigestPoolEntry> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/pool`, {
+    method: 'POST',
+    body: JSON.stringify({ entryRef }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as DigestPoolEntry
+}
+
+/** F102：移出素材池（不存在 → 404 ApiError）。 */
+export async function removeDigestPoolEntry(
+  configId: number,
+  entryId: number,
+): Promise<void> {
+  await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/pool/${entryId}`, {
+    method: 'DELETE',
+  })
+}
+
+/** F102：全量提交排序后的 id 顺序。 */
+export async function reorderDigestPool(
+  configId: number,
+  orderedIds: number[],
+): Promise<DigestPoolList> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/configs/${configId}/pool`, {
+    method: 'PATCH',
+    body: JSON.stringify({ orderedIds }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as DigestPoolList
+}
+
+/** F103：轮换 dry-run 影响报告（零变更；无记录 → null 诚实未知）。 */
+export interface FeedRotateImpact {
+  tokenExists: boolean
+  tokenRotatedAt: string | null
+  ageDays: number | null
+  note: string
+}
+
+/** F103：订阅 token 轮换影响预览（dryRun=true，服务端零写入）。 */
+export async function rotateGptDigestFeedDryRun(): Promise<{
+  dryRun: boolean
+  impact: FeedRotateImpact
+}> {
+  const response = await rawRequest(`${API_BASE}/gpt-digest/feed/rotate?dryRun=true`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { dryRun: boolean; impact: FeedRotateImpact }
+}
+
+/** F104：单封邮件解析对照（structure 快照 + 统计；零写入）。 */
+export interface MailParseDebug {
+  messageId: string
+  structure: Record<string, unknown> | null
+  attachmentMeta: { filename: string; bytes: number }[]
+  subjectPresent: boolean
+  fromDisplay: string
+  textLen: number
+  htmlPartPresent: boolean
+  itemTitle: string
+  itemDiffSummary: {
+    titleMatches: boolean
+    bodyChars: number
+    trackingPixelsBlocked: number
+  }
+}
+
+export async function getMailParseDebug(
+  listUuid: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<MailParseDebug> {
+  return request<MailParseDebug>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages/${encodeURIComponent(messageId)}/parse-debug`,
+    signal,
+  )
+}
+
+/** F110：会话链（祖先 → 本封 → 子孙；current 标当前查看的邮件）。 */
+export interface MailThread {
+  chain: { id: string; subject: string; date: string; current: boolean }[]
+  reason: string | null
+  cycleBroken: boolean
+}
+
+export async function getMailThread(
+  listUuid: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<MailThread> {
+  return request<MailThread>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages/${encodeURIComponent(messageId)}/thread`,
+    signal,
+  )
+}
+
+/** F105：邮件接收规则（scope=list）。 */
+export interface MailRule {
+  id: number
+  listUuid: string
+  priority: number
+  field: string
+  op: string
+  value: string
+  action: string
+  enabled: boolean
+}
+
+export interface MailRuleList {
+  items: MailRule[]
+}
+
+export async function listMailRules(
+  listUuid: string,
+  signal?: AbortSignal,
+): Promise<MailRuleList> {
+  return request<MailRuleList>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/rules`,
+    signal,
+  )
+}
+
+export interface MailRuleCreateInput {
+  field: 'from' | 'subject'
+  op: 'contains' | 'equals'
+  value: string
+  action: 'allow' | 'deny'
+  enabled?: boolean
+}
+
+export async function createMailRule(
+  listUuid: string,
+  input: MailRuleCreateInput,
+): Promise<MailRule> {
+  const response = await rawRequest(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/rules`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as MailRule
+}
+
+export async function patchMailRule(
+  ruleId: number,
+  patch: { enabled?: boolean; value?: string; action?: string },
+): Promise<MailRule> {
+  const response = await rawRequest(`${API_BASE}/mail/rules/${ruleId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as MailRule
+}
+
+export async function moveMailRule(ruleId: number, direction: 'up' | 'down'): Promise<MailRule> {
+  const response = await rawRequest(
+    `${API_BASE}/mail/rules/${ruleId}/move?direction=${direction}`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as MailRule
+}
+
+export async function deleteMailRule(ruleId: number): Promise<void> {
+  await rawRequest(`${API_BASE}/mail/rules/${ruleId}`, { method: 'DELETE' })
+}
+
+/** F105：样本试跑（纯读）：field/value → 首条命中规则或「无规则 = 允许」。 */
+export interface MailRuleDryRunResult {
+  matchedRule: MailRule | null
+  explanation: string
+}
+
+export async function dryRunMailRule(
+  listUuid: string,
+  sample: { field: 'from' | 'subject'; value: string },
+): Promise<MailRuleDryRunResult> {
+  const response = await rawRequest(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/rules/dry-run`,
+    {
+      method: 'POST',
+      body: JSON.stringify(sample),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as MailRuleDryRunResult
+}
+
+/** F106：历史回填结果（dryRun → sample/matched；执行 → processed/created/…）。 */
+export interface MailBackfillResult {
+  dryRun?: boolean
+  sample?: { uid: number; subject: string; date: string }[]
+  matched?: number
+  uidvalidity?: string | null
+  note?: string
+  aborted?: boolean
+  reason?: string
+  processed?: number
+  created?: number
+  skippedDup?: number
+  failed?: { uid: string; reason: string }[]
+}
+
+export async function backfillMailImap(body: {
+  since?: string
+  uids?: number[]
+  dryRun: boolean
+}): Promise<MailBackfillResult> {
+  const response = await rawRequest(`${API_BASE}/mail/imap/backfill`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as MailBackfillResult
+}
+
+/** F107：收件投递事件（失败可重放）。 */
+export interface InboxEvent {
+  id: number
+  sourceUuid: string
+  guid: string
+  status: string
+  errorSummary: string | null
+  payloadHashPrefix: string
+  createdAt: string
+}
+
+export async function listInboxEvents(
+  sourceUuid: string,
+  signal?: AbortSignal,
+  limit = 50,
+): Promise<{ items: InboxEvent[] }> {
+  return request<{ items: InboxEvent[] }>(
+    `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}/events?limit=${limit}`,
+    signal,
+  )
+}
+
+export async function replayInboxEvent(
+  eventId: number,
+): Promise<{ status: string; ref: string; replayedFrom: number }> {
+  const response = await rawRequest(`${API_BASE}/inbox/events/${eventId}/replay`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { status: string; ref: string; replayedFrom: number }
+}
+
+/** F108：接入检查（零写入契约试跑）。 */
+export interface IngestDryRunResult {
+  valid: boolean
+  errors: { field: string; reason: string }[]
+  wouldCreate: { title: string; kind: string } | null
+  notes: string[]
+  wouldDuplicate?: boolean
+}
+
+export async function dryRunInboxIngest(
+  sourceUuid: string,
+  payloadJson: string,
+): Promise<IngestDryRunResult> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}/ingest/dry-run`,
+    {
+      method: 'POST',
+      body: payloadJson,
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as IngestDryRunResult
+}
+
+/** F114：派生数据保留策略（默认关；preview 只读，apply 有界删除）。 */
+export interface StorageRetention {
+  enabled: boolean
+  aiVersionsDays: number | null
+  taskLogDays: number | null
+}
+
+export interface RetentionPreview {
+  enabled: boolean
+  aiVersions: { count: number; bytes: number }
+  taskLog: { count: number }
+  excluded: Record<string, unknown>
+  quizNote: string
+}
+
+export interface RetentionApplyResult {
+  enabled: boolean
+  deleted: { aiVersions: number; taskLog: number }
+  note?: string
+}
+
+export async function getStorageRetention(signal?: AbortSignal): Promise<StorageRetention> {
+  return request<StorageRetention>(`${API_BASE}/storage/retention`, signal)
+}
+
+export async function putStorageRetention(values: {
+  enabled?: boolean
+  aiVersionsDays?: number | null
+  taskLogDays?: number | null
+}): Promise<StorageRetention> {
+  const response = await rawRequest(`${API_BASE}/storage/retention`, {
+    method: 'PUT',
+    body: JSON.stringify(values),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as StorageRetention
+}
+
+export async function previewStorageRetention(): Promise<RetentionPreview> {
+  const response = await rawRequest(`${API_BASE}/storage/retention/preview`, { method: 'POST' })
+  return (await response.json()) as RetentionPreview
+}
+
+export async function applyStorageRetention(): Promise<RetentionApplyResult> {
+  const response = await rawRequest(`${API_BASE}/storage/retention/apply`, { method: 'POST' })
+  return (await response.json()) as RetentionApplyResult
+}
+
+/** F115：两份本地备份 manifest 比较（incomparable 诚实呈现）。 */
+export interface BackupCompareResult {
+  identical: boolean
+  categories: {
+    name: string
+    aCount: number | null
+    bCount: number | null
+    delta: number
+  }[]
+  schemaVersions: { a: unknown; b: unknown } | null
+  incomparable: string[]
+}
+
+export async function compareBackups(aId: string, bId: string): Promise<BackupCompareResult> {
+  const response = await rawRequest(`${API_BASE}/backups/compare`, {
+    method: 'POST',
+    body: JSON.stringify({ aId, bId }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupCompareResult
+}
+
+/** F109：轮换收件连接器 bearer secret。新 secret 只在本响应出现一次；
+ * 旧令牌自下一请求起立即失效；已推送条目不受影响。 */
+export async function rotateInboxSource(sourceUuid: string): Promise<InboxSourceCreated> {
+  const response = await rawRequest(
+    `${API_BASE}/inbox/sources/${encodeURIComponent(sourceUuid)}/rotate`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as InboxSourceCreated
 }

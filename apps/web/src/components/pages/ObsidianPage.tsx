@@ -38,6 +38,7 @@ import {
 import type { NoteView, ObsidianStatus } from '../../api/client'
 import { dateTimeFormatter } from '../../lib/date-format'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
+import { NoteLinksPanel } from '../NoteLinksPanel'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -209,6 +210,10 @@ function NoteDetailDialog({
               中打开原文件查看完整内容。
             </p>
           )}
+          {/* F080：引用关系（反链/断链） */}
+          <NoteLinksPanel
+            uuid={(resolved.ref ?? '').replace(/^obsidian:/, '')}
+          />
           {resolved.tags.length > 0 && (
             <ul className="flex flex-wrap gap-1.5" aria-label="标签">
               {resolved.tags.map((tag) => (

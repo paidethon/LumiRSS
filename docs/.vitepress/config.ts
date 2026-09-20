@@ -89,7 +89,7 @@ export default defineConfig({
       { text: '配置', link: '/reference/configuration' },
       { text: '架构', link: '/explanation/architecture' },
       { text: 'Roadmap', link: '/ROADMAP' },
-      { text: '存档', link: '/research/phase2/00-platform-architecture', activeMatch: '/(research|audits|history|upstream)/' },
+      { text: '历史', link: '/history/milestones', activeMatch: '/(audits|history|upstream)/' },
     ],
     sidebar: {
       '/': [
@@ -139,9 +139,7 @@ export default defineConfig({
           text: ARCHIVE,
           collapsed: true,
           items: [
-            { text: 'Phase 2 研究', link: '/research/phase2/00-platform-architecture' },
-            { text: '其他研究报告', link: '/research/local-translation' },
-            { text: 'Recovery 审计账本', link: '/audits/phase2-recovery' },
+            { text: 'Recovery 审计账本（冻结）', link: '/audits/phase2-recovery' },
             { text: '历史里程碑', link: '/history/milestones' },
             { text: '上游引用与许可', link: '/upstream/UPSTREAMS' },
           ],

@@ -228,6 +228,8 @@ function normalizeList(raw: unknown): Annotation[] {
 }
 
 /** 读取全部批注（损坏数据 → 空数组，不抛错）。 */
+// ---- 存储层（F051：服务端真源 + localStorage 离线缓存 + 首次导入） ----
+
 export function readAllAnnotations(): Annotation[] {
   try {
     const raw = localStorage.getItem(ANNOTATIONS_STORAGE_KEY)
@@ -253,13 +255,107 @@ function writeAll(list: Annotation[]): void {
   }
 }
 
-/** 新增 / 更新一条批注（按 id upsert）。 */
+/** 服务端批注（client.ts Annotation）→ 本地缓存形状。 */
+function fromServer(item: {
+  id: string
+  entryRef: string
+  anchor: Record<string, unknown>
+  excerpt: string
+  note: string
+  color: string
+  createdAt: string
+}): Annotation {
+  const anchor = item.anchor as Record<string, unknown>
+  return {
+    id: item.id,
+    entryRef: item.entryRef,
+    color: (
+      ANNOTATION_COLORS as readonly string[]
+    ).includes(item.color)
+      ? (item.color as AnnotationColor)
+      : 'yellow',
+    note: item.note ?? '',
+    anchor: {
+      prefix: typeof anchor.prefix === 'string' ? anchor.prefix : '',
+      exact: typeof anchor.exact === 'string' ? anchor.exact : item.excerpt,
+      suffix: typeof anchor.suffix === 'string' ? anchor.suffix : '',
+    },
+    createdAt: Date.parse(item.createdAt) || 0,
+    contentVersion:
+      typeof anchor.contentVersion === 'string' ? anchor.contentVersion : '',
+  }
+}
+
+/** 本地批注 → 服务端 POST 负载（excerpt 取 exact，contentVersion 并入 anchor）。 */
+function toServerPayload(annotation: Annotation): {
+  entryRef: string
+  anchor: Record<string, unknown>
+  excerpt: string
+  note: string
+  color: string
+} {
+  return {
+    entryRef: annotation.entryRef,
+    anchor: { ...annotation.anchor, contentVersion: annotation.contentVersion },
+    excerpt: annotation.anchor.exact,
+    note: annotation.note,
+    color: annotation.color,
+  }
+}
+
+let serverSyncStarted = false
+
+/**
+ * F051 首次同步：把本地存量 POST 导入（服务端按 anchor hash 查重，
+ * 幂等——重复导入返回既有行），随后用服务端列表覆盖本地缓存。
+ * 之后所有读写以服务端为准；本函数在 Reader 挂载批注层时调用一次。
+ */
+export async function syncAnnotationsWithServer(): Promise<void> {
+  if (serverSyncStarted) return
+  serverSyncStarted = true
+  try {
+    const [{ listAnnotations, createAnnotation }, local] = await Promise.all([
+      import('../api/client'),
+      Promise.resolve(readAllAnnotations()),
+    ])
+    for (const annotation of local) {
+      await createAnnotation(toServerPayload(annotation)).catch(() => {})
+    }
+    const server = await listAnnotations({})
+    writeAll(server.items.map(fromServer))
+  } catch {
+    // 离线/网络失败：保留本地缓存，下次再试（诚实降级为设备本地）。
+    serverSyncStarted = false
+  }
+}
+
+/** 新增 / 更新一条批注：本地缓存立即生效 + 服务端异步写入。 */
 export function saveAnnotation(annotation: Annotation): void {
   const rest = readAllAnnotations().filter((a) => a.id !== annotation.id)
   writeAll([...rest, annotation])
+  void (async () => {
+    try {
+      const { createAnnotation } = await import('../api/client')
+      const saved = await createAnnotation(toServerPayload(annotation))
+      const withServerId = readAllAnnotations().map((a) =>
+        a.id === annotation.id ? { ...a, id: saved.id } : a,
+      )
+      writeAll(withServerId)
+    } catch {
+      // 离线：本地缓存仍有效，服务端同步待下次 sync 补偿
+    }
+  })()
 }
 
-/** 删除一条批注。 */
+/** 删除一条批注（本地 + 服务端 fire-and-forget）。 */
 export function deleteAnnotation(id: string): void {
   writeAll(readAllAnnotations().filter((a) => a.id !== id))
+  void (async () => {
+    try {
+      const client = await import('../api/client')
+      await client.deleteAnnotation(id)
+    } catch {
+      // 离线：下次 sync 后与服务端收敛
+    }
+  })()
 }

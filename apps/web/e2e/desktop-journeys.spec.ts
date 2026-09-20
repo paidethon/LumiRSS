@@ -101,7 +101,9 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
   // 自建前置（幂等）：把 E2E feed 条目显式置为未读、未收藏（set 语义
   // PATCH）。不依赖 FreshRSS 当前数据状态——上轮运行遗留的已读/收藏
   // 不会影响本轮。
-  const all = await (await page.request.get('/api/v1/entries?view=all')).json()
+  // 栈会被多轮重跑复用：复位必须覆盖全量匹配（默认第一页 20 条在
+  // 多源种子下不够），否则点到的同名重复条目仍是已读 → 假失败。
+  const all = await (await page.request.get('/api/v1/entries?view=all&limit=100')).json()
   const targets = all.items.filter((i: { title: string }) =>
     /^文章 (alpha|beta|gamma)/.test(i.title),
   )
@@ -128,6 +130,11 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
   const entryTitle = page.getByRole('button', { name: /^文章 (alpha|beta|gamma)/ }).first()
   await expect(entryTitle).toBeVisible({ timeout: 15_000 })
   const openedTitle = (await entryTitle.innerText()).trim()
+  // 多轮重跑后栈里可能存在同名重复条目（不同 feed 各自一份）：状态
+  // 断言一律用行根的 entryRef 精确匹配，标题只用于展示。
+  const openedRef = await entryTitle
+    .locator('xpath=ancestor::*[@data-entry-ref][1]')
+    .getAttribute('data-entry-ref')
   await entryTitle.click()
   const readerText = page.getByText(/正文内容，用于 Reader 断言|正文内容。/).first()
   await expect(readerText).toBeVisible()
@@ -137,7 +144,9 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
   // 500ms 更长的真实观察窗口，再断言条目仍在 unread 视图（独立复审 F9）。
   await page.waitForTimeout(700)
   const unread = await (await page.request.get('/api/v1/entries?view=unread')).json()
-  expect(unread.items.some((i: { title: string }) => i.title === openedTitle)).toBe(true)
+  expect(
+    unread.items.some((i: { entryRef: string }) => i.entryRef === openedRef),
+  ).toBe(true)
 
   // 显式操作（Reader 区域内）：收藏 + 标记为已读（set 语义）
   const readerActions = page.locator('article').first()
@@ -156,7 +165,7 @@ test('J2 — 时间线与 Reader：打开不自动已读 / 显式已读 / 收藏
     .poll(
       async () => {
         const unreadAfter = await (await page.request.get('/api/v1/entries?view=unread')).json()
-        return unreadAfter.items.some((i: { title: string }) => i.title === openedTitle)
+        return unreadAfter.items.some((i: { entryRef: string }) => i.entryRef === openedRef)
       },
       { timeout: 5_000 },
     )

@@ -69,6 +69,9 @@ _SQL_SEARCH = (
     " AND (? IS NULL OR s.published_at < ?)"
     " AND (? IS NULL OR s.published_at < ?"
     "      OR (s.published_at = ? AND s.item_id < ?))"
+    # F017 has_summary：仅摘要维度（NULL = 不启用；1 = 有摘要；0 = 无摘要）
+    " AND (? IS NULL OR (? = 1 AND s.content_text != '')"
+    "      OR (? = 0 AND (s.content_text IS NULL OR s.content_text = '')))"
     " ORDER BY s.published_at DESC, s.item_id DESC LIMIT ?"
 )
 
@@ -94,6 +97,7 @@ class SearchStore:
         intitle_terms: list[str] | None = None,
         phrase: str | None = None,
         exclude_terms: list[str] | None = None,
+        has_summary: bool | None = None,
     ) -> list[Any]:
         """One page of hits, newest first; limit+1 rows detect hasMore.
 
@@ -151,6 +155,8 @@ class SearchStore:
             params.extend([1, keyset[0], keyset[0], keyset[1]])
         else:
             params.extend([None, None, None, None])
+        # F017：has_summary 三槽（维度开关 + 真/假分支；位于 keyset 之后）
+        params.extend([has_summary, has_summary, has_summary])
         params.append(limit + 1)
         return await self._db.fetch_all(_SQL_SEARCH, tuple(params))
 

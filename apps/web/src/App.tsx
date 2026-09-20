@@ -4,7 +4,20 @@ import { useReaderUi } from './store/reader-ui'
 import { useAppSettings } from './store/app-settings'
 import { useKeyboardShortcuts } from './lib/keyboard-shortcuts'
 import { initNavHistory } from './lib/nav-history'
+import {
+  initParaTarget,
+  tryResumePendingPara,
+} from './lib/para-anchor'
+import { clearSearchHistoryOnLogout } from './lib/search-history'
+import { useAuthStore } from './store/auth'
+import { clearAllDrafts } from './lib/draft-store'
+import { resetPrivacyOnBoot } from './lib/privacy-mask'
+import { startVersionCheck } from './lib/version-check'
 import { EdgeSwipeBack } from './lib/edge-swipe'
+
+// F113：演示隐私遮罩是“会话内”开关——刷新即重置。模块加载（早于任何
+// 组件首渲染）清掉上次会话残留标记，抽屉开关态与 DOM 遮蔽态保持一致。
+resetPrivacyOnBoot()
 
 /** PWA Share Target（phase2 M2）：GET /?share=1&url=… 落地后把目标 URL
  * 经 sessionStorage 交给剪藏页（一次性交接，读取即清除）。 */
@@ -32,15 +45,19 @@ function handleShareTarget(): void {
   }
 }
 import EntryList from './components/EntryList'
+// Bundle guard：对话框非首屏关键路径——懒加载分包（Suspense
+// 瞬时 null 无感；与既有 MobileSettingsScreen/一级页 lazy 契约一致）。
 import MobileHeader from './components/MobileHeader'
 import MobileNavigationDrawer from './components/MobileNavigationDrawer'
 import MobileTabBar from './components/MobileTabBar'
-import InstallHint from './components/InstallHint'
+import SidebarCollapsedRail from './components/SidebarCollapsedRail'
+const ShortcutsHelpDialog = lazy(() => import('./components/ShortcutsHelpDialog'))
+const UndoSnackbar = lazy(() => import('./components/UndoSnackbar'))
+const SettingsConflictDialog = lazy(() => import('./components/SettingsConflictDialog'))
+const VersionUpdateToast = lazy(() => import('./components/VersionUpdateToast'))
+const InstallHint = lazy(() => import('./components/InstallHint'))
 import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
-import SidebarCollapsedRail from './components/SidebarCollapsedRail'
-import ShortcutsHelpDialog from './components/ShortcutsHelpDialog'
-import UndoSnackbar from './components/UndoSnackbar'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
 
@@ -98,6 +115,15 @@ export default function App() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   // pool #06：「?」快捷键帮助弹窗（hook 持回调 ref，App 持开关状态）。
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
+  // F117：版本轮询（30min fetch /version.json；版本不同 → 更新确认 toast）
+  const [newVersion, setNewVersion] = useState<string | null>(null)
+  useEffect(
+    () =>
+      startVersionCheck({
+        onNewVersion: (build) => setNewVersion(build),
+      }),
+    [],
+  )
   // 0010 Gate B：全局键盘快捷键（j/k/u/s///?；输入框聚焦时不劫持）
   useKeyboardShortcuts({
     onShowShortcutsHelp: () => setShortcutsHelpOpen(true),
@@ -109,6 +135,25 @@ export default function App() {
   // P1.3：统一返回链初始化（必须在 Share Target 之后——replaceState
   // 以净化后的 URL 为基线）。
   useEffect(() => initNavHistory(), [])
+  // F015：段落定位链接 —— 启动解析 ?entry=&para=（已登录直接打开；
+  // 未登录暂存，登录后重放）。挂载一次。
+  useEffect(() => {
+    initParaTarget(
+      () => useAuthStore.getState().status === 'authenticated',
+      (entryRef) => useReaderUi.getState().selectEntry(entryRef),
+    )
+    // 登录完成后重放暂存目标
+    return useAuthStore.subscribe((state) => {
+      if (state.status === 'authenticated') {
+        tryResumePendingPara((entryRef) => useReaderUi.getState().selectEntry(entryRef))
+      }
+      // F079：登出/会话过期 → 清理本地搜索历史与暂停标记（幂等）。
+      if (state.status === 'unauthenticated') {
+        clearSearchHistoryOnLogout()
+        clearAllDrafts() // F119：登出清理全部本机草稿
+      }
+    })
+  }, [])
 
   const settings = useAppSettings((s) => s.settings)
   // P1.3：侧滑/玻璃效果设置（settings 声明之后读取）。
@@ -428,19 +473,42 @@ export default function App() {
       )}
 
       {/* F20：最近操作撤销条（单实例；无可撤销动作时零渲染） */}
-      <UndoSnackbar />
+      <Suspense fallback={null}>
+        <UndoSnackbar />
+      </Suspense>
 
       {/* 0011 Gate 1：<768 底部导航岛（首页/订阅/搜索/收藏）；Reader 打开时隐藏 */}
       <MobileTabBar />
 
-      {/* Phase M：克制的安装引导（standalone / 已关闭时零渲染） */}
-      <InstallHint />
+      {/* Phase M：克制的安装引导（standalone / 已关闭时零渲染）。
+          局部 Suspense：lazy 首帧挂起绝不外溢到 root（root 挂起 = 整树
+          卸载成 0 字节，mobile-navigation 结构契约即因此破坏）。 */}
+      <Suspense fallback={null}>
+        <InstallHint />
+      </Suspense>
 
-      {/* pool #06：「?」键盘快捷键速查 */}
-      <ShortcutsHelpDialog
-        open={shortcutsHelpOpen}
-        onClose={() => setShortcutsHelpOpen(false)}
-      />
+      {/* pool #06：「?」键盘快捷键速查——条件挂载（lazy 只在打开时参与） */}
+      {shortcutsHelpOpen && (
+        <Suspense fallback={null}>
+          <ShortcutsHelpDialog
+            open={shortcutsHelpOpen}
+            onClose={() => setShortcutsHelpOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* F116：设置冲突解决（settings-sync 409 时触发；无冲突零渲染） */}
+      <Suspense fallback={null}>
+        <SettingsConflictDialog />
+      </Suspense>
+
+      {/* F117：发现新版本确认（稍后/草稿保护；无新版本零渲染） */}
+      <Suspense fallback={null}>
+        <VersionUpdateToast
+          newVersion={newVersion}
+          onDismiss={() => setNewVersion(null)}
+        />
+      </Suspense>
     </div>
   )
 }

@@ -201,6 +201,22 @@ async def import_bookmarks(request: Request) -> BookmarkImportResult:
             imported += 1
         else:
             skipped += 1
+    # F049：导入批次追踪（失败项存 retry_payload 供仅重试失败；幂等重试）。
+    try:
+        from lumirss.import_batch_store import ImportBatchStore
+
+        await ImportBatchStore(request.app.state.db).record(
+            kind="bookmarks",
+            counts={"imported": imported, "skipped": skipped, "failed": len(failed)},
+            errors=[
+                {"url": item.url, "reason": item.reason} for item in failed
+            ],
+            retry_payload=[
+                {"url": item.url, "title": None} for item in failed
+            ],
+        )
+    except Exception:  # noqa: BLE001 — 批次记录失败不影响导入本身
+        pass
     return BookmarkImportResult(
         imported=imported, skipped=skipped, failed=failed
     )

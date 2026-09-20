@@ -39,11 +39,14 @@ lexical hits → RRF fusion. Hard properties:
 
 import asyncio
 import contextlib
+import hashlib
 import importlib.util
+import json
 import logging
 import sqlite3
 import struct
 import time
+import uuid as _uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -73,6 +76,8 @@ _MAX_INDEX_REFS = 50
 # plus one embed batch of float vectors — never the whole corpus.
 _DOC_PAGE = 16
 _EMBED_BATCH = 32
+# F093：作业游标持久化上限与默认 kind。
+_JOB_KIND = "rebuild"
 
 _FASTEMBED_AVAILABLE = importlib.util.find_spec("fastembed") is not None
 
@@ -83,6 +88,15 @@ class RagModelUnavailable(Exception):
 
 class RagRebuildBusy(Exception):
     """A rebuild is already running."""
+
+
+class RagJobPaused(Exception):
+    """F093：批间安全点观察到暂停请求（游标已持久化）。"""
+
+
+def doc_content_hash(text: str) -> str:
+    """F100：语料文档正文 hash（分块行的 content_hash 列存同一值）。"""
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 def vec_extension_available() -> bool:
@@ -229,6 +243,8 @@ class RagService:
         self._rebuild_lock = asyncio.Lock()
         self._vec_ready = False
         self._vec_conn: sqlite3.Connection | None = None
+        # F093：测试可注入的批间暂停点（None = 生产无额外钩子）。
+        self._pause_hook: Any = None
 
     # -- vec connection (loaded once; extensions are per-connection) --------
 
@@ -321,6 +337,7 @@ class RagService:
             (MODEL_ID,),
         )
         chunks = int(row["n"]) if row is not None else 0
+        job_section = await self._job_summary()
         return {
             "enabled": (await self._setting("rag_enabled")) == "1",
             "chunks": chunks,
@@ -332,6 +349,32 @@ class RagService:
             "lastRebuildAt": await self._setting("rag_last_rebuild"),
             "lastError": await self._setting("rag_last_error"),
             "fastembedAvailable": _FASTEMBED_AVAILABLE,
+            # F093：最近一次重建作业（stage/done/remaining）。
+            "job": job_section,
+        }
+
+    async def _job_summary(self) -> dict[str, Any] | None:
+        """F093 status job 段：最近作业的进度（stage/done/remaining）。"""
+        job = await self._job_latest()
+        if job is None:
+            return None
+        stage = (job.get("cursor") or {}).get("stage")
+        done = int((job.get("stats") or {}).get("chunks", 0))
+        docs_done = int((job.get("stats") or {}).get("docs", 0))
+        remaining: int | None = None
+        if job["status"] == "running" or job["status"] == "paused":
+            row_rss = await self._db.fetch_one("SELECT COUNT(*) AS n FROM search_entries")
+            row_lib = await self._db.fetch_one("SELECT COUNT(*) AS n FROM search_library")
+            total = int(row_rss["n"] if row_rss else 0) + int(row_lib["n"] if row_lib else 0)
+            remaining = max(total - docs_done, 0)
+        return {
+            "jobId": job["jobId"],
+            "kind": job["kind"],
+            "status": job["status"],
+            "stage": stage,
+            "done": done,
+            "remaining": remaining,
+            "updatedAt": job["updatedAt"],
         }
 
     async def enable(self) -> bool:
@@ -371,55 +414,306 @@ class RagService:
 
     # -- indexing -----------------------------------------------------------
 
+    # -- F093 作业行（rag_jobs）---------------------------------------------
+
+    async def _job_create(self) -> str:
+        job_id = str(_uuid.uuid4())
+        await self._db.execute(
+            "INSERT INTO rag_jobs (id, kind, status, cursor_json, stats_json, updated_at) VALUES (?, ?, 'running', NULL, ?, ?)",
+            (job_id, _JOB_KIND, json.dumps({"chunks": 0, "docs": 0, "skipped": []}), utc_now()),
+        )
+        return job_id
+
+    async def _job_get(self, job_id: str) -> dict[str, Any] | None:
+        row = await self._db.fetch_one(
+            "SELECT id, kind, status, cursor_json, stats_json, updated_at FROM rag_jobs WHERE id = ?",
+            (job_id,),
+        )
+        if row is None:
+            return None
+        return {
+            "jobId": str(row["id"]),
+            "kind": str(row["kind"]),
+            "status": str(row["status"]),
+            "cursor": json.loads(str(row["cursor_json"])) if row["cursor_json"] else None,
+            "stats": json.loads(str(row["stats_json"])) if row["stats_json"] else {},
+            "updatedAt": str(row["updated_at"]),
+        }
+
+    async def _job_latest(self) -> dict[str, Any] | None:
+        row = await self._db.fetch_one(
+            "SELECT id FROM rag_jobs ORDER BY updated_at DESC, id DESC LIMIT 1"
+        )
+        if row is None:
+            return None
+        job = await self._job_get(str(row["id"]))
+        assert job is not None
+        return job
+
+    async def _job_pause_request(self, job_id: str) -> bool:
+        """设置暂停请求（当前批完成后生效）；False = 作业不在运行。"""
+        row = await self._db.fetch_one(
+            "SELECT id FROM rag_jobs WHERE id = ? AND status = 'running'",
+            (job_id,),
+        )
+        if row is None:
+            return False
+        await self._db.execute(
+            "UPDATE rag_jobs SET status = 'paused', updated_at = ? WHERE id = ?",
+            (utc_now(), job_id),
+        )
+        return True
+
+    async def _job_pause_latest_running(self) -> str | None:
+        row = await self._db.fetch_one(
+            "SELECT id FROM rag_jobs WHERE status = 'running' ORDER BY updated_at DESC LIMIT 1"
+        )
+        if row is None:
+            return None
+        job_id = str(row["id"])
+        await self._job_pause_request(job_id)
+        return job_id
+
+    async def _job_write(self, job_id: str, *, status: str | None = None, cursor: dict | None = None, stats: dict | None = None) -> None:
+        row = await self._job_get(job_id)
+        if row is None:
+            return
+        await self._db.execute(
+            "UPDATE rag_jobs SET status = ?, cursor_json = ?, stats_json = ?, updated_at = ? WHERE id = ?",
+            (
+                status or row["status"],
+                json.dumps(cursor, ensure_ascii=False) if cursor is not None else (json.dumps(row["cursor"], ensure_ascii=False) if row["cursor"] else None),
+                json.dumps(stats if stats is not None else row["stats"], ensure_ascii=False),
+                utc_now(),
+                job_id,
+            ),
+        )
+
     async def rebuild(self) -> dict[str, Any]:
-        """Full index rebuild (bounded, serial, transactional, honest)."""
+        """Full index rebuild as a PAUSABLE batched job (F093).
+
+        Same synchronous contract as before (await → done report), but
+        the loop checkpoints a rag_jobs row between document pages: a
+        concurrent pause request flips the job row and the loop stops at
+        the next safe point, persisting its cursor for ``resume_rebuild``.
+        """
         if self._rebuild_lock.locked():
             raise RagRebuildBusy("重建已在进行中。")
         async with self._rebuild_lock:
             started = utc_now()
+            job_id = await self._job_create()
             try:
                 await self._db.migrate()
-                chunks = await self._rebuild_streaming()
+                chunks = await self._rebuild_streaming(job_id)
                 await self._set_setting("rag_last_rebuild", started)
                 await self._clear_setting("rag_last_error")
                 return {
                     "chunks": chunks,
                     "elapsedMs": _elapsed_ms(started),
+                    "jobId": job_id,
+                    "status": "done",
+                }
+            except RagJobPaused:
+                job = await self._job_get(job_id)
+                return {
+                    "chunks": int((job or {}).get("stats", {}).get("chunks", 0)),
+                    "elapsedMs": _elapsed_ms(started),
+                    "jobId": job_id,
+                    "status": "paused",
                 }
             except Exception as exc:
+                await self._job_write(job_id, status="failed", stats={"error": str(exc)[:300]})
                 await self._set_setting("rag_last_error", str(exc)[:500])
                 self._embedder.unload()  # never keep a half-broken model
                 raise
 
-    async def _rebuild_streaming(self) -> int:
+    async def resume_rebuild(self) -> dict[str, Any]:
+        """F093：从持久化游标继续 paused/failed 的重建（幂等）。
+
+        已 done 的作业直接返回完成态，不重复 embed；进程重启后新建
+        实例同样可续（游标与 staging 都在同一个 SQLite 文件里）。"""
+        job = await self._job_latest()
+        if job is None or job["status"] == "done":
+            return {
+                "chunks": job["stats"].get("chunks", 0) if job else 0,
+                "jobId": job["jobId"] if job else None,
+                "status": "done" if job else "idle",
+                "resumed": False,
+            }
+        if self._rebuild_lock.locked():
+            raise RagRebuildBusy("重建已在进行中。")
+        async with self._rebuild_lock:
+            started = utc_now()
+            if await self._job_get(job["jobId"]) is None:
+                return {"chunks": 0, "jobId": None, "status": "idle", "resumed": False}
+            await self._job_write(job["jobId"], status="running")
+            try:
+                chunks = await self._rebuild_streaming(job["jobId"])
+                await self._set_setting("rag_last_rebuild", started)
+                await self._clear_setting("rag_last_error")
+                return {
+                    "chunks": chunks,
+                    "elapsedMs": _elapsed_ms(started),
+                    "jobId": job["jobId"],
+                    "status": "done",
+                    "resumed": True,
+                }
+            except RagJobPaused:
+                return {
+                    "chunks": job["stats"].get("chunks", 0),
+                    "jobId": job["jobId"],
+                    "status": "paused",
+                    "resumed": True,
+                }
+            except Exception as exc:
+                await self._job_write(job["jobId"], status="failed", stats={"error": str(exc)[:300]})
+                raise
+
+    async def pause_rebuild(self) -> str | None:
+        """F093：请求暂停（当前文档页完成后生效）。返回作业 id。"""
+        return await self._job_pause_latest_running()
+
+    async def _check_pause(self, job_id: str, cursor: dict[str, Any], stats: dict[str, Any]) -> None:
+        """批间安全点：暂停请求 → 游标持久化 → 抛 RagJobPaused。"""
+        if self._pause_hook is not None:  # 测试注入的同步暂停点
+            await self._pause_hook(job_id)
+        job = await self._job_get(job_id)
+        if job is not None and job["status"] == "paused":
+            await self._job_write(job_id, status="paused", cursor=cursor, stats=stats)
+            raise RagJobPaused()
+
+    async def _corpus_page(
+        self, stage: str, after: Any
+    ) -> tuple[list[dict[str, str]], Any, bool]:
+        """一页语料（F093 游标化分页）。返回 (docs, next_after, exhausted)。"""
+        await self._db.migrate()
+        if stage == "rss":
+            # F066 + F091：AI 禁用与索引排除来源都不进入语料
+            #（ai_disabled 严格优先；此处取并集）。
+            from lumirss.rag_exclusions import rag_excluded_feed_set
+            from lumirss.source_ai_gate import ai_disabled_feed_set
+
+            disabled_feeds = await ai_disabled_feed_set(self._db)
+            disabled_feeds = disabled_feeds | await rag_excluded_feed_set(self._db)
+            rows = await self._db.fetch_all(
+                "SELECT id, entry_ref, feed_url, title, content_text FROM search_entries WHERE id > ? ORDER BY id LIMIT ?",
+                (after, _DOC_PAGE),
+            )
+            if not rows:
+                return [], after, True
+            next_after = int(rows[-1]["id"])
+            docs = [
+                {
+                    "ref": str(row["entry_ref"]),
+                    "kind": "rss",
+                    "title": str(row["title"] or ""),
+                    "text": str(row["content_text"] or ""),
+                }
+                for row in rows
+                if str(row["feed_url"] or "") not in disabled_feeds
+            ]
+            return docs, next_after, False
+        rows = await self._db.fetch_all(
+            "SELECT ref, kind, title, body FROM search_library WHERE ref > ? ORDER BY ref LIMIT ?",
+            (after, _DOC_PAGE),
+        )
+        if not rows:
+            return [], after, True
+        next_after = str(rows[-1]["ref"])
+        docs = [
+            {
+                "ref": str(row["ref"]),
+                "kind": str(row["kind"]),
+                "title": str(row["title"] or ""),
+                "text": str(row["body"] or ""),
+            }
+            for row in rows
+        ]
+        return docs, next_after, False
+
+    async def _refs_still_present(
+        self, docs: list[dict[str, str]]
+    ) -> tuple[list[dict[str, str]], list[str]]:
+        """F093：staging 前复核来源仍存在；中途删除的源跳过并记录。"""
+        present: list[dict[str, str]] = []
+        skipped: list[str] = []
+        for doc in docs:
+            if doc["kind"] == "rss":
+                row = await self._db.fetch_one(
+                    "SELECT entry_ref FROM search_entries WHERE entry_ref = ?",
+                    (doc["ref"],),
+                )
+            else:
+                row = await self._db.fetch_one(
+                    "SELECT ref FROM search_library WHERE ref = ?", (doc["ref"],)
+                )
+            if row is not None:
+                present.append(doc)
+            else:
+                skipped.append(doc["ref"])
+        return present, skipped
+
+    async def _rebuild_streaming(self, job_id: str | None = None) -> int:
         """Stream the corpus in document pages: chunk → embed → stage.
 
         Embeddings never accumulate (one ``_EMBED_BATCH`` of float
         vectors at a time) and the staged rows swap into the live index
         in ONE short transaction, so a failure leaves the previous index
-        intact (Q-P0-01: the old design resident the whole corpus and
-        every float vector at once — an OOM on production-sized data)."""
-        await asyncio.to_thread(_stage_reset, self)
+        intact (Q-P0-01). F093：带 rag_jobs 游标——批间安全点检查暂停，
+        暂停/失败后续建从游标继续，已完成的批绝不重复 embed。"""
+        cursor: dict[str, Any] = {
+            "stage": "rss",
+            "after": 0,
+            "chunks": 0,
+            "docs": 0,
+            "ord": {},
+        }
+        stats: dict[str, Any] = {"chunks": 0, "docs": 0, "skipped": []}
+        if job_id is not None:
+            job = await self._job_get(job_id)
+            if job is not None and job["cursor"] is not None:
+                cursor = job["cursor"]
+                stats = {
+                    "chunks": cursor.get("chunks", 0),
+                    "docs": cursor.get("docs", 0),
+                    "skipped": list(job["stats"].get("skipped", [])),
+                }
+                # 断点续建：staging 可能在上次失败清理中丢失——确保存在
+                #（已 staged 的行原样保留，游标对齐）。
+                await asyncio.to_thread(_stage_ensure, self)
+            else:
+                await asyncio.to_thread(_stage_reset, self)
+        else:
+            await asyncio.to_thread(_stage_reset, self)
         try:
-            total = 0
-            # Per-ref chunk ordinals must survive batch boundaries: the
-            # UNIQUE(ref, ord, model_id) index on rag_chunks rejects any
-            # ref whose chunk sequence restarts at 0 mid-batch (the
-            # counter state lives for the WHOLE rebuild, not one batch).
-            ord_state: dict[str, int] = {}
-            async for page in self._document_pages():
-                jobs: list[tuple[str, str, str, str]] = []
-                for doc in page:
-                    for chunk in chunk_text(
-                        doc["text"], heading=doc["title"] or None
-                    ):
+            # Per-ref chunk ordinals must survive batch boundaries (the
+            # UNIQUE(ref, ord, model_id) index) — the counter state is
+            # part of the persisted cursor, so resume never restarts it.
+            ord_state: dict[str, int] = dict(cursor.get("ord", {}))
+            stage = cursor.get("stage", "rss")
+            after: Any = cursor.get("after", 0)
+            while True:
+                docs, next_after, exhausted = await self._corpus_page(stage, after)
+                if exhausted:
+                    if stage == "rss":
+                        stage, after = "library", ""
+                        continue
+                    break
+                if docs:
+                    docs, skipped_refs = await self._refs_still_present(docs)
+                    if skipped_refs:
+                        stats["skipped"] = list(stats.get("skipped", [])) + skipped_refs
+                jobs: list[tuple[str, str, str, str, str]] = []
+                for doc in docs:
+                    doc_hash = doc_content_hash(doc["text"])
+                    for chunk in chunk_text(doc["text"], heading=doc["title"] or None):
                         jobs.append(
-                            (doc["ref"], doc["kind"], doc["title"], chunk)
+                            (doc["ref"], doc["kind"], doc["title"], chunk, doc_hash)
                         )
                 for start in range(0, len(jobs), _EMBED_BATCH):
                     batch = jobs[start : start + _EMBED_BATCH]
                     vectors = await self._embedder.embed(
-                        [chunk for _ref, _kind, _title, chunk in batch]
+                        [chunk for _ref, _kind, _title, chunk, _h in batch]
                     )
                     if any(len(vector) != MODEL_DIM for vector in vectors):
                         raise RagModelUnavailable(
@@ -428,53 +722,47 @@ class RagService:
                     await asyncio.to_thread(
                         _stage_rows, self, batch, vectors, ord_state
                     )
-                    total += len(batch)
+                    stats["chunks"] = int(stats.get("chunks", 0)) + len(batch)
+                    cursor["chunks"] = stats["chunks"]
+                stats["docs"] = int(stats.get("docs", 0)) + len(docs)
+                cursor["docs"] = stats["docs"]
+                cursor["stage"] = stage
+                cursor["after"] = next_after
+                cursor["ord"] = ord_state
+                after = next_after
+                if job_id is not None:
+                    await self._job_write(job_id, cursor=cursor, stats=stats)
+                    await self._check_pause(job_id, cursor, stats)
             await asyncio.to_thread(_swap_staged_index, self)
-            return total
+            if job_id is not None:
+                await self._job_write(
+                    job_id, status="done", cursor=None, stats=stats
+                )
+            return int(stats.get("chunks", 0))
+        except RagJobPaused:
+            # 暂停不是失败：staging 与游标原样保留，等待 resume。
+            raise
         except BaseException:
             await asyncio.to_thread(_stage_discard, self)
             raise
 
     async def _document_pages(self) -> AsyncIterator[list[dict[str, str]]]:
         """Keyset-paged corpus reader (search_entries by id, then
-        search_library by ref) — never a whole-table fetch_all."""
-        await self._db.migrate()
-        after_id = 0
+        search_library by ref) — never a whole-table fetch_all.
+
+        F091：AI 禁用与 rag_excluded 来源不进入语料（与 rebuild 的
+        _corpus_page 同一排除口径）。"""
+        stage, after = "rss", 0
         while True:
-            rows = await self._db.fetch_all(
-                "SELECT id, entry_ref, title, content_text FROM search_entries WHERE id > ? ORDER BY id LIMIT ?",
-                (after_id, _DOC_PAGE),
-            )
-            if not rows:
+            docs, next_after, exhausted = await self._corpus_page(stage, after)
+            if exhausted:
+                if stage == "rss":
+                    stage, after = "library", ""
+                    continue
                 break
-            after_id = int(rows[-1]["id"])
-            yield [
-                {
-                    "ref": str(row["entry_ref"]),
-                    "kind": "rss",
-                    "title": str(row["title"] or ""),
-                    "text": str(row["content_text"] or ""),
-                }
-                for row in rows
-            ]
-        after_ref = ""
-        while True:
-            rows = await self._db.fetch_all(
-                "SELECT ref, kind, title, body FROM search_library WHERE ref > ? ORDER BY ref LIMIT ?",
-                (after_ref, _DOC_PAGE),
-            )
-            if not rows:
-                break
-            after_ref = str(rows[-1]["ref"])
-            yield [
-                {
-                    "ref": str(row["ref"]),
-                    "kind": str(row["kind"]),
-                    "title": str(row["title"] or ""),
-                    "text": str(row["body"] or ""),
-                }
-                for row in rows
-            ]
+            after = next_after
+            if docs:
+                yield docs
 
     # -- incremental propagation (P0-07e) ------------------------------------
 
@@ -587,14 +875,15 @@ class RagService:
                     }
                 )
                 found.add(ref)
-        chunk_jobs: list[tuple[str, str, str, str]] = []
+        chunk_jobs: list[tuple[str, str, str, str, str]] = []
         for doc in documents:
+            doc_hash = doc_content_hash(doc["text"])
             for chunk in chunk_text(doc["text"], heading=doc["title"] or None):
-                chunk_jobs.append((doc["ref"], doc["kind"], doc["title"], chunk))
+                chunk_jobs.append((doc["ref"], doc["kind"], doc["title"], chunk, doc_hash))
         vectors: list[list[float]] = []
         if chunk_jobs:
             vectors = await self._embedder.embed(
-                [chunk for _ref, _kind, _title, chunk in chunk_jobs]
+                [chunk for _ref, _kind, _title, chunk, _h in chunk_jobs]
             )
             if any(len(vector) != MODEL_DIM for vector in vectors):
                 raise RagModelUnavailable("embedding 模型维度与索引不符。")
@@ -683,7 +972,7 @@ class RagService:
 
 def _write_index_sync(
     service: "RagService",
-    chunk_jobs: list[tuple[str, str, str, str]],
+    chunk_jobs: list[tuple[str, str, str, str, str]],
     vectors: list[list[float]],
     only_refs: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -693,7 +982,7 @@ def _write_index_sync(
     (``only_refs``): replace rows of exactly those refs. Chunks AND
     vectors commit together or not at all — a failure leaves the
     previous index intact. Module-level so tests can wrap it to prove
-    the rollback."""
+    the rollback. F100：每行记录其源文档正文 hash（content_hash）。"""
     if not service._ensure_vec_table():
         raise RagModelUnavailable("sqlite-vec 扩展不可用。")
     connection = service._vec_connection()
@@ -721,7 +1010,7 @@ def _write_index_sync(
             base = int(row["m"]) if row is not None else 0
             chunk_rows = []
             vec_rows = []
-            for offset, ((ref, kind, title, chunk), vector) in enumerate(
+            for offset, ((ref, kind, title, chunk, doc_hash), vector) in enumerate(
                 zip(chunk_jobs, vectors, strict=True), start=1
             ):
                 chunk_id = base + offset
@@ -736,11 +1025,12 @@ def _write_index_sync(
                         chunk,
                         serialize_vector(vector),
                         now,
+                        doc_hash,
                     )
                 )
                 vec_rows.append((chunk_id, serialize_vector(vector)))
             connection.executemany(
-                "INSERT INTO rag_chunks (chunk_id, ref, ord, model_id, kind, title, text, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO rag_chunks (chunk_id, ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 chunk_rows,
             )
             connection.executemany(
@@ -754,14 +1044,23 @@ def _write_index_sync(
     return {"chunks": len(chunk_jobs)}
 
 
-# -- streaming rebuild staging (Q-P0-01) --------------------------------------
+# -- streaming rebuild staging (Q-P0-01 / F093 pause) -------------------------
 
 
 def _stage_reset(service: "RagService") -> None:
     """Drop + recreate the staging table (start of a rebuild)."""
     connection = service._vec_connection()
     connection.execute("DROP TABLE IF EXISTS rag_rebuild_stage")
-    connection.execute("CREATE TABLE rag_rebuild_stage (ref TEXT NOT NULL, ord INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL)")
+    _stage_ensure(service)
+
+
+def _stage_ensure(service: "RagService") -> None:
+    """Create the staging table when absent (resume after a failure that
+    already discarded it — F093 keeps staged rows across pauses)."""
+    connection = service._vec_connection()
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS rag_rebuild_stage (ref TEXT NOT NULL, ord INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL, content_hash TEXT)"
+    )
 
 
 def _stage_discard(service: "RagService") -> None:
@@ -772,7 +1071,7 @@ def _stage_discard(service: "RagService") -> None:
 
 def _stage_rows(
     service: "RagService",
-    batch: list[tuple[str, str, str, str]],
+    batch: list[tuple[str, str, str, str, str]],
     vectors: list[list[float]],
     ord_state: dict[str, int],
 ) -> None:
@@ -784,12 +1083,12 @@ def _stage_rows(
     (found by the Round-1 fresh-eyes re-audit)."""
     connection = service._vec_connection()
     rows = []
-    for (ref, kind, title, chunk), vector in zip(batch, vectors, strict=True):
+    for (ref, kind, title, chunk, doc_hash), vector in zip(batch, vectors, strict=True):
         ord_ = ord_state.get(ref, 0)
         ord_state[ref] = ord_ + 1
-        rows.append((ref, ord_, kind, title, chunk, serialize_vector(vector)))
+        rows.append((ref, ord_, kind, title, chunk, serialize_vector(vector), doc_hash))
     connection.executemany(
-        "INSERT INTO rag_rebuild_stage (ref, ord, kind, title, text, embedding) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO rag_rebuild_stage (ref, ord, kind, title, text, embedding, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
 
@@ -808,7 +1107,7 @@ def _swap_staged_index(service: "RagService") -> None:
         connection.execute("BEGIN")
         connection.execute("DELETE FROM rag_vec")
         connection.execute("DELETE FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
-        connection.execute("INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at) SELECT ref, ord, ?, kind, title, text, embedding, ? FROM rag_rebuild_stage", (MODEL_ID, now))
+        connection.execute("INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) SELECT ref, ord, ?, kind, title, text, embedding, ?, content_hash FROM rag_rebuild_stage", (MODEL_ID, now))
         connection.execute("INSERT INTO rag_vec (chunk_id, embedding) SELECT chunk_id, embedding FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
         connection.execute("DROP TABLE rag_rebuild_stage")
         connection.commit()

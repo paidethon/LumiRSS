@@ -7,32 +7,17 @@
 import { useRef, useState } from 'react'
 import { Download, Trash2, Upload } from 'lucide-react'
 import { normalizeSettings, useAppSettings, type FilterRule } from '../../store/app-settings'
+import { matchesFilterRules } from '../../lib/feed-filter-match'
+
+export { matchesFilterRules }
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { cx } from '../ui/cx'
 
 /** 匹配引擎（OrigRead ArticleFilterEngine 语义：只匹配标题、忽略大小写、
  * 首条命中；feedId 命中优先于全局——显示层过滤在 EntryList 消费）。 */
-export function matchesFilterRules(
-  title: string,
-  rules: FilterRule[],
-  feedId: string | null,
-): FilterRule | null {
-  const feedRules = rules.filter((r) => r.enabled && r.feedId !== null && r.feedId === feedId)
-  const globalRules = rules.filter((r) => r.enabled && r.feedId === null)
-  for (const rule of [...feedRules, ...globalRules]) {
-    if (rule.type === 'keyword') {
-      if (title.toLowerCase().includes(rule.keyword.toLowerCase())) return rule
-    } else {
-      try {
-        if (new RegExp(rule.keyword, 'i').test(title)) return rule
-      } catch {
-        /* normalize 已保证可编译；防御 */
-      }
-    }
-  }
-  return null
-}
+// matchesFilterRules 移至 lib/feed-filter-match（EntryList 首屏只该带
+// 纯匹配逻辑，不该拖入整个设置页模块）；此处 re-export 兼容既有引用。
 
 export function FilterRulesSection() {
   const settings = useAppSettings((s) => s.settings)

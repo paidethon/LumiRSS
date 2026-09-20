@@ -15,7 +15,7 @@ import urllib.parse
 from collections.abc import Callable
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from lumirss.storage import Database
 from lumirss.util import utc_now as _utc_now
@@ -46,6 +46,13 @@ SUPPORTED_TRANSLATION_ENGINES = (
 )
 KEY_TRANSLATION_ENGINE = "translation.engine"
 KEY_LIBRETRANSLATE_URL = "translation.libretranslate_url"
+
+# F064：AI 配额（可空 = 不限）。window: "" | day | month；max_calls: 0..10000
+# （0 = 不限）。服务端本地时区窗口计数，见 ai_quota.py。
+KEY_QUOTA_WINDOW = "ai.quota_window"
+KEY_QUOTA_MAX_CALLS = "ai.quota_max_calls"
+SUPPORTED_QUOTA_WINDOWS = ("", "day", "month")
+MAX_QUOTA_CALLS = 10000
 
 MAX_MODEL_LENGTH = 200
 
@@ -119,6 +126,21 @@ def _validate_translation_language(value: str) -> str:
     return value
 
 
+def _validate_quota_window(value: str) -> str:
+    if value not in SUPPORTED_QUOTA_WINDOWS:
+        raise ValueError("quota window must be one of: (empty), day, month")
+    return value
+
+
+def _validate_quota_max_calls(value: int | str) -> str:
+    text = str(value).strip()
+    if not text.isdigit() or int(text) > MAX_QUOTA_CALLS:
+        raise ValueError(
+            f"quota max calls must be an integer 0..{MAX_QUOTA_CALLS} (0 = unlimited)"
+        )
+    return str(int(text))
+
+
 def _validate_translation_engine(value: str) -> str:
     if value not in SUPPORTED_TRANSLATION_ENGINES:
         raise ValueError(
@@ -142,6 +164,8 @@ _SETTING_SPECS: dict[str, tuple[str, _ErrorSink]] = {
     KEY_TRANSLATION_LANGUAGE: ("zh-CN", _validate_translation_language),
     KEY_TRANSLATION_ENGINE: (TRANSLATION_ENGINE_AI, _validate_translation_engine),
     KEY_LIBRETRANSLATE_URL: ("", _validate_base_url),
+    KEY_QUOTA_WINDOW: ("", _validate_quota_window),
+    KEY_QUOTA_MAX_CALLS: ("0", _validate_quota_max_calls),
 }
 
 
@@ -167,6 +191,9 @@ class AiSettingsUpdate(BaseModel):
     translationLanguage: Literal["zh-CN", "en"] | None = None
     translationEngine: Literal["ai", "libretranslate", "browser"] | None = None
     libretranslateUrl: str | None = None
+    # F064：用量限制（window: ""=不限/day/month；maxCalls: 0=不限,1..10000）。
+    quotaWindow: Literal["", "day", "month"] | None = None
+    quotaMaxCalls: int | None = Field(default=None, ge=0, le=MAX_QUOTA_CALLS)
 
 
 
@@ -202,6 +229,8 @@ class AiSettingsStore:
             ("translationLanguage", KEY_TRANSLATION_LANGUAGE),
             ("translationEngine", KEY_TRANSLATION_ENGINE),
             ("libretranslateUrl", KEY_LIBRETRANSLATE_URL),
+            ("quotaWindow", KEY_QUOTA_WINDOW),
+            ("quotaMaxCalls", KEY_QUOTA_MAX_CALLS),
         ):
             value = getattr(update, field)
             if value is None:

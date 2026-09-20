@@ -235,9 +235,19 @@ def test_favorites_view_marks_deleted_content_stale(client, db):
     assert resp.status_code == 204
     view = client.get("/api/v1/favorites").json()
     assert any(item["ref"] == bookmark_ref for item in view["library"])
-    # Delete the content: the favorite degrades to a stale row, never a
-    # silent drop (ADR 0004).
+    # F019 迁移：DELETE = 软删（回收站）——内容仍可解析，收藏不退化
+    # 为 stale（恢复窗口内链接不悬空）；永久删除后按 ADR 0004 退化为
+    # stale 行，绝不静默消失。
     client.delete(f"/api/v1/library/bookmarks/{uuid}")
+    view = client.get("/api/v1/favorites").json()
+    entry = next(
+        item for item in view["library"] if item["ref"] == bookmark_ref
+    )
+    assert entry["stale"] is False
+    purged = client.delete(
+        f"/api/v1/library/trash/{uuid}", params={"permanent": "true"}
+    )
+    assert purged.status_code == 204
     view = client.get("/api/v1/favorites").json()
     entry = next(
         item for item in view["library"] if item["ref"] == bookmark_ref

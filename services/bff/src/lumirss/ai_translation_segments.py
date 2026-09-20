@@ -51,6 +51,10 @@ from lumirss.ai_settings import (
     TRANSLATION_ENGINE_BROWSER,
     TRANSLATION_ENGINE_LIBRETRANSLATE,
 )
+from lumirss.ai_translation_revisions import (
+    SegmentRevision,
+    revision_map,
+)
 
 SEGMENTS_PROMPT_VERSION = "translation-segments-v1"
 
@@ -100,6 +104,10 @@ class SegmentState:
     translated_text: str | None = None
     failure_type: str | None = None
     cached: bool = False
+    # F062：手工修订（存在时 UI 优先展示；stale = 源段已变化）。
+    user_revision: str | None = None
+    revised_at: str | None = None
+    revision_stale: bool = False
 
 
 def normalize_block_text(text: str) -> str:
@@ -211,6 +219,34 @@ class SegmentTranslationService:
             return (TRANSLATION_ENGINE_LIBRETRANSLATE, "")
         return (TRANSLATION_ENGINE_AI, settings[KEY_MODEL])
 
+    @staticmethod
+    def _attach_revisions(
+        states: list[SegmentState],
+        revisions: dict[int, SegmentRevision],
+        hashes: dict[int, str],
+    ) -> list[SegmentState]:
+        """F062：把修订（按 index）附加到状态；stale = 修订锚定的源段
+        hash != 当前源段 hash（源文已更新——保留标记，不误删）。"""
+        attached: list[SegmentState] = []
+        for state in states:
+            revision = revisions.get(state.index)
+            if revision is not None:
+                attached.append(
+                    SegmentState(
+                        index=state.index,
+                        status=state.status,
+                        translated_text=state.translated_text,
+                        failure_type=state.failure_type,
+                        cached=state.cached,
+                        user_revision=revision.text,
+                        revised_at=revision.revised_at,
+                        revision_stale=revision.source_hash != hashes.get(state.index),
+                    )
+                )
+            else:
+                attached.append(state)
+        return attached
+
     async def lookup(
         self, entry_ref: str, blocks: list[SegmentInput],
         settings: dict[str, str] | None = None,
@@ -233,12 +269,20 @@ class SegmentTranslationService:
                 )
             else:
                 states.append(self._state_from_row(row, block.index, cached=True))
-        return states
+        # F062：只读路径也如实附带修订（stale 按当前源段 hash 比对）。
+        revisions = await revision_map(self._db, entry_ref)
+        return self._attach_revisions(
+            states, revisions, {b.index: block_hash(normalize_block_text(b.text)) for b in clean}
+        )
 
     async def generate(
-        self, entry_ref: str, blocks: list[SegmentInput]
+        self, entry_ref: str, blocks: list[SegmentInput],
+        *, overwrite_revisions: bool = False,
     ) -> list[SegmentState]:
-        """Explicit generation: bounded batches, per-block cache rows."""
+        """Explicit generation: bounded batches, per-block cache rows.
+
+        F062：默认保留已修订段（不重发、不覆盖）；显式
+        ``overwrite_revisions=True`` 才撤销修订并重新生成这些段。"""
         settings = await self._resolve_settings()
         engine = settings[KEY_TRANSLATION_ENGINE]
         if engine == TRANSLATION_ENGINE_BROWSER:
@@ -250,12 +294,22 @@ class SegmentTranslationService:
         provider, model = self._engine_identity(engine, settings)
         language = settings[KEY_TRANSLATION_LANGUAGE]
 
+        # F062：修订索引（默认重新生成跳过已修订段；显式覆盖时先撤销）。
+        revisions = await revision_map(self._db, entry_ref)
+        if overwrite_revisions and revisions:
+            from lumirss.ai_translation_revisions import clear_revision
+
+            for index in revisions:
+                await clear_revision(self._db, entry_ref, index)
+            revisions = {}
+
         # Serialize per article: duplicate generate flows for the same
         # entry would duplicate provider batches otherwise.
         lock = self._article_locks.lock_for(entry_ref)
         async with lock:
             cache: dict[int, SegmentState] = {}
             missing: list[SegmentInput] = []
+            preserved: dict[int, SegmentState] = {}
             for block in clean:
                 normalized = normalize_block_text(block.text)
                 row = await self._fetch_row(
@@ -265,6 +319,14 @@ class SegmentTranslationService:
                 if row is not None and row["status"] == "success":
                     cache[block.index] = self._state_from_row(
                         row, block.index, cached=True
+                    )
+                elif block.index in revisions:
+                    # F062：已修订段默认不再请求 provider（与既有「只重
+                    # 失败段」机制叠加——修订段视同已成功）。
+                    preserved[block.index] = self._state_from_row(
+                        row, block.index, cached=True
+                    ) if row is not None else SegmentState(
+                        index=block.index, status="not_generated"
                     )
                 else:
                     missing.append(block)
@@ -279,8 +341,10 @@ class SegmentTranslationService:
 
             states: list[SegmentState] = []
             for block in clean:
-                if block.index in cache:
-                    states.append(cache[block.index])
+                if block.index in cache or block.index in preserved:
+                    states.append(
+                        cache.get(block.index) or preserved[block.index]
+                    )
                     continue
                 normalized = normalize_block_text(block.text)
                 row = await self._fetch_row(
@@ -295,7 +359,11 @@ class SegmentTranslationService:
                     states.append(
                         self._state_from_row(row, block.index, cached=False)
                     )
-            return states
+            # F062：生成后按 index 附带修订（覆盖模式已清空 → 无修订）。
+            revisions = await revision_map(self._db, entry_ref)
+            return self._attach_revisions(
+                states, revisions, {b.index: block_hash(normalize_block_text(b.text)) for b in clean}
+            )
 
     # -- AI engine ---------------------------------------------------------
 

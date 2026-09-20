@@ -33,6 +33,8 @@ export function useOpmlImportFlow() {
   const [file, setFile] = useState<File | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [result, setResult] = useState<OpmlImportResult | null>(null)
+  // F002：逐项勾选（index 集合；预览到达时按 status 计算默认勾选）
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const previewMutation = useOpmlPreviewMutation()
   const importMutation = useOpmlImportMutation()
 
@@ -43,27 +45,66 @@ export function useOpmlImportFlow() {
     setFile(null)
     setLocalError(null)
     setResult(null)
+    setSelected(new Set())
     previewMutation.reset()
     importMutation.reset()
   }
 
-  function selectFile(selected: File) {
+  function selectFile(selectedFile: File) {
     setLocalError(null)
     setResult(null)
-    if (selected.size > OPML_MAX_BYTES) {
+    setSelected(new Set())
+    if (selectedFile.size > OPML_MAX_BYTES) {
       // 本地拦截：不发请求（BFF 侧同规则兜底）
       setFile(null)
       previewMutation.reset()
       setLocalError('OPML 文件超过 2 MiB 上限。')
       return
     }
-    setFile(selected)
-    previewMutation.mutate(selected)
+    setFile(selectedFile)
+    previewMutation.mutate(selectedFile, {
+      onSuccess: (previewData) => {
+        // F002：默认勾选 new + category_conflict；duplicate/invalid 默认不选
+        const defaults = new Set<number>()
+        for (const item of previewData.items ?? []) {
+          if (item.status === 'new' || item.status === 'category_conflict') {
+            defaults.add(item.index)
+          }
+        }
+        setSelected(defaults)
+      },
+    })
+  }
+
+  /** F002：切换单项勾选。 */
+  function toggleItem(index: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  /** F002：全选 / 全不选（以 items 全集为界）。 */
+  function toggleAll() {
+    const items = preview?.items ?? []
+    const allSelected = items.length > 0 && items.every((i) => selected.has(i.index))
+    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.index)))
+  }
+
+  /** F002：反选。 */
+  function invertSelection() {
+    const items = preview?.items ?? []
+    setSelected(new Set(items.filter((i) => !selected.has(i.index)).map((i) => i.index)))
   }
 
   function confirmImport() {
-    if (file === null || busy) return
-    importMutation.mutate(file, { onSuccess: (r) => setResult(r) })
+    if (file === null || busy || selected.size === 0) return
+    importMutation.mutate(
+      { file, selectedIndexes: [...selected] },
+      { onSuccess: (r) => setResult(r) },
+    )
   }
 
   const preview: OpmlImportPreview | null = previewMutation.data ?? null
@@ -84,6 +125,11 @@ export function useOpmlImportFlow() {
       error !== null && !previewMutation.isPending && !importMutation.isPending,
     previewPending: previewMutation.isPending,
     importPending: importMutation.isPending,
+    selected,
+    selectedCount: selected.size,
+    toggleItem,
+    toggleAll,
+    invertSelection,
     selectFile,
     confirmImport,
     reset,
@@ -91,18 +137,22 @@ export function useOpmlImportFlow() {
 }
 
 /** OPML 导出流程 hook（0014a Gate 1：设置「订阅与来源」与订阅管理页
- * 共用同一导出状态机；复用 BFF 代理下载，浏览器不接触 FreshRSS）。 */
+ * 共用同一导出状态机；复用 BFF 代理下载，浏览器不接触 FreshRSS）。
+ * F003：exportOnce 可携带 selection（仅导出所选订阅/分类）。 */
 export function useOpmlExportFlow() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
 
-  async function exportOnce() {
+  async function exportOnce(selection?: {
+    subscriptionRefs?: string[]
+    categoryIds?: string[]
+  }) {
     setError(null)
     setDone(false)
     setBusy(true)
     try {
-      await exportOpml()
+      await exportOpml(selection)
       setDone(true)
     } catch (e) {
       setError(managementErrorText(e).title)

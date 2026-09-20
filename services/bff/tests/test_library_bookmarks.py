@@ -93,10 +93,18 @@ def test_update_and_delete_bookmark(client):
     assert patched.json()["title"] == "原题"
 
     assert client.delete(f"/api/v1/library/bookmarks/{uuid}").status_code == 204
-    # Identity row is gone too — the ref no longer resolves.
+    # F019 迁移：DELETE = 软删（回收站）——身份行保留，ref 仍可解析
+    # （恢复窗口内不造成链接悬空）；重复删除 → 404。
     assert client.delete(f"/api/v1/library/bookmarks/{uuid}").status_code == 404
     resolve = client.post("/api/v1/resolve", json={"refs": [ref]})
-    assert resolve.json()["items"][0]["stale"] is True
+    assert resolve.json()["items"][0]["stale"] is False
+    # 永久删除（permanent=true）后 ref 才不再解析（stale=True）。
+    purged = client.delete(
+        f"/api/v1/library/trash/{uuid}", params={"permanent": "true"}
+    )
+    assert purged.status_code == 204
+    resolve_after = client.post("/api/v1/resolve", json={"refs": [ref]})
+    assert resolve_after.json()["items"][0]["stale"] is True
 
 
 def test_list_pagination_and_search(client):

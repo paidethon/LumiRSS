@@ -1,0 +1,41 @@
+{
+  "name": "E2E 预置文章源",
+  "items": [
+    {
+      "title": "文章 alpha",
+      "url": "https://fixtures.internal/seed/alpha",
+      "published": "2026-09-10T08:00:00Z",
+      "summary": "文章 alpha 的正文内容，用于 Reader 断言。包含足够的正文长度，供滚动与打印视图检查使用。"
+    },
+    {
+      "title": "文章 beta",
+      "url": "https://fixtures.internal/seed/beta",
+      "published": "2026-09-11T09:00:00Z",
+      "summary": "文章 beta 的正文内容。第二条种子，用于连续选择与已读收藏链路。"
+    },
+    {
+      "title": "文章 gamma",
+      "url": "https://fixtures.internal/seed/gamma",
+      "published": "2026-09-12T10:00:00Z",
+      "summary": "文章 gamma 的正文内容。第三条种子。"
+    },
+    {
+      "title": "文章 delta",
+      "url": "https://fixtures.internal/seed/delta",
+      "published": "2026-09-13T11:00:00Z",
+      "summary": "文章 delta 的正文内容。第四条种子。"
+    },
+    {
+      "title": "文章 epsilon",
+      "url": "https://fixtures.internal/seed/epsilon",
+      "published": "2026-09-14T12:00:00Z",
+      "summary": "文章 epsilon 的正文内容。第五条种子。"
+    },
+    {
+      "title": "文章 zeta",
+      "url": "https://fixtures.internal/seed/zeta",
+      "published": "2026-09-15T13:00:00Z",
+      "summary": "文章 zeta 的正文内容。第六条种子。"
+    }
+  ]
+}

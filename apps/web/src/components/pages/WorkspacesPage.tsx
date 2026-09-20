@@ -15,7 +15,9 @@
  */
 
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, FolderOpen, Loader2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Archive, ArrowDown, ArrowUp, FolderOpen, LayoutDashboard, Loader2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { MarkdownImportPanel } from '../MarkdownImportPanel'
 import {
   useCreateWorkspaceMutation,
   useDeleteWorkspaceMutation,
@@ -25,7 +27,14 @@ import {
   useWorkspaceContents,
   useWorkspaces,
 } from '../../api/queries'
-import { exportResearchPackMd } from '../../api/client'
+import { exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
+import { WorkspaceBoardView } from '../WorkspaceBoard'
+import {
+  ArchivedBar,
+  ResearchPackExportDialog,
+  SaveAsTemplateDialog,
+  TemplatesDialog,
+} from '../WorkspaceExtras'
 import type { ResolvedItem } from '../../api/types'
 import type { Workspace } from '../../api/types'
 import { Button } from '../ui/Button'
@@ -390,9 +399,32 @@ export default function WorkspacesPage() {
   // 渲染期派生，不进 effect（数据到达即生效，无二次渲染）。
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  // F020：Markdown 批量入库面板开关
+  const [noteImportOpen, setNoteImportOpen] = useState(false)
   // P0-10：重命名 / 删除（仅非保留工作区提供入口）。
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // F085：列表 / 看板视图切换。
+  const [view, setView] = useState<'list' | 'board'>('list')
+  // F083：模板入口。F088：ZIP 导出对话框。
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
+  const [zipExportOpen, setZipExportOpen] = useState(false)
+  // F084：归档动作与错误（409 protected_workspace 诚实展示）。
+  const [archiveError, setArchiveError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const archive = useMutation({
+    mutationFn: (id: string) => patchWorkspaceArchive(id, true),
+    onSuccess: async () => {
+      setArchiveError(null)
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      await queryClient.invalidateQueries({ queryKey: ['workspace-archive'] })
+      setSelectedId(null)
+    },
+    onError: (error) => {
+      setArchiveError(error instanceof Error ? error.message : '归档失败，请稍后重试。')
+    },
+  })
 
   const wsItems = workspaces.data?.items ?? []
   const effectiveSelectedId = selectedId ?? wsItems[0]?.id ?? null
@@ -418,8 +450,31 @@ export default function WorkspacesPage() {
             <Plus aria-hidden className="size-4" />
             新建工作区
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setTemplatesOpen(true)}>
+            模板
+          </Button>
+          {selectedWorkspace !== null && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={view === 'board'}
+              onClick={() => setView((v) => (v === 'board' ? 'list' : 'board'))}
+            >
+              <LayoutDashboard aria-hidden className="size-4" />
+              看板
+            </Button>
+          )}
           {selectedWorkspace !== null && !selectedWorkspace.reserved && (
-            <Menu
+            <>
+            <button
+                type="button"
+                aria-pressed={noteImportOpen}
+                onClick={() => setNoteImportOpen((v) => !v)}
+                className="min-h-7 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+              >
+                导入 Markdown
+              </button>
+              <Menu
               trigger={({ triggerProps }) => (
                 <IconButton
                   {...triggerProps}
@@ -437,6 +492,14 @@ export default function WorkspacesPage() {
                   </>
                 ) },
                 { key: 'export', content: '导出研究包（Markdown）' },
+                { key: 'export-zip', content: '导出研究包（ZIP，含快照）' },
+                { key: 'save-template', content: '保存为模板' },
+                { key: 'archive', content: (
+                  <>
+                    <Archive aria-hidden className="mr-2 inline size-3.5" />
+                    归档工作区
+                  </>
+                ) },
                 { key: 'delete', content: (
                   <>
                     <Trash2 aria-hidden className="mr-2 inline size-3.5" />
@@ -447,6 +510,9 @@ export default function WorkspacesPage() {
               onSelect={(key) => {
                 if (key === 'rename') setRenameOpen(true)
                 if (key === 'delete') setDeleteOpen(true)
+                if (key === 'save-template') setSaveTemplateOpen(true)
+                if (key === 'export-zip') setZipExportOpen(true)
+                if (key === 'archive') archive.mutate(selectedWorkspace.id)
                 if (key === 'export') {
                   void exportResearchPackMd(selectedWorkspace.id).then((text) => {
                     const blob = new Blob([text], { type: 'text/markdown' })
@@ -460,8 +526,15 @@ export default function WorkspacesPage() {
                 }
               }}
             />
+            </>
           )}
         </div>
+        {noteImportOpen && <MarkdownImportPanel onClose={() => setNoteImportOpen(false)} />}
+        {/* F084：归档列表入口（默认导航隐藏，此处显式可见 + 恢复）。 */}
+        <ArchivedBar />
+        {archiveError !== null && (
+          <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">{archiveError}</p>
+        )}
 
         {/* 工作区选择器 */}
         {workspaces.isPending ? (
@@ -530,7 +603,10 @@ export default function WorkspacesPage() {
             {selectedDescription}
           </p>
         ) : null}
-        {effectiveSelectedId !== null && !workspaces.isError && (
+        {/* 选中工作区的内容：看板（F085/F086）或列表 */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
+          <WorkspaceBoardView workspaceId={effectiveSelectedId} />
+        ) : effectiveSelectedId !== null && !workspaces.isError && (
           contents.isPending ? (
             <ul className="mt-3 flex flex-col gap-2" aria-label="工作区内容加载中">
               {Array.from({ length: 3 }, (_, i) => (
@@ -596,6 +672,15 @@ export default function WorkspacesPage() {
           onClose={() => setDeleteOpen(false)}
           onDeleted={() => setSelectedId(null)}
         />
+      )}
+      {templatesOpen && (
+        <TemplatesDialog onClose={() => setTemplatesOpen(false)} onCreated={(id) => setSelectedId(id)} />
+      )}
+      {saveTemplateOpen && selectedWorkspace !== null && (
+        <SaveAsTemplateDialog workspaceId={selectedWorkspace.id} onClose={() => setSaveTemplateOpen(false)} />
+      )}
+      {zipExportOpen && selectedWorkspace !== null && (
+        <ResearchPackExportDialog workspaceId={selectedWorkspace.id} onClose={() => setZipExportOpen(false)} />
       )}
     </div>
   )

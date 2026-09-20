@@ -17,16 +17,18 @@ import {
   Tags,
   Zap,
 } from 'lucide-react'
-import { useMemo, useState, memo } from 'react'
-import { useFeeds } from '../api/queries'
+import { Suspense, lazy, useMemo, useState, memo } from 'react'
+import { useFeeds, usePinnedViewCount, usePinnedViews } from '../api/queries'
 import type { Feed } from '../api/types'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import type { ContentScope } from '../lib/navigation'
 import { requestOpenSettings } from './settings/settings-bridge'
 import { Skeleton } from './ui/Skeleton'
-import AddSourceDialog from './AddSourceDialog'
+const AddSourceDialog = lazy(() => import('./AddSourceDialog'))
 import SidebarHeader from './SidebarHeader'
 import { cx } from './ui/cx'
+import RecentReadsInline from './RecentReadsInline'
+import ContinueReadingCard from './ContinueReadingCard'
 
 /** Sidebar — 信息架构分组导航（0011 阻断修复：真实分类树 + 四级 Scope）。
  *
@@ -197,6 +199,9 @@ function RssTree({
 
   return (
     <div>
+      {/* F035：固定视图块（pin_order 顺序 + 服务端真实计数徽标；查询失败显示 '—'） */}
+      <PinnedViewsBlock />
+
       {/* RSS 行：主区域（→ 全部 RSS）+ chevron（→ tree 展开/收起） */}
       <div
         className={cx(
@@ -386,7 +391,7 @@ function RssTree({
                         style={{ backgroundColor: feedColor(feed.feedUrl) }}
                       />
                       <span className="truncate" title={feed.title}>
-                        {feed.title}
+                        <span data-privacy-text="">{feed.title}</span>
                       </span>
                     </NavItem>
                   ))}
@@ -421,11 +426,18 @@ function Sidebar({
     <nav className="flex flex-col gap-1 p-2.5 max-lg:gap-1" aria-label="主导航">
       <SidebarHeader />
       {isDesktop && (
-        <AddSourceDialog
-          open={addSourceOpen}
-          onClose={() => setAddSourceOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <AddSourceDialog
+            open={addSourceOpen}
+            onClose={() => setAddSourceOpen(false)}
+          />
+        </Suspense>
       )}
+
+      {/* F056 继续阅读（服务端跨设备；点击打开文章并定位段落） */}
+      {isDesktop && <ContinueReadingCard />}
+      {/* F057 最近打开（桌面折叠区；与移动端 RecentReads 共用真源） */}
+      {isDesktop && <RecentReadsInline />}
 
       {/* ===== 信息来源 ===== */}
       <div className="flex flex-col gap-0.5" role="group" aria-label="信息来源">
@@ -668,3 +680,51 @@ function Sidebar({
 }
 
 export default memo(Sidebar)
+
+/** F035：单个固定视图行（实时计数徽标；失败态诚实显示 '—' 而非 0）。 */
+function PinnedViewRow({ id, name }: { id: string; name: string }) {
+  const count = usePinnedViewCount(id)
+  const label =
+    count.isPending || count.isError || (count.data?.error ?? null) !== null
+      ? '—'
+      : String(count.data?.count ?? 0)
+  return (
+    <button
+      type="button"
+      data-lumi-pinned-view=""
+      onClick={() => {
+        window.dispatchEvent(new CustomEvent('lumirss-navigate-search'))
+      }}
+      className={cx(
+        'flex min-h-8 w-full items-center gap-2 rounded-[var(--lumi-radius-md)] px-2.5 text-left text-sm',
+        'py-1 transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] max-lg:min-h-11',
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span
+        className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 text-[11px] text-[var(--lumi-text-tertiary)]"
+        data-lumi-pinned-count=""
+      >
+        {label}
+      </span>
+    </button>
+  )
+}
+
+/** F035：固定视图块（无固定视图时零渲染）。 */
+function PinnedViewsBlock() {
+  const pinned = usePinnedViews()
+  if (pinned.isPending || pinned.isError) return null
+  const items = pinned.data?.items ?? []
+  if (items.length === 0) return null
+  return (
+    <div className="mt-1 flex flex-col gap-0.5" data-lumi-pinned-views="">
+      <p className="px-2.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+        固定视图
+      </p>
+      {items.map((view) => (
+        <PinnedViewRow key={view.id} id={view.id} name={view.name} />
+      ))}
+    </div>
+  )
+}

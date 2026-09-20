@@ -36,9 +36,11 @@ from lumirss.agent_store import (
 )
 from lumirss.models import (
     AgentApprovalDecision,
+    AgentBranchRequest,
     AgentMessageCreate,
     AgentThread,
     AgentThreadListResponse,
+    AgentThreadUpdate,
 )
 from lumirss.sources import resolve_item
 
@@ -242,3 +244,218 @@ async def stream_events(thread_id: str, request: Request, after: int = 0):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------------------------------------------------------------------------
+# W5: F094 范围 / F095 搜索 / F096 导出 / F097 预演 / F099 分支
+# ---------------------------------------------------------------------------
+
+
+def _session_store(request: Request):
+    from lumirss.agent_session import AgentSessionStore
+
+    return AgentSessionStore(request.app.state.db, _get_agent_store(request))
+
+
+@router.get("/api/v1/agent/threads/search")
+async def search_threads(request: Request, q: str):
+    """F095：会话消息搜索（每线程扫描 ≤200 条、总结果 ≤50）。"""
+    from lumirss.agent_session import SearchInvalid
+
+    try:
+        items = await _session_store(request).search_messages(q)
+    except SearchInvalid as exc:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "invalid_search_query", "message": str(exc)}
+            },
+        )
+    return {"items": items, "truncated": len(items) >= 50}
+
+
+@router.patch("/api/v1/agent/threads/{thread_id}")
+async def update_thread_settings(
+    thread_id: str, payload: AgentThreadUpdate, request: Request
+):
+    """F094/F098：会话设置（scope / toolPolicy / 标题）。下轮生效。"""
+    store = _session_store(request)
+    try:
+        settings = await store.update_settings(
+            thread_id,
+            title=payload.title,
+            scope=None if payload.clearScope else payload.scope,
+            tool_policy=(
+                None if payload.clearToolPolicy else payload.toolPolicy
+            ),
+        )
+    except KeyError as exc:
+        raise ThreadNotFound("会话不存在。") from exc
+    return settings
+
+
+@router.post("/api/v1/agent/threads/{thread_id}/branch")
+async def branch_thread(
+    thread_id: str, payload: AgentBranchRequest, request: Request
+):
+    """F099：从指定消息分支（可见上下文快照；工具不重放、审批不复制）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.agent_session import AgentSessionStore, BranchInvalid
+
+    store = AgentSessionStore(request.app.state.db, _get_agent_store(request))
+    try:
+        result = await store.branch_thread(thread_id, payload.messageIndex)
+    except KeyError as exc:
+        raise ThreadNotFound("会话不存在。") from exc
+    except BranchInvalid as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "invalid_branch_request", "message": str(exc)}
+            },
+        )
+    thread = await _get_agent_store(request).get_thread(result["threadId"])
+    return {
+        "thread": thread,
+        "branchOf": result["branchOf"],
+        "copiedMessages": result["copiedMessages"],
+        "truncated": result["truncated"],
+    }
+
+
+@router.get("/api/v1/agent/threads/{thread_id}/export")
+async def export_thread(
+    thread_id: str, request: Request, rounds: int = 5, format: str = "md"
+):
+    """F096：会话导出（角色轮次 + 工具/审批标注 + 机密剥离）。"""
+    from urllib.parse import quote
+
+    from fastapi.responses import JSONResponse, Response
+
+    from lumirss.agent_export import ExportInvalid
+    from lumirss.agent_export import export_thread as build_export
+
+    store = _get_agent_store(request)
+    try:
+        thread, markdown = await build_export(store, thread_id, rounds=rounds)
+    except KeyError as exc:
+        raise ThreadNotFound("会话不存在。") from exc
+    except ExportInvalid as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "invalid_export_request", "message": str(exc)}
+            },
+        )
+    if format != "md":
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_export_request",
+                    "message": "format 仅支持 md。",
+                }
+            },
+        )
+    filename = f"agent-thread-{thread_id[:8]}.md"
+    quoted = quote(filename)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
+            )
+        },
+    )
+
+
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/preview"
+)
+async def preview_approval(
+    thread_id: str, approval_id: str, request: Request
+):
+    """F097：写操作预演（零业务写入；预演不改变审批流）。"""
+    from datetime import datetime, timedelta
+
+    from fastapi.responses import JSONResponse
+
+    from lumirss.agent_export import _redact
+    from lumirss.agent_store import APPROVAL_TTL_MINUTES
+    from lumirss.agent_tools import DryRunUnsupported
+
+    from ..deps import _get_agent_dry_run
+
+    row = await _session_store(request).get_approval_row(thread_id, approval_id)
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {"type": "approval_invalid", "message": "批准记录不存在。"}
+            },
+        )
+    if not row["hashOk"]:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "args_mismatch",
+                    "message": "审批参数已被篡改，预演拒绝。",
+                }
+            },
+        )
+    # F097：过期审批预演 → 410（诚实；批准同样会失败）。
+    created = datetime.fromisoformat(row["createdAt"])
+    expired = (
+        row["status"] == "expired"
+        or (
+            row["status"] == "pending"
+            and datetime.fromisoformat(
+                __import__("lumirss.util", fromlist=["utc_now"]).utc_now()
+            )
+            - created
+            > timedelta(minutes=APPROVAL_TTL_MINUTES)
+        )
+    )
+    if expired:
+        return JSONResponse(
+            status_code=410,
+            content={
+                "error": {"type": "approval_expired", "message": "批准已超时。"}
+            },
+        )
+    if row["status"] != "pending":
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "approval_invalid",
+                    "message": "批准记录已被处理。",
+                }
+            },
+        )
+    dry_run = _get_agent_dry_run(request)
+    try:
+        preview = await dry_run(row["tool"], row["args"])
+    except DryRunUnsupported:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "dry_run_unsupported",
+                    "message": "只读工具没有预演。",
+                }
+            },
+        )
+    return {
+        "approvalId": row["approvalId"],
+        "tool": row["tool"],
+        "target": preview.get("target"),
+        "changes": _redact(preview.get("changes") or []),
+        "uncertain": preview.get("uncertain") or [],
+        "note": "预演不执行；批准后按审批行参数执行。",
+    }

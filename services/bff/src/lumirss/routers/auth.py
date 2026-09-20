@@ -151,3 +151,38 @@ async def change_password(
     response.headers["Set-Cookie"] = build_session_cookie(raw_token, _max_age_seconds())
     response.headers["Cache-Control"] = "no-store"
     return AuthStatus(authenticated=True, expiresAt=_iso(expires_at))
+
+
+# -- F038 会话管理界面 --------------------------------------------------------
+
+
+@router.get("/api/v1/auth/sessions", response_model_exclude_none=True)
+async def list_auth_sessions(request: Request) -> list[dict[str, object]]:
+    """活跃会话（当前标记「本机」）；响应绝不含 token/hash 字段。"""
+    from lumirss.middleware import parse_session_cookie
+
+    raw_token = parse_session_cookie(request.headers.raw)
+    sessions = await _auth_store(request).list_sessions(current_token=raw_token)
+    return sessions
+
+
+@router.delete("/api/v1/auth/sessions/{session_id}", status_code=204)
+async def revoke_auth_session(session_id: str, request: Request) -> Response:
+    """撤销一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。"""
+    import hashlib as _hashlib
+
+    from lumirss.middleware import clear_session_cookie, parse_session_cookie
+
+    store = _auth_store(request)
+    raw_token = parse_session_cookie(request.headers.raw)
+    deleted = await store.revoke_session_by_id(session_id)
+    if not deleted:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "session_not_found", "message": "会话不存在或已过期。"}},
+        )
+    headers: dict[str, str] = {"Cache-Control": "no-store"}
+    if raw_token is not None and _hashlib.sha256(raw_token.encode()).hexdigest()[:8] == session_id:
+        # 撤销的是当前会话：等价登出，把 cookie 一并作废。
+        headers["Set-Cookie"] = clear_session_cookie()
+    return Response(status_code=204, headers=headers)

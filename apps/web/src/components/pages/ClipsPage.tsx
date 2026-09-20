@@ -28,10 +28,14 @@ import {
 } from '../../api/queries'
 import type { Clip, ClipFetchArticleResult } from '../../api/types'
 import { formatTimestamp } from '../../lib/date-format'
+import { LibraryTrashPanel } from '../LibraryTrashPanel'
 import { safeExternalHttpUrl } from '../../lib/safe-external-http-url'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
+import { ClipRevisionBadge, ClipRevisionDialog, safeOriginalHtml } from '../ClipRevisionDialog'
+import { BatchEditDialog } from '../BatchEditDialog'
+import { CheckLinksDialog } from '../CheckLinksDialog'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
@@ -58,8 +62,18 @@ const inputCls = cx(
 )
 
 /** 剪藏行：标题按钮（打开阅读 Dialog）+ 安全外链（绝对 http/https 才
- * 渲染）+ url / byline / 时间 + 行内立即删除。 */
-function ClipRow({ clip, onOpen }: { clip: Clip; onOpen: (clipRef: string) => void }) {
+ * 渲染）+ url / byline / 时间 + 多选（F081/F087）+ 行内立即删除。 */
+function ClipRow({
+  clip,
+  onOpen,
+  selected,
+  onToggleSelect,
+}: {
+  clip: Clip
+  onOpen: (clipRef: string) => void
+  selected: boolean
+  onToggleSelect: (ref: string) => void
+}) {
   const del = useDeleteClipMutation()
   const safeUrl = safeExternalHttpUrl(clip.url)
 
@@ -70,6 +84,13 @@ function ClipRow({ clip, onOpen }: { clip: Clip; onOpen: (clipRef: string) => vo
         className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3.5"
       >
         <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(clip.ref)}
+            aria-label={`选择剪藏：${clip.title}`}
+            className="mt-1 size-4 shrink-0 accent-[var(--lumi-accent)]"
+          />
           <div className="min-w-0 flex-1">
             <button
               type="button"
@@ -130,9 +151,17 @@ function ClipRow({ clip, onOpen }: { clip: Clip; onOpen: (clipRef: string) => vo
 }
 
 /** 剪藏阅读 Dialog：服务端 Detail 的 contentHtml 再次过 DOMPurify 后
- * 注入（提取时已清洗一次，渲染前是第二道边界）；无正文时回退纯文本。 */
+ * 注入（提取时已清洗一次，渲染前是第二道边界）；无正文时回退纯文本。
+ * F089：已修订徽标 + 查看原始版本 + 修订正文入口。 */
 function ClipReadDialog({ clipRef, onClose }: { clipRef: string; onClose: () => void }) {
   const detail = useClipDetail(clipRef)
+  const [revising, setRevising] = useState(false)
+  const [viewingOriginal, setViewingOriginal] = useState(false)
+  // 生成的 ClipDetail 类型尚未含 W5 字段（api:generate 由收口统一跑）；
+  // 此处按 BFF 实际 JSON 读取（与 ClipDetailW5 同形）。
+  const w5 = detail.data as unknown as
+    | { revised: { revisedAt: string; note: string | null } | null; original: Record<string, unknown>; contentHtml?: string }
+    | undefined
 
   return (
     <Dialog
@@ -141,12 +170,43 @@ function ClipReadDialog({ clipRef, onClose }: { clipRef: string; onClose: () => 
       title={detail.data?.title ?? '剪藏'}
       panelClassName="max-w-2xl"
       footer={
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          关闭
-        </Button>
+        <div className="flex w-full items-center gap-2">
+          {w5?.revised != null && (
+            <ClipRevisionBadge
+              clipRef={clipRef}
+              revised={w5.revised}
+              viewingOriginal={viewingOriginal}
+              onToggleOriginal={() => setViewingOriginal((v) => !v)}
+            />
+          )}
+          <div className="ml-auto flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setRevising(true)}>
+              修订正文
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              关闭
+            </Button>
+          </div>
+        </div>
       }
     >
-      {detail.isPending ? (
+      {revising && <ClipRevisionDialog clipRef={clipRef} onClose={() => setRevising(false)} />}
+      {viewingOriginal && w5?.original != null ? (
+        <div className="max-h-[70vh] overflow-y-auto">
+          <p className="mb-2 text-xs text-[var(--lumi-text-tertiary)]">原始版本（不可变；不入搜索索引）</p>
+          <article
+            className={cx(
+              'text-sm leading-relaxed text-[var(--lumi-text-primary)]',
+              '[&_a]:text-[var(--lumi-accent-text)] [&_a]:underline [&_a]:underline-offset-2',
+              '[&_blockquote]:border-l-2 [&_blockquote]:border-[var(--lumi-border)] [&_blockquote]:pl-3',
+              '[&_img]:max-w-full [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6',
+              '[&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-[var(--lumi-radius-md)]',
+              '[&_pre]:bg-[var(--lumi-surface-selected)] [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6',
+            )}
+            dangerouslySetInnerHTML={{ __html: safeOriginalHtml(w5.original) }}
+          />
+        </div>
+      ) : detail.isPending ? (
         <div className="flex flex-col gap-2" aria-label="剪藏内容加载中">
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-24 w-full" />
@@ -192,8 +252,22 @@ export default function ClipsPage() {
       return ''
     }
   })
+  const [trashOpen, setTrashOpen] = useState(false)
   const [phase, setPhase] = useState<ClipPhase>({ kind: 'idle' })
   const [readingRef, setReadingRef] = useState<string | null>(null)
+  // F081/F087：多选批量操作（复用书签页同款对话框）。
+  const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
+  const [batchEditOpen, setBatchEditOpen] = useState(false)
+  const [checkLinksOpen, setCheckLinksOpen] = useState(false)
+
+  function toggleSelect(ref: string) {
+    setSelectedRefs((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }
 
   const list = useClips()
   const clipFetch = useClipFetchMutation()
@@ -271,8 +345,32 @@ export default function ClipsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
-        {/* 头部：标题 + 剪藏表单 */}
-        <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">网页剪藏</h1>
+        {/* 头部：标题 + 回收站开关 + 多选批量操作（F081/F087） + 剪藏表单 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-base font-semibold text-[var(--lumi-text-primary)]">网页剪藏</h1>
+          {selectedRefs.size > 0 && (
+            <>
+              <span data-selection-count="" className="text-xs text-[var(--lumi-text-secondary)]">
+                已选 {selectedRefs.size} 条
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => setBatchEditOpen(true)}>
+                批量编辑
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setCheckLinksOpen(true)}>
+                检查链接
+              </Button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-pressed={trashOpen}
+            onClick={() => setTrashOpen((v) => !v)}
+            className="ml-auto min-h-7 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-1 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]"
+          >
+            回收站
+          </button>
+        </div>
+        {trashOpen && <LibraryTrashPanel />}
 
         <form
           className="mt-2.5 flex items-center gap-2"
@@ -428,7 +526,13 @@ export default function ClipsPage() {
           <>
             <ul className="mt-3 flex flex-col gap-2" aria-label="剪藏列表">
               {clips.map((clip) => (
-                <ClipRow key={clip.ref} clip={clip} onOpen={setReadingRef} />
+                <ClipRow
+                  key={clip.ref}
+                  clip={clip}
+                  onOpen={setReadingRef}
+                  selected={selectedRefs.has(clip.ref)}
+                  onToggleSelect={toggleSelect}
+                />
               ))}
             </ul>
             {hasNextPage && (
@@ -446,6 +550,14 @@ export default function ClipsPage() {
           </>
         )}
       </div>
+
+      {/* F081/F087：批量编辑 / 检查链接（与书签页同款对话框；零 FreshRSS/Vault 接触） */}
+      {batchEditOpen && selectedRefs.size > 0 && (
+        <BatchEditDialog refs={[...selectedRefs]} onClose={() => { setBatchEditOpen(false); setSelectedRefs(new Set()) }} />
+      )}
+      {checkLinksOpen && selectedRefs.size > 0 && (
+        <CheckLinksDialog refs={[...selectedRefs]} onClose={() => { setCheckLinksOpen(false); setSelectedRefs(new Set()) }} />
+      )}
 
       {/* 阅读视图（单实例；key 保证切换剪藏时状态重置） */}
       {readingRef !== null && (

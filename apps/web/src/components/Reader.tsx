@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowUp, ChevronDown, ChevronUp, History, Pause, Play, RefreshCw, Square } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useEntryDetail, useEntryStateMutation } from '../api/queries'
 import { ApiError } from '../api/client'
+import { listSourceOverrides } from '../api/client'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import {
@@ -30,14 +32,20 @@ import {
   SPEECH_MAX_CHARS,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
-import ArticleConversation from './ArticleConversation'
-import ReaderHeader from './ReaderHeader'
-import ReaderPlaceholder from './ReaderPlaceholder'
-import ReaderSummary from './ReaderSummary'
-import ProvenanceCard from './ProvenanceCard'
-import EntryNotesBacklinks from './EntryNotesBacklinks'
+const ReaderHeader = lazy(() => import('./ReaderHeader'))
 import ReaderTranslation from './ReaderTranslation'
+// bundle guard：摘要/来源/反链/对话面板非正文首帧结构（各自已有局部
+// Suspense 边界 / 条件挂载）——lazy 分包，正文渲染路径仅
+// ReaderTranslation/ArticleContent 保持静态。
+const ArticleConversation = lazy(() => import('./ArticleConversation'))
+const ReaderSummary = lazy(() => import('./ReaderSummary'))
+const ProvenanceCard = lazy(() => import('./ProvenanceCard'))
+const EntryNotesBacklinks = lazy(() => import('./EntryNotesBacklinks'))
+const EnclosurePlayer = lazy(() => import('./EnclosurePlayer').then((m) => ({ default: m.EnclosurePlayer })))
+import ReaderPlaceholder from './ReaderPlaceholder'
+import { useReadingProgressReporter } from '../lib/reading-progress-reporter'
 import ReaderProgress from './ReaderProgress'
+import { isPlayableEnclosure } from '../lib/enclosure'
 import { lazy, Suspense } from 'react'
 // Bundle guard：查找条/批注层/行辅助线非首读必需——懒加载分包
 // （查找条仅在工具栏打开时可见，Suspense 瞬时 null 无感）。
@@ -48,10 +56,17 @@ const AnnotationsLayer = lazy(() =>
 const ReadingRuler = lazy(() =>
   import('./ReadingRuler').then((m) => ({ default: m.ReadingRuler })),
 )
+const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
+const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
+const QuizPanel = lazy(() => import('./QuizPanel').then((m) => ({ default: m.QuizPanel })))
+const KnowledgeCardsPanel = lazy(() => import('./KnowledgeCardsPanel').then((m) => ({ default: m.KnowledgeCardsPanel })))
+const SearchHitsChip = lazy(() => import('./SearchHitsChip').then((m) => ({ default: m.SearchHitsChip })))
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
+import { useIsMobile } from '../lib/use-is-mobile'
+import { readerStyleCssVars, resolveSourceReaderStyle } from '../lib/source-reader-style'
 
 /** 段落锚点候选：正文容器内的常见内容元素（文档序遍历，取视口线上方
  * 最近的一个作为位置锚点）。 */
@@ -172,6 +187,19 @@ function AutoScrollChip({
  * - F25 回到顶部 / 返回刚才位置（>600px 且未到底时出现；恢复滚动
  *   先 noteProgrammaticScroll 豁免，不计主动推进）；
  * - 专注阅读（会话级开关；视口中心块标记，其余降透明度）。 */
+/** F011：当前 Entry 的可播放 enclosure 列表（无附件 → 零渲染）。 */
+function EnclosurePlayers({ detail }: { detail: { entryRef: string; enclosure?: { href: string; type?: string | null }[] | null } }) {
+  const items = (detail.enclosure ?? []).filter((item) => isPlayableEnclosure(item))
+  if (items.length === 0) return null
+  return (
+    <div className="mb-3 flex flex-col gap-2">
+      {items.map((item) => (
+        <EnclosurePlayer key={item.href} enclosure={item} entryRef={detail.entryRef} />
+      ))}
+    </div>
+  )
+}
+
 export default function Reader() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const selectEntry = useReaderUi((s) => s.selectEntry)
@@ -180,6 +208,30 @@ export default function Reader() {
   const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
+  // F055 消费端：按 entry 的 feed 匹配 source_overrides.readerStyle
+  // （fontSize/lineHeight/width 三键，全局仍是基础、覆盖仅这三键；
+  // width 移动端忽略）。查询随 detail 有 feedUrl 才启用。
+  const isMobile = useIsMobile()
+  const detailFeedUrl = data?.feedUrl ?? null
+  const overridesQuery = useQuery({
+    queryKey: ['source-overrides'],
+    queryFn: async () => {
+      try {
+        return await listSourceOverrides()
+      } catch {
+        // 覆盖是增强能力：拿不到（网络/接口异常）→ 诚实退回全局样式。
+        return { items: [] }
+      }
+    },
+    enabled: detailFeedUrl !== null,
+    staleTime: 60_000,
+  })
+  const sourceStyleVars = readerStyleCssVars(
+    resolveSourceReaderStyle(detailFeedUrl, overridesQuery.data?.items, { isMobile }),
+  )
+  // F056：阅读进度上报（15s 节流 + 仅页面可见时；切文自动换 ref）。
+  // 无条件调用（Hooks 规则）；entryRef 为 null 时 hook 内部直接跳过。
+  useReadingProgressReporter(data?.entryRef ?? null)
   // 0016：AI 对话面板开关（纯 UI 状态；面板内容跟随当前文章）。
   const [aiConversationOpen, setAiConversationOpen] = useState(false)
   // Gate：语言视图（原文/双语/仅译文）——Reader 层持有，工具栏与内容区
@@ -207,6 +259,8 @@ export default function Reader() {
   /** F20/R05：正文容器 ref（AnnotationsLayer 选区监听 / ReadingRuler
    * 指针跟随用；与 scrollRef 同一 DOM 节点，通过双写保持同步）。 */
   const articleScrollRef = useRef<HTMLDivElement | null>(null)
+  // F054：正文容器（收集文中链接）；F048：提取失败徽标状态。
+  const contentRef = useRef<HTMLElement | null>(null)
 
   // P0-2：正文读到底自动已读（与列表划过标读、位置保存严格区分）。
   const stateMutation = useEntryStateMutation()
@@ -273,6 +327,8 @@ useEffect(() => {
 
 // F13：文内查找条开关。
 const [findOpen, setFindOpen] = useState(false)
+  // F054：文中链接面板
+  const [linksOpen, setLinksOpen] = useState(false)
 // 专注阅读：会话级开关（settings store 无此键；Aa 面板经 props 切换）。
 const [focusMode, setFocusMode] = useState(false)
 const focusModeRef = useRef(focusMode)
@@ -584,10 +640,19 @@ const handleScroll = useCallback(() => {
     <div className="relative h-full bg-[var(--lumi-reader-bg)]">
       {/* F11：阅读进度条（滚动容器顶部；自挂原生 passive 监听） */}
       <ReaderProgress getContainer={getScrollContainer} enabled={readerShowReadingProgress} />
-      {/* F13：文内查找条（工具栏 Search 按钮打开；Escape/× 关闭清高亮） */}
+      {/* F072：搜索命中定位 chip（命中 N 处/下一处；正文已变化 → 诚实降级）。
+          局部 Suspense 边界：lazy 首帧挂起只影响 chip 本身，绝不把
+          Reader 主体（含静态哨兵结构）拖进挂起态。 */}
       <Suspense fallback={null}>
-        <ArticleFindBar open={findOpen} onClose={() => setFindOpen(false)} getRoot={getFindRoot} />
+        <SearchHitsChip entryRef={detailEntryRef} getRoot={getFindRoot} detailReady={!isPending && !isError} />
       </Suspense>
+      {/* F13：文内查找条（工具栏 Search 按钮打开；Escape/× 关闭清高亮） */}
+      {(findOpen || linksOpen) && (
+        <Suspense fallback={null}>
+          <ArticleFindBar open={findOpen} onClose={() => setFindOpen(false)} getRoot={getFindRoot} />
+          {linksOpen && <ArticleLinksPanel containerRef={contentRef} onClose={() => setLinksOpen(false)} />}
+        </Suspense>
+      )}
       {/* 0010 Gate A：正文宽度消费 --lumi-reader-content-width（默认 46rem
           ≈ 736px，设置中心可调）；0017：页面左右边距消费
           --lumi-reader-page-margin（.lumi-reader-article 连续值，
@@ -603,45 +668,82 @@ const handleScroll = useCallback(() => {
       >
       <article
         className="lumi-reader lumi-reader-article mx-auto py-6"
-        style={{
-          maxWidth: 'var(--lumi-reader-content-width, 46rem)',
-          paddingBottom: 'max(1.5rem, var(--safe-bottom))',
-        }}
+        style={
+          {
+            maxWidth: 'var(--lumi-reader-content-width, 46rem)',
+            paddingBottom: 'max(1.5rem, var(--safe-bottom))',
+            // F055：per-source 覆盖以内联变量作用于本篇（未覆盖的键
+            // 继续继承根节点全局值；无覆盖时空对象零影响）。
+            ...sourceStyleVars,
+          } as CSSProperties
+        }
       >
         {/* key=entryRef：切换 Entry = 组件重挂载，旧 mutation 的
             pending / error UI 不泄漏到新 Entry。（三处 key 必须互不相同，
             React 兄弟节点不允许重复 key。） */}
-        <ReaderHeader
-          key={`header-${detail.entryRef}`}
-          detail={detail}
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          onOpenAiConversation={() => setAiConversationOpen(true)}
-          onOpenFind={() => setFindOpen(true)}
-          collectSpeechText={collectSpeechText}
-          autoScrollState={autoScroll}
-          onAutoScrollToggle={() =>
-            setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))
-          }
-          focusMode={focusMode}
-          onFocusModeChange={setFocusMode}
-        />
+        <Suspense fallback={null}>
+          <ReaderHeader
+            key={`header-${detail.entryRef}`}
+            detail={detail}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            onOpenAiConversation={() => setAiConversationOpen(true)}
+            onOpenFind={() => setFindOpen(true)}
+            onOpenLinks={() => setLinksOpen(true)}
+            collectSpeechText={collectSpeechText}
+            autoScrollState={autoScroll}
+            onAutoScrollToggle={() =>
+              setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))
+            }
+            focusMode={focusMode}
+            onFocusModeChange={setFocusMode}
+          />
+        </Suspense>
         {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
             AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
             pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
-        <ReaderSummary key={`summary-${detail.entryRef}`} entryRef={detail.entryRef} />
+        <Suspense fallback={null}>
+        <ReaderSummary
+          key={`summary-${detail.entryRef}`}
+          entryRef={detail.entryRef}
+          articleTitle={detail.title}
+          articleText={detail.contentText}
+        />
+        </Suspense>
         {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
+        <Suspense fallback={null}>
         <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* F011：enclosure 播放器（audio/video 附件；显式开始，禁止 autoplay） */}
+        <Suspense fallback={null}>
+          <EnclosurePlayers key={`enclosures-${detail.entryRef}`} detail={detail} />
+        </Suspense>
         {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
+        <Suspense fallback={null}>
         <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* F069：文章阅读自测（生成→作答→评分→再来一次） */}
+        <Suspense fallback={null}>
+        <QuizPanel key={`quiz-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* F070：提取知识卡片（预览→选择编辑→保存） */}
+        <Suspense fallback={null}>
+        <KnowledgeCardsPanel key={`cards-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* F021：手工关联内容（双向列表 + 解除 + 关联选择；无 AI 参与） */}
+        <Suspense fallback={null}>
+        <ItemRelationsPanel key={`relations-${detail.entryRef}`} itemRef={`rss:${detail.entryRef}`} />
+        </Suspense>
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
             P0-11：注册浏览器引擎的手势启动回调（点击 → 直接编排）。 */}
-        <ReaderTranslation
+        <Suspense fallback={null}>
+                <ReaderTranslation
           key={`translation-${detail.entryRef}`}
           detail={detail}
           viewMode={viewMode}
           registerTranslationStart={registerTranslationStart}
         />
+        </Suspense>
         {/* P0-2：正文读完判定哨兵——在实际正文结束处（AI 对话/笔记等
             面板之前），IntersectionObserver 以本滚动容器为 root。 */}
         <div ref={finishRead.sentinelRef} aria-hidden="true" data-finish-sentinel="" className="h-px" />
@@ -675,14 +777,20 @@ const handleScroll = useCallback(() => {
         <Suspense fallback={null}>
           <ReadingRuler containerRef={articleScrollRef} />
         </Suspense>
-        {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏） */}
-        <ArticleConversation
-          key={`conversation-${detail.entryRef}`}
-          entryRef={detail.entryRef}
-          articleTitle={detail.title}
-          open={aiConversationOpen}
-          onClose={() => setAiConversationOpen(false)}
-        />
+        {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏）——条件挂载：
+            open-prop 门控的 lazy 仍会首帧拉 chunk；对话框类按 bundle
+            guard 契约改为条件挂载 */}
+        {aiConversationOpen && (
+          <Suspense fallback={null}>
+            <ArticleConversation
+              key={`conversation-${detail.entryRef}`}
+              entryRef={detail.entryRef}
+              articleTitle={detail.title}
+              open={aiConversationOpen}
+              onClose={() => setAiConversationOpen(false)}
+            />
+          </Suspense>
+        )}
       </article>
       </div>
       {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响） */}

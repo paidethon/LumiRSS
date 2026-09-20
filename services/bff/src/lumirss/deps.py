@@ -548,6 +548,7 @@ def _get_agent_loop(request: Request) -> AgentLoop:
             return await rss_keyword_search(request.app.state.db, query, limit)
 
         registry = build_registry(
+            db=request.app.state.db,
             rss_search=rss_search,
             library_search=_get_library_search_writer(request),
             rag=_get_rag_service(request),
@@ -559,13 +560,41 @@ def _get_agent_loop(request: Request) -> AgentLoop:
             if request.app.state.obsidian_service is not None
             else None,
         )
+
+        async def _session_loader(thread_id: str) -> dict:
+            from lumirss.agent_session import AgentSessionStore
+
+            settings = await AgentSessionStore(
+                request.app.state.db, _get_agent_store(request)
+            ).get_settings(thread_id)
+            return settings or {}
+
         return AgentLoop(
             _get_agent_store(request),
             registry,
             lambda: _provider_or_none(request),
+            session_loader=_session_loader,
         )
 
     return _cached_on_app_state(request, "agent_loop", build)
+
+
+def _get_agent_dry_run(request: Request):
+    """F097 写操作预演执行器（与工具注册表同一服务装配；零写入）。"""
+
+    def build():
+        from lumirss.agent_tools import build_dry_run
+
+        adapter = _get_adapter_or_none(request)
+        return build_dry_run(
+            db=request.app.state.db,
+            library=_get_library_store(request),
+            workspaces=_get_workspace_store(request),
+            tags=_get_tag_store(request),
+            adapter=adapter,
+        )
+
+    return _cached_on_app_state(request, "agent_dry_run", build)
 
 
 async def _provider_or_none(request: Request):

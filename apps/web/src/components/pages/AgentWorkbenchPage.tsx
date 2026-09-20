@@ -32,6 +32,14 @@ import {
 } from '../../api/queries'
 import type { AgentApprovalContent, AgentMessage } from '../../api/client'
 import { openResolvedItem } from '../../lib/open-item'
+import {
+  ApprovalPreviewSection,
+  BranchBadge,
+  BranchButton,
+  ThreadExportButton,
+  ThreadSearchBox,
+  ThreadSettingsButton,
+} from '../AgentW5'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
@@ -151,10 +159,17 @@ function CitationList({ refs }: { refs: string[] }) {
 }
 
 /** 单条消息：按 role 分派渲染。 */
-function MessageRow({ message }: { message: AgentMessage }) {
+function MessageRow({
+  message,
+  onBranched,
+}: {
+  message: AgentMessage
+  onBranched: (newThreadId: string) => void
+}) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
+      <div className="group/message flex items-center justify-end gap-1">
+        <BranchButton threadId={message.threadId} messageSeq={message.seq} onBranched={onBranched} />
         <div className="max-w-[85%] rounded-[var(--lumi-radius-lg)] bg-[var(--lumi-accent-soft)] px-3 py-2 text-sm whitespace-pre-wrap text-[var(--lumi-text-primary)]">
           {textOf(message.content)}
         </div>
@@ -238,25 +253,28 @@ function ApprovalCard({ message }: { message: AgentMessage }) {
         {prettyJson(approval.args)}
       </pre>
       {pending ? (
-        <div className="mt-2 flex gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            aria-label="批准写入"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ approvalId: approval.approvalId, decision: 'approve' })}
-          >
-            批准
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-label="拒绝写入"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ approvalId: approval.approvalId, decision: 'reject' })}
-          >
-            拒绝
-          </Button>
+        <div className="mt-2 flex flex-col gap-1.5">
+          <ApprovalPreviewSection threadId={message.threadId} approvalId={approval.approvalId} />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              aria-label="批准写入"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ approvalId: approval.approvalId, decision: 'approve' })}
+            >
+              批准
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label="拒绝写入"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ approvalId: approval.approvalId, decision: 'reject' })}
+            >
+              拒绝
+            </Button>
+          </div>
         </div>
       ) : (
         <p className="mt-1.5 text-[11px] text-[var(--lumi-text-tertiary)]">
@@ -272,8 +290,21 @@ function ApprovalCard({ message }: { message: AgentMessage }) {
   )
 }
 
-/** 消息区（含发送框）。空会话给 能力说明 + 示例问题。 */
-function ChatArea({ threadId, title }: { threadId: string; title: string }) {
+/** 消息区（含发送框）。空会话给 能力说明 + 示例问题。F099：分支打开
+ * 新会话后滚动到来源消息。 */
+function ChatArea({
+  threadId,
+  title,
+  scrollSeq = null,
+  branchOf = null,
+  onBranched,
+}: {
+  threadId: string
+  title: string
+  scrollSeq?: number | null
+  branchOf?: string | null
+  onBranched: (newThreadId: string) => void
+}) {
   const messages = useAgentMessages(threadId)
   const send = useSendAgentMessageMutation(threadId)
   const [draft, setDraft] = useState('')
@@ -293,6 +324,15 @@ function ChatArea({ threadId, title }: { threadId: string; title: string }) {
     }
   }, [items.length])
 
+  // F095/F099：从搜索/分支打开 → 滚动到目标消息（等消息渲染后执行）。
+  useEffect(() => {
+    if (scrollSeq === null || messages.isPending) return
+    const el = document.querySelector(`[data-seq="${scrollSeq}"]`)
+    if (el !== null && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'center' })
+    }
+  }, [scrollSeq, messages.isPending, items.length])
+
   const submit = () => {
     const text = draft.trim()
     if (text === '' || send.isPending) return
@@ -305,7 +345,12 @@ function ChatArea({ threadId, title }: { threadId: string; title: string }) {
         <h2 className="min-w-0 truncate text-sm font-semibold text-[var(--lumi-text-primary)]">
           {title}
         </h2>
+        <BranchBadge branchOf={branchOf} />
         <RagStatusChip />
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <ThreadSettingsButton threadId={threadId} />
+          <ThreadExportButton threadId={threadId} />
+        </div>
       </div>
 
       <div
@@ -358,7 +403,9 @@ function ChatArea({ threadId, title }: { threadId: string; title: string }) {
         )}
 
         {items.map((message) => (
-          <MessageRow key={message.id} message={message} />
+          <div key={message.id} data-seq={message.seq}>
+            <MessageRow message={message} onBranched={onBranched} />
+          </div>
         ))}
         <div ref={bottomRef} aria-hidden="true" />
         {processing && (
@@ -425,9 +472,11 @@ function NoThreadPlaceholder() {
 function ThreadList({
   activeId,
   onSelect,
+  onOpenAt,
 }: {
   activeId: string | null
   onSelect: (threadId: string) => void
+  onOpenAt: (threadId: string, messageSeq: number) => void
 }) {
   const threads = useAgentThreads()
   const create = useCreateAgentThreadMutation()
@@ -456,6 +505,9 @@ function ThreadList({
           新会话
         </Button>
       </div>
+
+      {/* F095：会话消息搜索（结果下拉 → 打开并滚动到消息）。 */}
+      <ThreadSearchBox onOpen={onOpenAt} />
 
       {create.isError && (
         <p role="alert" className="px-2.5 pb-1 text-xs text-[var(--lumi-danger)]">
@@ -528,19 +580,40 @@ function ThreadList({
   )
 }
 
-/** 页面根：左会话列表 + 右消息区。 */
+/** 页面根：左会话列表 + 右消息区。F099：分支/搜索打开 → 滚动定位。 */
 export default function AgentWorkbenchPage() {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [scrollSeq, setScrollSeq] = useState<number | null>(null)
   const threads = useAgentThreads()
   const items = threads.data?.items ?? []
   const activeThread =
     activeThreadId !== null ? (items.find((t) => t.id === activeThreadId) ?? null) : null
+  const branchOf =
+    activeThread !== null
+      ? ((activeThread as unknown as { branchOf?: string | null }).branchOf ?? null)
+      : null
+
+  function handleOpenAt(threadId: string, seq: number) {
+    setActiveThreadId(threadId)
+    setScrollSeq(seq)
+  }
+  function handleBranched(newThreadId: string) {
+    setActiveThreadId(newThreadId)
+    setScrollSeq(null)
+    void threads.refetch()
+  }
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row">
-      <ThreadList activeId={activeThreadId} onSelect={setActiveThreadId} />
+      <ThreadList activeId={activeThreadId} onSelect={setActiveThreadId} onOpenAt={handleOpenAt} />
       {activeThread !== null ? (
-        <ChatArea threadId={activeThread.id} title={activeThread.title} />
+        <ChatArea
+          threadId={activeThread.id}
+          title={activeThread.title}
+          scrollSeq={scrollSeq}
+          branchOf={branchOf}
+          onBranched={handleBranched}
+        />
       ) : (
         <NoThreadPlaceholder />
       )}

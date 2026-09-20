@@ -94,6 +94,8 @@ export interface AdvancedSearchParams {
   intitle?: string | null
   phrase?: string | null
   exclude?: string | null
+  /** F017：仅摘要有/无维度（true=有摘要；false=无摘要；null=不过滤）。 */
+  hasSummary?: boolean | null
 }
 
 /** 构造 /api/v1/search 请求 URL（导出供测试断言参数）。 */
@@ -111,7 +113,57 @@ export function buildAdvancedSearchUrl(params: AdvancedSearchParams): string {
   if (params.intitle != null && params.intitle !== '') query.set('intitle', params.intitle)
   if (params.phrase != null && params.phrase !== '') query.set('phrase', params.phrase)
   if (params.exclude != null && params.exclude !== '') query.set('exclude', params.exclude)
+  if (params.hasSummary != null) query.set('hasSummary', params.hasSummary ? 'true' : 'false')
   return `${API_BASE}/search?${query}`
+}
+
+export interface BuilderFilters {
+  /** 来源（feedUrl）；null = 全部来源。 */
+  sourceFeedUrl: string | null
+  unread: boolean | null
+  favorite: boolean | null
+  hasSummary: boolean | null
+}
+
+export const EMPTY_BUILDER_FILTERS: BuilderFilters = {
+  sourceFeedUrl: null,
+  unread: null,
+  favorite: null,
+  hasSummary: null,
+}
+
+/** 是否至少启用了一个构建器维度。 */
+export function hasBuilderFilters(f: BuilderFilters): boolean {
+  return (
+    f.sourceFeedUrl !== null || f.unread !== null || f.favorite !== null || f.hasSummary !== null
+  )
+}
+
+/** F017：生成的查询语义（人类可读；用于面板确认与保存意图说明）。 */
+export function describeAdvancedQuery(opts: {
+  q: string
+  sourceLabel?: string | null
+  unread?: boolean | null
+  favorite?: boolean | null
+  hasSummary?: boolean | null
+  intitle?: string | null
+  phrase?: string | null
+  exclude?: string | null
+  from?: string | null
+  to?: string | null
+}): string {
+  const parts: string[] = [`搜索「${opts.q}」`]
+  if (opts.sourceLabel) parts.push(`来源=${opts.sourceLabel}`)
+  if (opts.unread) parts.push('未读')
+  if (opts.favorite) parts.push('收藏')
+  if (opts.hasSummary === true) parts.push('有摘要')
+  if (opts.hasSummary === false) parts.push('无摘要')
+  if (opts.intitle) parts.push(`标题含「${opts.intitle}」`)
+  if (opts.phrase) parts.push(`短语「${opts.phrase}」`)
+  if (opts.exclude) parts.push(`排除「${opts.exclude}」`)
+  if (opts.from) parts.push(`自 ${opts.from}`)
+  if (opts.to) parts.push(`至 ${opts.to}`)
+  return parts.join(' AND ')
 }
 
 /** 把非 2xx 响应转成 Error（容错 BFF error envelope；与 client.toApiError

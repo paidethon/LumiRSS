@@ -1,7 +1,8 @@
 import { lazy, Suspense, useState } from 'react'
-import { Command, History } from 'lucide-react'
+import { Command, History, EyeOff } from 'lucide-react'
 import { useReaderUi } from '../store/reader-ui'
 import { COMMAND_PALETTE_TOGGLE_EVENT } from '../lib/keyboard-shortcuts'
+import { isPrivacyEnabled, setPrivacyMask } from '../lib/privacy-mask'
 import Sidebar from './Sidebar'
 import { Sheet } from './ui/Sheet'
 
@@ -39,6 +40,14 @@ export default function MobileNavigationDrawer() {
   const closeMobileSidebar = useReaderUi((s) => s.closeMobileSidebar)
   // F10：最近阅读面板（渲染在 Sheet 之外——覆盖层不参与抽屉的 Drawer 行为）
   const [recentReadsOpen, setRecentReadsOpen] = useState(false)
+  // F113：演示隐私遮罩（device-local 开关；真实替换 [data-privacy-text]）
+  const [privacyOn, setPrivacyOn] = useState(isPrivacyEnabled)
+
+  const togglePrivacy = () => {
+    const next = !privacyOn
+    setPrivacyOn(next)
+    setPrivacyMask(next)
+  }
 
   const openCommandPalette = () => {
     window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_TOGGLE_EVENT))
@@ -97,6 +106,17 @@ export default function MobileNavigationDrawer() {
           >
             <Command aria-hidden className="size-4 shrink-0" />
             命令面板
+          </button>
+          {/* F113：演示隐私（开启后标题/来源等文本替换为 ▮；退出/刷新恢复） */}
+          <button
+            type="button"
+            data-testid="drawer-privacy-demo"
+            aria-pressed={privacyOn}
+            onClick={togglePrivacy}
+            className="flex min-h-11 items-center gap-2.5 rounded-[var(--lumi-radius-md)] px-2 text-sm text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <EyeOff aria-hidden className="size-4 shrink-0" />
+            {privacyOn ? '演示隐私：开（点击退出）' : '演示隐私'}
           </button>
         </div>
       </Sheet>

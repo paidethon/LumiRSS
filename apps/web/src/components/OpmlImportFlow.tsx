@@ -10,6 +10,7 @@
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { OpmlImportPreview, OpmlImportResult } from '../api/types'
 import { opmlFailureLabel } from '../lib/opml-import'
+import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 
 /** 预览摘要：数量 / 分类 / 重复（只显示可靠判定项）。 */
@@ -55,6 +56,95 @@ export function OpmlPreviewCard({ preview }: { preview: OpmlImportPreview }) {
   )
 }
 
+/** F002：逐项预览表（复选框；全选/反选；默认勾选由流程 hook 决定）。
+ * status → 中文标签：new=新增 / duplicate=重复 / invalid=无效 /
+ * category_conflict=分类冲突（note 说明冲突原因）。 */
+export function OpmlPreviewItemsCard({
+  preview,
+  selected,
+  onToggleItem,
+  onToggleAll,
+  onInvert,
+}: {
+  preview: OpmlImportPreview
+  selected: Set<number>
+  onToggleItem: (index: number) => void
+  onToggleAll: () => void
+  onInvert: () => void
+}) {
+  const items = preview.items ?? []
+  if (items.length === 0) return null
+  const allSelected = items.every((i) => selected.has(i.index))
+  const statusLabel: Record<string, string> = {
+    new: '新增',
+    duplicate: '重复',
+    invalid: '无效',
+    category_conflict: '分类冲突',
+  }
+  return (
+    <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--lumi-separator)] px-3 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--lumi-text-tertiary)]">
+          逐项导入（已选 {selected.size}/{items.length}）
+        </span>
+        <span className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={onToggleAll} disabled={items.length === 0}>
+            {allSelected ? '全不选' : '全选'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onInvert} disabled={items.length === 0}>
+            反选
+          </Button>
+        </span>
+      </div>
+      <ul className="max-h-56 divide-y divide-[var(--lumi-separator)] overflow-y-auto">
+        {items.map((item) => (
+          <li key={item.index}>
+            <label
+              htmlFor={`opml-item-${item.index}`}
+              className="flex min-h-11 cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--lumi-surface-hover)]"
+            >
+              <input
+                id={`opml-item-${item.index}`}
+                type="checkbox"
+                aria-label={`选择 ${item.title || item.xmlUrl}`}
+                checked={selected.has(item.index)}
+                onChange={() => onToggleItem(item.index)}
+                className="size-4 shrink-0 accent-[var(--lumi-accent)]"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
+                  {item.title || item.xmlUrl}
+                  <span
+                    className={cx(
+                      'ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                      item.status === 'new' &&
+                        'bg-[var(--lumi-accent)]/15 text-[var(--lumi-accent-text)]',
+                      item.status === 'duplicate' && 'bg-[var(--lumi-text-tertiary)]/15 text-[var(--lumi-text-tertiary)]',
+                      item.status === 'invalid' && 'bg-[var(--lumi-danger)]/15 text-[var(--lumi-danger)]',
+                      item.status === 'category_conflict' && 'bg-[var(--lumi-warning)]/20 text-[var(--lumi-text-primary)]',
+                    )}
+                  >
+                    {statusLabel[item.status] ?? item.status}
+                  </span>
+                </span>
+                <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]" title={item.xmlUrl}>
+                  {item.xmlUrl}
+                  {item.category !== null && item.category !== undefined && ` · ${item.category}`}
+                </span>
+                {item.note !== null && item.note !== undefined && (
+                  <span className="block truncate text-xs text-[var(--lumi-text-tertiary)]">
+                    {item.note}
+                  </span>
+                )}
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /** 导入结果摘要：全部来自 server-confirmed 响应，无推测。 */
 export function OpmlResultCard({ result }: { result: OpmlImportResult }) {
   const categoryNotApplied = result.added.filter((a) => !a.categoryApplied).length
@@ -67,8 +157,14 @@ export function OpmlResultCard({ result }: { result: OpmlImportResult }) {
         <CheckCircle2 aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent-text)]" />
         已导入 {result.added.length} 个订阅源
         {result.duplicates.length > 0 && `，跳过重复 ${result.duplicates.length} 个`}
+        {(result.skipped?.length ?? 0) > 0 && `，未导入 ${result.skipped.length} 个`}
         {result.failed.length > 0 && `，失败 ${result.failed.length} 个`}
       </p>
+      {(result.skipped?.length ?? 0) > 0 && (
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          未导入：{result.skipped.map((s) => `${s.title || s.feedUrl}（${s.reason === 'invalid' ? '无效' : '未勾选'}）`).join('、')}
+        </p>
+      )}
       {result.categoriesCreated.length > 0 && (
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
           新建分类：{result.categoriesCreated.join('、')}

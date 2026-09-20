@@ -236,13 +236,18 @@ async def test_preview_counts_without_any_mutation():
 
     preview = await service.preview(OPML_MIX)
 
-    assert preview == {
+    # F002 迁移：preview 新增逐项 items 数组（F002 专测覆盖其内容），
+    # 这里保持对既有计数/分类字段的完整契约断言。
+    assert {k: preview[k] for k in (
+        "totalFeeds", "newFeeds", "duplicates", "invalidEntries", "categories",
+    )} == {
         "totalFeeds": 4,
         "newFeeds": 3,
         "duplicates": 2,  # already-subscribed + in-file repeat
         "invalidEntries": 0,
         "categories": [{"label": "Tech", "feedCount": 3}],
     }
+    assert len(preview["items"]) == 5  # 4 entries + 1 in-file repeat
     # strictly read-only: only the list call happened
     assert fake.calls == [("list_subscriptions",)]
 
@@ -501,7 +506,11 @@ def test_preview_route_is_non_mutating():
     response = call(fake, "POST", "/api/v1/opml/import/preview", content=VALID_OPML)
 
     assert response.status_code == 200
-    assert response.json() == {
+    # F002 迁移：preview 响应新增逐项 items 数组（F002 专测覆盖其内容）
+    body = response.json()
+    assert {k: body[k] for k in (
+        "totalFeeds", "newFeeds", "duplicates", "invalidEntries", "categories",
+    )} == {
         "totalFeeds": 4,
         "newFeeds": 4,
         "duplicates": 0,
@@ -511,6 +520,7 @@ def test_preview_route_is_non_mutating():
             {"label": "Tech", "feedCount": 2},
         ],
     }
+    assert len(body["items"]) == 4
     # read-only proof: only the list call, no subscribe/move/export
     assert fake.calls == [("list_subscriptions",)]
 

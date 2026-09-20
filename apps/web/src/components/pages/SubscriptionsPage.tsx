@@ -30,15 +30,42 @@ import {
   Plus,
   Rss,
   Search,
+  ShieldAlert,
   Upload,
 } from 'lucide-react'
 import {
   useCategories,
   useSetSourceOverrideMutation,
+  useSourceNotesListQuery,
   useSubscriptions,
 } from '../../api/queries'
-import { FirstRunChecklist, useFirstRunVisible } from '../FirstRunChecklist'
+import type { SourceNotesView } from '../../api/client'
+import { listSourceOverrides } from '../../api/client'
+import {
+  FilterRulesDialog,
+  HealthCheckDialog,
+  ImportBatchesDialog,
+  MigrateSubscriptionDialog,
+  MuteListDialog,
+  SourcePolicyDialog,
+} from '../subscription-w3-panels'
+import { useQuery } from '@tanstack/react-query'
+import { RsshubRouteParamsDialog } from '../rsshub-route-params-dialog'
+import {
+  FirstRunChecklist,
+  useFirstRunVisible,
+} from '../FirstRunChecklist'
 import { VolumeOverview } from '../VolumeOverview'
+import {
+  SourceStaleAlertDialog,
+  StaleSourcesPanel,
+} from '../SourceStaleAlert'
+import {
+  BatchMoveDialog,
+  DuplicateSuspectsPanel,
+  NotesSearchBox,
+  SourceNotesDialog,
+} from '../SubscriptionTools'
 import type { Subscription } from '../../api/types'
 import { useReaderUi, ALL_SCOPE } from '../../store/reader-ui'
 import { useOpmlExportFlow } from '../../lib/opml-import'
@@ -182,6 +209,43 @@ export default function SubscriptionsPage() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; label: string } | null>(null)
   // F26：置顶订阅（localStorage 持久；顺序即置顶区展示顺序）
   const [pinned, setPinned] = useState<string[]>(() => readPinnedFeeds())
+  // F001：异常来源筛选开关 + 新鲜度预警设置目标
+  const [stalePanelOpen, setStalePanelOpen] = useState(false)
+  const [staleTarget, setStaleTarget] = useState<{
+    feedUrl: string
+    title: string
+  } | null>(null)
+  // F004：查重面板开关
+  const [duplicatePanelOpen, setDuplicatePanelOpen] = useState(false)
+  // F003/F006：多选模式（选中集合为 subscriptionRef）
+  const [multiSelect, setMultiSelect] = useState(false)
+  const [checkedRefs, setCheckedRefs] = useState<Set<string>>(new Set())
+  // F006：批量移动对话框
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false)
+  // F005：备注对话框目标 + 备注关键词过滤（前端过滤当前列表）
+  const [notesTarget, setNotesTarget] = useState<{
+    subscriptionRef: string
+    title: string
+  } | null>(null)
+  const [notesFilter, setNotesFilter] = useState<string | null>(null)
+  // W3：F044 迁移 / F045 内容过滤 / F048+F055 来源设置 / F046 静音列表 /
+  // F049 导入记录 / F050 维护检查 的对话框目标与开关。
+  const [migrateTarget, setMigrateTarget] = useState<Subscription | null>(null)
+  const [filterTarget, setFilterTarget] = useState<Subscription | null>(null)
+  const [policyTarget, setPolicyTarget] = useState<Subscription | null>(null)
+  const [routeParamsTarget, setRouteParamsTarget] = useState<Subscription | null>(null)
+  const [muteListOpen, setMuteListOpen] = useState(false)
+  const [importBatchesOpen, setImportBatchesOpen] = useState(false)
+  const [healthCheckOpen, setHealthCheckOpen] = useState(false)
+
+  const toggleChecked = (ref: string) => {
+    setCheckedRefs((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }
 
   const togglePin = (feedUrl: string) => {
     setPinned((prev) => {
@@ -198,17 +262,40 @@ export default function SubscriptionsPage() {
     })
   }
 
+  // F005：后端 note_search（返回命中的备注），仅用于前端当前列表过滤
+  const notesList = useSourceNotesListQuery(notesFilter)
+  const sourceNotesIndex = useMemo(() => {
+    const map = new Map<string, SourceNotesView>()
+    for (const item of notesList.data?.items ?? []) map.set(item.subscriptionRef, item)
+    return map
+  }, [notesList.data])
+
   const filtered = useMemo(() => {
     const all = subscriptions.data ?? []
     const q = query.trim().toLowerCase()
-    if (!q) return all
-    return all.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        s.feedUrl.toLowerCase().includes(q) ||
-        (s.category?.label.toLowerCase().includes(q) ?? false),
-    )
-  }, [subscriptions.data, query])
+    let list = all
+    if (q) {
+      list = list.filter(
+        (s) =>
+          s.title.toLowerCase().includes(q) ||
+          s.feedUrl.toLowerCase().includes(q) ||
+          (s.category?.label.toLowerCase().includes(q) ?? false),
+      )
+    }
+    if (notesFilter !== null) {
+      // F005：备注关键词过滤（客户端过滤当前列表，文案诚实）
+      list = list.filter((s) => {
+        const note = sourceNotesIndex.get(s.subscriptionRef)
+        if (note === undefined) return false
+        return (
+          (note.note ?? '').includes(notesFilter) ||
+          (note.reason ?? '').includes(notesFilter) ||
+          (note.maintenanceLog ?? '').includes(notesFilter)
+        )
+      })
+    }
+    return list
+  }, [subscriptions.data, query, notesFilter, sourceNotesIndex])
 
   const groups = useMemo(() => groupByCategory(filtered), [filtered])
 
@@ -239,6 +326,12 @@ export default function SubscriptionsPage() {
   }, [subscriptions.data, categories.data, scope, selectScope])
 
   const overrideMutation = useSetSourceOverrideMutation()
+  // F046：静音列表数据（服务端 overrides；过期过滤在 MuteListDialog 内做）
+  const overridesQuery = useQuery({
+    queryKey: ['source-overrides'],
+    queryFn: () => listSourceOverrides(),
+    enabled: muteListOpen,
+  })
   // F40：首启向导（尚无任何订阅且未被关闭时显示）
   const firstRunVisible = useFirstRunVisible()
   const [firstRunDismissed, setFirstRunDismissed] = useState(false)
@@ -297,6 +390,72 @@ export default function SubscriptionsPage() {
         onClose={() => setRenameTarget(null)}
         category={renameTarget}
       />
+      <SourceStaleAlertDialog
+        open={staleTarget !== null}
+        onClose={() => setStaleTarget(null)}
+        subscription={staleTarget}
+      />
+      <SourceNotesDialog
+        open={notesTarget !== null}
+        onClose={() => setNotesTarget(null)}
+        subscription={notesTarget}
+      />
+      <BatchMoveDialog
+        open={batchMoveOpen}
+        onClose={() => setBatchMoveOpen(false)}
+        refs={[...checkedRefs]}
+        titleOf={(ref) =>
+          (subscriptions.data ?? []).find((s) => s.subscriptionRef === ref)?.title ?? ref
+        }
+      />
+      {migrateTarget !== null && (
+        <MigrateSubscriptionDialog
+          open
+          onClose={() => setMigrateTarget(null)}
+          subscriptionRef={migrateTarget.subscriptionRef}
+          feedUrl={migrateTarget.feedUrl}
+          title={migrateTarget.title}
+        />
+      )}
+      {filterTarget !== null && (
+        <FilterRulesDialog
+          open
+          onClose={() => setFilterTarget(null)}
+          feedUrl={filterTarget.feedUrl}
+          title={filterTarget.title}
+        />
+      )}
+      {policyTarget !== null && (
+        <SourcePolicyDialog
+          open
+          onClose={() => setPolicyTarget(null)}
+          feedUrl={policyTarget.feedUrl}
+          title={policyTarget.title}
+        />
+      )}
+      {routeParamsTarget !== null && (
+        <RsshubRouteParamsDialog open onClose={() => setRouteParamsTarget(null)} subscription={routeParamsTarget} />
+      )}
+      <MuteListDialog
+        open={muteListOpen}
+        onClose={() => setMuteListOpen(false)}
+        overrides={(overridesQuery.data?.items ?? []).map((item) => ({
+          feedUrl: item.feedUrl,
+          hiddenUntil: item.hiddenUntil,
+          staleAlertHours: item.staleAlertHours,
+        }))}
+        onUnmute={(feedUrl) => overrideMutation.mutate({ feedUrl, hiddenUntil: null })}
+      />
+      <ImportBatchesDialog open={importBatchesOpen} onClose={() => setImportBatchesOpen(false)} />
+      <HealthCheckDialog
+        open={healthCheckOpen}
+        onClose={() => setHealthCheckOpen(false)}
+        subscriptions={(subscriptions.data ?? []).map((sub) => ({
+          subscriptionRef: sub.subscriptionRef,
+          title: sub.title,
+          feedUrl: sub.feedUrl,
+        }))}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-3 max-lg:pb-[76px]">
         {/* F40：首启向导（尚无订阅且未被关闭时显示；可整体关闭） */}
         {firstRunVisible && !firstRunDismissed ? (
@@ -354,6 +513,97 @@ export default function SubscriptionsPage() {
             <Download aria-hidden className="size-3.5" />
             {opmlExport.busy ? '导出中…' : '导出 OPML'}
           </Button>
+          {/* W3 工具：静音列表（F046）/ 导入记录（F049）/ 维护检查（F050） */}
+          <Button variant="secondary" className="text-xs" onClick={() => setMuteListOpen(true)} aria-haspopup="dialog">
+            静音列表
+          </Button>
+          <Button variant="secondary" className="text-xs" onClick={() => setImportBatchesOpen(true)} aria-haspopup="dialog">
+            导入记录
+          </Button>
+          <Button variant="secondary" className="text-xs" onClick={() => setHealthCheckOpen(true)} aria-haspopup="dialog">
+            维护检查
+          </Button>
+          {/* F001：异常来源筛选开关（aria-pressed = 筛选态可见性） */}
+          <Button
+            variant={stalePanelOpen ? 'primary' : 'secondary'}
+            onClick={() => setStalePanelOpen((v) => !v)}
+            aria-pressed={stalePanelOpen}
+            className="text-xs"
+          >
+            <ShieldAlert aria-hidden className="size-3.5" />
+            异常来源
+          </Button>
+          {/* F004：查重面板开关 */}
+          <Button
+            variant={duplicatePanelOpen ? 'primary' : 'secondary'}
+            onClick={() => setDuplicatePanelOpen((v) => !v)}
+            aria-pressed={duplicatePanelOpen}
+            className="text-xs"
+          >
+            查重
+          </Button>
+          {/* F003/F006：多选模式开关 */}
+          <Button
+            variant={multiSelect ? 'primary' : 'secondary'}
+            onClick={() => {
+              setMultiSelect((v) => !v)
+              setCheckedRefs(new Set())
+            }}
+            aria-pressed={multiSelect}
+            className="text-xs"
+          >
+            多选
+          </Button>
+        </div>
+        {/* F001：超期来源面板（开关展开；含 basis 标注与空态） */}
+        {stalePanelOpen && <StaleSourcesPanel />}
+        {/* F004：重复候选面板（只读） */}
+        {duplicatePanelOpen && <DuplicateSuspectsPanel />}
+        {/* F003/F006：多选操作栏（导出所选 OPML / 移动到分类） */}
+        {multiSelect && (
+          <div
+            className="mb-3 flex flex-wrap items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
+            role="group"
+            aria-label="多选操作"
+          >
+            <span className="text-xs text-[var(--lumi-text-secondary)]">
+              已选 {checkedRefs.size}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={checkedRefs.size === 0 || opmlExport.busy}
+              onClick={() =>
+                opmlExport.exportOnce({ subscriptionRefs: [...checkedRefs] })
+              }
+              className="text-xs"
+            >
+              <Download aria-hidden className="size-3.5" />
+              {opmlExport.busy ? '导出中…' : '导出所选 OPML'}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={checkedRefs.size === 0}
+              onClick={() => setBatchMoveOpen(true)}
+              className="text-xs"
+            >
+              移动到分类…
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCheckedRefs(new Set())}
+              disabled={checkedRefs.size === 0}
+              className="text-xs"
+            >
+              清空
+            </Button>
+          </div>
+        )}
+        {/* F005：备注关键词过滤框（过滤当前列表） */}
+        <div className="mb-3">
+          <NotesSearchBox onSearch={setNotesFilter} />
         </div>
         {opmlExport.error !== null && (
           <p role="alert" className="mb-3 flex items-center gap-1.5 text-xs text-[var(--lumi-danger)]">
@@ -525,6 +775,19 @@ export default function SubscriptionsPage() {
                     >
                       {group.subscriptions.map((subscription) => (
                         <li key={subscription.subscriptionRef} className="flex items-center">
+                          {/* F003/F006：多选勾选框（44px 触控目标由行高与
+                              min-h-11 保证；aria-label 独立命名） */}
+                          {multiSelect && (
+                            <span className="flex min-h-11 items-center pl-2">
+                              <input
+                                type="checkbox"
+                                aria-label={`选择「${subscription.title}」`}
+                                checked={checkedRefs.has(subscription.subscriptionRef)}
+                                onChange={() => toggleChecked(subscription.subscriptionRef)}
+                                className="size-5 accent-[var(--lumi-accent)]"
+                              />
+                            </span>
+                          )}
                           {/* 主区域：icon / title / domain（Lumi Mist 行） */}
                           <button
                             type="button"
@@ -601,6 +864,12 @@ export default function SubscriptionsPage() {
                             )}
                             items={[
                               { key: 'move', content: '移动到分类' },
+                              { key: 'staleAlert', content: '新鲜度预警' },
+                              { key: 'notes', content: '备注/维护记录' },
+                              { key: 'migrate', content: '更换订阅地址' },
+                              { key: 'filterRules', content: '内容过滤' },
+                              { key: 'sourcePolicy', content: '来源设置（正文策略/阅读外观）' },
+                              { key: 'routeParams', content: '路由参数' },
                               { key: 'hide7', content: '隐藏 7 天（F11）' },
                               { key: 'hide30', content: '隐藏 30 天' },
                               { key: 'unhide', content: '取消隐藏' },
@@ -610,6 +879,16 @@ export default function SubscriptionsPage() {
                             ]}
                             onSelect={(key) => {
                               if (key === 'move') setMoveTarget(subscription)
+                              else if (key === 'staleAlert')
+                                setStaleTarget({
+                                  feedUrl: subscription.feedUrl,
+                                  title: subscription.title,
+                                })
+                              else if (key === 'notes')
+                                setNotesTarget({
+                                  subscriptionRef: subscription.subscriptionRef,
+                                  title: subscription.title,
+                                })
                               else if (key === 'unsubscribe') setUnsubscribeTarget(subscription)
                               else if (key === 'hide7')
                                 overrideMutation.mutate({

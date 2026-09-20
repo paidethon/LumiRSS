@@ -19,6 +19,10 @@ interface DiffRow {
   key: string
   from: unknown
   to: unknown
+  /** F040：旧 schema 字段级兼容映射（old→new） */
+  mappedFrom?: string
+  /** F040：无法映射的旧字段（列出跳过原因，不整体拒绝） */
+  skipped?: string
 }
 
 function formatValue(value: unknown): string {
@@ -31,6 +35,7 @@ export function PreferencesMigrationSection() {
   const update = useAppSettings((s) => s.update)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [pending, setPending] = useState<DiffRow[] | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
 
@@ -77,6 +82,31 @@ export function PreferencesMigrationSection() {
           const from = (current as Record<string, unknown>)[key]
           if (from !== to) rows.push({ key, from, to })
         }
+        // F040：旧 schema 文件的字段级兼容映射（识别已知旧字段名→新字段）。
+        const LEGACY_ALIASES: Record<string, string> = {
+          readerWidth: 'readerContentWidth',
+          readingTheme: 'readerBackground',
+          fontFamily: 'readerFontFamily',
+          fontSize: 'readerFontSize',
+        }
+        const incoming = parsed.values ?? {}
+        for (const [oldKey, newKey] of Object.entries(LEGACY_ALIASES)) {
+          if (oldKey in incoming && !(newKey in incoming)) {
+            rows.push({
+              key: newKey,
+              from: (current as Record<string, unknown>)[newKey],
+              to: incoming[oldKey],
+              mappedFrom: oldKey,
+            })
+          }
+        }
+        for (const key of Object.keys(incoming)) {
+          if (!(key in (current as Record<string, unknown>)) && !(key in LEGACY_ALIASES)) {
+            rows.push({ key, from: null, to: incoming[key], skipped: '本地设置无此字段' })
+          }
+        }
+        // 默认勾选：本地缺失或不同的项（rows 本身就是「将变化」项）
+        setSelected(new Set(rows.filter((row) => !row.skipped).map((row) => row.key)))
         setPending(rows)
       })
       .catch(() => {
@@ -88,7 +118,11 @@ export function PreferencesMigrationSection() {
   function applyPending() {
     if (!pending) return
     const patch: Record<string, unknown> = {}
-    for (const row of pending) patch[row.key] = row.to
+    // F040：仅应用所选（未选项保持原值）
+    for (const row of pending) {
+      if (row.skipped) continue
+      if (selected.has(row.key)) patch[row.key] = row.to
+    }
     update(patch as Parameters<typeof update>[0])
     setApplied(true)
     setPending(null)
@@ -137,15 +171,36 @@ export function PreferencesMigrationSection() {
             将修改 {pending.length} 项偏好：
           </p>
           <ul className="mb-2 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
-            {pending.map((row) => (
-              <li key={row.key} className="text-xs text-[var(--lumi-text-secondary)]">
-                {row.key}: {formatValue(row.from)} → {formatValue(row.to)}
-              </li>
-            ))}
+            {pending.map((row) =>
+              row.skipped ? (
+                <li key={row.key} className="text-xs text-[var(--lumi-text-tertiary)]">
+                  跳过 {row.key}（{row.skipped}）
+                </li>
+              ) : (
+                <li key={row.key} className="text-xs text-[var(--lumi-text-secondary)]">
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.key)}
+                      onChange={(e) => {
+                        const next = new Set(selected)
+                        if (e.target.checked) next.add(row.key)
+                        else next.delete(row.key)
+                        setSelected(next)
+                      }}
+                      aria-label={`应用 ${row.key}`}
+                    />
+                    {row.key}
+                    {row.mappedFrom ? `（将转换：${row.mappedFrom} → ${row.key}）` : ''}:{' '}
+                    {formatValue(row.from)} → {formatValue(row.to)}
+                  </label>
+                </li>
+              ),
+            )}
           </ul>
           <div className="flex gap-2">
             <Button variant="primary" size="sm" onClick={applyPending}>
-              应用
+              仅应用所选（{selected.size}）
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
               取消

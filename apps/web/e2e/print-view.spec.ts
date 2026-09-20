@@ -12,6 +12,12 @@ test.skip(process.env.LUMIRSS_CI_STATIC === '1', '需要 compose 栈（有 API�
 test('print 媒体下隐藏导航与交互控件，正文保留', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
+  // 显式打开一篇文章：不再依赖上次会话残留的选中态（隔离性）。
+  // 列表行内标题按钮是行内最后一个 button（行首为动作按钮组）。
+  const firstRow = page.locator('li').filter({ has: page.getByRole('button', { name: '加入稍后读' }) }).first()
+  await firstRow.waitFor({ state: 'visible', timeout: 15_000 })
+  await firstRow.getByRole('button').last().click()
+  await expect(page.locator('.article-content').first()).toBeAttached({ timeout: 15_000 })
   await page.emulateMedia({ media: 'print' })
 
   await expect(page.getByRole('navigation')).toHaveCount(0)

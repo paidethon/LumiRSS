@@ -68,6 +68,10 @@ class ApiSourceExpressionError(Exception):
     """JMESPath expression failed to compile or evaluate."""
 
 
+class ApiSourcePreviewError(ApiSourceExpressionError):
+    """Preview-level expression/pagination failure (F041: mapped 422)."""
+
+
 @dataclass(frozen=True)
 class ApiSourceRecord:
     uuid: str
@@ -84,6 +88,9 @@ class ApiSourceRecord:
     created_at: str
     atom_body: str | None = None
     feed_updated: str | None = None
+    pagination: str = '{"mode":"none"}'
+    confirmed_schema: str | None = None
+    schema_drift: str | None = None
 
     def to_dict(self, *, with_secret: bool = False) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -189,7 +196,10 @@ def validate_endpoint(url: str) -> str:
     return url.strip()
 
 
-def parse_field_map(raw: str) -> dict[str, str]:
+def parse_field_map(raw: str | dict[str, str]) -> dict[str, str]:
+    """Accept the stored JSON string OR an in-memory dict (preview path)."""
+    if isinstance(raw, dict):
+        return raw
     value = json.loads(raw)
     if not isinstance(value, dict):
         raise ApiSourceExpressionError("stored field map is not an object.")
@@ -310,6 +320,7 @@ def generate_atom(
     items: list[dict[str, Any]],
     feed_updated: str,
     self_base: str,
+    max_entries: int = _MAX_ITEMS,
 ) -> str:
     """RFC 4287 feed via the shared renderer (stable ids, stdlib escaping).
 
@@ -327,7 +338,7 @@ def generate_atom(
             published=rfc3339(item.get("published")),
             content_html=str(item.get("body") or ""),
         )
-        for item in items[:_MAX_ITEMS]
+        for item in items[:max_entries]
     ]
     return render_feed(
         feed_id=f"urn:lumirss:apisource:{source.uuid}",
@@ -341,6 +352,313 @@ def generate_atom(
 
 def feed_etag(atom_xml: str) -> str:
     return '"' + hashlib.sha256(atom_xml.encode("utf-8")).hexdigest()[:32] + '"'
+
+
+# -- F041: Atom-form preview (dry-run, zero writes) --------------------------
+
+
+_PREVIEW_ATOM_LIMIT = 3
+_CONTENT_EXCERPT_LENGTH = 200
+_PREVIEW_UUID = "preview"
+
+
+def preview_atom_entries(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """First ≤3 mapped items in their FINAL Atom-rendered shape.
+
+    Uses the exact same id derivation / title fallback / timestamp
+    normalization / content pipeline as :func:`generate_atom`, so what
+    the operator previews is what FreshRSS will ingest. Returns
+    structured dicts (id/title/link/published/contentExcerpt) instead of
+    XML — bounded, no writes anywhere."""
+    entries: list[dict[str, Any]] = []
+    feed_updated = newest_rfc3339(
+        [rfc3339(item.get("published")) for item in items[:_PREVIEW_ATOM_LIMIT]]
+    ) or utc_now()
+    for item in items[:_PREVIEW_ATOM_LIMIT]:
+        body = str(item.get("body") or "")
+        entries.append(
+            {
+                "id": _entry_id(_PREVIEW_UUID, item),
+                "title": str(item.get("title") or "(无标题)"),
+                "link": str(item["url"]) if item.get("url") else None,
+                "published": rfc3339(item.get("published")),
+                "updated": rfc3339(item.get("published")) or feed_updated,
+                "contentExcerpt": body[:_CONTENT_EXCERPT_LENGTH],
+            }
+        )
+    return entries
+
+
+# -- F042: pagination sampling -----------------------------------------------
+
+
+_MAX_PAGES = 50
+_MAX_PAGINATED_ITEMS = 1000
+_DEFAULT_MAX_PAGES = 5
+_DEFAULT_MAX_ITEMS = 200
+_PAGE_QUERY_WINDOW = 100  # abort when a page URL grows absurdly
+
+
+class PaginationInvalid(ApiSourceInvalid):
+    """pagination config failed validation."""
+
+
+def validate_pagination(raw: Any) -> str:
+    """Validate + canonicalize the pagination config to a JSON string.
+
+    mode none (default): single fetch, other keys ignored. page: requires
+    ``page_param``. cursor: requires ``cursor_path`` (a bounded JMESPath
+    expression evaluated against each page payload). max_pages ≤ 50,
+    max_items ≤ 1000 — the walk is always bounded."""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise PaginationInvalid("pagination must be an object.")
+    mode = raw.get("mode", "none")
+    if mode not in ("none", "page", "cursor"):
+        raise PaginationInvalid("pagination.mode must be none|page|cursor.")
+    clean: dict[str, Any] = {"mode": mode}
+    if mode == "page":
+        page_param = raw.get("page_param")
+        if not isinstance(page_param, str) or not page_param.strip():
+            raise PaginationInvalid("page 模式需要 page_param。")
+        clean["page_param"] = page_param.strip()[:64]
+        first_page = raw.get("first_page", 1)
+        if not isinstance(first_page, int) or isinstance(first_page, bool) or first_page < 1:
+            raise PaginationInvalid("first_page must be a positive integer.")
+        clean["first_page"] = min(first_page, 10_000)
+    if mode == "cursor":
+        cursor_path = raw.get("cursor_path")
+        if not isinstance(cursor_path, str) or not cursor_path.strip():
+            raise PaginationInvalid("cursor 模式需要 cursor_path。")
+        clean["cursor_path"] = validate_field_expr(cursor_path)
+    max_pages = raw.get("max_pages", _DEFAULT_MAX_PAGES)
+    if not isinstance(max_pages, int) or isinstance(max_pages, bool) or not (1 <= max_pages <= _MAX_PAGES):
+        raise PaginationInvalid(f"max_pages must be within 1..{_MAX_PAGES}.")
+    clean["max_pages"] = max_pages
+    max_items = raw.get("max_items", _DEFAULT_MAX_ITEMS)
+    if not isinstance(max_items, int) or isinstance(max_items, bool) or not (1 <= max_items <= _MAX_PAGINATED_ITEMS):
+        raise PaginationInvalid(f"max_items must be within 1..{_MAX_PAGINATED_ITEMS}.")
+    clean["max_items"] = max_items
+    return json.dumps(clean, ensure_ascii=False, separators=(",", ":"))
+
+
+def validate_field_expr(expr: str) -> str:
+    """A bounded JMESPath expression (cursor_path / per-field use)."""
+    clean = expr.strip()
+    if len(clean) > _MAX_FIELD_EXPR_LENGTH:
+        raise PaginationInvalid("cursor_path expression is too long.")
+    try:
+        jmespath.compile(clean)
+    except Exception as exc:
+        raise PaginationInvalid(f"cursor_path 表达式无法编译：{exc}") from exc
+    return clean
+
+
+def parse_pagination(raw: str | None) -> dict[str, Any]:
+    try:
+        value = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        value = {}
+    return value if isinstance(value, dict) else {}
+
+
+def _url_with_param(endpoint: str, key: str, value: str) -> str:
+    parts = urllib.parse.urlsplit(endpoint)
+    query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    query = [(k, v) for k, v in query if k != key]
+    query.append((key, value))
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(query), parts.fragment)
+    )
+
+
+async def fetch_json_pages(
+    http_client: httpx.AsyncClient,
+    endpoint: str,
+    pagination_raw: str | None,
+    items_expr: str,
+) -> tuple[list[Any], str]:
+    """Walk the configured pagination and return (page payloads, stop_reason).
+
+    Normal stops (published for the run): empty_page / cursor_missing /
+    cursor_repeat / max_pages / max_items. HARD failures (atomic: the
+    whole run aborts with :class:`ApiSourceFetchFailed`, nothing is
+    published): HTTP 429, timeouts, network errors, oversized bodies —
+    the caller keeps the last-known-good feed. Every page URL passes the
+    same SSRF validation as the base endpoint (cursor mode dials
+    cursor-carrying URLs through the identical checked fetch)."""
+    config = parse_pagination(pagination_raw)
+    mode = config.get("mode", "none")
+    if mode == "none":
+        return [await fetch_json(http_client, endpoint)], "single"
+    max_pages = int(config.get("max_pages", _DEFAULT_MAX_PAGES))
+    max_items = int(config.get("max_items", _DEFAULT_MAX_ITEMS))
+    # Items-per-page estimate for the max_items bound: count via the
+    # items expression when it resolves to a list, else count 1 per page.
+    async def page_items(payload: Any) -> int:
+        try:
+            result = jmespath.search(items_expr, payload)
+        except Exception:
+            return 1
+        return len(result) if isinstance(result, list) else 1
+
+    payloads: list[Any] = []
+    if mode == "page":
+        page_param = str(config.get("page_param", "page"))
+        first_page = int(config.get("first_page", 1))
+        total = 0
+        for offset in range(max_pages):
+            page_number = first_page + offset
+            target = _url_with_param(endpoint, page_param, str(page_number))
+            if len(target) > 2048 + _PAGE_QUERY_WINDOW:
+                return payloads, "max_pages"
+            try:
+                payload = await fetch_json(http_client, target)
+            except ApiSourceFetchFailed as exc:
+                if "HTTP 429" in str(exc):
+                    raise ApiSourceFetchFailed(f"分页在第 {page_number} 页被限流（HTTP 429），本次未发布任何条目。") from exc
+                raise
+            items_here = await page_items(payload)
+            if items_here == 0:
+                return payloads, "empty_page"
+            payloads.append(payload)
+            total += items_here
+            if total >= max_items:
+                return payloads, "max_items"
+        return payloads, "max_pages"
+    # cursor mode
+    cursor_path = str(config.get("cursor_path", ""))
+    seen: list[str] = []
+    target = endpoint
+    total = 0
+    for _ in range(max_pages):
+        try:
+            payload = await fetch_json(http_client, target)
+        except ApiSourceFetchFailed as exc:
+            if "HTTP 429" in str(exc):
+                raise ApiSourceFetchFailed("分页被限流（HTTP 429），本次未发布任何条目。") from exc
+            raise
+        payloads.append(payload)
+        total += await page_items(payload)
+        if total >= max_items:
+            return payloads, "max_items"
+        try:
+            cursor = jmespath.search(cursor_path, payload)
+        except Exception:
+            cursor = None
+        if cursor is None or (isinstance(cursor, str) and not cursor.strip()):
+            return payloads, "cursor_missing"
+        cursor_text = str(cursor)
+        if cursor_text in seen:
+            return payloads, "cursor_repeat"
+        seen.append(cursor_text)
+        target = _url_with_param(endpoint, "cursor", cursor_text)
+        if len(target) > 2048 + _PAGE_QUERY_WINDOW:
+            return payloads, "max_pages"
+    return payloads, "max_pages"
+
+
+# -- F043: structure baseline + drift ----------------------------------------
+
+_MAX_BASELINE_FIELDS = 64
+_MAX_BASELINE_BYTES = 2048
+_SCHEMA_SAMPLE_ITEMS = 50
+
+
+def _schema_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "json"
+
+
+def observe_schema(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Observed field schema from a bounded sample of mapped items.
+
+    field → {"type": observed type, "required": present-and-non-null in
+    EVERY sampled item}. Bounded to the first _SCHEMA_SAMPLE_ITEMS items
+    and _MAX_BASELINE_FIELDS fields (deterministic field order)."""
+    sample = items[:_SCHEMA_SAMPLE_ITEMS]
+    fields: dict[str, dict[str, Any]] = {}
+    for item in sample:
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            slot = fields.setdefault(key, {"types": set(), "count": 0, "nonnull": 0})
+            slot["count"] += 1
+            if value is not None:
+                slot["types"].add(_schema_type(value))
+                slot["nonnull"] += 1
+    observed: dict[str, dict[str, Any]] = {}
+    for key in sorted(fields)[:_MAX_BASELINE_FIELDS]:
+        slot = fields[key]
+        types = slot["types"] or {"null"}
+        observed[key] = {
+            "type": sorted(types)[0] if len(types) == 1 else "mixed",
+            "required": slot["count"] > 0 and slot["nonnull"] == slot["count"] == len(sample),
+        }
+    return observed
+
+
+def serialize_baseline(schema: dict[str, dict[str, Any]]) -> str | None:
+    """Deterministic, size-bounded baseline JSON (None → not storable)."""
+    if not schema:
+        return None
+    trimmed = dict(sorted(schema.items())[:_MAX_BASELINE_FIELDS])
+    payload = json.dumps(trimmed, ensure_ascii=False, separators=(",", ":"))
+    while len(payload.encode("utf-8")) > _MAX_BASELINE_BYTES and trimmed:
+        trimmed.pop(next(iter(trimmed)))
+        payload = json.dumps(trimmed, ensure_ascii=False, separators=(",", ":"))
+    return payload or None
+
+
+def diff_schema(
+    baseline_raw: str | None, observed: dict[str, dict[str, Any]]
+) -> dict[str, list[str]] | None:
+    """Baseline vs observed drift. missing/type_changed warn; new_optional
+    is advisory only. None when there is no baseline to compare against."""
+    if not baseline_raw:
+        return None
+    try:
+        baseline = json.loads(baseline_raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(baseline, dict) or not baseline:
+        return None
+    missing: list[str] = []
+    type_changed: list[str] = []
+    new_optional: list[str] = []
+    for field, spec in baseline.items():
+        expect_type = str(spec.get("type", "")) if isinstance(spec, dict) else ""
+        expect_required = bool(spec.get("required")) if isinstance(spec, dict) else False
+        current = observed.get(field)
+        if current is None or current["type"] == "null":
+            # 字段消失，或样本中恒为 null：对必需字段等同缺失。
+            if expect_required:
+                missing.append(field)
+            continue
+        if expect_type and current["type"] not in (expect_type, "mixed"):
+            type_changed.append(field)
+    for field in observed:
+        if field not in baseline:
+            new_optional.append(field)
+    return {
+        "missing": sorted(missing),
+        "type_changed": sorted(type_changed),
+        "new_optional": sorted(new_optional)[:_MAX_BASELINE_FIELDS],
+    }
+
+
+def has_drift(drift: dict[str, list[str]] | None) -> bool:
+    return bool(drift and (drift["missing"] or drift["type_changed"]))
 
 
 def secrets_match(supplied: str, source: ApiSourceRecord) -> bool:

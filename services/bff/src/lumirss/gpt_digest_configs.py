@@ -56,6 +56,10 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
     limit = limit if isinstance(limit, int) else fallback["limitCount"]
     per_source = values.get("perSourceCap", fallback["perSourceCap"])
     per_source = per_source if isinstance(per_source, int) else fallback["perSourceCap"]
+    # F101：回看窗口（0=关，默认 7，上限 90）。
+    lookback = values.get("lookbackDays", fallback.get("lookbackDays", 7))
+    if not isinstance(lookback, int) or isinstance(lookback, bool):
+        lookback = fallback.get("lookbackDays", 7)
     slots = values.get("slots", fallback.get("slots", ""))
     if not isinstance(slots, str):
         slots = ",".join(str(h) for h in parse_slots(slots))
@@ -69,6 +73,7 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         "windowHours": min(max(window, 1), 72),
         "limitCount": min(max(limit, 1), 40),
         "perSourceCap": min(max(per_source, 0), 5),
+        "lookbackDays": min(max(lookback, 0), 90),
         "slots": slots,
         "sourceKind": source_kind,
     }
@@ -76,6 +81,7 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
 
 def config_row_to_dict(row: Any) -> dict[str, Any]:
     slots_raw = str(row["slots"] or "")
+    keys = row.keys()
     return {
         "id": int(row["id"]),
         "name": str(row["name"]),
@@ -85,6 +91,8 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
         "windowHours": int(row["window_hours"]),
         "limitCount": int(row["limit_count"]),
         "perSourceCap": int(row["per_source_cap"]),
+        # F101：迁移前旧行无该列 → 默认 7（列有 DEFAULT，正常恒在）。
+        "lookbackDays": int(row["lookback_days"]) if "lookback_days" in keys else 7,
         "feedUrlAllow": str(row["feed_url_allow"] or ""),
         "sourceKind": row["source_kind"] if row["source_kind"] in ("window", "read_later", "starred") else "window",
         "slots": parse_slots(slots_raw),
@@ -104,14 +112,14 @@ class GptDigestConfigStore:
     async def list_configs(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs ORDER BY id"
+            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs ORDER BY id"
         )
         return [config_row_to_dict(row) for row in rows]
 
     async def get_config(self, config_id: int) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs WHERE id = ?",
+            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs WHERE id = ?",
             (config_id,),
         )
         return config_row_to_dict(row) if row else None
@@ -119,9 +127,9 @@ class GptDigestConfigStore:
     async def create_config(self, values: dict[str, Any]) -> dict[str, Any]:
         await self._db.migrate()
         name = str(values.get("name") or "").strip()[:_MAX_NAME] or "未命名日报"
-        clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2})
+        clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2, "lookbackDays": 7})
         await self._db.execute(
-            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, feed_url_allow, source_kind, slots, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 clamped["hour"],
@@ -129,6 +137,7 @@ class GptDigestConfigStore:
                 clamped["windowHours"],
                 clamped["limitCount"],
                 clamped["perSourceCap"],
+                clamped["lookbackDays"],
                 str(values.get("feedUrlAllow") or ""),
                 clamped["sourceKind"],
                 clamped["slots"],
@@ -150,7 +159,7 @@ class GptDigestConfigStore:
         name = str(values.get("name", current["name"])).strip()[:_MAX_NAME] or current["name"]
         clamped = _clamp_config(values, current)
         await self._db.execute(
-            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, feed_url_allow = ?, source_kind = ?, slots = ? WHERE id = ?",
+            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ? WHERE id = ?",
             (
                 name,
                 1 if values.get("enabled", current["enabled"]) else 0,
@@ -159,6 +168,7 @@ class GptDigestConfigStore:
                 clamped["windowHours"],
                 clamped["limitCount"],
                 clamped["perSourceCap"],
+                clamped["lookbackDays"],
                 str(values.get("feedUrlAllow", current["feedUrlAllow"])),
                 clamped["sourceKind"],
                 clamped["slots"],
@@ -168,10 +178,14 @@ class GptDigestConfigStore:
         return await self.get_config(config_id)
 
     async def delete_config(self, config_id: int) -> bool:
-        """删除配置并级联删除其期刊（id=1 默认配置不可删除）。"""
+        """删除配置并级联删除其期刊与素材池（id=1 默认配置不可删除）。"""
         if config_id <= 1:
             return False
         await self._db.migrate()
+        await self._db.execute(
+            "DELETE FROM digest_material_pool WHERE config_id = ?",
+            (config_id,),
+        )
         await self._db.execute(
             "DELETE FROM gpt_digest_issues WHERE config_id = ?",
             (config_id,),

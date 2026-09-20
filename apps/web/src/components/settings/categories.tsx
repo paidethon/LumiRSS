@@ -42,7 +42,8 @@ import type {
   UiFontSize,
 } from '../../store/app-settings'
 import type { ThemeMode } from '../../lib/theme'
-import { SHORTCUTS } from '../../lib/keyboard-shortcuts'
+import { effectiveShortcuts } from '../../lib/keyboard-shortcuts'
+import { loadCustomShortcuts } from '../../lib/custom-shortcuts'
 import type { SettingItemDef } from './SettingItem'
 import {
   AccentColorPicker,
@@ -90,6 +91,7 @@ import { PreferencesMigrationSection } from './PreferencesMigrationSection'
 // F36：存储用量统计卡
 import { exportLumiData } from '../../api/client'
 import { StorageUsageSection } from './StorageUsageSection'
+import { StorageRetentionSection } from './StorageRetentionSection'
 import { SettingsHistorySection } from './SettingsHistorySection'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
@@ -469,12 +471,19 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           node: (
             <div className="py-2">
               <p className="mb-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                列表上下文中的基础快捷键；输入框聚焦时不生效。
+                列表上下文中的基础快捷键；输入框聚焦时不生效。用户自定义覆盖默认值（与「?」帮助弹窗同步）。
               </p>
               <dl className="divide-y divide-[var(--lumi-separator)]">
-                {SHORTCUTS.map((s) => (
-                  <div key={s.keys} className="flex items-center justify-between gap-4 py-2.5">
-                    <dt className="text-sm text-[var(--lumi-text-primary)]">{s.action}</dt>
+                {effectiveShortcuts(loadCustomShortcuts()).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-4 py-2.5">
+                    <dt className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]">
+                      {s.action}
+                      {s.overridden && (
+                        <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-tertiary)]">
+                          已自定义
+                        </span>
+                      )}
+                    </dt>
                     <dd>
                       <kbd className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-0.5 font-mono text-xs text-[var(--lumi-text-secondary)]">
                         {s.keys}
@@ -574,6 +583,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
+        // F114：派生数据保留策略（默认关；预览 → 应用）
+        { type: 'custom', node: <StorageRetentionSection /> },
         { type: 'custom', node: <DataBackupSection /> },
       ]
     case 'services':

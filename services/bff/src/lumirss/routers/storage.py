@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from lumirss.config import LumiSettings
 from lumirss.models import StorageUsage
@@ -96,3 +98,60 @@ def _utc_now() -> str:
     from datetime import datetime
 
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+# -- F114 派生数据保留策略 ------------------------------------------------------
+
+
+class RetentionBody(BaseModel):
+    """PUT /api/v1/storage/retention 体（越界值由存储层收敛/置 None）。"""
+
+    enabled: bool | None = None
+    aiVersionsDays: int | None = None
+    taskLogDays: int | None = None
+
+
+@router.get("/api/v1/storage/retention")
+async def get_storage_retention(request: Request) -> dict[str, Any]:
+    from lumirss.storage_retention import load_retention
+
+    return await load_retention(request.app.state.db)
+
+
+@router.put("/api/v1/storage/retention")
+async def put_storage_retention(request: Request) -> dict[str, Any]:
+    import json as _json
+
+    from lumirss.storage_retention import save_retention
+
+    try:
+        body = _json.loads(await request.body() or b"{}")
+    except ValueError:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "请求体需为 JSON 对象。"}},
+        )
+    if not isinstance(body, dict):
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "请求体需为 JSON 对象。"}},
+        )
+    return await save_retention(request.app.state.db, body)
+
+
+@router.post("/api/v1/storage/retention/preview")
+async def preview_storage_retention(request: Request) -> dict[str, Any]:
+    """F114：预览（只读）——各类将清理的记录数与估算字节（分开口径）；
+    保护类如实列出（entries/annotations/notes/cards/credentials/
+    running jobs 永不清理）。"""
+    from lumirss.storage_retention import retention_preview
+
+    return await retention_preview(request.app.state.db)
+
+
+@router.post("/api/v1/storage/retention/apply")
+async def apply_storage_retention(request: Request) -> dict[str, Any]:
+    """F114：应用（有界删除：逐类 LIMIT 500/批；边界 = now-days）。"""
+    from lumirss.storage_retention import retention_apply
+
+    return await retention_apply(request.app.state.db)

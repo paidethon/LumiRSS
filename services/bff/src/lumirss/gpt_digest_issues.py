@@ -29,13 +29,17 @@ class GptDigestIssuesStore:
         refs_json: str,
         model: str,
         published_at: str,
+        status_for_new: str = "published",
     ) -> dict[str, Any]:
+        """F031：新期号可用 status_for_new='draft'（人工审阅后发布）；
+        修订已有期号不改状态（ON CONFLICT 不更新 status）。"""
         await self._db.migrate()
         await self._db.execute(
-            "INSERT INTO gpt_digest_issues (config_id, issue_key, status, title, body_html, sections_json, refs_json, model, created_at, published_at, updated_at) VALUES (?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(config_id, issue_key) DO UPDATE SET status = 'published', title = excluded.title, body_html = excluded.body_html, sections_json = excluded.sections_json, refs_json = excluded.refs_json, model = excluded.model, updated_at = excluded.updated_at",
+            "INSERT INTO gpt_digest_issues (config_id, issue_key, status, title, body_html, sections_json, refs_json, model, created_at, published_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(config_id, issue_key) DO UPDATE SET title = excluded.title, body_html = excluded.body_html, sections_json = excluded.sections_json, refs_json = excluded.refs_json, model = excluded.model, updated_at = excluded.updated_at",
             (
                 config_id,
                 issue_key,
+                status_for_new,
                 title,
                 body_html,
                 sections_json,
@@ -83,13 +87,45 @@ class GptDigestIssuesStore:
         )
         return await self.get_issue(config_id, issue_key)
 
-    async def recent_issues(self, config_id: int, limit: int) -> list[dict[str, Any]]:
+    async def recent_issues(
+        self, config_id: int, limit: int, *, include_drafts: bool = False
+    ) -> list[dict[str, Any]]:
+        """F031：管理面 include_drafts=True 显示草稿；公开订阅默认只出
+        published。"""
         await self._db.migrate()
+        where = (
+            "WHERE config_id = ?"
+            if include_drafts
+            else "WHERE config_id = ? AND status = 'published'"
+        )
         rows = await self._db.fetch_all(
-            "SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues WHERE config_id = ? AND status = 'published' ORDER BY issue_key DESC LIMIT ?",
+            f"SELECT issue_key, status, title, body_html, sections_json, refs_json, model, note, created_at, published_at, updated_at FROM gpt_digest_issues {where} ORDER BY issue_key DESC LIMIT ?",
             (config_id, max(1, min(limit, 90))),
         )
         return [dict(row) for row in rows]
+
+    async def all_issue_keys(self, config_id: int, limit: int = 90) -> list[str]:
+        """F032：全部期号 key（含草稿）——缺失日期判定的真实依据。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT issue_key FROM gpt_digest_issues WHERE config_id = ? ORDER BY issue_key DESC LIMIT ?",
+            (config_id, max(1, min(limit, 400))),
+        )
+        return [str(row["issue_key"]) for row in rows]
+
+    async def publish_issue(self, config_id: int, issue_key: str) -> dict[str, Any] | None:
+        """F031：显式发布（幂等：已 published 再发布不改动）。"""
+        await self._db.migrate()
+        row = await self.get_issue(config_id, issue_key)
+        if row is None:
+            return None
+        if row["status"] == "published":
+            return row
+        await self._db.execute(
+            "UPDATE gpt_digest_issues SET status = 'published' WHERE config_id = ? AND issue_key = ?",
+            (config_id, issue_key),
+        )
+        return await self.get_issue(config_id, issue_key)
 
     async def get_issue(self, config_id: int, issue_key: str) -> dict[str, Any] | None:
         await self._db.migrate()
@@ -105,6 +141,10 @@ class GptDigestIssuesStore:
             sections = json.loads(str(row.get("sections_json") or "[]"))
         except ValueError:
             sections = []
+        # F031 兼容：generate 落库的是完整输出对象 {title, sections,
+        # limitations}；此处统一展开为 sections 列表（DTO 契约保持）。
+        if isinstance(sections, dict):
+            sections = sections.get("sections") or []
         try:
             refs = json.loads(str(row.get("refs_json") or "{}"))
         except ValueError:

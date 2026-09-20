@@ -185,9 +185,13 @@ def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
     ]
     body = str(post.content or "")
     wikilinks: list[str] = []
+    wikilink_raws: list[str] = []
     for chunk in body.split("[[")[1:]:
         target = chunk.split("]]", 1)[0]
+        raw = target.strip()
         target = target.split("|", 1)[0].split("#", 1)[0].strip()
+        if raw and raw not in wikilink_raws:
+            wikilink_raws.append(raw[:200])  # F080：保留别名/锚点原文
         if target and target not in wikilinks:
             wikilinks.append(target[:200])
     inline_tags: list[str] = []
@@ -214,6 +218,7 @@ def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
         "title": title[:_MAX_TITLE_LENGTH],
         "tags": tags[:30],
         "wikilinks": wikilinks[:_MAX_WIKILINKS],
+        "wikilink_raws": wikilink_raws[:_MAX_WIKILINKS],
         "body_text": text[:_MAX_BODY_LENGTH],
         "truncated": 1 if truncated else 0,
     }
@@ -385,7 +390,7 @@ class ObsidianService:
                     (item_uuid, now),
                 )
                 connection.execute(
-                    "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, body_text, truncated, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO obsidian_notes (item_uuid, rel_path, fingerprint, content_hash, title, tags, wikilinks, wikilink_raws, body_text, truncated, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         item_uuid,
                         note["rel_path"],
@@ -394,6 +399,7 @@ class ObsidianService:
                         note["title"],
                         json.dumps(note["tags"], ensure_ascii=False),
                         json.dumps(note["wikilinks"], ensure_ascii=False),
+                        json.dumps(note["wikilink_raws"], ensure_ascii=False),
                         note["body_text"],
                         note["truncated"],
                         now,
@@ -408,7 +414,7 @@ class ObsidianService:
                 )
             for item_uuid, note, _kind in updates:
                 connection.execute(
-                    "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, body_text = ?, truncated = ?, indexed_at = ? WHERE item_uuid = ?",
+                    "UPDATE obsidian_notes SET rel_path = ?, fingerprint = ?, content_hash = ?, title = ?, tags = ?, wikilinks = ?, wikilink_raws = ?, body_text = ?, truncated = ?, indexed_at = ? WHERE item_uuid = ?",
                     (
                         note["rel_path"],
                         note["fingerprint"],
@@ -416,6 +422,7 @@ class ObsidianService:
                         note["title"],
                         json.dumps(note["tags"], ensure_ascii=False),
                         json.dumps(note["wikilinks"], ensure_ascii=False),
+                        json.dumps(note["wikilink_raws"], ensure_ascii=False),
                         note["body_text"],
                         note["truncated"],
                         now,
@@ -455,6 +462,13 @@ class ObsidianService:
         )
         result = report.to_dict()
         result["vaultPath"] = str(root)
+        # F080：重建反向链接索引（尽力而为；失败不影响 rescan 结果）
+        import contextlib as _contextlib
+
+        from lumirss.obsidian_backlinks import rebuild_backlinks
+
+        with _contextlib.suppress(Exception):
+            result["backlinksRebuilt"] = await rebuild_backlinks(self._db) >= 0
         return result
 
     async def list_notes(

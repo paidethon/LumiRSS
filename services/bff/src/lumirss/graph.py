@@ -143,6 +143,19 @@ async def build_graph(db: Database, *, scope: str, max_nodes: int = _MAX_NODES) 
                 add_node(target_ref, target_text, "obsidian_note")
             add_edge(ref, target_ref, "wikilink")
 
+    # F021 手工关联内容：type "manual" 边（与标签/工作区派生边区分）。
+    # 关系是纯手工元数据——图谱只如实画边，跳转前的目标校验由调用方做。
+    relation_rows = await db.fetch_all(
+        "SELECT src_ref, dst_ref FROM item_relations ORDER BY id ASC LIMIT 2000",
+        (),
+    )
+    for row in relation_rows:
+        src_ref = str(row["src_ref"])
+        dst_ref = str(row["dst_ref"])
+        add_node(src_ref, src_ref, _kind_of(src_ref))
+        add_node(dst_ref, dst_ref, _kind_of(dst_ref))
+        add_edge(src_ref, dst_ref, "manual")
+
     # Human labels for item nodes (best effort; refs stay honest labels).
     lib_labels = await db.fetch_all(
         "SELECT i.uuid, COALESCE(b.title, c.title, o.title, i.kind) AS label FROM library_items i LEFT JOIN library_bookmarks b ON b.item_uuid = i.uuid LEFT JOIN library_clips c ON c.item_uuid = i.uuid LEFT JOIN obsidian_notes o ON o.item_uuid = i.uuid"

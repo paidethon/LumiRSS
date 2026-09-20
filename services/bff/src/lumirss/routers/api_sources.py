@@ -26,23 +26,33 @@ from lumirss.api_sources import (
     ApiSourceFetchFailed,
     ApiSourceInvalid,
     ApiSourceNotFound,
+    ApiSourcePreviewError,
     atom_base,
     atom_path,
     compute_feed_updated,
+    diff_schema,
     feed_etag,
     fetch_json,
+    fetch_json_pages,
     generate_atom,
     map_items,
-    secrets_match,
+    observe_schema,
+    parse_pagination,
+    preview_atom_entries,
+    validate_field_map,
+    validate_pagination,
 )
 from lumirss.models import (
     ApiSource,
+    ApiSourceConfirmSchemaResult,
     ApiSourceCreate,
     ApiSourceListResponse,
+    ApiSourcePaginationDryRun,
     ApiSourcePreviewRequest,
     ApiSourcePreviewResult,
     ApiSourceUpdate,
 )
+from lumirss.token_hash import verify_token
 
 from ..deps import _get_api_source_store, _get_control_adapter
 
@@ -51,13 +61,15 @@ router = APIRouter()
 _PREVIEW_ITEM_LIMIT = 5
 
 
-class ApiSourcePreviewError(ApiSourceExpressionError):
-    """Preview-level expression failure (keeps 400 mapping readable)."""
-
-
 def _model(record, *, with_secret: bool = False) -> ApiSource:
     import json as _json
 
+    drift = None
+    if record.schema_drift:
+        try:
+            drift = _json.loads(record.schema_drift)
+        except _json.JSONDecodeError:
+            drift = None
     return ApiSource(
         uuid=record.uuid,
         name=record.name,
@@ -71,6 +83,9 @@ def _model(record, *, with_secret: bool = False) -> ApiSource:
         createdAt=record.created_at,
         secret=record.secret if with_secret else None,
         atomPath=atom_path(record.uuid, record.secret) if with_secret else None,
+        pagination=_json.loads(record.pagination),
+        confirmedSchema=bool(record.confirmed_schema),
+        schemaDrift=drift,
     )
 
 
@@ -99,9 +114,15 @@ async def _unsubscribe_required(request: Request, record) -> str | None:
     except Exception:  # FreshRSS not configured — no subscription can exist
         return None
     try:
-        atom_path_value = atom_path(record.uuid, record.secret)
+        # §13.4：存储值已是哈希——不能再用其拼 URL 匹配（订阅时用的是
+        # 创建时刻的一次性明文）。与本文件同构的 mail 域同解：按 uuid
+        # 路径段匹配本 source 的身份（相近 uuid/不同 host 均不误判）。
+        from urllib.parse import urlsplit
+
+        prefix = f"/feeds/{record.uuid}."
         for subscription in await adapter.list_subscriptions():
-            if subscription.feed_url.endswith(atom_path_value):
+            path = urlsplit(subscription.feed_url).path
+            if path.startswith(prefix) and path.endswith(".atom"):
                 await adapter.unsubscribe(subscription.stream_id)
                 return None
         return None  # already absent → idempotent success
@@ -117,6 +138,7 @@ async def create_source(payload: ApiSourceCreate, request: Request) -> ApiSource
         endpoint=payload.endpoint,
         items_expr=payload.itemsExpr,
         field_map=payload.fieldMap,
+        pagination=payload.pagination,
     )
     base = atom_base()
     atom_url = base + atom_path(record.uuid, record.secret)
@@ -149,10 +171,33 @@ async def update_source(
         items_expr=payload.itemsExpr,
         field_map=payload.fieldMap,
         enabled=payload.enabled,
+        pagination=payload.pagination,
     )
     if record is None:
         raise ApiSourceNotFound(source_uuid)
     return _model(record)
+
+
+@router.post(
+    "/api/v1/api-sources/{source_uuid}/confirm-schema",
+    response_model=ApiSourceConfirmSchemaResult,
+)
+async def confirm_schema(
+    source_uuid: str, request: Request
+) -> ApiSourceConfirmSchemaResult:
+    """F043: re-snapshot the user-confirmed structure baseline.
+
+    Fetches the upstream once (single-shot, bounded), maps with the
+    saved mapping and stores the observed field schema as the baseline;
+    drift warnings clear with it. Nothing else changes."""
+    store: ApiSourceStore = _get_api_source_store(request)
+    record = await store.get(source_uuid)
+    if record is None:
+        raise ApiSourceNotFound(source_uuid)
+    data = await fetch_json(request.app.state.http_client, record.endpoint)
+    items = map_items(data, record.items_expr, record.field_map)
+    await store.confirm_schema(source_uuid, items)
+    return ApiSourceConfirmSchemaResult(confirmed=bool(items), sampledItems=len(items))
 
 
 @router.delete("/api/v1/api-sources/{source_uuid}", status_code=204)
@@ -190,7 +235,19 @@ async def delete_source(source_uuid: str, request: Request) -> Response:
 async def preview_source(
     payload: ApiSourcePreviewRequest, request: Request
 ) -> ApiSourcePreviewResult:
-    """Fetch + map WITHOUT saving anything; ≤5 items, honest errors."""
+    """Fetch + map WITHOUT saving anything; ≤5 items, honest errors.
+
+    F041: ``atomPreview`` shows the first ≤3 entries in their final
+    Atom-rendered shape (stable urn ids, RFC 3339 timestamps, bounded
+    content excerpts) via the exact production pipeline. F042:
+    ``dryRunPagination`` walks the configured pagination against the
+    live upstream and reports {pages, stopReason} — still zero writes.
+    Upstream response headers are never echoed (the response model has
+    no such field by construction)."""
+    validate_field_map(payload.fieldMap)
+    validate_pagination(payload.pagination)
+    if payload.dryRunPagination:
+        return await _dry_run_pagination(payload, request)
     data = await fetch_json(request.app.state.http_client, payload.endpoint.strip())
     try:
         items = map_items(data, payload.itemsExpr.strip(), payload.fieldMap)
@@ -202,7 +259,45 @@ async def preview_source(
             for item in items[:_PREVIEW_ITEM_LIMIT]
         ],
         totalAvailable=len(items),
+        atomPreview=preview_atom_entries(items),
     )
+
+
+async def _dry_run_pagination(
+    payload: ApiSourcePreviewRequest, request: Request
+) -> ApiSourcePreviewResult:
+    """Walk pagination page by page; report counts + stop reason, no writes."""
+    from lumirss.api_sources import parse_pagination
+
+    config = parse_pagination(validate_pagination(payload.pagination))
+    max_pages = int(config.get("max_pages", 5))
+    max_items = int(config.get("max_items", 200))
+    try:
+        payloads, stop_reason = await fetch_json_pages(
+            request.app.state.http_client,
+            payload.endpoint.strip(),
+            validate_pagination(payload.pagination),
+            payload.itemsExpr.strip(),
+        )
+        pages: list[dict[str, object]] = []
+        total = 0
+        for index, data in enumerate(payloads):
+            try:
+                items = map_items(data, payload.itemsExpr.strip(), payload.fieldMap)
+            except ApiSourceExpressionError as exc:
+                raise ApiSourcePreviewError(str(exc)) from exc
+            total += len(items)
+            pages.append({"index": index + 1, "mappedItems": len(items)})
+        return ApiSourcePreviewResult(
+            items=[],  # dry-run reports page stats only; items stay bounded above
+            totalAvailable=total,
+            paginationDryRun=ApiSourcePaginationDryRun(
+                pages=pages, stopReason=stop_reason
+            ),
+        )
+    except ApiSourceFetchFailed as exc:
+        _ = (max_pages, max_items)
+        raise ApiSourcePreviewError(f"分页试跑失败：{exc}") from exc
 
 
 @router.get("/feeds/{source_uuid}.{secret}.atom")
@@ -217,13 +312,23 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     body falls back to the 502 stub."""
     store: ApiSourceStore = _get_api_source_store(request)
     record = await store.get(source_uuid)
-    if record is None or not secrets_match(secret, record):
+    if record is None or not verify_token(secret, record.secret):
         raise ApiSourceNotFound(source_uuid)
     if not record.enabled:
         return Response(status_code=404, media_type="application/xml")
     try:
-        data = await fetch_json(request.app.state.http_client, record.endpoint)
-        items = map_items(data, record.items_expr, record.field_map)
+        if parse_pagination(record.pagination).get("mode", "none") == "none":
+            payloads = [await fetch_json(request.app.state.http_client, record.endpoint)]
+        else:
+            payloads, _stop_reason = await fetch_json_pages(
+                request.app.state.http_client,
+                record.endpoint,
+                record.pagination,
+                record.items_expr,
+            )
+        items: list[dict[str, object]] = []
+        for payload in payloads:
+            items.extend(map_items(payload, record.items_expr, record.field_map))
     except ApiSourceFetchFailed as exc:
         await store.mark_error(record.uuid, "fetch_failed", str(exc))
         if record.atom_body:
@@ -242,10 +347,23 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
             media_type="application/xml",
             content="<error>bad expression</error>",
         )
+    # F043: structure drift against the user-confirmed baseline is
+    # advisory — recorded, never blocks serving. Empty mapped responses
+    # never overwrite the last-known-good feed (honest stale instead).
+    if not items and record.atom_body:
+        await store.mark_error(
+            record.uuid, "empty_response", "上游响应映射结果为空，保留上次内容。"
+        )
+        return _stale_atom_response(record, request)
+    drift = diff_schema(record.confirmed_schema, observe_schema(items))
+    if drift is not None:
+        await store.mark_drift(record.uuid, drift)
+    pagination = parse_pagination(record.pagination)
+    max_entries = int(pagination.get("max_items", 100)) if pagination.get("mode", "none") != "none" else 100
     feed_updated = compute_feed_updated(
         items, record.feed_updated, record.created_at
     )
-    atom = generate_atom(record, items, feed_updated, atom_base())
+    atom = generate_atom(record, items, feed_updated, atom_base(), max_entries=max_entries)
     etag = feed_etag(atom)
     await store.mark_success(record.uuid, etag, atom, feed_updated)
     if_none_match = request.headers.get("if-none-match")

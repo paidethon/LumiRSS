@@ -197,3 +197,55 @@ class AuthStore:
 
     async def revoke_all_sessions(self) -> None:
         await self._db.execute("DELETE FROM auth_sessions")
+
+    # ---- F038 会话管理 ----------------------------------------------------
+
+    async def list_sessions(
+        self, *, current_token: str | None = None, limit: int = 20
+    ) -> list[dict[str, object]]:
+        """活跃会话列表（绝不返回 token 或 token_hash）。
+
+        id = token_hash 前 8 位（显示/撤销标识）；current 按传入的原始
+        token 判定；user_agent 截断 64 字符。
+        """
+        await self._db.migrate()
+        current_hash = _hash_token(current_token) if current_token else None
+        rows = await self._db.fetch_all(
+            "SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?",
+            (max(1, min(limit, 50)),),
+        )
+        now = _now()
+        sessions: list[dict[str, object]] = []
+        for row in rows:
+            expires_at = int(row["expires_at"])
+            if expires_at <= now:
+                continue
+            token_hash = str(row["token_hash"])
+            agent = str(row["user_agent"] or "")
+            sessions.append(
+                {
+                    "id": token_hash[:8],
+                    "createdAt": int(row["created_at"]),
+                    "lastSeenAt": int(row["last_seen_at"]),
+                    "expiresAt": expires_at,
+                    "userAgent": agent[:64] if agent else None,
+                    "current": bool(current_hash is not None and token_hash == current_hash),
+                }
+            )
+        return sessions
+
+    async def revoke_session_by_id(self, session_id: str) -> bool:
+        """按 8 位 id（token_hash 前缀）撤销；不存在 → False。"""
+        if not session_id or len(session_id) != 8:
+            return False
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%'",
+            (session_id,),
+        )
+        if row is None:
+            return False
+        await self._db.execute(
+            "DELETE FROM auth_sessions WHERE token_hash = ?", (row["token_hash"],)
+        )
+        return True

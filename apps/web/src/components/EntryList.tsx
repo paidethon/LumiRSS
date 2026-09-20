@@ -1,5 +1,11 @@
 import { Inbox, Clock, Loader2, PanelLeft, PanelLeftClose, Unplug, CheckSquare, ChevronDown, X, RotateCw } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+// Bundle guard：对话框/工具面板非列表首屏必需——懒加载分包。
+const AskBatchDialog = lazy(() => import('./AskBatchDialog').then((m) => ({ default: m.AskBatchDialog })))
+const ReadingBudgetPanel = lazy(() => import('./ReadingBudgetPanel').then((m) => ({ default: m.ReadingBudgetPanel })))
+const BacklogPanel = lazy(() => import('./BacklogPanel').then((m) => ({ default: m.BacklogPanel })))
+const CompareRead = lazy(() => import('./CompareRead'))
 import {
   useEntries,
   useEntryStateMutation,
@@ -15,7 +21,7 @@ import { scopeKey, scopeTitle } from '../lib/navigation'
 import { useAppSettings } from '../store/app-settings'
 import { groupEntriesByDate } from '../lib/entry-groups'
 import { listAnchorKey, loadListAnchor, saveListAnchor } from '../lib/list-anchor'
-import { matchesFilterRules } from './settings/FilterRulesPage'
+import { matchesFilterRules } from '../lib/feed-filter-match'
 import EntryCard from './EntryCard'
 import EntryRow from './EntryRow'
 import { Button } from './ui/Button'
@@ -24,6 +30,8 @@ import { IconButton } from './ui/IconButton'
 import { UnifiedContentCard } from './UnifiedContentCard'
 import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
+import { aggregateByNormalizedUrl, type UrlGroup } from '../lib/url-aggregate'
+import type { BudgetCandidate } from '../lib/reading-budget'
 
 const EMPTY_TEXTS: Record<UiView, { title: string; description: string }> = {
   all: { title: '这里还没有文章', description: '订阅源还没有内容，稍后再来看看。' },
@@ -437,6 +445,17 @@ function EntriesList() {
   const scope = useReaderUi((s) => s.scope)
   const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
+  // F014：阅读预算（会话内临时清单）
+  const selectEntry = useReaderUi((s) => s.selectEntry)
+  const [budgetOpen, setBudgetOpen] = useState(false)
+  // F024：积压整理面板开关
+  const [backlogOpen, setBacklogOpen] = useState(false)
+  const openEntry = (entryRef: string) => selectEntry(entryRef)
+  // F016：对照阅读（恰好选中 2 条时可用；关闭恢复原列表）
+  const [compareRefs, setCompareRefs] = useState<[string, string] | null>(null)
+  // F018：同链聚合（展示层；仅折叠当前页内同链，诚实标注「仅本页」）
+  const [aggregateOn, setAggregateOn] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const selectScope = useReaderUi((s) => s.selectScope)
   // 0010a Gate E（AC9）：实验性滚动标记已读（默认关）
   const scrollMarkUnread = useAppSettings((s) => s.settings.scrollMarkUnread)
@@ -472,6 +491,33 @@ function EntriesList() {
     return timelineOrder === 'oldest' ? [...filtered].reverse() : filtered
   }, [data, filterEnabled, filterRules, timelineOrder])
 
+  // F014：未读候选（当前已加载 + 当前筛选；阅读预算装填输入）
+  const budgetCandidates = useMemo<BudgetCandidate[]>(
+    () =>
+      entries
+        .filter((item) => !item.read)
+        .map((item) => ({
+          entryRef: item.entryRef,
+          title: item.title,
+          text: item.snippet ?? null,
+        })),
+    [entries],
+  )
+
+  // F018：同链聚合组表（entries 依赖；仅当前已加载页）
+  const urlGroups = useMemo(
+    () => (aggregateOn ? aggregateByNormalizedUrl<EntryListItem>(entries) : null),
+    [aggregateOn, entries],
+  )
+  const toggleGroupExpand = (ref: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else next.add(ref)
+      return next
+    })
+  }
+
   // F05：按来源分组（仅在设置开启时计算）
   const feedGroups = useMemo(
     () => (listGroupByFeed ? groupEntriesByFeed(entries) : []),
@@ -492,6 +538,8 @@ function EntriesList() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
   const [batch, setBatch] = useState<{ kind: BatchKind; running: boolean; failed: string[] } | null>(null)
+  // F065：多篇共同问答（多选 ≥1 打开对话框）。
+  const [askOpen, setAskOpen] = useState(false)
   const { mutateAsync: mutateEntryStateAsync } = useEntryStateMutation()
   // 批量稍后读直接用底层成员 mutation（add 语义）：useToggleReadLater 的
   // toggle 是「按服务端状态翻转」且不返回 Promise——批量场景下翻转会让
@@ -730,6 +778,37 @@ function EntriesList() {
         else rowRefs.current.delete(item.entryRef)
       }}
     >
+      {/* F018：同链聚合组头（仅本页内折叠；展开列出各自来源与时间） */}
+      {urlGroups !== null &&
+        (() => {
+          const group: UrlGroup<EntryListItem> | undefined = urlGroups.groups.get(item.entryRef)
+          if (group === undefined) return null
+          const expanded = expandedGroups.has(item.entryRef)
+          return (
+            <li className="bg-[var(--lumi-surface-selected)] px-4 py-1" data-testid="same-link-header">
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => toggleGroupExpand(item.entryRef)}
+                className="flex min-h-7 w-full items-center gap-1.5 text-left text-[11px] text-[var(--lumi-text-secondary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <ChevronDown aria-hidden className={cx('size-3 transition-transform', !expanded && '-rotate-90')} />
+                <span data-testid="same-link-count">{group.duplicates.length + 1} 个来源收录</span>
+                <span className="text-[var(--lumi-text-tertiary)]">（仅本页 · 归一化 {group.key}）</span>
+              </button>
+              {expanded && (
+                <ul className="mt-0.5 flex flex-col gap-0.5 pb-1">
+                  {group.duplicates.map((dup) => (
+                    <li key={dup.entryRef} className="truncate text-[11px] text-[var(--lumi-text-tertiary)]">
+                      {dup.feedTitle}
+                      {dup.publishedAt != null && dup.publishedAt !== '' ? ` · ${dup.publishedAt.slice(0, 10)}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          )
+        })()}
       {/* 0011 Gate 3：移动端卡片化（<1024）；桌面行保持 0009
           密度（Spec R2：两套展示共存，CSS 分发） */}
       <div className="max-lg:px-2 max-lg:py-1">
@@ -755,13 +834,75 @@ function EntriesList() {
     </li>
   )
 
+  // F016：对照阅读挂载时整列替换为双栏视图（关闭恢复原列表）
+  if (compareRefs !== null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <Suspense fallback={null}>
+          <CompareRead
+            refs={compareRefs}
+            onClose={() => setCompareRefs(null)}
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ListHeader view={view} loadedCount={entries.length} />
 
+      {/* F014：阅读预算面板（列表工具区；会话内临时清单） */}
+      {budgetOpen && (
+        <Suspense fallback={null}>
+          <ReadingBudgetPanel
+          candidates={budgetCandidates}
+          onOpenEntry={(entryRef) => {
+            openEntry(entryRef)
+          }}
+            onClose={() => setBudgetOpen(false)}
+          />
+        </Suspense>
+      )}
+      {/* F024：积压整理面板（预览→确认→执行；保护项服务端强制） */}
+      {backlogOpen && (
+        <Suspense fallback={null}>
+          <BacklogPanel onClose={() => setBacklogOpen(false)} />
+        </Suspense>
+      )}
       {/* F06 排序切换 + F07 多选入口（列表工具行；移动端也有——列表头
           仅桌面显示，这里是其唯一工具入口） */}
       <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1">
+        {/* F014：阅读预算入口 */}
+        <button
+          type="button"
+          aria-pressed={budgetOpen}
+          onClick={() => setBudgetOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            budgetOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          阅读预算
+        </button>
+        {/* F024：积压整理入口 */}
+        <button
+          type="button"
+          aria-pressed={backlogOpen}
+          onClick={() => setBacklogOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            backlogOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          积压整理
+        </button>
         {timelineOrder === 'oldest' && (
           <p
             role="note"
@@ -787,6 +928,37 @@ function EntriesList() {
         >
           {timelineOrder === 'oldest' ? '最早优先' : '最新优先'}
         </button>
+        {/* F018：同链聚合开关 */}
+        <button
+          type="button"
+          aria-pressed={aggregateOn}
+          onClick={() => {
+            setAggregateOn((v) => !v)
+            setExpandedGroups(new Set())
+          }}
+          className={cx(
+            'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            aggregateOn
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          聚合同链
+        </button>
+        {selectMode && selectedRefs.size === 2 && (
+          <button
+            type="button"
+            data-testid="compare-open"
+            onClick={() => {
+              const [a, b] = [...selectedRefs]
+              if (a !== undefined && b !== undefined) setCompareRefs([a, b])
+            }}
+            className="flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-0.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            对照阅读
+          </button>
+        )}
         {selectMode ? (
           <button
             type="button"
@@ -1005,6 +1177,15 @@ function EntriesList() {
               清除
             </button>
             <span className="flex-1" />
+            <button
+              type="button"
+              data-testid="ask-batch-open"
+              disabled={selectedRefs.size === 0}
+              onClick={() => setAskOpen(true)}
+              className="min-h-11 rounded-[var(--lumi-radius-md)] px-2.5 py-1 text-xs font-medium text-[var(--lumi-accent-text)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              基于所选提问
+            </button>
             {(['read', 'star', 'readLater'] as BatchKind[]).map((kind) => (
               <button
                 key={kind}
@@ -1049,6 +1230,27 @@ function EntriesList() {
             </div>
           )}
         </div>
+      )}
+      {/* F065：多篇共同问答（范围=当前多选；可移除；引用 chips 打开该文）。
+          条件挂载：open-prop 门控的 lazy 仍会首帧拉 chunk——条件挂载后
+          首帧完全不参与（bundle guard 契约）。 */}
+      {askOpen && (
+        <Suspense fallback={null}>
+          <AskBatchDialog
+            open={askOpen}
+            onClose={() => setAskOpen(false)}
+            targets={entries
+              .filter((item) => selectedRefs.has(item.entryRef))
+              .map((item) => ({ ref: item.entryRef, title: item.title }))}
+            onRemove={(ref) => {
+              setSelectedRefs((prev) => {
+                const next = new Set(prev)
+                next.delete(ref)
+                return next
+              })
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

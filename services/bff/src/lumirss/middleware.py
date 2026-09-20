@@ -482,10 +482,61 @@ LOGIN_FAILURE_WINDOW_S = 60
 
 _login_failures: dict[str, list[float]] = {}
 
+# 2026-09-20 安全整改（ROADMAP 遗留 P2）：反代后 socket peer 恒为代理，
+# 单桶会被第三方锁死登录。仅当直连 peer 落在可信代理网段时才采纳
+# X-Forwarded-For 的**最后一跳**（由可信代理追加的真实客户端）；不可信
+# peer 的 XFF 一律忽略（防伪造）。默认信任 loopback + 私网 + 链路本地
+# ——单用户自托管拓扑（Caddy 同机/同 compose 网）；可用
+# LUMIRSS_TRUSTED_PROXY_NETWORKS 覆盖（逗号分隔 CIDR）。
+_DEFAULT_TRUSTED_PROXY_NETWORKS = (
+    "127.0.0.0/8",
+    "::1/128",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "fc00::/7",
+)
+
+
+def _trusted_proxy_networks() -> tuple:
+    import ipaddress
+
+    from lumirss.config import LumiSettings
+
+    raw = LumiSettings().LUMIRSS_TRUSTED_PROXY_NETWORKS
+    nets = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part:
+            nets.append(ipaddress.ip_network(part, strict=False))
+    if nets:
+        return tuple(nets)
+    return tuple(ipaddress.ip_network(n) for n in _DEFAULT_TRUSTED_PROXY_NETWORKS)
+
+
+def _is_trusted_proxy(peer: str) -> bool:
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(addr in net for net in _trusted_proxy_networks())
+
 
 def _client_key(scope) -> str:
     client = scope.get("client")
-    return client[0] if client else "unknown"
+    peer = client[0] if client else "unknown"
+    if not _is_trusted_proxy(peer):
+        return peer
+    raw_xff = dict(scope.get("headers") or []).get(b"x-forwarded-for")
+    if raw_xff:
+        # 最后一跳：由本方可信代理追加的客户端地址（第一跳可被客户端伪造）。
+        last_hop = raw_xff.decode("latin-1").split(",")[-1].strip()
+        if last_hop:
+            return last_hop
+    return peer
 
 
 def login_attempts_allowed(scope) -> bool:

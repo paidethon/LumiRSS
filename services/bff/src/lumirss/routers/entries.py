@@ -10,11 +10,20 @@ from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
 from lumirss.deps import _get_adapter, _get_search_service
 from lumirss.entryref import InvalidEntryReference, decode_entry_ref
 from lumirss.models import (
+    BacklogApplyRequest,
+    BacklogApplyResponse,
+    BacklogPreviewRequest,
+    BacklogPreviewResponse,
+    BacklogSampleItem,
     EntryDetail,
     EntryListResponse,
 )
+from lumirss.util import utc_now
 
 router = APIRouter()
+
+# F024：单批执行上限（超出部分需要再次预览+确认，避免不可控大批量）。
+_BACKLOG_APPLY_CAP = 1000
 
 
 class EntryStateUpdate(BaseModel):
@@ -45,6 +54,7 @@ async def entries(
     sourceType: str | None = None,
     categoryId: str | None = None,
     cursor: str | None = None,
+    includeHidden: bool = False,
 ) -> EntryListResponse:
     """One filtered page of entries — list fields only, never bodies.
 
@@ -97,6 +107,41 @@ async def entries(
         from lumirss.source_overrides import filter_timeline_items
 
         items = await filter_timeline_items(request.app.state.db, list(page.items))
+    # F045：服务端屏蔽规则（per-feed）。默认把命中项从结果中剔除并在
+    # filteredCount 如实计数；includeHidden=true 临时包含（附带
+    # hiddenByRule 标记）。规则不触碰 FreshRSS 侧任何状态。
+    from lumirss.feed_filter_store import FeedFilterRuleStore, first_matching_rule
+
+    rules_by_feed: dict[str, list[dict[str, object]]] = {}
+    store = FeedFilterRuleStore(request.app.state.db)
+    for rule in await store.list_rules(None):
+        if rule["enabled"]:
+            rules_by_feed.setdefault(str(rule["feedUrl"]), []).append(rule)
+    filtered_count = 0
+    kept: list[object] = []
+    for item in items:
+        item_feed_url = getattr(item, "feedUrl", None)
+        rules = rules_by_feed.get(str(item_feed_url)) if item_feed_url else None
+        hit = (
+            first_matching_rule(
+                rules, title=getattr(item, "title", None), author=getattr(item, "author", None)
+            )
+            if rules
+            else None
+        )
+        if hit is None:
+            kept.append(item)
+            continue
+        reason = (
+            f"{'标题' if hit['field'] == 'title' else '作者'}"
+            f"{'包含' if hit['op'] == 'contains' else '等于'}「{hit['value']}」"
+        )
+        if includeHidden:
+            item.hiddenByRule = {"ruleId": str(hit["id"]), "reason": reason}
+            kept.append(item)
+        else:
+            filtered_count += 1
+    items = kept  # type: ignore[assignment]
     next_cursor = (
         encode_cursor(
             page.upstreamContinuation,
@@ -108,7 +153,7 @@ async def entries(
         if page.upstreamContinuation is not None
         else None
     )
-    return EntryListResponse(items=items, nextCursor=next_cursor)
+    return EntryListResponse(items=items, nextCursor=next_cursor, filteredCount=filtered_count)
 
 
 @router.get(
@@ -116,12 +161,55 @@ async def entries(
     response_model=EntryDetail,
     response_model_exclude_none=False,
 )
-async def entry_detail(entry_ref: str, request: Request) -> EntryDetail:
+async def entry_detail(
+    entry_ref: str, request: Request, extractOnce: bool = False
+) -> Response:
     """One entry as plain text. Invalid refs are rejected before FreshRSS;
-    reading a detail never marks anything as read (read-only milestone)."""
+    reading a detail never marks anything as read (read-only milestone).
+
+    F048：来源覆盖 extract_policy='web' 时，经安全有界抓取层抓原文正文
+    （article_extract + SSRF 校验，≤2MB，不执行 JS），结果缓存于
+    entry_extract_cache；失败回退 RSS 正文并置 extractionFailed=true。"""
+    from fastapi.responses import JSONResponse
+
+
     item_id = decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
     adapter = _get_adapter(request)
-    return await adapter.get_entry(item_id)
+    detail = await adapter.get_entry(item_id)
+    detail.extractPolicy = "rss"
+    detail.extractionFailed = False
+    feed_url = getattr(detail, "feedUrl", None)
+    if not feed_url:
+        return JSONResponse(detail.model_dump())
+    from lumirss.source_overrides import SourceOverrideStore
+
+    policy = await SourceOverrideStore(request.app.state.db).get_extract_policy(feed_url)
+    if extractOnce:
+        policy = "web"  # 单篇临时预览（不改变来源策略）
+    detail.extractPolicy = policy
+    if policy != "web" or not detail.url:
+        return JSONResponse(detail.model_dump())
+    # 缓存命中优先
+    row = await request.app.state.db.fetch_one(
+        "SELECT content_html, fetched_at FROM entry_extract_cache WHERE entry_ref = ?",
+        (entry_ref,),
+    )
+    if row is not None:
+        detail.contentHtml = row["content_html"]
+        return JSONResponse(detail.model_dump())
+    try:
+        from lumirss.clip_fetch import fetch_extract_sanitize
+
+        page = await fetch_extract_sanitize(detail.url)
+    except Exception:  # noqa: BLE001 — 提取失败诚实回退 RSS 正文
+        detail.extractionFailed = True
+        return JSONResponse(detail.model_dump())
+    detail.contentHtml = page.content_html
+    await request.app.state.db.execute(
+        "INSERT INTO entry_extract_cache (entry_ref, content_html, fetched_at) VALUES (?, ?, ?) ON CONFLICT(entry_ref) DO UPDATE SET content_html = excluded.content_html, fetched_at = excluded.fetched_at",
+        (entry_ref, page.content_html, utc_now()),
+    )
+    return JSONResponse(detail.model_dump())
 
 
 @router.patch("/api/v1/entries/{entry_ref}/state", status_code=204)
@@ -146,3 +234,111 @@ async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request
     return Response(status_code=204)
 
 
+
+
+# -- F024 积压整理助手 --------------------------------------------------------
+
+
+def _backlog_condition(payload) -> dict:
+    from lumirss.backlog import _condition_dict
+
+    return _condition_dict(
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+    )
+
+
+def _effective_exclusions(payload) -> list[str]:
+    from lumirss.backlog import _EFFECTIVE_EXCLUSIONS
+
+    # 服务端强制排除：即使传 false 也保护 starred / read-later。
+    return list(_EFFECTIVE_EXCLUSIONS)
+
+
+def _sample_model(row) -> "BacklogSampleItem":
+    return BacklogSampleItem(
+        ref=f"rss:{row['entry_ref']}",
+        title=str(row["title"]),
+        publishedAt=str(row["published_at"]),
+    )
+
+
+@router.post(
+    "/api/v1/entries/backlog-preview",
+    response_model=BacklogPreviewResponse,
+)
+async def backlog_preview(payload: BacklogPreviewRequest, request: Request) -> dict:
+    """真实计数 + 前 20 条样本 + 一次性 token（30s）。零写入。"""
+    from lumirss.backlog import backlog_rows, issue_preview_token
+
+    condition = _backlog_condition(payload)
+    rows = await backlog_rows(
+        request.app.state.db,
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+        limit=None,
+    )
+    token = issue_preview_token(condition)
+    return {
+        "count": len(rows),
+        "sample": [_sample_model(row) for row in rows[:20]],
+        "effectiveExclusions": _effective_exclusions(payload),
+        "confirmPreviewToken": token,
+    }
+
+
+@router.post(
+    "/api/v1/entries/backlog-apply",
+    response_model=BacklogApplyResponse,
+)
+async def backlog_apply(payload: BacklogApplyRequest, request: Request) -> dict:
+    """确认执行：逐条走既有 set-read 管线（set 语义）；单条失败进
+    failed[]；token 校验失败（过期/条件漂移）→ 409。"""
+    import asyncio as _asyncio
+
+    from lumirss.backlog import (
+        backlog_rows,
+        validate_apply_token,
+    )
+
+    condition = _backlog_condition(payload)
+    validate_apply_token(payload.confirmPreviewToken, condition)  # 409 on drift/expiry
+    rows = await backlog_rows(
+        request.app.state.db,
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+        limit=_BACKLOG_APPLY_CAP,
+    )
+    adapter = _get_adapter(request)
+    search = _get_search_service(request)
+    applied = 0
+    failed: list[BacklogSampleItem] = []
+
+    async def _mark(row) -> bool:
+        from lumirss.entryref import decode_entry_ref
+
+        try:
+            item_id = decode_entry_ref(row["entry_ref"])
+            await adapter.set_entry_state(item_id, read=True, starred=None)
+            await search.set_entry_read(row["entry_ref"], True)
+            return True
+        except Exception:  # noqa: BLE001 — 单条失败不中断整批
+            return False
+
+    results = await _asyncio.gather(*(_mark(row) for row in rows))
+    for row, ok in zip(rows, results, strict=True):
+        if ok:
+            applied += 1
+        else:
+            failed.append(_sample_model(row))
+    return {
+        "applied": applied,
+        "failed": failed,
+        "effectiveExclusions": _effective_exclusions(payload),
+    }
+
+
+_ = (_BACKLOG_APPLY_CAP,)  # cap referenced above; BacklogConflict mapped via BacklogConflict import in apply

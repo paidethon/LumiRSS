@@ -63,7 +63,7 @@ describe('PreferencesMigrationSection（F32）', () => {
       element?.textContent === 'readerFontSize: 19 → 14' && element.tagName === 'LI',
     )
     expect(row).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '应用' }))
+    fireEvent.click(screen.getByRole('button', { name: /仅应用所选/ }))
     await waitFor(() => {
       expect(useAppSettings.getState().settings.readerFontSize).toBe(14)
       expect(useAppSettings.getState().settings.readerJustify).toBe(true)

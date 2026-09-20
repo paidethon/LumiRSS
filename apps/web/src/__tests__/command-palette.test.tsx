@@ -104,7 +104,11 @@ describe('command-registry 纯逻辑', () => {
 
 describe('CommandPalette 组件', () => {
   it('事件唤起 → 输入过滤 → 点击执行（store 变化）→ 面板关闭', async () => {
-    render(<CommandPalette />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CommandPalette />
+      </QueryClientProvider>,
+    )
     expect(screen.queryByTestId('command-palette')).toBeNull()
     openPalette()
     expect(screen.getByRole('dialog', { name: '命令面板' })).toBeInTheDocument()
@@ -119,7 +123,11 @@ describe('CommandPalette 组件', () => {
   })
 
   it('上下键移动选中项，Enter 执行；无结果空态', () => {
-    render(<CommandPalette />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CommandPalette />
+      </QueryClientProvider>,
+    )
     openPalette()
     const input = screen.getByLabelText('搜索命令')
     fireEvent.change(input, { target: { value: '订阅' } })
@@ -138,7 +146,11 @@ describe('CommandPalette 组件', () => {
   })
 
   it('上下键在多结果间循环；Escape 关闭', () => {
-    render(<CommandPalette />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CommandPalette />
+      </QueryClientProvider>,
+    )
     openPalette()
     const input = screen.getByLabelText('搜索命令')
     // 外观：主题 三条命令
@@ -205,7 +217,11 @@ describe('CommandPalette 组件', () => {
   it('返回链：goBack() 关闭打开的面板（registerOverlay 登记）', async () => {
     window.history.replaceState(null, '', '/')
     initNavHistory()
-    render(<CommandPalette />)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CommandPalette />
+      </QueryClientProvider>,
+    )
     openPalette()
     expect(screen.getByTestId('command-palette')).toBeInTheDocument()
     expect(goBack()).toBe(true)

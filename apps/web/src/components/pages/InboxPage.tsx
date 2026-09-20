@@ -15,6 +15,8 @@
  */
 
 import { useMemo, useState } from 'react'
+import { Suspense, lazy } from 'react'
+const InboxRulesPanelLazy = lazy(() => import('../InboxRulesPanel'))
 import {
   Copy,
   Inbox as InboxIcon,
@@ -39,6 +41,7 @@ import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
 import UnifiedContentCard from '../UnifiedContentCard'
+import { InboxSourceTools } from '../InboxSourceTools'
 import { cx } from '../ui/cx'
 
 /** 新建连接器 Dialog：名称输入；成功后展示一次性 secret + 摄取路径。 */
@@ -137,7 +140,7 @@ function CreateConnectorDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** 只读凭据行 + 复制按钮（clipboard 失败静默——值仍在框内可手动复制）。 */
-function CopyField({
+export function CopyField({
   label,
   value,
   onCopy,
@@ -250,14 +253,18 @@ function ConnectorList() {
                 </Button>
               </>
             ) : (
-              <IconButton
-                icon={<Trash2 aria-hidden className="size-4" />}
-                label={`删除连接器 ${source.name}`}
-                size="sm"
-                touch
-                disabled={del.isPending}
-                onClick={() => setConfirmUuid(source.uuid)}
-              />
+              <>
+                {/* W6：F107 投递记录 / F108 接入检查 / F109 轮换凭据 */}
+                <InboxSourceTools sourceUuid={source.uuid} name={source.name} />
+                <IconButton
+                  icon={<Trash2 aria-hidden className="size-4" />}
+                  label={`删除连接器 ${source.name}`}
+                  size="sm"
+                  touch
+                  disabled={del.isPending}
+                  onClick={() => setConfirmUuid(source.uuid)}
+                />
+              </>
             )}
           </li>
         )
@@ -397,6 +404,11 @@ export default function InboxPage() {
         <div className="mt-2">
           <ConnectorList />
         </div>
+
+        {/* F022：归类规则（顺序/启停/编辑 + dry-run 样本试跑） */}
+        <Suspense fallback={null}>
+          <InboxRulesPanelLazy />
+        </Suspense>
 
         {/* 条目 / 诚实状态 */}
         {isPending ? (

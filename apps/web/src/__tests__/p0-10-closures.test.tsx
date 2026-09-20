@@ -70,6 +70,7 @@ function workspaceFixture(over: Partial<Workspace> = {}): Workspace {
     name: '工作区',
     position: 0,
     itemCount: 0,
+    archived: false,
     reserved: false,
     description: '',
     ...over,

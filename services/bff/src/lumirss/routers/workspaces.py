@@ -18,6 +18,7 @@ from lumirss.models import (
     ReadLaterSnoozeRequest,
     ReadLaterSnoozeResult,
     ReadLaterTimelineResponse,
+    ResearchPackPreviewRequest,
     ResearchPackRequest,
     ResolvedItem,
     ResolveRequest,
@@ -28,7 +29,7 @@ from lumirss.models import (
     WorkspaceItemsResolvedResponse,
     WorkspaceItemsResponse,
     WorkspaceListResponse,
-    WorkspaceRename,
+    WorkspacePatch,
     WorkspaceReorderRequest,
 )
 from lumirss.sources import (
@@ -90,6 +91,8 @@ def _workspace_model(summary) -> Workspace:
         itemCount=summary.item_count,
         reserved=summary.reserved,
         description=summary.description,
+        archived=summary.archived,
+        archivedAt=summary.archived_at,
     )
 
 
@@ -148,12 +151,30 @@ async def get_workspace(workspace_id: str, request: Request) -> Workspace:
 
 @router.patch("/api/v1/workspaces/{workspace_id}", response_model=Workspace)
 async def rename_workspace(
-    workspace_id: str, payload: WorkspaceRename, request: Request
+    workspace_id: str, payload: WorkspacePatch, request: Request
 ) -> Workspace:
+    """F084：PATCH 扩展——archived=true 归档 / false 恢复；name/description
+    缺省 = 不修改（与归档可同请求组合）。"""
     store: WorkspaceStore = _get_workspace_store(request)
-    return _workspace_model(
-        await store.rename_workspace(workspace_id, payload.name, payload.description)
-    )
+    if payload.archived is not None:
+        from lumirss.workspace_archive import WorkspaceArchiveStore
+
+        archive = WorkspaceArchiveStore(request.app.state.db, store)
+        try:
+            if payload.archived:
+                await archive.archive(workspace_id)
+            else:
+                await archive.restore(workspace_id)
+        except KeyError as exc:
+            raise WorkspaceNotFound(workspace_id) from exc
+    if payload.name is not None:
+        await store.rename_workspace(
+            workspace_id, payload.name, payload.description
+        )
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    return _workspace_model(summary)
 
 
 @router.delete("/api/v1/workspaces/{workspace_id}", status_code=204)
@@ -259,10 +280,54 @@ async def workspace_contents(
 
 
 @router.post(
+    "/api/v1/workspaces/{workspace_id}/research-pack/preview",
+    response_model=None,
+)
+async def preview_research_pack(
+    workspace_id: str, payload: ResearchPackPreviewRequest, request: Request
+):
+    """F088：资料包预览（计数 + 体积估算 + 可选快照清单；缺失诚实跳过）。"""
+    from pathlib import Path
+
+    from lumirss.config import LumiSettings
+    from lumirss.models import ResearchPackPreviewResponse
+    from lumirss.research_pack_zip import ResearchPackZipBuilder
+
+    store = _get_workspace_store(request)
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    members = await store.list_items(workspace_id, limit=500)
+    registry = _get_source_registry(request)
+    resolved = list(
+        await asyncio.gather(
+            *(_resolve_bounded(registry, member.item_ref) for member in members)
+        )
+    )
+    missing = sum(1 for view in resolved if view.stale)
+    asset_root = Path(LumiSettings().data_dir) / "library" / "assets"
+    builder = ResearchPackZipBuilder(request.app.state.db, asset_root)
+    preview = await builder.preview(
+        entry_count=len(members),
+        missing_count=missing,
+        include_snapshots=payload.includeSnapshots,
+    )
+    return ResearchPackPreviewResponse(
+        entryCount=preview["entryCount"],
+        missingCount=preview["missingCount"],
+        estBytes=preview["estBytes"],
+        snapshots=preview["snapshots"],
+    )
+
+
+@router.post(
     "/api/v1/workspaces/{workspace_id}/research-pack",
 )
 async def export_research_pack(
-    workspace_id: str, payload: ResearchPackRequest, request: Request
+    workspace_id: str,
+    payload: ResearchPackRequest,
+    request: Request,
+    format: str | None = None,
 ) -> Response:
     """F27 研究包导出（Markdown + manifest；只读，可重现）。
 
@@ -346,6 +411,31 @@ async def export_research_pack(
     lines.append("```")
 
     text = "\n".join(lines)
+    if format == "zip":
+        # F088：ZIP 导出（快照纳入 + manifest sha256 + 成员路径白名单）。
+        from pathlib import Path
+
+        from lumirss.config import LumiSettings
+        from lumirss.research_pack_zip import ResearchPackZipBuilder
+
+        asset_root = Path(LumiSettings().data_dir) / "library" / "assets"
+        builder = ResearchPackZipBuilder(request.app.state.db, asset_root)
+        zip_bytes, manifest = await builder.build_zip(
+            markdown=text,
+            entry_count=len(members),
+            missing_count=missing,
+            include_snapshots=getattr(payload, "includeSnapshots", None) or [],
+        )
+        filename = f"research-pack-{workspace_id}.zip"
+        quoted = quote(filename)
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted}",
+                "X-Manifest-Files": str(manifest["fileCount"]),
+            },
+        )
     filename = f"research-pack-{workspace_id}.md"
     quoted = quote(filename)
     return Response(

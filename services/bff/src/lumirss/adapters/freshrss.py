@@ -651,6 +651,7 @@ class FreshRSSAdapter(FreshRSSSession):
             contentText=html_to_text(base["content_html"]),
             contentHtml=base["content_html"] or None,
             feedUrl=feed_url_map.get(base["feed_title"]),
+            enclosure=base["enclosure"],
         )
 
     async def set_entry_state(
@@ -941,6 +942,21 @@ class FreshRSSAdapter(FreshRSSSession):
             )
         categories = item.get("categories")
         categories = categories if isinstance(categories, list) else []
+        # F011：enclosure 原样透传（仅取 str href + 可选 str type；
+        # 形状异常的元素丢弃，绝不构造 URL）。
+        raw_enclosures = item.get("enclosure")
+        enclosure = []
+        if isinstance(raw_enclosures, list):
+            for element in raw_enclosures:
+                if not isinstance(element, dict):
+                    continue
+                href = element.get("href")
+                if not isinstance(href, str) or not href:
+                    continue
+                kind = element.get("type")
+                enclosure.append(
+                    {"href": href, "type": kind if isinstance(kind, str) else None}
+                )
         return {
             "item_id": item_id,
             "title": title,
@@ -952,6 +968,7 @@ class FreshRSSAdapter(FreshRSSSession):
             "read": _READ_MARKER in categories,
             "starred": _STARRED_MARKER in categories,
             "content_html": FreshRSSAdapter._content_html_of(item),
+            "enclosure": enclosure,
         }
 
     @staticmethod

@@ -16,6 +16,8 @@
  * - loading Skeleton / empty / error+重试 三态齐备。 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { GraphViewsToolbar } from '../GraphViewsToolbar'
+import { GraphPathFinder } from '../GraphPathFinder'
 import { AlertCircle, Loader2, MoreVertical, Pencil, RefreshCw, Trash2, Waypoints } from 'lucide-react'
 import type { Core, ElementDefinition, StylesheetJson } from 'cytoscape'
 import {
@@ -153,6 +155,16 @@ function GraphCanvas({
                 'curve-style': 'haystack',
                 'haystack-radius': 0.2,
                 opacity: 0.6,
+              },
+            },
+            {
+              // F021：手工关联边用虚线+主题色，与标签/工作区派生边区分。
+              selector: 'edge[kind = "manual"]',
+              style: {
+                width: 2,
+                'line-style': 'dashed',
+                'line-color': tokenColor('--lumi-category-purple', '#a855f7'),
+                opacity: 0.9,
               },
             },
           ] satisfies StylesheetJson,
@@ -298,6 +310,19 @@ export default function GraphPage() {
           <RefreshCw aria-hidden className={cx('size-3.5', graph.isFetching && 'animate-spin')} />
           重建视图
         </Button>
+        {/* F077：关系路径查找（两节点选择→节点链 chips） */}
+        <GraphPathFinder nodes={nodes} />
+        {/* F076：图谱命名视图（保存当前/恢复/覆盖/删除） */}
+        <GraphViewsToolbar
+          nodes={nodes}
+          filters={{ scope, tablePreferred }}
+          focusNode={selectedRef}
+          captureLayout={() => ({})}
+          onRestore={({ filters, focusNode }: { filters: Record<string, unknown>; focusNode: string | null }) => {
+            if (typeof filters.scope === 'string') setScope(filters.scope)
+            setSelectedRef(focusNode)
+          }}
+        />
       </div>
 
       {/* 标签列表（非图形等价路径）：chip = #名称 (数量)，可聚焦 */}
@@ -496,6 +521,26 @@ export default function GraphPage() {
                     {openState.error}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* F021 图例：手工关联边（虚线）与派生边区分。 */}
+            {(visibleEdges.some((edge) => edge.kind === 'manual')) && (
+              <div
+                className="mt-1 flex items-center gap-3 px-1 text-[11px] text-[var(--lumi-text-tertiary)]"
+                data-lumi-graph-legend=""
+              >
+                <span className="flex items-center gap-1">
+                  <span aria-hidden className="inline-block h-px w-6 border-t border-[var(--lumi-border)]" />
+                  标签/工作区派生边
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    aria-hidden
+                    className="inline-block h-px w-6 border-t-2 border-dashed border-[var(--lumi-category-purple)]"
+                  />
+                  手工关联（{visibleEdges.filter((edge) => edge.kind === 'manual').length}）
+                </span>
               </div>
             )}
 

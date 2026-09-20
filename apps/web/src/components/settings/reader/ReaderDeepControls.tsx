@@ -130,6 +130,25 @@ export function ChineseTypographySettings() {
             ]}
           />
         </div>
+
+        {/* F009：默认不加载远程图片（本地/快照资源不受影响；单图可恢复） */}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">默认不加载远程图片</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              隐私优先 · 远程图片以占位显示，点击「加载本图」才加载（本地快照不受影响）
+            </p>
+          </div>
+          <Select
+            aria-label="默认不加载远程图片"
+            value={settings.readerBlockRemoteImages ? 'on' : 'off'}
+            onChange={(e) => update({ readerBlockRemoteImages: e.target.value === 'on' })}
+            options={[
+              { value: 'off', label: '关闭' },
+              { value: 'on', label: '开启' },
+            ]}
+          />
+        </div>
       </div>
     </div>
   )

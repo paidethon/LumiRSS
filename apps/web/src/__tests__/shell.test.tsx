@@ -120,8 +120,8 @@ describe('Test F — Entry list 渲染', () => {
     // 圆点是纯视觉信号（aria-hidden），语义由字重 + 结构承载（AC10）。
     const unreadTitles = screen.getAllByText('未读文章')
     const readTitles = screen.getAllByText('已读收藏')
-    for (const t of unreadTitles) expect(t.className).toContain('font-medium')
-    for (const t of readTitles) expect(t.className).toContain('font-normal')
+    for (const t of unreadTitles) expect(t.closest('button')?.className).toContain('font-medium')
+    for (const t of readTitles) expect(t.closest('button')?.className).toContain('font-normal')
     // 列表契约：数据里没有 contentText，正文绝不出现在 UI
     expect(document.body.textContent).not.toContain('contentText')
   })

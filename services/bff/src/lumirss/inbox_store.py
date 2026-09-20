@@ -26,7 +26,8 @@ from typing import Any
 
 from lumirss.db_tx import transaction
 from lumirss.storage import Database
-from lumirss.util import constant_time_equals, utc_now
+from lumirss.token_hash import hash_token, verify_token
+from lumirss.util import utc_now
 
 
 class InboxSourceNotFound(Exception):
@@ -49,11 +50,13 @@ def new_source_secret() -> str:
     """High-entropy per-connector credential (shown once at creation)."""
     import secrets
 
+
     return secrets.token_hex(16)
 
 
 def secrets_match(supplied: str, stored: str) -> bool:
-    return constant_time_equals(supplied, stored)
+    """§13.4：哈希化存储的单向验证（旧明文行走兼容分支）。"""
+    return verify_token(supplied, stored)
 
 
 class InboxStore:
@@ -72,9 +75,10 @@ class InboxStore:
         secret = new_source_secret()
         now = utc_now()
         await self._db.migrate()
+        # §13.4：只存哈希；明文仅在创建响应出现一次。
         await self._db.execute(
-            "INSERT INTO inbox_sources (uuid, name, enabled, secret, last_success_at, last_error, created_at) VALUES (?, ?, 1, ?, NULL, NULL, ?)",
-            (source_uuid, name, secret, now),
+            "INSERT INTO inbox_sources (uuid, name, enabled, secret, last_success_at, last_error, created_at, secret_is_hash) VALUES (?, ?, 1, ?, NULL, NULL, ?, 1)",
+            (source_uuid, name, hash_token(secret), now),
         )
         return {
             "uuid": source_uuid,
@@ -120,9 +124,10 @@ class InboxStore:
             return None
         secret = new_source_secret()
         await self._db.migrate()
+        # §13.4：落库哈希；明文仅在轮换响应出现一次。
         await self._db.execute(
-            "UPDATE inbox_sources SET secret = ? WHERE uuid = ?",
-            (secret, source_uuid),
+            "UPDATE inbox_sources SET secret = ?, secret_is_hash = 1 WHERE uuid = ?",
+            (hash_token(secret), source_uuid),
         )
         return secret
 

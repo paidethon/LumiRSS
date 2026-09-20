@@ -40,6 +40,30 @@
   [../explanation/search.md](../explanation/search.md)）。
 - **`./lumirss` 生命周期脚本 + GHCR 预构建镜像**：一键 deploy/update/
   backup/restore/doctor/rollback（用法见 [../how-to/deploy.md](../how-to/deploy.md)）。
+- **2026-09-13/14 Phase 2 Recovery**：13 个 P0 返工全部 production_verified。
+  冻结账本：[../audits/phase2-recovery.md](../audits/phase2-recovery.md)。
+- **2026-09-18 夜间批次**：RSS 自动采集修复（FreshRSS `CRON_MIN` 唯一调度
+  拥有者）、Agent 桌面全宽布局、GPT 日报（多主题 + token 订阅 Atom）、
+  收件量概览/稍后读延后/打印视图/溯源卡/能力页/存储用量/偏好迁移。
+- **2026-09-19/20 一百二十项可感知功能批次**：来源管理（新鲜度预警、
+  OPML 逐项导入/选择性导出、查重、备注、批量迁移、屏蔽规则、静音列表、
+  RSSHub 参数编辑、正文提取策略、导入批次、批量健康检查）、阅读与批注
+  （段落链接、对照阅读、阅读预算、批注服务端化与管理器/复习队列、脚注、
+  公式、双语关联滚动与导出、外链清单、单源样式、跨设备续读）、搜索与
+  知识（筛选构建器、同链聚合、回收站、命中定位/解释、清单导出、视图
+  对照、同义词、图谱命名视图与路径、Obsidian 反链）、AI 与交付（输入
+  预览、证据定位、版本比较、问答模板、术语命中、草稿审阅、补刊、配额、
+  多文问答/对照、来源级 AI 禁用、自测、知识卡片）、维护与隐私（诊断包、
+  设置历史撤销、CSS 隔离预览、隐私遮罩、保留策略、备份比较、冲突解决
+  界面、版本更新确认、草稿恢复、审计时间线）、接入域（API 来源分页/
+  结构预警、地址迁移向导、IMAP 启停、邮件解析对照/过滤规则/历史回填/
+  会话串联、Inbox 事件重放/契约试跑/凭据轮换 UI、日报素材池/近期去重）。
+  同批安全整改：登录限流按可信代理 XFF 分桶、订阅凭据单向哈希存储。
+  完整实现/测试清单见当轮私有验收账本（不入库）。
+- **文档考古说明（2026-09-20）**：`docs/research/`（Phase 2 研究与三篇
+  研究报告）与 `docs/audits/mobile-liquid-glass-acceptance.md` 已完成
+  历史使命删除，Git 历史可恢复
+  （`git log --diff-filter=D -- docs/research/`）。
 
 ## Releases
 

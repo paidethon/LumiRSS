@@ -30,9 +30,13 @@ test('连续选择 5 篇文章：最后一次选择胜出且不被旧文覆盖',
   const isDesktop = (page.viewportSize()?.width ?? 0) >= 1024
   await page.goto('/')
 
+  // W-波次后行根内新增内容包装层：标题按钮不再是行根直接子级；
+  // 用「行内带文本的 aria-pressed 按钮」定位（动作按钮均为 icon-only，
+  // 无文本；与实现类名解耦）。
   const titleButtons = page
-    .locator('li div[data-entry-ref] > button[aria-pressed]')
+    .locator('div[data-entry-ref] button[aria-pressed]')
     .filter({ visible: true })
+    .filter({ hasText: /\S/ })
   // 就绪信号 = 列表行出现（移动端没有常驻「打开设置」按钮，
   // 不能用桌面的 waitForAppReady）
   await expect(titleButtons.first()).toBeVisible({ timeout: 15_000 })

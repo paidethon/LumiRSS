@@ -21,6 +21,7 @@
 | `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 单用户访问控制。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
 | `LUMIRSS_SESSION_MAX_AGE_DAYS` | `180`（天）。session 模式的绝对不活跃窗口；活跃使用会滑动续期（临近过期自动延长），经常使用基本不需要重新登录 |
 | `LUMIRSS_SESSION_SECURE_COOKIES` | `1`。`__Host-` 前缀 + `Secure`（要求 HTTPS，所有生产部署都应保持 1）；仅纯 HTTP 本地调试才设 0（此时 cookie 名退化为 `lumirss_session`） |
+| `LUMIRSS_TRUSTED_PROXY_NETWORKS` | （空）。登录失败限流的可信代理网段（逗号分隔 CIDR）。空 = loopback+私网+链路本地（本栈两级 Caddy 拓扑默认即可）。仅这些网段的直连 peer 采纳 `X-Forwarded-For` **最后一跳**做限流分桶，其余 peer 的 XFF 一律忽略（防伪造刷桶锁死登录） |
 | `LUMIRSS_PUBLIC_ORIGIN` | （空）。CSRF Origin 校验的精确公共源（如 `https://rss.example.com`），供会改写 Host 头的反代使用；空 = 与转发的 Host 头比对（本栈两级 Caddy 都保留 Host，默认即可） |
 | `DOMAIN` | 公网站点地址。真实 FQDN → Caddy 自动 Let's Encrypt（80+443）；`localhost`/空 → 自签本地证书并强制 HTTPS；`http://:80` 形式 → 纯 HTTP（仅内网调试） |
 | `FRESHRSS_BASE_URL` | BFF 访问 FreshRSS 的**内部**地址（默认 `http://freshrss:80`，Docker 服务名，永不是公网 URL） |

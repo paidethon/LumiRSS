@@ -7,6 +7,10 @@
  * 剥掉 <script> 标签对（regex 级防御，不重写 sanitizer—— sanitizer
  * 仍只在渲染路径唯一存在）。 */
 
+import { guardCell } from './table-export'
+
+/** F068/F012 同源转义：公式形似段落前置撇号（guardCell）。 */
+
 export interface ExportInput {
   title: string
   source: string
@@ -150,4 +154,91 @@ export function exportEntryAsHtml(input: ExportInput): boolean {
     buildHtmlExport(input),
     'text/html',
   )
+}
+
+// ---- F068：双语对照导出（原文段 + 译文段按 data-lb-index 配对） ----
+
+/** 单段译文状态：机翻 / 已人工修订 / 未翻译。 */
+export type TranslationStatus = 'machine' | 'revised' | 'missing'
+
+export interface BilingualSegmentInput {
+  /** 段落序号（文档顺序，1 起）。 */
+  index: number
+  /** 原文段文本。 */
+  source: string
+  /** 机器译文（lookup 段的 translatedText）。 */
+  machineText: string | null
+  /** F062 手工修订（存在时优先展示并标注「已人工修订」）。 */
+  userRevision: string | null
+}
+
+export interface BilingualExportInput {
+  title: string
+  source: string
+  date: string
+  url: string | null
+  segments: BilingualSegmentInput[]
+}
+
+export interface BilingualExportOptions {
+  /** 'all' = 全文；'visible' = 仅当前可见段落（indexes 指定子集）。 */
+  scope: 'all' | 'visible'
+  /** scope='visible' 时导出的段落序号集合。 */
+  visibleIndexes?: number[]
+}
+
+const STATUS_LABELS: Record<TranslationStatus, string> = {
+  machine: '机器翻译',
+  revised: '已人工修订',
+  missing: '未翻译',
+}
+
+/** 译文段取值与状态：修订优先；无任何译文 → null（未翻译）。 */
+export function translationOf(segment: BilingualSegmentInput): {
+  text: string | null
+  status: TranslationStatus
+} {
+  if (segment.userRevision !== null && segment.userRevision !== undefined && segment.userRevision !== '') {
+    return { text: segment.userRevision, status: 'revised' }
+  }
+  if (segment.machineText !== null && segment.machineText !== undefined && segment.machineText !== '') {
+    return { text: segment.machineText, status: 'machine' }
+  }
+  return { text: null, status: 'missing' }
+}
+
+/** 段落对 Markdown 行：原文段 + 空行 + 译文段（标注状态）。转义与
+ * F012 同源（guardCell：公式形似值前置撇号），防止表格软件解释。 */
+function segmentLines(segment: BilingualSegmentInput): string[] {
+  const { text, status } = translationOf(segment)
+  const lines = ['', guardCell(segment.source)]
+  if (text !== null) {
+    lines.push('', guardCell(text), '', `> [${STATUS_LABELS[status]}]`)
+  } else {
+    lines.push('', '> [未翻译]')
+  }
+  return lines
+}
+
+/** 纯构建：双语对照 Markdown（文档头 + 逐段对照）。 */
+export function buildBilingualMarkdownExport(
+  input: BilingualExportInput,
+  options: BilingualExportOptions,
+): string {
+  const visible =
+    options.scope === 'visible'
+      ? new Set(options.visibleIndexes ?? [])
+      : null
+  const segments = input.segments.filter(
+    (s) => visible === null || visible.has(s.index),
+  )
+  const lines: string[] = [`# ${input.title}（双语对照稿）`]
+  const meta = [input.source, input.date].filter((v) => v !== '').join(' · ')
+  if (meta !== '') lines.push('', `> ${meta}`)
+  if (input.url !== null && input.url !== '') lines.push('', `原文链接：${input.url}`)
+  lines.push('', `> 共 ${segments.length} 段（${options.scope === 'visible' ? '当前可见' : '全文'}）`)
+  for (const segment of segments) {
+    lines.push(...segmentLines(segment))
+  }
+  return `${lines.join('\n')}\n`
 }

@@ -16,7 +16,7 @@ maintain.
 
 from datetime import UTC
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from lumirss.config import RssHubSettings
@@ -26,6 +26,7 @@ from lumirss.models import (
     SourceOverrideUpdate,
     SourceRegistryEntry,
     SourceRegistryResponse,
+    StaleSourcesResponse,
     SubscriptionVolumeItem,
     SubscriptionVolumeResponse,
 )
@@ -139,15 +140,34 @@ async def list_source_overrides(request: Request) -> SourceOverrideList:
     )
 
 
+async def _drop_feed_from_rag(request: Request, feed_url: str) -> None:
+    """F066：禁用时把该来源条目从 RAG 索引移除（chunk+向量；
+    重新启用后由重建/增量自然恢复纳入）。尽力而为，不阻塞设置写入。"""
+    from lumirss.source_ai_gate import feed_refs
+
+    try:
+        refs = await feed_refs(request.app.state.db, feed_url)
+        if not refs:
+            return
+        from lumirss.deps import _get_rag_service
+
+        await _get_rag_service(request).mark_stale(refs, wait=False)
+    except Exception:  # noqa: BLE001 — 索引清理失败不影响设置写入
+        pass
+
+
 @router.put("/api/v1/sources/overrides", response_model=SourceOverrideResult)
 async def set_source_override(payload: SourceOverrideUpdate, request: Request) -> SourceOverrideResult:
-    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom）。
+    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
 
     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
-    设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）。"""
+    设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
+    staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。"""
     from lumirss.source_overrides import (
         SourceOverrideStore,
         canonical_utc,
+        extract_policy_valid,
+        validate_reader_style,
     )
 
     fields = payload.model_fields_set
@@ -164,10 +184,133 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
 
             raise BookmarkInvalid("showFrom must be an RFC3339 timestamp.")
         kwargs["show_from"] = payload.showFrom
+    if "staleAlertHours" in fields:
+        kwargs["stale_alert_hours"] = payload.staleAlertHours
     result = await SourceOverrideStore(request.app.state.db).set_fields(
         payload.feedUrl, **kwargs
     )
+    store = SourceOverrideStore(request.app.state.db)
+    # F048：per-source 正文提取策略。
+    if "extractPolicy" in fields:
+        if payload.extractPolicy is not None:
+            if not extract_policy_valid(payload.extractPolicy):
+                from lumirss.library import BookmarkInvalid
+
+                raise BookmarkInvalid("extractPolicy 必须是 'rss' 或 'web'。")
+            await store.set_extract_policy(payload.feedUrl, payload.extractPolicy)
+        else:
+            await store.set_extract_policy(payload.feedUrl, "rss")
+    # F055：per-source 阅读样式覆盖（键值子集校验）。
+    if "readerStyle" in fields:
+        style = validate_reader_style(payload.readerStyle)
+        await store.set_reader_style(payload.feedUrl, style)
+    # F066：per-source AI 禁用（服务端执行点统一判定，非仅 UI 隐藏）。
+    if "aiDisabled" in fields:
+        from lumirss.source_ai_gate import set_ai_disabled
+
+        await set_ai_disabled(request.app.state.db, payload.feedUrl, bool(payload.aiDisabled))
+        if payload.aiDisabled:
+            await _drop_feed_from_rag(request, payload.feedUrl)
+    result = await store.get_override(payload.feedUrl)
+    if result is None:
+        result = {
+            "feedUrl": payload.feedUrl,
+            "hiddenUntil": None,
+            "showFrom": None,
+            "staleAlertHours": None,
+            "extractPolicy": "rss",
+            "readerStyle": None,
+            "aiDisabled": False,
+            "updatedAt": utc_now(),
+        }
     return SourceOverrideResult(**result)
+
+
+@router.get("/api/v1/sources/stale", response_model=StaleSourcesResponse)
+async def stale_sources(
+    request: Request,
+    threshold: int | None = Query(default=None, ge=1, le=8760),
+) -> StaleSourcesResponse:
+    """F001：按各自阈值超期的来源列表（只读，无任何写副作用）。
+
+    口径（诚实标注，绝不把发布时间标成抓取成功）：
+    - FreshRSS greader subscription/list 在本仓库的适配层不透传
+      feed 最近抓取/更新元数据（adapters 现有能力已核实），因此
+      basis 恒为 latest_entry（search_entries 派生投影的最新发布时间）
+      或 unknown（投影中该 feed 无任何条目——未知 ≠ 超期，不误报）；
+    - threshold：全局兜底阈值（小时），仅对未单独配置 staleAlertHours
+      的来源生效；缺省时只评估单独配置过的来源。
+    """
+    from datetime import datetime
+
+    from lumirss.models import StaleSourceItem
+    from lumirss.source_overrides import SourceOverrideStore
+    from lumirss.util import utc_now
+
+    if threshold is not None and not 1 <= threshold <= 8760:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_threshold",
+                    "message": "threshold 必须在 1..8760 小时之间。",
+                }
+            },
+        )
+    db = request.app.state.db
+    configs = await SourceOverrideStore(db).stale_alert_configs()
+    adapter = _get_adapter(request)
+    subscriptions = await adapter.list_subscriptions()
+    now = datetime.now(UTC)
+
+    try:
+        rows = await db.fetch_all(
+            "SELECT feed_url, MAX(published_at) AS latest_published FROM search_entries GROUP BY feed_url"
+        )
+    except Exception:  # noqa: BLE001 — 投影不可用 → 全部诚实降级 unknown
+        rows = []
+    latest = {
+        str(row["feed_url"]): str(row["latest_published"])
+        for row in rows
+        if row["latest_published"] is not None
+    }
+
+    items: list[StaleSourceItem] = []
+    checked = 0
+    for subscription in subscriptions:
+        hours = configs.get(subscription.feed_url, threshold)
+        if hours is None:
+            continue  # 未配置且无全局兜底 → 不评估
+        checked += 1
+        last_activity = latest.get(subscription.feed_url)
+        if last_activity is None:
+            continue  # basis=unknown：没有条目证据，绝不判超期
+        try:
+            last_dt = datetime.fromisoformat(
+                last_activity.replace("Z", "+00:00")
+            )
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+        except ValueError:
+            continue  # 无法解析的时间 → 不误报
+        age_hours = (now - last_dt).total_seconds() / 3600.0
+        if age_hours <= hours:
+            continue
+        items.append(
+            StaleSourceItem(
+                feedUrl=subscription.feed_url,
+                subscriptionRef=subscription.subscription_ref,
+                title=subscription.title,
+                staleAlertHours=hours,
+                lastActivityAt=last_activity,
+                ageHours=round(age_hours, 2),
+                basis="latest_entry",
+            )
+        )
+    items.sort(key=lambda item: -(item.ageHours or 0.0))
+    return StaleSourcesResponse(items=items, checked=checked, generatedAt=utc_now())
 
 
 @router.get("/api/v1/sources/replacement-preview")

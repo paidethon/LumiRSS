@@ -79,13 +79,14 @@ describe('EntryCard（AC10）', () => {
     expect(screen.getByText('示例源 A')).toBeInTheDocument()
     expect(screen.getByText('刚刚')).toBeInTheDocument()
     const title = screen.getByText('文章 e1.a')
-    expect(title.className).toContain('font-medium') // 未读
+    // F113：标题文本包在 data-privacy-text span 里，字重在最近 button 祖先上
+    expect(title.closest('button')?.className).toContain('font-medium') // 未读
     // 动作区：稍后读 + 收藏按钮（§19）
     expect(screen.getByRole('button', { name: '加入稍后读' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '收藏' })).toBeInTheDocument()
 
     render(withProviders(<EntryCard item={item('e1.b', { read: true })} selected={false} />))
-    expect(screen.getByText('文章 e1.b').className).toContain('font-normal') // 已读
+    expect(screen.getByText('文章 e1.b').closest('button')?.className).toContain('font-normal') // 已读
   })
 
   it('已收藏显示星标动作；点击卡片标题 → selectEntry', () => {

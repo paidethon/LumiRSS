@@ -140,13 +140,67 @@ class ClipStore:
 
     async def get_clip(self, item_uuid: str) -> ClipView | None:
         await self._db.migrate()
-        row = await self._db.fetch_one("SELECT item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at FROM library_clips WHERE item_uuid = ?", (item_uuid,))
+        row = await self._db.fetch_one("SELECT item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at FROM library_clips WHERE item_uuid = ? AND NOT EXISTS (SELECT 1 FROM library_items i WHERE i.uuid = library_clips.item_uuid AND i.deleted_at IS NOT NULL)", (item_uuid,))
         if row is None:
             return None
         return _clip_from_row(row)
 
     async def delete_clip(self, item_uuid: str) -> bool:
-        """Delete the identity row (cascades the clip) + projection atomically."""
+        """F019：软删（回收站）——标记 deleted_at 并移除搜索投影。
+
+        身份行与标签/工作区关联保留；恢复时原样回到剪辑列表并重新
+        入索引。永久删除走 purge_clip。"""
+        await self._db.migrate()
+        now = utc_now()
+
+        def _tx(conn: sqlite3.Connection) -> bool:
+            cursor = conn.execute(
+                "UPDATE library_items SET deleted_at = ? WHERE uuid = ? AND kind = 'clip' AND deleted_at IS NULL",
+                (now, item_uuid),
+            )
+            if cursor.rowcount == 0:
+                return False
+            delete_search_row(conn, f"library:{item_uuid}")
+            return True
+
+        return await transaction(self._db, _tx)
+
+    async def get_clip_any(self, item_uuid: str) -> ClipView | None:
+        """读取剪辑（含已软删——恢复路径需要完整数据）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at FROM library_clips WHERE item_uuid = ?", (item_uuid,))
+        if row is None:
+            return None
+        return _clip_from_row(row)
+
+    async def restore_clip(self, item_uuid: str) -> bool:
+        """F019：从回收站恢复（清除标记 + 重新入搜索索引）。"""
+        await self._db.migrate()
+        view = await self.get_clip_any(item_uuid)
+        if view is None:
+            return False
+
+        def _tx(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                "UPDATE library_items SET deleted_at = NULL WHERE uuid = ? AND kind = 'clip' AND deleted_at IS NOT NULL",
+                (item_uuid,),
+            )
+            if cursor.rowcount:
+                upsert_search_row(
+                    conn,
+                    ref=f"library:{item_uuid}",
+                    kind="clip",
+                    title=view.title,
+                    body=(view.content_text or "")[:4000],
+                    url=view.url,
+                    now=utc_now(),
+                )
+            return cursor.rowcount
+
+        return await transaction(self._db, _tx) > 0
+
+    async def purge_clip(self, item_uuid: str) -> bool:
+        """F019：永久删除（身份行级联剪辑行 + 投影），不可恢复。"""
         await self._db.migrate()
 
         def _tx(conn: sqlite3.Connection) -> bool:
@@ -174,7 +228,7 @@ class ClipStore:
         key_created = keyset[0] if keyset else None
         key_uuid = keyset[1] if keyset else None
         rows = await self._db.fetch_all(
-            "SELECT item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at FROM library_clips WHERE (? IS NULL OR created_at < ? OR (created_at = ? AND item_uuid < ?)) ORDER BY created_at DESC, item_uuid DESC LIMIT ?",
+            "SELECT item_uuid, url, title, byline, content_html, content_text, fetched_at, created_at FROM library_clips WHERE NOT EXISTS (SELECT 1 FROM library_items i WHERE i.uuid = library_clips.item_uuid AND i.deleted_at IS NOT NULL) AND (? IS NULL OR created_at < ? OR (created_at = ? AND item_uuid < ?)) ORDER BY created_at DESC, item_uuid DESC LIMIT ?",
             (key_created, key_created, key_created, key_uuid, limit + 1),
         )
         has_more = len(rows) > limit

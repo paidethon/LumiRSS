@@ -15,12 +15,15 @@
   有效发布物。
 """
 
+import contextlib
 import hashlib
 import json
-from datetime import UTC
+from datetime import UTC, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from lumirss.api_sources import atom_base
 from lumirss.atom_render import AtomEntry, render_feed
@@ -28,11 +31,16 @@ from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
     build_preview,
+    consume_pool_for_issue,
     generate_issue,
 )
 from lumirss.gpt_digest_configs import GptDigestConfigStore
 from lumirss.gpt_digest_issues import GptDigestIssuesStore
-from lumirss.gpt_digest_store import GptDigestStore
+from lumirss.gpt_digest_pool import (
+    DigestMaterialPoolStore,
+    DigestPoolDuplicate,
+)
+from lumirss.gpt_digest_store import GptDigestStore, feed_token_impact
 from lumirss.models import (
     GptDigestConfig,
     GptDigestConfigList,
@@ -45,7 +53,7 @@ from lumirss.models import (
     GptDigestSettings,
     GptDigestSettingsUpdate,
 )
-from lumirss.util import constant_time_equals
+from lumirss.token_hash import verify_token
 
 router = APIRouter()
 
@@ -133,14 +141,25 @@ async def get_config_feed(config_id: int, request: Request) -> GptDigestFeedInfo
             status_code=404,
             content={"error": {"type": "not_found", "message": "配置不存在。"}},
         )
+    # §13.4：仅首次创建返回原始 token（一次性展示）；已存在 → atomPath
+    # 为空（UI 显示「已隐藏，可轮换」——明文不可从哈希重建）。
     token = _store(request).ensure_feed_token()
-    return GptDigestFeedInfo(atomPath=f"/feeds/gpt-digest/{config_id}.{token}.atom")
+    atom_path_value = (
+        f"/feeds/gpt-digest/{config_id}.{token}.atom" if token else ""
+    )
+    return GptDigestFeedInfo(atomPath=atom_path_value)
 
 
 @router.get(
     "/api/v1/gpt-digest/configs/{config_id}/preview", response_model=GptDigestPreview
 )
-async def preview_config_digest(config_id: int, request: Request) -> GptDigestPreview:
+async def preview_config_digest(
+    config_id: int,
+    request: Request,
+    put_back: Annotated[list[str] | None, Query(alias="putBack")] = None,
+) -> GptDigestPreview:
+    """F06/F101：选材预览；``putBack``（可重复参数）为本次显式放回的
+    材料身份——与生成请求共用同一选材函数，预览即所得。"""
     config = await _config_store(request).get_config(config_id)
     if config is None:
         return JSONResponse(
@@ -155,13 +174,163 @@ async def preview_config_digest(config_id: int, request: Request) -> GptDigestPr
                 "error": {"type": "freshrss_unconfigured", "message": "FreshRSS 未配置。"}
             },
         )
-    preview = await build_preview(adapter, config, request.app.state.db)
+    preview = await build_preview(
+        adapter, config, request.app.state.db, put_back=put_back
+    )
     return GptDigestPreview(**preview)
 
 
+@router.get("/api/v1/gpt-digest/configs/{config_id}/missing-dates")
+async def missing_digest_dates(
+    config_id: int, request: Request, days: int = 30
+) -> Response:
+    """F032：按配置计划（时区）列出最近 `days` 天内缺失期号的日期。
+
+    已有期号（含草稿）的日期排除；未来日期（今天及以后）不算缺失。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from lumirss.gpt_digest_store import issue_key_for
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    bounded = max(1, min(days, 90))
+    tz = ZoneInfo(config["timezone"]) if config["timezone"] else None
+    now = datetime.now(tz) if tz else datetime.now().astimezone()
+    existing = set(await _issues(request).all_issue_keys(config_id))
+    missing: list[str] = []
+    for offset in range(1, bounded + 1):
+        day = now.fromtimestamp(now.timestamp(), tz=now.tzinfo) - timedelta(days=offset)
+        key = issue_key_for(day, config["timezone"])
+        if key not in existing:
+            missing.append(key)
+    return JSONResponse(
+        status_code=200,
+        content={"missing": list(reversed(missing)), "existing": sorted(existing)},
+    )
+
+
+class DigestTargetDateBody(BaseModel):
+    """POST …/generate 可选体：补刊指定缺失日期 / F101 显式放回列表。
+
+    ``putBack`` 为材料身份（url 或 title: 前缀键，来自预览响应）；
+    本次生成显式放回，不影响后续期号的去重。"""
+
+    model_config = {"extra": "forbid"}
+
+    targetDate: str | None = Field(default=None, min_length=8, max_length=10)
+    putBack: list[str] | None = Field(default=None, max_length=50)
+
+
 @router.post("/api/v1/gpt-digest/configs/{config_id}/generate")
-async def generate_config_digest(config_id: int, request: Request) -> Response:
-    return await _generate_for_config(request, await _config_store(request).get_config(config_id))
+async def generate_config_digest(
+    config_id: int, request: Request, body: DigestTargetDateBody | None = None
+) -> Response:
+    target = body.targetDate if body is not None else None
+    put_back = body.putBack if body is not None else None
+    if target is not None:
+        return await _generate_for_missing_date(request, config_id, target, put_back)
+    return await _generate_for_config(
+        request,
+        await _config_store(request).get_config(config_id),
+        put_back=put_back,
+    )
+
+
+async def _generate_for_missing_date(
+    request: Request,
+    config_id: int,
+    target: str,
+    put_back: list[str] | None = None,
+) -> Response:
+    """F032：补刊缺失日期。仅允许缺失日期——已有期号（含已发布/草稿）
+    的日期 409 protected（不覆盖已发布）；无材料日期报错不产空刊。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from lumirss.gpt_digest import DigestMaterialEmpty
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    existing = set(await _issues(request).all_issue_keys(config_id))
+    if target in existing:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "protected",
+                    "message": f"{target} 已有期号，不可覆盖（如需修订请用编辑）。",
+                }
+            },
+        )
+    # 缺失日期校验：不得是未来日期
+    tz = ZoneInfo(config["timezone"]) if config["timezone"] else None
+    try:
+        y, m, d = (int(part) for part in target.split("-"))
+    except ValueError:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "targetDate 需为 YYYY-MM-DD。"}},
+        )
+    now_local = datetime.now(tz) if tz else datetime.now().astimezone()
+    target_end = datetime(y, m, d, 23, 59, 59, tzinfo=now_local.tzinfo)
+    if target_end > now_local:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "不能补刊未来日期。"}},
+        )
+    adapter = request.app.state.freshrss_adapter
+    if adapter is None:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {"type": "freshrss_unconfigured", "message": "FreshRSS 未配置。"}
+            },
+        )
+    from lumirss.gpt_digest import _build_ai_deps
+
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        row = await generate_issue(
+            _config_store(request),
+            _issues(request),
+            config=config,
+            adapter=adapter,
+            ai_settings=ai_settings,
+            provider_factory=provider_factory,
+            db=request.app.state.db,
+            now=target_end,
+            draft=True,
+            put_back=put_back,
+        )
+    except DigestMaterialEmpty as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping below
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={"error": {"type": "ai_not_configured", "message": "AI 未配置或配置不可用。"}},
+            )
+        if name in {"AiRateLimited", "AiTimeout", "AiUpstreamError"}:
+            return JSONResponse(
+                status_code=502,
+                content={"error": {"type": "ai_upstream", "message": "AI 上游暂时不可用。"}},
+            )
+        raise
+    dto = _issues(request).issue_to_dto(row)
+    return JSONResponse(status_code=200, content={"issue": dto})
 
 
 @router.get(
@@ -170,7 +339,7 @@ async def generate_config_digest(config_id: int, request: Request) -> Response:
 async def list_config_issues(
     config_id: int, request: Request, limit: int = 14
 ) -> GptDigestIssueList:
-    rows = await _issues(request).recent_issues(config_id, limit)
+    rows = await _issues(request).recent_issues(config_id, limit, include_drafts=True)
     return GptDigestIssueList(items=[_issues(request).issue_to_dto(row) for row in rows])
 
 
@@ -200,14 +369,29 @@ async def update_gpt_digest_settings(
 async def get_gpt_digest_feed(request: Request) -> GptDigestFeedInfo:
     """订阅路径（含 token）。token 是密码级秘密：只在会话认证的 UI 里
     返回，绝不进公开文档、日志或共享缓存。"""
+    # §13.4：同上——一次性展示；再查看为空。
     token = _store(request).ensure_feed_token()
-    return GptDigestFeedInfo(atomPath=f"/feeds/gpt-digest/{token}.atom")
+    atom_path_value = f"/feeds/gpt-digest/{token}.atom" if token else ""
+    return GptDigestFeedInfo(atomPath=atom_path_value)
 
 
-@router.post("/api/v1/gpt-digest/feed/rotate", response_model=GptDigestFeedInfo)
-async def rotate_gpt_digest_feed(request: Request) -> GptDigestFeedInfo:
-    token = _store(request).rotate_feed_token()
-    return GptDigestFeedInfo(atomPath=f"/feeds/gpt-digest/{token}.atom")
+@router.post("/api/v1/gpt-digest/feed/rotate")
+async def rotate_gpt_digest_feed(request: Request, dryRun: bool = False) -> Response:
+    """F103：轮换订阅 token。``dryRun=true`` → 影响预览（零变更：
+    token、secrets、时刻戳都不动）；省略/false → 执行轮换（现有语义：
+    旧链接立即失效）。"""
+    store = _store(request)
+    if dryRun:
+        impact = await feed_token_impact(request.app.state.secrets_store, request.app.state.db)
+        return JSONResponse(
+            status_code=200,
+            content={"dryRun": True, "impact": impact},
+        )
+    token = store.rotate_feed_token()
+    return JSONResponse(
+        status_code=200,
+        content={"atomPath": f"/feeds/gpt-digest/{token}.atom"},
+    )
 
 
 @router.get("/api/v1/gpt-digest/preview", response_model=GptDigestPreview)
@@ -297,6 +481,58 @@ async def revise_gpt_digest_issue(
             content={"error": {"type": "not_found", "message": "期号不存在。"}},
         )
     dto = issues.issue_to_dto(updated)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
+@router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/publish")
+async def publish_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> Response:
+    """F031：草稿审阅后显式发布（幂等：已 published 再发布 200 不变）。
+
+    发布前复用既有引用校验（sections 中的 sourceId 必须存在于生成时的
+    引用集）：校验失败保留 draft 并报 422，绝不半发布。"""
+    issues = _issues(request)
+    row = await issues.get_issue(config_id, issue_key)
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "期号不存在。"}},
+        )
+    if row["status"] != "published":
+        try:
+            refs = json.loads(str(row["refs_json"] or "{}"))
+        except ValueError:
+            refs = {}
+        try:
+            from lumirss.gpt_digest import parse_and_validate_output
+
+            parse_and_validate_output(
+                str(row["sections_json"] or "{}"), list(refs.keys())
+            )
+        except DigestOutputInvalid as exc:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": {
+                        "type": "invalid_issue",
+                        "message": f"引用校验失败，仍是草稿：{exc}",
+                    }
+                },
+            )
+    published = await issues.publish_issue(config_id, issue_key)
+    assert published is not None
+    # F102：审阅发布草稿 → 该期引用命中的素材池条目标记已用（尽力而为）。
+    adapter = request.app.state.freshrss_adapter
+    if adapter is not None and request.app.state.db is not None:
+        with contextlib.suppress(Exception):
+            await consume_pool_for_issue(
+                adapter,
+                DigestMaterialPoolStore(request.app.state.db),
+                config_id,
+                published,
+            )
+    dto = issues.issue_to_dto(published)
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
@@ -538,14 +774,118 @@ async def compare_facts_gpt_digest_issue(
 async def list_gpt_digest_issues(
     request: Request, limit: int = 14
 ) -> GptDigestIssueList:
-    rows = await _issues(request).recent_issues(1, limit)
+    rows = await _issues(request).recent_issues(1, limit, include_drafts=True)
     return GptDigestIssueList(items=[_issues(request).issue_to_dto(row) for row in rows])
+
+
+# -- F102 手工候选素材池 ------------------------------------------------------
+
+
+def _pool_store(request: Request) -> DigestMaterialPoolStore:
+    return DigestMaterialPoolStore(request.app.state.db)
+
+
+class PoolAddBody(BaseModel):
+    """POST …/pool 体：一条读者条目引用（rss: 前缀）。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str = Field(min_length=1, max_length=512)
+
+
+class PoolReorderBody(BaseModel):
+    """PATCH …/pool 体：全量提交后的 id 顺序。"""
+
+    model_config = {"extra": "forbid"}
+
+    orderedIds: list[int] = Field(max_length=200)
+
+
+@router.get("/api/v1/gpt-digest/configs/{config_id}/pool")
+async def list_digest_pool(config_id: int, request: Request) -> dict:
+    if await _config_store(request).get_config(config_id) is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    entries = await _pool_store(request).list_entries(config_id)
+    pending = [e for e in entries if e["usedIssueKey"] is None]
+    used = [e for e in entries if e["usedIssueKey"] is not None]
+    return {"items": pending, "used": used}
+
+
+@router.post("/api/v1/gpt-digest/configs/{config_id}/pool", status_code=201)
+async def add_digest_pool_entry(
+    config_id: int, payload: PoolAddBody, request: Request
+) -> dict:
+    """加入素材池。重复 → 409；AI 禁用来源的条目 → 422（F066 负向语义：
+    服务端拒绝，不只靠 UI 隐藏）。"""
+    if await _config_store(request).get_config(config_id) is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    from lumirss.source_ai_gate import disabled_entry_refs
+
+    disabled = await disabled_entry_refs(request.app.state.db, [payload.entryRef])
+    if disabled:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "ai_disabled_source",
+                    "message": "该条目所属来源已禁用 AI 选材，不可加入日报素材池。",
+                }
+            },
+        )
+    try:
+        entry = await _pool_store(request).add_entry(config_id, payload.entryRef)
+    except DigestPoolDuplicate:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "duplicate",
+                    "message": "该条目已在素材池中。",
+                }
+            },
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": str(exc)}},
+        )
+    return entry
+
+
+@router.delete("/api/v1/gpt-digest/configs/{config_id}/pool/{entry_id}", status_code=204)
+async def remove_digest_pool_entry(
+    config_id: int, entry_id: int, request: Request
+) -> Response:
+    removed = await _pool_store(request).remove_entry(config_id, entry_id)
+    if not removed:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "池条目不存在。"}},
+        )
+    return Response(status_code=204)
+
+
+@router.patch("/api/v1/gpt-digest/configs/{config_id}/pool")
+async def reorder_digest_pool(
+    config_id: int, payload: PoolReorderBody, request: Request
+) -> dict:
+    await _pool_store(request).reorder(config_id, payload.orderedIds)
+    entries = await _pool_store(request).list_entries(config_id)
+    return {"items": [e for e in entries if e["usedIssueKey"] is None]}
 
 
 # -- 生成（配置共用） --------------------------------------------------------
 
 
-async def _generate_for_config(request: Request, config: dict | None) -> Response:
+async def _generate_for_config(
+    request: Request, config: dict | None, *, put_back: list[str] | None = None
+) -> Response:
     if config is None:
         return JSONResponse(
             status_code=404,
@@ -578,6 +918,8 @@ async def _generate_for_config(request: Request, config: dict | None) -> Respons
             provider_factory=provider_factory,
             db=request.app.state.db,
             plan=plan,
+            draft=True,
+            put_back=put_back,
         )
     except DigestMaterialEmpty as exc:
         return JSONResponse(
@@ -637,7 +979,7 @@ async def serve_gpt_digest_atom(spec: str, request: Request) -> Response:
     """只读订阅输出。token 错误 → 404（不区分「无此资源」与「token 错」）。"""
     config_id, token = _parse_feed_spec(spec)
     expected = _store(request).feed_token()
-    if not expected or not constant_time_equals(token, expected):
+    if not expected or not verify_token(token, expected):
         return Response(status_code=404)
     config = await _config_store(request).get_config(config_id)
     if config is None:
