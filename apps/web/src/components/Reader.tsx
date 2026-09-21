@@ -32,11 +32,14 @@ import {
   SPEECH_MAX_CHARS,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
-const ReaderHeader = lazy(() => import('./ReaderHeader'))
-import ReaderTranslation from './ReaderTranslation'
+import ReaderHeader from './ReaderHeader'
+import ArticleContent from './ArticleContent'
 // bundle guard：摘要/来源/反链/对话面板非正文首帧结构（各自已有局部
-// Suspense 边界 / 条件挂载）——lazy 分包，正文渲染路径仅
-// ReaderTranslation/ArticleContent 保持静态。
+// Suspense 边界 / 条件挂载）——lazy 分包。正文首读关键路径（原始渲染）
+// 保持静态：original 模式直渲 ArticleContent；双语/仅译文才挂 lazy
+// ReaderTranslation（其非手势第二等级 effect 会在挂载后按当前 viewMode
+// 自启翻译——浏览器引擎 activation 被消费时诚实重试，既有语义）。
+const ReaderTranslation = lazy(() => import('./ReaderTranslation'))
 const ArticleConversation = lazy(() => import('./ArticleConversation'))
 const ReaderSummary = lazy(() => import('./ReaderSummary'))
 const ProvenanceCard = lazy(() => import('./ProvenanceCard'))
@@ -735,15 +738,31 @@ const handleScroll = useCallback(() => {
         <ItemRelationsPanel key={`relations-${detail.entryRef}`} itemRef={`rss:${detail.entryRef}`} />
         </Suspense>
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
-            P0-11：注册浏览器引擎的手势启动回调（点击 → 直接编排）。 */}
-        <Suspense fallback={null}>
-                <ReaderTranslation
-          key={`translation-${detail.entryRef}`}
-          detail={detail}
-          viewMode={viewMode}
-          registerTranslationStart={registerTranslationStart}
-        />
-        </Suspense>
+            original 直渲 ArticleContent（首读关键路径零 lazy）；非 original
+            挂 lazy ReaderTranslation，fallback 用同一 ArticleContent 防
+            白闪。翻译启动不依赖挂载前的手势注册：ReaderTranslation 的
+            第二等级 effect 以 active=viewMode!=='original' 驱动，挂载后
+            自启（浏览器引擎 activation 被消费 → 诚实重试，既有语义）。 */}
+        {viewMode === 'original' ? (
+          <div>
+            <ArticleContent detail={detail} />
+          </div>
+        ) : (
+          <Suspense
+            fallback={
+              <div>
+                <ArticleContent detail={detail} />
+              </div>
+            }
+          >
+            <ReaderTranslation
+              key={`translation-${detail.entryRef}`}
+              detail={detail}
+              viewMode={viewMode}
+              registerTranslationStart={registerTranslationStart}
+            />
+          </Suspense>
+        )}
         {/* P0-2：正文读完判定哨兵——在实际正文结束处（AI 对话/笔记等
             面板之前），IntersectionObserver 以本滚动容器为 root。 */}
         <div ref={finishRead.sentinelRef} aria-hidden="true" data-finish-sentinel="" className="h-px" />

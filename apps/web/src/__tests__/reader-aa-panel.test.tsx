@@ -13,8 +13,11 @@ function withQueryClient(ui: React.ReactElement) {
   return <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear()
+  // 移动分支的底部 Sheet 是 lazy 分包（bundle guard）：预解析 chunk，
+  // 让打开面板后的同步结构断言确定性成立（异步时序适配，语义不变）。
+  await import('../components/ui/Sheet')
 })
 
 describe('ReaderAaPanel — 桌面 Popover（0017 连续 Slider）', () => {

@@ -99,7 +99,10 @@ function stubNavigatorMember(name: string, value: unknown): void {
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Aa 面板底部 Sheet 是 lazy 分包（bundle guard）：预解析 chunk，让
+  // 打开面板后的同步结构断言确定性成立（异步时序适配，语义不变）。
+  await import('../components/ui/Sheet')
   useReaderUi.setState({ view: 'all', scope: { kind: 'all' }, selectedEntryRef: null })
   useAppSettings.setState({
     settings: {

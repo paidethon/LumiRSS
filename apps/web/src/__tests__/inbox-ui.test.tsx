@@ -92,8 +92,10 @@ describe('InboxPage states', () => {
   it('renders error state with retry and refetches on click', async () => {
     mocks.listInboxItems.mockRejectedValue(new Error('网络错误'))
     renderWithProviders(<InboxPage />)
-    expect(await screen.findByRole('alert')).toBeTruthy()
-    const retry = screen.getByRole('button', { name: '重试' })
+    // 页面同时可能有多个 alert（连接器错误 + 归类规则面板错误——后者
+    // 随 lazy chunk 就绪时序出现）：断言「存在错误提示」而非唯一性。
+    expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0)
+    const retry = await screen.findByRole('button', { name: '重试' })
     mocks.listInboxItems.mockResolvedValue(emptyList())
     fireEvent.click(retry)
     await waitFor(() => expect(screen.getByText('收件箱为空')).toBeTruthy())

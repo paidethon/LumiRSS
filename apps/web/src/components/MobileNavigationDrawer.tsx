@@ -4,7 +4,29 @@ import { useReaderUi } from '../store/reader-ui'
 import { COMMAND_PALETTE_TOGGLE_EVENT } from '../lib/keyboard-shortcuts'
 import { isPrivacyEnabled, setPrivacyMask } from '../lib/privacy-mask'
 import Sidebar from './Sidebar'
-import { Sheet } from './ui/Sheet'
+// bundle guard：base-ui Drawer（约 20K min）不进首屏 chunk——Sheet 条件
+// 挂载（mobileSidebarOpen 才挂）+ lazy；模块级 warm import 让 chunk 在
+// 应用启动时并行预热（动态 import 不进 entry，与「遮罩/✕/Escape 关闭、
+// 打开即 Sidebar 可见」的行为契约不变；打开瞬间 chunk 未就绪时显示
+// 短暂空白后自动出现）。
+type SheetComponent = typeof import('./ui/Sheet')['Sheet']
+let LoadedSheet: SheetComponent | null = null
+// 预热：应用启动即并行加载（动态 import 不进 entry chunk）。
+const sheetLoad: Promise<void> = import('./ui/Sheet').then((m) => {
+  LoadedSheet = m.Sheet
+})
+void sheetLoad
+
+/** 同步可用的 Sheet：模块就绪（测试 beforeEach 预解析/生产预热完成）
+ * 后直接同步渲染——不走 React.lazy 的「首次渲染必挂起」路径，抽屉打开
+ * 的同步结构断言（fireEvent 后立即查 DOM）确定性成立。 */
+function DrawerSheet(props: React.ComponentProps<SheetComponent>) {
+  if (LoadedSheet !== null) {
+    const S = LoadedSheet
+    return <S {...props} />
+  }
+  throw sheetLoad // 尚未就绪 → 由 Suspense 兜底（fallback null）
+}
 
 // Bundle guard（Phase K）：命令面板/最近阅读只在抽屉里用——懒加载分包，
 // 不占首屏预算（键盘事件监听在 CommandPalette 模块内部，首次交互前
@@ -55,7 +77,9 @@ export default function MobileNavigationDrawer() {
 
   return (
     <div className="lg:hidden">
-      <Sheet
+      {mobileSidebarOpen && (
+      <Suspense fallback={null}>
+      <DrawerSheet
         open={mobileSidebarOpen}
         onClose={closeMobileSidebar}
         label="导航"
@@ -119,7 +143,9 @@ export default function MobileNavigationDrawer() {
             {privacyOn ? '演示隐私：开（点击退出）' : '演示隐私'}
           </button>
         </div>
-      </Sheet>
+      </DrawerSheet>
+      </Suspense>
+      )}
 
       {/* F10：最近阅读覆盖层（z 高于抽屉；Escape/遮罩/✕ 关闭） */}
       <Suspense fallback={null}>

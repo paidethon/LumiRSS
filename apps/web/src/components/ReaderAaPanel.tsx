@@ -11,7 +11,7 @@
  *   settings store 无此键且禁止改 store）；
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
-import { useState, type Ref } from 'react'
+import { Suspense, useState, type Ref } from 'react'
 import { ALargeSmall, X } from 'lucide-react'
 import { useAppSettings } from '../store/app-settings'
 import {
@@ -23,7 +23,23 @@ import {
 import { useIsMobile } from '../lib/use-is-mobile'
 import SettingsShell from './SettingsShell'
 import { Popover } from './ui/Popover'
-import { Sheet } from './ui/Sheet'
+// bundle guard：base-ui Drawer 不进首屏 chunk——Sheet 仅移动分支且
+// sheetOpen 时挂载（桌面 Popover 路径不受影响）。同步可用的 LoadedSheet
+// 模式：模块预热后直接同步渲染，不走 React.lazy 的首渲染必挂起路径。
+type SheetComponent = typeof import('./ui/Sheet')['Sheet']
+let LoadedSheet: SheetComponent | null = null
+const sheetLoad: Promise<void> = import('./ui/Sheet').then((m) => {
+  LoadedSheet = m.Sheet
+})
+void sheetLoad
+
+function AaSheet(props: React.ComponentProps<SheetComponent>) {
+  if (LoadedSheet !== null) {
+    const S = LoadedSheet
+    return <S {...props} />
+  }
+  throw sheetLoad
+}
 import { Select } from './ui/Select'
 import { Slider } from './ui/Slider'
 import { Switch } from './ui/Switch'
@@ -259,7 +275,9 @@ export default function ReaderAaPanel({
       {isMobile ? (
         <>
           {trigger({ onClick: () => setSheetOpen(true) })}
-          <Sheet
+          {sheetOpen && (
+          <Suspense fallback={null}>
+          <AaSheet
             open={sheetOpen}
             onClose={() => setSheetOpen(false)}
             label="阅读样式"
@@ -280,7 +298,9 @@ export default function ReaderAaPanel({
               focusMode={focusMode}
               onFocusModeChange={onFocusModeChange}
             />
-          </Sheet>
+          </AaSheet>
+          </Suspense>
+          )}
         </>
       ) : (
         <Popover

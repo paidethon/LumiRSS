@@ -85,13 +85,17 @@ function renderApp() {
 const menuButton = () => document.querySelector<HTMLButtonElement>('[aria-label="打开导航"]')!
 const drawer = () => document.getElementById('mobile-navigation-drawer')
 
-beforeEach(() => {
+beforeEach(async () => {
   useReaderUi.setState({
     view: 'all',
     scope: { kind: 'all' },
     selectedEntryRef: null,
     mobileSidebarOpen: false,
   })
+  // Sheet 是 lazy 分包（bundle guard）：预解析 chunk，让各用例
+  // fireEvent.click(menu) 后的同步结构断言确定性成立（异步时序适配，
+  // 结构语义不变）。
+  await import('../components/ui/Sheet')
 })
 
 afterEach(() => {
@@ -101,10 +105,7 @@ afterEach(() => {
 describe('Test A — Drawer closed by default', () => {
   it('初始 drawer 不渲染，menu button 可用且 aria-expanded=false', () => {
     vi.stubGlobal('fetch', mockApi())
-    const { container } = renderApp()
-    console.log('DBG_LEN', container.innerHTML.length)
-    console.log('DBG_HEAD', container.innerHTML.slice(0, 200))
-
+    renderApp()
     expect(menuButton()).toBeInTheDocument()
     expect(menuButton()).toHaveAttribute('aria-expanded', 'false')
     expect(menuButton()).toHaveAttribute('aria-controls', 'mobile-navigation-drawer')
