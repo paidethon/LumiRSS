@@ -702,40 +702,12 @@ const handleScroll = useCallback(() => {
             onFocusModeChange={setFocusMode}
           />
         </Suspense>
-        {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
-            AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
-            pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
-        <Suspense fallback={null}>
-        <ReaderSummary
-          key={`summary-${detail.entryRef}`}
-          entryRef={detail.entryRef}
-          articleTitle={detail.title}
-          articleText={detail.contentText}
-        />
-        </Suspense>
-        {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
-        <Suspense fallback={null}>
-        <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
-        </Suspense>
+        {/* O127 内容优先重排：媒体附件（enclosure 属于内容）紧随标题，
+            正文之后才是工具面板（AI 摘要/溯源/自测/知识卡片/关联）——
+            打开文章首屏即正文，工具不再把内容推到折叠线下。 */}
         {/* F011：enclosure 播放器（audio/video 附件；显式开始，禁止 autoplay） */}
         <Suspense fallback={null}>
           <EnclosurePlayers key={`enclosures-${detail.entryRef}`} detail={detail} />
-        </Suspense>
-        {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
-        <Suspense fallback={null}>
-        <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
-        </Suspense>
-        {/* F069：文章阅读自测（生成→作答→评分→再来一次） */}
-        <Suspense fallback={null}>
-        <QuizPanel key={`quiz-${detail.entryRef}`} entryRef={detail.entryRef} />
-        </Suspense>
-        {/* F070：提取知识卡片（预览→选择编辑→保存） */}
-        <Suspense fallback={null}>
-        <KnowledgeCardsPanel key={`cards-${detail.entryRef}`} detail={detail} />
-        </Suspense>
-        {/* F021：手工关联内容（双向列表 + 解除 + 关联选择；无 AI 参与） */}
-        <Suspense fallback={null}>
-        <ItemRelationsPanel key={`relations-${detail.entryRef}`} itemRef={`rss:${detail.entryRef}`} />
         </Suspense>
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
             original 直渲 ArticleContent（首读关键路径零 lazy）；非 original
@@ -763,8 +735,8 @@ const handleScroll = useCallback(() => {
             />
           </Suspense>
         )}
-        {/* P0-2：正文读完判定哨兵——在实际正文结束处（AI 对话/笔记等
-            面板之前），IntersectionObserver 以本滚动容器为 root。 */}
+        {/* P0-2：正文读完判定哨兵——紧贴实际正文结束处（工具面板之前），
+            IntersectionObserver 以本滚动容器为 root。 */}
         <div ref={finishRead.sentinelRef} aria-hidden="true" data-finish-sentinel="" className="h-px" />
         {/* P0-2：短文（不足一屏）不自动判定——「读完了」明确按钮作为
             主动确认路径；自动判定失败给可理解的提示与重试入口。 */}
@@ -786,6 +758,37 @@ const handleScroll = useCallback(() => {
             </Button>
           </p>
         )}
+        {/* 0015：AI 摘要卡片（按需生成；状态机与 Reader 其它 UI 同源）。
+            AUDIT-011：key=entryRef 保证切换文章时重挂载，A 的
+            pending / error / result 不泄漏到 B（与 translation/conversation 同源）。 */}
+        <Suspense fallback={null}>
+        <ReaderSummary
+          key={`summary-${detail.entryRef}`}
+          entryRef={detail.entryRef}
+          articleTitle={detail.title}
+          articleText={detail.contentText}
+        />
+        </Suspense>
+        {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
+        <Suspense fallback={null}>
+        <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
+        <Suspense fallback={null}>
+        <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* F069：文章阅读自测（生成→作答→评分→再来一次） */}
+        <Suspense fallback={null}>
+        <QuizPanel key={`quiz-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* F070：提取知识卡片（预览→选择编辑→保存） */}
+        <Suspense fallback={null}>
+        <KnowledgeCardsPanel key={`cards-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* F021：手工关联内容（双向列表 + 解除 + 关联选择；无 AI 参与） */}
+        <Suspense fallback={null}>
+        <ItemRelationsPanel key={`relations-${detail.entryRef}`} itemRef={`rss:${detail.entryRef}`} />
+        </Suspense>
         {/* F20：正文锚定高亮/批注（选区浮动条 + 批注卡；设备本地存储）。
             entryRef 必填；contentVersion 缺省时组件按正文文本自行派生，
             锚点失效诚实降级。 */}

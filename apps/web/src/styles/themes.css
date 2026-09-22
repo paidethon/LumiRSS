@@ -16,6 +16,10 @@
   --lumi-surface: #fbfafa;
   --lumi-surface-elevated: #ffffff;
   --lumi-reader: #fcfbfb;
+  /* O122：玻璃材质基色（lumi-glass 的 tint 与实色回退都引用它）。
+   * 曾缺失 → backdrop-filter 不支持时顶栏/底栏完全透明（移动端
+   * 「透明叠层」根因之一）。别名义 = surface-elevated。 */
+  --lumi-elevated: var(--lumi-surface-elevated);
 
   --lumi-surface-hover: #efeced;
   --lumi-surface-selected: #e7e5e9;
@@ -73,6 +77,8 @@
   --lumi-surface: #222226;
   --lumi-surface-elevated: #28282d;
   --lumi-reader: #1b1b1e;
+  /* O122：与浅色同一修复——玻璃基色别名。 */
+  --lumi-elevated: var(--lumi-surface-elevated);
 
   --lumi-surface-hover: #29292d;
   --lumi-surface-selected: #303036;

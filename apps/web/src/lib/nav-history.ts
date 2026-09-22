@@ -44,6 +44,13 @@ const navStack: NavSnapshot[] = []
 let suppressPush = false
 /** 浮层栈：按打开顺序登记，后退只关最上层。 */
 const overlayStack: Array<{ id: string; close: () => void }> = []
+/** 每个浮层 id 的历史条目是否仍在栈顶等待消费。unregisterOverlay 只在
+ * 自己的条目确实是当前条目时才 back()——React StrictMode 的
+ * mount→cleanup→remount 会连续 register/unregister 同一 id，乱发
+ * back() 会让迟到的 popstate 击落下一个浮层（O124 根因链）。 */
+const overlayHistoryArmed = new Map<string, boolean>()
+/** 未决的延迟 back() 定时器（unregister → 同 tick re-register 取消）。 */
+const overlayPendingBack = new Map<string, ReturnType<typeof setTimeout>>()
 
 function scopeEquals(a: ContentScope, b: ContentScope): boolean {
   if (a.kind !== b.kind) return false
@@ -80,7 +87,7 @@ function closeOverlays(): void {
 /** 把快照应用到导航 store（popstate 与 goBack 共用；抑制 push）。 */
 function applySnapshot(target: NavSnapshot): void {
   const current = snapshot()
-  if (sameNav(target, current)) return
+  if (sameNav(target, current) && !useReaderUi.getState().mobileSidebarOpen) return
   suppressPush = true
   try {
     useReaderUi.setState({
@@ -88,7 +95,8 @@ function applySnapshot(target: NavSnapshot): void {
       scope: target.scope,
       view: target.view as never,
       selectedEntryRef: target.selectedEntryRef,
-      mobileSidebarOpen: false,
+      // 浮层状态不属于页面快照：popstate 只关「自己的历史条目」，
+      // 页面级恢复不能顺手砸掉刚打开的抽屉/面板（O124 竞争修复）。
     })
   } finally {
     suppressPush = false
@@ -112,13 +120,24 @@ export function initNavHistory(): () => void {
   }
   const onPopState = (event: PopStateEvent) => {
     const state = event.state as HistoryEntryState | null
-    if (state === null || !(HISTORY_KEY in state)) return
+    // 任何 popstate 都意味着历史位置变了：取消全部未决 back()，不在
+    // 新栈顶的浮层条目已被消费，armed 记录随之失效。
+    for (const timer of overlayPendingBack.values()) window.clearTimeout(timer)
+    overlayPendingBack.clear()
+    if (state === null || !(HISTORY_KEY in state)) {
+      overlayHistoryArmed.clear()
+      return
+    }
+    const topOverlay = state.overlayId
+    for (const [armedId, armed] of overlayHistoryArmed) {
+      if (!armed || armedId !== topOverlay) overlayHistoryArmed.delete(armedId)
+    }
     depth = typeof state.lumiDepth === 'number' ? state.lumiDepth : 0
     const target = state[HISTORY_KEY]
     if (target === undefined) return
     // 前进/后退到浮层条目：浮层按层级由各自 open/close 管理；
     // 到达非浮层条目时清空残存浮层（离开页面语义）。
-    if (state.overlayId === undefined) closeOverlays()
+    if (topOverlay === undefined) closeOverlays()
     applySnapshot(target)
   }
   window.addEventListener('popstate', onPopState)
@@ -146,28 +165,53 @@ export function pushNavHistory(): void {
   }
 }
 
-/** 浮层打开：登记关闭回调并 push 一条浮层历史（后退只关这层）。 */
+/** 浮层打开：登记关闭回调并 push 一条浮层历史（后退只关这层）。
+ * 同一 id 重复登记（StrictMode remount）不重复 push，并取消其未决的
+ * 延迟 back()——否则迟到的 popstate 会击落新浮层（O124 根因链）。 */
 export function registerOverlay(id: string, close: () => void): void {
-  overlayStack.push({ id, close })
+  if (!overlayStack.some((entry) => entry.id === id)) {
+    overlayStack.push({ id, close })
+  }
   if (typeof window === 'undefined' || typeof window.history === 'undefined') return
+  const pending = overlayPendingBack.get(id)
+  if (pending !== undefined) {
+    window.clearTimeout(pending)
+    overlayPendingBack.delete(id)
+  }
+  if (overlayHistoryArmed.get(id)) return // 同 id 条目已在栈顶，勿再 push
   depth += 1
   try {
     window.history.pushState({ [HISTORY_KEY]: snapshot(), lumiDepth: depth, overlayId: id }, '')
+    overlayHistoryArmed.set(id, true)
   } catch {
     depth -= 1
   }
 }
 
-/** 浮层关闭（UI/Escape 触发）：消耗它自己的历史条目。 */
+/** 浮层关闭（UI/Escape 触发）：消耗它自己的历史条目。
+ * back() 延迟一个宏任务：StrictMode 的 mount→cleanup→remount 会在同
+ * 一 tick 内 unregister 后马上 re-register——同步 back() 的迟到
+ * popstate 落在新条目之下会把刚打开的浮层砸掉。真正的关闭无人复登
+ * 记，定时器照常触发。 */
 export function unregisterOverlay(id: string): void {
   const index = overlayStack.findIndex((entry) => entry.id === id)
-  if (index === -1) return
-  overlayStack.splice(index, 1)
-  if (typeof window === 'undefined' || typeof window.history === 'undefined') return
-  const state = window.history.state as HistoryEntryState | null
-  if (state !== null && state.overlayId === id) {
-    window.history.back() // popstate 到浮层前状态（nav 相同 → no-op 恢复）
+  if (index !== -1) overlayStack.splice(index, 1)
+  if (typeof window === 'undefined' || typeof window.history === 'undefined') {
+    overlayHistoryArmed.delete(id)
+    return
   }
+  if (!overlayHistoryArmed.get(id)) return
+  overlayHistoryArmed.delete(id)
+  const state = window.history.state as HistoryEntryState | null
+  if (state === null || state.overlayId !== id) return
+  const timer = window.setTimeout(() => {
+    overlayPendingBack.delete(id)
+    const current = window.history.state as HistoryEntryState | null
+    if (current !== null && current.overlayId === id && !overlayHistoryArmed.has(id)) {
+      window.history.back() // popstate 到浮层前状态（nav 相同 → no-op 恢复）
+    }
+  }, 0)
+  overlayPendingBack.set(id, timer)
 }
 
 /** 是否存在浮层（返回按钮优先关浮层）。 */
