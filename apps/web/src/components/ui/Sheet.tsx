@@ -85,7 +85,8 @@ export function Sheet({ open, onClose, label, children, side = 'left', panelClas
             }}
             className={cx(
               'relative bg-[var(--lumi-surface-elevated)] shadow-[var(--lumi-shadow-dialog)]',
-              'transition-transform duration-[var(--lumi-motion-slow)] ease-[var(--lumi-ease)]',
+              // O133：面板过渡消费 ease-out-soft（纯 token 引用，行为不变式：时长不变）
+              'transition-transform duration-[var(--lumi-motion-slow)] ease-[var(--lumi-ease-out-soft)]',
               side === 'left' &&
                 cx(
                   'h-full w-4/5 max-w-80 border-r border-[var(--lumi-border)]',

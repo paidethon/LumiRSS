@@ -17,10 +17,13 @@
   --radius-xl: 12px;
   --radius-2xl: 14px;
   --radius-3xl: 16px;
+  --radius-4xl: 20px;
 }
 
 :root {
-  /* 圆角（语义引用，供 CSS/arbitrary 值使用） */
+  /* 圆角（语义引用，供 CSS/arbitrary 值使用）。
+   * O133 分级体系：控件 md(8) → 卡片 lg(10)/大内容卡 2xl(14) →
+   * 浮动面板 3xl(16) → 大弹层（全屏 dialog/sheet）4xl(20)。 */
   --lumi-radius-xs: 4px; /* 徽标 / 细节 */
   --lumi-radius-sm: 6px; /* 小控件 / 缩略图 */
   --lumi-radius-md: 8px; /* 按钮 / nav item / IconButton */
@@ -28,6 +31,7 @@
   --lumi-radius-xl: 12px; /* 设置组 / dialog body */
   --lumi-radius-2xl: 14px; /* AI 摘要卡 / 大内容卡 */
   --lumi-radius-3xl: 16px; /* 浮动面板 / 大 overlay */
+  --lumi-radius-4xl: 20px; /* 大弹层（O133 补缺：全屏级 dialog / sheet） */
   --lumi-radius-full: 999px; /* pill / switch */
 
   /* 动效（简单交互一律 CSS transition；数值为 Spec 冻结区间取中值） */
@@ -35,6 +39,8 @@
   --lumi-motion-normal: 140ms; /* menu / popover */
   --lumi-motion-slow: 200ms; /* drawer / panel */
   --lumi-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* O133：面板/弹层出场缓动（先快后缓的 soft out），供 transition-timing */
+  --lumi-ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* 字体（Folo 实测 system 栈；不打包专有字体） */
   --lumi-font-sans:

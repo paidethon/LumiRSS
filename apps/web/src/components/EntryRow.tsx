@@ -185,19 +185,22 @@ function EntryRow({
                 : 'text-[var(--lumi-text-tertiary)]',
             )}
           >
-            {/* 未读标记圆点是产品固定视觉语义（状态不只靠颜色） */}
+            {/* 未读标记圆点是产品固定视觉语义（状态不只靠颜色）；O126
+                放大一档（8px）与 EntryCard 一致 */}
             <span
               aria-hidden="true"
               className={cx(
-                'size-1.5 shrink-0 rounded-full',
+                'size-2 shrink-0 rounded-full',
                 item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
               )}
             />
             <SourceGlyph name={item.feedTitle} />
+            {/* O126 来源优先：secondary 色 + medium 字重（高于时间/作者的
+                tertiary），同标题不同来源一眼可分 */}
             <SourceLabel
               feedTitle={item.feedTitle}
               feedUrl={item.feedUrl}
-              className="min-w-0 max-w-[40%] font-medium text-left"
+              className="min-w-0 max-w-[40%] font-medium text-left text-[var(--lumi-text-secondary)]"
             />
             {item.author !== null && (
               <span className="hidden truncate lg:inline">· {item.author}</span>

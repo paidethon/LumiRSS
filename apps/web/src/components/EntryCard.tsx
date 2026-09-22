@@ -138,7 +138,10 @@ function EntryCard({
       onTouchEnd={swipeEnabled ? onTouchEnd : undefined}
       className={cx(
         'lumi-entry-card group/row relative flex w-full overflow-hidden rounded-[var(--lumi-radius-lg)] text-left',
-        'transition-colors duration-[var(--lumi-motion-fast)]',
+        // O141 按压微动效：transition 限定属性（禁 all）；transform 参与
+        // 是根层 scale，滑动跟手的 translateX 在内容层（无 transition）。
+        'transition-[background-color,color,transform] duration-[var(--lumi-motion-fast)]',
+        'active:scale-[0.99]',
         dimRead && item.read && 'opacity-60',
         selected
           ? 'bg-[var(--lumi-surface-selected)]'
@@ -195,23 +198,26 @@ function EntryCard({
                 : 'text-[var(--lumi-text-tertiary)]',
             )}
           >
-            {/* 未读标记圆点是产品固定视觉语义（状态不只靠颜色） */}
+            {/* 未读标记圆点是产品固定视觉语义（状态不只靠颜色）；O126
+                放大一档（8px）提升首屏可辨识度 */}
             <span
               aria-hidden="true"
               className={cx(
-                'size-1.5 shrink-0 rounded-full',
+                'size-2 shrink-0 rounded-full',
                 item.read ? 'bg-transparent' : 'bg-[var(--lumi-accent)]',
               )}
             />
             <SourceGlyph name={item.feedTitle} />
-            {/* 来源按钮 min-w-0：动作区固定占位，来源保留可识别片段 */}
+            {/* O126 来源优先：secondary 色 + medium 字重（高于时间的
+                tertiary），同标题不同来源一眼可分 */}
             <SourceLabel
               feedTitle={item.feedTitle}
               feedUrl={item.feedUrl}
-              className="min-w-0 flex-1 font-medium text-left"
+              className="min-w-0 flex-1 font-medium text-left text-[var(--lumi-text-secondary)]"
             />
             <span className="shrink-0">{formatListTime(item.publishedAt, timeFormat)}</span>
-            <EntryActionButtons entryRef={item.entryRef} starred={item.starred} />
+            {/* O126：高频 稍后读/收藏 + 标签留卡上，其余折进「更多操作」 */}
+            <EntryActionButtons entryRef={item.entryRef} starred={item.starred} variant="card" />
           </div>
 
           {/* 内容行：标题（打开 Reader）+ 封面缩略图（F03，可选） */}

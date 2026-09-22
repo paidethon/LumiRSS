@@ -41,6 +41,7 @@ import {
   FolderPlus,
   Languages,
   Loader2,
+  MoreHorizontal,
   Star,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -99,6 +100,7 @@ export function EntryActionButtons({
   starred,
   title,
   compact,
+  variant = 'list',
 }: {
   entryRef: string
   starred: boolean
@@ -106,6 +108,10 @@ export function EntryActionButtons({
   title?: string
   /** 紧凑模式（桌面行）：按钮 28px、icon 16px；默认 44px 触控（卡片） */
   compact?: boolean
+  /** O126：list = 桌面行全量按钮（hover 增强，默认）；card = 移动卡片
+   * 收纳——高频 Clock/Star/Tags 留在卡上（44px），存书签/翻译/延后/
+   * 添加到工作区折进「更多操作」菜单（菜单按钮同样 44px，触屏可达）。 */
+  variant?: 'list' | 'card'
 }) {
   const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
   const marked = isReadLater(entryRef)
@@ -117,6 +123,8 @@ export function EntryActionButtons({
   const pushUndo = useUndo((s) => s.push)
   // F23：按需标题翻译（缓存优先，一次一条）
   const titleTranslation = useTitleTranslationMutation()
+  // F19 延后（O126 card 变体菜单项用；list 变体仍用行内 SnoozeButton）
+  const snooze = useSnoozeReadLaterMutation()
 
   const starUndo = (next: boolean) => {
     pushUndo({
@@ -202,6 +210,10 @@ export function EntryActionButtons({
     mutation.variables?.entryRef === entryRef &&
     'starred' in mutation.variables.patch
 
+  // O126 card 菜单：翻译标题 pending（仅本条目）
+  const translatePending =
+    titleTranslation.isPending && titleTranslation.variables?.entryRef === `rss:${entryRef}`
+
   // P0-10：条目的既有标签（勾选/激活态）。
   const itemTags = useItemTags(`rss:${entryRef}`)
   const attachedTagNames = useMemo(
@@ -240,8 +252,9 @@ export function EntryActionButtons({
       </button>
 
       {/* F19 延后：仅对已在稍后读的条目提供——把项目推迟 7 天，到期自动
-          回到时间线；行保留、已读/收藏状态不受影响。 */}
-      {marked ? (
+          回到时间线；行保留、已读/收藏状态不受影响。（O126：card 变体
+          收进「更多操作」菜单，行内不再出现） */}
+      {marked && variant === 'list' ? (
         <SnoozeButton entryRef={entryRef} itemRef={`rss:${entryRef}`} btnBase={btnBase} hoverCls={hoverCls} iconSize={iconSize} idleCls={idleCls} />
       ) : null}
 
@@ -277,121 +290,238 @@ export function EntryActionButtons({
         )}
       </button>
 
-      {/* 存书签：POST 幂等（重复存同一 rssItemRef 返回同一 ref）。
-          激活态 = rss-refs 集合命中；错误时按钮 title 承载原因（可重试）。 */}
-      <IconButton
-        icon={
-          bookmarkPending ? (
-            <Loader2 aria-hidden className={iconSize} />
-          ) : (
-            <Bookmark
-              aria-hidden
-              className={cx(iconSize, bookmarked && 'fill-[var(--lumi-accent)]')}
-            />
-          )
-        }
-        label="存书签"
-        aria-pressed={bookmarked}
-        title={
-          bookmarkPending
-            ? '存书签中…'
-            : createBookmark.isError && createBookmark.variables?.rssItemRef === `rss:${entryRef}`
-              ? `存书签失败：${createBookmark.error instanceof Error ? createBookmark.error.message : '请稍后重试'}`
-              : bookmarked
-                ? '已存书签'
-                : '存书签'
-        }
-        size={compact ? 'sm' : 'md'}
-        touch={!compact}
-        className={cx(!bookmarked && idleCls)}
-        style={{ color: bookmarked ? 'var(--lumi-accent)' : 'var(--lumi-text-tertiary)' }}
-        disabled={bookmarkPending}
-        onClick={(e) => {
-          e.stopPropagation()
-          saveBookmark()
-        }}
-      />
+      {/* O126 card 变体：标签（完整 Popover 功能保留在卡上）+ 「更多操作」
+          菜单（存书签 / 翻译标题 / 延后 / 添加到工作区），触屏可达。 */}
+      {variant === 'card' ? (
+        <>
+          {/* P0-10：标签（Base UI Popover：勾选既有标签 + 新建 + 绑定/解绑）。
+              面板走 portal，不冒泡到行。Q-P1-09：提取为 kind 无关的
+              ItemTagButton（UnifiedContentCard 库类条目同用）。 */}
+          <ItemTagButton
+            itemRef={`rss:${entryRef}`}
+            compact={compact}
+            idleCls={idleCls}
+            attachedCount={attachedTagNames.size}
+          />
 
-      {/* P0-10：标签（Base UI Popover：勾选既有标签 + 新建 + 绑定/解绑）。
-          面板走 portal，不冒泡到行。Q-P1-09：提取为 kind 无关的
-          ItemTagButton（UnifiedContentCard 库类条目同用）。 */}
-      <ItemTagButton
-        itemRef={`rss:${entryRef}`}
-        compact={compact}
-        idleCls={idleCls}
-        attachedCount={attachedTagNames.size}
-      />
-
-      {/* F23：按需翻译标题（单条显式动作，不批量）。译文以 muted 副行
-          叠加在原题下方（由调用方布局承接 titleTranslation 状态）。 */}
-      <IconButton
-        icon={
-          titleTranslation.isPending &&
-          titleTranslation.variables?.entryRef === entryRef ? (
-            <Loader2 aria-hidden className={cx(iconSize, 'animate-spin')} />
-          ) : (
-            <Languages aria-hidden className={iconSize} />
-          )
-        }
-        label="翻译标题"
-        title={
-          titleTranslation.data && titleTranslation.variables?.entryRef === `rss:${entryRef}` && false
-            ? '再次点击刷新译文'
-            : '翻译标题（原题保留）'
-        }
-        size={compact ? 'sm' : 'md'}
-        touch={!compact}
-        className={idleCls}
-        style={{ color: 'var(--lumi-text-tertiary)' }}
-        disabled={titleTranslation.isPending}
-        onClick={(e) => {
-          e.stopPropagation()
-          titleTranslation.mutate({ entryRef: `rss:${entryRef}` })
-        }}
-      />
-
-      {/* 添加到工作区：溢出菜单（Base UI 行为底座），列出全部工作区
-          （稍后读保留工作区也在列，POST 幂等）；会话内加入过的条目打勾。 */}
-      <Menu
-        trigger={({ triggerProps }) => (
+          <Menu
+            trigger={({ triggerProps }) => (
+              <IconButton
+                icon={<MoreHorizontal aria-hidden className={iconSize} />}
+                label="更多操作"
+                title="更多操作"
+                size={compact ? 'sm' : 'md'}
+                touch={!compact}
+                className={idleCls}
+                style={{ color: 'var(--lumi-text-tertiary)' }}
+                {...triggerProps}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  triggerProps.onClick?.(e)
+                }}
+              />
+            )}
+            items={[
+              {
+                key: 'bookmark',
+                disabled: bookmarkPending,
+                content: (
+                  <span className="flex items-center gap-2">
+                    {bookmarkPending ? (
+                      <Loader2 aria-hidden className="size-4 animate-spin" />
+                    ) : (
+                      <Bookmark
+                        aria-hidden
+                        className={cx('size-4', bookmarked && 'fill-[var(--lumi-accent)]')}
+                      />
+                    )}
+                    {bookmarked ? '已存书签' : '存书签'}
+                  </span>
+                ),
+              },
+              {
+                key: 'translate',
+                disabled: translatePending,
+                content: (
+                  <span className="flex items-center gap-2">
+                    {translatePending ? (
+                      <Loader2 aria-hidden className="size-4 animate-spin" />
+                    ) : (
+                      <Languages aria-hidden className="size-4" />
+                    )}
+                    翻译标题
+                  </span>
+                ),
+              },
+              ...(marked
+                ? [
+                    {
+                      key: 'snooze',
+                      content: (
+                        <span className="flex items-center gap-2">
+                          <CalendarClock aria-hidden className="size-4" />
+                          延后 7 天（到期自动回来）
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
+              { key: 'ws-header', disabled: true, content: '添加到工作区' },
+              ...(workspaces.isPending
+                ? [{ key: '__loading', content: '加载中…', disabled: true }]
+                : (workspaces.data?.items ?? []).map((w) => ({
+                    key: w.id,
+                    content: (
+                      <>
+                        <span className="min-w-0 flex-1 truncate">
+                          {w.reserved ? '稍后读' : w.name}
+                        </span>
+                        {addedWorkspaceIds.has(w.id) && (
+                          <Check
+                            aria-hidden
+                            className="size-4 shrink-0 text-[var(--lumi-accent-text)]"
+                          />
+                        )}
+                      </>
+                    ),
+                  }))),
+            ]}
+            onSelect={(key) => {
+              if (key === 'bookmark') {
+                saveBookmark()
+                return
+              }
+              if (key === 'translate') {
+                titleTranslation.mutate({ entryRef: `rss:${entryRef}` })
+                return
+              }
+              if (key === 'snooze') {
+                snooze.mutate({ itemRef: `rss:${entryRef}`, days: 7 })
+                return
+              }
+              addToWorkspace(key)
+            }}
+          />
+        </>
+      ) : (
+        <>
+          {/* 存书签：POST 幂等（重复存同一 rssItemRef 返回同一 ref）。
+              激活态 = rss-refs 集合命中；错误时按钮 title 承载原因（可重试）。 */}
           <IconButton
-            icon={<FolderPlus aria-hidden className={iconSize} />}
-            label="添加到工作区"
-            title={addedWorkspaceIds.size > 0 ? '已加入（可继续添加到其它工作区）' : '添加到工作区'}
+            icon={
+              bookmarkPending ? (
+                <Loader2 aria-hidden className={iconSize} />
+              ) : (
+                <Bookmark
+                  aria-hidden
+                  className={cx(iconSize, bookmarked && 'fill-[var(--lumi-accent)]')}
+                />
+              )
+            }
+            label="存书签"
+            aria-pressed={bookmarked}
+            title={
+              bookmarkPending
+                ? '存书签中…'
+                : createBookmark.isError && createBookmark.variables?.rssItemRef === `rss:${entryRef}`
+                  ? `存书签失败：${createBookmark.error instanceof Error ? createBookmark.error.message : '请稍后重试'}`
+                  : bookmarked
+                    ? '已存书签'
+                    : '存书签'
+            }
+            size={compact ? 'sm' : 'md'}
+            touch={!compact}
+            className={cx(!bookmarked && idleCls)}
+            style={{ color: bookmarked ? 'var(--lumi-accent)' : 'var(--lumi-text-tertiary)' }}
+            disabled={bookmarkPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              saveBookmark()
+            }}
+          />
+
+          {/* P0-10：标签（Base UI Popover：勾选既有标签 + 新建 + 绑定/解绑）。
+              面板走 portal，不冒泡到行。Q-P1-09：提取为 kind 无关的
+              ItemTagButton（UnifiedContentCard 库类条目同用）。 */}
+          <ItemTagButton
+            itemRef={`rss:${entryRef}`}
+            compact={compact}
+            idleCls={idleCls}
+            attachedCount={attachedTagNames.size}
+          />
+
+          {/* F23：按需翻译标题（单条显式动作，不批量）。译文以 muted 副行
+              叠加在原题下方（由调用方布局承接 titleTranslation 状态）。 */}
+          <IconButton
+            icon={
+              titleTranslation.isPending &&
+              titleTranslation.variables?.entryRef === entryRef ? (
+                <Loader2 aria-hidden className={cx(iconSize, 'animate-spin')} />
+              ) : (
+                <Languages aria-hidden className={iconSize} />
+              )
+            }
+            label="翻译标题"
+            title={
+              titleTranslation.data && titleTranslation.variables?.entryRef === `rss:${entryRef}` && false
+                ? '再次点击刷新译文'
+                : '翻译标题（原题保留）'
+            }
             size={compact ? 'sm' : 'md'}
             touch={!compact}
             className={idleCls}
             style={{ color: 'var(--lumi-text-tertiary)' }}
-            disabled={addPending}
-            {...triggerProps}
+            disabled={titleTranslation.isPending}
             onClick={(e) => {
               e.stopPropagation()
-              triggerProps.onClick?.(e)
+              titleTranslation.mutate({ entryRef: `rss:${entryRef}` })
             }}
           />
-        )}
-        items={
-          workspaces.isPending
-            ? [{ key: '__loading', content: '加载中…', disabled: true }]
-            : (workspaces.data?.items ?? []).map((w) => ({
-                key: w.id,
-                content: (
-                  <>
-                    <span className="min-w-0 flex-1 truncate">
-                      {w.reserved ? '稍后读' : w.name}
-                    </span>
-                    {addedWorkspaceIds.has(w.id) && (
-                      <Check
-                        aria-hidden
-                        className="size-4 shrink-0 text-[var(--lumi-accent-text)]"
-                      />
-                    )}
-                  </>
-                ),
-              }))
-        }
-        onSelect={addToWorkspace}
-      />
+
+          {/* 添加到工作区：溢出菜单（Base UI 行为底座），列出全部工作区
+              （稍后读保留工作区也在列，POST 幂等）；会话内加入过的条目打勾。 */}
+          <Menu
+            trigger={({ triggerProps }) => (
+              <IconButton
+                icon={<FolderPlus aria-hidden className={iconSize} />}
+                label="添加到工作区"
+                title={addedWorkspaceIds.size > 0 ? '已加入（可继续添加到其它工作区）' : '添加到工作区'}
+                size={compact ? 'sm' : 'md'}
+                touch={!compact}
+                className={idleCls}
+                style={{ color: 'var(--lumi-text-tertiary)' }}
+                disabled={addPending}
+                {...triggerProps}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  triggerProps.onClick?.(e)
+                }}
+              />
+            )}
+            items={
+              workspaces.isPending
+                ? [{ key: '__loading', content: '加载中…', disabled: true }]
+                : (workspaces.data?.items ?? []).map((w) => ({
+                    key: w.id,
+                    content: (
+                      <>
+                        <span className="min-w-0 flex-1 truncate">
+                          {w.reserved ? '稍后读' : w.name}
+                        </span>
+                        {addedWorkspaceIds.has(w.id) && (
+                          <Check
+                            aria-hidden
+                            className="size-4 shrink-0 text-[var(--lumi-accent-text)]"
+                          />
+                        )}
+                      </>
+                    ),
+                  }))
+            }
+            onSelect={addToWorkspace}
+          />
+        </>
+      )}
       {/* P0-01：稍后读写失败（加入/移除）诚实透出——不吞不假装成功。
           紧凑模式靠 title 提示 + role=alert 播报，不撑破行布局。 */}
       {readLaterError !== null && (
