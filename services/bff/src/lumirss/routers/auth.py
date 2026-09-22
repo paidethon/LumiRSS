@@ -233,7 +233,7 @@ async def activation_preview(request: Request, token: str) -> dict[str, object]:
     no emails, no pool usernames."""
     accounts = _control(request)
     token_hash = hash_token(token)
-    row = await accounts._db.fetch_one("SELECT expires_at, used_at, revoked_at, kind FROM invites WHERE token_hash = ?", (token_hash,))
+    row = await accounts.get_invite_state_by_token(token_hash)
     now = datetime.now(UTC).timestamp()
     valid = bool(row) and row["used_at"] is None and row["revoked_at"] is None and int(row["expires_at"]) > now
     pool = await accounts.pool_status()
@@ -282,10 +282,10 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
     except AccountError as exc:
         # Restore the invite: a failed signup (name taken, weak password)
         # must not burn the one-time token.
-        await accounts._db.execute("UPDATE invites SET used_at = NULL, used_by = NULL WHERE token_hash = ?", (token_hash,))
+        await accounts.restore_unused_invite(token_hash)
         return _reject(400, "invalid_username", str(exc))
     user_id = str(user["id"])
-    await accounts._db.execute("UPDATE invites SET used_by = ? WHERE token_hash = ?", (user_id, token_hash))
+    await accounts.mark_invite_used_by(token_hash, user_id)
     # FreshRSS binding from the pool — atomic assignment, honest pending.
     assigned = await accounts.pool_assign(user_id)
     if assigned is not None:

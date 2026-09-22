@@ -296,3 +296,17 @@ class AccountsStore:
         await self._db.migrate()
         row = await self._db.fetch_one("SELECT user_id FROM token_owner_index WHERE token_hash = ?", (token_hash,))
         return str(row["user_id"]) if row else None
+
+    # ---- 邀请读取/修复路径（供 activation 路由使用，SQL 不出 store） ----
+
+    async def get_invite_state_by_token(self, token_hash: str) -> dict[str, object] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT expires_at, used_at, revoked_at, kind FROM invites WHERE token_hash = ?", (token_hash,))
+        return dict(row) if row else None
+
+    async def restore_unused_invite(self, token_hash: str) -> None:
+        """激活失败（用户名占用/弱密码）时归还一次性 token。"""
+        await self._db.execute("UPDATE invites SET used_at = NULL, used_by = NULL WHERE token_hash = ?", (token_hash,))
+
+    async def mark_invite_used_by(self, token_hash: str, user_id: str) -> None:
+        await self._db.execute("UPDATE invites SET used_by = ? WHERE token_hash = ?", (user_id, token_hash))

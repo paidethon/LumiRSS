@@ -14,6 +14,7 @@ import time
 import urllib.parse
 import uuid
 from contextvars import ContextVar
+from pathlib import Path
 
 from lumirss.config import LumiSettings
 from lumirss.util import constant_time_equals
@@ -505,7 +506,7 @@ async def _principal_for_user(state, user_id: str) -> dict[str, str] | None:
 
 
 _implicit_owner_lock = asyncio.Lock()
-_implicit_owner_cache: dict[int, str] = {}
+_implicit_owner_cache: dict[str, str] = {}
 
 
 async def _implicit_owner_id(scope) -> str | None:
@@ -514,12 +515,16 @@ async def _implicit_owner_id(scope) -> str | None:
     The owner row is created by the startup migration; until it exists
     there is no user database to address and /api business routes must
     fail closed (session_required) instead of guessing an identity.
+    Cache key = control database path (NOT id(state)): a replaced or
+    re-created control database must not inherit the previous owner id.
     """
     app = scope.get("app")
     state = getattr(app, "state", None) if app else None
     if state is None:
         return None
-    key = id(state)
+    from lumirss.config import LumiSettings as _Settings
+
+    key = str(Path(_Settings().LUMIRSS_DB_PATH))
     cached = _implicit_owner_cache.get(key)
     if cached:
         return cached

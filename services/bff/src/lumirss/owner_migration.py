@@ -129,17 +129,24 @@ async def ensure_owner_migration(db: Database, control_secrets) -> str | None:
     is served.
     """
     from lumirss.accounts_store import AccountsStore, hash_password
-    from lumirss.user_scope import user_context
 
     await db.migrate()
     accounts = AccountsStore(db)
+    owner_id: str | None = None
     for row in await accounts.list_users(limit=500):
         if row.get("role") == "owner":
-            return str(row["id"])
+            owner_id = str(row["id"])
+            break
 
     settings = LumiSettings()
     legacy_path = Path(settings.LUMIRSS_DB_PATH)
     users_root = legacy_path.parent / "users"
+
+    if owner_id is not None:
+        # 已迁移库：仅当 owner 仍无绑定时按 env 幂等补种（修复早期版本
+        # 误写控制库的部署）；owner 主动解绑不受重启影响。
+        await _seed_owner_env_binding(db, control_secrets, owner_id, users_root, only_if_unbound=True)
+        return owner_id
 
     legacy_hash = _legacy_password_hash(legacy_path)
     if legacy_hash is None:
@@ -173,14 +180,36 @@ async def ensure_owner_migration(db: Database, control_secrets) -> str | None:
     # the invitation pool (O154). Fresh installs without env credentials
     # simply stay unbound (honest empty state until the operator adds a
     # source account).
-    try:
-        freshrss = FreshRSSSettings()
-    except Exception:  # noqa: BLE001 — unconfigured installs bind later
-        freshrss = None
-    if freshrss is not None:
-        with user_context(owner_id):
-            await db.execute("INSERT OR REPLACE INTO freshrss_binding (id, base_url, username, public_url, bound_at, source) VALUES (1, ?, ?, ?, 0, 'env')", (freshrss.FRESHRSS_BASE_URL, freshrss.FRESHRSS_USERNAME, freshrss.FRESHRSS_PUBLIC_URL))
-            control_secrets.set("freshrss_api_password", freshrss.FRESHRSS_API_PASSWORD.get_secret_value())
+    #
+    # 写入位置是 OWNER 的用户库与 per-user secrets（RoutingDatabase /
+    # RoutingSecretsStore 在 owner 上下文下解析）——写控制库会让绑定
+    # 对所有读路径不可见（load_user_env / adapter 均按用户库读）。
+    await _seed_owner_env_binding(db, control_secrets, owner_id, users_root, only_if_unbound=False)
 
     await accounts.audit(actor="system", action="owner_migration", object_type="user", object_id=owner_id)
     return owner_id
+
+
+async def _seed_owner_env_binding(db: Database, control_secrets, owner_id: str, users_root: Path, *, only_if_unbound: bool) -> None:
+    """幂等把 env 凭据授给 owner 的用户库（无条件用于新迁移）。"""
+    try:
+        freshrss = FreshRSSSettings()
+    except Exception:  # noqa: BLE001 — unconfigured installs bind later
+        return
+    from lumirss.user_scope import RoutingDatabase, RoutingSecretsStore, user_context
+
+    user_db: Database = db
+    user_secrets = control_secrets
+    if not isinstance(db, RoutingDatabase):
+        # 迁移句柄是控制库（普通 Database）：为种子写入临时构建
+        # owner 用户库路由句柄；已是 RoutingDatabase 则直接用。
+        user_db = RoutingDatabase(db.path, users_root)
+        user_secrets = RoutingSecretsStore(users_root)
+    with user_context(owner_id):
+        await user_db.migrate()
+        if only_if_unbound:
+            row = await user_db.fetch_one("SELECT id FROM freshrss_binding WHERE id = 1")
+            if row is not None:
+                return  # owner 已有绑定（含主动解绑）→ 不覆盖
+        await user_db.execute("INSERT OR REPLACE INTO freshrss_binding (id, base_url, username, public_url, bound_at, source) VALUES (1, ?, ?, ?, 0, 'env')", (freshrss.FRESHRSS_BASE_URL, freshrss.FRESHRSS_USERNAME, freshrss.FRESHRSS_PUBLIC_URL))
+        user_secrets.set("freshrss_api_password", freshrss.FRESHRSS_API_PASSWORD.get_secret_value())

@@ -25,8 +25,25 @@ def _wire(tmp: Path, monkeypatch):
 def test_f039_diagnostics_structure_and_no_secret_leak(tmp_path, monkeypatch):
     _wire(tmp_path, monkeypatch)
     with TestClient(app) as client:
+        from lumirss.storage import Database
+
+        # 0067：lifespan 绑定 RoutingDatabase（需要请求身份）；直连
+        # 建库/断言按 conftest 同款约定覆盖为普通 Database（控制库文件）。
+        client.app.state.db = Database(tmp_path / "lumi.sqlite")
         run = asyncio.run
         run(client.app.state.db.migrate())
+        # freshrss presence 按用户绑定判定（basic 模式 = owner）：
+        # 给 owner 种一行绑定（0068 后 freshrss_binding 在用户库）。
+        owner_id = None
+        for row in run(client.app.state.accounts.list_users(limit=10)):
+            if row.get("role") == "owner":
+                owner_id = str(row["id"])
+        assert owner_id, "owner migration did not run"
+        run(
+            client.app.state.db.execute(
+                "INSERT OR REPLACE INTO freshrss_binding (id, base_url, username, public_url, bound_at, source) VALUES (1, 'http://freshrss', 'user', '', 0, 'env')"
+            )
+        )
         # 带秘密形态的数据在库中（正文含秘密串）
         run(
             client.app.state.db.execute(
