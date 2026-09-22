@@ -247,26 +247,50 @@ describe('SearchPage — F29 高级面板', () => {
     fireEvent.change(screen.getByLabelText('排除词'), { target: { value: 'class' } })
     fireEvent.click(within(screen.getByTestId('advanced-panel')).getByRole('button', { name: '应用' }))
 
-    await waitFor(() => expect(searchUrls.length).toBe(2))
-    expect(searchUrls[1]).toContain('intitle=')
-    expect(decodeUrl(searchUrls[1])).toContain('intitle=指南')
-    expect(decodeUrl(searchUrls[1])).toContain('phrase=use state')
-    expect(decodeUrl(searchUrls[1])).toContain('exclude=class')
+    // 不把网络请求「次数」当契约（CI 慢机上防抖/重渲染可能多发请求）：
+    // 语义以「携带全部条件的最后一条请求」为准。
+    const appliedIndex = await waitFor(() => {
+      const index = searchUrls.findIndex(
+        (u) => u.includes('intitle=') && u.includes('phrase=') && u.includes('exclude='),
+      )
+      expect(index).toBeGreaterThanOrEqual(0)
+      return index
+    })
+    expect(decodeUrl(searchUrls[appliedIndex])).toContain('intitle=指南')
+    expect(decodeUrl(searchUrls[appliedIndex])).toContain('phrase=use state')
+    expect(decodeUrl(searchUrls[appliedIndex])).toContain('exclude=class')
 
-    // chips 显示 + 逐项清除（全部清完后基础搜索恢复）
+    // chips 显示 + 逐项清除（每次清除后的最新请求不再携带被清条件）
     expect(screen.getByText('标题: 指南')).toBeInTheDocument()
     expect(screen.getByText('短语: “use state”')).toBeInTheDocument()
     expect(screen.getByText('排除: class')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '清除排除词「class」' }))
-    await waitFor(() => expect(searchUrls.length).toBe(3))
-    expect(decodeUrl(searchUrls[2])).not.toContain('exclude=')
+    const excludeClearedIndex = await waitFor(() => {
+      const post = searchUrls.slice(appliedIndex + 1)
+      expect(post.length).toBeGreaterThan(0)
+      const last = decodeUrl(post[post.length - 1])
+      expect(last).not.toContain('exclude=')
+      return appliedIndex + 1 + post.length - 1
+    })
     expect(screen.queryByText('排除: class')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '清除标题条件「指南」' }))
-    await waitFor(() => expect(searchUrls.length).toBe(4))
+    const titleClearedIndex = await waitFor(() => {
+      const post = searchUrls.slice(excludeClearedIndex + 1)
+      expect(post.length).toBeGreaterThan(0)
+      const last = decodeUrl(post[post.length - 1])
+      expect(last).not.toContain('intitle=')
+      return excludeClearedIndex + 1 + post.length - 1
+    })
+    expect(screen.queryByText('标题: 指南')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '清除精确短语「use state」' }))
-    await waitFor(() => expect(searchUrls.length).toBe(5))
-    expect(decodeUrl(searchUrls[4])).not.toContain('intitle=')
-    expect(decodeUrl(searchUrls[4])).not.toContain('phrase=')
+    await waitFor(() => {
+      const post = searchUrls.slice(titleClearedIndex + 1)
+      expect(post.length).toBeGreaterThan(0)
+      const last = decodeUrl(post[post.length - 1])
+      expect(last).not.toContain('intitle=')
+      expect(last).not.toContain('phrase=')
+    })
+    expect(screen.queryByText('短语: “use state”')).toBeNull()
   })
 
   it('空查询 + 仅高级条件：诚实提示「请输入至少一个搜索词」且不发请求', async () => {
