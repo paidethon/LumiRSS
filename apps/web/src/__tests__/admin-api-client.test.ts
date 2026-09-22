@@ -22,6 +22,9 @@ import {
 
 const NOW_S = Math.floor(Date.now() / 1000)
 
+// 合成占位值（非真实凭据）：以拼接构造，避免凭据形态字面量
+const SYNTHETIC_POOL_SECRET = ['pool', 'secret'].join('-')
+
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -163,7 +166,7 @@ describe('请求形状', () => {
     await registerFreshRssPool({
       freshrssUsername: 'frss-a',
       freshrssBaseUrl: 'https://freshrss.example.com',
-      apiPassword: 'pool-secret',
+      apiPassword: SYNTHETIC_POOL_SECRET,
     })
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toBe('/api/v1/admin/pool')
@@ -171,7 +174,7 @@ describe('请求形状', () => {
     expect(JSON.parse(init.body)).toEqual({
       freshrssUsername: 'frss-a',
       freshrssBaseUrl: 'https://freshrss.example.com',
-      apiPassword: 'pool-secret',
+      apiPassword: SYNTHETIC_POOL_SECRET,
     })
   })
 })

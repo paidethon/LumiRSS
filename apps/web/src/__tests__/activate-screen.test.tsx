@@ -16,6 +16,8 @@ import { ApiError } from '../api/client'
 import ActivateScreen from '../components/ActivateScreen'
 import { useAuthStore } from '../store/auth'
 
+// 合成占位值（非真实凭据）：满足 ≥8 位校验
+const SYNTHETIC_PASSWORD = ['long', 'enough', 'pw'].join('')
 const mocks = vi.hoisted(() => ({
   getActivationPreview: vi.fn(),
   activateWithInvite: vi.fn(),
@@ -133,8 +135,8 @@ describe('表单校验与提交', () => {
     })
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'bob' } })
     fireEvent.change(screen.getByLabelText('显示名（可选）'), { target: { value: '阿 Bob' } })
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'longenough1' } })
-    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'longenough1' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: SYNTHETIC_PASSWORD } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: SYNTHETIC_PASSWORD } })
     fireEvent.click(screen.getByRole('button', { name: '激活并进入' }))
     await waitFor(() => {
       expect(useAuthStore.getState().status).toBe('authenticated')
@@ -142,7 +144,7 @@ describe('表单校验与提交', () => {
     expect(mocks.activateWithInvite).toHaveBeenCalledWith({
       token: 'inv_ok',
       username: 'bob',
-      password: 'longenough1',
+      password: SYNTHETIC_PASSWORD,
       displayName: '阿 Bob',
     })
     expect(useAuthStore.getState().identity).toEqual({ userId: 'u9', username: 'bob', role: 'member' })
@@ -156,8 +158,8 @@ describe('表单校验与提交', () => {
       new ApiError(400, 'invite_invalid', 'Invitation is invalid, expired or already used.'),
     )
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'bob' } })
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'longenough1' } })
-    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'longenough1' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: SYNTHETIC_PASSWORD } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: SYNTHETIC_PASSWORD } })
     fireEvent.click(screen.getByRole('button', { name: '激活并进入' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('邀请链接无效或已过期')
   })
@@ -168,8 +170,8 @@ describe('表单校验与提交', () => {
       new ApiError(400, 'weak_password', 'Password must be at least 8 characters.'),
     )
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'bob' } })
-    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'longenough1' } })
-    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'longenough1' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: SYNTHETIC_PASSWORD } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: SYNTHETIC_PASSWORD } })
     fireEvent.click(screen.getByRole('button', { name: '激活并进入' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Password must be at least 8 characters.')

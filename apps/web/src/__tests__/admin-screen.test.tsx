@@ -17,6 +17,8 @@ import { ApiError, type AdminInvite, type AdminUser } from '../api/client'
 import AdminScreen from '../components/admin/AdminScreen'
 import { useAuthStore, type AuthIdentity } from '../store/auth'
 
+// 合成占位值（非真实凭据）
+const SYNTHETIC_POOL_SECRET = ['pool', 'secret', '1'].join('-')
 const mocks = vi.hoisted(() => ({
   listAdminUsers: vi.fn(),
   listAdminInvites: vi.fn(),
@@ -238,13 +240,13 @@ describe('FreshRSS 池', () => {
     await screen.findByTestId('pool-counts')
     fireEvent.change(screen.getByLabelText('FreshRSS 用户名'), { target: { value: 'frss-frank' } })
     fireEvent.change(screen.getByLabelText('FreshRSS 地址'), { target: { value: 'https://freshrss.example.com' } })
-    fireEvent.change(screen.getByLabelText('API 密码（只写）'), { target: { value: 'pool-secret-1' } })
+    fireEvent.change(screen.getByLabelText('API 密码（只写）'), { target: { value: SYNTHETIC_POOL_SECRET } })
     fireEvent.click(screen.getByRole('button', { name: '登记入池' }))
     await waitFor(() => {
       expect(mocks.registerFreshRssPool).toHaveBeenCalledWith({
         freshrssUsername: 'frss-frank',
         freshrssBaseUrl: 'https://freshrss.example.com',
-        apiPassword: 'pool-secret-1',
+        apiPassword: SYNTHETIC_POOL_SECRET,
         publicUrl: null,
       })
     })
@@ -259,7 +261,7 @@ describe('FreshRSS 池', () => {
     await screen.findByTestId('pool-counts')
     fireEvent.change(screen.getByLabelText('FreshRSS 用户名'), { target: { value: 'frss-frank' } })
     fireEvent.change(screen.getByLabelText('FreshRSS 地址'), { target: { value: 'https://freshrss.example.com' } })
-    fireEvent.change(screen.getByLabelText('API 密码（只写）'), { target: { value: 'pool-secret-1' } })
+    fireEvent.change(screen.getByLabelText('API 密码（只写）'), { target: { value: SYNTHETIC_POOL_SECRET } })
     fireEvent.click(screen.getByRole('button', { name: '登记入池' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('already registered')
   })

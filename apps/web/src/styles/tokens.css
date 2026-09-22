@@ -47,9 +47,12 @@
     system-ui, 'SN Pro', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
 
-  /* 层级（z-index 只允许经由这些 token） */
-  --lumi-z-tooltip: 30;
-  --lumi-z-popover: 40;
+  /* 层级（z-index 只允许经由这些 token）。O123 定序：对话框内触发的
+   * 菜单/提示（portal 到 body）必须盖过对话框本身——popover 55 > 
+   * dialog 50；tooltip 属瞬时最上层。修复实例：侧栏抽屉内账号菜单
+   * 可见但被 drawer viewport 拦截点击。 */
+  --lumi-z-tooltip: 70;
+  --lumi-z-popover: 55;
   --lumi-z-dialog: 50;
   --lumi-z-floating: 60;
 
