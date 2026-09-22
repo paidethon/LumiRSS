@@ -209,27 +209,28 @@ class ImapAdapter:
 
 
 async def mail_imap_poll_loop(app_state: Any) -> None:
-    """Background IMAP poll (P0-06c): re-reads the config every cycle so
-    interval/list changes apply without a restart; disabled (no config,
-    no bound list) simply idles. Poll-first-sleep ordering keeps boot
-    light; failures are logged, never fatal."""
+    """Background IMAP poll (P0-06c), per user (0067/O163): every active
+    user's own IMAP config is polled under that user's context; config
+    re-reads every cycle so interval/list changes apply without a
+    restart. Failures are isolated per user and never fatal."""
+    from lumirss.user_scope import for_each_active_user
+
     while True:
-        config = load_imap_config(app_state.secrets_store)
-        interval = (
-            config.interval_seconds if config else _DEFAULT_INTERVAL_SECONDS
-        )
-        await asyncio.sleep(max(interval, _INTERVAL_FLOOR_SECONDS))
-        if config is None or not config.list_uuid or not config.enabled:
-            continue  # F007：enabled=False 调度入口同样直接跳过
-        try:
+        await asyncio.sleep(_DEFAULT_INTERVAL_SECONDS)
+
+        async def poll_user(_uid: str) -> None:
+            config = load_imap_config(app_state.secrets_store)
+            if config is None or not config.list_uuid or not config.enabled:
+                return  # F007：enabled=False 调度入口同样直接跳过
             adapter = ImapAdapter(
                 app_state.secrets_store, MailBridgeStore(app_state.db)
             )
             await adapter.poll_once(config.list_uuid)
-        except ImapNotConfigured:
-            continue
+
+        try:
+            await for_each_active_user(app_state, poll_user)
         except Exception:  # noqa: BLE001 — polling must never kill the app
-            _logger.exception("mail IMAP poll failed; will retry next cycle")
+            _logger.exception("mail IMAP poll cycle failed; will retry")
 
 
 def build_mail_imap_task(app_state: Any) -> asyncio.Task:

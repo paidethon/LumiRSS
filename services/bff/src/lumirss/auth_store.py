@@ -1,19 +1,19 @@
-"""Persistent single-user session authentication store.
+"""Persistent multi-user session store (control database).
 
 Design (matching the task's security model):
 
-- The login password is verified against a bcrypt hash kept in
-  ``auth_password``; the plaintext is never persisted anywhere. Bootstrap
-  happens via ``scripts/set_password.py`` (deploy-time one-shot).
+- Login passwords are verified against ``users.password_hash`` (bcrypt);
+  the plaintext is never persisted anywhere. The legacy single-user
+  ``auth_password`` table is only a migration source (owner_migration).
 - Sessions are 256-bit ``secrets``-generated tokens handed to the browser
   as an opaque cookie. The database stores only ``SHA-256(token)`` — a
   leaked database cannot be replayed into a valid session.
-- Sessions slide: an authenticated request near expiry renews
-  ``expires_at``, so a regularly-used device stays logged in for up to
-  ``LUMIRSS_SESSION_MAX_AGE_DAYS`` of inactivity (default 180).
-- The table stays bounded: expired rows are pruned on every login, and a
-  hard cap on live sessions (oldest ``last_seen_at`` evicted first) keeps
-  a runaway client from growing the table forever.
+- Every session row carries its ``user_id``: the middleware resolves the
+  verified identity once per request and the per-user data layer reads it
+  from the context (user_scope). Sessions slide: an authenticated request
+  near expiry renews ``expires_at``.
+- The table stays bounded per user: expired rows are pruned on login and
+  a per-user live-session cap evicts the oldest ``last_seen_at`` first.
 """
 
 import hashlib
@@ -27,7 +27,7 @@ from lumirss.storage import Database
 # Raw token length: token_urlsafe(32) ≈ 256 bits of entropy.
 _TOKEN_BYTES = 32
 
-# Bound on simultaneously-live sessions (single user, a few devices).
+# Bound on simultaneously-live sessions per user (a few devices).
 MAX_LIVE_SESSIONS = 20
 
 MIN_PASSWORD_LENGTH = 8
@@ -116,11 +116,17 @@ class AuthStore:
     # ---- sessions -------------------------------------------------------
 
     async def create_session(
-        self, max_age_days: int, user_agent: str | None = None
+        self,
+        max_age_days: int,
+        user_agent: str | None = None,
+        *,
+        user_id: str = "",
     ) -> tuple[str, int]:
         """Create a session; returns (raw_token, expires_at_epoch).
 
-        Also prunes expired rows and enforces the live-session cap in the
+        ``user_id`` is mandatory in multi-account mode — the middleware
+        uses it to bind every later request to that identity. Also prunes
+        expired rows and enforces the per-user live-session cap in the
         same pass (the new row is the most recently seen, so it survives).
         """
         await self._db.migrate()
@@ -130,27 +136,41 @@ class AuthStore:
         token_hash = _hash_token(raw)
         agent = user_agent[:200] if user_agent else None
         await self._db.execute(
-            "INSERT INTO auth_sessions (token_hash, created_at, last_seen_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)",
-            (token_hash, now, now, expires, agent),
+            "INSERT INTO auth_sessions (token_hash, created_at, last_seen_at, expires_at, user_agent, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (token_hash, now, now, expires, agent, user_id),
         )
         await self._db.execute(
-            "DELETE FROM auth_sessions WHERE expires_at < ? OR token_hash NOT IN (SELECT token_hash FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?)",
-            (now, MAX_LIVE_SESSIONS),
+            "DELETE FROM auth_sessions WHERE expires_at < ? OR (user_id = ? AND token_hash NOT IN (SELECT token_hash FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT ?))",
+            (now, user_id, user_id, MAX_LIVE_SESSIONS),
         )
         return raw, expires
 
-    async def get_valid_session(self, raw_token: str) -> int | None:
-        """Epoch expiry if the token maps to an unexpired session."""
+    async def get_valid_session_user(self, raw_token: str) -> tuple[str, int] | None:
+        """(user_id, expires_at) if the token maps to an unexpired session
+        whose user still exists and is active (paused users lose access
+        immediately — O152)."""
         await self._db.migrate()
         token_hash = _hash_token(raw_token)
         row = await self._db.fetch_one(
-            "SELECT expires_at FROM auth_sessions WHERE token_hash = ?",
+            "SELECT s.expires_at AS expires_at, s.user_id AS user_id, u.status AS status FROM auth_sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
             (token_hash,),
         )
         if row is None:
             return None
         expires_at = int(row["expires_at"])
-        return expires_at if expires_at > _now() else None
+        if expires_at <= _now():
+            return None
+        user_id = str(row["user_id"] or "")
+        if not user_id:
+            return None
+        if row["status"] is not None and str(row["status"]) != "active":
+            return None
+        return user_id, expires_at
+
+    async def get_valid_session(self, raw_token: str) -> int | None:
+        """Epoch expiry if the token maps to an unexpired session."""
+        result = await self.get_valid_session_user(raw_token)
+        return result[1] if result else None
 
     async def touch_session(
         self,
@@ -195,25 +215,34 @@ class AuthStore:
             "DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,)
         )
 
-    async def revoke_all_sessions(self) -> None:
-        await self._db.execute("DELETE FROM auth_sessions")
+    async def revoke_all_sessions(self, user_id: str | None = None) -> None:
+        """Revoke every session (password change), or one user's sessions."""
+        if user_id is None:
+            await self._db.execute("DELETE FROM auth_sessions")
+        else:
+            await self._db.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
 
     # ---- F038 会话管理 ----------------------------------------------------
 
     async def list_sessions(
-        self, *, current_token: str | None = None, limit: int = 20
+        self,
+        *,
+        current_token: str | None = None,
+        limit: int = 20,
+        user_id: str | None = None,
     ) -> list[dict[str, object]]:
         """活跃会话列表（绝不返回 token 或 token_hash）。
 
         id = token_hash 前 8 位（显示/撤销标识）；current 按传入的原始
-        token 判定；user_agent 截断 64 字符。
+        token 判定；user_agent 截断 64 字符。多账户模式下每个用户只看
+        得到自己的会话（user_id 必填，由服务端身份决定）。
         """
         await self._db.migrate()
         current_hash = _hash_token(current_token) if current_token else None
-        rows = await self._db.fetch_all(
-            "SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?",
-            (max(1, min(limit, 50)),),
-        )
+        if user_id is None:
+            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?", (max(1, min(limit, 50)),))
+        else:
+            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT ?", (user_id, max(1, min(limit, 50))))
         now = _now()
         sessions: list[dict[str, object]] = []
         for row in rows:
@@ -234,15 +263,18 @@ class AuthStore:
             )
         return sessions
 
-    async def revoke_session_by_id(self, session_id: str) -> bool:
-        """按 8 位 id（token_hash 前缀）撤销；不存在 → False。"""
+    async def revoke_session_by_id(self, session_id: str, *, user_id: str | None = None) -> bool:
+        """按 8 位 id（token_hash 前缀）撤销；不存在 → False。
+
+        多账户模式下 user_id 必传：用户只能撤销自己的会话。
+        """
         if not session_id or len(session_id) != 8:
             return False
         await self._db.migrate()
-        row = await self._db.fetch_one(
-            "SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%'",
-            (session_id,),
-        )
+        if user_id is None:
+            row = await self._db.fetch_one("SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%'", (session_id,))
+        else:
+            row = await self._db.fetch_one("SELECT token_hash FROM auth_sessions WHERE token_hash LIKE ? || '%' AND user_id = ?", (session_id, user_id))
         if row is None:
             return False
         await self._db.execute(

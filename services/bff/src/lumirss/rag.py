@@ -1147,32 +1147,30 @@ async def rag_index_pass(service: "RagService") -> dict[str, Any]:
 
 
 async def rag_incremental_loop(app_state: Any, interval: float) -> None:
-    """Periodically converge the semantic index with the projections.
-    Failures are logged, never fatal.
+    """Periodically converge each user's semantic index (0067/O163).
+    Failures are isolated per user and logged, never fatal.
 
-    When no service instance exists yet (lazy-by-request construction),
-    the loop builds one itself once RAG is actually enabled — otherwise
-    an enabled deployment would not converge until the first RAG request
-    touched the app (fresh-eyes issue: restart silently idled the
-    sweep)."""
-    logger = logging.getLogger("lumirss.rag")
+    Per-user RagService instances live in ``user_services`` (the embed
+    model is heavy — the idle loop unloads them after the TTL). When no
+    instance exists yet the loop probes RAG-enabled under that user's
+    context, so an enabled deployment converges without a prior request.
+    """
+    from lumirss.user_scope import for_each_active_user
+
+    async def index_user(uid: str) -> None:
+        cache = app_state.user_services
+        service: RagService | None = cache.get((uid, "rag_service"))
+        if service is None:
+            probe = RagService(app_state.db)
+            if (await probe._setting("rag_enabled")) != "1":  # noqa: SLF001
+                return  # RAG never enabled for this user → no service
+            service = probe
+            cache[(uid, "rag_service")] = service
+        await rag_index_pass(service)
+
     while True:
         await asyncio.sleep(interval)
-        service: RagService | None = getattr(app_state, "rag_service", None)
-        if service is None:
-            try:
-                probe = RagService(app_state.db)
-                if (await probe._setting("rag_enabled")) != "1":  # noqa: SLF001
-                    continue  # RAG never enabled → no service, no pass
-                service = probe
-                app_state.rag_service = service
-            except Exception:  # noqa: BLE001 — lifecycle must never kill the app
-                logger.exception("rag incremental service build failed")
-                continue
-        try:
-            await rag_index_pass(service)
-        except Exception:  # noqa: BLE001 — lifecycle must never kill the app
-            logger.exception("rag incremental index pass failed")
+        await for_each_active_user(app_state, index_user)
 
 
 def build_rag_incremental_task(app_state: Any, interval: float) -> asyncio.Task:
@@ -1188,18 +1186,21 @@ def build_rag_incremental_task(app_state: Any, interval: float) -> asyncio.Task:
 
 
 async def rag_idle_loop(app_state: Any) -> None:
-    """Periodically release the embedding model when idle past the TTL.
+    """Periodically release idle embedding models (per-user instances).
     Failures are logged, never fatal."""
     logger = logging.getLogger("lumirss.rag")
     while True:
         await asyncio.sleep(_RAG_IDLE_TICK_SECONDS)
-        service = getattr(app_state, "rag_service", None)
-        if service is None:
-            continue  # not built yet → nothing can be resident
-        try:
-            service.unload_if_idle()
-        except Exception:  # noqa: BLE001 — lifecycle must never kill the app
-            logger.exception("rag idle unload failed")
+        cache = getattr(app_state, "user_services", None)
+        if not cache:
+            continue  # no per-user service built yet → nothing resident
+        for key, service in list(cache.items()):
+            if key[1] != "rag_service":
+                continue
+            try:
+                service.unload_if_idle()
+            except Exception:  # noqa: BLE001 — lifecycle must never kill the app
+                logger.exception("rag idle unload failed for %s", key[0])
 
 
 def build_rag_idle_task(app_state: Any) -> asyncio.Task:

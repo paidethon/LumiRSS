@@ -64,50 +64,62 @@ def stable_entry_guid(entry_ref: str) -> str:
 
 @router.get("/feeds/views/{view_id}.{secret}.atom")
 async def saved_view_atom(view_id: str, secret: str, request: Request) -> Response:
-    """保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。"""
-    store = SavedSearchStore(request.app.state.db)
-    view = await store.get(view_id)
-    stored_secret = await store.get_feed_secret(view_id)
-    if (
-        view is None
-        or stored_secret is None
-        or not verify_token(secret, stored_secret)
-    ):
-        return Response(
-            status_code=404,
-            media_type="application/xml",
-            content="<error>not found</error>",
-        )
-    params = view_search_params(view)
-    if not params["query"].strip():
-        return Response(
-            status_code=404,
-            media_type="application/xml",
-            content="<error>not found</error>",
-        )
-    service = _get_search_service(request)
-    result = await service.search(limit=_MAX_FEED_ENTRIES, **params)
-    from lumirss.util import utc_now
+    """保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。
 
-    generated_at = rfc3339(utc_now()) or utc_now()
-    entries = [
-        AtomEntry(
-            entry_id=stable_entry_guid(str(item["entryRef"])),
-            title=str(item["title"]),
-            updated=rfc3339(item["publishedAt"]) or generated_at,
-            link=item.get("url"),
-            author=item.get("author") or item.get("feedTitle"),
-            content_html=str(item.get("snippet") or ""),
-            published=rfc3339(item["publishedAt"]),
+    0067：路径 token 先经 token_owner_index 解析归属用户——同一 404
+    不泄露存在性，也绝不落入别人的数据作用域。"""
+    from lumirss.machine_auth import machine_user_context
+
+    async with machine_user_context(request, secret) as uid:
+        if uid is None:
+            return Response(
+                status_code=404,
+                media_type="application/xml",
+                content="<error>not found</error>",
+            )
+        store = SavedSearchStore(request.app.state.db)
+        view = await store.get(view_id)
+        stored_secret = await store.get_feed_secret(view_id)
+        if (
+            view is None
+            or stored_secret is None
+            or not verify_token(secret, stored_secret)
+        ):
+            return Response(
+                status_code=404,
+                media_type="application/xml",
+                content="<error>not found</error>",
+            )
+        params = view_search_params(view)
+        if not params["query"].strip():
+            return Response(
+                status_code=404,
+                media_type="application/xml",
+                content="<error>not found</error>",
+            )
+        service = _get_search_service(request)
+        result = await service.search(limit=_MAX_FEED_ENTRIES, **params)
+        from lumirss.util import utc_now
+
+        generated_at = rfc3339(utc_now()) or utc_now()
+        entries = [
+            AtomEntry(
+                entry_id=stable_entry_guid(str(item["entryRef"])),
+                title=str(item["title"]),
+                updated=rfc3339(item["publishedAt"]) or generated_at,
+                link=item.get("url"),
+                author=item.get("author") or item.get("feedTitle"),
+                content_html=str(item.get("snippet") or ""),
+                published=rfc3339(item["publishedAt"]),
+            )
+            for item in result["rows"][:_MAX_FEED_ENTRIES]
+        ]
+        atom = render_feed(
+            feed_id=f"urn:lumi:view-feed:{view_id}",
+            title=f"{view['name']} · LumiRSS 保存视图（生成于 {generated_at}）",
+            updated=generated_at,
+            self_href=str(request.url),
+            entries=entries,
+            feed_author="LumiRSS",
         )
-        for item in result["rows"][:_MAX_FEED_ENTRIES]
-    ]
-    atom = render_feed(
-        feed_id=f"urn:lumi:view-feed:{view_id}",
-        title=f"{view['name']} · LumiRSS 保存视图（生成于 {generated_at}）",
-        updated=generated_at,
-        self_href=str(request.url),
-        entries=entries,
-        feed_author="LumiRSS",
-    )
-    return Response(content=atom, media_type="application/atom+xml; charset=utf-8")
+        return Response(content=atom, media_type="application/atom+xml; charset=utf-8")

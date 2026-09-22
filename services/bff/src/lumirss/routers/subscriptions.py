@@ -3,9 +3,8 @@
 
 
 from fastapi import APIRouter, Query, Request, Response
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, model_validator
 
-from lumirss.config import FreshRSSSettings
 from lumirss.deps import _get_control_adapter
 from lumirss.models import (
     BatchMoveItem,
@@ -537,16 +536,17 @@ async def rename_category(
 async def freshrss_ui(request: Request) -> dict[str, str | None]:
     """Browser-safe public URL of the FreshRSS web UI, or null.
 
-    The advanced escape hatch ("在 FreshRSS 中管理") is only offered when
-    the operator explicitly configured FRESHRSS_PUBLIC_URL. The internal
-    FRESHRSS_BASE_URL (possibly a Docker hostname or loopback address) is
-    never exposed to the browser, and no URL ever carries credentials.
+    0067：读当前用户绑定的 public_url（激活/迁移时写入），env 配置只在
+    owner 迁移时授予 owner。内部 FRESHRSS_BASE_URL（可能是 Docker 主机
+    名或回环地址）永不暴露给浏览器，URL 不携带凭据。
     """
     try:
-        settings = FreshRSSSettings()
-    except ValidationError:
+        await request.app.state.db.migrate()
+        row = await request.app.state.db.fetch_one("SELECT public_url FROM freshrss_binding WHERE id = 1")
+    except Exception:  # noqa: BLE001 — 未绑定诚实返回 null
         return {"url": None}
-    return {"url": settings.FRESHRSS_PUBLIC_URL or None}
+    url = str(row["public_url"]) if row and row["public_url"] else None
+    return {"url": url or None}
 
 
 async def _probe_feed_url(

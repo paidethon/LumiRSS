@@ -975,11 +975,21 @@ async def _scheduled_generate(
     """The scheduler's generate: builds the same dependency graph as the
     route (adapter + summary-purpose AI view + key-aware provider)."""
     from lumirss.gpt_digest_configs import GptDigestConfigStore
+    from lumirss.user_scope import current_user_id
 
     configs = GptDigestConfigStore(app_state.db)
-    adapter = app_state.freshrss_adapter
+    uid = current_user_id()
+    adapter = None
+    if uid:
+        adapter = app_state.user_services.get((uid, "bg_freshrss_adapter"))
+        if adapter is None:
+            from lumirss.control_resources import user_freshrss_adapter
+
+            adapter = await user_freshrss_adapter(app_state, uid)
+            if adapter is not None:
+                app_state.user_services[(uid, "bg_freshrss_adapter")] = adapter
     if adapter is None:
-        raise AiNotConfigured("FreshRSS 适配器不可用。")
+        raise AiNotConfigured("FreshRSS 适配器不可用（账号未绑定 RSS 源）。")
     ai_settings, provider_factory = _build_ai_deps(app_state)
     return await generate_issue(
         configs,
@@ -995,25 +1005,31 @@ async def _scheduled_generate(
 
 
 async def gpt_digest_scheduler_loop(app_state: Any) -> None:
-    """Background loop; failures are logged, never fatal.
+    """Background loop, per user (0067/O163); failures are isolated per
+    user and logged, never fatal.
 
     F01：逐个配置检查到期（配置间串行，避免并发模型调用互相挤占）。"""
-    from lumirss.gpt_digest_configs import GptDigestConfigStore
+    from lumirss.user_scope import for_each_active_user
 
-    scheduler = GptDigestScheduler(app_state.db)
+    async def tick_user(_uid: str) -> None:
+        from lumirss.gpt_digest_configs import GptDigestConfigStore as _Cfg
+
+        scheduler = GptDigestScheduler(app_state.db)
+        configs = _Cfg(app_state.db)
+        issues = GptDigestIssuesStore(app_state.db)
+        for config in await configs.list_configs():
+            await scheduler.maybe_generate_config(
+                lambda cfg=config, plan=None: _scheduled_generate(app_state, cfg, plan),
+                config,
+                issues,
+            )
+
     while True:
         await asyncio.sleep(_SCHEDULE_TICK_SECONDS)
         try:
-            configs = GptDigestConfigStore(app_state.db)
-            issues = GptDigestIssuesStore(app_state.db)
-            for config in await configs.list_configs():
-                await scheduler.maybe_generate_config(
-                    lambda cfg=config, plan=None: _scheduled_generate(app_state, cfg, plan),
-                    config,
-                    issues,
-                )
+            await for_each_active_user(app_state, tick_user)
         except Exception:  # noqa: BLE001 — 调度永不杀死应用
-            logger.exception("scheduled gpt digest failed; retry next tick")
+            logger.exception("scheduled gpt digest cycle failed; retry next tick")
 
 
 def build_gpt_digest_scheduler_task(app_state: Any) -> Any:

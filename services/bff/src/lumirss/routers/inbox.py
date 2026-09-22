@@ -185,6 +185,9 @@ async def create_inbox_source(
     once; it cannot be retrieved afterwards."""
     store = _get_inbox_store(request)
     created = await store.create_source(body.name.strip())
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, created["secret"], "inbox_ingest")
     return InboxSourceCreated(
         uuid=created["uuid"],
         name=created["name"],
@@ -224,6 +227,9 @@ async def rotate_inbox_source_secret(
     secret = await store.rotate_secret(source_uuid)
     if source is None or secret is None:
         raise InboxSourceNotFound(source_uuid)
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, secret, "inbox_ingest")
     return InboxSourceCreated(
         uuid=source["uuid"],
         name=source["name"],
@@ -256,62 +262,66 @@ async def ingest_inbox_item(
     with 200 instead of duplicating. Unknown source and wrong secret are
     indistinguishable (404) so the endpoint does not leak existence.
     F107：每次投递落一条事件（delivered/duplicate/failed），失败可重放。"""
-    store: InboxStore = _get_inbox_store(request)
     auth = request.headers.get("authorization", "")
     supplied = auth[7:] if auth.lower().startswith("bearer ") else ""
-    source = await store.get_source(source_uuid)
-    if source is None or not store.secrets_match(supplied, source["secret"]):
-        raise InboxSourceNotFound(source_uuid)
-
     from lumirss.inbox_events import InboxEventStore
+    from lumirss.machine_auth import machine_user_context
 
-    events = InboxEventStore(request.app.state.db)
-    raw_payload = item.model_dump()
-    try:
-        prepared = prepare_ingest_item(item)
-        status, ref = await store.ingest(
-            source,
-            guid=prepared["guid"],
-            title=prepared["title"],
-            url=prepared["url"],
-            author=prepared["author"],
-            content_html=prepared["content_html"],
-            content_text=prepared["content_text"],
-            published_at=prepared["published_at"],
-            categories=prepared["categories"],
-        )
-    except Exception as exc:
-        # Connector health stays honest (Q-P2-03): a rejected or failed
-        # push surfaces as lastError in the source registry instead of a
-        # permanently green connector. Recording is best-effort — never
-        # mask the original failure. F107：失败同时落 failed 事件（可重放）。
-        message = str(exc) if isinstance(exc, InvalidInboxPayload) else "ingest failed"
-        with contextlib.suppress(Exception):
-            await store.record_error(source_uuid, message)
+    async with machine_user_context(request, supplied) as uid:
+        if uid is None:
+            raise InboxSourceNotFound(source_uuid)
+        store: InboxStore = _get_inbox_store(request)
+        source = await store.get_source(source_uuid)
+        if source is None or not store.secrets_match(supplied, source["secret"]):
+            raise InboxSourceNotFound(source_uuid)
+
+        events = InboxEventStore(request.app.state.db)
+        raw_payload = item.model_dump()
+        try:
+            prepared = prepare_ingest_item(item)
+            status, ref = await store.ingest(
+                source,
+                guid=prepared["guid"],
+                title=prepared["title"],
+                url=prepared["url"],
+                author=prepared["author"],
+                content_html=prepared["content_html"],
+                content_text=prepared["content_text"],
+                published_at=prepared["published_at"],
+                categories=prepared["categories"],
+            )
+        except Exception as exc:
+            # Connector health stays honest (Q-P2-03): a rejected or failed
+            # push surfaces as lastError in the source registry instead of a
+            # permanently green connector. Recording is best-effort — never
+            # mask the original failure. F107：失败同时落 failed 事件（可重放）。
+            message = str(exc) if isinstance(exc, InvalidInboxPayload) else "ingest failed"
+            with contextlib.suppress(Exception):
+                await store.record_error(source_uuid, message)
+            with contextlib.suppress(Exception):
+                await events.record(
+                    source_uuid=source_uuid,
+                    guid=item.guid,
+                    status="failed",
+                    error_summary=message,
+                    payload=raw_payload,
+                )
+            raise
+        if status == "created":
+            # F022：仅「新建」条目应用第一条命中规则（重复投递同 GUID 走
+            # exists 路径，不重复触发副作用）。归类失败不影响投递本身。
+            with contextlib.suppress(Exception):
+                await _apply_inbox_rule(
+                    request, ref=ref, title=prepared["title"], source=source["name"]
+                )
         with contextlib.suppress(Exception):
             await events.record(
                 source_uuid=source_uuid,
-                guid=item.guid,
-                status="failed",
-                error_summary=message,
+                guid=prepared["guid"],
+                status="delivered" if status == "created" else "duplicate",
                 payload=raw_payload,
             )
-        raise
-    if status == "created":
-        # F022：仅「新建」条目应用第一条命中规则（重复投递同 GUID 走
-        # exists 路径，不重复触发副作用）。归类失败不影响投递本身。
-        with contextlib.suppress(Exception):
-            await _apply_inbox_rule(
-                request, ref=ref, title=prepared["title"], source=source["name"]
-            )
-    with contextlib.suppress(Exception):
-        await events.record(
-            source_uuid=source_uuid,
-            guid=prepared["guid"],
-            status="delivered" if status == "created" else "duplicate",
-            payload=raw_payload,
-        )
-    return InboxIngestResult(status=status, ref=ref)
+        return InboxIngestResult(status=status, ref=ref)
 
 
 # -- F108 载荷契约试跑 ---------------------------------------------------------

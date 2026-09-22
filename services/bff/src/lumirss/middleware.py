@@ -6,6 +6,7 @@ layer (LUMIRSS_AUTH_MODE=session). Registered on the app in main.py.
 """
 
 
+import asyncio
 import contextlib
 import logging
 import re
@@ -320,9 +321,19 @@ PLAIN_SESSION_COOKIE_NAME = "lumirss_session"
 # Paths the session layer deliberately leaves open. /health/* keeps
 # container healthchecks token-free, /api/v1/version is provenance for
 # skew diagnosis, and the auth endpoints themselves must be reachable
-# pre-login. Everything else under /api/ requires a session.
+# pre-login (login / invite activation / recovery / setup probes).
+# Everything else under /api/ requires a session. Unsafe methods on
+# these paths STILL pass the Origin check below (CSRF, O170).
 SESSION_PUBLIC_PATHS = frozenset(
-    {"/api/v1/auth/login", "/api/v1/auth/session", "/api/v1/version"}
+    {
+        "/api/v1/auth/login",
+        "/api/v1/auth/session",
+        "/api/v1/auth/activate",
+        "/api/v1/auth/activation-preview",
+        "/api/v1/auth/recover",
+        "/api/v1/auth/first-run",
+        "/api/v1/version",
+    }
 )
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -394,7 +405,13 @@ def _origin_allowed(scope, headers) -> bool:
 
 
 class SessionAuthMiddleware:
-    """Cookie-session gate for /api/* (opt-in via LUMIRSS_AUTH_MODE)."""
+    """Cookie-session gate for /api/* (opt-in via LUMIRSS_AUTH_MODE).
+
+    Multi-account (0067): a valid session resolves to its verified user,
+    the user must still be active, and the identity is published for the
+    request via ``scope["lumi_principal"]`` plus the user-scope ContextVar
+    that routes every private database access (user_scope.RoutingDatabase).
+    """
 
     def __init__(self, app) -> None:
         self.app = app
@@ -403,24 +420,45 @@ class SessionAuthMiddleware:
         if scope["type"] != "http" or scope.get("method") == "OPTIONS":
             await self.app(scope, receive, send)
             return
-        if LumiSettings().LUMIRSS_AUTH_MODE != "session":
-            await self.app(scope, receive, send)
+        auth_mode = LumiSettings().LUMIRSS_AUTH_MODE
+        if auth_mode != "session":
+            # Legacy single-user mode (dev / basic reverse-proxy auth):
+            # every request implicitly addresses the owner account.
+            owner_id = await _implicit_owner_id(scope)
+            if owner_id is None:
+                await _reject_session_required(send)
+                return
+            from lumirss.user_scope import load_user_env, user_context
+
+            scope["lumi_principal"] = {"user_id": owner_id, "role": "owner", "username": "owner"}
+            scope["lumi_user_env"] = await load_user_env(scope.get("app").state, owner_id, "owner", "owner")
+            with user_context(owner_id):
+                await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
-        if not path.startswith("/api/") or path in SESSION_PUBLIC_PATHS:
+        if not path.startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+        headers = scope.get("headers") or []
+        method = scope.get("method", "")
+        # CSRF gate FIRST (O170): unsafe methods — including on public
+        # auth paths (activation / recovery writes) — need a same-origin
+        # context. Browsers always send Origin on cross-site unsafe
+        # requests; its absence means a non-browser caller, which still
+        # has to pass the internal-token layer in production.
+        if method in _UNSAFE_METHODS and not _origin_allowed(scope, headers):
+            await _reject_forbidden(send)
+            return
+        if path in SESSION_PUBLIC_PATHS:
             await self.app(scope, receive, send)
             return
         # phase2 recovery (P0-06d): bearer-authenticated machine ingest —
         # defer to the route (constant-time secret check; the secret is
-        # never logged). Browsers without a bearer still require a
-        # session below. 0021 adds the inbox push ingest.
-        headers = scope.get("headers") or []
+        # never logged). The route resolves the owning user from the
+        # token_owner_index and enters that user's scope itself. 0021
+        # adds the inbox push ingest.
         if _bearer_machine_path(path, headers):
             await self.app(scope, receive, send)
-            return
-        method = scope.get("method", "")
-        if method in _UNSAFE_METHODS and not _origin_allowed(scope, headers):
-            await _reject_forbidden(send)
             return
         raw_token = parse_session_cookie(headers)
         state = scope.get("app").state if scope.get("app") else None
@@ -429,14 +467,81 @@ class SessionAuthMiddleware:
             return
         from lumirss.auth_store import AuthStore
 
-        store = AuthStore(state.db)
-        if await store.get_valid_session(raw_token) is None:
+        store = AuthStore(state.control_db)
+        resolved = await store.get_valid_session_user(raw_token)
+        if resolved is None:
+            await _reject_session_required(send)
+            return
+        user_id, _expires_at = resolved
+        principal = await _principal_for_user(state, user_id)
+        if principal is None:
             await _reject_session_required(send)
             return
         settings = LumiSettings()
         with contextlib.suppress(Exception):  # renewal must never break reading
             await store.touch_session(raw_token, settings.LUMIRSS_SESSION_MAX_AGE_DAYS)
-        await self.app(scope, receive, send)
+        from lumirss.user_scope import load_user_env, user_context
+
+        scope["lumi_principal"] = principal
+        scope["lumi_user_env"] = await load_user_env(
+            state, user_id, principal["role"], principal["username"]
+        )
+        with user_context(user_id):
+            await self.app(scope, receive, send)
+
+
+async def _principal_for_user(state, user_id: str) -> dict[str, str] | None:
+    """User row → principal dict; None when the user vanished/paused."""
+    from lumirss.accounts_store import AccountsStore
+
+    user = await AccountsStore(state.control_db).get_user(user_id)
+    if user is None or user.get("status") != "active":
+        return None
+    return {
+        "user_id": str(user["id"]),
+        "role": str(user["role"]),
+        "username": str(user["username"]),
+    }
+
+
+_implicit_owner_lock = asyncio.Lock()
+_implicit_owner_cache: dict[int, str] = {}
+
+
+async def _implicit_owner_id(scope) -> str | None:
+    """Owner user id for legacy single-user mode (cached per process).
+
+    The owner row is created by the startup migration; until it exists
+    there is no user database to address and /api business routes must
+    fail closed (session_required) instead of guessing an identity.
+    """
+    app = scope.get("app")
+    state = getattr(app, "state", None) if app else None
+    if state is None:
+        return None
+    key = id(state)
+    cached = _implicit_owner_cache.get(key)
+    if cached:
+        return cached
+    async with _implicit_owner_lock:
+        cached = _implicit_owner_cache.get(key)
+        if cached:
+            return cached
+        from lumirss.accounts_store import AccountsStore
+
+        try:
+            users = AccountsStore(state.control_db)
+            owner = None
+            for row in await users.list_users(limit=500):
+                if row.get("role") == "owner":
+                    owner = row
+                    break
+            if owner is not None:
+                _implicit_owner_cache[key] = str(owner["id"])
+                return str(owner["id"])
+        except Exception:  # noqa: BLE001 — fail closed below
+            return None
+    return None
 
 
 async def _reject_session_required(send) -> None:

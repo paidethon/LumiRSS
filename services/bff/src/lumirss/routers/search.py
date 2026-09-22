@@ -565,6 +565,9 @@ async def enable_view_feed_token(view_id: str, request: Request) -> ViewFeedToke
     secret = new_view_feed_secret()
     if not await store.set_feed_secret(view_id, secret):
         raise SavedSearchNotFound(view_id)
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, secret, "view_feed")
     return ViewFeedTokenResult(
         atomPath=f"/feeds/views/{view_id}.{secret}.atom",
         hasFeedToken=True,
@@ -586,6 +589,9 @@ async def rotate_view_feed_token(view_id: str, request: Request) -> ViewFeedToke
     secret = new_view_feed_secret()
     if not await store.set_feed_secret(view_id, secret):
         raise SavedSearchNotFound(view_id)
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, secret, "view_feed")
     return ViewFeedTokenResult(
         atomPath=f"/feeds/views/{view_id}.{secret}.atom",
         hasFeedToken=True,

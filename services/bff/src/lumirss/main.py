@@ -12,6 +12,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
@@ -28,6 +29,7 @@ from lumirss.middleware import (
 )
 from lumirss.obsidian import ObsidianService
 from lumirss.routers import (
+    admin,
     agent,
     ai_settings,
     ai_tasks,
@@ -81,8 +83,6 @@ from lumirss.routers import (
     synonyms as search_synonyms,
 )
 from lumirss.search_index import SearchIndexService
-from lumirss.secrets_store import SecretsStore
-from lumirss.storage import Database
 
 _logger = logging.getLogger("lumirss.search")
 
@@ -100,19 +100,48 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout=httpx.Timeout(10.0, connect=5.0),
         trust_env=False,
     )
-    app.state.db = Database(LumiSettings().LUMIRSS_DB_PATH)
-    app.state.secrets_store = SecretsStore(LumiSettings().secrets_path)
+    # 0067 邀请制多账户：LUMIRSS_DB_PATH 是控制库（身份/会话/邀请/池/
+    # 审计）；每个用户的业务数据在 users/<uid>/lumi.sqlite，由
+    # RoutingDatabase 按请求身份路由（app.state.db 保持历史属性名，
+    # 所有 store 无感获得用户隔离）。启动时先完成旧单用户库 → owner
+    # 账户的幂等迁移（O148）。
+    from lumirss.accounts_store import AccountsStore
+    from lumirss.owner_migration import ensure_owner_migration
+    from lumirss.secrets_store import SecretsStore
+    from lumirss.storage import Database as _ControlDatabase
+    from lumirss.user_scope import RoutingDatabase, RoutingSecretsStore
+
+    control_settings = LumiSettings()
+    app.state.control_db = _ControlDatabase(control_settings.LUMIRSS_DB_PATH)
+    _users_root = Path(control_settings.LUMIRSS_DB_PATH).expanduser().parent / "users"
+    app.state.users_root = _users_root
+    app.state.control_secrets = SecretsStore(
+        Path(control_settings.secrets_path).parent / "control-secrets.json"
+    )
+    app.state.accounts = AccountsStore(app.state.control_db)
+    owner_id = await ensure_owner_migration(app.state.control_db, app.state.control_secrets)
+    app.state.owner_id = owner_id
+    # Legacy attribute names keep their meaning for every store/router:
+    app.state.db = RoutingDatabase(control_settings.LUMIRSS_DB_PATH, _users_root)
+    app.state.secrets_store = RoutingSecretsStore(_users_root)
+    app.state.user_services = {}
     # §13.4：存量明文凭据的一次性哈希回填（幂等；四表 + gpt_digest
     # feed token）。失败不阻塞启动——校验层 verify_token 对旧明文行
-    # 永远兼容，回填只是把「静态明文」收敛为「静态哈希」。
+    # 永远兼容，回填只是把「静态明文」收敛为「静态哈希」。在 owner
+    # 用户上下文中运行：回填作用于各用户库的表。
     try:
         from lumirss.token_backfill import (
           backfill_token_hashes,
           upgrade_digest_feed_token,
         )
+        from lumirss.user_scope import user_context
 
-        migrated = await backfill_token_hashes(app.state.db)
-        upgraded = upgrade_digest_feed_token(app.state.secrets_store)
+        migrated: dict[str, int] = {}
+        upgraded = False
+        for uid in await app.state.accounts.active_user_ids():
+            with user_context(uid):
+                migrated.update(await backfill_token_hashes(app.state.db))
+                upgraded = upgrade_digest_feed_token(app.state.secrets_store) or upgraded
         if any(migrated.values()) or upgraded:
             _logger.info(
                 "token hash backfill done: %s digest_token_upgraded=%s",
@@ -190,43 +219,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.search_sync_task = None
     # P0-08f: the obsidian service exists for the whole process lifetime
     # (never request-lazy) so agent tool registration cannot bake in a
-    # None based on which page was opened first.
+    # None based on which page was opened first. The Vault belongs to the
+    # OPERATOR (O168): the service is bound to the owner's context.
     app.state.obsidian_service = ObsidianService(
         app.state.db, env_root=settings.LUMIRSS_OBSIDIAN_VAULT_DIR
     )
     app.state.obsidian_scan_task = None
     if interval > 0:
-        # Build the projection service eagerly so the background sync runs
-        # even before the first search request. Unconfigured FreshRSS
-        # (tests, degraded dev) simply leaves it disabled.
-        try:
-            from lumirss.adapters.freshrss import FreshRSSAdapter
-            from lumirss.config import FreshRSSSettings
-
-            # Cache the adapter on app.state so request-path wiring
-            # (deps._get_adapter) reuses the SAME session — login and
-            # action-token state stay single-owner.
-            if app.state.freshrss_adapter is None:
-                app.state.freshrss_adapter = FreshRSSAdapter(
-                    app.state.http_client, FreshRSSSettings()
-                )
-            app.state.search_service = SearchIndexService(
-                app.state.db,
-                app.state.freshrss_adapter,
-            )
-        except Exception:  # noqa: BLE001 — never block startup on search
-            _logger.info("search sync disabled (FreshRSS not configured)")
-
+        # Per-user search sync (0067/O163): each active user's projection
+        # syncs from THAT user's FreshRSS under their own context.
         async def search_sync_loop() -> None:
+            from lumirss.control_resources import user_freshrss_adapter
+            from lumirss.user_scope import for_each_active_user
+
+            async def sync_user(uid: str) -> None:
+                cache = app.state.user_services
+                key = (uid, "bg_search_service")
+                service = cache.get(key)
+                if service is None:
+                    adapter = await user_freshrss_adapter(app.state, uid)
+                    if adapter is None:
+                        return  # unbound account: honest skip
+                    service = SearchIndexService(app.state.db, adapter)
+                    cache[key] = service
+                await service.maybe_sync()
+
             while True:
                 await asyncio.sleep(interval)
-                service: SearchIndexService | None = app.state.search_service
-                if service is None:
-                    continue
-                try:
-                    await service.maybe_sync()
-                except Exception:  # noqa: BLE001 — sync must never kill the app
-                    _logger.exception("search index sync failed; will retry")
+                await for_each_active_user(app.state, sync_user)
 
         # P0-13: the task exists only when sync is enabled; interval=0 must
         # not create a sleep(0) hot loop.
@@ -235,13 +255,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if obsidian_interval > 0:
 
         async def obsidian_scan_loop() -> None:
+            from lumirss.user_scope import user_context
+
             while True:
                 await asyncio.sleep(obsidian_interval)
                 service: ObsidianService | None = app.state.obsidian_service
                 if service is None:
                     continue
+                owner_id = app.state.owner_id
+                if not owner_id:
+                    continue
                 try:
-                    await service.scan_if_configured()
+                    with user_context(owner_id):
+                        await service.scan_if_configured()
                 except Exception:  # noqa: BLE001 — scan must never kill the app
                     _logger.exception("obsidian scan failed; will retry")
 
@@ -318,6 +344,7 @@ app.add_middleware(RequestCorrelationMiddleware)
 # historical main.py; URL spaces are disjoint but ordering stays explicit).
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(feeds.router)
 app.include_router(entries.router)
 app.include_router(feed_filters.router)

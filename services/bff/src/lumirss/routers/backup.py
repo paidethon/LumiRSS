@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from lumirss.backup import (
@@ -35,6 +36,27 @@ from lumirss.models import (
 from lumirss.webdav import WebDavError, WebDavNotConfigured
 
 router = APIRouter()
+
+_NO_STORE = {"Cache-Control": "no-store"}
+
+
+async def _require_admin(request: Request) -> JSONResponse | None:
+    """O167：全实例备份/恢复是运营操作——包含量身于所有用户的数据
+    （每用户库、凭据状态、任务账本）。member 一律 403；basic 模式下
+    只存在 owner，行为不变。服务端角色判定，绝不信任请求体。"""
+    from lumirss.config import LumiSettings as _LS
+    from lumirss.user_scope import principal_of
+
+    if _LS().LUMIRSS_AUTH_MODE != "session":
+        return None
+    principal = principal_of(request.scope)
+    if principal is None or principal.get("role") not in ("owner", "admin"):
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"type": "forbidden", "message": "Administrator role required."}},
+            headers=_NO_STORE,
+        )
+    return None
 
 
 class WebDavSettingsPut(BaseModel):
@@ -72,6 +94,9 @@ def _webdav_json(doc: dict, password_configured: bool) -> dict[str, object]:
 
 @router.get("/api/v1/backups/webdav", response_model=WebDavSettingsView)
 async def get_webdav_settings(request: Request) -> dict[str, object]:
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     store = _get_webdav_settings(request)
     doc = await store.load()
     return _webdav_json(doc, store.password_configured())
@@ -82,6 +107,9 @@ async def put_webdav_settings(
     body: WebDavSettingsPut, request: Request
 ) -> dict[str, object]:
     """Update WebDAV settings (password write-only, never read back)."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     store = _get_webdav_settings(request)
     update: dict[str, object] = {}
     if body.serverUrl is not None:
@@ -106,6 +134,9 @@ async def put_webdav_settings(
 )
 async def test_webdav(request: Request) -> dict[str, object]:
     """Test the WebDAV connection: create + list the backup root."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     from lumirss.webdav import backup_root_path
 
     store = _get_webdav_settings(request)
@@ -134,6 +165,9 @@ class BackupCreate(BaseModel):
     response_model_exclude_none=False,  # queued jobs: stage/startedAt/… null
 )
 async def list_backups(request: Request) -> list[dict[str, object]]:
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     jobs = _get_backup_jobs(request)
     return [_job_json(job) for job in await jobs.list()]
 
@@ -149,6 +183,9 @@ async def backup_capabilities(request: Request) -> dict[str, object]:
     the UI can never offer a full backup the engine would refuse — and the
     engine never fails with a vaguer error than the preflight detected.
     """
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     settings = LumiSettings()
     lumi_available = Path(settings.LUMIRSS_DB_PATH).expanduser().is_file()
     assessment = await asyncio.to_thread(
@@ -185,6 +222,9 @@ async def create_backup(
     body: BackupCreate, request: Request
 ) -> dict[str, object]:
     """Create a full backup job (runs in the background; poll the job)."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     engine = _get_backup_engine(request)
     job = await engine.submit_full_backup(body.target)
     return _job_json(job)
@@ -193,6 +233,9 @@ async def create_backup(
 @router.get("/api/v1/backups/remote", response_model=RemoteBackupsResponse)
 async def list_remote_backups(request: Request) -> dict[str, object]:
     """List backups stored on WebDAV (flat names + sizes, no secret values)."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     from lumirss.webdav import backup_root_path
 
     store = _get_webdav_settings(request)
@@ -221,6 +264,9 @@ async def list_remote_backups(request: Request) -> dict[str, object]:
     response_model_exclude_none=False,
 )
 async def get_backup_job(job_id: str, request: Request) -> dict[str, object]:
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     jobs = _get_backup_jobs(request)
     job = await jobs.get(job_id)
     if job is None:
@@ -285,6 +331,9 @@ async def compare_backups(body: BackupCompareBody, request: Request) -> dict[str
     """F115：两份本地备份的 manifest 差异比较（只读——只开 zip 读句柄，
     不改文件、不触碰 mtime）。相同 → identical=true；不同类别计数逐条
     delta；未知段名（旧格式）进 incomparable——绝不显示为 0。"""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     side_a = await _read_backup_manifest(body.aId, request)
     side_b = await _read_backup_manifest(body.bId, request)
     incomparable: list[str] = []
@@ -406,6 +455,9 @@ async def restore_preview(
     body: RestorePreviewBody, request: Request
 ) -> dict[str, object]:
     """Validate a backup package and return a preview + restoreSessionId."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     zip_path, name = await _locate_backup_package(body, request)
     service = _get_restore_service(request)
     preview = await service.preview(zip_path)
@@ -437,6 +489,9 @@ async def restore_execute(
     is reconciled: stale rows are marked interrupted (nothing can legitimately
     be running once the exclusive restore finished) and the restore record is
     re-created when the swap erased it."""
+    guard = await _require_admin(request)
+    if guard is not None:
+        return guard
     engine = _get_backup_engine(request)
     service = _get_restore_service(request)
     jobs = _get_backup_jobs(request)

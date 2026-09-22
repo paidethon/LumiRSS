@@ -28,6 +28,18 @@ class DatabaseError(Exception):
     """A storage-level failure (connection, migration, integrity)."""
 
 
+def _statement_write_result(cursor: "sqlite3.Cursor", sql: str) -> int | None:
+    """INSERT → lastrowid（新行 id）；UPDATE/DELETE → rowcount。
+
+    条件更新（「WHERE 是否真的命中」守卫）依赖 rowcount——lastrowid 对
+    UPDATE 无意义，会让原子条件更新永远走失败分支。仅按语句首词分流，
+    无字符串拼装。
+    """
+    if sql.lstrip()[:6].upper() == "INSERT":
+        return cursor.lastrowid
+    return cursor.rowcount
+
+
 class Database:
     """A SQLite database handle for one Lumi state file."""
 
@@ -95,7 +107,7 @@ class Database:
         with closing(self._connect()) as connection:
             cursor = connection.execute(sql, params)
             connection.commit()
-            return cursor.lastrowid
+            return _statement_write_result(cursor, sql)
 
     def _execute_many(
         self, sql: str, params: list[tuple[Any, ...]]
@@ -145,6 +157,21 @@ class Database:
         """Many write statements in one transaction."""
         try:
             await self._run(self._execute_many, sql, params)
+        except sqlite3.IntegrityError:
+            raise
+        except sqlite3.Error as exc:
+            raise DatabaseError(f"Lumi database write failed: {sql.splitlines()[0].strip()}") from exc
+
+    def exec_sync(self, sql: str, params: tuple[Any, ...] = ()) -> int | None:
+        """Synchronous write — startup migration tooling only.
+
+        The request path must use ``execute`` (off-loop). This variant
+        exists for pre-serving startup code (owner_migration) that runs
+        before the event loop is under load; it bounds to a handful of
+        small statements at boot.
+        """
+        try:
+            return self._execute(sql, params)
         except sqlite3.IntegrityError:
             raise
         except sqlite3.Error as exc:

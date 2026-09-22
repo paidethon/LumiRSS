@@ -592,8 +592,10 @@ class LumiNoteList(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """POST /api/v1/auth/login — single user, password only."""
+    """POST /api/v1/auth/login — username + password (multi-account);
+    legacy single-user mode sends password only."""
 
+    username: str | None = Field(default=None, min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
 
 
@@ -609,11 +611,16 @@ class AuthStatus(BaseModel):
 
     mode tells the web app WHICH auth layer is active: "basic" = proxy
     Basic Auth (the app must not render its own login gate), "session" =
-    BFF sessions (gate on ``authenticated``)."""
+    BFF sessions (gate on ``authenticated``). userId/username/role carry
+    the server-verified identity for the account menu — the client never
+    declares who it is."""
 
     authenticated: bool
     mode: Literal["basic", "session"] = "session"
     expiresAt: str | None = None
+    userId: str | None = None
+    username: str | None = None
+    role: Literal["owner", "admin", "member"] | None = None
 
 
 class ApiVersionInfo(BaseModel):

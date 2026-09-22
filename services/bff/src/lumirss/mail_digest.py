@@ -396,17 +396,23 @@ async def _send_scheduled_digest(app_state: Any) -> None:
 
 
 async def digest_scheduler_loop(app_state: Any) -> None:
-    """Background digest check; failures are logged, never fatal."""
+    """Background digest check, per user (0067/O163): every active
+    user's own schedule runs under that user's context; failures are
+    isolated and logged, never fatal."""
+    from lumirss.user_scope import for_each_active_user
+
     logger = logging.getLogger("lumirss.mail_digest")
-    scheduler = DigestScheduler(app_state.db)
+
+    async def tick_user(_uid: str) -> None:
+        scheduler = DigestScheduler(app_state.db)
+        await scheduler.maybe_send(lambda: _send_scheduled_digest(app_state))
+
     while True:
         await asyncio.sleep(_SCHEDULE_TICK_SECONDS)
         try:
-            await scheduler.maybe_send(
-                lambda: _send_scheduled_digest(app_state)
-            )
+            await for_each_active_user(app_state, tick_user)
         except Exception:  # noqa: BLE001 — scheduling must never kill the app
-            logger.exception("scheduled digest failed; will retry next tick")
+            logger.exception("scheduled digest cycle failed; will retry next tick")
 
 
 def build_digest_scheduler_task(app_state: Any) -> asyncio.Task:

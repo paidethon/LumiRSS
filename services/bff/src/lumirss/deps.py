@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 from fastapi import Request
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from lumirss.adapters.freshrss import (
     ConfigError,
@@ -78,34 +78,87 @@ from lumirss.workspaces import WorkspaceStore
 
 
 def _cached_on_app_state(request: Request, attr: str, build):
-    """Lazily create and cache one service on app.state (single process).
+    """Lazily create and cache one service per (user, attr).
 
-    The app.state attribute starts as None (lifespan); the first request
-    builds the service via ``build`` and every later request reuses the
-    same instance for the process lifetime. Individual ``_get_*`` accessors
-    keep the service wiring visible at their definition site.
+    0067 多账户：服务实例按已验证用户缓存（app.state.user_services），
+    其中的 Database 句柄本身也是按请求主体路由的——数据与凭据状态都
+    不跨用户。显式注入 app.state.<attr> 的实例（测试替身/部署覆盖）
+    仍最优先。缺少身份的调用方每次重建（不缓存、不落到共享实例）。
+
+    Single-user legacy mode (basic) mirrors the instance back onto
+    ``app.state.<attr>``: one user ⇒ the historical handle semantics
+    (tests and operators read it back) hold unchanged. Session mode
+    never mirrors — a second user must not inherit the first one's
+    identity-bound instances.
     """
-    value = getattr(request.app.state, attr)
-    if value is None:
+    injected = getattr(request.app.state, attr, None)
+    if injected is not None:
+        return injected
+    scope = getattr(request, "scope", None)  # tests may pass a duck-typed client
+    principal = scope.get("lumi_principal") if scope else None
+    if principal is None:
+        # No verified identity (internal/test calls): historical behavior —
+        # one process-wide instance, so injected handles stay shared.
         value = build()
         setattr(request.app.state, attr, value)
-    return value
+        return value
+    cache = request.app.state.user_services
+    key = (principal["user_id"], attr)
+    if key not in cache:
+        cache[key] = build()
+        if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+            setattr(request.app.state, attr, cache[key])
+    return cache[key]
+
+
+def user_env(request: Request):
+    """Middleware-loaded identity + FreshRSS binding for this request."""
+    env = request.scope.get("lumi_user_env")
+    if env is None:
+        raise ConfigError("Request has no verified user environment.")
+    return env
+
+
+def _user_secrets(request: Request) -> SecretsStore:
+    """Routing secrets store (per-user file under users/<uid>/)."""
+    return request.app.state.secrets_store
 
 
 def _get_adapter(request: Request) -> FreshRSSAdapter:
-    """Lazily create and cache the FreshRSSAdapter on app.state."""
-    adapter = request.app.state.freshrss_adapter
-    if adapter is None:
-        try:
-            settings = FreshRSSSettings()
-        except ValidationError as exc:
-            raise ConfigError(
-                "FreshRSS settings are missing or invalid. "
-                "Set FRESHRSS_BASE_URL / FRESHRSS_USERNAME / FRESHRSS_API_PASSWORD."
-            ) from exc
-        adapter = FreshRSSAdapter(request.app.state.http_client, settings)
-        request.app.state.freshrss_adapter = adapter
-    return adapter
+    """Per-user FreshRSSAdapter from that user's own binding (O154).
+
+    Credentials come from the user's binding row + secrets file — never
+    from process env at request time, never from another user's session.
+    """
+    env = user_env(request)
+    return _cached_on_app_state(
+        request,
+        "freshrss_adapter",
+        lambda: _build_user_adapter(request, env),
+    )
+
+
+def _build_user_adapter(request: Request, env):
+    """Construct the adapter for one user's binding (sync; binding was
+    preloaded by the middleware)."""
+    from lumirss.user_scope import require_user_id
+
+    if not (env.freshrss_base_url and env.freshrss_username):
+        raise ConfigError(
+            "FreshRSS is not bound for this account yet. Finish account "
+            "activation (FreshRSS binding) before reading feeds."
+        )
+    api_password = _user_secrets(request).get("freshrss_api_password") or ""
+    if not api_password:
+        raise ConfigError("FreshRSS API password is missing for this account.")
+    settings = FreshRSSSettings(
+        FRESHRSS_BASE_URL=env.freshrss_base_url,
+        FRESHRSS_USERNAME=env.freshrss_username,
+        FRESHRSS_API_PASSWORD=SecretStr(api_password),
+        FRESHRSS_PUBLIC_URL=env.freshrss_public_url,
+    )
+    require_user_id()  # hard identity gate before any upstream session
+    return FreshRSSAdapter(request.app.state.http_client, settings)
 
 
 def _get_adapter_or_none(request: Request) -> FreshRSSAdapter | None:
@@ -420,14 +473,12 @@ def _get_inbox_store(request: Request) -> InboxStore:
 
 
 def _get_snapshot_store(request: Request) -> AssetStore:
-    """Snapshot asset store (phase2 M2) under the Lumi data directory."""
+    """Snapshot asset store under the per-user data directory (0067)."""
 
     def build() -> AssetStore:
-        settings = LumiSettings()
-        return AssetStore(
-            request.app.state.db,
-            Path(settings.data_dir) / "library" / "assets",
-        )
+        principal = request.scope["lumi_principal"]
+        root = request.app.state.users_root / principal["user_id"] / "library" / "assets"
+        return AssetStore(request.app.state.db, Path(root))
 
     return _cached_on_app_state(request, "asset_store", build)
 
@@ -528,6 +579,16 @@ async def _rag_mark_stale(request: Request, refs: list[str]) -> None:
         )
 
 
+def _is_owner(request: Request) -> bool:
+    """Server-verified owner check (basic mode ⇒ owner by definition)."""
+    from lumirss.config import LumiSettings as _LS
+
+    if _LS().LUMIRSS_AUTH_MODE != "session":
+        return True
+    principal = request.scope.get("lumi_principal")
+    return bool(principal and principal.get("role") == "owner")
+
+
 def _get_agent_store(request: Request) -> AgentStore:
     """Agent threads/messages/approvals store (phase2 G7)."""
     return _cached_on_app_state(
@@ -556,8 +617,10 @@ def _get_agent_loop(request: Request) -> AgentLoop:
             library=_get_library_store(request),
             workspaces=_get_workspace_store(request),
             tags=_get_tag_store(request),
+            # O168：Vault 属 owner——member 的 Agent 工具表不注册任何
+            # Obsidian 工具（服务端收口，UI 隐藏入口不算权限边界）。
             obsidian=_get_obsidian_service(request)
-            if request.app.state.obsidian_service is not None
+            if request.app.state.obsidian_service is not None and _is_owner(request)
             else None,
         )
 

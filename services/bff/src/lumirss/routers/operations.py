@@ -127,7 +127,7 @@ async def operations_diagnostics(request: Request) -> dict[str, object]:
         "deps": deps,
         "errorCountsByType": dict(counts),
         "configPresence": {
-            "freshrss": _freshrss_configured(),
+            "freshrss": await _freshrss_configured(request),
             "rsshub": _rsshub_configured(),
             "aiKey": ai_key_present,
             "imap": imap_present,
@@ -141,12 +141,18 @@ async def operations_diagnostics(request: Request) -> dict[str, object]:
     }
 
 
-def _freshrss_configured() -> bool:
-    from lumirss.config import FreshRSSSettings
+async def _freshrss_configured(request: Request) -> bool:
+    """0067：按当前用户绑定判定（env 只在 owner 迁移时授予 owner）。"""
+    from lumirss.user_scope import principal_of
 
+    principal = principal_of(request.scope)
+    if principal is None:
+        return False
     try:
-        return bool(FreshRSSSettings().FRESHRSS_BASE_URL)
-    except Exception:  # noqa: BLE001
+        await request.app.state.db.migrate()
+        row = await request.app.state.db.fetch_one("SELECT base_url FROM freshrss_binding WHERE id = 1")
+        return bool(row and row["base_url"])
+    except Exception:  # noqa: BLE001 — status probe must not raise
         return False
 
 

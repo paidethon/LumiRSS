@@ -124,6 +124,9 @@ async def create_bridge_list(
 ) -> MailBridgeListCreatedV2:
     store: MailBridgeStore = _get_mail_bridge_store(request)
     created = await store.create_list(payload.name)
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, created.secret, "mail_bridge")
     atom_path_value = f"/feeds/mail/{created.uuid}.{created.secret}.atom"
     subscribe_error = await _subscribe_best_effort(
         request, atom_base() + atom_path_value, created.name
@@ -226,17 +229,22 @@ async def ingest_mail(list_uuid: str, request: Request) -> MailIngestResult:
     store: MailBridgeStore = _get_mail_bridge_store(request)
     auth = request.headers.get("authorization", "")
     supplied = auth[7:] if auth.lower().startswith("bearer ") else ""
-    target = await store.get_list(list_uuid)
-    if target is None or not store.secrets_match(supplied, target):
-        raise MailBridgeNotFound(list_uuid)
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > _MAX_RAW_BYTES:
-            raise MailBridgeInvalid("Message exceeds the 10MB limit.")
-        chunks.append(chunk)
-    result = await store.ingest(target, b"".join(chunks))
+    from lumirss.machine_auth import machine_user_context
+
+    async with machine_user_context(request, supplied) as uid:
+        if uid is None:
+            raise MailBridgeNotFound(list_uuid)
+        target = await store.get_list(list_uuid)
+        if target is None or not store.secrets_match(supplied, target):
+            raise MailBridgeNotFound(list_uuid)
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > _MAX_RAW_BYTES:
+                raise MailBridgeInvalid("Message exceeds the 10MB limit.")
+            chunks.append(chunk)
+        result = await store.ingest(target, b"".join(chunks))
     return MailIngestResult(
         status=result["status"],
         messageId=str(result.get("messageId", "")),
@@ -253,11 +261,17 @@ async def serve_mail_atom(list_uuid: str, secret: str, request: Request) -> Resp
     (never empty — falls back to the list creation time)/link rel=self
     (absolute IRI)/author; entries carry updated (received_at) and
     author (From header)."""
+    entries: list | None = None
     store: MailBridgeStore = _get_mail_bridge_store(request)
-    target = await store.get_list(list_uuid)
-    if target is None or not store.secrets_match(secret, target):
-        raise MailBridgeNotFound(list_uuid)
-    entries = await store.list_entries(list_uuid)
+    from lumirss.machine_auth import machine_user_context
+
+    async with machine_user_context(request, secret) as uid:
+        if uid is None:
+            raise MailBridgeNotFound(list_uuid)
+        target = await store.get_list(list_uuid)
+        if target is None or not store.secrets_match(secret, target):
+            raise MailBridgeNotFound(list_uuid)
+        entries = await store.list_entries(list_uuid)
     feed_updated = (
         newest_rfc3339([str(entry["received_at"]) for entry in entries])
         or target.created_at

@@ -22,8 +22,32 @@ from ..deps import _get_favorites_service, _get_obsidian_service
 router = APIRouter()
 
 
+async def _require_owner(request: Request):
+    """O168：Vault 属于运营者（owner）。member/admin 不可读写、不可
+    扫描——一次越权扫描等于把 owner 的私人笔记灌进别人的索引。
+    basic 模式只有 owner，行为不变。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.config import LumiSettings
+    from lumirss.user_scope import principal_of
+
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return None
+    principal = principal_of(request.scope)
+    if principal is None or principal.get("role") != "owner":
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"type": "forbidden", "message": "Owner role required."}},
+            headers={"Cache-Control": "no-store"},
+        )
+    return None
+
+
 @router.get("/api/v1/obsidian/status", response_model=ObsidianStatus)
 async def obsidian_status(request: Request) -> ObsidianStatus:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     service = _get_obsidian_service(request)
     status = await service.get_status()
     return ObsidianStatus(**status)
@@ -37,6 +61,9 @@ async def set_obsidian_settings(
 
     Rejected while the deployment fixes the root via
     LUMIRSS_OBSIDIAN_VAULT_DIR — the bind mount owns the path then."""
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     service = _get_obsidian_service(request)
     canonical = await service.set_vault_path(payload.vaultPath)
     return ObsidianSettings(
@@ -47,6 +74,9 @@ async def set_obsidian_settings(
 
 @router.post("/api/v1/obsidian/rescan", response_model=ObsidianRescanResult)
 async def rescan_obsidian(request: Request) -> ObsidianRescanResult:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     service = _get_obsidian_service(request)
     return ObsidianRescanResult(**await service.rescan())
 
@@ -57,6 +87,9 @@ async def list_notes(
     q: str | None = None,
     limit: int = 50,
 ) -> NoteListResponse:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     service = _get_obsidian_service(request)
     notes = await service.list_notes(q=q, limit=limit)
     return NoteListResponse(
@@ -75,6 +108,9 @@ async def list_notes(
 
 @router.get("/api/v1/obsidian/notes/{note_uuid}", response_model=NoteView)
 async def get_note(note_uuid: str, request: Request) -> NoteView:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     service = _get_obsidian_service(request)
     note = await service.get_note(note_uuid)
     if note is None:
@@ -142,6 +178,9 @@ async def remove_library_favorite(
 
 @router.get("/api/v1/obsidian/notes/{note_uuid}/backlinks")
 async def list_note_backlinks(note_uuid: str, request: Request) -> Any:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     from lumirss.obsidian_backlinks import backlinks_for
 
     return {"items": await backlinks_for(request.app.state.db, note_uuid)}
@@ -149,6 +188,9 @@ async def list_note_backlinks(note_uuid: str, request: Request) -> Any:
 
 @router.get("/api/v1/obsidian/notes/{note_uuid}/broken-links")
 async def list_note_broken_links(note_uuid: str, request: Request) -> Any:
+    guard = await _require_owner(request)
+    if guard is not None:
+        return guard
     from lumirss.obsidian_backlinks import broken_links_for
 
     return {"items": await broken_links_for(request.app.state.db, note_uuid)}
