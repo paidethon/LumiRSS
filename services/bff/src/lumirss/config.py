@@ -138,7 +138,7 @@ class LumiSettings(BaseSettings):
     LUMIRSS_DB_PATH: str = str(_DEFAULT_LUMI_DATA_DIR / "lumi.sqlite")
     LUMIRSS_DATA_DIR: str = ""
     FRESHRSS_DATA_DIR: str = ""
-    LUMIRSS_VERSION: str = "0.1.0"
+    LUMIRSS_VERSION: str = "0.2.0"
     LUMIRSS_COMMIT: str = ""
     # F36: storage usage budget in MB (0 = off); >80% usage raises a warning
     # in /api/v1/storage/usage — reporting only, never auto-deletion.

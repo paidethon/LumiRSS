@@ -41,6 +41,10 @@ jobs:
             fi
           done
 
+      - name: Verify version single source (O190)
+        shell: bash
+        run: python3 scripts/check-version.py
+
       - name: Reject tracked secret and runtime files
         shell: bash
         run: |
