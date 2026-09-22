@@ -30,7 +30,9 @@
      覆盖 surface / elevated / sidebar / hover / selected 全部浅色底）。 */
   --lumi-text-primary: #29282c;
   --lumi-text-secondary: #64616a;
-  --lumi-text-tertiary: #6a6770;
+  /* O132/a11y：tertiary 在选中行背景（surface-selected #e7e5e9）上
+   * 实测 4.49:1（axe color-contrast serious）——加深 5% 达 4.9:1。 */
+  --lumi-text-tertiary: #636069;
   --lumi-text-disabled: #bbb7be;
 
   /* ---- 边框族 ---- */

@@ -56,9 +56,17 @@ test('a11y — Reader（打开文章）', async ({ page }) => {
   await page.goto('/')
   // 数据无关定位（Q-P2-36）：静态栈有 mock 条目、真实栈有订阅条目——
   // 打开时间线第一行，不再耦合特定标题数据。
-  const firstRow = page.locator('[data-entry-row-ref]').first()
+  // 桌面/移动两套列表同树渲染（响应式隐藏）：取「可见」的行，
+  // 否则 first() 会命中 display:none 的移动卡片，点击永不可达。
+  const firstRow = page
+    .locator('[data-entry-row-ref]')
+    .locator('visible=true')
+    .first()
   await expect(firstRow).toBeVisible({ timeout: 15_000 })
-  await firstRow.getByRole('button').first().click()
+  // O126 重排后行容器同时含桌面行与隐藏的移动卡两套按钮——取「可见
+  // 按钮中的最后一个」：标题按钮在两套布局里都排最后且唯一有正文文本。
+  const titleButton = firstRow.locator('button:visible').last()
+  await titleButton.click()
   await expect(page.locator('article').first()).toBeVisible()
   await expectNoCriticalViolations(page)
 })

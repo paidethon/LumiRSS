@@ -24,8 +24,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const browser = await chromium.launch()
   try {
     const context = await browser.newContext({ baseURL })
+    // 0067 多账户契约：用户名+密码登录（默认 owner；可用
+    // LUMIRSS_E2E_LOGIN_USER 覆盖为其它成员账号做隔离走查）。
+    const username = process.env.LUMIRSS_E2E_LOGIN_USER ?? 'owner'
     const response = await context.request.post('/api/v1/auth/login', {
-      data: { password },
+      data: { username, password },
       headers: { Origin: baseURL },
     })
     if (!response.ok()) {
