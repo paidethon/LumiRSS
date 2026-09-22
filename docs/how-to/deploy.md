@@ -37,7 +37,7 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→
 | `./lumirss doctor` | PASS/WARN/FAIL 诊断（docker、compose、.env.prod、DNS、容器与健康、**OOM/重启计数**、备份就绪 `fullBackupReady`、磁盘、备份目录；external 模式另查公网暴露与 HTTPS；session 模式另查密码已初始化） |
 | `./lumirss rollback` | 回到上一镜像 tag + 恢复上一份 `.env.prod` 快照 |
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
-| `./lumirss set-password` | 安装/轮换浏览器登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进 BFF 数据库，明文任何地方不落盘** |
+| `./lumirss set-password` | 安装/轮换 owner 登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进控制库，明文任何地方不落盘**。成员账号的密码重置走 `/admin`（见 [invite-members.md](invite-members.md)） |
 | `./lumirss freshrss-init` | 安装/启用内部 FreshRSS 与 BFF 用户（幂等） |
 
 镜像默认取 GHCR：`ghcr.io/paidethon/lumirss-web` /
@@ -103,7 +103,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 - FreshRSS / RSSHub 镜像按 digest/版本 pin（不随系统升级漂移）。
 - 最低资源：2 vCPU / 2 GB RAM / 10 GB 磁盘（RSSHub 峰值内存最高）。
   小内存 VPS（~1.6 GB、与其它容器共处）用 `./lumirss deploy --low-memory`
-  写入单用户资源预设（web 96m / bff 256m / freshrss 320m / rsshub 448m
+  写入低资源预设（web 96m / bff 256m / freshrss 320m / rsshub 448m
   + RSSHub memory cache 64 MB + V8 堆 256 MB）。改完用
   `./lumirss doctor` 验证：任何 OOMKilled = limit 过低，调大对应
   `LUMIRSS_*_MEM_LIMIT`，绝不把 OOM 交付为"更低占用"。
@@ -122,24 +122,27 @@ HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
 
 两种模式（`LUMIRSS_AUTH_MODE`，`./lumirss deploy --auth-mode=…` 切换）：
 
-### 5a. session 模式（推荐：一次登录，长期会话）
+### 5a. session 模式（推荐：账号登录，长效会话）
 
 ```bash
 sudo ./lumirss deploy --auth-mode=session
-sudo ./lumirss set-password          # 交互输入；或 stdin / LUMIRSS_NEW_PASSWORD
+sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / LUMIRSS_NEW_PASSWORD
 ```
 
-- **登录流**：浏览器只输一次密码 → BFF bcrypt 校验（哈希只存
-  `lumi.sqlite`，明文任何地方不落盘）→ 签发 256-bit 随机 opaque
-  session（数据库只存其 SHA-256）→ `__Host-lumirss_session` Cookie
-  （`Secure; HttpOnly; SameSite=Strict; Path=/`，无 `Domain`）。
+- **登录流**：浏览器提交 `{username, password}` → BFF 经控制层
+  AccountsStore 做 bcrypt 校验（哈希只存控制库，明文任何地方不落盘）→
+  签发 256-bit 随机 opaque session（数据库只存其 SHA-256）→
+  `__Host-lumirss_session` Cookie（`Secure; HttpOnly; SameSite=Strict;
+  Path=/`，无 `Domain`）。LumiRSS 是邀请制多账户：owner 之外还可经
+  `/admin` 邀请成员（见 [invite-members.md](invite-members.md)），每个
+  账号数据完全隔离。首次部署后 owner 密码未知，用 `set-password` 安装。
 - **长期有效**：默认 180 天不活跃窗口（`LUMIRSS_SESSION_MAX_AGE_DAYS`），
   活跃使用自动滑动续期——经常使用基本不需要重新登录。改密 → 撤销
-  全部会话（本设备自动换发新会话）；登出/所有设备登出在
+  该账号全部会话（本设备自动换发新会话）；登出/所有设备登出在
   「设置 → 账户与服务」。
 - **防护**：登录失败限流（5 次失败/分钟 → 429，成功即重置，不锁账户）；
   不安全方法（POST/PATCH/…）做 Origin 同源校验（CSRF）；
-  会话表有界（过期行登录时清理 + 最多 20 个活跃会话）。
+  会话表有界（过期行登录时清理 + 每账号最多 20 个活跃会话）。
 - **边界**：静态资源与 `/api/v1/auth/*`、`/health/*`、`/api/v1/version`
   公开；其余 `/api/*` 需要会话。internal token 层照常生效（会话不替代
   internal token——后者防的是绕过 Caddy 直连 BFF）。
@@ -173,8 +176,8 @@ sudo ./lumirss set-password          # 交互输入；或 stdin / LUMIRSS_NEW_PA
   `request_too_large`；OPML 导入保留更严格的 2 MiB）；昂贵控制面路由
   进程内固定窗口限流（超限 → 429 `rate_limited` + `Retry-After`：
   restore 10/min、backups 12/min、feed 预览/来源发现 30/min、AI/MT
-  生成 120/min、RSSHub 变更 60/min；阅读类 GET 不限流；阈值面向单用户，
-  进程重启即重置）。
+  生成 120/min、RSSHub 变更 60/min；阅读类 GET 不限流；阈值面向小规模
+  自托管部署，进程重启即重置）。
 - **多设备设置冲突**：`PATCH /api/v1/settings` 可带 `baseRevision`，与
   当前不一致返回 409 `app_settings_conflict`；Web 同步层自动 re-hydrate
   并重试一次；不带 `baseRevision` 保持 last-write-wins（旧客户端兼容）。

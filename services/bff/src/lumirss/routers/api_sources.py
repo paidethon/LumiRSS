@@ -140,6 +140,9 @@ async def create_source(payload: ApiSourceCreate, request: Request) -> ApiSource
         field_map=payload.fieldMap,
         pagination=payload.pagination,
     )
+    from lumirss.machine_auth import index_machine_token
+
+    await index_machine_token(request, record.secret, "api_source")
     base = atom_base()
     atom_url = base + atom_path(record.uuid, record.secret)
     subscribe_error = None
@@ -310,6 +313,12 @@ async def serve_atom(source_uuid: str, secret: str, request: Request) -> Respons
     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
     keeps its cached copy functional) and only a source with no last-good
     body falls back to the 502 stub."""
+    from lumirss.machine_auth import resolve_machine_user
+
+    uid = await resolve_machine_user(request, secret)
+    if uid is None:
+        # session 模式下未知 token：与「源不存在」同一 404，不泄露存在性
+        raise ApiSourceNotFound(source_uuid)
     store: ApiSourceStore = _get_api_source_store(request)
     record = await store.get(source_uuid)
     if record is None or not verify_token(secret, record.secret):

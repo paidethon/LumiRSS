@@ -350,7 +350,12 @@ def test_search_service_reuses_the_shared_freshrss_session(tmp_path, monkeypatch
     with TestClient(app):
         app.state.freshrss_adapter = _SentinelAdapter()
         app.state.search_service = None
-        service = _get_search_service(type("R", (), {"app": app})())
+        # 0067：_get_adapter 先经 user_env 读取中间件注入的请求环境，
+        # 再回退到 app.state 注入句柄——鸭子类型请求要带最小 scope。
+        fake_request = type(
+            "R", (), {"app": app, "scope": {"lumi_user_env": object()}}
+        )()
+        service = _get_search_service(fake_request)
         assert isinstance(service._adapter, _SentinelAdapter)
 
 

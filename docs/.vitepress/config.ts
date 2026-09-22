@@ -107,6 +107,7 @@ export default defineConfig({
           text: '使用（How-to）',
           items: [
             { text: '部署 / 升级 / 回滚', link: '/how-to/deploy' },
+            { text: '邀请成员（运营者）', link: '/how-to/invite-members' },
             { text: '备份与恢复', link: '/how-to/backup-restore' },
             { text: '故障排查', link: '/how-to/troubleshoot' },
           ],
@@ -131,6 +132,7 @@ export default defineConfig({
           items: [
             { text: '产品需求（PRD）', link: '/product/PRD' },
             { text: '架构决策（ADR）', link: '/decisions/0001-freshrss-owns-rss-state' },
+            { text: '邀请制多账户（ADR 0005）', link: '/decisions/0005-invite-multi-account' },
             { text: '设计系统', link: '/design/design-system' },
           ],
         },

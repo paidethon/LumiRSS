@@ -87,10 +87,14 @@ def test_f029_prompt_block_matches_generation_request(tmp_path, monkeypatch):
         return RecordingProvider()
 
     with TestClient(app) as client:
-        app.state.db = client.app.state.db
+        # 0067： lifespan 绑定的是 RoutingDatabase（按请求身份路由）；
+        # 直连 DB 断言按 conftest 同款约定覆盖为普通 Database
+        #（= LUMIRSS_DB_PATH 控制库文件），无需用户上下文。
+        from lumirss.storage import Database as _Database
+
+        app.state.db = _Database(db_path)
         app.state.freshrss_adapter = FakeAdapter()
         from lumirss.ai_translation import TranslationService
-        from lumirss.deps import _get_ai_settings_store
 
         run(AiSettingsStore(app.state.db).save(
             AiSettingsUpdate(baseUrl="https://api.example.com/v1", model="m")
@@ -98,7 +102,7 @@ def test_f029_prompt_block_matches_generation_request(tmp_path, monkeypatch):
         service = TranslationService(
             db=app.state.db,
             adapter=FakeAdapter(),
-            settings_store=_get_ai_settings_store(client),
+            settings_store=AiSettingsStore(app.state.db),
             provider_factory=factory,
         )
         app.state.translation_service = service

@@ -40,7 +40,10 @@ UTC = UTC
 
 
 def _store():
-    return GptDigestStore(app.state.db, app.state.secrets_store)
+    # 0067：直连调用无请求上下文 → 显式 owner uid 解析 routing secrets。
+    return GptDigestStore(
+        app.state.db, app.state.secrets_store.store_for(app.state.owner_id)
+    )
 
 
 def _issues_store():

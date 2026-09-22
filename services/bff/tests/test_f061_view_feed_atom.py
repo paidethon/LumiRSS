@@ -151,17 +151,21 @@ def test_f061_admin_needs_session_public_atom_stays_open(client, monkeypatch):
     """管理端需登录（session 模式 401）；公开 Atom 路由无需登录可读。"""
     from fastapi.testclient import TestClient
 
-    from lumirss.auth_store import AuthStore
+    from lumirss.accounts_store import AccountsStore, hash_password
 
     monkeypatch.setenv("LUMIRSS_AUTH_MODE", "session")
     monkeypatch.setenv("LUMIRSS_SESSION_SECURE_COOKIES", "false")
     monkeypatch.setenv("LUMIRSS_INTERNAL_TOKEN", "")
 
     async def _install_password():
-        await app.state.db.migrate()
-        await AuthStore(app.state.db).set_password("pw-f061-session")
-
-    asyncio.run(_install_password())
+        # 0067：owner 在启动迁移时已存在（随机不可知密码）——把已知
+        # 测试密码直接写进控制库 users.password_hash。
+        accounts = AccountsStore(app.state.control_db)
+        owner = await accounts.get_user_by_username("owner")
+        assert owner is not None
+        await accounts.set_password_hash(
+            str(owner["id"]), hash_password("pw-f061-session")
+        )
 
     with TestClient(app, base_url="http://lumirss.test") as anon:
         # 未登录：管理端列表 401
@@ -169,9 +173,11 @@ def test_f061_admin_needs_session_public_atom_stays_open(client, monkeypatch):
         assert (
             anon.post("/api/v1/search/views/x/token/rotate").status_code == 401
         )
+        _run(_install_password())
         # 登录后启用订阅
         assert anon.post(
-            "/api/v1/auth/login", json={"password": "pw-f061-session"}
+            "/api/v1/auth/login",
+            json={"username": "owner", "password": "pw-f061-session"},
         ).status_code == 200
         view = _create_view(anon)
         atom_path = _enable(anon, view["id"]).json()["atomPath"]

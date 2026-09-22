@@ -110,8 +110,12 @@ def test_f071_rescan_idempotent_status_persists_no_auto_delete(client):
 
     from fastapi.testclient import TestClient
 
+    # 0067：重启（新 TestClient）的 lifespan 会把 app.state.db 重绑成
+    # RoutingDatabase——先捕获普通 Database 句柄，启动后再覆盖回去
+    #（与 conftest client fixture 同一约定）。
+    plain_db = app.state.db
     with TestClient(app) as client2:
-        client2.app.state.db = app.state.db
+        client2.app.state.db = plain_db
         pairs = client2.get("/api/v1/library/duplicates", params={"status": "ignored"}).json()["items"]
         assert any(p["id"] == target["id"] for p in pairs)
         assert all(p["status"] == "ignored" for p in pairs)

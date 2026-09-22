@@ -1,12 +1,13 @@
-# Gate 8 production-like E2E stack (phase2 recovery).
+# Production-like E2E stack (phase2 recovery gate; migrated from
+# e2e/gate8/ to e2e/stack/).
 #
 # Mirrors docker-compose.prod.yml topology (web/Caddy front, internal
 # bff/freshrss/rsshub) plus the local real dependencies the release gate
 # needs: Mailpit (SMTP+API), the controlled fixtures server, the
 # scripted OpenAI-compatible server, and the read-only Obsidian vault.
 #
-#   docker compose -f e2e/gate8/docker-compose.e2e.yml up -d --build
-#   e2e/gate8/run-smoke.sh up     # init + smoke
+#   docker compose -f e2e/stack/docker-compose.e2e.yml up -d --build
+#   e2e/stack/run-smoke.sh up     # init + smoke
 #
 # Nothing here is published beyond 127.0.0.1. No real third parties:
 # mail goes to Mailpit, AI to the scripted server, sources to fixtures.
@@ -86,7 +87,7 @@ services:
       CACHE_TYPE: memory
 
   mailpit:
-    # Local stdlib SMTP sink + HTTP inspector (e2e/gate8/mail_sink.py).
+    # Local stdlib SMTP sink + HTTP inspector (e2e/stack/mail_sink.py).
     # Stands in for Mailpit so the stack stays pullable offline; same
     # ports (SMTP 1025, HTTP API 8025).
     image: python:3.12-slim

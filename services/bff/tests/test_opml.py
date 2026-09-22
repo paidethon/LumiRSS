@@ -592,18 +592,38 @@ def test_export_route_maps_upstream_error():
     assert response.json()["error"]["type"] == "upstream_error"
 
 
-def test_freshrss_ui_route_returns_configured_public_url(monkeypatch):
+def test_freshrss_ui_route_returns_configured_public_url(monkeypatch, tmp_path):
+    """0067：路由读**当前账户** freshrss_binding.public_url（env 不再在
+    请求时参与）；内部 FRESHRSS_BASE_URL 永不暴露，只回显绑定里的
+    公共 URL。绑定行按 owner 用户库的实际落点直接种子（owner 迁移的
+    env 授予路径另见 owner_migration）。"""
+    import asyncio
+
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     monkeypatch.setenv("FRESHRSS_BASE_URL", "http://freshrss:80")  # internal
-    monkeypatch.setenv("FRESHRSS_USERNAME", "user")
-    monkeypatch.setenv("FRESHRSS_API_PASSWORD", "pw")
-    monkeypatch.setenv("FRESHRSS_PUBLIC_URL", "https://rss.example.com")
-    response = call(RouteControlAdapter(), "GET", "/api/v1/freshrss-ui")
+    with TestClient(app) as client:
+        owner_id = client.app.state.owner_id
+        assert owner_id
+
+        async def _seed_binding():
+            from lumirss.storage import Database
+
+            # 种进 owner 的用户业务库（RoutingDatabase 按请求解析的同一文件）
+            path = client.app.state.db.user_db_path(owner_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = Database(path)
+            await db.migrate()
+            await db.execute("INSERT OR REPLACE INTO freshrss_binding (id, base_url, username, public_url, bound_at, source) VALUES (1, 'http://freshrss:80', 'user', 'https://rss.example.com', 0, 'test')", ())
+
+        asyncio.run(_seed_binding())
+        response = client.get("/api/v1/freshrss-ui")
     assert response.status_code == 200
-    # the internal base URL is never exposed — only the explicit public URL
+    # the internal base URL is never exposed — only the bound public URL
     assert response.json() == {"url": "https://rss.example.com"}
 
 
-def test_freshrss_ui_route_returns_null_when_unset(monkeypatch):
+def test_freshrss_ui_route_returns_null_when_unset(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     monkeypatch.setenv("FRESHRSS_BASE_URL", "http://freshrss:80")
     monkeypatch.setenv("FRESHRSS_USERNAME", "user")
     monkeypatch.setenv("FRESHRSS_API_PASSWORD", "pw")

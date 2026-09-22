@@ -60,3 +60,26 @@ async def index_machine_token(request: Request, raw_token: str, purpose: str) ->
     await AccountsStore(request.app.state.control_db).index_token(
         hash_token(raw_token), principal["user_id"], purpose
     )
+
+
+async def resolve_machine_user(request: Request, supplied_token: str) -> str | None:
+    """Bind the token owner's scope for the rest of the request task.
+
+    Same contract as :func:`machine_user_context` for long route bodies:
+    returns the resolved user id (context bound in place) or None —
+    callers must treat None as authentication failure (404, no oracle).
+    """
+    from lumirss.config import LumiSettings
+    from lumirss.user_scope import bind_user_context
+
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return current_user_id()
+    if not supplied_token:
+        return None
+    uid = await AccountsStore(request.app.state.control_db).token_owner(
+        hash_token(supplied_token)
+    )
+    if uid is None:
+        return None
+    bind_user_context(uid)
+    return uid

@@ -8,9 +8,15 @@
 
 ## 1. Project identity
 
-LumiRSS is a single-user, self-hosted, source-first information reader:
-RSS/Atom via FreshRSS, non-RSS via RSSHub, a FastAPI BFF, and a responsive
-React Web / PWA client.
+LumiRSS is an invite-based multi-account, self-hosted, source-first
+information reader: RSS/Atom via FreshRSS, non-RSS via RSSHub, a FastAPI
+BFF, and a responsive React Web / PWA client. The operator invites
+members from the admin console; each invitee activates their own account
+(one-time, expiring invite → self-chosen username/password at
+`/activate`), and every account's subscriptions, reading state, library,
+AI settings and FreshRSS binding are fully isolated (control DB + per-user
+DBs, server-derived identity — see docs/decisions/
+0005-invite-multi-account.md). There is no public registration.
 
 Feature status lives in one place: [docs/ROADMAP.md](docs/ROADMAP.md)
 (implemented / next / deferred). Do not copy feature inventories into
@@ -18,9 +24,12 @@ agent prompts or docs — link instead.
 
 NOT implemented — do not describe these as existing: web clipping browser
 extension, Obsidian write-back (the vault stays read-only), MCP surface,
-PWA push / background sync. LumiRSS is single-user by design (one trusted
-user behind the operator's own auth / network); multi-user tenancy and
-public-internet hardening are out of scope.
+PWA push / background sync, public registration / multi-tenant tenancy.
+LumiRSS is small-scale invite-only by design (the operator's own
+deployment, members they personally invited); public-internet hardening
+and multi-tenancy guarantees remain out of scope. All data-protection
+rules below (secrets never to the browser, DOMPurify boundary, no Docker
+socket, per-account isolation) still apply exactly as written.
 
 ---
 

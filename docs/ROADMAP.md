@@ -44,8 +44,13 @@
   分桶（`LUMIRSS_TRUSTED_PROXY_NETWORKS`，不可信 peer 的 XFF 忽略）；
   订阅/邮件/收件箱/视图/日报五处凭据改单向哈希存储（存量惰性回填，
   旧链接不失效）。
-- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、多用户形态、
-  外部向量库服务（sqlite-vec 单文件已够）。
+- **邀请制多账户（0.2.0）**：运营者经 `/admin` 发一次性限时邀请，受邀者
+  在 `/activate` 激活独立账号（订阅/阅读状态/资料库/AI/设置/FreshRSS
+  绑定按账号隔离）；FreshRSS 账号池预建与原子分配；数据层拆分为控制库
+  + 每用户库（[ADR 0005](decisions/0005-invite-multi-account.md)）。
+  运营者操作见 [how-to/invite-members.md](how-to/invite-members.md)。
+- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、公开注册 /
+  多租户形态、外部向量库服务（sqlite-vec 单文件已够）。
 
 ## Next（候选，立项由用户批准的 spec 决定）
 
@@ -60,7 +65,8 @@
 
 ## Explicitly deferred / rejected
 
-- 多用户 / 多租户、公共互联网硬化（单用户是产品前提）；
+- 公开注册 / 多租户、公共互联网硬化（邀请制小规模多账户已实现；
+  对公网开放前的加固仍不在范围内）；
 - PWA Push / 后台同步（app-shell 离线缓存已实现；其余明确延后）；
 - Folo 产品克隆、社区/社交、算法推荐、原生移动 App；
 - BFF 任意 Docker 管理（未来服务控制必须走窄 allow-list 边界）；

@@ -13,6 +13,7 @@
 5. **AI is optional and non-blocking.** AI 未配置或失败不影响阅读、状态写入与来源管理；GET 类 AI 端点绝不触发 Provider 调用。
 6. **Untrusted content is sanitized as the final boundary.** 文章 HTML 经受控 transform 后必须通过 DOMPurify 才能进入 React。
 7. **Honest state.** read/star 写入用 set 语义；分页 cursor 与 `entryRef` 均为 opaque；打开文章不自动标为已读；所有网络状态都有 loading/empty/error UI。
+8. **Accounts are invite-only and data is scoped server-side.** 运营者经 `/admin` 发一次性限时邀请，受邀者在 `/activate` 自设用户名密码激活；私有数据永远按服务端验证的身份路由（见下「控制库与每用户库」）。
 
 ## Data flow
 
@@ -31,17 +32,33 @@ Non-RSS → RSSHub-generated feed ──┤
 
 浏览器只信任 Lumi 契约，不感知上游实现细节。
 
+## Control database and per-user databases（邀请制多账户的数据分层）
+
+- **控制库**（`LUMIRSS_DB_PATH`，即 `data/lumi.sqlite`）只存账户控制面：
+  `users`（邀请制账号，bcrypt 口令哈希）、`invites`（一次性限时邀请，
+  只存 token SHA-256）、`freshrss_pool`（预建账号登记与原子分配）、
+  `audit_log`、`token_owner_index` 与机器会话。
+- **每用户业务库**：每个账号的全部业务数据（库域、工作区、标签、AI、
+  设置、搜索投影、FreshRSS 绑定凭据引用）位于
+  `<data_dir>/users/<uid>/lumi.sqlite`，旁边是 per-user `secrets.json`；
+  历史单用户 schema 与各 store 原样运行在用户库文件上。
+- **身份只由服务端派生**：`RoutingDatabase` 经 ContextVar 把每个连接解析
+  到当前请求的用户库（session 中间件或后台任务显式绑定）。没有验证身份
+  的请求触碰私有库是硬错误——不存在匿名回退库；**前端声明的任何
+  `user_id` 都不参与数据路由或授权**。
+- 决策记录：[ADR 0005](../decisions/0005-invite-multi-account.md)。
+
 ## Data ownership
 
 | 数据 | 权威位置 |
 | --- | --- |
-| RSS feeds / categories / entries、read / starred、订阅 / 分类 / OPML | FreshRSS（订阅经 `FreshRSSControlAdapter` 管理） |
+| 身份 / 会话 / 邀请 / FreshRSS 池 / 审计 | Lumi 控制库（`lumi.sqlite`） |
+| RSS feeds / categories / entries、read / starred、订阅 / 分类 / OPML（按账号隔离） | FreshRSS（每账号一个 FreshRSS 用户；订阅经 `FreshRSSControlAdapter` 管理） |
 | RSSHub 路由目录（Lumi 精选元数据） | BFF 静态 `CATALOG`（pinned 实例逐一验证） |
-| RSSHub 期望/已应用配置、AI 非机密设置与 purpose 映射、AI 结果、便携设置（`app.settings`）、备份账本、schema 版本 | Lumi SQLite |
+| RSSHub 期望/已应用配置、AI 非机密设置与 purpose 映射、AI 结果、便携设置（`app.settings`）、备份账本、库域内容、标签、工作区、Agent 会话（全部按账号隔离） | 每用户库（`users/<uid>/lumi.sqlite`） |
 | RSSHub 实例地址 | `RSSHUB_BASE_URL` / `RSSHUB_FRESHRSS_BASE_URL` |
-| 库域内容（书签 / 剪藏 / 快照 / 收件箱条目）、工作区与稍后读时间线、标签、收藏、Agent 会话 | Lumi SQLite（`library_items` 身份表 + 各 kind 载荷表；workspace `read-later` 为保留种子行） |
 | 设备本地设置（布局宽度、自定义字体、过滤规则、阅读外观） | 浏览器 localStorage / IndexedDB，不上传 |
-| AI API keys、WebDAV 密码、RSSHub 机密 | `data/secrets.json`（0600；刻意置于 DB 与备份之外） |
+| AI API keys、WebDAV 密码、RSSHub 机密、FreshRSS API 密码 | `secrets.json`（控制级 0600；per-user secrets 随用户库目录；刻意置于 DB 与备份之外） |
 
 ## Read path
 
@@ -107,7 +124,7 @@ Shiki 高亮）→ DOMPurify.sanitize（最终安全边界）→ ArticleContent
 ## Security and trust boundaries
 
 - 内容：RSS/网站 HTML 视为不可信，DOMPurify 是最终边界。
-- 凭据：上游凭据只在服务端 env；AI/WebDAV/RSSHub 机密只在 `secrets.json`（0600）；所有机密接口 write-only，不回显、不入日志/Git/备份。
+- 凭据：上游凭据只在服务端 env；AI/WebDAV/RSSHub 机密只在 `secrets.json`（0600）；所有机密接口 write-only，不回显、不入日志/Git/备份；成员账号互不可见对方数据（每用户库 + 服务端身份路由，见 [ADR 0005](../decisions/0005-invite-multi-account.md)）。
 - 控制面：BFF 无 Docker socket；恢复需 preview + 显式输入 `RESTORE`，执行前自动安全备份；备份归档有成员数/总量/单文件上限。
 - 网络：WebDAV http 仅允许回环/私网、重定向限同源；来源发现/预览有 scheme/host 校验、有界 body/超时；OPML 导入上限 2 MiB。
 - 边缘：Caddy 安全响应头（nosniff / DENY / no-referrer / HSTS / Permissions-Policy / CSP，内联脚本 sha256 pin）；可选 basic auth（两个 auth 变量同设或同不设）；可选 BFF internal token（`X-Lumi-Token`）；BFF 全局请求体 4 MiB 上限与控制面路由限流（429 + `Retry-After`）。
@@ -140,12 +157,14 @@ Internet / private access
 ## Deferred（不得描述为已存在）
 
 - Web clipping 浏览器扩展；Obsidian 写回（vault 永远只读）；MCP surface；
-- 多用户 / 多租户与公共互联网硬化；
+- 多租户 / 公开注册 / 公共互联网硬化（邀请制小规模多账户已实现，
+  见 [ADR 0005](../decisions/0005-invite-multi-account.md)；
+  [how-to/invite-members.md](../how-to/invite-members.md)）；
 - PWA Push / 后台同步（app-shell 离线缓存已实现——`public/sw.js` 缓存
   静态资源与导航回退；API / 认证响应永不入缓存）；
 - AI：streaming、fallback 链、多供应商自动路由。
 
 ## Related
 
-- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库（均 Accepted）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
+- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库 / [0005 邀请制多账户与控制库·每用户库](../decisions/0005-invite-multi-account.md)（均 Accepted）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
 - API 家族清单以生成的 OpenAPI schema 为准（`cd services/bff && uv run python scripts/export_openapi.py`，Web 侧 `pnpm api:check` 有 drift 门禁）。

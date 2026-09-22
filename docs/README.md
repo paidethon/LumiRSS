@@ -1,8 +1,9 @@
 # LumiRSS Documentation
 
-LumiRSS 是一个单用户、自托管、source-first 的信息阅读器：FreshRSS 作为
-RSS 域引擎与真源，RSSHub 生成非 RSS 来源，项目自有的 FastAPI BFF 与
-React Web / PWA 客户端。
+LumiRSS 是一个邀请制多账户、自托管、source-first 的信息阅读器：运营者
+经管理界面邀请成员，每个账号的订阅 / 阅读状态 / 资料库 / AI / 设置 /
+FreshRSS 绑定完全独立；FreshRSS 作为 RSS 域引擎与真源，RSSHub 生成非
+RSS 来源，项目自有的 FastAPI BFF 与 React Web / PWA 客户端。
 
 项目阶段：**MVP（0000–0020）+ Phase 2 知识工作台 + recovery 返工均已
 合入 main 并部署生产（2026-09）**。当前方向见
@@ -20,6 +21,7 @@ React Web / PWA 客户端。
 |---|---|
 | 本地跑起来 / 自托管快速上手 | [getting-started.md](getting-started.md) |
 | 部署 / 升级 / 回滚 / 运维 | [how-to/deploy.md](how-to/deploy.md) |
+| 邀请朋友加入（运营者） | [how-to/invite-members.md](how-to/invite-members.md) |
 | 备份 / 恢复 / 灾难恢复 | [how-to/backup-restore.md](how-to/backup-restore.md) |
 | 排查故障 | [how-to/troubleshoot.md](how-to/troubleshoot.md) |
 | 查配置键含义 | [reference/configuration.md](reference/configuration.md) |
@@ -28,7 +30,7 @@ React Web / PWA 客户端。
 | 快速读懂项目（边界图 / 两条时序 / 追踪方法） | [explanation/project-map.md](explanation/project-map.md) |
 | 搞懂全局搜索原理 | [explanation/search.md](explanation/search.md) |
 | 复用 vs 自研边界 / 生成物规则 | [explanation/reuse-policy.md](explanation/reuse-policy.md) |
-| 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) |
+| 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) · [0005](decisions/0005-invite-multi-account.md) |
 | 改 UI / 视觉与交互 | [design/design-system.md](design/design-system.md)（背景：[design/README.md](design/README.md)） |
 | 产品范围与原则 | [product/PRD.md](product/PRD.md) |
 | 许可证 / 上游引用 | [LICENSE_AUDIT.md](upstream/LICENSE_AUDIT.md) · [UPSTREAMS.md](upstream/UPSTREAMS.md) |

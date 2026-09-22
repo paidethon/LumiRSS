@@ -1,4 +1,4 @@
-"""OpenAI-compatible test server for Gate 8 E2E (local, no internet).
+"""OpenAI-compatible test server for the E2E stack (local, no internet).
 
 Implements just enough of the chat-completions contract to exercise the
 Lumi agent: non-streamed + streamed (SSE) responses, one scripted tool

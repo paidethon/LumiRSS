@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gate 8 production-like smoke (phase2 recovery).
+# Production-like smoke (phase2 recovery gate; migrated from e2e/gate8/).
 #
 # Drives the real stack from docker-compose.e2e.yml: built bff image
 # (monolith included), web/Caddy, FreshRSS, RSSHub, Mailpit, controlled
@@ -8,14 +8,20 @@
 # evidence. Browser-only flows (translation activation matrix) are
 # marked BROWSER — they need a headed Chrome run and are NOT faked here.
 #
-#   docker compose -f e2e/gate8/docker-compose.e2e.yml up -d --build
-#   e2e/gate8/run-smoke.sh up     # init + smoke
+#   docker compose -f e2e/stack/docker-compose.e2e.yml up -d --build
+#   e2e/stack/run-smoke.sh up     # init + smoke
 # No `set -e`: every check captures its own status and the summary is
 # the verdict — an inverted grep guard must not abort the whole run.
+#
+# Multi-account note: since the invite-based multi-account change, login
+# is {username, password} against the control-plane AccountsStore (the
+# legacy auth_password table no longer feeds login), and Obsidian
+# projection tables live in the owner's per-user database
+# (/data/users/<owner-id>/lumi.sqlite), not the control DB.
 set -uo pipefail
 
 cd "$(dirname "$0")/../.."
-COMPOSE="docker compose -f e2e/gate8/docker-compose.e2e.yml"
+COMPOSE="docker compose -f e2e/stack/docker-compose.e2e.yml"
 BASE=http://127.0.0.1:8088
 BFF=http://lumirss-e2e-bff:8000
 # Throwaway E2E-local login value for a hermetic local stack — composed
@@ -42,24 +48,31 @@ internal() { # internal <path> [curl-args...] — session + token via Caddy
 }
 
 seed_login_value() {
-  $COMPOSE exec -T bff python - <<'PY'
+  # Set the owner's password through the control-plane AccountsStore —
+  # the same store the login route verifies against. The owner row is
+  # bootstrapped at BFF startup (owner migration); the password starts
+  # unguessable, so the smoke seed installs the known E2E value here.
+  $COMPOSE exec -T -e E2E_LOGIN="$E2E_LOGIN" bff python - <<'PY'
 import asyncio
-from lumirss.auth_store import AuthStore
+import os
+
+from lumirss.accounts_store import AccountsStore, hash_password
 from lumirss.storage import Database
 
 async def main():
-    store = AuthStore(Database("/data/lumi.sqlite"))
-    await store.set_password("e2e-login-" + "pwpw")
+    store = AccountsStore(Database("/data/lumi.sqlite"))
+    owner = next(u for u in await store.list_users() if u["role"] == "owner")
+    await store.set_password_hash(owner["id"], hash_password(os.environ["E2E_LOGIN"]))
 
 asyncio.run(main())
 PY
 }
 
-smoke_login_and_phase1() { # 1. 登录（session auth）
+smoke_login_and_phase1() { # 1. 登录（session auth，邀请制多账户契约）
   local code
   code=$(curl -sS -o /dev/null -w '%{http_code}' -c "$COOKIE" -H "Origin: $BASE" \
     -H 'content-type: application/json' \
-    -d "{\"password\": \"$E2E_LOGIN\"}" "$BASE/api/v1/auth/login")
+    -d "{\"username\": \"owner\", \"password\": \"$E2E_LOGIN\"}" "$BASE/api/v1/auth/login")
   [[ "$code" == "200" || "$code" == "204" ]]
   check "01 login (session auth)" $?
 }
@@ -221,15 +234,23 @@ smoke_digest_mailpit() { # 10. 空摘要必须拒绝（不再发空邮件）
 
 smoke_obsidian() { # 11. Obsidian bind mount + 同内容双文件
   internal /api/v1/obsidian/status | grep -q '"envRootConfigured":true' || { fail "11 env vault root not active"; return; }
+  # The projection tables live in the OWNER's per-user database
+  # (/data/users/<owner-id>/lumi.sqlite) — resolve the owner id from
+  # the control-plane AccountsStore first, then open that file.
   $COMPOSE exec -T bff python - <<'PY'
 import asyncio
+
+from lumirss.accounts_store import AccountsStore
 from lumirss.config import LumiSettings
 from lumirss.obsidian import ObsidianService
 from lumirss.storage import Database
 
 async def main():
-    db = Database(LumiSettings().LUMIRSS_DB_PATH)
-    service = ObsidianService(db, env_root=LumiSettings().LUMIRSS_OBSIDIAN_VAULT_DIR)
+    settings = LumiSettings()
+    accounts = AccountsStore(Database(settings.LUMIRSS_DB_PATH))
+    owner = next(u for u in await accounts.list_users() if u["role"] == "owner")
+    user_db = Database(f"{settings.LUMIRSS_DATA_DIR}/users/{owner['id']}/lumi.sqlite")
+    service = ObsidianService(user_db, env_root=settings.LUMIRSS_OBSIDIAN_VAULT_DIR)
     report = await service.rescan()
     # Re-run tolerant: the first scan adds 4; later scans converge with
     # nothing removed — the duplicate-content copy must NEVER steal the

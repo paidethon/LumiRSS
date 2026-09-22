@@ -19,7 +19,9 @@
 | 磁盘增长 | 清理 `data/backups/` 与 `data/restore-staging/`（见 [backup-restore.md](backup-restore.md)） |
 | 部署时 DNS/端口告警 | `./lumirss deploy` preflight 会告警域名未解析、80/443 被占用、磁盘不足；先解决再部署 |
 | 机器推送（收件箱 ingest / 邮件 webhook）在 session 模式下 401 | 这两条是机器到机器端点（bearer 鉴权），外层 host Caddy 若开了 basic auth 会先拦截它们：在 host 反代上对 `/api/v1/inbox/ingest/*` 与 `/api/mail/ingest/*` 放行（仍受 BFF 侧 bearer 保护） |
-| 回滚到旧镜像后邮件桥报错 | 回滚快照的 schema 是按当时版本建的：回退跨越 0018（`mail_seen` 重建）之前的镜像时，须先把 DB 回滚到对应 schema 版本的快照，不能只换镜像 tag |
+| 成员账号 RSS 绑定显示「待就绪」 | 激活时 FreshRSS 账号池为空（诚实状态，账号其余功能不受影响）：运营者用 `scripts/freshrss_pool.sh` 补池后即可绑定；池状态见 `/admin`（详见 [invite-members.md](invite-members.md)） |
+| 成员登录返回 401 且确认密码正确 | 账号可能被暂停（`/admin` → 成员 → 恢复）或邀请/恢复链接已过期（一次性限时，过期后请运营者重发）；owner 密码遗忘用 `./lumirss set-password` |
+| 回滚到旧镜像后邮件桥报错 | 回滚快照的 schema 是按当时版本建的：回退跨越 0018（`mail_seen` 重建）之前的镜像时，须先把 DB 回滚到对应 schema 版本的快照，不能只换镜像 tag。**0.2.0 起数据布局改变（控制库 + 每用户库），跨该版本回退只能恢复升级前备份** |
 
 ## 首次安装清单
 

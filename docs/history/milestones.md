@@ -64,6 +64,12 @@
   研究报告）与 `docs/audits/mobile-liquid-glass-acceptance.md` 已完成
   历史使命删除，Git 历史可恢复
   （`git log --diff-filter=D -- docs/research/`）。
+- **2026-09 邀请制多账户（0.2.0）**：一次性限时邀请 + `/activate` 自助
+  激活、`/admin` 成员生命周期、FreshRSS 账号池（`scripts/freshrss_pool.sh`
+  预建 + BFF 原子分配）、数据层拆分为控制库 + 每用户库、旧单用户数据
+  幂等迁移为 owner。决策记录：
+  [../decisions/0005-invite-multi-account.md](../decisions/0005-invite-multi-account.md)；
+  能力变化见仓库根 `CHANGELOG.md`。
 
 ## Releases
 

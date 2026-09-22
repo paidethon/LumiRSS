@@ -454,7 +454,10 @@ def test_f102_pool_config_isolation_and_ai_disabled_rejected(client):
 def test_f103_rotate_dry_run_zero_change_then_real(client):
     app = client.app
     run(app.state.db.migrate())
-    store = GptDigestStore(app.state.db, app.state.secrets_store)
+    # 0067：直连调用无请求上下文 → 显式 owner uid 解析 routing secrets。
+    store = GptDigestStore(
+        app.state.db, app.state.secrets_store.store_for(app.state.owner_id)
+    )
     old_token = store.ensure_feed_token()
     assert old_token  # 首次创建 → 一次性返回原始 token
     stored_hash = store.feed_token()

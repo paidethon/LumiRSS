@@ -284,7 +284,9 @@ def test_api_source_secret_hashed_and_atom_verifies(client, monkeypatch):
 
 def test_digest_feed_token_upgraded_to_hash_and_rotation(client):
     app = client.app
-    secrets = app.state.secrets_store
+    # 0067：直连 secrets 访问无请求上下文 → 显式 owner uid 解析出
+    # 普通 SecretsStore（与 basic 模式请求上下文同一文件）。
+    secrets = app.state.secrets_store.store_for(app.state.owner_id)
 
     # 遗留明文 token：ensure 原地升级为哈希且不再出明文（再次查看隐藏）
     secrets.set("gpt_digest_feed_token", "legacy-plain-token")
@@ -312,7 +314,8 @@ def test_digest_feed_token_upgraded_to_hash_and_rotation(client):
 
 def test_digest_feed_token_upgrade_helper_is_idempotent(client):
     app = client.app
-    secrets = app.state.secrets_store
+    # 0067：同上——显式 owner uid 解析普通 SecretsStore。
+    secrets = app.state.secrets_store.store_for(app.state.owner_id)
     secrets.set("gpt_digest_feed_token", "another-plain")
     assert upgrade_digest_feed_token(secrets) is True
     hashed = secrets.get("gpt_digest_feed_token")

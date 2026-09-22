@@ -501,3 +501,11 @@ IMPL-BE-1/2 可对 `errors.py`/`models.py` 做**追加式 Edit**（只加自己�
   FreshRSS 停机时 web 壳/工作区/entries/search 诚实降级不拖垮主链路，
   元数据/环回地址在 clip/feed-preview/api-source 三入口 fail-closed，
   AI provider 停机时 RAG 状态诚实，恢复后栈全绿。
+
+> **注（2026-09-22 目录迁移）**：上述两个一次性探针脚本
+> （`round2-probe.sh`、`round4-chaos.sh`）已随 `e2e/gate8/` → `e2e/stack/`
+> 迁移一并删除——它们是恢复门期间的一次性验证产物，全部结果已保留于
+> 本文（Round 2 定向探针 8/8、Round 4 故障注入 13/13），无需再执行。
+> 旧目录与探针脚本的历史内容见 commit 快照：
+> <https://github.com/paidethon/LumiRSS/tree/a9262f8cb7d1c39117d9b973b827387326cc68d6/e2e/gate8>
+> （GitHub SHA permalink，指向迁移前最后一个包含 `e2e/gate8/` 的提交）。

@@ -1,6 +1,10 @@
 # LumiRSS
 
-LumiRSS is a single-user, self-hosted, source-first information reader.
+LumiRSS is an invite-based multi-account, self-hosted, source-first
+information reader: the operator invites members from an admin console,
+each invited member activates their own account, and every account's
+subscriptions, reading state, library, AI settings and FreshRSS binding
+are fully isolated. There is no public registration.
 
 Its foundation:
 
@@ -60,7 +64,7 @@ Full guide: [docs/getting-started.md](docs/getting-started.md).
 ```bash
 sudo ./lumirss deploy                      # interactive
 sudo ./lumirss deploy --auth-mode=session  # persistent session login
-sudo ./lumirss deploy --low-memory         # single-user resource preset
+sudo ./lumirss deploy --low-memory         # low-resource preset for small self-hosts
 ```
 
 Caddy serves the Web build and reverse-proxies `/api` to the BFF;
@@ -76,6 +80,7 @@ Full runbook: [docs/how-to/deploy.md](docs/how-to/deploy.md).
 |---|---|
 | Run it locally | [docs/getting-started.md](docs/getting-started.md) |
 | Deploy / upgrade / roll back | [docs/how-to/deploy.md](docs/how-to/deploy.md) |
+| Invite members (admin) | [docs/how-to/invite-members.md](docs/how-to/invite-members.md) |
 | Back up / restore | [docs/how-to/backup-restore.md](docs/how-to/backup-restore.md) |
 | Troubleshoot | [docs/how-to/troubleshoot.md](docs/how-to/troubleshoot.md) |
 | Configuration keys | [docs/reference/configuration.md](docs/reference/configuration.md) |

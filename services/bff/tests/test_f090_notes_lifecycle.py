@@ -113,8 +113,12 @@ def test_f090_restart_persistence_and_vault_untouched(client, tmp_path):
     from fastapi.testclient import TestClient
 
     assert app.state.db.path  # 重启后同库文件（持久性前提）
+    # 0067：重启（新 TestClient）的 lifespan 会把 app.state.db 重绑成
+    # RoutingDatabase——先捕获普通 Database 句柄，启动后再覆盖回去
+    #（与 conftest client fixture 同一约定）。
+    plain_db = app.state.db
     with TestClient(app) as client2:
-        client2.app.state.db = app.state.db
+        client2.app.state.db = plain_db
         got = client2.get(f"/api/v1/library/notes/{note['uuid']}")
         assert got.status_code == 200
         assert got.json()["contentMd"] == "内容持久化"

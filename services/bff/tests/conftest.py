@@ -35,6 +35,19 @@ def _reset_rate_limit_windows() -> None:
     middleware._login_failures.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_implicit_owner_cache() -> None:
+    """0067 basic mode caches the owner id per process keyed by
+    id(app.state) — a module-global that would otherwise pin the FIRST
+    test's owner id onto every later test's user-database/secrets
+    routing (each test gets a fresh control db + users root). Clearing
+    it per test keeps basic-mode request routing consistent with
+    ``app.state.owner_id`` for direct store access in tests."""
+    import lumirss.middleware as middleware
+
+    middleware._implicit_owner_cache.clear()
+
+
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch):
     """A TestClient with a fresh temp Lumi database (phase2 M1 suites).

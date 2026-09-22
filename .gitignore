@@ -51,3 +51,4 @@ coverage/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 .web-test.log
+.playwright-mcp/

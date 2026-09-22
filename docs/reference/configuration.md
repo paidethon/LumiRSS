@@ -18,7 +18,7 @@
 | 键 | 说明 |
 |---|---|
 | `LUMIRSS_AUTH_MODE` | `basic`（默认，历史行为：Caddy basic_auth）或 `session`（持久会话登录：bcrypt 密码 + 长效 Cookie，见下）。`./lumirss deploy --auth-mode=session` 自动写入 |
-| `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 单用户访问控制。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
+| `LUMIRSS_AUTH_USER` / `LUMIRSS_AUTH_HASH` | basic 模式的 Caddy basic_auth 边缘访问控制（单组共享凭据，历史兼容；账号级登录请用 session 模式）。bcrypt 哈希（不是明文密码），`$$` 转义。**两个要么都设要么都不设，只设一个容器拒绝启动**；都为空 = 无 auth（受信内网/已有外层认证）。session 模式下忽略 |
 | `LUMIRSS_SESSION_MAX_AGE_DAYS` | `180`（天）。session 模式的绝对不活跃窗口；活跃使用会滑动续期（临近过期自动延长），经常使用基本不需要重新登录 |
 | `LUMIRSS_SESSION_SECURE_COOKIES` | `1`。`__Host-` 前缀 + `Secure`（要求 HTTPS，所有生产部署都应保持 1）；仅纯 HTTP 本地调试才设 0（此时 cookie 名退化为 `lumirss_session`） |
 | `LUMIRSS_TRUSTED_PROXY_NETWORKS` | （空）。登录失败限流的可信代理网段（逗号分隔 CIDR）。空 = loopback+私网+链路本地（本栈两级 Caddy 拓扑默认即可）。仅这些网段的直连 peer 采纳 `X-Forwarded-For` **最后一跳**做限流分桶，其余 peer 的 XFF 一律忽略（防伪造刷桶锁死登录） |
@@ -36,8 +36,8 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `LUMIRSS_DB_PATH` | `<services/bff>/data/lumi.sqlite` | Lumi SQLite 文件；首次使用时创建。生产 compose 固定为 `/data/lumi.sqlite`（lumi-data 卷），不走 `.env.prod` |
-| `LUMIRSS_DATA_DIR` | `LUMIRSS_DB_PATH` 的父目录 | Lumi 运行时状态根：`secrets.json`（0600）、本地备份 `backups/`、恢复暂存 `restore-staging/` |
+| `LUMIRSS_DB_PATH` | `<services/bff>/data/lumi.sqlite` | Lumi 控制库（身份/会话/邀请/FreshRSS 池/审计）；首次使用时创建。每用户业务库在 `LUMIRSS_DATA_DIR/users/<uid>/lumi.sqlite`（见 [ADR 0005](../decisions/0005-invite-multi-account.md)）。生产 compose 固定为 `/data/lumi.sqlite`（lumi-data 卷），不走 `.env.prod` |
+| `LUMIRSS_DATA_DIR` | `LUMIRSS_DB_PATH` 的父目录 | Lumi 运行时状态根：`users/<uid>/`（每用户业务库 + secrets）、`secrets.json`（0600）、本地备份 `backups/`、恢复暂存 `restore-staging/` |
 | `FRESHRSS_DATA_DIR` | 空 | FreshRSS 数据目录的**只读**挂载路径，供一致性在线备份；空 = 完整备份不可用（开发态）。生产 compose 固定为 `/freshrss-data` |
 | `LUMIRSS_SEARCH_SYNC_INTERVAL` | `60.0`（秒） | 搜索投影后台同步节奏；`0` 关闭后台同步（测试用）。机制见 [../explanation/search.md](../explanation/search.md) |
 | `LUMIRSS_ATOM_BASE_URL` | 空 | API 来源 / 邮件桥生成的 Atom 相对路径对外解析基准（`GET /api/v1/sources` 返回的 `atomUrl` 用它拼绝对 URL）；空 = 返回相对路径 |
@@ -59,11 +59,11 @@
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
-| `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入单用户预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |
+| `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入低资源预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |
 | `LUMIRSS_BFF_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | BFF 容器（low-memory 预设 256m/96m） |
 | `LUMIRSS_FRESHRSS_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | FreshRSS 容器（low-memory 预设 320m/96m） |
 | `LUMIRSS_RSSHUB_MEM_LIMIT` / `_RESERVATION` | `1g` / `256m` | RSSHub 容器（low-memory 预设 448m/192m） |
-| `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——单用户足够） |
+| `LUMIRSS_RSSHUB_MEMORY_MAX` | `256`（MB） | RSSHub 进程内 memory cache 上限（与固定镜像默认一致；low-memory 预设 64——小规模自托管足够） |
 | `LUMIRSS_RSSHUB_NODE_OPTIONS` | （空 = V8 默认） | RSSHub Node 堆上限（如 `--max-old-space-size=256`）。**容器 limit 必须明显高于 V8 堆**，给 native memory 留余量（low-memory 预设 = 256 堆 + 448 容器） |
 | `LUMIRSS_BACKUP_DIR` | `./backups` | `./lumirss backup` 输出目录 |
 | `LUMIRSS_BACKUP_IMAGE` | `alpine:3.20` | 卷备份用的临时容器镜像 |

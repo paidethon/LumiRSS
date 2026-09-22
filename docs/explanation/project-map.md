@@ -65,13 +65,15 @@ FreshRSS 容器 cron（CRON_MIN 指定分钟）
 ## 数据归属
 
 ```text
-FreshRSS：订阅/条目/已读/收藏（RSS 域唯一真源）
-Lumi SQLite：
-  自有内容   书签/剪藏/快照/工作区/收件箱/日报期刊/Agent 会话
-  可重建投影 search_entries、标签统计（删了可从 FreshRSS 重建）
+控制库 lumi.sqlite：身份/会话/邀请/FreshRSS 池/审计（账户控制面）
+每用户库 users/<uid>/lumi.sqlite：该账号全部业务数据（服务端身份路由）
+FreshRSS：订阅/条目/已读/收藏（RSS 域唯一真源，每账号一个 FreshRSS 用户）
 Obsidian Vault：只读投影，永不回写
 secrets.json：API 密钥/SMTP/订阅 token（永不进 SQLite/日志/浏览器）
 ```
+
+多账户分层细节：[explanation/architecture.md](architecture.md)
+「控制库与每用户库」一节与 [ADR 0005](../decisions/0005-invite-multi-account.md)。
 
 ## 从一次点击追到存储（方法）
 

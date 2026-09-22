@@ -114,7 +114,11 @@ def test_f031_draft_not_in_public_feed_publish_idempotent_and_validation(client)
     # 公开订阅只含 published：草稿不可见（负向）
     from lumirss.gpt_digest_store import GptDigestStore
 
-    token = GptDigestStore(app.state.db, app.state.secrets_store).ensure_feed_token()
+    # 0067：直连调用无请求上下文 → 显式 owner uid 解析 routing secrets。
+    token = GptDigestStore(
+        app.state.db,
+        app.state.secrets_store.store_for(app.state.owner_id),
+    ).ensure_feed_token()
     feed = client.get(f"/feeds/gpt-digest/{token}.atom")
     assert feed.status_code == 200
     assert "2026-09-17" not in feed.text

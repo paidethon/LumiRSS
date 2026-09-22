@@ -1,9 +1,14 @@
-"""Persistent single-user session authentication (LUMIRSS_AUTH_MODE=session).
+"""Persistent multi-account session authentication (LUMIRSS_AUTH_MODE=session).
 
 Covers: login/logout semantics, cookie flags, expiry, sliding renewal,
 brute-force limiting, password change + global revocation, session-table
 bounds, public/private path split, CSRF Origin validation, and layering
 with the internal-token middleware.
+
+0067 邀请制多账户：登录是 username + password（users.password_hash）。
+本文件统一用启动迁移创建的 ``owner`` 账户：``_install_password`` 在
+TestClient 启动前把哈希写进旧 ``auth_password`` 表，由 owner 迁移继承
+（这正是生产旧库升级路径）。会话/密码表都在控制库（LUMIRSS_DB_PATH）。
 
 All credentials below are dynamically generated fakes (never real
 secrets), matching the suite-wide convention for credential-shaped data.
@@ -35,6 +40,7 @@ DEAD_HASH = _secrets.token_hex(16)
 @pytest.fixture()
 def session_env(monkeypatch, tmp_path):
     """Session auth on, secure cookies off (plain HTTP test transport)."""
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     monkeypatch.setenv("LUMIRSS_AUTH_MODE", "session")
     monkeypatch.setenv("LUMIRSS_SESSION_SECURE_COOKIES", "false")
     monkeypatch.setenv("LUMIRSS_INTERNAL_TOKEN", "")
@@ -57,8 +63,11 @@ def _client(db_path) -> TestClient:
     return TestClient(app, base_url="http://lumirss.test")
 
 
-def _login(client: TestClient, password: str = PASSWORD):
-    return client.post("/api/v1/auth/login", json={"password": password})
+def _login(client: TestClient, username: str = "owner", password: str = PASSWORD):
+    return client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": password},
+    )
 
 
 @pytest.fixture()
@@ -85,12 +94,23 @@ def test_login_wrong_password_is_401(session_env):
         assert response.json()["error"]["type"] == "invalid_credentials"
 
 
-def test_login_without_bootstrap_is_503(session_env):
+def test_unbootstrapped_owner_password_rejected_without_oracle(session_env):
+    """新契约语义（替代旧 503 auth_not_initialized）：owner 由启动迁移
+    创建，但全新安装没有任何人知道的密码（password_updated_at 为
+    NULL、哈希随机不可知）→ 登录失败，且失败形状与「密码错误」「账号
+    不存在」完全一致——不泄露账号存在性。"""
     with _client(session_env) as client:
         app.state.db = Database(session_env / "lumi.sqlite")
-        response = _login(client)
-        assert response.status_code == 503
-        assert response.json()["error"]["type"] == "auth_not_initialized"
+        response = _login(client, password=WRONG_PASSWORD)
+        assert response.status_code == 401
+        assert response.json()["error"]["type"] == "invalid_credentials"
+        unknown = _login(client, username=_fake("nouser-"), password=WRONG_PASSWORD)
+        assert unknown.status_code == 401
+        assert unknown.json() == response.json()
+        # 运维面诚实报告首次设置仍未完成。
+        probe = client.get("/api/v1/auth/first-run")
+        assert probe.status_code == 200
+        assert probe.json()["needsSetup"] is True
 
 
 def test_login_failure_rate_limit(session_env):
@@ -407,11 +427,11 @@ def test_internal_token_still_required_in_session_mode(session_env, monkeypatch)
     with _client(session_env) as client:
         app.state.db = Database(session_env / "lumi.sqlite")
         # Session layer passes (public), but the token layer still rejects.
-        no_token = client.post("/api/v1/auth/login", json={"password": PASSWORD})
+        no_token = _login(client)
         assert no_token.status_code == 401
         with_token = client.post(
             "/api/v1/auth/login",
-            json={"password": PASSWORD},
+            json={"username": "owner", "password": PASSWORD},
             headers={"X-Lumi-Token": INTERNAL_TOKEN},
         )
         assert with_token.status_code == 200

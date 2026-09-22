@@ -69,6 +69,16 @@ def validate_user_id(user_id: str) -> str:
     return user_id
 
 
+def bind_user_context(user_id: str) -> None:
+    """Bind the user for the REST of the current request task (no scope).
+
+    For machine-channel routes whose entire body runs as the token's
+    owner: the route is the outermost task, so there is nothing to
+    restore into.
+    """
+    _current_user_id.set(validate_user_id(user_id))
+
+
 class RoutingDatabase(Database):
     """``Database`` facade that resolves each connection to the active
     user's SQLite file.

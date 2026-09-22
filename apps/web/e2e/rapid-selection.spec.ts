@@ -8,7 +8,7 @@
  *    放行 ——「旧文晚到」由路由注入保证成立，而非靠运气；
  * 3. 选中行高亮跟随最后一次选择（aria-pressed）。
  *
- * 数据自足：E2E feed（J3b 导入 / gate8 预置）现含 6 条目，任何满足
+ * 数据自足：E2E feed（J3b 导入 / stack 预置）现含 6 条目，任何满足
  * 前置的栈都有 ≥5 行；不足时本测试【失败】而不是被静默跳过（跳过 =
  * 回归不可见的假绿）。
  *
@@ -43,7 +43,7 @@ test('连续选择 5 篇文章：最后一次选择胜出且不被旧文覆盖',
   const visibleCount = await titleButtons.count()
   expect(
     visibleCount,
-    '列表数据不足：E2E 栈需已导入含 6 条目的 E2E feed（desktop-journeys J3b 或 gate8 预置）',
+    '列表数据不足：E2E 栈需已导入含 6 条目的 E2E feed（desktop-journeys J3b 或 stack 预置）',
   ).toBeGreaterThanOrEqual(BURST)
 
   const titles: string[] = []

@@ -107,10 +107,11 @@ def test_f007_settings_route_roundtrip_enabled(client):
     assert reopened.status_code == 200
     assert reopened.json()["enabled"] is True
     # 无效配置错误路径：未配置时测试连接 → 稳定 4xx（非 500）
-
     from lumirss.mail_imap import save_imap_config as _sic
+    from lumirss.user_scope import user_context
 
-    _sic(secrets, {}, None)  # 清空 host/user → unconfigured
+    with user_context(client.app.state.owner_id):
+        _sic(secrets, {}, None)  # 清空 host/user → unconfigured
     import contextlib
 
     with contextlib.suppress(Exception):

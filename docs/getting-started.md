@@ -18,6 +18,8 @@ sudo ./lumirss deploy
 ```
 
 生产部署、升级与运维的完整说明：[how-to/deploy.md](how-to/deploy.md)。
+部署后想给朋友开通独立账号（邀请制多账户）：见
+[how-to/invite-members.md](how-to/invite-members.md)。
 
 ## 本地开发环境
 

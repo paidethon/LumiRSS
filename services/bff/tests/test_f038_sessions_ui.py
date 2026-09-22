@@ -42,7 +42,10 @@ def session_env(tmp_path, monkeypatch):
 
 def test_f038_list_current_flag_no_leak_and_revoke_logout(session_env):
     client, _ = session_env
-    login = client.post("/api/v1/auth/login", json={"password": PASSWORD})
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": PASSWORD},
+    )
     assert login.status_code == 200
 
     sessions = client.get("/api/v1/auth/sessions")
@@ -57,7 +60,10 @@ def test_f038_list_current_flag_no_leak_and_revoke_logout(session_env):
     assert "hash" not in body_text.lower()
 
     # 第二台设备（第二次登录）：当前会话标记唯一
-    client.post("/api/v1/auth/login", json={"password": PASSWORD})
+    client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": PASSWORD},
+    )
     items2 = client.get("/api/v1/auth/sessions").json()
     assert len(items2) == 2
     assert sum(1 for s in items2 if s["current"]) == 1
@@ -75,7 +81,13 @@ def test_f038_list_current_flag_no_leak_and_revoke_logout(session_env):
 
 def test_f038_revoke_missing_id_404(session_env):
     client, _ = session_env
-    assert client.post("/api/v1/auth/login", json={"password": PASSWORD}).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"username": "owner", "password": PASSWORD},
+        ).status_code
+        == 200
+    )
     missing = client.delete("/api/v1/auth/sessions/00000000")
     assert missing.status_code == 404
     assert missing.json()["error"]["type"] == "session_not_found"

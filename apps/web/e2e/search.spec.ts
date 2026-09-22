@@ -6,7 +6,7 @@
  *
  * 数据契约（Q-P2-36 治理）：查询词使用 Gate 8 fixture 的确定内容
  * （api-source e2e-json-* → 「sqlite-vec 发布 1.0」），不再依赖开发栈
- * 恰好订阅过什么。前置：`e2e/gate8/run-smoke.sh all` 已在该栈上运行
+ * 恰好订阅过什么。前置：`e2e/stack/run-smoke.sh all` 已在该栈上运行
  * （订阅 + actualize 由 smoke 完成）。
  *
  * 数据隔离：只读搜索 + 打开文章（打开不自动已读）；不动用户真实状态。

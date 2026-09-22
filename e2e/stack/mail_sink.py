@@ -1,4 +1,4 @@
-"""Minimal local SMTP sink + HTTP inspector for the Gate 8 E2E stack.
+"""Minimal local SMTP sink + HTTP inspector for the E2E stack.
 
 Stands in for Mailpit when the local docker proxy cannot pull images:
 - SMTP listener on :1025 stores every message (bounded);

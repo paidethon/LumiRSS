@@ -22,9 +22,14 @@ def run(coroutine):
 
 
 def _store(client) -> DigestStore:
+    """0067：直连调用（无请求上下文）需要显式用户作用域——routing
+    secrets store 用 owner 的显式 uid 解析出普通 SecretsStore。"""
     from lumirss.main import app
 
-    return DigestStore(app.state.db, app.state.secrets_store)
+    return DigestStore(
+        app.state.db,
+        app.state.secrets_store.store_for(app.state.owner_id),
+    )
 
 
 def test_timezone_roundtrip_and_invalid_fallback(client):
