@@ -322,6 +322,14 @@ main() {
       # "configuration cannot be found".
       $COMPOSE exec -T freshrss sh -c \
         'chown -R www-data:www-data /var/www/FreshRSS/data/users/e2e; chmod 770 /var/www/FreshRSS/data/users/e2e'
+      # AI journeys 的 mock 跑在 runner 宿主机 18082：把 docker 网桥
+      # 网关追加进 BFF 的私网白名单（环境变化时 compose 自动重建 bff）。
+      local gateway
+      gateway=$(docker network inspect lumirss-e2e_default \
+        --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)
+      if [[ -n "$gateway" ]]; then
+        E2E_ALLOW_PRIVATE_HOSTS="fixtures,$gateway" $COMPOSE up -d --build bff >/dev/null 2>&1
+      fi
       echo "init complete"
       ;;
     all)
