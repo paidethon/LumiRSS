@@ -30,6 +30,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit Tail */
+        get: operations["audit_tail_api_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invites */
+        get: operations["list_invites_api_v1_admin_invites_get"];
+        put?: never;
+        /**
+         * Create Invite
+         * @description Create an invitation. The raw token is returned exactly once —
+         *     the operator hands it to the invitee out of band.
+         */
+        post: operations["create_invite_api_v1_admin_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Invite */
+        delete: operations["revoke_invite_api_v1_admin_invites__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/pool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pool Status */
+        get: operations["pool_status_api_v1_admin_pool_get"];
+        put?: never;
+        /**
+         * Pool Add
+         * @description Register one pre-provisioned FreshRSS account (O155).
+         *
+         *     No Docker socket, no shell: the account itself is created by the
+         *     operator with the FreshRSS CLI beforehand; this endpoint records the
+         *     binding material. The password lands in the control secrets file and
+         *     is never returned.
+         */
+        post: operations["pool_add_api_v1_admin_pool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause User */
+        post: operations["pause_user_api_v1_admin_users__user_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset User Password
+         * @description Install an unguessable password (nobody knows it) and revoke all
+         *     the user's sessions, then return a one-time recovery invite the
+         *     operator hands to the member (O150 — honest, no email pretending).
+         */
+        post: operations["reset_user_password_api_v1_admin_users__user_id__reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume User */
+        post: operations["resume_user_api_v1_admin_users__user_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/revoke-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke User Sessions */
+        post: operations["revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads": {
         parameters: {
             query?: never;
@@ -423,6 +595,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Account
+         * @description Redeem a signup invite: create the independent account, bind an
+         *     own FreshRSS account from the pool, mint a session.
+         *
+         *     Pool-empty is an explicit pending-binding state — the account is
+         *     usable and the UI shows "RSS source binding pending"; the server
+         *     never falls back to shared credentials.
+         */
+        post: operations["activate_account_api_v1_auth_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/activation-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activation Preview
+         * @description Honest activation screen state: is the invite usable, is a
+         *     FreshRSS account ready? Reveals nothing beyond yes/no — no labels,
+         *     no emails, no pool usernames.
+         */
+        get: operations["activation_preview_api_v1_auth_activation_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/first-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * First Run Status
+         * @description Setup probe for the operator UI: does the owner password still
+         *     need to be set? (No account details; safe pre-login.)
+         */
+        get: operations["first_run_status_api_v1_auth_first_run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -434,12 +674,10 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Verify the password, mint a session, set the cookie.
+         * @description Verify credentials, mint a per-user session.
          *
-         *     Failures only count toward the brute-force budget (see middleware);
-         *     a correct password resets it, so honest retries never lock the user
-         *     out. The wrong-password and not-initialized replies deliberately
-         *     share the generic shape — no oracle for an attacker.
+         *     Wrong-password and unknown-username share the generic failure shape
+         *     and the same brute-force budget (no account oracle).
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -479,7 +717,7 @@ export interface paths {
         put?: never;
         /**
          * Logout All
-         * @description Revoke every session (all devices), including this one.
+         * @description Revoke THIS user's sessions on all devices, including this one.
          */
         post: operations["logout_all_api_v1_auth_logout_all_post"];
         delete?: never;
@@ -499,11 +737,32 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password: verify current, replace hash, revoke ALL
-         *     sessions, then immediately mint a fresh session for THIS device so
-         *     the operator is not bounced to the login screen mid-action.
+         * @description Change own password: verify current, replace hash, revoke ALL of
+         *     this user's sessions, then mint a fresh session for THIS device.
          */
         post: operations["change_password_api_v1_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recover Password
+         * @description Redeem an admin-issued recovery invite: set a new password,
+         *     revoke all of that user's sessions (O150 — no email service, nothing
+         *     is pretended to be sent).
+         */
+        post: operations["recover_password_api_v1_auth_recover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -520,8 +779,8 @@ export interface paths {
         /**
          * Session Status
          * @description Public probe: which auth layer is active, and is this browser
-         *     holding a live session? (basic mode: authenticated reflects the
-         *     proxy — the app never gates on it.)
+         *     holding a live session? Includes the server-verified identity (never
+         *     from the request body) so the UI can render the account menu.
          */
         get: operations["session_status_api_v1_auth_session_get"];
         put?: never;
@@ -564,7 +823,7 @@ export interface paths {
         post?: never;
         /**
          * Revoke Auth Session
-         * @description 撤销一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。
+         * @description 撤销自己的一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。
          */
         delete: operations["revoke_auth_session_api_v1_auth_sessions__session_id__delete"];
         options?: never;
@@ -1551,10 +1810,9 @@ export interface paths {
          * Freshrss Ui
          * @description Browser-safe public URL of the FreshRSS web UI, or null.
          *
-         *     The advanced escape hatch ("在 FreshRSS 中管理") is only offered when
-         *     the operator explicitly configured FRESHRSS_PUBLIC_URL. The internal
-         *     FRESHRSS_BASE_URL (possibly a Docker hostname or loopback address) is
-         *     never exposed to the browser, and no URL ever carries credentials.
+         *     0067：读当前用户绑定的 public_url（激活/迁移时写入），env 配置只在
+         *     owner 迁移时授予 owner。内部 FRESHRSS_BASE_URL（可能是 Docker 主机
+         *     名或回环地址）永不暴露给浏览器，URL 不携带凭据。
          */
         get: operations["freshrss_ui_api_v1_freshrss_ui_get"];
         put?: never;
@@ -6123,6 +6381,9 @@ export interface paths {
         /**
          * Saved View Atom
          * @description 保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。
+         *
+         *     0067：路径 token 先经 token_owner_index 解析归属用户——同一 404
+         *     不泄露存在性，也绝不落入别人的数据作用域。
          */
         get: operations["saved_view_atom_feeds_views__view_id___secret__atom_get"];
         put?: never;
@@ -6208,6 +6469,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActivateAccountRequest
+         * @description POST /auth/activate — signup invite redemption.
+         */
+        ActivateAccountRequest: {
+            /** Displayname */
+            displayName?: string | null;
+            /** Password */
+            password: string;
+            /** Token */
+            token: string;
+            /** Username */
+            username: string;
+        };
         /**
          * AgentApprovalDecision
          * @description POST /api/v1/agent/threads/{id}/approvals.
@@ -6976,7 +7251,9 @@ export interface components {
          *
          *     mode tells the web app WHICH auth layer is active: "basic" = proxy
          *     Basic Auth (the app must not render its own login gate), "session" =
-         *     BFF sessions (gate on ``authenticated``).
+         *     BFF sessions (gate on ``authenticated``). userId/username/role carry
+         *     the server-verified identity for the account menu — the client never
+         *     declares who it is.
          */
         AuthStatus: {
             /** Authenticated */
@@ -6989,6 +7266,12 @@ export interface components {
              * @enum {string}
              */
             mode: "basic" | "session";
+            /** Role */
+            role?: ("owner" | "admin" | "member") | null;
+            /** Userid */
+            userId?: string | null;
+            /** Username */
+            username?: string | null;
         };
         /** AuthorAlias */
         AuthorAlias: {
@@ -9143,6 +9426,26 @@ export interface components {
             /** Uuid */
             uuid: string;
         };
+        /**
+         * InviteCreateRequest
+         * @description POST /admin/invites.
+         */
+        InviteCreateRequest: {
+            /**
+             * Kind
+             * @default signup
+             */
+            kind: string;
+            /** Label */
+            label?: string | null;
+            /** Targetusername */
+            targetUsername?: string | null;
+            /**
+             * Ttlhours
+             * @default 72
+             */
+            ttlHours: number;
+        };
         /** KnowledgeCardList */
         KnowledgeCardList: {
             /**
@@ -9224,11 +9527,14 @@ export interface components {
         };
         /**
          * LoginRequest
-         * @description POST /api/v1/auth/login — single user, password only.
+         * @description POST /api/v1/auth/login — username + password (multi-account);
+         *     legacy single-user mode sends password only.
          */
         LoginRequest: {
             /** Password */
             password: string;
+            /** Username */
+            username?: string | null;
         };
         /**
          * LumiNoteCreate
@@ -9919,6 +10225,27 @@ export interface components {
             entryRef: string;
         };
         /**
+         * PoolAddRequest
+         * @description POST /admin/pool — register one pre-provisioned FreshRSS account.
+         *
+         *     The API password is created deployment-side (FreshRSS CLI); it is
+         *     stored in the control secrets file (0600), never in SQLite, and is
+         *     never echoed back.
+         */
+        PoolAddRequest: {
+            /** Apipassword */
+            apiPassword: string;
+            /** Freshrssbaseurl */
+            freshrssBaseUrl: string;
+            /** Freshrssusername */
+            freshrssUsername: string;
+            /**
+             * Publicurl
+             * @default
+             */
+            publicUrl: string;
+        };
+        /**
          * PoolReorderBody
          * @description PATCH …/pool 体：全量提交后的 id 顺序。
          */
@@ -10296,6 +10623,16 @@ export interface components {
             paraId: string;
             /** Pct */
             pct: number;
+        };
+        /**
+         * RecoverPasswordRequest
+         * @description POST /auth/recover — recovery invite redemption.
+         */
+        RecoverPasswordRequest: {
+            /** Newpassword */
+            newPassword: string;
+            /** Token */
+            token: string;
         };
         /**
          * RelationCreate
@@ -12112,6 +12449,318 @@ export interface operations {
             };
         };
     };
+    audit_tail_api_v1_admin_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invites_api_v1_admin_invites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_invite_api_v1_admin_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invite_api_v1_admin_invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pool_status_api_v1_admin_pool_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pool_add_api_v1_admin_pool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PoolAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pause_user_api_v1_admin_users__user_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_user_password_api_v1_admin_users__user_id__reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_user_api_v1_admin_users__user_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_threads_api_v1_agent_threads_get: {
         parameters: {
             query?: never;
@@ -12923,6 +13572,94 @@ export interface operations {
             };
         };
     };
+    activate_account_api_v1_auth_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activation_preview_api_v1_auth_activation_preview_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    first_run_status_api_v1_auth_first_run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -13029,6 +13766,39 @@ export interface operations {
             };
         };
     };
+    recover_password_api_v1_auth_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoverPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     session_status_api_v1_auth_session_get: {
         parameters: {
             query?: never;
@@ -13064,9 +13834,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": unknown;
                 };
             };
         };

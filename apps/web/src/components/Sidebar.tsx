@@ -29,6 +29,7 @@ import SidebarHeader from './SidebarHeader'
 import { cx } from './ui/cx'
 import RecentReadsInline from './RecentReadsInline'
 import ContinueReadingCard from './ContinueReadingCard'
+import AccountMenu from './AccountMenu'
 
 /** Sidebar — 信息架构分组导航（0011 阻断修复：真实分类树 + 四级 Scope）。
  *
@@ -675,6 +676,9 @@ function Sidebar({
           </NavItem>
         </div>
       </div>
+
+      {/* 0067 多账户：当前身份 + 账号菜单（basic 模式零渲染，现状兼容） */}
+      <AccountMenu />
     </nav>
   )
 }

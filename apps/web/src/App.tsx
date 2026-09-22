@@ -14,6 +14,7 @@ import { clearAllDrafts } from './lib/draft-store'
 import { resetPrivacyOnBoot } from './lib/privacy-mask'
 import { startVersionCheck } from './lib/version-check'
 import { EdgeSwipeBack } from './lib/edge-swipe'
+import { useAppRoute } from './lib/app-route'
 
 // F113：演示隐私遮罩是“会话内”开关——刷新即重置。模块加载（早于任何
 // 组件首渲染）清掉上次会话残留标记，抽屉开关态与 DOM 遮蔽态保持一致。
@@ -80,6 +81,9 @@ const ObsidianPage = lazy(() => import('./components/pages/ObsidianPage'))
 // phase2 G7/G8：Agent 工作台 / 标签与图谱
 const AgentWorkbenchPage = lazy(() => import('./components/pages/AgentWorkbenchPage'))
 const GraphPage = lazy(() => import('./components/pages/GraphPage'))
+// 0067：管理台（/admin，owner/admin）——独立顶层路由，懒加载分包
+//（非首屏关键路径，与其它一级页 lazy 契约一致）。
+const AdminScreen = lazy(() => import('./components/admin/AdminScreen'))
 
 function PageSkeleton() {
   return (
@@ -203,6 +207,19 @@ export default function App() {
     }
     prevSelectionRef.current = selectedEntryRef
   }, [selectedEntryRef, update])
+
+  // 0067：顶层路由 /admin（管理台独占全屏，替代整个 shell；权限由
+  // AdminScreen 内部转述后端 403）。放在全部 hooks 之后（规则一致：
+  // 早返回不跳过任何 hook）。/activate 不在这里——它属于未登录分支，
+  // 由 main.tsx 的 AuthGate 处理。
+  const route = useAppRoute()
+  if (route === 'admin') {
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <AdminScreen />
+      </Suspense>
+    )
+  }
 
   return (
     <div className="flex h-dvh flex-col bg-[var(--lumi-canvas)]">

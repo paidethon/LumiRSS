@@ -67,12 +67,20 @@ const API_BASE = '/api/v1'
 export class ApiError extends Error {
   readonly status: number
   readonly type: string
+  /** 429 rate_limited 的剩余等待秒数（Retry-After 头）；无该头为 null。 */
+  readonly retryAfterSeconds: number | null
 
-  constructor(status: number, type: string, message: string) {
+  constructor(
+    status: number,
+    type: string,
+    message: string,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.type = type
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -107,7 +115,13 @@ async function toApiError(response: Response): Promise<ApiError> {
   } catch {
     // 非 JSON（如 HTML 错误页 / 422 detail 数组）→ 使用安全 fallback。
   }
-  return new ApiError(response.status, type, message)
+  // 429 rate_limited：读 Retry-After 头（秒）供 UI 显示剩余等待。
+  let retryAfterSeconds: number | null = null
+  const retryAfterRaw = response.headers.get('Retry-After')
+  if (retryAfterRaw !== null && /^\d+$/.test(retryAfterRaw.trim())) {
+    retryAfterSeconds = Number.parseInt(retryAfterRaw.trim(), 10)
+  }
+  return new ApiError(response.status, type, message, retryAfterSeconds)
 }
 
 /** 发起请求并把非 2xx / 网络失败转成 ApiError；返回原始 Response，
@@ -218,6 +232,268 @@ export async function changePassword(
     contentType: 'application/json',
   })
   return (await response.json()) as AuthStatusView
+}
+
+// ---- 0067 邀请制多账户（auth 多账户面 + 管理台） ----
+// 契约类型在本模块补齐（additive，与 generated/schema 的策略一致——
+// schema 尚未收录这批端点；BFF 是唯一真源）。admin 列表端点返回
+// SQLite 行（snake_case、epoch 秒时间戳），在此归一为稳定的 Web DTO。
+
+/** 邀请激活预览（公开端点；只回答是/否，不含任何标签/邮箱/池用户名）。 */
+export interface ActivationPreview {
+  valid: boolean
+  kind: 'signup' | null
+  /** 池中有 ready 的 FreshRSS 账号可立即绑定。 */
+  freshrssReady: boolean
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  role: 'owner' | 'admin' | 'member'
+  status: 'active' | 'paused'
+  displayName: string | null
+  /** ISO-8601；服务端 epoch 秒在此归一。 */
+  createdAt: string | null
+}
+
+export interface AdminInvite {
+  id: string
+  kind: 'signup' | 'recovery'
+  label: string | null
+  targetUsername: string | null
+  createdAt: string | null
+  expiresAt: string | null
+  usedAt: string | null
+  revokedAt: string | null
+}
+
+export interface AdminInviteCreated {
+  /** 原始 token（inv_...）只出现这一次；服务端只存哈希。 */
+  token: string
+  invite: AdminInvite
+}
+
+export interface FreshRssPoolMember {
+  id: string
+  username: string
+  bound: boolean
+  boundTo: string | null
+}
+
+export interface FreshRssPoolStatus {
+  ready: number
+  assigned: number
+  members: FreshRssPoolMember[]
+}
+
+/** 容错归一：epoch 秒数字或 ISO 字符串 → ISO 字符串；其它 → null。 */
+function toIso(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value * 1000).toISOString()
+  }
+  if (typeof value === 'string' && value !== '') return value
+  return null
+}
+
+function pickString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function normalizeUser(row: Record<string, unknown>): AdminUser {
+  const role = row.role
+  const status = row.status
+  return {
+    id: String(row.id ?? ''),
+    username: String(row.username ?? ''),
+    role: role === 'owner' || role === 'admin' ? role : 'member',
+    status: status === 'paused' ? 'paused' : 'active',
+    displayName: pickString(row.displayName ?? row.display_name),
+    createdAt: toIso(row.createdAt ?? row.created_at),
+  }
+}
+
+function normalizeInvite(row: Record<string, unknown>): AdminInvite {
+  const kind = row.kind
+  return {
+    id: String(row.id ?? ''),
+    kind: kind === 'recovery' ? 'recovery' : 'signup',
+    label: pickString(row.label),
+    targetUsername: pickString(row.targetUsername ?? row.target_user),
+    createdAt: toIso(row.createdAt ?? row.created_at),
+    expiresAt: toIso(row.expiresAt ?? row.expires_at),
+    usedAt: toIso(row.usedAt ?? row.used_at),
+    revokedAt: toIso(row.revokedAt ?? row.revoked_at),
+  }
+}
+
+/** 登录（多账户：username + password）。成功 = 浏览器拿到会话 Cookie；
+ * 响应体只含 authenticated/expiresAt，身份由随后的 GET /auth/session
+ * 补齐（服务端核实，绝不取自响应体之外）。 */
+export async function loginAccount(username: string, password: string): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+/** 邀请激活预览（公开；不消耗 token）。 */
+export async function getActivationPreview(token: string): Promise<ActivationPreview> {
+  return request<ActivationPreview>(
+    `${API_BASE}/auth/activation-preview?token=${encodeURIComponent(token)}`,
+  )
+}
+
+/** 兑换 signup 邀请并自动登录（会话 Cookie 由响应设置）。
+ * 400: invite_invalid / invalid_username / weak_password。 */
+export async function activateWithInvite(body: {
+  token: string
+  username: string
+  password: string
+  displayName?: string | null
+}): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/activate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      token: body.token,
+      username: body.username,
+      password: body.password,
+      ...(body.displayName ? { displayName: body.displayName } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+// ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
+
+/** 成员目录（不含密码哈希；owner→member 全量）。 */
+export async function listAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
+  const rows = await request<unknown[]>(`${API_BASE}/admin/users`, signal)
+  return rows.map((row) => normalizeUser(row as Record<string, unknown>))
+}
+
+export interface AdminInviteInput {
+  label?: string | null
+  ttlHours?: number
+  kind?: 'signup' | 'recovery'
+  targetUsername?: string | null
+}
+
+/** 创建邀请。原始 token 只在本次响应出现一次，UI 必须立刻展示/复制。 */
+export async function createAdminInvite(input: AdminInviteInput): Promise<AdminInviteCreated> {
+  const response = await rawRequest(`${API_BASE}/admin/invites`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: input.kind ?? 'signup',
+      ...(input.label ? { label: input.label } : {}),
+      ...(input.ttlHours !== undefined ? { ttlHours: input.ttlHours } : {}),
+      ...(input.targetUsername ? { targetUsername: input.targetUsername } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  const body = (await response.json()) as { token?: unknown; invite?: unknown }
+  return {
+    token: String(body.token ?? ''),
+    invite: normalizeInvite((body.invite ?? {}) as Record<string, unknown>),
+  }
+}
+
+/** 邀请列表（新→旧；含已用/已撤销——列表即台账）。 */
+export async function listAdminInvites(signal?: AbortSignal): Promise<AdminInvite[]> {
+  const rows = await request<unknown[]>(`${API_BASE}/admin/invites`, signal)
+  return rows.map((row) => normalizeInvite(row as Record<string, unknown>))
+}
+
+/** 撤销邀请（仅未使用可撤；DELETE 幂等到服务端 404 语义）。 */
+export async function revokeAdminInvite(inviteId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/invites/${encodeURIComponent(inviteId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 暂停成员（owner 与最后一名活跃 admin 由服务端拒绝；暂停即撤销其全部会话）。 */
+export async function pauseAdminUser(userId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/pause`, {
+    method: 'POST',
+  })
+}
+
+/** 恢复成员。 */
+export async function resumeAdminUser(userId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/resume`, {
+    method: 'POST',
+  })
+}
+
+/** 撤销某成员的全部会话（强制下线；不动密码）。 */
+export async function revokeAdminUserSessions(userId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, {
+    method: 'POST',
+  })
+}
+
+export interface AdminPasswordReset {
+  /** 一次性 recovery 邀请 token；拼 /activate?token= 给成员自助设新密码。 */
+  recoveryToken: string
+  invite: AdminInvite
+}
+
+/** 重置成员密码：服务端装上无人知晓的随机密码并撤销其全部会话，
+ * 返回一次性 recovery 链接材料（O150：诚实——没有邮件，什么都不假装发送）。 */
+export async function resetAdminUserPassword(userId: string): Promise<AdminPasswordReset> {
+  const response = await rawRequest(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/reset-password`,
+    { method: 'POST' },
+  )
+  const body = (await response.json()) as { recoveryToken?: unknown; invite?: unknown }
+  return {
+    recoveryToken: String(body.recoveryToken ?? ''),
+    invite: normalizeInvite((body.invite ?? {}) as Record<string, unknown>),
+  }
+}
+
+/** FreshRSS 池状态（ready/assigned 计数 + 每个成员的绑定情况）。 */
+export async function getFreshRssPool(signal?: AbortSignal): Promise<FreshRssPoolStatus> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/pool`, signal)
+  const members = Array.isArray(body.members) ? body.members : []
+  return {
+    ready: typeof body.ready === 'number' ? body.ready : 0,
+    assigned: typeof body.assigned === 'number' ? body.assigned : 0,
+    members: members.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      return {
+        id: String(row.id ?? ''),
+        username: String(row.username ?? ''),
+        bound: row.bound === true,
+        boundTo: pickString(row.boundTo ?? row.bound_to),
+      }
+    }),
+  }
+}
+
+export interface FreshRssPoolInput {
+  freshrssUsername: string
+  freshrssBaseUrl: string
+  /** 只写不回读：落入服务端 0600 secrets，绝不返回。 */
+  apiPassword: string
+  publicUrl?: string | null
+}
+
+/** 登记（非创建）一个部署侧已建好的 FreshRSS 账号入池。 */
+export async function registerFreshRssPool(input: FreshRssPoolInput): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/pool`, {
+    method: 'POST',
+    body: JSON.stringify({
+      freshrssUsername: input.freshrssUsername,
+      freshrssBaseUrl: input.freshrssBaseUrl,
+      apiPassword: input.apiPassword,
+      ...(input.publicUrl ? { publicUrl: input.publicUrl } : {}),
+    }),
+    contentType: 'application/json',
+  })
 }
 
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——

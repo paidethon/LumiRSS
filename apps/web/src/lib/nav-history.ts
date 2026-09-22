@@ -49,8 +49,11 @@ const overlayStack: Array<{ id: string; close: () => void }> = []
  * mount→cleanup→remount 会连续 register/unregister 同一 id，乱发
  * back() 会让迟到的 popstate 击落下一个浮层（O124 根因链）。 */
 const overlayHistoryArmed = new Map<string, boolean>()
-/** 未决的延迟 back() 定时器（unregister → 同 tick re-register 取消）。 */
-const overlayPendingBack = new Map<string, ReturnType<typeof setTimeout>>()
+/** 未决的延迟 back() 定时器（unregister → 同 tick re-register 取消）。
+ * 值类型钉死 number：本文件统一用 window.setTimeout（DOM 计时器），
+ * ReturnType<typeof setTimeout> 会因 @types/node 解析成 NodeJS.Timeout
+ * 而与 window.setTimeout 的 number 返回值冲突（tsc noEmit 即报）。 */
+const overlayPendingBack = new Map<string, number>()
 
 function scopeEquals(a: ContentScope, b: ContentScope): boolean {
   if (a.kind !== b.kind) return false

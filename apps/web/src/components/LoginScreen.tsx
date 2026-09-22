@@ -1,17 +1,27 @@
-/** LoginScreen — 单用户会话登录页（LUMIRSS_AUTH_MODE=session）。
+/** LoginScreen — 多账户会话登录页（LUMIRSS_AUTH_MODE=session）。
  *
- * 只输密码（单用户，username 无产品价值）。成功后浏览器持有
- * Secure/HttpOnly Cookie，本组件不保存任何凭据。
+ * username + password（0067 多账户）。成功后浏览器持有
+ * Secure/HttpOnly Cookie，本组件不保存任何凭据；身份（username/role）
+ * 由登录后的 GET /auth/session 服务端核实，绝不取自响应体之外。
  *
- * 错误语义（Phase O 契约）：
- * - 密码错误 / 未初始化 / 限流 → 服务端明确错误信息；
+ * 错误语义（Phase O + 0067 契约）：
+ * - invalid_credentials → 统一「用户名或密码不正确」——不区分
+ *   「用户不存在/密码错误」（O171 无账号枚举预言机）；
+ * - rate_limited → 显示 Retry-After 的剩余等待秒数；
  * - 网络不可用 → 「网络不可用」，绝不显示「密码错误 / 会话过期」。
+ *
+ * O157：登录成功先 resetAccountState 清上一账号的本地足迹与缓存，
+ * 再翻认证门——换账号绝不串号。basic 模式永远到不了本页
+ * （AuthGate 对 mode=basic 直接放行）。
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, LogIn } from 'lucide-react'
-import { ApiError, loginPassword } from '../api/client'
-import { useAuthStore } from '../store/auth'
+import { ApiError, getAuthSession, loginAccount } from '../api/client'
+import { identityFromSession, useAuthStore } from '../store/auth'
+import { resetAccountState } from '../lib/auth-reset'
+import { navigateAppRoute, readAppRoute } from '../lib/app-route'
 import { Button } from './ui/Button'
 
 type LoginFeedback =
@@ -19,8 +29,20 @@ type LoginFeedback =
   | { kind: 'error'; message: string }
   | { kind: 'offline'; message: string }
 
+/** invalid_credentials 的统一文案——错误身份不透露哪个字段错了。 */
+const INVALID_CREDENTIALS_TEXT = '用户名或密码不正确。'
+
+function rateLimitedText(retryAfterSeconds: number | null): string {
+  if (retryAfterSeconds !== null && retryAfterSeconds > 0) {
+    return `尝试过于频繁，请约 ${retryAfterSeconds} 秒后再试。`
+  }
+  return '尝试过于频繁，请稍后再试。'
+}
+
 export default function LoginScreen() {
+  const queryClient = useQueryClient()
   const setStatus = useAuthStore((s) => s.setStatus)
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [reveal, setReveal] = useState(false)
   const [pending, setPending] = useState(false)
@@ -40,12 +62,27 @@ export default function LoginScreen() {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (pending || password.length === 0) return
+    if (pending || password.length === 0 || username.trim().length === 0) return
     setPending(true)
     setFeedback({ kind: 'none' })
     try {
-      const status = await loginPassword(password)
+      const status = await loginAccount(username.trim(), password)
       if (status.authenticated) {
+        // 身份由服务端核实（login 响应只含 authenticated）；探测失败
+        // 不阻断进入——identity 为 null 时账号菜单隐藏，session 过期
+        // 仍会正常翻门。
+        let identity = null
+        try {
+          identity = identityFromSession(await getAuthSession())
+        } catch {
+          identity = null
+        }
+        // O157：先清上一账号状态（缓存/草稿/最近阅读…），再进门。
+        resetAccountState(queryClient)
+        useAuthStore.getState().setIdentity(identity)
+        // 会话过期可能把用户留在 /admin、/activate 等路径：登录成功
+        // 回到应用主路由（replace，不留登录前残迹在历史里）。
+        if (readAppRoute() !== 'app') navigateAppRoute('app', true)
         setPassword('')
         setStatus('authenticated')
       }
@@ -54,6 +91,14 @@ export default function LoginScreen() {
         setFeedback({
           kind: 'offline',
           message: '网络不可用 —— 请检查网络连接后重试。',
+        })
+      } else if (error instanceof ApiError && error.type === 'invalid_credentials') {
+        // 统一文案：不区分用户不存在/密码错误（无账号枚举）。
+        setFeedback({ kind: 'error', message: INVALID_CREDENTIALS_TEXT })
+      } else if (error instanceof ApiError && error.type === 'rate_limited') {
+        setFeedback({
+          kind: 'error',
+          message: rateLimitedText(error.retryAfterSeconds),
         })
       } else if (error instanceof ApiError) {
         setFeedback({ kind: 'error', message: error.message })
@@ -75,12 +120,39 @@ export default function LoginScreen() {
               LumiRSS
             </h1>
             <p className="mt-1 text-sm text-[var(--lumi-text-secondary)]">
-              流光阅源 · 输入密码继续
+              流光阅源 · 登录继续
             </p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
+          <div>
+            <label
+              htmlFor="login-username"
+              className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
+            >
+              用户名
+            </label>
+            <input
+              id="login-username"
+              ref={inputRef}
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
+              inputMode="text"
+              disabled={pending}
+              aria-invalid={feedback.kind !== 'none' || undefined}
+              aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
+              className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
+              placeholder="用户名"
+            />
+          </div>
+
           <div>
             <label
               htmlFor="login-password"
@@ -91,7 +163,6 @@ export default function LoginScreen() {
             <div className="relative">
               <input
                 id="login-password"
-                ref={inputRef}
                 type={reveal ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -138,7 +209,7 @@ export default function LoginScreen() {
             type="submit"
             variant="primary"
             size="md"
-            disabled={pending || password.length === 0}
+            disabled={pending || password.length === 0 || username.trim().length === 0}
             className="min-h-11 w-full"
           >
             <LogIn aria-hidden className="size-4" />

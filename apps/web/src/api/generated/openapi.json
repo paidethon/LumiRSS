@@ -1,6 +1,48 @@
 {
  "components": {
   "schemas": {
+   "ActivateAccountRequest": {
+    "description": "POST /auth/activate — signup invite redemption.",
+    "properties": {
+     "displayName": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Displayname"
+     },
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     },
+     "token": {
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Token",
+      "type": "string"
+     },
+     "username": {
+      "maxLength": 32,
+      "minLength": 3,
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "token",
+     "username",
+     "password"
+    ],
+    "title": "ActivateAccountRequest",
+    "type": "object"
+   },
    "AgentApprovalDecision": {
     "additionalProperties": false,
     "description": "POST /api/v1/agent/threads/{id}/approvals.",
@@ -1594,7 +1636,7 @@
     "type": "object"
    },
    "AuthStatus": {
-    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``).",
+    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is.",
     "properties": {
      "authenticated": {
       "title": "Authenticated",
@@ -1619,6 +1661,44 @@
       ],
       "title": "Mode",
       "type": "string"
+     },
+     "role": {
+      "anyOf": [
+       {
+        "enum": [
+         "owner",
+         "admin",
+         "member"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Role"
+     },
+     "userId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Userid"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
      }
     },
     "required": [
@@ -6973,6 +7053,50 @@
     "title": "InboxSourceCreated",
     "type": "object"
    },
+   "InviteCreateRequest": {
+    "description": "POST /admin/invites.",
+    "properties": {
+     "kind": {
+      "default": "signup",
+      "pattern": "^(signup|recovery)$",
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     },
+     "targetUsername": {
+      "anyOf": [
+       {
+        "maxLength": 32,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetusername"
+     },
+     "ttlHours": {
+      "default": 72,
+      "maximum": 720.0,
+      "minimum": 1.0,
+      "title": "Ttlhours",
+      "type": "integer"
+     }
+    },
+    "title": "InviteCreateRequest",
+    "type": "object"
+   },
    "KnowledgeCardList": {
     "properties": {
      "items": {
@@ -7142,13 +7266,26 @@
     "type": "object"
    },
    "LoginRequest": {
-    "description": "POST /api/v1/auth/login — single user, password only.",
+    "description": "POST /api/v1/auth/login — username + password (multi-account);\nlegacy single-user mode sends password only.",
     "properties": {
      "password": {
       "maxLength": 256,
       "minLength": 1,
       "title": "Password",
       "type": "string"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
      }
     },
     "required": [
@@ -8722,6 +8859,42 @@
     "title": "PoolAddBody",
     "type": "object"
    },
+   "PoolAddRequest": {
+    "description": "POST /admin/pool — register one pre-provisioned FreshRSS account.\n\nThe API password is created deployment-side (FreshRSS CLI); it is\nstored in the control secrets file (0600), never in SQLite, and is\nnever echoed back.",
+    "properties": {
+     "apiPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Apipassword",
+      "type": "string"
+     },
+     "freshrssBaseUrl": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Freshrssbaseurl",
+      "type": "string"
+     },
+     "freshrssUsername": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Freshrssusername",
+      "type": "string"
+     },
+     "publicUrl": {
+      "default": "",
+      "maxLength": 256,
+      "title": "Publicurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "freshrssUsername",
+     "freshrssBaseUrl",
+     "apiPassword"
+    ],
+    "title": "PoolAddRequest",
+    "type": "object"
+   },
    "PoolReorderBody": {
     "additionalProperties": false,
     "description": "PATCH …/pool 体：全量提交后的 id 顺序。",
@@ -9578,6 +9751,29 @@
      "pct"
     ],
     "title": "ReadingProgressPut",
+    "type": "object"
+   },
+   "RecoverPasswordRequest": {
+    "description": "POST /auth/recover — recovery invite redemption.",
+    "properties": {
+     "newPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Newpassword",
+      "type": "string"
+     },
+     "token": {
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "token",
+     "newPassword"
+    ],
+    "title": "RecoverPasswordRequest",
     "type": "object"
    },
    "RelationCreate": {
@@ -13680,6 +13876,348 @@
     "summary": "Ingest Mail"
    }
   },
+  "/api/v1/admin/audit": {
+   "get": {
+    "operationId": "audit_tail_api_v1_admin_audit_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 100,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Audit Tail"
+   }
+  },
+  "/api/v1/admin/invites": {
+   "get": {
+    "operationId": "list_invites_api_v1_admin_invites_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Invites"
+   },
+   "post": {
+    "description": "Create an invitation. The raw token is returned exactly once —\nthe operator hands it to the invitee out of band.",
+    "operationId": "create_invite_api_v1_admin_invites_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteCreateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Invite"
+   }
+  },
+  "/api/v1/admin/invites/{invite_id}": {
+   "delete": {
+    "operationId": "revoke_invite_api_v1_admin_invites__invite_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "invite_id",
+      "required": true,
+      "schema": {
+       "title": "Invite Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revoke Invite"
+   }
+  },
+  "/api/v1/admin/pool": {
+   "get": {
+    "operationId": "pool_status_api_v1_admin_pool_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Pool Status"
+   },
+   "post": {
+    "description": "Register one pre-provisioned FreshRSS account (O155).\n\nNo Docker socket, no shell: the account itself is created by the\noperator with the FreshRSS CLI beforehand; this endpoint records the\nbinding material. The password lands in the control secrets file and\nis never returned.",
+    "operationId": "pool_add_api_v1_admin_pool_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PoolAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pool Add"
+   }
+  },
+  "/api/v1/admin/users": {
+   "get": {
+    "operationId": "list_users_api_v1_admin_users_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Users"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/pause": {
+   "post": {
+    "operationId": "pause_user_api_v1_admin_users__user_id__pause_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pause User"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/reset-password": {
+   "post": {
+    "description": "Install an unguessable password (nobody knows it) and revoke all\nthe user's sessions, then return a one-time recovery invite the\noperator hands to the member (O150 — honest, no email pretending).",
+    "operationId": "reset_user_password_api_v1_admin_users__user_id__reset_password_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reset User Password"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/resume": {
+   "post": {
+    "operationId": "resume_user_api_v1_admin_users__user_id__resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Resume User"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/revoke-sessions": {
+   "post": {
+    "operationId": "revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revoke User Sessions"
+   }
+  },
   "/api/v1/agent/threads": {
    "get": {
     "operationId": "list_threads_api_v1_agent_threads_get",
@@ -14728,9 +15266,111 @@
     "summary": "Confirm Schema"
    }
   },
+  "/api/v1/auth/activate": {
+   "post": {
+    "description": "Redeem a signup invite: create the independent account, bind an\nown FreshRSS account from the pool, mint a session.\n\nPool-empty is an explicit pending-binding state — the account is\nusable and the UI shows \"RSS source binding pending\"; the server\nnever falls back to shared credentials.",
+    "operationId": "activate_account_api_v1_auth_activate_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActivateAccountRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activate Account"
+   }
+  },
+  "/api/v1/auth/activation-preview": {
+   "get": {
+    "description": "Honest activation screen state: is the invite usable, is a\nFreshRSS account ready? Reveals nothing beyond yes/no — no labels,\nno emails, no pool usernames.",
+    "operationId": "activation_preview_api_v1_auth_activation_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "token",
+      "required": true,
+      "schema": {
+       "title": "Token",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Activation Preview Api V1 Auth Activation Preview Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activation Preview"
+   }
+  },
+  "/api/v1/auth/first-run": {
+   "get": {
+    "description": "Setup probe for the operator UI: does the owner password still\nneed to be set? (No account details; safe pre-login.)",
+    "operationId": "first_run_status_api_v1_auth_first_run_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response First Run Status Api V1 Auth First Run Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "First Run Status"
+   }
+  },
   "/api/v1/auth/login": {
    "post": {
-    "description": "Verify the password, mint a session, set the cookie.\n\nFailures only count toward the brute-force budget (see middleware);\na correct password resets it, so honest retries never lock the user\nout. The wrong-password and not-initialized replies deliberately\nshare the generic shape — no oracle for an attacker.",
+    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).",
     "operationId": "login_api_v1_auth_login_post",
     "requestBody": {
      "content": {
@@ -14788,7 +15428,7 @@
   },
   "/api/v1/auth/logout-all": {
    "post": {
-    "description": "Revoke every session (all devices), including this one.",
+    "description": "Revoke THIS user's sessions on all devices, including this one.",
     "operationId": "logout_all_api_v1_auth_logout_all_post",
     "responses": {
      "200": {
@@ -14807,7 +15447,7 @@
   },
   "/api/v1/auth/password": {
    "post": {
-    "description": "Change the password: verify current, replace hash, revoke ALL\nsessions, then immediately mint a fresh session for THIS device so\nthe operator is not bounced to the login screen mid-action.",
+    "description": "Change own password: verify current, replace hash, revoke ALL of\nthis user's sessions, then mint a fresh session for THIS device.",
     "operationId": "change_password_api_v1_auth_password_post",
     "requestBody": {
      "content": {
@@ -14844,9 +15484,48 @@
     "summary": "Change Password"
    }
   },
+  "/api/v1/auth/recover": {
+   "post": {
+    "description": "Redeem an admin-issued recovery invite: set a new password,\nrevoke all of that user's sessions (O150 — no email service, nothing\nis pretended to be sent).",
+    "operationId": "recover_password_api_v1_auth_recover_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RecoverPasswordRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Recover Password"
+   }
+  },
   "/api/v1/auth/session": {
    "get": {
-    "description": "Public probe: which auth layer is active, and is this browser\nholding a live session? (basic mode: authenticated reflects the\nproxy — the app never gates on it.)",
+    "description": "Public probe: which auth layer is active, and is this browser\nholding a live session? Includes the server-verified identity (never\nfrom the request body) so the UI can render the account menu.",
     "operationId": "session_status_api_v1_auth_session_get",
     "responses": {
      "200": {
@@ -14871,14 +15550,7 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {
-         "items": {
-          "additionalProperties": true,
-          "type": "object"
-         },
-         "title": "Response List Auth Sessions Api V1 Auth Sessions Get",
-         "type": "array"
-        }
+        "schema": {}
        }
       },
       "description": "Successful Response"
@@ -14889,7 +15561,7 @@
   },
   "/api/v1/auth/sessions/{session_id}": {
    "delete": {
-    "description": "撤销一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。",
+    "description": "撤销自己的一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。",
     "operationId": "revoke_auth_session_api_v1_auth_sessions__session_id__delete",
     "parameters": [
      {
@@ -17039,7 +17711,7 @@
   },
   "/api/v1/freshrss-ui": {
    "get": {
-    "description": "Browser-safe public URL of the FreshRSS web UI, or null.\n\nThe advanced escape hatch (\"在 FreshRSS 中管理\") is only offered when\nthe operator explicitly configured FRESHRSS_PUBLIC_URL. The internal\nFRESHRSS_BASE_URL (possibly a Docker hostname or loopback address) is\nnever exposed to the browser, and no URL ever carries credentials.",
+    "description": "Browser-safe public URL of the FreshRSS web UI, or null.\n\n0067：读当前用户绑定的 public_url（激活/迁移时写入），env 配置只在\nowner 迁移时授予 owner。内部 FRESHRSS_BASE_URL（可能是 Docker 主机\n名或回环地址）永不暴露给浏览器，URL 不携带凭据。",
     "operationId": "freshrss_ui_api_v1_freshrss_ui_get",
     "responses": {
      "200": {
@@ -27490,7 +28162,7 @@
   },
   "/feeds/views/{view_id}.{secret}.atom": {
    "get": {
-    "description": "保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。",
+    "description": "保存视图的私有 Atom 订阅（公开免登录；token 错 → 404 不泄露）。\n\n0067：路径 token 先经 token_owner_index 解析归属用户——同一 404\n不泄露存在性，也绝不落入别人的数据作用域。",
     "operationId": "saved_view_atom_feeds_views__view_id___secret__atom_get",
     "parameters": [
      {

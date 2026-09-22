@@ -144,10 +144,16 @@ export function findAnchorElement(
   return null
 }
 
-export function forgetReadingPositionsForTest(): void {
+/** 清空全部阅读位置（O157 换账号防串号：登出/登录统一调用）。
+ * 位置记忆虽是本设备数据，但「读到哪」是用户内容足迹——换号即清。 */
+export function clearReadingPositions(): void {
   try {
     window.localStorage.removeItem(KEY)
   } catch {
     // ignore
   }
+}
+
+export function forgetReadingPositionsForTest(): void {
+  clearReadingPositions()
 }

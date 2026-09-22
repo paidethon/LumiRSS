@@ -3,9 +3,9 @@ import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import LoginScreen from './components/LoginScreen.tsx'
+import AuthEntrance from './components/AuthEntrance.tsx'
 import { getAuthSession, ApiError } from './api/client'
-import { useAuthStore } from './store/auth.ts'
+import { identityFromSession, useAuthStore } from './store/auth.ts'
 import { initAppSettings, useAppSettings, watchSystemTheme } from './store/app-settings.ts'
 import { initSettingsSync } from './store/settings-sync.ts'
 import { useReaderUi } from './store/reader-ui.ts'
@@ -73,10 +73,11 @@ const queryClient = new QueryClient({
   },
 })
 
-/** 会话认证门（Phase N）：启动时探测认证模式与登录态。
+/** 会话认证门（Phase N + 0067 多账户）。
  *
  * - mode=basic（代理层 Basic Auth）→ 永远放行，Web 不建登录 UI；
- * - mode=session → 未登录渲染 LoginScreen，登录后挂 App；
+ * - mode=session → 未登录渲染 LoginScreen（/activate 路由时渲染
+ *   ActivateScreen 邀请激活页），登录/激活后挂 App；
  * - 探测失败（离线 / BFF 暂不可用）→ 放行：数据层会诚实展示网络
  *   错误，「连不上」绝不冒充「未登录」把用户送去登录页。
  * 登录态翻转后清空 query 缓存（登出/过期后不留旧文章数据）。 */
@@ -91,6 +92,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         if (cancelled) return
         const auth = useAuthStore.getState()
         auth.setMode(probe.mode)
+        // 0067：身份由服务端核实（未认证/缺字段 → null，账号菜单隐藏）
+        auth.setIdentity(identityFromSession(probe))
         setStatus(probe.mode === 'basic' || probe.authenticated ? 'authenticated' : 'unauthenticated')
       })
       .catch(() => {
@@ -115,7 +118,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-  if (status === 'unauthenticated') return <LoginScreen />
+  if (status === 'unauthenticated') {
+    // /activate：邀请激活（token 在 ?token=）；其余走登录页。
+    return <AuthEntrance />
+  }
   return children
 }
 
