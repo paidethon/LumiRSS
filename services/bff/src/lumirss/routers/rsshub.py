@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from lumirss.config import LumiSettings
+from lumirss.config import LumiSettings, _validate_service_base_url
 from lumirss.deps import (
     _get_rsshub_control_store,
     _get_rsshub_credentials_store,
@@ -22,6 +22,7 @@ from lumirss.models import (
 )
 from lumirss.routers.ai_settings import SecretValuePut
 from lumirss.rsshub import (
+    RssHubInvalidParameters,
     RssHubNotConfigured,
 )
 from lumirss.rsshub_control import (
@@ -33,10 +34,16 @@ router = APIRouter()
 
 
 class RssHubPreviewRequest(BaseModel):
-    """POST /api/v1/rsshub/preview body (0014): route + parameter values."""
+    """POST /api/v1/rsshub/preview body (0014): route + parameter values.
+
+    ``baseUrl`` is an E2E-ONLY fetch-base override — see
+    ``_e2e_base_override`` for the gate contract. The Web client never
+    sends it.
+    """
 
     routeId: str = Field(min_length=1)
     params: dict[str, str] = Field(default_factory=dict)
+    baseUrl: str | None = Field(default=None, min_length=1, max_length=2000)
 
 
 @router.get("/api/v1/rsshub/routes", response_model=RssHubCatalog)
@@ -79,6 +86,33 @@ async def rsshub_routes(request: Request) -> dict[str, object]:
     }
 
 
+def _e2e_base_override(base_url: str | None) -> str | None:
+    """Validate the E2E-only preview fetch-base override (or pass None).
+
+    The cross-service smoke (e2e/stack/run-smoke.sh) pins a dead endpoint
+    via ``baseUrl`` to assert the stable 502 ``rsshub_fetch_error`` class.
+    The override exists ONLY for that stack: it is honored exclusively
+    when the BFF itself runs with ``LUMIRSS_E2E=1`` (set only in the e2e
+    compose); every other deployment raises 400 before any dial. The URL
+    must pass the same structural rules as the configured base, and it
+    never leaks into the returned subscription feedUrl.
+    """
+    if base_url is None:
+        return None
+    import os
+
+    if os.environ.get("LUMIRSS_E2E") != "1":
+        raise RssHubInvalidParameters(
+            "baseUrl override is only honored in the E2E stack "
+            "(LUMIRSS_E2E=1)."
+        )
+    try:
+        _validate_service_base_url(base_url, "baseUrl override")
+    except ValueError as exc:
+        raise RssHubInvalidParameters(str(exc)) from exc
+    return base_url
+
+
 @router.post(
     "/api/v1/rsshub/preview",
     response_model=FeedPreviewResult,
@@ -95,8 +129,9 @@ async def rsshub_preview(
     alreadySubscribed. The returned feedUrl is the FreshRSS-facing
     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
     """
+    override = _e2e_base_override(body.baseUrl)
     service = _get_rsshub_service(request)
-    preview = await service.preview(body.routeId, body.params)
+    preview = await service.preview(body.routeId, body.params, base_override=override)
     return _preview_json(preview)
 
 
