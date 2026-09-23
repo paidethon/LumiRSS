@@ -13223,6 +13223,21 @@
     "title": "TrashList",
     "type": "object"
    },
+   "UserRoleRequest": {
+    "description": "POST /admin/users/{id}/role — owner-only provisioning body.\n\nAnything outside ``member``/``admin`` (including ``owner`` — there is\nexactly one owner and it is never assignable through the API) is a\nvalidation error (422).",
+    "properties": {
+     "role": {
+      "pattern": "^(member|admin)$",
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "role"
+    ],
+    "title": "UserRoleRequest",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -14053,6 +14068,23 @@
     "summary": "Pool Add"
    }
   },
+  "/api/v1/admin/system": {
+   "get": {
+    "description": "Admin-only deployment diagnostics (P11). See the block comment above\nfor the non-secret guarantee and the deliberate scoping: cross-user /\nsystem-wide facts live ONLY behind this gate; the per-user\n/api/v1/operations/* endpoints stay own-scope by design.",
+    "operationId": "system_status_api_v1_admin_system_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "System Status"
+   }
+  },
   "/api/v1/admin/users": {
    "get": {
     "operationId": "list_users_api_v1_admin_users_get",
@@ -14216,6 +14248,54 @@
      }
     },
     "summary": "Revoke User Sessions"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/role": {
+   "post": {
+    "description": "Owner-only role provisioning (0067).\n\nActivation admits everyone as ``member``; ONLY the owner can grant or\nrevoke the ``admin`` role afterwards. Rules, all stable-shaped:\n- admins get 403 (an admin can never mint or demote another admin);\n- the owner account is untargetable (403) — no demotion, no re-role;\n- demoting the last active admin is refused (403) so a delegation\n  mistake can never lock the operator out of admin surfaces;\n- unknown user → 404, unknown role → 422 (body validation);\n- every accepted change is audited (no credentials involved).",
+    "operationId": "set_user_role_api_v1_admin_users__user_id__role_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserRoleRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set User Role"
    }
   },
   "/api/v1/agent/threads": {

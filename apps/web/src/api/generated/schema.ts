@@ -112,6 +112,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Status
+         * @description Admin-only deployment diagnostics (P11). See the block comment above
+         *     for the non-secret guarantee and the deliberate scoping: cross-user /
+         *     system-wide facts live ONLY behind this gate; the per-user
+         *     /api/v1/operations/* endpoints stay own-scope by design.
+         */
+        get: operations["system_status_api_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -196,6 +219,35 @@ export interface paths {
         put?: never;
         /** Revoke User Sessions */
         post: operations["revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Role
+         * @description Owner-only role provisioning (0067).
+         *
+         *     Activation admits everyone as ``member``; ONLY the owner can grant or
+         *     revoke the ``admin`` role afterwards. Rules, all stable-shaped:
+         *     - admins get 403 (an admin can never mint or demote another admin);
+         *     - the owner account is untargetable (403) — no demotion, no re-role;
+         *     - demoting the last active admin is refused (403) so a delegation
+         *       mistake can never lock the operator out of admin surfaces;
+         *     - unknown user → 404, unknown role → 422 (body validation);
+         *     - every accepted change is audited (no credentials involved).
+         */
+        post: operations["set_user_role_api_v1_admin_users__user_id__role_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12123,6 +12175,18 @@ export interface components {
              */
             items: components["schemas"]["TrashItem"][];
         };
+        /**
+         * UserRoleRequest
+         * @description POST /admin/users/{id}/role — owner-only provisioning body.
+         *
+         *     Anything outside ``member``/``admin`` (including ``owner`` — there is
+         *     exactly one owner and it is never assignable through the API) is a
+         *     validation error (422).
+         */
+        UserRoleRequest: {
+            /** Role */
+            role: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -12617,6 +12681,26 @@ export interface operations {
             };
         };
     };
+    system_status_api_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: never;
@@ -12740,6 +12824,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_role_api_v1_admin_users__user_id__role_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRoleRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

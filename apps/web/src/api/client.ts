@@ -496,6 +496,134 @@ export async function registerFreshRssPool(input: FreshRssPoolInput): Promise<vo
   })
 }
 
+// ---- P11 管理台系统面板（/admin/system；admin-only，服务端派生、无秘密） ----
+
+export interface AdminSystemService {
+  name: string
+  configured: boolean
+  /** healthy/unconfigured/unauthenticated/unavailable/configured（服务端固定词表）。 */
+  status: string
+  latencyMs: number | null
+}
+
+export interface AdminSystemTask {
+  name: string
+  enabled: boolean
+  /** running/completed/cancelled/failed/off（off = 生命周期未创建该任务）。 */
+  state: string
+  /** 目前没有任何调度器记录 last-run —— 服务端如实恒为 null。 */
+  lastRunAt: string | null
+}
+
+export interface AdminSystemCounts {
+  users: number
+  activeUsers: number
+  invites: number
+  freshrssPoolReady: number
+  freshrssPoolAssigned: number
+  sessions: number
+  /** 以下三个是「当前请求管理员自己库」的投影计数（无跨成员内容）。 */
+  feeds: number
+  entriesIndexed: number
+  libraryItems: number
+}
+
+export interface AdminSystemInfo {
+  version: string
+  commit: string
+  python: string
+  /** 进程运行秒数；/proc 不可用（非 Linux）时如实为 null。 */
+  uptimeS: number | null
+  process: {
+    rssBytes: number | null
+    peakRssBytes: number | null
+    cpuTimeS: number | null
+  }
+  counts: AdminSystemCounts
+  services: AdminSystemService[]
+  tasks: AdminSystemTask[]
+}
+
+/** 系统诊断（只含数字/布尔/固定状态串——绝不含秘密值或 env dump）。 */
+export async function getAdminSystem(signal?: AbortSignal): Promise<AdminSystemInfo> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/system`, signal)
+  const process = (body.process ?? {}) as Record<string, unknown>
+  const counts = (body.counts ?? {}) as Record<string, unknown>
+  const services = Array.isArray(body.services) ? body.services : []
+  const tasks = Array.isArray(body.tasks) ? body.tasks : []
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  return {
+    version: String(body.version ?? ''),
+    commit: typeof body.commit === 'string' ? body.commit : '',
+    python: typeof body.python === 'string' ? body.python : '',
+    uptimeS: num(body.uptimeS),
+    process: {
+      rssBytes: num(process.rssBytes),
+      peakRssBytes: num(process.peakRssBytes),
+      cpuTimeS: num(process.cpuTimeS),
+    },
+    counts: {
+      users: num(counts.users) ?? 0,
+      activeUsers: num(counts.activeUsers) ?? 0,
+      invites: num(counts.invites) ?? 0,
+      freshrssPoolReady: num(counts.freshrssPoolReady) ?? 0,
+      freshrssPoolAssigned: num(counts.freshrssPoolAssigned) ?? 0,
+      sessions: num(counts.sessions) ?? 0,
+      feeds: num(counts.feeds) ?? 0,
+      entriesIndexed: num(counts.entriesIndexed) ?? 0,
+      libraryItems: num(counts.libraryItems) ?? 0,
+    },
+    services: services.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      return {
+        name: String(row.name ?? ''),
+        configured: row.configured === true,
+        status: String(row.status ?? 'unknown'),
+        latencyMs: num(row.latencyMs),
+      }
+    }),
+    tasks: tasks.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      return {
+        name: String(row.name ?? ''),
+        enabled: row.enabled === true,
+        state: String(row.state ?? 'unknown'),
+        lastRunAt: toIso(row.lastRunAt),
+      }
+    }),
+  }
+}
+
+export interface AdminAuditEntry {
+  /** epoch 秒在此归一为 ISO。 */
+  at: string | null
+  /** 操作者只以用户 id 出现（审计不含用户名/凭据）。 */
+  actor: string
+  action: string
+  objectType: string | null
+  objectId: string | null
+  outcome: string
+  detail: string | null
+}
+
+/** 审计尾部（admin/audit 原始行归一；不含正文与凭据）。 */
+export async function listAdminAudit(signal?: AbortSignal, limit = 20): Promise<AdminAuditEntry[]> {
+  const rows = await request<unknown[]>(`${API_BASE}/admin/audit?limit=${limit}`, signal)
+  return rows.map((raw) => {
+    const row = (raw ?? {}) as Record<string, unknown>
+    return {
+      at: toIso(row.ts),
+      actor: String(row.actor ?? ''),
+      action: String(row.action ?? ''),
+      objectType: pickString(row.object_type),
+      objectId: pickString(row.object_id),
+      outcome: String(row.outcome ?? 'ok'),
+      detail: pickString(row.detail),
+    }
+  })
+}
+
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——
  * POST 语义与 Mutation 一致，避免预览中途被取消造成状态不一致）。 */
 export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata> {

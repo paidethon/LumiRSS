@@ -1,4 +1,14 @@
-"""Operations routes (moved verbatim from main.py)."""
+"""Operations routes (moved verbatim from main.py).
+
+Scoping audit (P11): every route below reads ONLY the requesting user's
+own database (RoutingDatabase: rsshub restart flags, webdav/backup state,
+diagnostics counts, timeline task records) plus deployment-level probe
+status strings that /health/ready already exposes publicly — no route
+returns cross-user or member-identifying data, so all three keep their
+logged-in own-scope semantics. Genuinely system-wide diagnostics (process
+memory/uptime, control-DB counts, scheduler task states) live behind the
+admin gate at GET /api/v1/admin/system (routers/admin.py).
+"""
 
 
 
