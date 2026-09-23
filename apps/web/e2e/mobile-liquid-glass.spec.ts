@@ -36,9 +36,9 @@ async function openFirstEntry(page: Page) {
   await entryTitle.click()
 }
 
-test('G1 — 移动 shell：底栏四入口 + 顶栏 + 无横向溢出（含 WebKit）', async ({ page }) => {
+test('G1 — 移动 shell：底栏四入口（P04 订阅→来源） + 顶栏 + 无横向溢出（含 WebKit）', async ({ page }) => {
   await page.goto('/')
-  for (const name of ['首页', '订阅', '搜索', '收藏']) {
+  for (const name of ['首页', '来源', '搜索', '收藏']) {
     await expect(page.getByRole('button', { name, exact: true }).first()).toBeVisible()
   }
   // 玻璃材质类挂载（data-glass 由设置驱动；auto 默认）。

@@ -55,7 +55,7 @@ describe('MobileTabBar 不含设置（AC1）', () => {
     render(withProviders(<MobileTabBar />))
     const nav = screen.getByRole('navigation', { name: '底部导航' })
     const labels = [...nav.querySelectorAll('button')].map((b) => b.textContent?.trim())
-    expect(labels).toEqual(['首页', '订阅', '搜索', '收藏'])
+    expect(labels).toEqual(['首页', '来源', '搜索', '收藏'])
   })
 })
 
