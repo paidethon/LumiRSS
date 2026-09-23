@@ -78,6 +78,24 @@ def _seed_projections(db: Database) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_fastembed_available(monkeypatch):
+    """Treat the embedding runtime as AVAILABLE for every test here.
+
+    This module proves the full pipeline with the deterministic fake
+    embedder (no downloads), but ``RagService.enable()`` consults the
+    module-level ``_FASTEMBED_AVAILABLE`` flag BEFORE warmup — on
+    machines without the optional fastembed package every enable-gated
+    test died on the honest 404-class guard before the fake ever ran.
+    Same hermetic pattern as tests/test_rag_api.py::test_disable_route_
+    resets_enabled and tests/test_rag_multi_user.py::fake_embedding.
+    The not-installed contract stays covered: test_enable_requires_
+    explicit_action re-patches the flag to False explicitly."""
+    import lumirss.rag as rag_module
+
+    monkeypatch.setattr(rag_module, "_FASTEMBED_AVAILABLE", True)
+
+
 @pytest.fixture()
 def rag_db(tmp_path):
     db = Database(tmp_path / "lumi.sqlite")
@@ -516,9 +534,11 @@ def test_real_fastembed_smoke(rag_db):
     """Opt-in: the REAL fastembed bge-small-zh-v1.5 loads (with the
     corrected ``model_name`` kwarg), embeds at 512-dim and the full
     enable→rebuild→semantic-search pipeline works against it."""
-    from lumirss.rag import _FASTEMBED_AVAILABLE
+    # Probe the REAL runtime (the module flag is patched True by the
+    # hermetic autouse fixture above, so it cannot decide this skip).
+    import importlib.util
 
-    if not _FASTEMBED_AVAILABLE:
+    if importlib.util.find_spec("fastembed") is None:
         pytest.skip("fastembed not installed")
     _seed_projections(rag_db)
     service = RagService(rag_db)  # REAL embedder, no monkeypatching

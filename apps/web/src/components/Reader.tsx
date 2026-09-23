@@ -31,8 +31,15 @@ import {
   type SpeechCollection,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
-import ReaderHeader from './ReaderHeader'
 import ArticleContent from './ArticleContent'
+// bundle guard：阅读工具栏只在选中文章后出现，且本就挂在局部
+// `<Suspense fallback={null}>` 边界里——与下方摘要/对话/查找条同一
+// 模式改 lazy 分包（首开瞬时 null，chunk 缓存后同步渲染）。正文
+// 渲染管线 ArticleContent 仍保持静态（首读关键路径零 lazy 不变）。
+// P12/P14/P16 合并后首屏超 780/235 门槛，此举单独降 ~68 kB raw /
+// ~21 kB gzip（810→742 / 244→223），随 reader-export、本地翻译引擎
+// 与其专属 base-ui 部件一并移出首屏。
+const ReaderHeader = lazy(() => import('./ReaderHeader'))
 // bundle guard：摘要/来源/反链/对话面板非正文首帧结构（各自已有局部
 // Suspense 边界 / 条件挂载）——lazy 分包。正文首读关键路径（原始渲染）
 // 保持静态：original 模式直渲 ArticleContent；双语/仅译文才挂 lazy
