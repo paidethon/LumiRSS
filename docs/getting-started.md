@@ -10,8 +10,10 @@ sudo ./lumirss deploy
 ```
 
 脚本会生成/引导填写 `.env.prod`（域名、浏览器登录账号密码）、拉取 GHCR
-预构建镜像（不可用时自动本地构建）、启动生产栈并等待健康检查。全部子命令
-（update / status / logs / backup / restore / doctor / rollback）见：
+预构建镜像（**prebuilt-only**：拉取失败即中止并保留旧栈，不回退本地
+构建）、启动生产栈并等待健康检查。全部子命令
+（update / status / logs / backup / restore / doctor / rollback /
+export-images / import-images）见：
 
 ```bash
 ./lumirss --help

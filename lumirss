@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LumiRSS self-hosted lifecycle: deploy / update / status / logs / backup /
-# restore / doctor / rollback.
+# restore / doctor / rollback / export-images / import-images.
 #
 # Quick start on a fresh Ubuntu 22.04/24.04 x86_64 server:
 #   git clone https://github.com/paidethon/LumiRSS.git && cd LumiRSS
@@ -57,7 +57,7 @@ usage() {
   cat <<'USAGE'
 LumiRSS — self-hosted reader lifecycle
 
-  sudo ./lumirss deploy [--build] [--dry-run]   first-time / re-run install
+  sudo ./lumirss deploy [--dry-run]             first-time / re-run install
   sudo ./lumirss deploy --external-caddy        … behind an existing host
                                   Caddy / reverse proxy (loopback-only web)
   sudo ./lumirss deploy --auth-mode=session     persistent session login
@@ -65,13 +65,18 @@ LumiRSS — self-hosted reader lifecycle
                                   prompts) — then './lumirss set-password'
   sudo ./lumirss deploy --low-memory            single-user resource preset
                                   (tighter container limits + RSSHub caps)
-  ./lumirss update  [--build]                   backup → pull → up → health
+  ./lumirss update                              backup → pull → up → health
   ./lumirss status                              containers, health, versions
   ./lumirss logs [service] [-f]                 stack or single-service logs
   ./lumirss backup                              tar.gz of lumi + FreshRSS data
   ./lumirss restore <backup.tar.gz> [--yes]     stop → restore → start → health
   ./lumirss doctor                              PASS/WARN/FAIL diagnostics
   ./lumirss rollback                            previous images + config
+  ./lumirss export-images [--out DIR]           docker save the pinned images
+                                  to a tar + SHA256SUMS (+ release manifest
+                                  when present) for air-gapped hosts
+  ./lumirss import-images <DIR>                 verify SHA256SUMS, then
+                                  docker load an export made above
   ./lumirss caddy-config                        print the managed host-Caddy
                                   site block (BEGIN/END LUMIRSS markers)
   ./lumirss freshrss-init                       install/enable the internal
@@ -83,6 +88,11 @@ LumiRSS — self-hosted reader lifecycle
 Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
 LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH,
 LUMIRSS_AUTH_PASSWORD, LUMIRSS_UPSTREAM_PORT (non-interactive deploys).
+
+Production deploys are prebuilt-only: images always come from GHCR
+(pinned by LUMIRSS_IMAGE_TAG); a pull failure aborts and leaves the
+previously deployed stack running. Local builds are dev/CI only
+(docker-compose.build.yml overlay); `deploy/update --build` is refused.
 USAGE
 }
 
@@ -98,8 +108,6 @@ env_value() { # env_value KEY [FILE]
   [[ -f "$file" ]] || return 0
   grep -E "^$1=" "$file" | tail -1 | cut -d= -f2- || true
 }
-
-git_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
 
 # Set (or append) KEY=VALUE in $ENV_FILE idempotently.
 env_set() { # env_set KEY VALUE
@@ -266,29 +274,43 @@ configure() { # interactive when values are missing; env vars win
 }
 
 # ---------------------------------------------------------------------------
-images_pull_or_build() { # $1 = "--build" optional
-  local mode="${1:-}"
-  local tag="${IMAGE_TAG:-latest}"
-  if [[ "$mode" == "--build" ]]; then
-    log "building images locally (LUMIRSS_BUILD_COMMIT=$(git_commit))"
-    LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
-    return 0
+# Production is prebuilt-only: images come from GHCR pinned by
+# LUMIRSS_IMAGE_TAG. Local builds exist solely for dev/CI via the
+# docker-compose.build.yml overlay, so `--build` must never reach a
+# production compose path (it would silently replace the pinned release
+# with a build from whatever this checkout happens to be).
+refuse_build_flag() {
+  if [[ "${LUMIRSS_ENV:-}" == "production" ]] \
+      || printf '%s\n' "${COMPOSE_ARGS[@]}" | grep -qx "docker-compose.prod.yml"; then
+    err "--build is refused: production deploys are prebuilt-only (GHCR images pinned by LUMIRSS_IMAGE_TAG)."
+    err "For a local dev/CI build use the overlay instead:"
+    err "  LUMIRSS_BUILD_COMMIT=\"\$(git rev-parse HEAD)\" docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build"
+    exit 1
   fi
+}
+
+images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
+  if [[ "${1:-}" == "--build" ]]; then
+    refuse_build_flag
+  fi
+  local tag="${IMAGE_TAG:-latest}"
   log "pulling prebuilt images (tag: $tag)"
-  if LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D pull --ignore-buildable 2>&1 | grep -qE " Pulled| up to date"; then
+  if DC_D pull 2>&1 | grep -qE " Pulled| up to date"; then
     return 0
   fi
   # Pull output varies across compose versions; when the images are already
-  # present locally, use them instead of rebuilding — a rebuild would
-  # silently overwrite working images with one built from whatever base a
-  # registry mirror hands out (stale mirrors have caused real incidents).
+  # present locally (e.g. pre-seeded via './lumirss import-images' on an
+  # air-gapped host), use them — but never build: a failed pull must not
+  # silently swap the pinned release for a local build.
   if docker_cmd image inspect "ghcr.io/paidethon/lumirss-web:$tag" >/dev/null 2>&1 \
       && docker_cmd image inspect "ghcr.io/paidethon/lumirss-bff:$tag" >/dev/null 2>&1; then
     warn "pull output not confirmed — using existing local images (tag: $tag)"
     return 0
   fi
-  warn "pull failed — building locally instead (this takes a few minutes)"
-  LUMIRSS_BUILD_COMMIT="$(git_commit)" DC_D build
+  err "image pull failed and no local images exist for tag '$tag' — aborting."
+  err "The previously deployed stack (if any) is still running and untouched."
+  err "Check network/registry access to ghcr.io, or import an offline bundle: './lumirss import-images <DIR>'."
+  exit 1
 }
 
 wait_health() { # wait_health <timeout_seconds>
@@ -326,7 +348,6 @@ cmd_deploy() {
   fi
   snapshot_for_rollback
   images_pull_or_build "${1:-}"
-  export LUMIRSS_BUILD_COMMIT="$(git_commit)"
   DC_D up -d --remove-orphans
   if wait_health 180; then
     if ((EXTERNAL_MODE == 1)); then
@@ -364,7 +385,6 @@ cmd_update() {
   cmd_backup || warn "pre-update backup failed — continuing (existing backups: $BACKUP_DIR)"
   snapshot_for_rollback
   images_pull_or_build "${1:-}"
-  export LUMIRSS_BUILD_COMMIT="$(git_commit)"
   DC_D up -d --remove-orphans
   if wait_health 180; then
     log "update complete."
@@ -655,6 +675,53 @@ cmd_freshrss_init() { # make the internal FreshRSS usable by the BFF
 }
 
 # ---------------------------------------------------------------------------
+cmd_export_images() { # ./lumirss export-images [--out DIR]
+  local out="."
+  if [[ "${1:-}" == "--out" ]]; then
+    out="${2:-}"
+    [[ -n "$out" ]] || { err "usage: ./lumirss export-images [--out DIR]"; exit 1; }
+  fi
+  local tag="${IMAGE_TAG:-latest}"
+  local web_img="ghcr.io/paidethon/lumirss-web:$tag"
+  local bff_img="ghcr.io/paidethon/lumirss-bff:$tag"
+  local tar_name="lumirss-images-$tag.tar"
+  mkdir -p "$out"
+  log "exporting $web_img + $bff_img → $out/$tar_name (offline bundle)"
+  docker_cmd save -o "$out/$tar_name" "$web_img" "$bff_img" \
+    || { err "docker save failed — are both images pulled on this host? ('LUMIRSS_IMAGE_TAG=$tag ./lumirss update')"; exit 1; }
+  ( cd "$out" && sha256sum "$tar_name" > SHA256SUMS )
+  local extra=""
+  if [[ -f release-manifest.json ]]; then
+    if [[ "$out" != "." ]]; then cp -f release-manifest.json "$out/"; fi
+    ( cd "$out" && sha256sum release-manifest.json >> SHA256SUMS )
+    extra=" (+ release-manifest.json)"
+  fi
+  log "export complete: $out/$tar_name + SHA256SUMS$extra"
+  log "on the target host: './lumirss import-images $out', then './lumirss deploy'."
+}
+
+cmd_import_images() { # ./lumirss import-images <DIR>
+  local dir="${1:-}"
+  if [[ -z "$dir" || ! -d "$dir" ]]; then
+    err "usage: ./lumirss import-images <DIR>  (output of './lumirss export-images')"
+    exit 1
+  fi
+  local tar
+  tar="$(find "$dir" -maxdepth 1 -name 'lumirss-images-*.tar' | sort | tail -1)"
+  [[ -n "$tar" ]] || { err "no lumirss-images-*.tar found in $dir"; exit 1; }
+  if [[ -f "$dir/SHA256SUMS" ]]; then
+    log "verifying SHA256SUMS in $dir"
+    ( cd "$dir" && sha256sum -c SHA256SUMS ) \
+      || { err "checksum verification failed — refusing to load a corrupted bundle."; exit 1; }
+  else
+    warn "no SHA256SUMS in $dir — loading without integrity verification"
+  fi
+  log "loading images from $tar"
+  docker_cmd load -i "$tar" || { err "docker load failed."; exit 1; }
+  log "images loaded — './lumirss deploy' / './lumirss update' will use them even when ghcr.io is unreachable."
+}
+
+# ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
   local a
@@ -691,6 +758,11 @@ main() {
     COMPOSE_ARGS+=(-f docker-compose.obsidian.yml)
     export LUMIRSS_OBSIDIAN_VAULT_HOST_DIR="$(env_value LUMIRSS_OBSIDIAN_VAULT_HOST_DIR)"
   fi
+  # `--build` is a dev-only flag: refuse it before any production path
+  # (preflight/configure/pull) gets a chance to run.
+  for a in ${extra[@]+"${extra[@]}"}; do
+    if [[ "$a" == "--build" ]]; then refuse_build_flag; fi
+  done
   case "$cmd" in
     deploy)
       local dextra=()
@@ -706,6 +778,8 @@ main() {
     caddy-config) cmd_caddy_config;;
     freshrss-init) cmd_freshrss_init;;
     set-password) cmd_set_password;;
+    export-images) cmd_export_images "${extra[@]}";;
+    import-images) cmd_import_images "${extra[@]}";;
     -h|--help|help|"") usage;;
     *) err "unknown command: $cmd"; usage; exit 1;;
   esac
