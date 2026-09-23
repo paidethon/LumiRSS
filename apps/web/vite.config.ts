@@ -63,6 +63,9 @@ export default defineConfig({
     // 同时运行）下事件循环饥饿会让 waitFor 超时（历史 scroll-mark-unread
     // / mobile-reader 抖动）。封顶后单文件仍能拿到稳定 CPU 配额。
     // （vitest 4 移除了 poolOptions，worker 上限统一走 maxWorkers。）
-    maxWorkers: 8,
+    // CI runner 只有 2–4 核：8 个 worker 会造成事件循环饥饿，重渲染链路
+    // （Reader 全量挂载 + DOMPurify）的 waitFor 会随机超时（PR#52 实测）。
+    // CI 封顶 2 个 worker；本机保持 8 以维持全量套件吞吐。
+    maxWorkers: process.env.CI ? 2 : 8,
   },
 })

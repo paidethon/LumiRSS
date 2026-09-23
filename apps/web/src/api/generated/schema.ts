@@ -11476,8 +11476,14 @@ export interface components {
         /**
          * RssHubPreviewRequest
          * @description POST /api/v1/rsshub/preview body (0014): route + parameter values.
+         *
+         *     ``baseUrl`` is an E2E-ONLY fetch-base override — see
+         *     ``_e2e_base_override`` for the gate contract. The Web client never
+         *     sends it.
          */
         RssHubPreviewRequest: {
+            /** Baseurl */
+            baseUrl?: string | null;
             /** Params */
             params?: {
                 [key: string]: string;

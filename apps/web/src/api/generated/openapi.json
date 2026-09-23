@@ -11152,8 +11152,21 @@
     "type": "object"
    },
    "RssHubPreviewRequest": {
-    "description": "POST /api/v1/rsshub/preview body (0014): route + parameter values.",
+    "description": "POST /api/v1/rsshub/preview body (0014): route + parameter values.\n\n``baseUrl`` is an E2E-ONLY fetch-base override — see\n``_e2e_base_override`` for the gate contract. The Web client never\nsends it.",
     "properties": {
+     "baseUrl": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Baseurl"
+     },
      "params": {
       "additionalProperties": {
        "type": "string"
