@@ -81,6 +81,13 @@ LumiRSS — self-hosted reader lifecycle
                                   site block (BEGIN/END LUMIRSS markers)
   ./lumirss freshrss-init                       install/enable the internal
                                   FreshRSS + user for the BFF (idempotent)
+  ./lumirss translate up|stop|status            optional ON-DEMAND self-hosted
+                                  LibreTranslate (machine translation) — never
+                                  part of deploy/update; first start downloads
+                                  ~200-400 MB of en/zh models and the service
+                                  wants ~300-400 MB RAM, so stop it again on
+                                  a 2 GB host (see docs/how-to/
+                                  optional-services.md)
   ./lumirss set-password                        install/rotate the browser
                                   login password (session auth mode); asks
                                   interactively or takes LUMIRSS_NEW_PASSWORD
@@ -722,6 +729,69 @@ cmd_import_images() { # ./lumirss import-images <DIR>
 }
 
 # ---------------------------------------------------------------------------
+# Optional ON-DEMAND LibreTranslate (docker-compose.translate.yml): machine
+# translation for the reader, self-hosted. Deliberately outside deploy/
+# update so a 2 GB host only pays its ~300-400 MB RAM while it is actually
+# used; `restart: "no"` keeps it from coming back after a reboot.
+require_docker() {
+  command -v docker >/dev/null || { err "docker is required (https://docs.docker.com/engine/install/ubuntu/)"; exit 1; }
+}
+
+translate_dc() { # base file + translate fragment only (NOT the mode overlays)
+  LUMIRSS_TRANSLATE_PORT="${LUMIRSS_TRANSLATE_PORT:-$(env_value LUMIRSS_TRANSLATE_PORT)}" \
+    docker_cmd compose -f docker-compose.prod.yml -f docker-compose.translate.yml "$@"
+}
+
+translate_probe() { # tiny en→zh probe: prints the OUTPUT LENGTH, never content
+  local len
+  len="$(curl -fsS --max-time 5 -H 'Content-Type: application/json' \
+    -d '{"q":"hello","source":"en","target":"zh","format":"text"}' \
+    "http://127.0.0.1:${LUMIRSS_TRANSLATE_PORT:-50050}/translate" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    t = json.load(sys.stdin).get("translatedText")
+    print(len(t) if isinstance(t, str) else "?")
+except Exception:
+    print("?")' 2>/dev/null || true)"
+  if [[ -n "$len" && "$len" != "?" ]]; then
+    log "probe: en→zh OK (translated output: $len chars; content not printed)."
+  else
+    warn "probe: en→zh failed — service starting, models still downloading, or translation unavailable."
+  fi
+}
+
+cmd_translate_up() { # ./lumirss translate up
+  require_docker
+  translate_dc up -d libretranslate
+  log "libretranslate starting — the FIRST start downloads the en/zh models (~200-400 MB) into the lumirss-libretranslate-models volume; check './lumirss translate status'."
+}
+
+cmd_translate_stop() { # ./lumirss translate stop
+  require_docker
+  translate_dc stop libretranslate
+  log "libretranslate stopped (container + model volume kept; './lumirss translate up' reuses them)."
+}
+
+cmd_translate_status() { # ./lumirss translate status
+  require_docker
+  local state
+  state="$(docker_cmd inspect \
+    --format '{{.State.Status}} (health: {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}})' \
+    lumirss-libretranslate 2>/dev/null || true)"
+  if [[ -z "$state" ]]; then
+    err "libretranslate is not running — it is on-demand by design; './lumirss translate up' starts it."
+    exit 1
+  fi
+  log "libretranslate container: $state"
+  log "endpoint: 127.0.0.1:${LUMIRSS_TRANSLATE_PORT:-50050} (host loopback, verification only) — Lumi settings use http://lumirss-libretranslate:5000 (compose network)"
+  # Translation here is local/free and the request is tiny, so the probe
+  # runs by default; LUMIRSS_TRANSLATE_PROBE=0 skips it.
+  if [[ "${LUMIRSS_TRANSLATE_PROBE:-1}" != "0" ]]; then
+    translate_probe
+  fi
+}
+
+# ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
   local a
@@ -780,6 +850,14 @@ main() {
     set-password) cmd_set_password;;
     export-images) cmd_export_images "${extra[@]}";;
     import-images) cmd_import_images "${extra[@]}";;
+    translate)
+      local tsub="${extra[0]:-}"
+      case "$tsub" in
+        up)     cmd_translate_up;;
+        stop)   cmd_translate_stop;;
+        status) cmd_translate_status;;
+        *) err "usage: ./lumirss translate up|stop|status"; exit 1;;
+      esac;;
     -h|--help|help|"") usage;;
     *) err "unknown command: $cmd"; usage; exit 1;;
   esac

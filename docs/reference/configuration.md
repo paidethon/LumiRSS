@@ -58,6 +58,7 @@
 | `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` | `80` / `443` | Caddy 发布到宿主的端口；与 `COMPOSE_PROJECT_NAME` 一起用于同机隔离测试（避免端口与卷冲突） |
 | `LUMIRSS_EXTERNAL_CADDY` | （空） | `1` = 外部宿主反代模式：web 只发布 `127.0.0.1:LUMIRSS_UPSTREAM_PORT`（纯 HTTP、任意 Host，无 ACME/443），TLS 由宿主 Caddy/nginx 负责。`./lumirss deploy --external-caddy` 自动写入；见 [../how-to/deploy.md](../how-to/deploy.md) |
 | `LUMIRSS_UPSTREAM_PORT` | `18080` | external 模式下 web 发布的 loopback 端口（`127.0.0.1:<port> -> 80`）。必须与宿主反代 upstream 一致；`./lumirss caddy-config` 按它渲染站点块 |
+| `LUMIRSS_TRANSLATE_PORT` | `50050` | 可选 LibreTranslate fragment（`docker-compose.translate.yml`）发布的 loopback 端口（`127.0.0.1:<port> -> 5000`），仅宿主机验证用；BFF 经 compose 内网名 `http://lumirss-libretranslate:5000` 访问。按需启停（`./lumirss translate up\|stop\|status`），见 [../how-to/optional-services.md](../how-to/optional-services.md) |
 | `COMPOSE_PROJECT_NAME` | `lumirss-prod` | compose 项目名（决定卷前缀） |
 | `LUMIRSS_WEB_MEM_LIMIT` / `_RESERVATION` | `128m` / `64m` | web 容器内存 limit/reservation。`./lumirss deploy --low-memory` 写入低资源预设（96m/48m）；改完用 `./lumirss doctor` 验证无 OOMKilled |
 | `LUMIRSS_BFF_MEM_LIMIT` / `_RESERVATION` | `512m` / `128m` | BFF 容器（low-memory 预设 256m/96m） |
