@@ -1113,7 +1113,11 @@ def _swap_staged_index(service: "RagService") -> None:
 
     chunk_id is reassigned by AUTOINCREMENT; rag_vec rows follow. A
     failure rolls back to the previous index (same guarantee the old
-    single-transaction rebuild gave, without its memory residency)."""
+    single-transaction rebuild gave, without its memory residency).
+    P20 residual hardening: staged rows whose source row is ALREADY
+    gone (deleted after their page was staged, before this swap) are
+    excluded — the swap must never resurrect deleted content as ghost
+    hits; the F093 pre-stage recheck alone could not cover this window."""
     if not service._ensure_vec_table():
         raise RagModelUnavailable("sqlite-vec 扩展不可用。")
     connection = service._vec_connection()
@@ -1122,7 +1126,10 @@ def _swap_staged_index(service: "RagService") -> None:
         connection.execute("BEGIN")
         connection.execute("DELETE FROM rag_vec")
         connection.execute("DELETE FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
-        connection.execute("INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) SELECT ref, ord, ?, kind, title, text, embedding, ?, content_hash FROM rag_rebuild_stage", (MODEL_ID, now))
+        connection.execute(
+            "INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) SELECT s.ref, s.ord, ?, s.kind, s.title, s.text, s.embedding, ?, s.content_hash FROM rag_rebuild_stage s WHERE EXISTS (SELECT 1 FROM search_entries e WHERE e.entry_ref = s.ref) OR EXISTS (SELECT 1 FROM search_library l WHERE l.ref = s.ref)",
+            (MODEL_ID, now),
+        )
         connection.execute("INSERT INTO rag_vec (chunk_id, embedding) SELECT chunk_id, embedding FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
         connection.execute("DROP TABLE rag_rebuild_stage")
         connection.commit()
