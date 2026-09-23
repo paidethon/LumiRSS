@@ -10,7 +10,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import ActivateScreen from '../components/ActivateScreen'
@@ -99,6 +99,81 @@ describe('邀请状态三态', () => {
     mocks.getActivationPreview.mockResolvedValue({ valid: true, kind: 'signup', freshrssReady: true })
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByLabelText('用户名')).toBeInTheDocument()
+  })
+})
+
+describe('预约生效邀请（N002 等待生效态）', () => {
+  const NOT_BEFORE = new Date(Date.now() + 3_600_000).toISOString()
+  const SERVER_NOW = new Date(Date.now()).toISOString()
+
+  it('预览 valid=false + notBefore → 等待生效态（显示服务器给出的时间，非报错）', async () => {
+    setUrl('/activate?token=inv_sched')
+    mocks.getActivationPreview.mockResolvedValue({
+      valid: false,
+      kind: null,
+      freshrssReady: false,
+      notBefore: NOT_BEFORE,
+      serverTime: SERVER_NOW,
+    })
+    renderActivate()
+    const waiting = await screen.findByTestId('invite-waiting')
+    expect(waiting).toHaveTextContent('邀请尚未生效')
+    expect(waiting).toHaveTextContent('生效时间：')
+    expect(waiting).toHaveTextContent('服务器当前时间：')
+    expect(within(waiting).getByText('重新检查')).toBeInTheDocument()
+    // 不是「无效邀请」也不是表单。
+    expect(waiting).not.toHaveTextContent('邀请链接无效或已过期')
+    expect(screen.queryByLabelText('用户名')).not.toBeInTheDocument()
+  })
+
+  it('等待生效态点「重新检查」→ 服务器放行后进入表单', async () => {
+    setUrl('/activate?token=inv_sched')
+    mocks.getActivationPreview.mockResolvedValueOnce({
+      valid: false,
+      kind: null,
+      freshrssReady: false,
+      notBefore: NOT_BEFORE,
+      serverTime: SERVER_NOW,
+    })
+    renderActivate()
+    await screen.findByTestId('invite-waiting')
+    mocks.getActivationPreview.mockResolvedValue({
+      valid: true,
+      kind: 'signup',
+      freshrssReady: true,
+      notBefore: null,
+      serverTime: SERVER_NOW,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '重新检查' }))
+    expect(await screen.findByLabelText('用户名')).toBeInTheDocument()
+  })
+
+  it('激活时服务端 403 invite_not_active → 等待生效态（回显服务器时间）', async () => {
+    setUrl('/activate?token=inv_race')
+    mocks.getActivationPreview.mockResolvedValue({
+      valid: true,
+      kind: 'signup',
+      freshrssReady: true,
+      notBefore: null,
+      serverTime: SERVER_NOW,
+    })
+    renderActivate()
+    await screen.findByLabelText('用户名')
+    const notActive = new ApiError(
+      403,
+      'invite_not_active',
+      'This invitation is not active yet.',
+      null,
+      { serverTime: SERVER_NOW, notBefore: NOT_BEFORE },
+    )
+    mocks.activateWithInvite.mockRejectedValue(notActive)
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'late' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: SYNTHETIC_PASSWORD } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: SYNTHETIC_PASSWORD } })
+    fireEvent.click(screen.getByRole('button', { name: '激活并进入' }))
+    const waiting = await screen.findByTestId('invite-waiting')
+    expect(waiting).toHaveTextContent('邀请尚未生效')
+    expect(waiting).toHaveTextContent('服务器当前时间：')
   })
 })
 

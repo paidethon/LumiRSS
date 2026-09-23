@@ -59,3 +59,32 @@ async def user_freshrss_adapter(state, user_id: str):
         adapter = FreshRSSAdapter(state.http_client, settings)
     state.user_services[cache_key] = adapter
     return adapter
+
+
+_MAX_SOURCE_RESULTS_ERROR_CHARS = 200
+
+
+async def apply_scheme_initial_sources(state, user_id: str, source_urls: list[str]) -> list[dict[str, object]]:
+    """Best-effort subscription of an invite scheme's initial sources (N001).
+
+    Called right after a scheme-stamped activation: every URL is
+    attempted once through the new user's own FreshRSS binding. Failures
+    are listed honestly per URL (bounded message, no credentials) and
+    NEVER block or roll back the activation — an account is usable with
+    a pending source list. Requires a complete FreshRSS binding; when
+    binding is still pending every URL reports that state.
+    """
+    results: list[dict[str, object]] = []
+    adapter = await user_freshrss_adapter(state, user_id)
+    if adapter is None:
+        return [{"url": url, "ok": False, "error": "freshrss_binding_pending"} for url in source_urls]
+    from lumirss.adapters.freshrss_control import FreshRSSControlAdapter
+
+    control = FreshRSSControlAdapter(adapter)
+    for url in source_urls:
+        try:
+            await control.subscribe(url)
+            results.append({"url": url, "ok": True, "error": None})
+        except Exception as exc:  # noqa: BLE001 — best-effort by contract
+            results.append({"url": url, "ok": False, "error": str(exc)[:_MAX_SOURCE_RESULTS_ERROR_CHARS]})
+    return results
