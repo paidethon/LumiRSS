@@ -1,8 +1,10 @@
-/** MobileTabBar — <768px 底部导航岛（0011 Gate 1，四入口重构）。
+/** MobileTabBar — <768px 底部导航岛（0011 Gate 1，四入口重构；P04 调整）。
  *
  * 四个一级入口（Spec §设计规格，替代 0010 的 时间线/收藏/设置 三 tab）：
- *   首页（AppSection home）/ 订阅（subscriptions）/ 搜索（search）/ 收藏（favorites）
+ *   首页（AppSection home）/ 来源（sources）/ 搜索（search）/ 收藏（favorites）
  *
+ * P04：原「订阅」tab 升级为「来源」（统一来源管理页）——RSS 订阅仍
+ * 可达（来源页 RSS 组深链 + 侧栏 RSS 订阅行 / 订阅中心 section）。 *
  * 导航岛形态（参考图 05-home 意图，非像素复刻）：
  * - 悬浮圆角容器：左右响应式 inset + 底部 safe-area 计入；
  * - 轻边框 + 克制阴影 + 实色表面（半透明/blur 仅点缀；无 backdrop-blur
@@ -21,7 +23,7 @@
  * 切换器延伸到整个 <1024 区间即修复该缺口（沿用既有响应式系统，
  * 不重新设计导航）。 */
 
-import { Home, Rss, Search, Star } from 'lucide-react'
+import { Home, Layers, Search, Star } from 'lucide-react'
 import { useReaderUi, type AppSection } from '../store/reader-ui'
 import { cx } from './ui/cx'
 
@@ -35,7 +37,7 @@ export default function MobileTabBar() {
 
   const tabs: { key: AppSection; label: string; icon: React.ReactNode }[] = [
     { key: 'home', label: '首页', icon: <Home aria-hidden className="size-5" /> },
-    { key: 'subscriptions', label: '订阅', icon: <Rss aria-hidden className="size-5" /> },
+    { key: 'sources', label: '来源', icon: <Layers aria-hidden className="size-5" /> },
     { key: 'search', label: '搜索', icon: <Search aria-hidden className="size-5" /> },
     { key: 'favorites', label: '收藏', icon: <Star aria-hidden className="size-5" /> },
   ]

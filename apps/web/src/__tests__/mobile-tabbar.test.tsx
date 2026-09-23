@@ -22,10 +22,10 @@ describe('MobileTabBar（AUDIT-016）', () => {
     expect(nav.className).not.toContain('md:hidden')
   })
 
-  it('点击「订阅」「搜索」切换 section（平板宽度进入这两屏的入口）', () => {
+  it('点击「来源」「搜索」切换 section（P04：订阅 tab 升级为来源；平板宽度入口）', () => {
     render(<MobileTabBar />)
-    fireEvent.click(screen.getByRole('button', { name: /订阅/ }))
-    expect(useReaderUi.getState().section).toBe('subscriptions')
+    fireEvent.click(screen.getByRole('button', { name: /来源/ }))
+    expect(useReaderUi.getState().section).toBe('sources')
     fireEvent.click(screen.getByRole('button', { name: /搜索/ }))
     expect(useReaderUi.getState().section).toBe('search')
     fireEvent.click(screen.getByRole('button', { name: /首页/ }))

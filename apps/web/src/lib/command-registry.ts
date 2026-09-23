@@ -61,6 +61,7 @@ export interface CommandActions {
 /** 一级页面导航命令（与 store/reader-ui AppSection 全集一一对应）。 */
 const SECTION_COMMANDS: Array<{ section: AppSection; title: string; keywords: string }> = [
   { section: 'home', title: '打开首页', keywords: 'home 时间线 entries' },
+  { section: 'sources', title: '打开来源', keywords: 'sources 来源 registry 注册表' },
   { section: 'subscriptions', title: '打开订阅管理', keywords: 'subscriptions feeds 订阅源' },
   { section: 'search', title: '打开搜索', keywords: 'search 搜索' },
   { section: 'favorites', title: '打开收藏', keywords: 'favorites star 收藏' },

@@ -20,7 +20,10 @@ import { DirectFeedTab } from './add-source/DirectFeedTab'
 import { WebsiteTab } from './add-source/WebsiteTab'
 import { RssHubTab } from './add-source/RssHubTab'
 
-type SourceTab = 'rss' | 'website' | 'rsshub'
+/** 添加来源的三种模式（P04：导出供来源页深链 initialTab 使用）。 */
+export type AddSourceTab = 'rss' | 'website' | 'rsshub'
+
+type SourceTab = AddSourceTab
 
 const TABS: { value: SourceTab; label: string }[] = [
   { value: 'rss', label: 'RSS / Atom' },
@@ -31,11 +34,15 @@ const TABS: { value: SourceTab; label: string }[] = [
 export default function AddSourceDialog({
   open,
   onClose,
+  initialTab = 'rss',
 }: {
   open: boolean
   onClose: () => void
+  /** 首次挂载时的初始模式（P04 来源页「RSSHub 管理」深链直达 RssHubTab）；
+   * 关闭后复位仍回到 'rss'（deep-link 场景由调用方按需重挂载）。 */
+  initialTab?: AddSourceTab
 }) {
-  const [tab, setTab] = useState<SourceTab>('rss')
+  const [tab, setTab] = useState<SourceTab>(initialTab)
 
   // 当前 tab 注册的关闭防护：返回 false = busy，拒绝关闭
   const guardRef = useRef<(() => boolean) | null>(null)

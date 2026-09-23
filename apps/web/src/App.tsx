@@ -68,6 +68,8 @@ import { Skeleton } from './components/ui/Skeleton'
 const FavoritesPage = lazy(() => import('./components/pages/FavoritesPage'))
 const SearchPage = lazy(() => import('./components/pages/SearchPage'))
 const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPage'))
+// P04：统一来源管理页（底栏「来源」tab / 侧栏「来源」入口）
+const SourcesPage = lazy(() => import('./components/pages/SourcesPage'))
 // phase2 M1：书签 / 工作区列表页（与 Search 同模式：桌面 Timeline 列位）
 const BookmarksPage = lazy(() => import('./components/pages/BookmarksPage'))
 const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
@@ -275,7 +277,9 @@ export default function App() {
               selectedEntryRef !== null ? 'max-lg:hidden' : ''
             }`}
             aria-label={
-              section === 'subscriptions'
+              section === 'sources'
+                ? '来源'
+                : section === 'subscriptions'
                 ? '订阅'
                 : section === 'search'
                   ? '搜索'
@@ -298,6 +302,11 @@ export default function App() {
                               : '收藏'
             }
           >
+            {section === 'sources' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SourcesPage />
+              </Suspense>
+            )}
             {section === 'subscriptions' && (
               <Suspense fallback={<PageSkeleton />}>
                 <SubscriptionsPage />
@@ -431,6 +440,12 @@ export default function App() {
             <div className="hidden min-h-0 flex-1 flex-col lg:flex">
               <Suspense fallback={<PageSkeleton />}>
                 <ObsidianPage />
+              </Suspense>
+            </div>
+          ) : section === 'sources' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <SourcesPage />
               </Suspense>
             </div>
           ) : (
