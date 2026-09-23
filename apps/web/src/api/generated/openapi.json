@@ -12120,6 +12120,126 @@
     "title": "SnapshotView",
     "type": "object"
    },
+   "SourceAliasHistoryItem": {
+    "description": "N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。",
+    "properties": {
+     "changedAt": {
+      "default": "",
+      "title": "Changedat",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "oldCustomName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Oldcustomname"
+     },
+     "upstreamNameAtSave": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Upstreamnameatsave"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl"
+    ],
+    "title": "SourceAliasHistoryItem",
+    "type": "object"
+   },
+   "SourceAliasHistoryList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SourceAliasHistoryItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SourceAliasHistoryList",
+    "type": "object"
+   },
+   "SourceAliasList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SourceAliasView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SourceAliasList",
+    "type": "object"
+   },
+   "SourceAliasUpdate": {
+    "description": "PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。",
+    "properties": {
+     "customName": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Customname",
+      "type": "string"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "customName"
+    ],
+    "title": "SourceAliasUpdate",
+    "type": "object"
+   },
+   "SourceAliasView": {
+    "description": "N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。",
+    "properties": {
+     "customName": {
+      "title": "Customname",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "customName"
+    ],
+    "title": "SourceAliasView",
+    "type": "object"
+   },
    "SourceDiscoveryRequest": {
     "description": "POST /api/v1/source-discovery body (0014): a public website URL.",
     "properties": {
@@ -12391,6 +12511,21 @@
        }
       ],
       "title": "Hiddenuntil"
+     },
+     "muteWindows": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mutewindows"
      },
      "readerStyle": {
       "anyOf": [
@@ -26512,6 +26647,149 @@
      }
     },
     "summary": "List Sources"
+   }
+  },
+  "/api/v1/sources/alias": {
+   "delete": {
+    "description": "清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。",
+    "operationId": "delete_source_alias_api_v1_sources_alias_delete",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Source Alias"
+   },
+   "put": {
+    "description": "设置/更名来源别名（upsert；custom_name 变化时写一条历史）。\n\nupstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →\nNULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。",
+    "operationId": "set_source_alias_api_v1_sources_alias_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceAliasUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Source Alias"
+   }
+  },
+  "/api/v1/sources/alias/history": {
+   "get": {
+    "description": "某来源的改名历史（新→旧，≤20；删除别名不删历史）。",
+    "operationId": "source_alias_history_api_v1_sources_alias_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasHistoryList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Source Alias History"
+   }
+  },
+  "/api/v1/sources/aliases": {
+   "get": {
+    "description": "全部来源别名（时间线/订阅展示的「服务端赢」数据源）。",
+    "operationId": "list_source_aliases_api_v1_sources_aliases_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Source Aliases"
    }
   },
   "/api/v1/sources/overrides": {

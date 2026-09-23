@@ -16,11 +16,16 @@ maintain.
 
 from datetime import UTC
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
+    SourceAliasHistoryItem,
+    SourceAliasHistoryList,
+    SourceAliasList,
+    SourceAliasUpdate,
+    SourceAliasView,
     SourceOverrideList,
     SourceOverrideResult,
     SourceOverrideUpdate,
@@ -138,6 +143,69 @@ async def list_source_overrides(request: Request) -> SourceOverrideList:
     return SourceOverrideList(
         items=[SourceOverrideResult(**item) for item in items]
     )
+
+
+# ---- N013 来源改名（别名）+ 历史 ---------------------------------------------
+
+
+@router.get("/api/v1/sources/aliases", response_model=SourceAliasList)
+async def list_source_aliases(request: Request) -> SourceAliasList:
+    """全部来源别名（时间线/订阅展示的「服务端赢」数据源）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    items = await SourceAliasStore(request.app.state.db).list_aliases()
+    return SourceAliasList(items=[SourceAliasView(**item) for item in items])
+
+
+@router.put("/api/v1/sources/alias", response_model=SourceAliasView)
+async def set_source_alias(payload: SourceAliasUpdate, request: Request) -> SourceAliasView:
+    """设置/更名来源别名（upsert；custom_name 变化时写一条历史）。
+
+    upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
+    NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。"""
+    from lumirss.deps import _get_adapter
+    from lumirss.source_aliases import SourceAliasStore
+
+    upstream_name: str | None = None
+    try:
+        subscription = next(
+            (
+                sub
+                for sub in await _get_adapter(request).list_subscriptions()
+                if sub.feed_url == payload.feedUrl
+            ),
+            None,
+        )
+        if subscription is not None:
+            upstream_name = subscription.title
+    except Exception:  # noqa: BLE001 — 快照尽力而为，不阻塞别名保存
+        upstream_name = None
+    stored = await SourceAliasStore(request.app.state.db).put_alias(
+        payload.feedUrl, payload.customName, upstream_name
+    )
+    return SourceAliasView(**stored)
+
+
+@router.get("/api/v1/sources/alias/history", response_model=SourceAliasHistoryList)
+async def source_alias_history(
+    request: Request, feedUrl: str = Query(min_length=1), limit: int = Query(default=20, ge=1, le=20)
+) -> SourceAliasHistoryList:
+    """某来源的改名历史（新→旧，≤20；删除别名不删历史）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    items = await SourceAliasStore(request.app.state.db).history(feedUrl, limit)
+    return SourceAliasHistoryList(
+        items=[SourceAliasHistoryItem(**item) for item in items]
+    )
+
+
+@router.delete("/api/v1/sources/alias", status_code=204)
+async def delete_source_alias(request: Request, feedUrl: str = Query(min_length=1)) -> Response:
+    """清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    await SourceAliasStore(request.app.state.db).delete_alias(feedUrl)
+    return Response(status_code=204)
 
 
 async def _drop_feed_from_rag(request: Request, feed_url: str) -> None:

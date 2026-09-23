@@ -5510,6 +5510,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/alias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Source Alias
+         * @description 设置/更名来源别名（upsert；custom_name 变化时写一条历史）。
+         *
+         *     upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
+         *     NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。
+         */
+        put: operations["set_source_alias_api_v1_sources_alias_put"];
+        post?: never;
+        /**
+         * Delete Source Alias
+         * @description 清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。
+         */
+        delete: operations["delete_source_alias_api_v1_sources_alias_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/alias/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Alias History
+         * @description 某来源的改名历史（新→旧，≤20；删除别名不删历史）。
+         */
+        get: operations["source_alias_history_api_v1_sources_alias_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Aliases
+         * @description 全部来源别名（时间线/订阅展示的「服务端赢」数据源）。
+         */
+        get: operations["list_source_aliases_api_v1_sources_aliases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -11944,6 +12011,66 @@ export interface components {
             uuid: string;
         };
         /**
+         * SourceAliasHistoryItem
+         * @description N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。
+         */
+        SourceAliasHistoryItem: {
+            /**
+             * Changedat
+             * @default
+             */
+            changedAt: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: number;
+            /** Oldcustomname */
+            oldCustomName?: string | null;
+            /** Upstreamnameatsave */
+            upstreamNameAtSave?: string | null;
+        };
+        /** SourceAliasHistoryList */
+        SourceAliasHistoryList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasHistoryItem"][];
+        };
+        /** SourceAliasList */
+        SourceAliasList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasView"][];
+        };
+        /**
+         * SourceAliasUpdate
+         * @description PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。
+         */
+        SourceAliasUpdate: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * SourceAliasView
+         * @description N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。
+         */
+        SourceAliasView: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /**
          * SourceDiscoveryRequest
          * @description POST /api/v1/source-discovery body (0014): a public website URL.
          */
@@ -12050,6 +12177,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;
@@ -22719,6 +22850,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceRegistryResponse"];
+                };
+            };
+        };
+    };
+    set_source_alias_api_v1_sources_alias_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAliasUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_alias_api_v1_sources_alias_delete: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_alias_history_api_v1_sources_alias_history_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasHistoryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_aliases_api_v1_sources_aliases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasList"];
                 };
             };
         };
