@@ -10,7 +10,8 @@
     "build:dashboard": "node tools/progress-dashboard/build.mjs",
     "check:dashboard": "node tools/progress-dashboard/check.mjs",
     "lint:commits": "commitlint --from ${BASE_SHA:-origin/main~20} --to HEAD",
-    "check:version": "python3 scripts/check-version.py"
+    "check:version": "python3 scripts/check-version.py",
+    "perf:soak": "node tools/perf/load-soak.mjs"
   },
   "devDependencies": {
     "vitepress": "^1.6.4",
