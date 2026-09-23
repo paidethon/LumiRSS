@@ -60,6 +60,37 @@ export default defineConfig({
     { name: 'mobile-430', use: { viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true } },
     { name: 'mobile-390', use: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } },
     { name: 'mobile-375', use: { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true } },
+    // P03 平板层：iPad 竖排（834×1194 → tablet 档，竖排默认折叠 rail +
+    // Reader 覆盖列表）与横排（1194×834 → ≥1024 desktop 档三栏）。
+    // 触屏 + 移动 UA + deviceScaleFactor 2 对齐真机；Chromium 触摸仿真
+    // 可跑，真机 Safari 表现仍需人工验证（同 webkit-mobile 的边界）。
+    // 只跑 ipad-smoke：既有 journeys 按手机/桌面二分断言（mobile-journeys
+    // 的底栏断言 / desktop journeys 的全量流程均未覆盖平板 shell），
+    // 平板 journeys 扩量属后续里程碑。
+    {
+      name: 'ipad-834',
+      testIgnore: /^(?!.*ipad-smoke)/,
+      use: {
+        viewport: { width: 834, height: 1194 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        userAgent:
+          'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E Safari/604.1',
+      },
+    },
+    {
+      name: 'ipad-1194',
+      testIgnore: /^(?!.*ipad-smoke)/,
+      use: {
+        viewport: { width: 1194, height: 834 },
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        isMobile: true,
+        userAgent:
+          'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E Safari/604.1',
+      },
+    },
     // 2026-09 移动端专项：WebKit 手机旅程（iPhone 类视口；真机表现仍需
     // 人工验证——自动化 WebKit 不等于真机 Safari）。宿主缺 GTK4/GStreamer
     // 库时此项目会在启动时报错（sudo 安装依赖见验收记录的环境阻塞节）。
