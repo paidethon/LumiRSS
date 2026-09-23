@@ -34,6 +34,10 @@ __pycache__/
 # Node
 node_modules/
 dist/
+# …except the progress dashboard: its dist/ is generated but committed so the
+# deployment is reproducible from the repo (npm run build:dashboard regenerates;
+# npm run check:dashboard guards drift).
+!tools/progress-dashboard/dist/
 coverage/
 
 # Editors and OS
