@@ -98,7 +98,11 @@ import {
   getReadLaterTimeline,
   getRagStatus,
   getRssHubConfig,
+  getRssHubFavorites,
+  getRssHubRecent,
+  getRssHubRouteHistory,
   getRssHubRoutes,
+  refreshRssHubRoute,
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
@@ -132,6 +136,7 @@ import {
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  putRssHubFavorite,
   rebuildRag,
   removeLibraryFavorite,
   removeWorkspaceItem,
@@ -143,6 +148,7 @@ import {
   saveLibreTranslateKey,
   searchEntries,
   createSavedSearchView,
+  deleteRssHubFavorite,
   deleteSavedSearchView,
   getSavedSearchViews,
   renameSavedSearchView,
@@ -767,6 +773,69 @@ export function useRssHubPreviewMutation() {
   return useMutation({
     mutationFn: (vars: { routeId: string; params: Record<string, string> }) =>
       previewRssHub(vars.routeId, vars.params),
+  })
+}
+
+/** N021：路由收藏（服务端持久化，跨设备）。 */
+export function useRssHubFavorites(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-favorites'],
+    queryFn: ({ signal }) => getRssHubFavorites(signal),
+    enabled,
+  })
+}
+
+/** N021：最近使用（仅成功 preview/subscribe 过的路由）。 */
+export function useRssHubRecent(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-recent'],
+    queryFn: ({ signal }) => getRssHubRecent(signal),
+    enabled,
+  })
+}
+
+/** N021：收藏 / 改标签（成功后失效收藏缓存）。 */
+export function usePutRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params?: Record<string, string>; label?: string }) =>
+      putRssHubFavorite(vars),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
+  })
+}
+
+/** N021：取消收藏（成功后失效收藏缓存）。 */
+export function useDeleteRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => deleteRssHubFavorite(routeKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
+  })
+}
+
+/** N025：路由健康时间线（routeKey 为 null 时不发请求——预览前无 key）。 */
+export function useRssHubRouteHistory(routeKey: string | null) {
+  return useQuery({
+    queryKey: ['rsshub-route-history', routeKey],
+    queryFn: ({ signal }) => getRssHubRouteHistory(routeKey as string, signal),
+    enabled: routeKey !== null,
+  })
+}
+
+/** N027：强制重取单路由（成功后失效该路由时间线缓存）。 */
+export function useRssHubRefreshMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => refreshRssHubRoute(routeKey),
+    onSuccess: async (_data, routeKey) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['rsshub-route-history', routeKey],
+      })
+    },
   })
 }
 

@@ -4910,8 +4910,47 @@ export interface paths {
          *     instance, parses offline and reads the subscription list for
          *     alreadySubscribed. The returned feedUrl is the FreshRSS-facing
          *     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
+         *
+         *     N021: a SUCCESSFUL preview upserts the route into the per-user
+         *     最近使用 list. N025: every attempt that reaches the fetch stage is
+         *     written to the route health timeline (last 20 kept per route).
+         *     Sensitive parameter values are masked to '***' before anything is
+         *     stored. Failed previews never record a 最近使用 entry.
+         *
+         *     N027: successful previews are cached per (user, route_key) with a
+         *     short TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``
+         *     and does NOT re-fetch, re-record a timeline row, or touch 最近使用 —
+         *     it was not an upstream attempt. The E2E base override always
+         *     bypasses the cache.
          */
         post: operations["rsshub_preview_api_v1_rsshub_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rsshub Refresh
+         * @description N027: force a re-fetch of exactly ONE route (per-user rate limited).
+         *
+         *     The route key is parsed server-side back into template id + params.
+         *     Sensitive parameter values were never stored ('***' sentinel only),
+         *     so refreshing such a route is refused — the user re-enters them in a
+         *     normal preview. Rate limit: 6 refreshes/minute/user, then a stable
+         *     429 with Retry-After. Only THIS route's cache entry is dropped;
+         *     other routes and any global caches are untouched.
+         */
+        post: operations["rsshub_refresh_api_v1_rsshub_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4935,6 +4974,97 @@ export interface paths {
          *     construction happens server-side on preview.
          */
         get: operations["rsshub_routes_api_v1_rsshub_routes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Favorites
+         * @description N021 favorites (per-user, cross-device). Sensitive parameter
+         *     values are stored as '***' sentinels and are the only thing that can
+         *     come back here.
+         */
+        get: operations["list_rsshub_favorites_api_v1_rsshub_routes_favorites_get"];
+        /**
+         * Put Rsshub Favorite
+         * @description Star (or re-label) one route — upsert on route_key.
+         *
+         *     routeId must exist in the Lumi catalog; params are stored MASKED
+         *     (F047 敏感键 → '***'), so a favorite never carries a secret.
+         */
+        put: operations["put_rsshub_favorite_api_v1_rsshub_routes_favorites_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites/{route_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Rsshub Favorite
+         * @description Unstar one favorite; 404 when the user has no such favorite.
+         */
+        delete: operations["delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route History
+         * @description N025 最近运行 — bounded health timeline for ONE route key
+         *     (newest first; the table itself prunes to the last 20 per route).
+         */
+        get: operations["rsshub_route_history_api_v1_rsshub_routes_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Recent
+         * @description N021 最近使用 — rows appear here only after a SUCCESSFUL preview
+         *     or subscribe (failed attempts never record).
+         */
+        get: operations["list_rsshub_recent_api_v1_rsshub_routes_recent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11588,6 +11718,16 @@ export interface components {
             dueAt: string;
         };
         /**
+         * RssHubCacheInfo
+         * @description N027: preview freshness (fresh=True when computed for this request).
+         */
+        RssHubCacheInfo: {
+            /** Ages */
+            ageS: number;
+            /** Fresh */
+            fresh: boolean;
+        };
+        /**
          * RssHubCatalog
          * @description GET /api/v1/rsshub/routes (static catalog; configured = instance set).
          */
@@ -11739,6 +11879,41 @@ export interface components {
             configured: boolean;
         };
         /**
+         * RssHubFavoriteItem
+         * @description One N021 route favorite (params carry masked sensitive values only).
+         */
+        RssHubFavoriteItem: {
+            /** Createdat */
+            createdAt: string;
+            /** Label */
+            label: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubFavoritePut
+         * @description PUT /api/v1/rsshub/routes/favorites body (route id + params + label).
+         */
+        RssHubFavoritePut: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Routeid */
+            routeId: string;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -11775,6 +11950,77 @@ export interface components {
             routeId: string;
         };
         /**
+         * RssHubPreviewResult
+         * @description POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+         *
+         *     N021/N025: the key (template id + masked params signature) is built
+         *     server-side; clients use it for favorites/recents/history/refresh
+         *     and never assemble it themselves. N027 adds cache freshness.
+         */
+        RssHubPreviewResult: {
+            /** Alreadysubscribed */
+            alreadySubscribed: boolean;
+            cache: components["schemas"]["RssHubCacheInfo"];
+            /** Description */
+            description?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "rss" | "atom";
+            /** Routekey */
+            routeKey: string;
+            /** Siteurl */
+            siteUrl?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * RssHubRecentItem
+         * @description One N021 recently used route (params carry masked sensitive values).
+         */
+        RssHubRecentItem: {
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Lastusedat */
+            lastUsedAt: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubRefreshRequest
+         * @description POST /api/v1/rsshub/refresh body (server-derived route key).
+         */
+        RssHubRefreshRequest: {
+            /** Routekey */
+            routeKey: string;
+        };
+        /**
+         * RssHubRefreshResult
+         * @description POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.
+         */
+        RssHubRefreshResult: {
+            cache: components["schemas"]["RssHubCacheInfo"];
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * RssHubRoute
          * @description One Lumi-owned RSSHub route descriptor (path built server-side).
          */
@@ -11789,6 +12035,38 @@ export interface components {
             pathTemplate: string;
             /** Title */
             title: string;
+        };
+        /**
+         * RssHubRouteRun
+         * @description One N025 route health timeline row (no secrets — route keys are
+         *     masked server-side before storage).
+         */
+        RssHubRouteRun: {
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Failureclass */
+            failureClass?: string | null;
+            /** Id */
+            id: number;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed";
+        };
+        /**
+         * RssHubRouteRuns
+         * @description GET /api/v1/rsshub/routes/history — bounded run list, newest first.
+         */
+        RssHubRouteRuns: {
+            /** Items */
+            items: components["schemas"]["RssHubRouteRun"][];
         };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
@@ -21944,7 +22222,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedPreviewResult"];
+                    "application/json": components["schemas"]["RssHubPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_refresh_api_v1_rsshub_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRefreshResult"];
                 };
             };
             /** @description Validation Error */
@@ -21974,6 +22285,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubCatalog"];
+                };
+            };
+        };
+    };
+    list_rsshub_favorites_api_v1_rsshub_routes_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"][];
+                };
+            };
+        };
+    };
+    put_rsshub_favorite_api_v1_rsshub_routes_favorites_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubFavoritePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_route_history_api_v1_rsshub_routes_history_get: {
+        parameters: {
+            query: {
+                routeKey: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteRuns"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_recent_api_v1_rsshub_routes_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRecentItem"][];
                 };
             };
         };

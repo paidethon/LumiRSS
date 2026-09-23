@@ -166,9 +166,11 @@ from lumirss.restore import (
     RestorePreviewRequired,
 )
 from lumirss.rsshub import (
+    RssHubFavoriteNotFound,
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
+    RssHubRefreshRateLimited,
     RssHubRouteNotFound,
 )
 from lumirss.rsshub_control import (
@@ -253,6 +255,8 @@ _ERROR_RESPONSES = {
     RssHubRouteNotFound: (404, "rsshub_route_not_found"),
     RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
     RssHubFetchError: (502, "rsshub_fetch_error"),
+    # N021 route favorites
+    RssHubFavoriteNotFound: (404, "rsshub_favorite_not_found"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
@@ -444,7 +448,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubNotConfigured)
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
-    @app.exception_handler(RssHubFetchError)
+    @app.exception_handler(RssHubFavoriteNotFound)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
@@ -587,6 +591,43 @@ def register_error_handlers(app) -> None:
                     "type": "workspace_revision_conflict",
                     "message": str(exc),
                     "currentRevision": exc.current_revision,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubFetchError)
+    async def rsshub_fetch_error_handler(
+        request: Request, exc: RssHubFetchError
+    ) -> JSONResponse:
+        """N026：502 rsshub_fetch_error 稳定类型不变，额外携带
+        failureClass（rsshub_unreachable / upstream_reject / auth_failure
+        / not_found / rate_limited / network_error）——路由健康时间线与
+        Web 文案据此分辨故障，不再全部坍缩成网络错误。"""
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "rsshub_fetch_error",
+                    "message": str(exc),
+                    "failureClass": exc.failure_class,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubRefreshRateLimited)
+    async def rsshub_refresh_rate_limited_handler(
+        request: Request, exc: RssHubRefreshRateLimited
+    ) -> JSONResponse:
+        """N027：刷新限速 → 429 + Retry-After 秒（稳定错误类型
+        rsshub_refresh_rate_limited；响应体同时带 retryAfterSeconds）。"""
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after_s)},
+            content={
+                "error": {
+                    "type": "rsshub_refresh_rate_limited",
+                    "message": str(exc),
+                    "retryAfterSeconds": exc.retry_after_s,
                 }
             },
         )

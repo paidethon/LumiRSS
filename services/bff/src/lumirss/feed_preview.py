@@ -99,6 +99,9 @@ class FeedPreview:
     description: str | None
     format: str  # "rss" | "atom"
     already_subscribed: bool
+    # N025: entry count for the RSSHub route timeline; the generic feed
+    # preview path never sets it (stays None — counting is route-only).
+    entry_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,20 @@ def parse_feed_document(raw: bytes) -> tuple[str, str | None, str | None, str]:
     site_url = _safe_site_url(feed.get("link"))
     description = _plain_text(feed.get("description") or feed.get("subtitle"))
     return title[:_MAX_TITLE_LENGTH], site_url, description, feed_format
+
+
+def count_feed_entries(raw: bytes) -> int:
+    """Count entries in an already-fetched feed document (offline parse).
+
+    N025 route health timeline needs the entry count; the body is the
+    bounded preview body, so the second parse is bounded too. A document
+    that fails entry extraction counts as 0 (parse_feed_document stays
+    the authority on "is this a feed").
+    """
+    try:
+        return len(feedparser.parse(raw).entries or [])
+    except Exception:  # noqa: BLE001 — counting is advisory metadata
+        return 0
 
 
 def _safe_site_url(link: object) -> str | None:

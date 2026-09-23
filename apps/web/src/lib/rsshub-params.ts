@@ -38,3 +38,19 @@ export function matchRoute<T extends RouteLike>(routes: readonly T[], feedUrl: s
   }
   return null
 }
+
+/** N025/N026：路由失败分类 → 中文标签（未知分类诚实回显原值）。 */
+export function rsshubFailureClassLabel(failureClass: string): string {
+  const known: Record<string, string> = {
+    rsshub_unreachable: 'RSSHub 不可达',
+    upstream_reject: '上游拒绝',
+    auth_failure: '鉴权失败',
+    auth_error: '鉴权错误',
+    not_found: '路由不存在',
+    rate_limited: '被限流',
+    no_new_content: '无新内容',
+    bad_content: '内容异常',
+    network_error: '网络错误',
+  }
+  return known[failureClass] ?? failureClass
+}

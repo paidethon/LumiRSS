@@ -10904,6 +10904,25 @@
     "title": "ReviewQueuePostpone",
     "type": "object"
    },
+   "RssHubCacheInfo": {
+    "description": "N027: preview freshness (fresh=True when computed for this request).",
+    "properties": {
+     "ageS": {
+      "title": "Ages",
+      "type": "number"
+     },
+     "fresh": {
+      "title": "Fresh",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ageS",
+     "fresh"
+    ],
+    "title": "RssHubCacheInfo",
+    "type": "object"
+   },
    "RssHubCatalog": {
     "description": "GET /api/v1/rsshub/routes (static catalog; configured = instance set).",
     "properties": {
@@ -11271,6 +11290,71 @@
     "title": "RssHubDetectResult",
     "type": "object"
    },
+   "RssHubFavoriteItem": {
+    "description": "One N021 route favorite (params carry masked sensitive values only).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId",
+     "label",
+     "params",
+     "createdAt"
+    ],
+    "title": "RssHubFavoriteItem",
+    "type": "object"
+   },
+   "RssHubFavoritePut": {
+    "description": "PUT /api/v1/rsshub/routes/favorites body (route id + params + label).",
+    "properties": {
+     "label": {
+      "default": "",
+      "maxLength": 120,
+      "title": "Label",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeId": {
+      "minLength": 1,
+      "title": "Routeid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeId"
+    ],
+    "title": "RssHubFavoritePut",
+    "type": "object"
+   },
    "RssHubParameter": {
     "description": "One RSSHub route parameter descriptor (form-renderable).",
     "properties": {
@@ -11345,6 +11429,173 @@
     "title": "RssHubPreviewRequest",
     "type": "object"
    },
+   "RssHubPreviewResult": {
+    "description": "POST /api/v1/rsshub/preview — adds the server-derived routeKey.\n\nN021/N025: the key (template id + masked params signature) is built\nserver-side; clients use it for favorites/recents/history/refresh\nand never assemble it themselves. N027 adds cache freshness.",
+    "properties": {
+     "alreadySubscribed": {
+      "title": "Alreadysubscribed",
+      "type": "boolean"
+     },
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "format": {
+      "enum": [
+       "rss",
+       "atom"
+      ],
+      "title": "Format",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "siteUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Siteurl"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "feedUrl",
+     "format",
+     "alreadySubscribed",
+     "routeKey",
+     "cache"
+    ],
+    "title": "RssHubPreviewResult",
+    "type": "object"
+   },
+   "RssHubRecentItem": {
+    "description": "One N021 recently used route (params carry masked sensitive values).",
+    "properties": {
+     "lastSuccessAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsuccessat"
+     },
+     "lastUsedAt": {
+      "title": "Lastusedat",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId",
+     "params",
+     "lastUsedAt"
+    ],
+    "title": "RssHubRecentItem",
+    "type": "object"
+   },
+   "RssHubRefreshRequest": {
+    "description": "POST /api/v1/rsshub/refresh body (server-derived route key).",
+    "properties": {
+     "routeKey": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Routekey",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey"
+    ],
+    "title": "RssHubRefreshRequest",
+    "type": "object"
+   },
+   "RssHubRefreshResult": {
+    "description": "POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.",
+    "properties": {
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
+     },
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "title",
+     "ranAt",
+     "durationMs",
+     "cache"
+    ],
+    "title": "RssHubRefreshResult",
+    "type": "object"
+   },
    "RssHubRoute": {
     "description": "One Lumi-owned RSSHub route descriptor (path built server-side).",
     "properties": {
@@ -11380,6 +11631,83 @@
      "parameters"
     ],
     "title": "RssHubRoute",
+    "type": "object"
+   },
+   "RssHubRouteRun": {
+    "description": "One N025 route health timeline row (no secrets — route keys are\nmasked server-side before storage).",
+    "properties": {
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "failureClass": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failureclass"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "routeKey",
+     "ranAt",
+     "status",
+     "durationMs"
+    ],
+    "title": "RssHubRouteRun",
+    "type": "object"
+   },
+   "RssHubRouteRuns": {
+    "description": "GET /api/v1/rsshub/routes/history — bounded run list, newest first.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubRouteRun"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "RssHubRouteRuns",
     "type": "object"
    },
    "SaveAsTemplateRequest": {
@@ -25384,7 +25712,7 @@
   },
   "/api/v1/rsshub/preview": {
    "post": {
-    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).",
+    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.\n\nN027: successful previews are cached per (user, route_key) with a\nshort TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``\nand does NOT re-fetch, re-record a timeline row, or touch 最近使用 —\nit was not an upstream attempt. The E2E base override always\nbypasses the cache.",
     "operationId": "rsshub_preview_api_v1_rsshub_preview_post",
     "requestBody": {
      "content": {
@@ -25401,7 +25729,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/FeedPreviewResult"
+         "$ref": "#/components/schemas/RssHubPreviewResult"
         }
        }
       },
@@ -25421,6 +25749,45 @@
     "summary": "Rsshub Preview"
    }
   },
+  "/api/v1/rsshub/refresh": {
+   "post": {
+    "description": "N027: force a re-fetch of exactly ONE route (per-user rate limited).\n\nThe route key is parsed server-side back into template id + params.\nSensitive parameter values were never stored ('***' sentinel only),\nso refreshing such a route is refused — the user re-enters them in a\nnormal preview. Rate limit: 6 refreshes/minute/user, then a stable\n429 with Retry-After. Only THIS route's cache entry is dropped;\nother routes and any global caches are untouched.",
+    "operationId": "rsshub_refresh_api_v1_rsshub_refresh_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubRefreshRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRefreshResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Refresh"
+   }
+  },
   "/api/v1/rsshub/routes": {
    "get": {
     "description": "Lumi-owned RSSHub route catalog (static, always available).\n\n``configured`` reports whether the server has an RSSHUB_BASE_URL —\nthe catalog itself is independent of the instance. Route descriptors\ncarry enough metadata for the Web to render parameter forms; path\nconstruction happens server-side on preview.",
@@ -25438,6 +25805,176 @@
      }
     },
     "summary": "Rsshub Routes"
+   }
+  },
+  "/api/v1/rsshub/routes/favorites": {
+   "get": {
+    "description": "N021 favorites (per-user, cross-device). Sensitive parameter\nvalues are stored as '***' sentinels and are the only thing that can\ncome back here.",
+    "operationId": "list_rsshub_favorites_api_v1_rsshub_routes_favorites_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/RssHubFavoriteItem"
+         },
+         "title": "Response List Rsshub Favorites Api V1 Rsshub Routes Favorites Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Favorites"
+   },
+   "put": {
+    "description": "Star (or re-label) one route — upsert on route_key.\n\nrouteId must exist in the Lumi catalog; params are stored MASKED\n(F047 敏感键 → '***'), so a favorite never carries a secret.",
+    "operationId": "put_rsshub_favorite_api_v1_rsshub_routes_favorites_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubFavoritePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubFavoriteItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Rsshub Favorite"
+   }
+  },
+  "/api/v1/rsshub/routes/favorites/{route_key}": {
+   "delete": {
+    "description": "Unstar one favorite; 404 when the user has no such favorite.",
+    "operationId": "delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_key",
+      "required": true,
+      "schema": {
+       "title": "Route Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Favorite"
+   }
+  },
+  "/api/v1/rsshub/routes/history": {
+   "get": {
+    "description": "N025 最近运行 — bounded health timeline for ONE route key\n(newest first; the table itself prunes to the last 20 per route).",
+    "operationId": "rsshub_route_history_api_v1_rsshub_routes_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "routeKey",
+      "required": true,
+      "schema": {
+       "maxLength": 500,
+       "minLength": 1,
+       "title": "Routekey",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRouteRuns"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Route History"
+   }
+  },
+  "/api/v1/rsshub/routes/recent": {
+   "get": {
+    "description": "N021 最近使用 — rows appear here only after a SUCCESSFUL preview\nor subscribe (failed attempts never record).",
+    "operationId": "list_rsshub_recent_api_v1_rsshub_routes_recent_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/RssHubRecentItem"
+         },
+         "title": "Response List Rsshub Recent Api V1 Rsshub Routes Recent Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Recent"
    }
   },
   "/api/v1/search": {

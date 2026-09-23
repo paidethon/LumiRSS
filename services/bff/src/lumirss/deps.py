@@ -60,6 +60,7 @@ from lumirss.restore import (
     RestoreService,
 )
 from lumirss.rsshub import (
+    RssHubPreviewCache,
     RssHubService,
 )
 from lumirss.rsshub_control import (
@@ -240,6 +241,20 @@ def _get_rsshub_service(request: Request) -> RssHubService:
         lambda: RssHubService(
             request.app.state.http_client, _get_control_adapter(request)
         ),
+    )
+
+
+def _get_rsshub_preview_cache(request: Request):
+    """N027 per-user preview cache (in-memory, TTL+LRU, bounded).
+
+    The cache object is process-global on app.state but every key
+    carries the verified user id, so accounts never share entries.
+    Tests inject a fresh/short-TTL instance via app.state directly.
+    """
+    return _cached_on_app_state(
+        request,
+        "rsshub_preview_cache",
+        lambda: RssHubPreviewCache(),
     )
 
 

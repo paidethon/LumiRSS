@@ -372,6 +372,74 @@ class RssHubCatalog(BaseModel):
     routes: list[RssHubRoute]
 
 
+class RssHubFavoriteItem(BaseModel):
+    """One N021 route favorite (params carry masked sensitive values only)."""
+
+    routeKey: str
+    templateId: str
+    label: str
+    params: dict[str, str]
+    createdAt: str
+
+
+class RssHubRecentItem(BaseModel):
+    """One N021 recently used route (params carry masked sensitive values)."""
+
+    routeKey: str
+    templateId: str
+    params: dict[str, str]
+    lastUsedAt: str
+    lastSuccessAt: str | None = None
+
+
+class RssHubCacheInfo(BaseModel):
+    """N027: preview freshness (fresh=True when computed for this request)."""
+
+    ageS: float
+    fresh: bool
+
+
+class RssHubPreviewResult(FeedPreviewResult):
+    """POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+
+    N021/N025: the key (template id + masked params signature) is built
+    server-side; clients use it for favorites/recents/history/refresh
+    and never assemble it themselves. N027 adds cache freshness."""
+
+    routeKey: str
+    cache: RssHubCacheInfo
+
+
+class RssHubRefreshResult(BaseModel):
+    """POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route."""
+
+    routeKey: str
+    title: str
+    entryCount: int | None = None
+    ranAt: str
+    durationMs: int
+    cache: RssHubCacheInfo
+
+
+class RssHubRouteRun(BaseModel):
+    """One N025 route health timeline row (no secrets — route keys are
+    masked server-side before storage)."""
+
+    id: int
+    routeKey: str
+    ranAt: str
+    status: Literal["ok", "failed"]
+    durationMs: int
+    entryCount: int | None = None
+    failureClass: str | None = None
+
+
+class RssHubRouteRuns(BaseModel):
+    """GET /api/v1/rsshub/routes/history — bounded run list, newest first."""
+
+    items: list[RssHubRouteRun]
+
+
 # ---------------------------------------------------------------------------
 # OPML import (0013 Gate 4)
 # ---------------------------------------------------------------------------

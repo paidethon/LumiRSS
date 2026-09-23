@@ -42,6 +42,11 @@ import type {
   RestorePreview,
   RestoreResult,
   RssHubConfig,
+  RssHubFavoriteItem,
+  RssHubPreviewMetadata,
+  RssHubRecentItem,
+  RssHubRefreshResult,
+  RssHubRouteRuns,
   RssHubRoutesResponse,
   SearchResponse,
   ServerSettings,
@@ -1104,17 +1109,70 @@ export async function getRssHubRoutes(signal?: AbortSignal): Promise<RssHubRoute
 }
 
 /** 0014：RSSHub 路由预览（无副作用 mutation；路径构造与抓取全部在 BFF，
- * 浏览器不直连 RSSHub）。响应形状与 feed-preview 一致。 */
+ * 浏览器不直连 RSSHub）。在共享预览形状上附加服务端派生的 routeKey。 */
 export async function previewRssHub(
   routeId: string,
   params: Record<string, string>,
-): Promise<FeedPreviewMetadata> {
+): Promise<RssHubPreviewMetadata> {
   const response = await rawRequest(`${API_BASE}/rsshub/preview`, {
     method: 'POST',
     body: JSON.stringify({ routeId, params }),
     contentType: 'application/json',
   })
-  return (await response.json()) as FeedPreviewMetadata
+  return (await response.json()) as RssHubPreviewMetadata
+}
+
+// ---- N021 路由收藏与最近使用（服务端持久化，跨设备） ----
+
+/** N021：收藏列表（敏感参数值只以 '***' 哨兵出现）。 */
+export async function getRssHubFavorites(signal?: AbortSignal): Promise<RssHubFavoriteItem[]> {
+  return request<RssHubFavoriteItem[]>(`${API_BASE}/rsshub/routes/favorites`, signal)
+}
+
+/** N021：收藏 / 改标签（服务端按 route_key upsert）。 */
+export async function putRssHubFavorite(input: {
+  routeId: string
+  params?: Record<string, string>
+  label?: string
+}): Promise<RssHubFavoriteItem> {
+  const response = await rawRequest(`${API_BASE}/rsshub/routes/favorites`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubFavoriteItem
+}
+
+/** N021：取消收藏（routeKey 来自收藏列表，客户端不自行拼装）。 */
+export async function deleteRssHubFavorite(routeKey: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/rsshub/routes/favorites/${encodeURIComponent(routeKey)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** N021：最近使用（仅成功过的 preview/subscribe 会出现在这里）。 */
+export async function getRssHubRecent(signal?: AbortSignal): Promise<RssHubRecentItem[]> {
+  return request<RssHubRecentItem[]>(`${API_BASE}/rsshub/routes/recent`, signal)
+}
+
+/** N025：路由健康时间线（单 route_key，最新在前，服务端有界）。 */
+export async function getRssHubRouteHistory(
+  routeKey: string,
+  signal?: AbortSignal,
+): Promise<RssHubRouteRuns> {
+  const params = new URLSearchParams({ routeKey })
+  return request<RssHubRouteRuns>(`${API_BASE}/rsshub/routes/history?${params}`, signal)
+}
+
+/** N027：强制重取该路由（绕过预览缓存；429 时抛带 retryAfterSeconds 的 ApiError）。 */
+export async function refreshRssHubRoute(routeKey: string): Promise<RssHubRefreshResult> {
+  const response = await rawRequest(`${API_BASE}/rsshub/refresh`, {
+    method: 'POST',
+    body: JSON.stringify({ routeKey }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubRefreshResult
 }
 
 /** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */
