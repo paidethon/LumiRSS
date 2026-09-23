@@ -1,10 +1,12 @@
-/** 管理台（/admin → AdminScreen）Web 测试 — 0067 + P11。
+/** 管理台（/admin → AdminScreen）Web 测试 — 0067 + P11 + N001–N004。
  *
- * 覆盖：member 访问 403 提示页、成员列表（角色/状态徽标 + 暂停/
+ * 覆盖：member 访问 403 提示页、成员列表（角色/状态/方案徽标 + 暂停/
  * 恢复/撤销会话/重置密码，危险操作确认对话框）、重置密码一次性
- * 链接展示、邀请创建（一次性完整链接 + 复制）/ 列表 / 撤销、
- * FreshRSS 池状态（计数 + 登记 + 成员绑定列表）、系统面板（版本/
- * 运行时/计数/服务健康/后台任务 + 审计尾部 + 刷新 + 错误态）。
+ * 链接展示、邀请创建（一次性完整链接 + 复制）/ 列表 / 撤销、等待生效
+ * 徽标（N002）、邀请方案 CRUD + 批量生成对话框（N001）、邀请漏斗
+ * 计数卡片 + 方案筛选（N004）、FreshRSS 池状态（计数含预约 + 登记 +
+ * 成员绑定列表）、系统面板（版本/运行时/计数/服务健康/后台任务 +
+ * 审计尾部 + 刷新 + 错误态）。
  *
  * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）；
  * BFF 不参与测试。admin 列表的 snake_case/epoch 秒形状由 client
@@ -20,6 +22,8 @@ import {
   type AdminInvite,
   type AdminSystemInfo,
   type AdminUser,
+  type InviteFunnel,
+  type InviteScheme,
 } from '../api/client'
 import AdminScreen from '../components/admin/AdminScreen'
 import { useAuthStore, type AuthIdentity } from '../store/auth'
@@ -39,6 +43,11 @@ const mocks = vi.hoisted(() => ({
   registerFreshRssPool: vi.fn(),
   getAdminSystem: vi.fn(),
   listAdminAudit: vi.fn(),
+  listInviteSchemes: vi.fn(),
+  createInviteScheme: vi.fn(),
+  deleteInviteScheme: vi.fn(),
+  generateInvitesFromScheme: vi.fn(),
+  getInviteFunnel: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -57,6 +66,11 @@ vi.mock('../api/client', async (importOriginal) => {
     registerFreshRssPool: mocks.registerFreshRssPool,
     getAdminSystem: mocks.getAdminSystem,
     listAdminAudit: mocks.listAdminAudit,
+    listInviteSchemes: mocks.listInviteSchemes,
+    createInviteScheme: mocks.createInviteScheme,
+    deleteInviteScheme: mocks.deleteInviteScheme,
+    generateInvitesFromScheme: mocks.generateInvitesFromScheme,
+    getInviteFunnel: mocks.getInviteFunnel,
   }
 })
 
@@ -70,8 +84,8 @@ const NOW_MS = Date.now()
 const ISO = (offsetMs: number) => new Date(NOW_MS + offsetMs).toISOString()
 
 const USERS: AdminUser[] = [
-  { id: 'u1', username: 'alice', role: 'owner', status: 'active', displayName: '运营者', createdAt: ISO(-86_400_000) },
-  { id: 'u3', username: 'carol', role: 'member', status: 'paused', displayName: null, createdAt: ISO(-3_600_000) },
+  { id: 'u1', username: 'alice', role: 'owner', status: 'active', displayName: '运营者', schemeName: null, createdAt: ISO(-86_400_000) },
+  { id: 'u3', username: 'carol', role: 'member', status: 'paused', displayName: null, schemeName: '新人套餐', createdAt: ISO(-3_600_000) },
 ]
 
 const INVITES: AdminInvite[] = [
@@ -80,12 +94,54 @@ const INVITES: AdminInvite[] = [
     kind: 'signup',
     label: '给 dave 的邀请',
     targetUsername: null,
+    schemeId: null,
+    notBefore: null,
+    heldPoolAccount: null,
     createdAt: ISO(-3_600_000),
     expiresAt: ISO(72 * 3_600_000),
     usedAt: null,
     revokedAt: null,
   },
 ]
+
+/** 预约生效邀请（N002）：notBefore 在未来 → 台账显示「等待生效」且可撤销。 */
+const SCHEDULED_INVITES: AdminInvite[] = [
+  {
+    id: 'i2',
+    kind: 'signup',
+    label: '预约生效邀请',
+    targetUsername: null,
+    schemeId: 's1',
+    notBefore: ISO(3_600_000),
+    heldPoolAccount: 'frss-held',
+    createdAt: ISO(-60_000),
+    expiresAt: ISO(72 * 3_600_000),
+    usedAt: null,
+    revokedAt: null,
+  },
+]
+
+/** 邀请方案 fixture（N001，已归一 DTO）。 */
+const SCHEMES: InviteScheme[] = [
+  {
+    id: 's1',
+    name: '新人套餐',
+    ttlHours: 48,
+    initialSourceUrls: ['https://a.example/feed.xml', 'https://b.example/rss.xml'],
+    freshrssPoolHold: true,
+    quotaNote: '每人 3 源',
+    createdAt: ISO(-86_400_000),
+  },
+]
+
+/** 邀请漏斗 fixture（N004，服务端真实行聚合的同款形状）。 */
+const FUNNEL: InviteFunnel = {
+  totals: { generated: 5, pending: 2, activated: 1, expired: 1, revoked: 1, failedActivation: 1 },
+  byScheme: [
+    { schemeId: 's1', schemeName: '新人套餐', generated: 2, pending: 1, activated: 1, expired: 0, revoked: 0 },
+    { schemeId: null, schemeName: null, generated: 3, pending: 1, activated: 0, expired: 1, revoked: 1 },
+  ],
+}
 
 /** P11 系统面板 fixture：与真实 BFF /admin/system 响应同构（已归一 DTO）。 */
 const SYSTEM: AdminSystemInfo = {
@@ -154,6 +210,7 @@ beforeEach(() => {
   mocks.listAdminInvites.mockResolvedValue(INVITES)
   mocks.getFreshRssPool.mockResolvedValue({
     ready: 2,
+    held: 1,
     assigned: 1,
     members: [
       { id: 'u2', username: 'bob', bound: true, boundTo: 'frss-bob' },
@@ -162,6 +219,8 @@ beforeEach(() => {
   })
   mocks.getAdminSystem.mockResolvedValue(SYSTEM)
   mocks.listAdminAudit.mockResolvedValue(AUDIT)
+  mocks.listInviteSchemes.mockResolvedValue(SCHEMES)
+  mocks.getInviteFunnel.mockResolvedValue(FUNNEL)
 })
 
 describe('权限门（后端 403 的前端转述）', () => {
@@ -186,7 +245,7 @@ describe('权限门（后端 403 的前端转述）', () => {
 })
 
 describe('成员列表', () => {
-  it('渲染角色/状态徽标', async () => {
+  it('渲染角色/状态徽标（含方案徽标，N001）', async () => {
     renderAdmin()
     const list = await screen.findByTestId('admin-user-list')
     expect(list).toHaveTextContent('alice')
@@ -194,6 +253,7 @@ describe('成员列表', () => {
     expect(list).toHaveTextContent('正常')
     expect(list).toHaveTextContent('carol')
     expect(list).toHaveTextContent('已暂停')
+    expect(list).toHaveTextContent('方案 · 新人套餐')
   })
 
   it('carol 已暂停 → 显示「恢复」；alice 正常 → 显示「暂停」', async () => {
@@ -285,14 +345,175 @@ describe('邀请管理', () => {
       expect(mocks.revokeAdminInvite).toHaveBeenCalledWith('i1')
     })
   })
+
+  it('预约生效邀请（N002）→ 「等待生效」徽标 + 生效时间，仍可撤销', async () => {
+    mocks.listAdminInvites.mockResolvedValue(SCHEDULED_INVITES)
+    renderAdmin()
+    const list = await screen.findByTestId('admin-invite-list')
+    expect(list).toHaveTextContent('等待生效')
+    expect(list).toHaveTextContent('起生效')
+    expect(list).toHaveTextContent('方案')
+    // 未开闸的邀请必须能收回——撤销按钮仍在。
+    expect(screen.getByRole('button', { name: '撤销' })).toBeInTheDocument()
+  })
+})
+
+describe('邀请方案（N001）', () => {
+  it('方案列表渲染（名称/TTL/预约标记/初始源数/配额备注）', async () => {
+    renderAdmin()
+    const list = await screen.findByTestId('scheme-list')
+    expect(list).toHaveTextContent('新人套餐')
+    expect(list).toHaveTextContent('48 小时')
+    expect(list).toHaveTextContent('预约池名额')
+    expect(list).toHaveTextContent('2 个初始源')
+    expect(list).toHaveTextContent('每人 3 源')
+  })
+
+  it('保存方案表单 → createInviteScheme（多行 URL 逐行拆分）', async () => {
+    mocks.createInviteScheme.mockResolvedValue(SCHEMES[0]!)
+    renderAdmin()
+    await screen.findByTestId('scheme-list')
+    // 邀请表单也有「有效期（小时）」——先圈定方案表单再查询。
+    const form = within(screen.getByTestId('scheme-create-form'))
+    fireEvent.change(form.getByLabelText('方案名称'), { target: { value: '深度阅读套餐' } })
+    fireEvent.change(form.getByLabelText('有效期（小时）'), { target: { value: '24' } })
+    fireEvent.change(form.getByLabelText('初始订阅源（每行一个 URL，可选）'), {
+      target: { value: 'https://x.example/1.xml\nhttps://x.example/2.xml\n\n' },
+    })
+    fireEvent.click(form.getByLabelText('生成时预约 FreshRSS 池名额'))
+    fireEvent.change(form.getByLabelText('配额备注（可选）'), { target: { value: '每人 2 源' } })
+    fireEvent.click(form.getByRole('button', { name: '保存方案' }))
+    await waitFor(() => {
+      expect(mocks.createInviteScheme).toHaveBeenCalledWith({
+        name: '深度阅读套餐',
+        ttlHours: 24,
+        initialSourceUrls: ['https://x.example/1.xml', 'https://x.example/2.xml'],
+        freshrssPoolHold: true,
+        quotaNote: '每人 2 源',
+      })
+    })
+  })
+
+  it('批量生成对话框：输入数量 → 生成 N 个一次性链接（只显示一次）', async () => {
+    mocks.generateInvitesFromScheme.mockResolvedValue({
+      scheme: SCHEMES[0]!,
+      invites: [
+        { token: 'inv_b1', invite: { id: 'ib1', kind: 'signup', label: '新人套餐' } as AdminInvite },
+        { token: 'inv_b2', invite: { id: 'ib2', kind: 'signup', label: '新人套餐' } as AdminInvite },
+      ],
+    })
+    renderAdmin()
+    await screen.findByTestId('scheme-list')
+    fireEvent.click(screen.getByTestId('scheme-generate-s1'))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('从「新人套餐」批量生成邀请')
+    fireEvent.change(within(dialog).getByLabelText('生成数量'), { target: { value: '2' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '生成' }))
+    await waitFor(() => {
+      expect(mocks.generateInvitesFromScheme).toHaveBeenCalledWith('s1', { count: 2 })
+    })
+    const links = await within(dialog).findAllByTestId('one-time-link')
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveTextContent('token=inv_b1')
+    expect(links[1]).toHaveTextContent('token=inv_b2')
+  })
+
+  it('池不足的批量生成（pool_empty）→ 对话框内诚实报错', async () => {
+    mocks.generateInvitesFromScheme.mockRejectedValue(
+      new ApiError(409, 'pool_empty', 'Pool has 0 ready account(s); 2 hold(s) were requested.'),
+    )
+    renderAdmin()
+    await screen.findByTestId('scheme-list')
+    fireEvent.click(screen.getByTestId('scheme-generate-s1'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: '生成' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('ready account')
+  })
+
+  it('删除方案是危险操作：确认后调用 deleteInviteScheme', async () => {
+    mocks.deleteInviteScheme.mockResolvedValue(undefined)
+    renderAdmin()
+    await screen.findByTestId('scheme-list')
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('删除方案')
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除方案' }))
+    await waitFor(() => {
+      expect(mocks.deleteInviteScheme).toHaveBeenCalledWith('s1')
+    })
+  })
+
+  it('创建方案失败 → 表单内诚实报错', async () => {
+    mocks.createInviteScheme.mockRejectedValue(new ApiError(403, 'forbidden', 'Administrator role required.'))
+    renderAdmin()
+    await screen.findByTestId('scheme-list')
+    fireEvent.change(screen.getByLabelText('方案名称'), { target: { value: 'x 方案' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('需要管理员权限')
+  })
+})
+
+describe('邀请漏斗（N004）', () => {
+  it('计数卡片渲染服务端聚合（无邀请码），按方案分桶明细', async () => {
+    renderAdmin()
+    const cards = await screen.findByTestId('funnel-cards')
+    expect(cards).toHaveTextContent('5')
+    expect(cards).toHaveTextContent('已生成')
+    expect(cards).toHaveTextContent('待使用')
+    expect(cards).toHaveTextContent('已激活')
+    expect(screen.getByTestId('funnel-activated')).toHaveTextContent('1')
+    expect(screen.getByTestId('funnel-expired')).toHaveTextContent('1')
+    expect(screen.getByTestId('funnel-revoked')).toHaveTextContent('1')
+    expect(screen.getByTestId('funnel-failed-activation')).toHaveTextContent('激活失败尝试：1 次')
+    const buckets = screen.getByTestId('funnel-by-scheme')
+    expect(buckets).toHaveTextContent('新人套餐')
+    expect(buckets).toHaveTextContent('未分组（普通邀请）')
+    // 漏斗载荷不含任何邀请码。
+    expect(screen.queryByText(/inv_/)).not.toBeInTheDocument()
+  })
+
+  it('方案筛选 → getInviteFunnel 带 scheme_id 重新请求', async () => {
+    renderAdmin()
+    await screen.findByTestId('funnel-cards')
+    expect(mocks.getInviteFunnel).toHaveBeenCalledWith(expect.anything(), null)
+    fireEvent.change(screen.getByTestId('funnel-scheme-filter'), { target: { value: 's1' } })
+    await waitFor(() => {
+      expect(mocks.getInviteFunnel).toHaveBeenCalledWith(expect.anything(), 's1')
+    })
+  })
+
+  it('真实动作后刷新：创建邀请使漏斗缓存失效并重取', async () => {
+    mocks.createAdminInvite.mockResolvedValue({
+      token: 'inv_f1',
+      invite: { id: 'if1', kind: 'signup', label: null } as AdminInvite,
+    })
+    renderAdmin()
+    await screen.findByTestId('funnel-cards')
+    const callsAfterMount = mocks.getInviteFunnel.mock.calls.length
+    expect(callsAfterMount).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '创建邀请' }))
+    await screen.findAllByTestId('one-time-link')
+    await waitFor(() => {
+      expect(mocks.getInviteFunnel.mock.calls.length).toBeGreaterThan(callsAfterMount)
+    })
+  })
+
+  it('漏斗接口失败 → 区块内诚实报错，其余区块不受影响', async () => {
+    mocks.getInviteFunnel.mockRejectedValue(new ApiError(403, 'forbidden', 'Administrator role required.'))
+    renderAdmin()
+    const section = await screen.findByTestId('invite-funnel')
+    expect(await within(section).findByRole('alert')).toHaveTextContent('需要管理员权限')
+    expect(screen.getByTestId('admin-invite-list')).toBeInTheDocument()
+  })
 })
 
 describe('FreshRSS 池', () => {
-  it('显示 ready/assigned 计数与成员绑定状态', async () => {
+  it('显示 ready/held/assigned 计数与成员绑定状态', async () => {
     renderAdmin()
     const counts = await screen.findByTestId('pool-counts')
-    expect(counts).toHaveTextContent('2')
-    expect(counts).toHaveTextContent('1')
+    expect(counts).toHaveTextContent('可绑定 2')
+    expect(counts).toHaveTextContent('已预约 1')
+    expect(counts).toHaveTextContent('已分配 1')
     const members = await screen.findByTestId('pool-member-list')
     expect(members).toHaveTextContent('bob')
     expect(members).toHaveTextContent('已绑定 frss-bob')

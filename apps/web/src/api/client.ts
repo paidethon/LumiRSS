@@ -72,18 +72,23 @@ export class ApiError extends Error {
   readonly type: string
   /** 429 rate_limited 的剩余等待秒数（Retry-After 头）；无该头为 null。 */
   readonly retryAfterSeconds: number | null
+  /** 稳定错误族附带的额外标量（如 invite_not_active 的 serverTime /
+   * notBefore）；服务端没给就是 null。UI 绝不从这里读秘密材料。 */
+  readonly extra: Record<string, string> | null
 
   constructor(
     status: number,
     type: string,
     message: string,
     retryAfterSeconds: number | null = null,
+    extra: Record<string, string> | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.type = type
     this.retryAfterSeconds = retryAfterSeconds
+    this.extra = extra
   }
 }
 
@@ -100,6 +105,7 @@ function isAbortError(error: unknown): boolean {
 async function toApiError(response: Response): Promise<ApiError> {
   let type = 'http_error'
   let message = `请求失败（HTTP ${response.status}），请稍后重试。`
+  let extra: Record<string, string> | null = null
   try {
     const body: unknown = await response.json()
     if (
@@ -114,6 +120,17 @@ async function toApiError(response: Response): Promise<ApiError> {
         type = err.type
         message = err.message
       }
+      // 稳定错误族的附加标量（如 invite_not_active 的 serverTime /
+      // notBefore）——只收集字符串值，绝不携带任何秘密材料。
+      const extras: Record<string, string> = {}
+      for (const [key, value] of Object.entries(err as Record<string, unknown>)) {
+        if (key !== 'type' && key !== 'message' && typeof value === 'string') {
+          extras[key] = value
+        }
+      }
+      if (Object.keys(extras).length > 0) {
+        extra = extras
+      }
     }
   } catch {
     // 非 JSON（如 HTML 错误页 / 422 detail 数组）→ 使用安全 fallback。
@@ -124,7 +141,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   if (retryAfterRaw !== null && /^\d+$/.test(retryAfterRaw.trim())) {
     retryAfterSeconds = Number.parseInt(retryAfterRaw.trim(), 10)
   }
-  return new ApiError(response.status, type, message, retryAfterSeconds)
+  return new ApiError(response.status, type, message, retryAfterSeconds, extra)
 }
 
 /** 发起请求并把非 2xx / 网络失败转成 ApiError；返回原始 Response，
@@ -242,12 +259,18 @@ export async function changePassword(
 // schema 尚未收录这批端点；BFF 是唯一真源）。admin 列表端点返回
 // SQLite 行（snake_case、epoch 秒时间戳），在此归一为稳定的 Web DTO。
 
-/** 邀请激活预览（公开端点；只回答是/否，不含任何标签/邮箱/池用户名）。 */
+/** 邀请激活预览（公开端点；只回答是/否，不含任何标签/邮箱/池用户名）。
+ * notBefore/serverTime 仅在预约生效（N002）场景由服务端给出——服务器
+ * 时钟是唯一时钟，客户端墙钟只用于显示。 */
 export interface ActivationPreview {
   valid: boolean
   kind: 'signup' | null
   /** 池中有 ready 的 FreshRSS 账号可立即绑定。 */
   freshrssReady: boolean
+  /** 邀请的预约生效时间（ISO-8601）；未预约或不在等待态为 null。 */
+  notBefore: string | null
+  /** 服务器当前时间（ISO-8601），用于「等待生效」的诚实倒计时显示。 */
+  serverTime: string | null
 }
 
 export interface AdminUser {
@@ -256,6 +279,8 @@ export interface AdminUser {
   role: 'owner' | 'admin' | 'member'
   status: 'active' | 'paused'
   displayName: string | null
+  /** 激活该账号所用的邀请方案名（N001）；无方案或方案已删除为 null。 */
+  schemeName: string | null
   /** ISO-8601；服务端 epoch 秒在此归一。 */
   createdAt: string | null
 }
@@ -265,6 +290,12 @@ export interface AdminInvite {
   kind: 'signup' | 'recovery'
   label: string | null
   targetUsername: string | null
+  /** 生成该邀请的方案 id（N001）；普通邀请为 null。 */
+  schemeId: string | null
+  /** 预约生效时间（N002，ISO-8601）；未预约为 null。 */
+  notBefore: string | null
+  /** 创建时预约的池账号用户名（N003，admin 元数据）；未预约为 null。 */
+  heldPoolAccount: string | null
   createdAt: string | null
   expiresAt: string | null
   usedAt: string | null
@@ -286,6 +317,8 @@ export interface FreshRssPoolMember {
 
 export interface FreshRssPoolStatus {
   ready: number
+  /** 被未使用邀请预约（held）的名额（N003）。 */
+  held: number
   assigned: number
   members: FreshRssPoolMember[]
 }
@@ -312,6 +345,7 @@ function normalizeUser(row: Record<string, unknown>): AdminUser {
     role: role === 'owner' || role === 'admin' ? role : 'member',
     status: status === 'paused' ? 'paused' : 'active',
     displayName: pickString(row.displayName ?? row.display_name),
+    schemeName: pickString(row.schemeName ?? row.scheme_name),
     createdAt: toIso(row.createdAt ?? row.created_at),
   }
 }
@@ -323,6 +357,9 @@ function normalizeInvite(row: Record<string, unknown>): AdminInvite {
     kind: kind === 'recovery' ? 'recovery' : 'signup',
     label: pickString(row.label),
     targetUsername: pickString(row.targetUsername ?? row.target_user),
+    schemeId: pickString(row.schemeId ?? row.scheme_id),
+    notBefore: toIso(row.notBefore ?? row.not_before),
+    heldPoolAccount: pickString(row.heldPoolAccount ?? row.held_pool_account),
     createdAt: toIso(row.createdAt ?? row.created_at),
     expiresAt: toIso(row.expiresAt ?? row.expires_at),
     usedAt: toIso(row.usedAt ?? row.used_at),
@@ -342,11 +379,19 @@ export async function loginAccount(username: string, password: string): Promise<
   return (await response.json()) as AuthStatusView
 }
 
-/** 邀请激活预览（公开；不消耗 token）。 */
+/** 邀请激活预览（公开；不消耗 token）。notBefore/serverTime 由服务端
+ * 提供（N002 等待生效状态），缺失时归一为 null。 */
 export async function getActivationPreview(token: string): Promise<ActivationPreview> {
-  return request<ActivationPreview>(
+  const body = await request<Record<string, unknown>>(
     `${API_BASE}/auth/activation-preview?token=${encodeURIComponent(token)}`,
   )
+  return {
+    valid: body.valid === true,
+    kind: body.kind === 'signup' ? 'signup' : null,
+    freshrssReady: body.freshrssReady === true,
+    notBefore: pickString(body.notBefore),
+    serverTime: pickString(body.serverTime),
+  }
 }
 
 /** 兑换 signup 邀请并自动登录（会话 Cookie 由响应设置）。
@@ -417,6 +462,166 @@ export async function revokeAdminInvite(inviteId: string): Promise<void> {
   })
 }
 
+// ---- 邀请方案（N001）/ 漏斗（N004）——管理台新面 -------------------------
+
+/** 邀请方案（模板：TTL + 可选初始源 + 可选池名额预约 + 配额备注）。 */
+export interface InviteScheme {
+  id: string
+  name: string
+  ttlHours: number
+  initialSourceUrls: string[]
+  freshrssPoolHold: boolean
+  quotaNote: string | null
+  /** ISO-8601；服务端 epoch 秒在此归一。 */
+  createdAt: string | null
+}
+
+function normalizeScheme(row: Record<string, unknown>): InviteScheme {
+  const urls = row.initialSourceUrls ?? row.initial_source_urls
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    ttlHours: typeof row.ttlHours === 'number' ? row.ttlHours : Number(row.ttl_hours ?? 0),
+    initialSourceUrls: Array.isArray(urls) ? urls.map((url) => String(url)) : [],
+    freshrssPoolHold: (row.freshrssPoolHold ?? row.freshrss_pool_hold) === true,
+    quotaNote: pickString(row.quotaNote ?? row.quota_note),
+    createdAt: toIso(row.createdAt ?? row.created_at),
+  }
+}
+
+export interface InviteSchemeInput {
+  name: string
+  ttlHours?: number
+  initialSourceUrls?: string[]
+  freshrssPoolHold?: boolean
+  quotaNote?: string | null
+}
+
+/** 保存一个命名邀请方案（模板；生成多少邀请由后续批量调用决定）。 */
+export async function createInviteScheme(input: InviteSchemeInput): Promise<InviteScheme> {
+  const response = await rawRequest(`${API_BASE}/admin/invite-schemes`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: input.name,
+      ...(input.ttlHours !== undefined ? { ttlHours: input.ttlHours } : {}),
+      ...(input.initialSourceUrls && input.initialSourceUrls.length > 0
+        ? { initialSourceUrls: input.initialSourceUrls }
+        : {}),
+      ...(input.freshrssPoolHold ? { freshrssPoolHold: true } : {}),
+      ...(input.quotaNote ? { quotaNote: input.quotaNote } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  return normalizeScheme((await response.json()) as Record<string, unknown>)
+}
+
+/** 方案列表（新→旧）。 */
+export async function listInviteSchemes(signal?: AbortSignal): Promise<InviteScheme[]> {
+  const rows = await request<unknown[]>(`${API_BASE}/admin/invite-schemes`, signal)
+  return rows.map((row) => normalizeScheme(row as Record<string, unknown>))
+}
+
+/** 删除方案模板（已生成的邀请/账号保留 scheme_id，展示上诚实降级）。 */
+export async function deleteInviteScheme(schemeId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/invite-schemes/${encodeURIComponent(schemeId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export interface InviteSchemeBatchCreated {
+  scheme: InviteScheme
+  /** 每个元素都是一次性完整链接材料（token 只出现这一次）。 */
+  invites: AdminInviteCreated[]
+}
+
+/** 从方案批量生成 N 个互相独立的一次性邀请（每个都记录 scheme_id）。 */
+export async function generateInvitesFromScheme(
+  schemeId: string,
+  input: { count: number; notBefore?: string | null; force?: boolean },
+): Promise<InviteSchemeBatchCreated> {
+  const response = await rawRequest(
+    `${API_BASE}/admin/invite-schemes/${encodeURIComponent(schemeId)}/generate-invites`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        count: input.count,
+        ...(input.notBefore ? { notBefore: input.notBefore } : {}),
+        ...(input.force ? { force: true } : {}),
+      }),
+      contentType: 'application/json',
+    },
+  )
+  const body = (await response.json()) as { scheme?: unknown; invites?: unknown }
+  const items = Array.isArray(body.invites) ? body.invites : []
+  return {
+    scheme: normalizeScheme((body.scheme ?? {}) as Record<string, unknown>),
+    invites: items.map((item) => {
+      const row = (item ?? {}) as Record<string, unknown>
+      return {
+        token: String(row.token ?? ''),
+        invite: normalizeInvite((row.invite ?? {}) as Record<string, unknown>),
+      }
+    }),
+  }
+}
+
+/** 邀请漏斗（N004）：服务端真实行聚合，绝不含邀请码。 */
+export interface InviteFunnelBucket {
+  schemeId: string | null
+  schemeName: string | null
+  generated: number
+  pending: number
+  activated: number
+  expired: number
+  revoked: number
+}
+
+export interface InviteFunnel {
+  totals: {
+    generated: number
+    pending: number
+    activated: number
+    expired: number
+    revoked: number
+    /** 激活失败审计事件计数（服务端有该审计才非 0）。 */
+    failedActivation: number
+  }
+  byScheme: InviteFunnelBucket[]
+}
+
+function normalizeBucket(row: Record<string, unknown>): InviteFunnelBucket {
+  const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  return {
+    schemeId: pickString(row.schemeId ?? row.scheme_id),
+    schemeName: pickString(row.schemeName ?? row.scheme_name),
+    generated: num(row.generated),
+    pending: num(row.pending),
+    activated: num(row.activated),
+    expired: num(row.expired),
+    revoked: num(row.revoked),
+  }
+}
+
+/** 漏斗聚合（可选按方案过滤）。 */
+export async function getInviteFunnel(signal?: AbortSignal, schemeId?: string | null): Promise<InviteFunnel> {
+  const suffix = schemeId ? `?scheme_id=${encodeURIComponent(schemeId)}` : ''
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/invite-funnel${suffix}`, signal)
+  const totalsRaw = (body.totals ?? {}) as Record<string, unknown>
+  const byScheme = Array.isArray(body.byScheme) ? body.byScheme : []
+  const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  return {
+    totals: {
+      generated: num(totalsRaw.generated),
+      pending: num(totalsRaw.pending),
+      activated: num(totalsRaw.activated),
+      expired: num(totalsRaw.expired),
+      revoked: num(totalsRaw.revoked),
+      failedActivation: num(totalsRaw.failedActivation),
+    },
+    byScheme: byScheme.map((row) => normalizeBucket((row ?? {}) as Record<string, unknown>)),
+  }
+}
+
 /** 暂停成员（owner 与最后一名活跃 admin 由服务端拒绝；暂停即撤销其全部会话）。 */
 export async function pauseAdminUser(userId: string): Promise<void> {
   await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/pause`, {
@@ -464,6 +669,7 @@ export async function getFreshRssPool(signal?: AbortSignal): Promise<FreshRssPoo
   const members = Array.isArray(body.members) ? body.members : []
   return {
     ready: typeof body.ready === 'number' ? body.ready : 0,
+    held: typeof body.held === 'number' ? body.held : 0,
     assigned: typeof body.assigned === 'number' ? body.assigned : 0,
     members: members.map((raw) => {
       const row = (raw ?? {}) as Record<string, unknown>

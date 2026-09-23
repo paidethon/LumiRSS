@@ -1,11 +1,13 @@
 /** ActivateScreen — 邀请激活页（/activate?token=…，未登录可达）。
  *
- * 三态（0067）：
+ * 四态（0067 + N002）：
  * 1. 无效/过期邀请 → 诚实单一提示，不含原因细节（不泄露邀请是
  *    「不存在/已过期/已撤销/已使用」中的哪种）；
- * 2. 正常表单 → 用户名 + 密码 + 确认 + 可选显示名；客户端预校验
+ * 2. 等待生效（预约生效邀请，N002）→ 诚实显示服务器给出的生效时间
+ *    与服务器当前时间——服务器时钟是唯一时钟，本机墙钟只用于显示；
+ * 3. 正常表单 → 用户名 + 密码 + 确认 + 可选显示名；客户端预校验
  *    username 规则与密码长度（服务端仍权威校验）；
- * 3. 成功 → 服务端已自动登录（会话 Cookie），进入应用。
+ * 4. 成功 → 服务端已自动登录（会话 Cookie），进入应用。
  *
  * 独立 FreshRSS 绑定状态：freshrssReady=false 不是错误——显示
  * 「RSS 源绑定待运营者准备，稍后自动完成」说明文案；永不回退到
@@ -14,7 +16,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { Clock, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import {
   ApiError,
   activateWithInvite,
@@ -37,6 +39,7 @@ type Phase =
   | { kind: 'loading' }
   | { kind: 'invalid' }
   | { kind: 'network'; detail: string }
+  | { kind: 'waiting'; notBefore: string; serverTime: string | null }
   | { kind: 'form'; freshrssReady: boolean }
   | { kind: 'submitting' }
 
@@ -46,6 +49,13 @@ function usernameIssue(value: string): string | null {
     return '用户名需 3–32 位，仅限小写字母、数字、- 或 _，并以字母或数字开头。'
   }
   return null
+}
+
+/** 服务器给出的 ISO 时刻 → 本地显示（只影响显示，不参与任何判断）。 */
+function formatServerInstant(value: string): string {
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) return value
+  return new Date(parsed).toLocaleString('zh-CN', { hour12: false })
 }
 
 function passwordIssue(value: string): string | null {
@@ -81,7 +91,10 @@ export default function ActivateScreen() {
       try {
         const preview: ActivationPreview = await getActivationPreview(token)
         if (cancelled) return
-        if (!preview.valid) {
+        if (!preview.valid && preview.notBefore) {
+          // 预约生效（N002）：以服务器给出的时间为准，诚实等待。
+          setPhase({ kind: 'waiting', notBefore: preview.notBefore, serverTime: preview.serverTime ?? null })
+        } else if (!preview.valid) {
           // 诚实单一提示：无效/过期/已用/已撤销不区分。
           setPhase({ kind: 'invalid' })
         } else {
@@ -148,6 +161,13 @@ export default function ActivateScreen() {
     } catch (error) {
       if (error instanceof ApiError && error.type === 'invite_invalid') {
         setPhase({ kind: 'invalid' })
+      } else if (error instanceof ApiError && error.type === 'invite_not_active') {
+        // 提前提交（竞态或预览过期）：落到等待态，以服务器时间为准。
+        setPhase({
+          kind: 'waiting',
+          notBefore: error.extra?.notBefore ?? '',
+          serverTime: error.extra?.serverTime ?? null,
+        })
       } else if (error instanceof ApiError && (error.type === 'invalid_username' || error.type === 'weak_password')) {
         setPhase({ kind: 'form', freshrssReady: false })
         setFormError(error.message)
@@ -193,6 +213,36 @@ export default function ActivateScreen() {
                 retryPreview()
               }}
             >
+              重新检查
+            </Button>
+          </div>
+        )}
+
+        {phase.kind === 'waiting' && (
+          <div
+            className="flex flex-col items-center gap-4 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4 text-center"
+            data-testid="invite-waiting"
+          >
+            <Clock aria-hidden className="size-6 text-[var(--lumi-text-tertiary)]" />
+            <p role="status" className="text-sm font-medium text-[var(--lumi-text-primary)]">
+              邀请尚未生效，请等待生效后再激活。
+            </p>
+            <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              {phase.notBefore !== '' && (
+                <>
+                  生效时间：
+                  <time dateTime={phase.notBefore}>{formatServerInstant(phase.notBefore)}</time>
+                  <br />
+                </>
+              )}
+              {phase.serverTime !== null && (
+                <>
+                  服务器当前时间：
+                  <time dateTime={phase.serverTime}>{formatServerInstant(phase.serverTime)}</time>
+                </>
+              )}
+            </p>
+            <Button variant="secondary" onClick={retryPreview}>
               重新检查
             </Button>
           </div>
