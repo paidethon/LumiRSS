@@ -2,9 +2,10 @@
  *
  * 结构（自上而下）：
  * 1. 用途分配：摘要 / 翻译 / AI 对话各自映射到「默认配置」或任一 Profile；
- * 2. AI Profile：多条命名配置（label / Base URL / model / 启用），
- *    每条可单独设置 API Key；
- * 3. 默认配置：全局 Base URL / model / 语言 + 默认 Key；
+ * 2. AI Profile：多条命名配置（label / provider / Base URL / model / 启用），
+ *    每条可单独设置 API Key。provider=gemini 时 BFF 固定使用 Google
+ *    官方 Generative Language 接口（P17），Base URL 输入框随之隐藏；
+ * 3. 默认配置：全局 Base URL / model / 语言 + 默认 Key（OpenAI 兼容）；
  * 4. 密钥状态：默认 Key（浏览器设置，存服务端 SecretsStore）与
  *    环境变量回退的存在性。
  *
@@ -44,6 +45,7 @@ import {
 } from '../../api/queries'
 import type {
   AiProfile,
+  AiProfileProvider,
   AiPurposeKey,
   AiPurposeStatus,
   AiSettings,
@@ -89,6 +91,14 @@ const inputClass = cx(
   'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
   'disabled:cursor-not-allowed disabled:opacity-50',
 )
+
+const PROVIDER_OPTIONS: { value: AiProfileProvider; label: string }[] = [
+  { value: 'openai_compatible', label: 'OpenAI 兼容' },
+  { value: 'gemini', label: 'Google Gemini' },
+]
+
+// P17：gemini Profile 由 BFF 固定使用官方接口（只读提示，无输入框）。
+const GEMINI_ENDPOINT_NOTE = 'generativelanguage.googleapis.com'
 
 const PURPOSE_LABELS: Record<AiPurposeKey, string> = {
   summary: '摘要',
@@ -216,8 +226,64 @@ function PurposeMappingSection({
 
 // ---- Profile 卡片 ----
 
+/** Profile 的 Provider + 地址字段：gemini → 官方接口只读提示（无输入框），
+ * openai_compatible → 自由填写的 Base URL。新建/编辑两个表单共用。 */
+function ProviderFields({
+  provider,
+  baseUrl,
+  onProviderChange,
+  onBaseUrlChange,
+  providerLabel,
+  baseUrlLabel,
+}: {
+  provider: AiProfileProvider
+  baseUrl: string
+  onProviderChange: (value: AiProfileProvider) => void
+  onBaseUrlChange: (value: string) => void
+  providerLabel: string
+  baseUrlLabel: string
+}) {
+  return (
+    <>
+      <FieldShell
+        label="Provider"
+        hint="OpenAI 兼容：任意 chat/completions 接口；Google Gemini：官方接口 + Gemini 模型。"
+      >
+        <Select
+          aria-label={providerLabel}
+          value={provider}
+          options={PROVIDER_OPTIONS}
+          onChange={(e) => onProviderChange(e.target.value as AiProfileProvider)}
+        />
+      </FieldShell>
+      {provider === 'gemini' ? (
+        <FieldShell
+          label="接口地址"
+          hint={`服务端固定使用 Google Gemini 官方接口（${GEMINI_ENDPOINT_NOTE}），无需填写。`}
+        >
+          <p className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-selected)] px-2.5 py-2 text-xs text-[var(--lumi-text-secondary)]">
+            Google Gemini 官方接口（{GEMINI_ENDPOINT_NOTE}）
+          </p>
+        </FieldShell>
+      ) : (
+        <FieldShell label="Base URL" hint="OpenAI-compatible 接口地址（如 https://api.example.com/v1）。">
+          <input
+            type="url"
+            value={baseUrl}
+            aria-label={baseUrlLabel}
+            placeholder="https://api.example.com/v1"
+            onChange={(e) => onBaseUrlChange(e.target.value)}
+            className={inputClass}
+          />
+        </FieldShell>
+      )}
+    </>
+  )
+}
+
 interface ProfileDraft {
   label: string
+  provider: AiProfileProvider
   baseUrl: string
   model: string
 }
@@ -232,6 +298,7 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [draft, setDraft] = useState<ProfileDraft>({
     label: profile.label,
+    provider: profile.provider,
     baseUrl: profile.baseUrl,
     model: profile.model,
   })
@@ -242,12 +309,25 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
 
   const dirty =
     draft.label !== profile.label ||
+    draft.provider !== profile.provider ||
     draft.baseUrl !== profile.baseUrl ||
     draft.model !== profile.model
 
   const saveEdit = () => {
+    // gemini：Base URL 由服务端固定（官方接口），不上送。
     updateProfile.mutate(
-      { profileId: profile.id, patch: draft },
+      {
+        profileId: profile.id,
+        patch:
+          draft.provider === 'gemini'
+            ? { label: draft.label, model: draft.model, provider: draft.provider }
+            : {
+                label: draft.label,
+                baseUrl: draft.baseUrl,
+                model: draft.model,
+                provider: draft.provider,
+              },
+      },
       { onSuccess: () => setEditing(false) },
     )
   }
@@ -280,6 +360,11 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
               {profile.label}
             </span>
             <KeyBadge configured={profile.keyConfigured} />
+            {profile.provider === 'gemini' && (
+              <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">
+                Google Gemini
+              </span>
+            )}
             {!profile.enabled && (
               <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-tertiary)]">
                 已停用
@@ -302,6 +387,7 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
               onClick={() => {
                 setDraft({
                   label: profile.label,
+                  provider: profile.provider,
                   baseUrl: profile.baseUrl,
                   model: profile.model,
                 })
@@ -334,22 +420,22 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
               className={inputClass}
             />
           </FieldShell>
-          <FieldShell label="Base URL" hint="OpenAI-compatible 接口地址（如 https://api.example.com/v1）。">
-            <input
-              type="url"
-              value={draft.baseUrl}
-              aria-label="Profile Base URL"
-              placeholder="https://api.example.com/v1"
-              onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
-              className={inputClass}
-            />
-          </FieldShell>
+          <ProviderFields
+            provider={draft.provider}
+            baseUrl={draft.baseUrl}
+            onProviderChange={(provider) => setDraft({ ...draft, provider })}
+            onBaseUrlChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
+            providerLabel="Profile Provider"
+            baseUrlLabel="Profile Base URL"
+          />
           <FieldShell label="Model">
             <input
               type="text"
               value={draft.model}
               aria-label="Profile Model"
-              placeholder="模型名"
+              placeholder={
+                draft.provider === 'gemini' ? 'gemini-2.0-flash' : '模型名'
+              }
               onChange={(e) => setDraft({ ...draft, model: e.target.value })}
               className={inputClass}
             />
@@ -500,7 +586,12 @@ function ProfileCard({ profile }: { profile: AiProfile }) {
 function ProfilesSection({ profiles }: { profiles: AiProfile[] }) {
   const createProfile = useCreateAiProfileMutation()
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState<ProfileDraft>({ label: '', baseUrl: '', model: '' })
+  const [draft, setDraft] = useState<ProfileDraft>({
+    label: '',
+    provider: 'openai_compatible',
+    baseUrl: '',
+    model: '',
+  })
   const [createError, setCreateError] = useState<string | null>(null)
 
   const submitCreate = () => {
@@ -509,16 +600,27 @@ function ProfilesSection({ profiles }: { profiles: AiProfile[] }) {
       return
     }
     setCreateError(null)
-    createProfile.mutate(
-      { label: draft.label.trim(), baseUrl: draft.baseUrl.trim(), model: draft.model.trim() },
-      {
-        onSuccess: () => {
-          setDraft({ label: '', baseUrl: '', model: '' })
-          setCreating(false)
-        },
-        onError: (err) => setCreateError(errorMessage(err, '创建失败，请重试。')),
+    // gemini：Base URL 由服务端固定（官方接口），不上送。
+    const input =
+      draft.provider === 'gemini'
+        ? {
+            label: draft.label.trim(),
+            model: draft.model.trim(),
+            provider: draft.provider,
+          }
+        : {
+            label: draft.label.trim(),
+            baseUrl: draft.baseUrl.trim(),
+            model: draft.model.trim(),
+            provider: draft.provider,
+          }
+    createProfile.mutate(input, {
+      onSuccess: () => {
+        setDraft({ label: '', provider: 'openai_compatible', baseUrl: '', model: '' })
+        setCreating(false)
       },
-    )
+      onError: (err) => setCreateError(errorMessage(err, '创建失败，请重试。')),
+    })
   }
 
   return (
@@ -540,7 +642,7 @@ function ProfilesSection({ profiles }: { profiles: AiProfile[] }) {
 
       {creating && (
         <div className="mt-3 flex flex-col gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-accent)] p-3">
-          <FieldShell label="名称" hint="例如「GLM 摘要」「DeepSeek 翻译」。">
+          <FieldShell label="名称" hint="例如「GLM 摘要」「Gemini 翻译」。">
             <input
               type="text"
               value={draft.label}
@@ -551,22 +653,22 @@ function ProfilesSection({ profiles }: { profiles: AiProfile[] }) {
               className={inputClass}
             />
           </FieldShell>
-          <FieldShell label="Base URL">
-            <input
-              type="url"
-              value={draft.baseUrl}
-              aria-label="新 Profile Base URL"
-              placeholder="https://api.example.com/v1"
-              onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
-              className={inputClass}
-            />
-          </FieldShell>
+          <ProviderFields
+            provider={draft.provider}
+            baseUrl={draft.baseUrl}
+            onProviderChange={(provider) => setDraft({ ...draft, provider })}
+            onBaseUrlChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
+            providerLabel="新 Profile Provider"
+            baseUrlLabel="新 Profile Base URL"
+          />
           <FieldShell label="Model">
             <input
               type="text"
               value={draft.model}
               aria-label="新 Profile Model"
-              placeholder="模型名"
+              placeholder={
+                draft.provider === 'gemini' ? 'gemini-2.0-flash' : '模型名'
+              }
               onChange={(e) => setDraft({ ...draft, model: e.target.value })}
               className={inputClass}
             />
@@ -755,7 +857,8 @@ function GlobalSettingsCard({ settings }: { settings: AiSettings }) {
     <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
       <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">默认配置</h3>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        未分配 Profile 的用途使用的全局服务地址与模型；Profile 的 Provider 均为 OpenAI-compatible。
+        未分配 Profile 的用途使用的全局服务地址与模型（OpenAI 兼容）；
+        Profile 可在上方卡片中选择 OpenAI 兼容或 Google Gemini。
       </p>
       <div className="mt-3 flex flex-col gap-4">
         <FieldShell

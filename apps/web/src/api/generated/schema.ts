@@ -5172,7 +5172,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Ai Profile
-         * @description Update profile metadata (label / baseUrl / model / enabled).
+         * @description Update profile metadata (label / provider / baseUrl / model / enabled).
          */
         patch: operations["patch_ai_profile_api_v1_settings_ai_profiles__profile_id__patch"];
         trace?: never;
@@ -6630,15 +6630,19 @@ export interface components {
             model: string;
             /**
              * Provider
-             * @constant
+             * @enum {string}
              */
-            provider: "openai_compatible";
+            provider: "openai_compatible" | "gemini";
             /** Updatedat */
             updatedAt: string;
         };
         /**
          * AiProfileCreate
          * @description POST /api/v1/settings/ai/profiles body (metadata only, no key).
+         *
+         *     ``provider`` selects the transport: an OpenAI-compatible endpoint
+         *     (default, baseUrl used as-is) or the native Google Gemini API (P17 —
+         *     the official endpoint is forced server-side, baseUrl ignored).
          */
         AiProfileCreate: {
             /**
@@ -6658,6 +6662,12 @@ export interface components {
              * @default
              */
             model: string;
+            /**
+             * Provider
+             * @default openai_compatible
+             * @enum {string}
+             */
+            provider: "openai_compatible" | "gemini";
         };
         /**
          * AiProfileUpdate
@@ -6672,6 +6682,8 @@ export interface components {
             label?: string | null;
             /** Model */
             model?: string | null;
+            /** Provider */
+            provider?: ("openai_compatible" | "gemini") | null;
         };
         /**
          * AiPurposeStatus

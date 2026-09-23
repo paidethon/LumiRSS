@@ -59,6 +59,7 @@ export type AiPurposeKey = 'summary' | 'translation' | 'chat'
 export type AiPurposes = Schemas['AiSettingsView']['purposes']
 export type AiPurposeStatus = Schemas['AiPurposeStatus']
 export type AiProfile = Schemas['AiProfile']
+export type AiProfileProvider = AiProfile['provider']
 export type AiSettingsUpdate = Schemas['AiSettingsUpdate']
 export type SummaryStatus = Schemas['EntrySummaryVersions']['status']
 export type EntrySummary = Schemas['EntrySummaryVersions']
