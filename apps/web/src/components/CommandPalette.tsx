@@ -23,7 +23,7 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import { useReaderUi } from '../store/reader-ui'
 import { useAppSettings } from '../store/app-settings'
 import { goBack, registerOverlay, unregisterOverlay } from '../lib/nav-history'
-import { COMMAND_PALETTE_TOGGLE_EVENT } from '../lib/keyboard-shortcuts'
+import { COMMAND_PALETTE_TOGGLE_EVENT, shouldIgnoreKeyEvent } from '../lib/keyboard-shortcuts'
 import {
   buildCommands,
   buildContextCommands,
@@ -235,6 +235,8 @@ export default function CommandPalette() {
   )
 
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // P13：IME 组合中的按键不驱动面板（Enter 上屏 / Esc 取消组合交还原生行为）
+    if (shouldIgnoreKeyEvent(event.nativeEvent)) return
     if (event.key === 'Escape') {
       event.preventDefault()
       close()
