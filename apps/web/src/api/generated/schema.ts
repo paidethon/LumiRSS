@@ -1241,6 +1241,11 @@ export interface paths {
          *     - categoryId：FreshRSS 分类（greader label stream，适配器含默认
          *       分类本地化名 fallback）；
          *     - feedUrl 与 categoryId 互斥（两者同时出现 → 400）。
+         *
+         *     N034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）
+         *     降序重排（服务端执行，query param 真实生效）；上游 continuation
+         *     分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内
+         *     条目附带 timeCredibility（投影摄取时分类的发布时间异常）。
          */
         get: operations["entries_api_v1_entries_get"];
         put?: never;
@@ -1483,6 +1488,30 @@ export interface paths {
          *     全部被丢 → 422。响应只含题目（无答案——负向契约）。
          */
         post: operations["generate_entry_quiz_api_v1_entries__entry_ref__quiz_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entry Revisions
+         * @description N031：单篇文章的有界修订历史（只读，纯投影查询，不触上游）。
+         *
+         *     修订 = FreshRSS 以同一 id 重新交付但内容哈希变化的摄取记录；行内
+         *     只有元数据（结构差异摘要 + 哈希），绝无全文副本。无记录 → 空表
+         *     200（条目可能存在于 FreshRSS 但从未修订过）。
+         */
+        get: operations["entry_revisions_api_v1_entries__entry_ref__revisions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1816,8 +1845,34 @@ export interface paths {
          *     subscription list (alreadySubscribed) but never writes anything:
          *     subscribing is POST /api/v1/subscriptions. Only reliable metadata is
          *     returned — no entries, no scraping, no feed discovery.
+         *
+         *     N033：响应附带 encodingInspection（声明/检测/乱码风险 + 掩码样本）；
+         *     若用户保存过 encoding_override，预览解析按该选择解码（只影响 Lumi
+         *     自己的 feed 字节→文本解码点，历史投影数据不回写）。
          */
         post: operations["preview_feed_api_v1_feed_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed-preview/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reparse Feed
+         * @description N033 重新解析诊断：同一次有界抓取，三种编码选择各渲染一份
+         *     （title + 掩码样本 + 乱码风险），供用户显式选择。选中的选择可保存
+         *     为 source_overrides.encoding_override（仅影响未来的解码）。
+         */
+        post: operations["reparse_feed_api_v1_feed_preview_reparse_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5606,6 +5661,10 @@ export interface paths {
          *       （投影落后 ≠ 没有新内容）；
          *     - lastPublishedAt：该订阅在投影中最新的发布时间；
          *     - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+         *
+         *     N040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS
+         *     收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取
+         *     时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。
          */
         get: operations["subscription_volume_api_v1_sources_volume_get"];
         put?: never;
@@ -7413,7 +7472,7 @@ export interface components {
              * @default newest
              * @enum {string}
              */
-            timelineOrder: "newest" | "oldest";
+            timelineOrder: "newest" | "oldest" | "received";
             /**
              * Uifontsize
              * @default 16
@@ -8186,6 +8245,32 @@ export interface components {
             note?: string | null;
         };
         /**
+         * CollectionTiming
+         * @description N040：三时点采集延迟块（未知保持 null，绝不臆造）。
+         *
+         *     - upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；
+         *     - freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，
+         *       非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注
+         *       口径；源从未提供 → None + basis="未提供 by upstream"）；
+         *     - lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；
+         *     - latencyHint：最大缺口环节提示（数据不足 → None）。
+         */
+        CollectionTiming: {
+            /**
+             * Freshrssfetchedbasis
+             * @default 未提供 by upstream
+             */
+            freshrssFetchedBasis: string;
+            /** Freshrssfetchedlatest */
+            freshrssFetchedLatest?: string | null;
+            /** Latencyhint */
+            latencyHint?: string | null;
+            /** Lumiprojectedlatest */
+            lumiProjectedLatest?: string | null;
+            /** Upstreampublishedlatest */
+            upstreamPublishedLatest?: string | null;
+        };
+        /**
          * CompareBody
          * @description POST /api/v1/entries/compare body（F067）。
          */
@@ -8274,6 +8359,48 @@ export interface components {
         ComponentError: {
             /** Type */
             type: string;
+        };
+        /**
+         * ContentVariantOption
+         * @description N032：一个可选的正文版本（经同一净化边界渲染）。
+         *
+         *     kind: "current"（上游当前）| "last_known_full"（保留的上一个更长
+         *     版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。
+         *     contentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界
+         *     渲染，BFF 不做净化（与正文同一安全模型）。
+         */
+        ContentVariantOption: {
+            /** Capturedat */
+            capturedAt?: string | null;
+            /** Contenthtml */
+            contentHtml?: string | null;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /**
+             * Lengthchars
+             * @default 0
+             */
+            lengthChars: number;
+        };
+        /**
+         * ContentVariantsBlock
+         * @description N032：正文明显变短时的版本选择块（未触发 → None）。
+         *
+         *     triggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的
+         *     历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测
+         *     内容是否「完整」。
+         */
+        ContentVariantsBlock: {
+            /** Currentlength */
+            currentLength: number;
+            /** Maxlength */
+            maxLength: number;
+            /** Triggered */
+            triggered: boolean;
+            /** Variants */
+            variants?: components["schemas"]["ContentVariantOption"][];
         };
         /**
          * ConversationMessage
@@ -8483,6 +8610,45 @@ export interface components {
             groups: components["schemas"]["DuplicateSuspectGroup"][];
         };
         /**
+         * EncodingInspection
+         * @description N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。
+         *
+         *     - declared/declaredMethod：文档声称的编码与判定来源
+         *       （bom | xml_declaration | meta_charset | content_type_header | none）；
+         *     - detected/detectedMethod：轻启发式结果（无 chardet 依赖）：
+         *       bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；
+         *     - mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；
+         *     - sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以
+         *       U+FFFD 掩码）；无无效字节 → None。
+         */
+        EncodingInspection: {
+            /**
+             * Bodybytes
+             * @default 0
+             */
+            bodyBytes: number;
+            /** Declared */
+            declared?: string | null;
+            /** Declaredmethod */
+            declaredMethod?: string | null;
+            /** Detected */
+            detected?: string | null;
+            /** Detectedmethod */
+            detectedMethod?: string | null;
+            /**
+             * Mojibakerisk
+             * @default false
+             */
+            mojibakeRisk: boolean;
+            /** Sample */
+            sample?: string | null;
+            /**
+             * Utf8Valid
+             * @default true
+             */
+            utf8Valid: boolean;
+        };
+        /**
          * EntryConversation
          * @description GET/POST /api/v1/entries/{entryRef}/conversation(+ /messages).
          */
@@ -8512,6 +8678,7 @@ export interface components {
             contentHtml?: string | null;
             /** Contenttext */
             contentText: string;
+            contentVariants?: components["schemas"]["ContentVariantsBlock"] | null;
             /** Crawledat */
             crawledAt?: string | null;
             /** Enclosure */
@@ -8588,6 +8755,8 @@ export interface components {
             snippet?: string | null;
             /** Starred */
             starred: boolean;
+            /** Timecredibility */
+            timeCredibility?: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -8604,6 +8773,44 @@ export interface components {
             items: components["schemas"]["EntryListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * EntryRevision
+         * @description N031：一条有界的文章修订记录（元数据，绝不含全文副本）。
+         *
+         *     summary 为服务端计算的结构差异摘要：basis 说明比较基准
+         *     （retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，
+         *     无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。
+         */
+        EntryRevision: {
+            /** Capturedat */
+            capturedAt: string;
+            /** Id */
+            id: number;
+            /** Newhash */
+            newHash: string;
+            /** Newtitle */
+            newTitle?: string | null;
+            /** Prevhash */
+            prevHash: string;
+            /** Prevtitle */
+            prevTitle?: string | null;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Titlechanged */
+            titleChanged: boolean;
+        };
+        /**
+         * EntryRevisionsResponse
+         * @description GET /api/v1/entries/{entry_ref}/revisions。
+         */
+        EntryRevisionsResponse: {
+            /** Entryref */
+            entryRef: string;
+            /** Revisions */
+            revisions: components["schemas"]["EntryRevision"][];
         };
         /**
          * EntryStateUpdate
@@ -8789,6 +8996,59 @@ export interface components {
             ruleId?: string | null;
         };
         /**
+         * FeedPreviewEncodingChoice
+         * @description reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。
+         */
+        FeedPreviewEncodingChoice: {
+            /** Encoding */
+            encoding: string;
+            /**
+             * Mojibakerisk
+             * @default false
+             */
+            mojibakeRisk: boolean;
+            /** Resolvedcodec */
+            resolvedCodec?: string | null;
+            /** Sample */
+            sample?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * FeedPreviewReparseBody
+         * @description POST /api/v1/feed-preview/reparse body (N033).
+         *
+         *     encoding=None → 只返回三种选择（utf-8 | declared | detected）的渲染
+         *     对比；encoding+save=true → 把该选择存为来源覆盖（影响后续预览的
+         *     解码方式，绝不回写历史投影）。
+         */
+        FeedPreviewReparseBody: {
+            /** Encoding */
+            encoding?: ("utf-8" | "declared" | "detected") | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Save
+             * @default false
+             */
+            save: boolean;
+        };
+        /**
+         * FeedPreviewReparseResponse
+         * @description reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。
+         */
+        FeedPreviewReparseResponse: {
+            /** Applied */
+            applied?: string | null;
+            /** Choices */
+            choices: components["schemas"]["FeedPreviewEncodingChoice"][];
+            /** Feedurl */
+            feedUrl: string;
+            inspection: components["schemas"]["EncodingInspection"];
+            /** Savedoverride */
+            savedOverride?: string | null;
+        };
+        /**
          * FeedPreviewRequest
          * @description POST /api/v1/feed-preview body (0013 Gate 2).
          */
@@ -8807,6 +9067,7 @@ export interface components {
             alreadySubscribed: boolean;
             /** Description */
             description?: string | null;
+            encodingInspection?: components["schemas"]["EncodingInspection"] | null;
             /** Feedurl */
             feedUrl: string;
             /**
@@ -12186,6 +12447,7 @@ export interface components {
          * @description F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。
          */
         SubscriptionVolumeItem: {
+            collectionTiming?: components["schemas"]["CollectionTiming"] | null;
             /** Feedurl */
             feedUrl: string;
             /** Lastpublishedat */
@@ -14925,6 +15187,7 @@ export interface operations {
                 categoryId?: string | null;
                 cursor?: string | null;
                 includeHidden?: boolean;
+                sort?: "received" | null;
             };
             header?: never;
             path?: never;
@@ -15308,6 +15571,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuizSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_revisions_api_v1_entries__entry_ref__revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryRevisionsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15966,6 +16260,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reparse_feed_api_v1_feed_preview_reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedPreviewReparseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPreviewReparseResponse"];
                 };
             };
             /** @description Validation Error */
