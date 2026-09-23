@@ -336,10 +336,11 @@ def _provider_factory_for(request: Request, purpose: str):
             await _get_ai_settings_store(request).load(),
             LumiSettings().AI_API_KEY.get_secret_value(),
         )
-        from lumirss.ai_provider import OpenAICompatibleProvider
+        from lumirss.ai_provider import build_provider
 
-        return OpenAICompatibleProvider(
+        return build_provider(
             request.app.state.http_client,
+            provider=effective.provider,
             base_url=effective.base_url or base_url,
             model=effective.model or model,
             api_key=effective.api_key or "",
@@ -728,10 +729,11 @@ async def _provider_or_none(request: Request):
         return None
     if not effective.base_url or not effective.model:
         return None
-    from lumirss.ai_provider import OpenAICompatibleProvider
+    from lumirss.ai_provider import build_provider
 
-    return OpenAICompatibleProvider(
+    return build_provider(
         request.app.state.http_client,
+        provider=effective.provider,
         base_url=effective.base_url,
         model=effective.model,
         api_key=effective.api_key or "",

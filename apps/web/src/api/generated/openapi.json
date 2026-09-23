@@ -220,7 +220,10 @@
       "type": "string"
      },
      "provider": {
-      "const": "openai_compatible",
+      "enum": [
+       "openai_compatible",
+       "gemini"
+      ],
       "title": "Provider",
       "type": "string"
      },
@@ -244,7 +247,7 @@
     "type": "object"
    },
    "AiProfileCreate": {
-    "description": "POST /api/v1/settings/ai/profiles body (metadata only, no key).",
+    "description": "POST /api/v1/settings/ai/profiles body (metadata only, no key).\n\n``provider`` selects the transport: an OpenAI-compatible endpoint\n(default, baseUrl used as-is) or the native Google Gemini API (P17 —\nthe official endpoint is forced server-side, baseUrl ignored).",
     "properties": {
      "baseUrl": {
       "default": "",
@@ -264,6 +267,15 @@
      "model": {
       "default": "",
       "title": "Model",
+      "type": "string"
+     },
+     "provider": {
+      "default": "openai_compatible",
+      "enum": [
+       "openai_compatible",
+       "gemini"
+      ],
+      "title": "Provider",
       "type": "string"
      }
     },
@@ -319,6 +331,21 @@
        }
       ],
       "title": "Model"
+     },
+     "provider": {
+      "anyOf": [
+       {
+        "enum": [
+         "openai_compatible",
+         "gemini"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider"
      }
     },
     "title": "AiProfileUpdate",
@@ -25393,7 +25420,7 @@
     "summary": "Delete Ai Profile"
    },
    "patch": {
-    "description": "Update profile metadata (label / baseUrl / model / enabled).",
+    "description": "Update profile metadata (label / provider / baseUrl / model / enabled).",
     "operationId": "patch_ai_profile_api_v1_settings_ai_profiles__profile_id__patch",
     "parameters": [
      {

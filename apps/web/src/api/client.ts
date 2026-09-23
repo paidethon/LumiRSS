@@ -4,6 +4,7 @@
 import { sessionExpired } from '../store/auth'
 import type {
   AiProfile,
+  AiProfileProvider,
   AiPurposeKey,
   AiPurposes,
   AiSettings,
@@ -920,6 +921,8 @@ export interface AiProfileInput {
   baseUrl?: string
   model?: string
   enabled?: boolean
+  /** gemini 时 BFF 强制使用官方接口地址（baseUrl 被忽略）。 */
+  provider?: AiProfileProvider
 }
 
 export async function createAiProfile(input: AiProfileInput): Promise<AiProfile> {

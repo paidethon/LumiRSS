@@ -21,6 +21,17 @@ from lumirss.storage import Database
 from lumirss.util import utc_now as _utc_now
 
 PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+PROVIDER_GEMINI = "gemini"
+
+# The official Google Generative Language endpoint. Gemini profiles do
+# NOT take a user-supplied base URL — this constant is the only endpoint
+# a ``gemini`` profile can target (the BFF dials it with the profile's
+# write-only API key).
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+# Provider allow-list for NAMED PROFILES (P17). The GLOBAL default
+# resolution stays OpenAI-compatible only (see _validate_provider).
+PROFILE_PROVIDERS = (PROVIDER_OPENAI_COMPATIBLE, PROVIDER_GEMINI)
 
 SUPPORTED_SUMMARY_LANGUAGES = ("zh-CN", "en")
 # 0016: translation target uses the same language set as summaries.
@@ -66,6 +77,14 @@ def _identity(value: str) -> str:
 def _validate_provider(value: str) -> str:
     if value not in (PROVIDER_OPENAI_COMPATIBLE,):
         raise ValueError(f"unsupported provider '{value}'")
+    return value
+
+
+def _validate_profile_provider(value: str) -> str:
+    """Provider type of one NAMED profile (P17): OpenAI-compatible or
+    the native Google Gemini REST API."""
+    if value not in PROFILE_PROVIDERS:
+        raise ValueError(f"provider must be one of {', '.join(PROFILE_PROVIDERS)}")
     return value
 
 

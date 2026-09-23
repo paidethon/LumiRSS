@@ -57,6 +57,18 @@ const PROFILE = {
   updatedAt: '2026-09-05T00:00:00Z',
 }
 
+const GEMINI_PROFILE = {
+  id: 'p3',
+  label: 'Gemini 摘要',
+  provider: 'gemini',
+  baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+  model: 'gemini-2.0-flash',
+  enabled: true,
+  keyConfigured: false,
+  createdAt: '2026-09-20T00:00:00Z',
+  updatedAt: '2026-09-20T00:00:00Z',
+}
+
 type Handler = (url: string, init?: RequestInit) => Response | Promise<Response>
 
 function renderSection(
@@ -198,6 +210,7 @@ describe('AiSettingsSection — Profile 管理', () => {
       label: 'DeepSeek 翻译',
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
+      provider: 'openai_compatible',
     })
     expect(postBodies[0]).not.toHaveProperty('apiKey')
   })
@@ -260,5 +273,116 @@ describe('AiSettingsSection — Profile 管理', () => {
     fireEvent.click(await screen.findByRole('button', { name: '删除 Profile GLM 摘要' }))
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
     await waitFor(() => expect(deleteCalls.length).toBe(1))
+  })
+})
+
+describe('AiSettingsSection — Profile Provider 切换（P17 Gemini）', () => {
+  it('默认（openai_compatible）保持原样：Base URL 输入框存在', async () => {
+    renderSection((url) => {
+      if (url === '/api/v1/settings/ai') return jsonResponse(DEFAULT_SETTINGS)
+      if (url === '/api/v1/settings/ai/profiles') return jsonResponse([])
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建 Profile/ }))
+    expect(screen.getByLabelText('新 Profile Provider')).toHaveValue('openai_compatible')
+    expect(screen.getByLabelText('新 Profile Base URL')).toBeInTheDocument()
+  })
+
+  it('切换到 gemini：Base URL 输入框被官方接口只读说明替代', async () => {
+    renderSection((url) => {
+      if (url === '/api/v1/settings/ai') return jsonResponse(DEFAULT_SETTINGS)
+      if (url === '/api/v1/settings/ai/profiles') return jsonResponse([])
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建 Profile/ }))
+    fireEvent.change(screen.getByLabelText('新 Profile Provider'), {
+      target: { value: 'gemini' },
+    })
+
+    expect(screen.queryByLabelText('新 Profile Base URL')).toBeNull()
+    expect(
+      screen.getByText('Google Gemini 官方接口（generativelanguage.googleapis.com）'),
+    ).toBeInTheDocument()
+    // gemini 模型名占位符
+    expect(screen.getByLabelText('新 Profile Model')).toHaveAttribute(
+      'placeholder',
+      'gemini-2.0-flash',
+    )
+  })
+
+  it('gemini 新建：POST 载荷带 provider=gemini 且不含 baseUrl', async () => {
+    const postBodies: unknown[] = []
+    renderSection((url, init) => {
+      if (url === '/api/v1/settings/ai/profiles' && init?.method === 'POST') {
+        postBodies.push(JSON.parse(String(init.body)))
+        return jsonResponse({ ...GEMINI_PROFILE, keyConfigured: false }, 201)
+      }
+      if (url === '/api/v1/settings/ai/profiles') return jsonResponse([])
+      if (url === '/api/v1/settings/ai') return jsonResponse(DEFAULT_SETTINGS)
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建 Profile/ }))
+    fireEvent.change(screen.getByLabelText('新 Profile 名称'), { target: { value: 'Gemini 翻译' } })
+    fireEvent.change(screen.getByLabelText('新 Profile Provider'), {
+      target: { value: 'gemini' },
+    })
+    fireEvent.change(screen.getByLabelText('新 Profile Model'), {
+      target: { value: 'gemini-2.0-flash' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+
+    await waitFor(() => expect(postBodies.length).toBe(1))
+    expect(postBodies[0]).toEqual({
+      label: 'Gemini 翻译',
+      model: 'gemini-2.0-flash',
+      provider: 'gemini',
+    })
+    expect(postBodies[0]).not.toHaveProperty('baseUrl')
+  })
+
+  it('gemini Profile 卡片：显示 Gemini 徽标与官方接口地址', async () => {
+    renderSection((url) => {
+      if (url === '/api/v1/settings/ai') return jsonResponse(DEFAULT_SETTINGS)
+      if (url === '/api/v1/settings/ai/profiles') return jsonResponse([GEMINI_PROFILE])
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    expect(await screen.findByText('Google Gemini', { selector: 'span' })).toBeInTheDocument()
+    expect(
+      screen.getByText(/generativelanguage\.googleapis\.com\/v1beta · gemini-2\.0-flash/),
+    ).toBeInTheDocument()
+  })
+
+  it('gemini Profile 编辑：保存的 PATCH 带 provider/model 且不带 baseUrl', async () => {
+    const patchBodies: unknown[] = []
+    renderSection((url, init) => {
+      if (url === '/api/v1/settings/ai/profiles/p3' && init?.method === 'PATCH') {
+        patchBodies.push(JSON.parse(String(init.body)))
+        return jsonResponse(GEMINI_PROFILE)
+      }
+      if (url === '/api/v1/settings/ai/profiles') return jsonResponse([GEMINI_PROFILE])
+      if (url === '/api/v1/settings/ai') return jsonResponse(DEFAULT_SETTINGS)
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 Profile Gemini 摘要' }))
+    expect(screen.queryByLabelText('Profile Base URL')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Profile Model'), {
+      target: { value: 'gemini-2.5-flash' },
+    })
+    // Profile 卡片的保存按钮（全局「默认配置」卡片也有一个同名按钮，
+    // Profile 区块渲染在前）。
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0])
+
+    await waitFor(() => expect(patchBodies.length).toBe(1))
+    expect(patchBodies[0]).toEqual({
+      label: 'Gemini 摘要',
+      model: 'gemini-2.5-flash',
+      provider: 'gemini',
+    })
+    expect(patchBodies[0]).not.toHaveProperty('baseUrl')
   })
 })
