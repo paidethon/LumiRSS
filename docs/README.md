@@ -21,6 +21,7 @@ RSS 来源，项目自有的 FastAPI BFF 与 React Web / PWA 客户端。
 |---|---|
 | 本地跑起来 / 自托管快速上手 | [getting-started.md](getting-started.md) |
 | 部署 / 升级 / 回滚 / 运维 | [how-to/deploy.md](how-to/deploy.md) |
+| 可选增强服务（按需 LibreTranslate 机器翻译） | [how-to/optional-services.md](how-to/optional-services.md) |
 | 邀请朋友加入（运营者） | [how-to/invite-members.md](how-to/invite-members.md) |
 | 备份 / 恢复 / 灾难恢复 | [how-to/backup-restore.md](how-to/backup-restore.md) |
 | 排查故障 | [how-to/troubleshoot.md](how-to/troubleshoot.md) |

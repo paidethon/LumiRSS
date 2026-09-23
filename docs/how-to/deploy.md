@@ -140,6 +140,10 @@ docker compose -f docker-compose.prod.yml exec bff \
   python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status)"
 ```
 
+可选增强服务（如自托管 LibreTranslate 机器翻译）不在这份默认栈里，
+用独立的按需 compose fragment 管理（`./lumirss translate up|stop|status`），
+见 [optional-services.md](optional-services.md)。
+
 公网入口自检：`curl -fsS -o /dev/null http://127.0.0.1/`（`DOMAIN` 强制
 HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
 
