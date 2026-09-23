@@ -53,7 +53,16 @@ export default function ObsidianExportDialog({
       { entryRef: detail.entryRef, deviceId: effectiveId },
       {
         onSuccess: async (result) => {
-          setOutcome(await runObsidianHandoff(result))
+          // 生成的 API 类型里 uri/reason 是可选的（`?: string | null`），
+          // HandoffResultLike 契约要求显式 null —— 调用点归一化，缺省
+          // 与 null 在 handoff 语义里等价（都走 file 回退分支）。
+          setOutcome(
+            await runObsidianHandoff({
+              ...result,
+              uri: result.uri ?? null,
+              reason: result.reason ?? null,
+            }),
+          )
         },
       },
     )
