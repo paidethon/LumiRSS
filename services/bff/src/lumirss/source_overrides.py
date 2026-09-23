@@ -62,6 +62,9 @@ def _reader_style_from_row(row: Any) -> dict[str, Any] | None:
 
 EXTRACT_POLICIES = ("rss", "web")
 
+# N033：显式编码覆盖（用户经 reparse 诊断选择；None = 跟随自动检测）。
+ENCODING_OVERRIDES = ("utf-8", "declared", "detected")
+
 # F055：阅读样式覆盖允许的键与边界（超集拒绝、越界钳制）。
 READER_STYLE_KEYS = {
     "fontSize": (12, 28),
@@ -103,6 +106,13 @@ def _ai_disabled_from_row(row: Any) -> bool:
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
+    encoding_override = None
+    try:
+        raw_encoding = row["encoding_override"]
+    except (IndexError, KeyError):
+        raw_encoding = None
+    if raw_encoding in ENCODING_OVERRIDES:
+        encoding_override = raw_encoding
     return {
         "feedUrl": str(row["feed_url"]),
         "hiddenUntil": row["hidden_until"],
@@ -111,6 +121,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "extractPolicy": row["extract_policy"] or "rss",
         "readerStyle": _reader_style_from_row(row),
         "aiDisabled": _ai_disabled_from_row(row),
+        "encodingOverride": encoding_override,
         "updatedAt": str(row["updated_at"] or ""),
     }
 
@@ -129,21 +140,21 @@ class SourceOverrideStore:
     async def list_overrides(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL ORDER BY updated_at DESC"
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, encoding_override, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL ORDER BY updated_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
     async def get_override(self, feed_url: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, updated_at FROM source_overrides WHERE feed_url = ?",
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, encoding_override, updated_at FROM source_overrides WHERE feed_url = ?",
             (feed_url,),
         )
         if row is None:
             return None
         result = _row_to_dict(row)
-        # F048/F055：提取策略（≠rss）与阅读样式覆盖也算有效覆盖，
-        # 否则仅设置策略的来源会被当成「无覆盖」丢弃。
+        # F048/F055：提取策略（≠rss）、阅读样式与 N033 编码覆盖也算有效
+        # 覆盖，否则仅设置策略的来源会被当成「无覆盖」丢弃。
         if (
             result["hiddenUntil"] is None
             and result["showFrom"] is None
@@ -151,6 +162,7 @@ class SourceOverrideStore:
             and result["extractPolicy"] == "rss"
             and result["readerStyle"] is None
             and not result["aiDisabled"]
+            and result["encodingOverride"] is None
         ):
             return None
         return result
@@ -198,9 +210,10 @@ class SourceOverrideStore:
         )
         if hidden_value is None and show_value is None and stale_value is None:
             # 所有时间维度都空 → 清理行，保持表紧凑（F066：ai_disabled/
-            # extract_policy/reader_style 等其它维度仍有时保留）。
+            # extract_policy/reader_style/encoding_override 等其它维度仍
+            # 有值时保留）。
             row = await self._db.fetch_one(
-                "SELECT ai_disabled, extract_policy, reader_style_json FROM source_overrides WHERE feed_url = ?",
+                "SELECT ai_disabled, extract_policy, reader_style_json, encoding_override FROM source_overrides WHERE feed_url = ?",
                 (feed_url,),
             )
             keep = (
@@ -209,6 +222,7 @@ class SourceOverrideStore:
                     bool(row["ai_disabled"])
                     or (row["extract_policy"] or "rss") != "rss"
                     or bool(row["reader_style_json"])
+                    or row["encoding_override"] in ENCODING_OVERRIDES
                 )
             )
             if not keep:
@@ -303,6 +317,45 @@ class SourceOverrideStore:
         except _json.JSONDecodeError:
             return None
         return style if isinstance(style, dict) and style else None
+
+    async def set_encoding_override(self, feed_url: str, override: str | None) -> None:
+        """N033：保存/清除 per-source 编码覆盖（None = 清除）。
+
+        只影响未来的抓取/解码（feed 预览、reparse）；已投影的历史数据
+        绝不回写（FreshRSS 摄取路径的解码在上游完成）。
+        """
+        if override is not None and override not in ENCODING_OVERRIDES:
+            raise ValueError("encoding override must be 'utf-8', 'declared' or 'detected'.")
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT encoding_override FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None:
+            if override is None:
+                return
+            await self._db.execute(
+                "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, encoding_override, updated_at) VALUES (?, NULL, NULL, NULL, 'rss', ?, ?)",
+                (feed_url, override, utc_now()),
+            )
+            return
+        if row["encoding_override"] == override:
+            return
+        await self._db.execute(
+            "UPDATE source_overrides SET encoding_override = ?, updated_at = ? WHERE feed_url = ?",
+            (override, utc_now(), feed_url),
+        )
+
+    async def get_encoding_override(self, feed_url: str) -> str | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT encoding_override FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None:
+            return None
+        value = row["encoding_override"]
+        return value if value in ENCODING_OVERRIDES else None
 
     async def stale_alert_configs(self) -> dict[str, int]:
         """F001：已启用新鲜度预警的 feed_url → 阈值小时数。"""

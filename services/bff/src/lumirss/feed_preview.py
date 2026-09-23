@@ -99,6 +99,8 @@ class FeedPreview:
     description: str | None
     format: str  # "rss" | "atom"
     already_subscribed: bool
+    # N033：有界响应体的编码检查（声明/检测/乱码风险 + 掩码样本）。
+    encoding_info: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -176,14 +178,37 @@ def hostname_allowlisted(hostname: str | None) -> bool:
     )
 
 
-def parse_feed_document(raw: bytes) -> tuple[str, str | None, str | None, str]:
+def parse_feed_document(
+    raw: bytes,
+    content_type: str | None = None,
+    *,
+    encoding_override: str | None = None,
+) -> tuple[str, str | None, str | None, str]:
     """Parse bounded feed bytes OFFLINE (feedparser never networks here).
 
     Returns (title, siteUrl, description, format); raises NotAFeedError
     when the document is not a feed with a usable title. Only reliable
-    metadata is extracted — no entries.
+    metadata is extracted — no entries, no summaries.
+
+    N033：``encoding_override``（'utf-8' | 'declared' | 'detected'）是
+    用户经 reparse 诊断显式选择的解码方式，只作用于 Lumi 自己的
+    「feed 字节 → 文本」解码点（预览/reparse；FreshRSS 摄取路径的解码
+    在上游完成，已投影的历史数据绝不回写）。无法解析出具体编解码器时
+    退回原始字节解析（诚实降级，不臆造）。
     """
-    parsed = feedparser.parse(raw)
+    payload = raw
+    if encoding_override is not None:
+        from lumirss.encoding_diag import inspect_encoding, resolve_override_codec
+
+        codec = resolve_override_codec(
+            encoding_override, inspect_encoding(raw, content_type)
+        )
+        if codec is not None:
+            try:
+                payload = raw.decode(codec, errors="replace")
+            except LookupError:
+                payload = raw  # unknown codec name: honest raw fallback
+    parsed = feedparser.parse(payload)
     version = parsed.get("version") or ""
     if version.startswith("rss"):
         feed_format = "rss"
@@ -248,13 +273,23 @@ class FeedPreviewService:
         self._resolver = resolver
         self._pin_factory = pin_factory
 
-    async def preview(self, feed_url: str) -> FeedPreview:
+    async def preview(
+        self, feed_url: str, *, encoding_override: str | None = None
+    ) -> FeedPreview:
         validate_feed_url(feed_url)
         document = await safe_fetch(
             feed_url, resolver=self._resolver, pin_factory=self._pin_factory
         )
+        # N033：编码检查始终随预览返回（声明/检测/乱码风险 + 掩码样本）；
+        # encoding_override（若提供）只影响本次的解码方式，见
+        # parse_feed_document 的诚实边界说明。
+        from lumirss.encoding_diag import inspect_encoding
+
+        inspection = inspect_encoding(document.body, document.content_type)
         title, site_url, description, feed_format = parse_feed_document(
-            document.body
+            document.body,
+            document.content_type,
+            encoding_override=encoding_override,
         )
         existing = await self._control.list_subscriptions()
         already_subscribed = any(s.feed_url == feed_url for s in existing)
@@ -265,7 +300,55 @@ class FeedPreviewService:
             description=description,
             format=feed_format,
             already_subscribed=already_subscribed,
+            encoding_info=inspection,
         )
+
+    async def reparse(
+        self, feed_url: str, *, encoding_override: str | None = None
+    ) -> tuple["FetchedDocument", dict, list[dict]]:
+        """N033 reparse：同一次有界抓取 + 三种编码选择的真实渲染。
+
+        返回 (document, inspection, choices)；choices 每项是
+        {encoding, resolvedCodec, title, sample, mojibakeRisk} —— title
+        与 sample 都在该选择下实际解码后提取（乱码如实呈现，不修饰）。
+        """
+        validate_feed_url(feed_url)
+        document = await safe_fetch(
+            feed_url, resolver=self._resolver, pin_factory=self._pin_factory
+        )
+        from lumirss.encoding_diag import (
+            decode_sample,
+            inspect_encoding,
+            resolve_override_codec,
+        )
+
+        inspection = inspect_encoding(document.body, document.content_type)
+        choices: list[dict] = []
+        for choice in ("utf-8", "declared", "detected"):
+            codec = resolve_override_codec(choice, inspection)
+            sample = decode_sample(document.body, codec)
+            parsed_title: str | None = None
+            try:
+                parsed = feedparser.parse(
+                    document.body.decode(codec, errors="replace")
+                    if codec
+                    else document.body
+                )
+                raw_title = parsed.feed.get("title")
+                if isinstance(raw_title, str) and raw_title.strip():
+                    parsed_title = raw_title.strip()[:_MAX_TITLE_LENGTH]
+            except Exception:  # noqa: BLE001 — 单选渲染失败如实置空
+                parsed_title = None
+            choices.append(
+                {
+                    "encoding": choice,
+                    "resolvedCodec": codec,
+                    "title": parsed_title,
+                    "sample": sample,
+                    "mojibakeRisk": "\ufffd" in sample,
+                }
+            )
+        return document, inspection, choices
 
 async def safe_fetch(
     url: str,

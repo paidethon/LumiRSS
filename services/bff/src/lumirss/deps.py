@@ -211,6 +211,9 @@ def _preview_json(preview) -> dict[str, object]:
         "description": preview.description,
         "format": preview.format,
         "alreadySubscribed": preview.already_subscribed,
+        # N033：直连预览附带编码检查（dict 形态的 EncodingInspection）；
+        # rsshub 预览（配置化基础设施，无用户 URL 诊断需求）→ None。
+        "encodingInspection": getattr(preview, "encoding_info", None),
     }
 
 
