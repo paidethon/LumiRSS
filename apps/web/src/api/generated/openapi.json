@@ -43,6 +43,36 @@
     "title": "ActivateAccountRequest",
     "type": "object"
    },
+   "ActivationSourceResult": {
+    "description": "One scheme initial-source subscription attempt (N001).\n\n``ok=False`` is an honest per-URL failure record — activation itself\nis never blocked or rolled back by a source failure.",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "ok"
+    ],
+    "title": "ActivationSourceResult",
+    "type": "object"
+   },
    "AgentApprovalDecision": {
     "additionalProperties": false,
     "description": "POST /api/v1/agent/threads/{id}/approvals.",
@@ -1663,7 +1693,7 @@
     "type": "object"
    },
    "AuthStatus": {
-    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is.",
+    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is. initialSources is only present on the invite\nactivation response (N001); every other surface omits it entirely.",
     "properties": {
      "authenticated": {
       "title": "Authenticated",
@@ -1679,6 +1709,20 @@
        }
       ],
       "title": "Expiresat"
+     },
+     "initialSources": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/ActivationSourceResult"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Initialsources"
      },
      "mode": {
       "default": "session",
@@ -7102,6 +7146,16 @@
    "InviteCreateRequest": {
     "description": "POST /admin/invites.",
     "properties": {
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "holdPool": {
+      "default": false,
+      "title": "Holdpool",
+      "type": "boolean"
+     },
      "kind": {
       "default": "signup",
       "pattern": "^(signup|recovery)$",
@@ -7119,6 +7173,30 @@
        }
       ],
       "title": "Label"
+     },
+     "notBefore": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notbefore"
+     },
+     "schemeId": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schemeid"
      },
      "targetUsername": {
       "anyOf": [
@@ -7141,6 +7219,87 @@
      }
     },
     "title": "InviteCreateRequest",
+    "type": "object"
+   },
+   "InviteSchemeBatchRequest": {
+    "description": "POST /admin/invite-schemes/{id}/generate-invites (N001).",
+    "properties": {
+     "count": {
+      "maximum": 100.0,
+      "minimum": 1.0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "notBefore": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notbefore"
+     }
+    },
+    "required": [
+     "count"
+    ],
+    "title": "InviteSchemeBatchRequest",
+    "type": "object"
+   },
+   "InviteSchemeCreateRequest": {
+    "description": "POST /admin/invite-schemes (N001).",
+    "properties": {
+     "freshrssPoolHold": {
+      "default": false,
+      "title": "Freshrsspoolhold",
+      "type": "boolean"
+     },
+     "initialSourceUrls": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Initialsourceurls",
+      "type": "array"
+     },
+     "name": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "quotaNote": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Quotanote"
+     },
+     "ttlHours": {
+      "default": 72,
+      "maximum": 720.0,
+      "minimum": 1.0,
+      "title": "Ttlhours",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "InviteSchemeCreateRequest",
     "type": "object"
    },
    "KnowledgeCardList": {
@@ -14360,6 +14519,188 @@
     "summary": "Audit Tail"
    }
   },
+  "/api/v1/admin/invite-funnel": {
+   "get": {
+    "description": "Per-scheme invite funnel counts (N004), aggregated from real rows.\n\nResponses carry counts ONLY — never invite codes, hashes or links.\nfailedActivation comes from the invite_activation_failed audit\nevents written by the activation boundary.",
+    "operationId": "invite_funnel_api_v1_admin_invite_funnel_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "scheme_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Scheme Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Invite Funnel"
+   }
+  },
+  "/api/v1/admin/invite-schemes": {
+   "get": {
+    "operationId": "list_invite_schemes_api_v1_admin_invite_schemes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Invite Schemes"
+   },
+   "post": {
+    "description": "Save a named invite scheme (N001): TTL + optional initial source\nURLs + optional FreshRSS pool hold + quota note. Templates only —\nnothing is generated until /generate-invites is called.",
+    "operationId": "create_invite_scheme_api_v1_admin_invite_schemes_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteSchemeCreateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Invite Scheme"
+   }
+  },
+  "/api/v1/admin/invite-schemes/{scheme_id}": {
+   "delete": {
+    "description": "Delete a scheme template. Already-generated invites and activated\naccounts keep their scheme_id — labels degrade honestly (LEFT JOIN)\ninstead of history being rewritten.",
+    "operationId": "delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scheme_id",
+      "required": true,
+      "schema": {
+       "title": "Scheme Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Invite Scheme"
+   }
+  },
+  "/api/v1/admin/invite-schemes/{scheme_id}/generate-invites": {
+   "post": {
+    "description": "Batch-generate N independent one-time invites from a scheme (N001).\n\nEvery invite records the scheme and uses the scheme's TTL; a pool\nhold per invite is taken when the scheme asks for one — an\ninsufficient pool fails the WHOLE batch 409 pool_empty (already\ncreated invites are rolled back, releasing their holds) unless\nforce=true generates the batch without holds. Tokens appear exactly\nonce, one per generated invite.",
+    "operationId": "generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scheme_id",
+      "required": true,
+      "schema": {
+       "title": "Scheme Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteSchemeBatchRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Invites From Scheme"
+   }
+  },
   "/api/v1/admin/invites": {
    "get": {
     "operationId": "list_invites_api_v1_admin_invites_get",
@@ -14376,7 +14717,7 @@
     "summary": "List Invites"
    },
    "post": {
-    "description": "Create an invitation. The raw token is returned exactly once —\nthe operator hands it to the invitee out of band.",
+    "description": "Create an invitation. The raw token is returned exactly once —\nthe operator hands it to the invitee out of band.\n\nN001/N002/N003 extensions (all optional, old bodies unchanged):\nschemeId stamps a saved scheme; notBefore schedules activation\n(server clock); holdPool reserves one FreshRSS pool slot at creation\n— with an empty pool this fails 409 pool_empty unless force=true\ncreates the invite honestly without a hold.",
     "operationId": "create_invite_api_v1_admin_invites_post",
     "requestBody": {
      "content": {
@@ -15779,7 +16120,7 @@
   },
   "/api/v1/auth/activate": {
    "post": {
-    "description": "Redeem a signup invite: create the independent account, bind an\nown FreshRSS account from the pool, mint a session.\n\nPool-empty is an explicit pending-binding state — the account is\nusable and the UI shows \"RSS source binding pending\"; the server\nnever falls back to shared credentials.",
+    "description": "Redeem a signup invite: create the independent account, bind an\nown FreshRSS account from the pool, mint a session.\n\nPool-empty is an explicit pending-binding state — the account is\nusable and the UI shows \"RSS source binding pending\"; the server\nnever falls back to shared credentials.\n\nN001: a scheme-stamped invite records the scheme on the account and\nsubscribes the scheme's initial sources best-effort — failures are\nlisted per URL in ``initialSources`` and never block activation.\nN002: a scheduled invite (not_before in the future by the SERVER\nclock) is rejected with the stable 403 invite_not_active carrying\nserverTime + notBefore; the token is not burned.",
     "operationId": "activate_account_api_v1_auth_activate_post",
     "requestBody": {
      "content": {
@@ -15818,7 +16159,7 @@
   },
   "/api/v1/auth/activation-preview": {
    "get": {
-    "description": "Honest activation screen state: is the invite usable, is a\nFreshRSS account ready? Reveals nothing beyond yes/no — no labels,\nno emails, no pool usernames.",
+    "description": "Honest activation screen state: is the invite usable, is a\nFreshRSS account ready? Reveals nothing beyond yes/no for a broken\nlink — for a scheduled invite (N002) it additionally echoes the\nserver clock (the ONLY clock the boundary consults) as serverTime\nand the notBefore instant, so the UI can render 等待生效. No labels,\nno emails, no pool usernames.",
     "operationId": "activation_preview_api_v1_auth_activation_preview_get",
     "parameters": [
      {

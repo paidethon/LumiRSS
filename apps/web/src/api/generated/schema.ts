@@ -47,6 +47,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/invite-funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invite Funnel
+         * @description Per-scheme invite funnel counts (N004), aggregated from real rows.
+         *
+         *     Responses carry counts ONLY — never invite codes, hashes or links.
+         *     failedActivation comes from the invite_activation_failed audit
+         *     events written by the activation boundary.
+         */
+        get: operations["invite_funnel_api_v1_admin_invite_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invite Schemes */
+        get: operations["list_invite_schemes_api_v1_admin_invite_schemes_get"];
+        put?: never;
+        /**
+         * Create Invite Scheme
+         * @description Save a named invite scheme (N001): TTL + optional initial source
+         *     URLs + optional FreshRSS pool hold + quota note. Templates only —
+         *     nothing is generated until /generate-invites is called.
+         */
+        post: operations["create_invite_scheme_api_v1_admin_invite_schemes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes/{scheme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Invite Scheme
+         * @description Delete a scheme template. Already-generated invites and activated
+         *     accounts keep their scheme_id — labels degrade honestly (LEFT JOIN)
+         *     instead of history being rewritten.
+         */
+        delete: operations["delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes/{scheme_id}/generate-invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Invites From Scheme
+         * @description Batch-generate N independent one-time invites from a scheme (N001).
+         *
+         *     Every invite records the scheme and uses the scheme's TTL; a pool
+         *     hold per invite is taken when the scheme asks for one — an
+         *     insufficient pool fails the WHOLE batch 409 pool_empty (already
+         *     created invites are rolled back, releasing their holds) unless
+         *     force=true generates the batch without holds. Tokens appear exactly
+         *     once, one per generated invite.
+         */
+        post: operations["generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invites": {
         parameters: {
             query?: never;
@@ -61,6 +157,12 @@ export interface paths {
          * Create Invite
          * @description Create an invitation. The raw token is returned exactly once —
          *     the operator hands it to the invitee out of band.
+         *
+         *     N001/N002/N003 extensions (all optional, old bodies unchanged):
+         *     schemeId stamps a saved scheme; notBefore schedules activation
+         *     (server clock); holdPool reserves one FreshRSS pool slot at creation
+         *     — with an empty pool this fails 409 pool_empty unless force=true
+         *     creates the invite honestly without a hold.
          */
         post: operations["create_invite_api_v1_admin_invites_post"];
         delete?: never;
@@ -664,6 +766,13 @@ export interface paths {
          *     Pool-empty is an explicit pending-binding state — the account is
          *     usable and the UI shows "RSS source binding pending"; the server
          *     never falls back to shared credentials.
+         *
+         *     N001: a scheme-stamped invite records the scheme on the account and
+         *     subscribes the scheme's initial sources best-effort — failures are
+         *     listed per URL in ``initialSources`` and never block activation.
+         *     N002: a scheduled invite (not_before in the future by the SERVER
+         *     clock) is rejected with the stable 403 invite_not_active carrying
+         *     serverTime + notBefore; the token is not burned.
          */
         post: operations["activate_account_api_v1_auth_activate_post"];
         delete?: never;
@@ -682,7 +791,10 @@ export interface paths {
         /**
          * Activation Preview
          * @description Honest activation screen state: is the invite usable, is a
-         *     FreshRSS account ready? Reveals nothing beyond yes/no — no labels,
+         *     FreshRSS account ready? Reveals nothing beyond yes/no for a broken
+         *     link — for a scheduled invite (N002) it additionally echoes the
+         *     server clock (the ONLY clock the boundary consults) as serverTime
+         *     and the notBefore instant, so the UI can render 等待生效. No labels,
          *     no emails, no pool usernames.
          */
         get: operations["activation_preview_api_v1_auth_activation_preview_get"];
@@ -6701,6 +6813,21 @@ export interface components {
             username: string;
         };
         /**
+         * ActivationSourceResult
+         * @description One scheme initial-source subscription attempt (N001).
+         *
+         *     ``ok=False`` is an honest per-URL failure record — activation itself
+         *     is never blocked or rolled back by a source failure.
+         */
+        ActivationSourceResult: {
+            /** Error */
+            error?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Url */
+            url: string;
+        };
+        /**
          * AgentApprovalDecision
          * @description POST /api/v1/agent/threads/{id}/approvals.
          */
@@ -7482,13 +7609,16 @@ export interface components {
          *     Basic Auth (the app must not render its own login gate), "session" =
          *     BFF sessions (gate on ``authenticated``). userId/username/role carry
          *     the server-verified identity for the account menu — the client never
-         *     declares who it is.
+         *     declares who it is. initialSources is only present on the invite
+         *     activation response (N001); every other surface omits it entirely.
          */
         AuthStatus: {
             /** Authenticated */
             authenticated: boolean;
             /** Expiresat */
             expiresAt?: string | null;
+            /** Initialsources */
+            initialSources?: components["schemas"]["ActivationSourceResult"][] | null;
             /**
              * Mode
              * @default session
@@ -9676,14 +9806,65 @@ export interface components {
          */
         InviteCreateRequest: {
             /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /**
+             * Holdpool
+             * @default false
+             */
+            holdPool: boolean;
+            /**
              * Kind
              * @default signup
              */
             kind: string;
             /** Label */
             label?: string | null;
+            /** Notbefore */
+            notBefore?: string | null;
+            /** Schemeid */
+            schemeId?: string | null;
             /** Targetusername */
             targetUsername?: string | null;
+            /**
+             * Ttlhours
+             * @default 72
+             */
+            ttlHours: number;
+        };
+        /**
+         * InviteSchemeBatchRequest
+         * @description POST /admin/invite-schemes/{id}/generate-invites (N001).
+         */
+        InviteSchemeBatchRequest: {
+            /** Count */
+            count: number;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Notbefore */
+            notBefore?: string | null;
+        };
+        /**
+         * InviteSchemeCreateRequest
+         * @description POST /admin/invite-schemes (N001).
+         */
+        InviteSchemeCreateRequest: {
+            /**
+             * Freshrsspoolhold
+             * @default false
+             */
+            freshrssPoolHold: boolean;
+            /** Initialsourceurls */
+            initialSourceUrls?: string[];
+            /** Name */
+            name: string;
+            /** Quotanote */
+            quotaNote?: string | null;
             /**
              * Ttlhours
              * @default 72
@@ -12914,6 +13095,156 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_funnel_api_v1_admin_invite_funnel_get: {
+        parameters: {
+            query?: {
+                scheme_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invite_schemes_api_v1_admin_invite_schemes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_invite_scheme_api_v1_admin_invite_schemes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteSchemeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteSchemeBatchRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -604,8 +604,11 @@ function normalizeBucket(row: Record<string, unknown>): InviteFunnelBucket {
 
 /** 漏斗聚合（可选按方案过滤）。 */
 export async function getInviteFunnel(signal?: AbortSignal, schemeId?: string | null): Promise<InviteFunnel> {
-  const suffix = schemeId ? `?scheme_id=${encodeURIComponent(schemeId)}` : ''
-  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/invite-funnel${suffix}`, signal)
+  const path =
+    schemeId
+      ? `${API_BASE}/admin/invite-funnel?scheme_id=${encodeURIComponent(schemeId)}`
+      : `${API_BASE}/admin/invite-funnel`
+  const body = await request<Record<string, unknown>>(path, signal)
   const totalsRaw = (body.totals ?? {}) as Record<string, unknown>
   const byScheme = Array.isArray(body.byScheme) ? body.byScheme : []
   const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
