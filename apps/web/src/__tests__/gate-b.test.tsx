@@ -131,10 +131,11 @@ describe('快捷键行为（j/k/u/s）', () => {
 
 describe('分类页 planned 语义（AC10）', () => {
   it('订阅与来源页：OPML 导入/导出真实可用（0013 Gate 4）；来源发现指向订阅中心（0014）', async () => {
-    // SourcesSettingsSection 会真实请求 subscriptions / freshrss-ui
+    // SourcesSettingsSection 会真实请求 subscriptions / freshrss/native-url
     const routes: Record<string, () => Response> = {
       'GET /api/v1/subscriptions': () => jsonResponse([]),
-      'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+      'GET /api/v1/freshrss/native-url': () =>
+        jsonResponse({ error: { type: 'freshrss_native_url_unavailable', message: '绑定待定' } }, 409),
       'GET /api/v1/operations/status': () => jsonResponse(OPERATIONS_STATUS_OK),
     }
     vi.stubGlobal(

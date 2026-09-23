@@ -1875,6 +1875,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/freshrss/native-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freshrss Native Url
+         * @description P09 委托入口：本账户 FreshRSS 原生界面的可直达坐标。
+         *
+         *     返回**恰好** ``{origin, username}``：origin 是绑定里浏览器可达的
+         *     public_url（内部 FRESHRSS_BASE_URL 永不回显——它可能是浏览器无法
+         *     且不应到达的 Docker 主机名，与 /api/v1/freshrss-ui 同一安全决策），
+         *     username 是该账户在 FreshRSS 侧的登录名（让原生界面里的身份可
+         *     识别）。密码与 greader token 不在模型里，契约上无凭据可泄。
+         *
+         *     绑定未完成或未配置浏览器可达地址 → 409 ``freshrss_native_url_unavailable``
+         *     （诚实的"暂不可用"状态，UI 显示待定文案、绝不渲染假链接）。
+         *     身份由会话/内部令牌中间件统一强制（/api/* 全量门禁）。
+         */
+        get: operations["freshrss_native_url_api_v1_freshrss_native_url_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/glossary": {
         parameters: {
             query?: never;
@@ -8788,6 +8818,21 @@ export interface components {
             siteUrl?: string | null;
             /** Title */
             title: string;
+        };
+        /**
+         * FreshRssNativeUrl
+         * @description GET /api/v1/freshrss/native-url — 委托入口数据（P09）。
+         *
+         *     响应**恰好**两个字段：浏览器可达的 FreshRSS 站点根（origin，来自
+         *     绑定的 public_url）+ 该账户的 FreshRSS 用户名（原生界面登录可识别）。
+         *     API 密码 / greader token 等任何凭据永不进入此响应——模型没有承载
+         *     它们的字段，契约上就不可能泄露。
+         */
+        FreshRssNativeUrl: {
+            /** Origin */
+            origin: string;
+            /** Username */
+            username: string;
         };
         /**
          * FreshRssUiInfo
@@ -15964,6 +16009,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreshRssUiInfo"];
+                };
+            };
+        };
+    };
+    freshrss_native_url_api_v1_freshrss_native_url_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshRssNativeUrl"];
                 };
             };
         };

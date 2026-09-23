@@ -529,6 +529,18 @@ class FreshRssUiInfo(BaseModel):
     url: str | None = None
 
 
+class FreshRssNativeUrl(BaseModel):
+    """GET /api/v1/freshrss/native-url — 委托入口数据（P09）。
+
+    响应**恰好**两个字段：浏览器可达的 FreshRSS 站点根（origin，来自
+    绑定的 public_url）+ 该账户的 FreshRSS 用户名（原生界面登录可识别）。
+    API 密码 / greader token 等任何凭据永不进入此响应——模型没有承载
+    它们的字段，契约上就不可能泄露。"""
+
+    origin: str
+    username: str
+
+
 class TrashItem(BaseModel):
     """F019：回收站条目（kind: bookmark | clip）。30 天过期由既有清理
     机制承担；当前若无调度器则仅在文档标注，不新建调度器。"""
