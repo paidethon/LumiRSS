@@ -120,8 +120,8 @@ export type GlassEffect = 'auto' | 'on' | 'off'
 export type ListDensity = 'compact' | 'standard' | 'comfortable'
 /** F04：列表时间格式 */
 export type ListTimeFormat = 'relative' | 'absolute'
-/** F06：RSS 时间线排序 */
-export type TimelineOrder = 'newest' | 'oldest'
+/** F06：RSS 时间线排序（N034：received = 服务端按接收时间排序） */
+export type TimelineOrder = 'newest' | 'oldest' | 'received'
 /** F08：卡片滑动动作（非屏幕边缘区） */
 export type CardSwipeAction = 'none' | 'read' | 'readLater' | 'star'
 

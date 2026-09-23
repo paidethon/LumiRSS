@@ -50,6 +50,9 @@ class EntryListItem(BaseModel):
     # F045：includeHidden=true 时附带的服务端屏蔽标记（其余情况为 None）。
     hiddenByRule: EntryHiddenByRule | None = None
     coverUrl: str | None = None
+    # N034：发布时间可信度（异常代码逗号连接，如 "future" /
+    # "missing,no_timezone"；无异常或投影未覆盖 → None，不冒充正常）。
+    timeCredibility: str | None = None
 
 
 class EntryPage(BaseModel):
@@ -123,6 +126,61 @@ class EntryEnclosure(BaseModel):
     type: str | None = None
 
 
+class ContentVariantOption(BaseModel):
+    """N032：一个可选的正文版本（经同一净化边界渲染）。
+
+    kind: "current"（上游当前）| "last_known_full"（保留的上一个更长
+    版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。
+    contentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界
+    渲染，BFF 不做净化（与正文同一安全模型）。
+    """
+
+    kind: str
+    label: str
+    capturedAt: str | None = None
+    contentHtml: str | None = None
+    lengthChars: int = 0
+
+
+class ContentVariantsBlock(BaseModel):
+    """N032：正文明显变短时的版本选择块（未触发 → None）。
+
+    triggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的
+    历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测
+    内容是否「完整」。
+    """
+
+    triggered: bool
+    currentLength: int
+    maxLength: int
+    variants: list[ContentVariantOption] = Field(default_factory=list)
+
+
+class EntryRevision(BaseModel):
+    """N031：一条有界的文章修订记录（元数据，绝不含全文副本）。
+
+    summary 为服务端计算的结构差异摘要：basis 说明比较基准
+    （retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，
+    无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。
+    """
+
+    id: int
+    capturedAt: str
+    titleChanged: bool
+    prevTitle: str | None = None
+    newTitle: str | None = None
+    summary: dict = Field(default_factory=dict)
+    prevHash: str
+    newHash: str
+
+
+class EntryRevisionsResponse(BaseModel):
+    """GET /api/v1/entries/{entry_ref}/revisions。"""
+
+    entryRef: str
+    revisions: list[EntryRevision]
+
+
 class EntryDetail(BaseModel):
     """One article with its body.
 
@@ -153,6 +211,9 @@ class EntryDetail(BaseModel):
     # F011：原样透传的 enclosure[]（audio/video 等媒体附件；greader
     # items 响应中的 enclosure 数组，形状异常的元素保守丢弃）。
     enclosure: list[EntryEnclosure] = Field(default_factory=list)
+    # N032：正文明显变短时的版本选择块（未触发为 None；字段存在于
+    # 契约，response_model_exclude_none=False 下始终出现）。
+    contentVariants: ContentVariantsBlock | None = None
 
 
 
@@ -315,6 +376,28 @@ class Subscription(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class EncodingInspection(BaseModel):
+    """N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。
+
+    - declared/declaredMethod：文档声称的编码与判定来源
+      （bom | xml_declaration | meta_charset | content_type_header | none）；
+    - detected/detectedMethod：轻启发式结果（无 chardet 依赖）：
+      bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；
+    - mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；
+    - sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以
+      U+FFFD 掩码）；无无效字节 → None。
+    """
+
+    declared: str | None = None
+    declaredMethod: str | None = None
+    detected: str | None = None
+    detectedMethod: str | None = None
+    utf8Valid: bool = True
+    mojibakeRisk: bool = False
+    sample: str | None = None
+    bodyBytes: int = 0
+
+
 class FeedPreviewResult(BaseModel):
     """POST /api/v1/feed-preview and POST /api/v1/rsshub/preview.
 
@@ -327,6 +410,38 @@ class FeedPreviewResult(BaseModel):
     description: str | None = None
     format: Literal["rss", "atom"]
     alreadySubscribed: bool
+    # N033：编码检查（直连预览路径附带；rsshub/preview 无抓取 → None）。
+    encodingInspection: EncodingInspection | None = None
+
+
+class FeedPreviewReparseRequest(BaseModel):
+    """POST /api/v1/feed-preview/reparse body (N033)."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str = Field(min_length=1)
+    encoding: Literal["utf-8", "declared", "detected"] | None = None
+    save: bool = False
+
+
+class FeedPreviewEncodingChoice(BaseModel):
+    """reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。"""
+
+    encoding: str
+    resolvedCodec: str | None = None
+    title: str | None = None
+    sample: str | None = None
+    mojibakeRisk: bool = False
+
+
+class FeedPreviewReparseResponse(BaseModel):
+    """reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。"""
+
+    feedUrl: str
+    inspection: EncodingInspection
+    choices: list[FeedPreviewEncodingChoice]
+    applied: str | None = None
+    savedOverride: str | None = None
 
 
 class DiscoveryCandidate(BaseModel):
@@ -1092,6 +1207,11 @@ class EntryDocument(BaseModel):
     read: bool
     starred: bool
     contentText: str
+    # N031/N032/N040：投影摄取需要原始 HTML（差异摘要 / 内容变体边界
+    # 判定）与 FreshRSS 首次收录时刻。contentHtml 只在投影写入路径内部
+    # 使用，绝不入库为全文（投影不保存正文副本），也不出现在 API 响应。
+    contentHtml: str = ""
+    crawledAt: str = ""
 
 
 class EntryDocumentPage(BaseModel):
@@ -2018,6 +2138,24 @@ class SettingsRevertResult(BaseModel):
     skipped: dict[str, object] = {}
 
 
+class CollectionTiming(BaseModel):
+    """N040：三时点采集延迟块（未知保持 null，绝不臆造）。
+
+    - upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；
+    - freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，
+      非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注
+      口径；源从未提供 → None + basis="未提供 by upstream"）；
+    - lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；
+    - latencyHint：最大缺口环节提示（数据不足 → None）。
+    """
+
+    upstreamPublishedLatest: str | None = None
+    freshrssFetchedLatest: str | None = None
+    freshrssFetchedBasis: str = "未提供 by upstream"
+    lumiProjectedLatest: str | None = None
+    latencyHint: str | None = None
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
@@ -2026,6 +2164,8 @@ class SubscriptionVolumeItem(BaseModel):
     publishedCount: int | None = None
     lastPublishedAt: str | None = None
     lastSyncedAt: str | None = None
+    # N040：三时点采集延迟块（投影未覆盖 → None）。
+    collectionTiming: CollectionTiming | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):

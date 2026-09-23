@@ -222,6 +222,7 @@ import type { BacklogCondition } from './client'
 import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
+import type { TimelineOrder } from '../store/app-settings'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
 import { READ_LATER_WORKSPACE_ID } from '../lib/read-later'
 
@@ -288,10 +289,12 @@ export function useSubscriptions() {
  * 1000 条只是病态增长的内存保险丝。DOM 成本由列表行的
  * content-visibility 处理（见 EntryList）。staleTime 30s：scope/view
  * 来回切换不重复请求（数据仍由写路径的精确补丁保持精确）。 */
-export function useEntries(scope: ContentScope, view: UiView) {
+export function useEntries(scope: ContentScope, view: UiView, order: TimelineOrder = 'newest') {
   const entryQuery = buildEntryQuery(scope, view)
   return useInfiniteQuery({
-    queryKey: ['entries', { view, scope: scopeKey(scope) }],
+    // N034：order 进入 queryKey —— received 走服务端 ?sort=received，
+    // 切换排序 = 换 key（与 read-later 时间线同一模式）。
+    queryKey: ['entries', { view, scope: scopeKey(scope), order }],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       getEntries(
@@ -301,6 +304,7 @@ export function useEntries(scope: ContentScope, view: UiView) {
           sourceType: entryQuery.sourceType,
           categoryId: entryQuery.categoryId,
           cursor: pageParam,
+          sort: order === 'received' ? 'received' : null,
         },
         signal,
       ),

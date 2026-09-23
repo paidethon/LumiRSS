@@ -66,18 +66,51 @@ export function VolumeOverview() {
           ) : (
             <ul className="flex flex-col divide-y divide-[var(--lumi-separator)]">
               {(volume.data?.items ?? []).map((item) => (
-                <li key={item.feedUrl} className="flex items-center justify-between gap-2 py-1.5">
-                  <span className="min-w-0 truncate text-xs text-[var(--lumi-text-primary)]">
-                    {item.title || item.feedUrl}
-                  </span>
-                  <span
-                    className="shrink-0 text-xs text-[var(--lumi-text-secondary)]"
-                    data-volume-count={item.publishedCount === null ? 'unknown' : item.publishedCount}
-                  >
-                    {item.publishedCount === null
-                      ? '未知（投影未覆盖）'
-                      : `${item.publishedCount} 篇`}
-                  </span>
+                <li key={item.feedUrl} className="flex flex-col gap-1 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-xs text-[var(--lumi-text-primary)]">
+                      {item.title || item.feedUrl}
+                    </span>
+                    <span
+                      className="shrink-0 text-xs text-[var(--lumi-text-secondary)]"
+                      data-volume-count={item.publishedCount === null ? 'unknown' : item.publishedCount}
+                    >
+                      {item.publishedCount === null
+                        ? '未知（投影未覆盖）'
+                        : `${item.publishedCount} 篇`}
+                    </span>
+                  </div>
+                  {/* N040：三时点采集延迟块（未知 = null，诚实显示「未提供」） */}
+                  {item.collectionTiming && (
+                    <div
+                      data-testid="collection-timing"
+                      className="flex flex-col gap-0.5 ps-2 text-[11px] leading-4 text-[var(--lumi-text-tertiary)]"
+                    >
+                      <div className="flex justify-between gap-2">
+                        <span>上游发布</span>
+                        <span data-testid="timing-upstream">
+                          {item.collectionTiming.upstreamPublishedLatest?.slice(0, 16).replace('T', ' ') ?? '未知'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span>FreshRSS 收录</span>
+                        <span data-testid="timing-freshrss" title={item.collectionTiming.freshrssFetchedBasis}>
+                          {item.collectionTiming.freshrssFetchedLatest?.slice(0, 16).replace('T', ' ') ?? '未提供 by upstream'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span>Lumi 投影</span>
+                        <span data-testid="timing-lumi">
+                          {item.collectionTiming.lumiProjectedLatest?.slice(0, 16).replace('T', ' ') ?? '未知'}
+                        </span>
+                      </div>
+                      {item.collectionTiming.latencyHint && (
+                        <p data-testid="timing-hint" className="text-[var(--lumi-text-secondary)]">
+                          最大延迟环节：{item.collectionTiming.latencyHint}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

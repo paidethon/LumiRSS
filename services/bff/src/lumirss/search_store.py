@@ -168,7 +168,7 @@ class SearchStore:
 
     async def known_states(self) -> list[Any]:
         return await self._db.fetch_all(
-            "SELECT item_id, published_at, read, starred FROM search_entries"
+            "SELECT item_id, published_at, read, starred, content_hash FROM search_entries"
         )
 
     async def entry_row_by_ref(self, entry_ref: str) -> Any | None:

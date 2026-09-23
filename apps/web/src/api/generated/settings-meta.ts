@@ -67,7 +67,7 @@ export const SETTING_ENUMS = {
   glassEffect: ['auto', 'on', 'off'],
   listDensity: ['compact', 'standard', 'comfortable'],
   listTimeFormat: ['relative', 'absolute'],
-  timelineOrder: ['newest', 'oldest'],
+  timelineOrder: ['newest', 'oldest', 'received'],
   cardSwipeAction: ['none', 'read', 'readLater', 'star'],
 } as const
 

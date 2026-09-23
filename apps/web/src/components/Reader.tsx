@@ -49,6 +49,8 @@ const ReaderTranslation = lazy(() => import('./ReaderTranslation'))
 const ArticleConversation = lazy(() => import('./ArticleConversation'))
 const ReaderSummary = lazy(() => import('./ReaderSummary'))
 const ProvenanceCard = lazy(() => import('./ProvenanceCard'))
+// N031：文章修订差异面板（元数据量级，按需查询；无修订零渲染）。
+const EntryRevisionsPanel = lazy(() => import('./EntryRevisionsPanel'))
 const EntryNotesBacklinks = lazy(() => import('./EntryNotesBacklinks'))
 const EnclosurePlayer = lazy(() => import('./EnclosurePlayer').then((m) => ({ default: m.EnclosurePlayer })))
 import ReaderPlaceholder from './ReaderPlaceholder'
@@ -778,6 +780,10 @@ const handleScroll = useCallback(() => {
         {/* F30：资料溯源卡（来源/作者/发布/收录/链接/内容版本；未知诚实显示） */}
         <Suspense fallback={null}>
         <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* N031：修订记录（内容哈希变化的摄取历史；无修订不渲染入口） */}
+        <Suspense fallback={null}>
+          <EntryRevisionsPanel key={`revisions-${detail.entryRef}`} entryRef={detail.entryRef} />
         </Suspense>
         {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
         <Suspense fallback={null}>

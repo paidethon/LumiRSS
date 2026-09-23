@@ -472,7 +472,8 @@ function EntriesList() {
   const timelineOrder = useAppSettings((s) => s.settings.timelineOrder)
   const updateSettings = useAppSettings((s) => s.update)
 
-  const entriesQuery = useEntries(scope, view)
+  // N034：received 交给服务端（?sort=received）；newest/oldest 仍为客户端重排。
+  const entriesQuery = useEntries(scope, view, timelineOrder)
   const { data, isPending, isError, error, refetch } = entriesQuery
   const hasNextPage = entriesQuery.hasNextPage
   const isFetchingNextPage = entriesQuery.isFetchingNextPage
@@ -490,6 +491,18 @@ function EntriesList() {
       : all
     return timelineOrder === 'oldest' ? [...filtered].reverse() : filtered
   }, [data, filterEnabled, filterRules, timelineOrder])
+
+  // N034 排序切换（最新优先 → 最早优先 → 按接收时间）。
+  const cycleTimelineOrder = () => {
+    updateSettings({
+      timelineOrder:
+        timelineOrder === 'newest'
+          ? 'oldest'
+          : timelineOrder === 'oldest'
+            ? 'received'
+            : 'newest',
+    })
+  }
 
   // F014：未读候选（当前已加载 + 当前筛选；阅读预算装填输入）
   const budgetCandidates = useMemo<BudgetCandidate[]>(
@@ -912,12 +925,21 @@ function EntriesList() {
             最早优先（当前已加载范围内排序，服务端分页仍为最新优先）
           </p>
         )}
+        {timelineOrder === 'received' && (
+          <p
+            role="note"
+            data-testid="timeline-order-received-note"
+            className="mr-auto text-xs text-[var(--lumi-text-tertiary)]"
+          >
+            按接收时间（服务端排序；页边界仍由上游分页决定）
+          </p>
+        )}
         <button
           type="button"
           data-testid="timeline-order-toggle"
-          aria-pressed={timelineOrder === 'oldest'}
-          title="切换时间线排序（最新优先 / 最早优先）"
-          onClick={() => updateSettings({ timelineOrder: timelineOrder === 'newest' ? 'oldest' : 'newest' })}
+          aria-pressed={timelineOrder !== 'newest'}
+          title="切换时间线排序（最新优先 / 最早优先 / 按接收时间）"
+          onClick={cycleTimelineOrder}
           className={cx(
             'rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
             'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
@@ -926,7 +948,11 @@ function EntriesList() {
               : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
           )}
         >
-          {timelineOrder === 'oldest' ? '最早优先' : '最新优先'}
+          {timelineOrder === 'newest'
+            ? '最新优先'
+            : timelineOrder === 'oldest'
+              ? '最早优先'
+              : '按接收时间'}
         </button>
         {/* F018：同链聚合开关 */}
         <button

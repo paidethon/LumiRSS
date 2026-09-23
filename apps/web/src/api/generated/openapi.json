@@ -1556,7 +1556,8 @@
       "default": "newest",
       "enum": [
        "newest",
-       "oldest"
+       "oldest",
+       "received"
       ],
       "title": "Timelineorder",
       "type": "string"
@@ -3520,6 +3521,62 @@
     "title": "ClipRevisionRequest",
     "type": "object"
    },
+   "CollectionTiming": {
+    "description": "N040：三时点采集延迟块（未知保持 null，绝不臆造）。\n\n- upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；\n- freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，\n  非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注\n  口径；源从未提供 → None + basis=\"未提供 by upstream\"）；\n- lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；\n- latencyHint：最大缺口环节提示（数据不足 → None）。",
+    "properties": {
+     "freshrssFetchedBasis": {
+      "default": "未提供 by upstream",
+      "title": "Freshrssfetchedbasis",
+      "type": "string"
+     },
+     "freshrssFetchedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Freshrssfetchedlatest"
+     },
+     "latencyHint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyhint"
+     },
+     "lumiProjectedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lumiprojectedlatest"
+     },
+     "upstreamPublishedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Upstreampublishedlatest"
+     }
+    },
+    "title": "CollectionTiming",
+    "type": "object"
+   },
    "CompareBody": {
     "description": "POST /api/v1/entries/compare body（F067）。",
     "properties": {
@@ -3691,6 +3748,83 @@
      "type"
     ],
     "title": "ComponentError",
+    "type": "object"
+   },
+   "ContentVariantOption": {
+    "description": "N032：一个可选的正文版本（经同一净化边界渲染）。\n\nkind: \"current\"（上游当前）| \"last_known_full\"（保留的上一个更长\n版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。\ncontentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界\n渲染，BFF 不做净化（与正文同一安全模型）。",
+    "properties": {
+     "capturedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Capturedat"
+     },
+     "contentHtml": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "lengthChars": {
+      "default": 0,
+      "title": "Lengthchars",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "kind",
+     "label"
+    ],
+    "title": "ContentVariantOption",
+    "type": "object"
+   },
+   "ContentVariantsBlock": {
+    "description": "N032：正文明显变短时的版本选择块（未触发 → None）。\n\ntriggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的\n历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测\n内容是否「完整」。",
+    "properties": {
+     "currentLength": {
+      "title": "Currentlength",
+      "type": "integer"
+     },
+     "maxLength": {
+      "title": "Maxlength",
+      "type": "integer"
+     },
+     "triggered": {
+      "title": "Triggered",
+      "type": "boolean"
+     },
+     "variants": {
+      "items": {
+       "$ref": "#/components/schemas/ContentVariantOption"
+      },
+      "title": "Variants",
+      "type": "array"
+     }
+    },
+    "required": [
+     "triggered",
+     "currentLength",
+     "maxLength"
+    ],
+    "title": "ContentVariantsBlock",
     "type": "object"
    },
    "ConversationMessage": {
@@ -4237,6 +4371,83 @@
     "title": "DuplicateSuspectsResponse",
     "type": "object"
    },
+   "EncodingInspection": {
+    "description": "N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。\n\n- declared/declaredMethod：文档声称的编码与判定来源\n  （bom | xml_declaration | meta_charset | content_type_header | none）；\n- detected/detectedMethod：轻启发式结果（无 chardet 依赖）：\n  bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；\n- mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；\n- sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以\n  U+FFFD 掩码）；无无效字节 → None。",
+    "properties": {
+     "bodyBytes": {
+      "default": 0,
+      "title": "Bodybytes",
+      "type": "integer"
+     },
+     "declared": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Declared"
+     },
+     "declaredMethod": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Declaredmethod"
+     },
+     "detected": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detected"
+     },
+     "detectedMethod": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detectedmethod"
+     },
+     "mojibakeRisk": {
+      "default": false,
+      "title": "Mojibakerisk",
+      "type": "boolean"
+     },
+     "sample": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sample"
+     },
+     "utf8Valid": {
+      "default": true,
+      "title": "Utf8Valid",
+      "type": "boolean"
+     }
+    },
+    "title": "EncodingInspection",
+    "type": "object"
+   },
    "EntryConversation": {
     "description": "GET/POST /api/v1/entries/{entryRef}/conversation(+ /messages).",
     "properties": {
@@ -4291,6 +4502,16 @@
      "contentText": {
       "title": "Contenttext",
       "type": "string"
+     },
+     "contentVariants": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ContentVariantsBlock"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "crawledAt": {
       "anyOf": [
@@ -4525,6 +4746,17 @@
       "title": "Starred",
       "type": "boolean"
      },
+     "timeCredibility": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timecredibility"
+     },
      "title": {
       "title": "Title",
       "type": "string"
@@ -4589,6 +4821,89 @@
      "nextCursor"
     ],
     "title": "EntryListResponse",
+    "type": "object"
+   },
+   "EntryRevision": {
+    "description": "N031：一条有界的文章修订记录（元数据，绝不含全文副本）。\n\nsummary 为服务端计算的结构差异摘要：basis 说明比较基准\n（retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，\n无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。",
+    "properties": {
+     "capturedAt": {
+      "title": "Capturedat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "newHash": {
+      "title": "Newhash",
+      "type": "string"
+     },
+     "newTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Newtitle"
+     },
+     "prevHash": {
+      "title": "Prevhash",
+      "type": "string"
+     },
+     "prevTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Prevtitle"
+     },
+     "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+     },
+     "titleChanged": {
+      "title": "Titlechanged",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "capturedAt",
+     "titleChanged",
+     "prevHash",
+     "newHash"
+    ],
+    "title": "EntryRevision",
+    "type": "object"
+   },
+   "EntryRevisionsResponse": {
+    "description": "GET /api/v1/entries/{entry_ref}/revisions。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "revisions": {
+      "items": {
+       "$ref": "#/components/schemas/EntryRevision"
+      },
+      "title": "Revisions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRef",
+     "revisions"
+    ],
+    "title": "EntryRevisionsResponse",
     "type": "object"
    },
    "EntryStateUpdate": {
@@ -5127,6 +5442,143 @@
     "title": "FeedFilterRuleTrialResult",
     "type": "object"
    },
+   "FeedPreviewEncodingChoice": {
+    "description": "reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。",
+    "properties": {
+     "encoding": {
+      "title": "Encoding",
+      "type": "string"
+     },
+     "mojibakeRisk": {
+      "default": false,
+      "title": "Mojibakerisk",
+      "type": "boolean"
+     },
+     "resolvedCodec": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolvedcodec"
+     },
+     "sample": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sample"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "encoding"
+    ],
+    "title": "FeedPreviewEncodingChoice",
+    "type": "object"
+   },
+   "FeedPreviewReparseBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/feed-preview/reparse body (N033).\n\nencoding=None → 只返回三种选择（utf-8 | declared | detected）的渲染\n对比；encoding+save=true → 把该选择存为来源覆盖（影响后续预览的\n解码方式，绝不回写历史投影）。",
+    "properties": {
+     "encoding": {
+      "anyOf": [
+       {
+        "enum": [
+         "utf-8",
+         "declared",
+         "detected"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Encoding"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "save": {
+      "default": false,
+      "title": "Save",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "FeedPreviewReparseBody",
+    "type": "object"
+   },
+   "FeedPreviewReparseResponse": {
+    "description": "reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。",
+    "properties": {
+     "applied": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied"
+     },
+     "choices": {
+      "items": {
+       "$ref": "#/components/schemas/FeedPreviewEncodingChoice"
+      },
+      "title": "Choices",
+      "type": "array"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "inspection": {
+      "$ref": "#/components/schemas/EncodingInspection"
+     },
+     "savedOverride": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Savedoverride"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "inspection",
+     "choices"
+    ],
+    "title": "FeedPreviewReparseResponse",
+    "type": "object"
+   },
    "FeedPreviewRequest": {
     "description": "POST /api/v1/feed-preview body (0013 Gate 2).",
     "properties": {
@@ -5159,6 +5611,16 @@
        }
       ],
       "title": "Description"
+     },
+     "encodingInspection": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/EncodingInspection"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "feedUrl": {
       "title": "Feedurl",
@@ -13620,6 +14082,16 @@
    "SubscriptionVolumeItem": {
     "description": "F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。",
     "properties": {
+     "collectionTiming": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CollectionTiming"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "feedUrl": {
       "title": "Feedurl",
       "type": "string"
@@ -18131,7 +18603,7 @@
   },
   "/api/v1/entries": {
    "get": {
-    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。",
+    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。\n\nN034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）\n降序重排（服务端执行，query param 真实生效）；上游 continuation\n分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内\n条目附带 timeCredibility（投影摄取时分类的发布时间异常）。",
     "operationId": "entries_api_v1_entries_get",
     "parameters": [
      {
@@ -18227,6 +18699,23 @@
        "default": false,
        "title": "Includehidden",
        "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "const": "received",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sort"
       }
      }
     ],
@@ -18741,6 +19230,46 @@
      }
     },
     "summary": "Generate Entry Quiz"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/revisions": {
+   "get": {
+    "description": "N031：单篇文章的有界修订历史（只读，纯投影查询，不触上游）。\n\n修订 = FreshRSS 以同一 id 重新交付但内容哈希变化的摄取记录；行内\n只有元数据（结构差异摘要 + 哈希），绝无全文副本。无记录 → 空表\n200（条目可能存在于 FreshRSS 但从未修订过）。",
+    "operationId": "entry_revisions_api_v1_entries__entry_ref__revisions_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryRevisionsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Revisions"
    }
   },
   "/api/v1/entries/{entry_ref}/state": {
@@ -19562,7 +20091,7 @@
   },
   "/api/v1/feed-preview": {
    "post": {
-    "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
+    "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.\n\nN033：响应附带 encodingInspection（声明/检测/乱码风险 + 掩码样本）；\n若用户保存过 encoding_override，预览解析按该选择解码（只影响 Lumi\n自己的 feed 字节→文本解码点，历史投影数据不回写）。",
     "operationId": "preview_feed_api_v1_feed_preview_post",
     "requestBody": {
      "content": {
@@ -19597,6 +20126,45 @@
      }
     },
     "summary": "Preview Feed"
+   }
+  },
+  "/api/v1/feed-preview/reparse": {
+   "post": {
+    "description": "N033 重新解析诊断：同一次有界抓取，三种编码选择各渲染一份\n（title + 掩码样本 + 乱码风险），供用户显式选择。选中的选择可保存\n为 source_overrides.encoding_override（仅影响未来的解码）。",
+    "operationId": "reparse_feed_api_v1_feed_preview_reparse_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedPreviewReparseBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedPreviewReparseResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reparse Feed"
    }
   },
   "/api/v1/feeds": {
@@ -28417,7 +28985,7 @@
   },
   "/api/v1/sources/volume": {
    "get": {
-    "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。",
+    "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。\n\nN040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS\n收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取\n时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。",
     "operationId": "subscription_volume_api_v1_sources_volume_get",
     "parameters": [
      {
