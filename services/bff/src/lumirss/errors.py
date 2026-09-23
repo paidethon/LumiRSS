@@ -145,6 +145,12 @@ from lumirss.obsidian import (
     VaultRootLocked,
     VaultUnreachable,
 )
+from lumirss.obsidian_devices import (
+    DeviceProfileInvalid,
+    DeviceProfileNotFound,
+)
+from lumirss.obsidian_template import TemplateTooLong
+from lumirss.obsidian_uri import ObsidianUriInvalid
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
@@ -325,6 +331,11 @@ _ERROR_RESPONSES = {
     VaultPermissionDenied: (403, "vault_permission_denied"),
     NoteNotFound: (404, "note_not_found"),
     VaultRootLocked: (409, "vault_root_locked"),
+    # P16 obsidian devices / export handoff
+    DeviceProfileInvalid: (422, "invalid_device_profile"),
+    DeviceProfileNotFound: (404, "device_profile_not_found"),
+    ObsidianUriInvalid: (422, "invalid_obsidian_uri"),
+    TemplateTooLong: (422, "template_too_long"),
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
@@ -488,6 +499,10 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(VaultPermissionDenied)
     @app.exception_handler(NoteNotFound)
     @app.exception_handler(VaultRootLocked)
+    @app.exception_handler(DeviceProfileInvalid)
+    @app.exception_handler(DeviceProfileNotFound)
+    @app.exception_handler(ObsidianUriInvalid)
+    @app.exception_handler(TemplateTooLong)
     @app.exception_handler(RagModelUnavailable)
     @app.exception_handler(RagRebuildBusy)
     @app.exception_handler(AgentProviderUnavailable)
