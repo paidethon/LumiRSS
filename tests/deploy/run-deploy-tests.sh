@@ -6,6 +6,11 @@
 #     inside the real caddy:2-alpine image with a stub `caddy`
 #   - preflight port-conflict + caddy-config snippet + configure idempotency
 #   - doctor / update run to completion against a stub docker CLI
+#   - prebuilt-only: pull failure aborts with the old stack preserved,
+#     `--build` refuses the prod compose path
+#   - data-preserving upgrade structure: backup → pull → up → health,
+#     same volume paths, no `down`, seeded data untouched
+#   - export-images / import-images command construction + checksum gate
 # Run from anywhere: tests/deploy/run-deploy-tests.sh
 set -uo pipefail
 
@@ -413,6 +418,189 @@ assert_eq "set-password refuses to run without a password source" "1" "$rc"
 assert_contains "refusal explains the sources" "LUMIRSS_NEW_PASSWORD" "$no_pw"
 cd - >/dev/null
 rm -rf "$sb" "$stub_dir" "$sp_log"
+
+# ---------------------------------------------------------------------------
+echo "== 13. prebuilt-only: pull failure aborts update, old stack preserved =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+pullfail_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: registry unreachable (compose pull fails) and the pinned
+# images are NOT present locally — the worst-case production pull failure
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  image) exit 1;;     # `docker image inspect`: no local images for this tag
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo 'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp: connection refused' >&2; exit 1;;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+pf_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$pullfail_log" ./lumirss update 2>&1)"
+rc=$?
+assert_eq "pull failure aborts the update (non-zero exit)" "1" "$rc"
+assert_contains "abort names the cause and keeps the old stack" "still running and untouched" "$pf_out"
+assert_contains "abort points at the offline import path" "import-images" "$pf_out"
+if grep -qE "docker compose .*build" "$pullfail_log"; then
+  bad "pull failure triggered a local build"
+else
+  ok "pull failure did not invoke any build"
+fi
+if grep -qE "docker compose .*up" "$pullfail_log"; then
+  bad "pull failure still ran compose up"
+else
+  ok "no compose up after pull failure (old stack untouched)"
+fi
+rm -rf "$sb" "$stub_dir" "$pullfail_log"
+
+# ---------------------------------------------------------------------------
+echo "== 14. --build is refused on every production compose path =="
+sb="$(new_sandbox)"
+bb_out="$(cd "$sb" && env LUMIRSS_ENV=production ./lumirss deploy --build 2>&1)"
+rc=$?
+assert_eq "deploy --build refuses under LUMIRSS_ENV=production" "1" "$rc"
+assert_contains "refusal explains prebuilt-only policy" "prebuilt-only" "$bb_out"
+assert_contains "refusal points at the dev/CI build overlay" "docker-compose.build.yml" "$bb_out"
+bb2_out="$(cd "$sb" && ./lumirss update --build 2>&1)"
+rc=$?
+assert_eq "update --build refuses against the prod compose file" "1" "$rc"
+assert_contains "refusal also names the overlay on the update path" "docker-compose.build.yml" "$bb2_out"
+rm -rf "$sb"
+
+# ---------------------------------------------------------------------------
+echo "== 15. data-preserving upgrade: backup → pull → up → health, volumes untouched =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+up_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: healthy registry + running stack; every call is logged
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  inspect) exit 0;;
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo " Pulled";;
+      exec) exit 0;;   # wait_health probe
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+# Seed an existing deployment: a .env.prod and a fake user DB the way a
+# long-running host would have one. With a stubbed daemon the volumes are
+# structural, so the assertions check the upgrade's shape: the backup step
+# mounts the SAME named volumes read-only, nothing ever runs `down`, and
+# the seeded data file survives byte-identical.
+mkdir -p "$sb/data"
+printf 'seeded-user-db-%s\n' "$(date +%s%N)" > "$sb/data/lumi.sqlite"
+seed_hash="$(sha256sum "$sb/data/lumi.sqlite" | cut -d' ' -f1)"
+upd_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && printf 'DOMAIN=reader.example.com\nLUMIRSS_EXTERNAL_CADDY=1\nLUMIRSS_UPSTREAM_PORT=18080\n' >> .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$up_log" \
+     LUMIRSS_BACKUP_DIR="$sb/backups" LUMIRSS_IMAGE_TAG=deadbeefcafe \
+     ./lumirss update 2>&1)"
+rc=$?
+assert_eq "update completes against the stub" "0" "$rc"
+assert_contains "update reports completion" "update complete" "$upd_out"
+assert_contains "backup mounted the lumi-data volume read-only" \
+  "lumirss-prod_lumi-data:/src:ro" "$(cat "$up_log")"
+assert_contains "backup mounted the freshrss-data volume read-only" \
+  "lumirss-prod_freshrss-data:/src:ro" "$(cat "$up_log")"
+[[ -s "$sb/backups/LATEST" ]] && ok "backup step ran (backups/LATEST written)" \
+  || bad "backup step did not run"
+if grep -qE "docker compose .*down" "$up_log"; then
+  bad "update path invoked compose down (data loss risk)"
+else
+  ok "update never invoked compose down (no -v destruction possible)"
+fi
+up_line="$(grep -nE "docker compose .* up " "$up_log" | head -1 | cut -d: -f1)"
+exec_line="$(grep -nE "docker compose .* exec " "$up_log" | head -1 | cut -d: -f1)"
+if [[ -n "$up_line" && -n "$exec_line" && "$exec_line" -gt "$up_line" ]]; then
+  ok "post-up health check ran (exec bff after up -d)"
+else
+  bad "health check missing or ran before up (up=$up_line exec=$exec_line)"
+fi
+assert_eq "seeded user DB survived the upgrade byte-identical" "$seed_hash" \
+  "$(sha256sum "$sb/data/lumi.sqlite" | cut -d' ' -f1)"
+rm -rf "$sb" "$stub_dir" "$up_log"
+
+# ---------------------------------------------------------------------------
+echo "== 16. export-images / import-images: construction + checksum gate =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+ex_log="$(mktemp)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "${LUMIRSS_TEST_DOCKER_LOG:?}"
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  save)  # honour -o so sha256sum has a real file to hash
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+    [ -n "$out" ] && printf 'fake-image-tar\n' > "$out"
+    exit 0;;
+  load) exit 0;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+printf '{"schema": "lumirss-release-manifest/v1"}\n' > "$sb/release-manifest.json"
+ex_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$ex_log" \
+  LUMIRSS_IMAGE_TAG=abc123def456 ./lumirss export-images --out "$sb/offline" 2>&1)"
+rc=$?
+assert_eq "export-images exits 0" "0" "$rc"
+assert_contains "export saves BOTH pinned images in one tar" \
+  "save -o $sb/offline/lumirss-images-abc123def456.tar ghcr.io/paidethon/lumirss-web:abc123def456 ghcr.io/paidethon/lumirss-bff:abc123def456" \
+  "$(cat "$ex_log")"
+[[ -s "$sb/offline/lumirss-images-abc123def456.tar" ]] \
+  && ok "export wrote the image tar" || bad "export tar missing"
+[[ "$(wc -l < "$sb/offline/SHA256SUMS")" -eq 2 ]] \
+  && ok "SHA256SUMS covers tar + release-manifest.json" || bad "SHA256SUMS incomplete"
+[[ -f "$sb/offline/release-manifest.json" ]] \
+  && ok "export copied release-manifest.json" || bad "release-manifest.json not copied"
+im_log="$(mktemp)"
+im_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$im_log" \
+  ./lumirss import-images "$sb/offline" 2>&1)"
+rc=$?
+assert_eq "import-images exits 0" "0" "$rc"
+assert_contains "import verifies checksums before load" "verifying SHA256SUMS" "$im_out"
+assert_contains "import loads the exported tar" \
+  "load -i $sb/offline/lumirss-images-abc123def456.tar" "$(cat "$im_log")"
+printf 'corrupted\n' > "$sb/offline/lumirss-images-abc123def456.tar"
+bad_log="$(mktemp)"
+bad_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_TEST_DOCKER_LOG="$bad_log" \
+  ./lumirss import-images "$sb/offline" 2>&1)"
+rc=$?
+assert_eq "import refuses a corrupted bundle" "1" "$rc"
+assert_contains "refusal names the checksum failure" "checksum verification failed" "$bad_out"
+if grep -q "docker load" "$bad_log"; then
+  bad "corrupted bundle still reached docker load"
+else
+  ok "corrupted bundle never reached docker load"
+fi
+rm -rf "$sb" "$stub_dir" "$ex_log" "$im_log" "$bad_log"
 
 # ---------------------------------------------------------------------------
 echo
