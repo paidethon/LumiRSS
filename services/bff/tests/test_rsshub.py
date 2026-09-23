@@ -7,6 +7,8 @@ injected via monkeypatched RssHubSettings so tests never read the real
 .env.
 """
 
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -346,28 +348,55 @@ async def test_preview_oversized_feed():
 # --- route level ------------------------------------------------------------
 
 
-async def route_request(path: str, *, json=None, base: str = BASE_URL):
+@pytest.fixture(autouse=True)
+def _isolated_control_db(monkeypatch, tmp_path):
+    """Route-level tests drive the real ASGI stack, whose auth middleware
+    resolves the request identity from the control database. Pin
+    LUMIRSS_DB_PATH to a temp file so the lifespan run below (owner
+    migration included) never touches a developer's real data dir —
+    same isolation the shared `client` fixture provides TestClient tests."""
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
+
+
+@asynccontextmanager
+async def _start_app_with(client):
+    """Run the real app lifespan, then swap in the test HTTP client.
+
+    The session/basic auth middleware now gates every /api route: without
+    a started app there is no control database and no owner identity, so
+    requests fail closed with 401. Running the lifespan gives the
+    middleware exactly what a production request has; the fakes are then
+    injected after startup, the same way test_feeds_route.py injects its
+    fake adapter into a started TestClient."""
     from lumirss.source_discovery import SourceDiscoveryService
 
+    async with app.router.lifespan_context(app):
+        lifespan_client, app.state.http_client = app.state.http_client, client
+        await lifespan_client.aclose()
+        app.state.rsshub_service = None
+        app.state.source_discovery_service = SourceDiscoveryService()
+        yield
+
+
+async def route_request(path: str, *, json=None, base: str = BASE_URL):
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(lambda r: httpx.Response(200, content=RSS_DOC))
     )
     control = FakeControl()
     service = RssHubService(client, control)
     service.load_settings = lambda: FakeSettings(base)
-    app.state.http_client = client
-    app.state.rsshub_service = service
-    app.state.source_discovery_service = SourceDiscoveryService()
     try:
-        from httpx import ASGITransport
+        async with _start_app_with(client):
+            app.state.rsshub_service = service
+            from httpx import ASGITransport
 
-        transport = ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as route_client:
-            if json is None:
-                return await route_client.get(path)
-            return await route_client.post(path, json=json)
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as route_client:
+                if json is None:
+                    return await route_client.get(path)
+                return await route_client.post(path, json=json)
     finally:
         await client.aclose()
 
@@ -398,16 +427,16 @@ async def test_route_routes_catalog_reports_not_configured():
         service.load_settings = lambda: (_ for _ in ()).throw(
             RssHubNotConfigured("x")
         )
-        app.state.http_client = client
-        app.state.rsshub_service = service
         try:
-            from httpx import ASGITransport
+            async with _start_app_with(client):
+                app.state.rsshub_service = service
+                from httpx import ASGITransport
 
-            transport = ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://testserver"
-            ) as route_client:
-                return await route_client.get("/api/v1/rsshub/routes")
+                transport = ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as route_client:
+                    return await route_client.get("/api/v1/rsshub/routes")
         finally:
             await client.aclose()
 
@@ -458,19 +487,19 @@ async def test_route_preview_upstream_error_502():
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         service = RssHubService(client, FakeControl())
         service.load_settings = lambda: FakeSettings()
-        app.state.http_client = client
-        app.state.rsshub_service = service
         try:
-            from httpx import ASGITransport
+            async with _start_app_with(client):
+                app.state.rsshub_service = service
+                from httpx import ASGITransport
 
-            transport = ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://testserver"
-            ) as route_client:
-                return await route_client.post(
-                    "/api/v1/rsshub/preview",
-                    json={"routeId": "hackernews", "params": {}},
-                )
+                transport = ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as route_client:
+                    return await route_client.post(
+                        "/api/v1/rsshub/preview",
+                        json={"routeId": "hackernews", "params": {}},
+                    )
         finally:
             await client.aclose()
 
