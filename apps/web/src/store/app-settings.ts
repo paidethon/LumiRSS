@@ -3,11 +3,11 @@
  * 类型化客户端设置（借鉴 OrigRead-Desktop DesktopSettings 模式，inspired）：
  * 单一 interface + zustand + localStorage 单 key（lumirss-settings）持久化。
  *
- * 迁移（AC17/V11）：旧 key lumirss-theme / lumirss-reader-bg 的数据在
- * 首次读取时并入（旧 key 保留不删——兼容一个版本，0017 服务端设置
- * 落地时统一收口）。themeMode/readerBackground 迁入后，旧 store
- * （store/theme.ts、lib/reader-bg.ts）改为本 store 的薄封装（Gate A
- * 先并存，Gate B 完成接线后旧模块退役）。
+ * 迁移（AC17/V11）：旧 key lumirss-theme 的数据在首次读取时并入
+ * （旧 key 保留不删——兼容一个版本，0017 服务端设置落地时统一收口）。
+ * 旧 key lumirss-reader-bg 已在 P14 收口：首次读取时并入并在移除后
+ * 删除（loadSettings 单一路径，lib/reader-bg.ts 模块已退役）。
+ * themeMode 迁入后，旧 store（store/theme.ts）改为本 store 的薄封装。
  *
  * Reader 排版（fontSize/lineHeight/contentWidth）由本 store 挂 CSS 变量
  * 到 <html>（--lumi-reader-font-size 等，Gate B 接线）。 */
@@ -47,8 +47,16 @@ import {
   normalizeSpeechSleepMinutes,
   type SpeechRate,
 } from '../lib/reader-speech'
+import {
+  isValidBgImageDataUrl,
+  normalizeOverlayOpacity,
+} from '../lib/reader-bg-image'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
+
+/** 退役旧 key（原 lib/reader-bg.ts 持有；P14 双路径收口后删除该模块，
+ * 此处仅保留迁移用途的常量并在 loadSettings 中一次性收割移除）。 */
+export const LEGACY_READER_BG_KEY = 'lumirss-reader-bg'
 
 // ---- 0017：连续数值范围（AD-0017-1，min/default/max/step 唯一来源） ----
 // 数值范围 + 默认值派生自 BFF PortableSettings（生成的 settings-meta），
@@ -190,6 +198,11 @@ export interface AppSettings {
   readerFontFamily: ReaderFontFamily
   readerBackground: ReaderBackground
   readerBackgroundCustom: string // #rrggbb（custom 时生效）
+  /** P14：背景图片 data URL（设备本地，绝不进 PORTABLE_KEYS / 不上传）。
+   * 仅接受位图 base64 data URL，编码后 ≤ 2MB（见 lib/reader-bg-image）。 */
+  readerBackgroundImage: string | null
+  /** P14：背景图片上的可读性遮罩不透明度（%，0–80，默认 40）。 */
+  readerBackgroundImageOverlay: number
   readerParagraphSpacing: ReaderParagraphSpacing
   readerJustify: boolean
   readerImageMode: ReaderImageMode
@@ -269,6 +282,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   customCss: '',
   readerPresetId: 'default',
   readerPresets: [],
+  // P14：背景图片（设备本地；默认无图片，遮罩 40%）
+  readerBackgroundImage: null,
+  readerBackgroundImageOverlay: 40,
   filterRules: [],
   filterStats: { totalFiltered: 0, lastFilteredAt: null, lastMatchedRule: null },
   includeHiddenEntries: false,
@@ -487,6 +503,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
       source.readerBackgroundCustom,
       DEFAULT_APP_SETTINGS.readerBackgroundCustom,
     ),
+    // P14：图片 data URL 校验（位图 MIME + base64 + ≤2MB）；损坏值丢弃
+    readerBackgroundImage: isValidBgImageDataUrl(source.readerBackgroundImage)
+      ? source.readerBackgroundImage
+      : null,
+    readerBackgroundImageOverlay: normalizeOverlayOpacity(
+      source.readerBackgroundImageOverlay,
+    ),
     readerParagraphSpacing: pickReaderNumber('readerParagraphSpacing', source.readerParagraphSpacing),
     readerJustify: pickBoolean(source.readerJustify, DEFAULT_APP_SETTINGS.readerJustify),
     readerImageMode: pickString(source.readerImageMode, IMAGE_MODES, DEFAULT_APP_SETTINGS.readerImageMode),
@@ -646,22 +669,41 @@ export function normalizeSettings(raw: unknown): AppSettings {
   }
 }
 
+/** 旧 lumirss-reader-bg key（lib/reader-bg.ts 退役遗留；P14 收口）：
+ * 值合法且当前 readerBackground 仍为默认（视为未设置）时并入，
+ * 然后无论如何移除旧 key——单一事实源收口到 lumirss-settings。 */
+function importLegacyReaderBg(storage: Storage, settings: AppSettings): AppSettings {
+  const legacy = storage.getItem(LEGACY_READER_BG_KEY)
+  if (legacy !== null) {
+    if (
+      settings.readerBackground === DEFAULT_APP_SETTINGS.readerBackground &&
+      READER_BG_VALUES.includes(legacy as ReaderBackground)
+    ) {
+      settings.readerBackground = legacy as ReaderBackground
+    }
+    storage.removeItem(LEGACY_READER_BG_KEY)
+  }
+  return settings
+}
+
 /** 首次加载：读新 key；不存在则从旧 key（theme/reader-bg）迁移。 */
 export function loadSettings(storage: Storage | null): AppSettings {
   if (storage === null) return { ...DEFAULT_APP_SETTINGS }
   try {
     const raw = storage.getItem(SETTINGS_STORAGE_KEY)
     if (raw !== null) {
-      return normalizeSettings(JSON.parse(raw))
+      // P14：新 key 已存在时同样收割/清除旧 reader-bg key（一次性迁移）
+      return importLegacyReaderBg(storage, normalizeSettings(JSON.parse(raw)))
     }
     // 迁移路径：旧 key 数据并入默认值
     const migrated = { ...DEFAULT_APP_SETTINGS }
     const oldTheme = storage.getItem('lumirss-theme')
     if (isThemeMode(oldTheme)) migrated.themeMode = oldTheme
-    const oldReaderBg = storage.getItem('lumirss-reader-bg')
+    const oldReaderBg = storage.getItem(LEGACY_READER_BG_KEY)
     if (READER_BG_VALUES.includes(oldReaderBg as ReaderBackground)) {
       migrated.readerBackground = oldReaderBg as ReaderBackground
     }
+    storage.removeItem(LEGACY_READER_BG_KEY)
     return migrated
   } catch {
     return { ...DEFAULT_APP_SETTINGS }
@@ -677,14 +719,10 @@ export function persistSettings(storage: Storage | null, settings: AppSettings):
   }
 }
 
-/** Reader 排版 CSS 变量挂载（Gate B 由 Reader 消费；此处为挂载逻辑）。 */
-export function applyReaderTypography(settings: AppSettings): void {
-  if (typeof document === 'undefined') return
-  const root = document.documentElement
-  root.style.setProperty('--lumi-reader-font-size', `${settings.readerFontSize}px`)
-  root.style.setProperty('--lumi-reader-line-height', String(settings.readerLineHeight))
-  root.style.setProperty('--lumi-reader-content-width', `${settings.readerContentWidth}px`)
-
+/** Reader 排版/配色 CSS 变量映射（applyReaderTypography 与设置页实时
+ * 预览共用同一映射，保证「预览即所得」）。follow 模式不含背景调色板
+ * ——消费端继承 tokens.css 的主题默认值。 */
+export function readerTypographyVars(settings: AppSettings): Record<string, string> {
   // 0010a F6：字体族 / 段距 / 对齐；0012：自定义字体优先于档位栈
   //（字体未注册完成时 CSS 自动回退档位栈，不白屏）
   let customFamily: string | null = null
@@ -694,23 +732,18 @@ export function applyReaderTypography(settings: AppSettings): void {
     customFamily = fontFamilyName(fontIdFromUrl(settings.readerFontUrl))
   }
   const baseStack = READER_FONT_STACKS[settings.readerFontFamily]
-  root.style.setProperty(
-    '--lumi-reader-font-family',
-    customFamily !== null ? `"${customFamily}", ${baseStack}` : baseStack,
-  )
-  // 0017：段距是连续 em 数值；页面边距是连续 px 数值（移动端 CSS 钳制）
-  root.style.setProperty('--lumi-reader-paragraph-spacing', `${settings.readerParagraphSpacing}em`)
-  root.style.setProperty('--lumi-reader-page-margin', `${settings.readerPageMargin}px`)
-  root.style.setProperty('--lumi-reader-text-align', settings.readerJustify ? 'justify' : 'start')
-  // 图片模式：灰度/隐藏由 .article-content img 消费
-  root.dataset.readerImages = settings.readerImageMode
-
-  // 0012 Gate 4：中文排版（首行缩进相对单位；标点悬挂 progressive
-  // enhancement —— CSS 侧用 @supports 包裹，这里只挂变量/标记）
-  root.style.setProperty('--lumi-reader-text-indent', settings.readerTextIndent === '2em' ? '2em' : '0')
-  root.dataset.readerHangingPunctuation = settings.readerHangingPunctuation ? 'true' : 'false'
-  // 简繁转换标记（展示层 transform 的开关，ArticleContent 消费）
-  root.dataset.readerChineseConversion = settings.readerChineseConversion
+  const vars: Record<string, string> = {
+    '--lumi-reader-font-size': `${settings.readerFontSize}px`,
+    '--lumi-reader-line-height': String(settings.readerLineHeight),
+    '--lumi-reader-content-width': `${settings.readerContentWidth}px`,
+    '--lumi-reader-font-family':
+      customFamily !== null ? `"${customFamily}", ${baseStack}` : baseStack,
+    '--lumi-reader-paragraph-spacing': `${settings.readerParagraphSpacing}em`,
+    '--lumi-reader-page-margin': `${settings.readerPageMargin}px`,
+    '--lumi-reader-text-align': settings.readerJustify ? 'justify' : 'start',
+    // 0012 Gate 4：中文首行缩进相对单位（标点悬挂走 data 属性，见下）
+    '--lumi-reader-text-indent': settings.readerTextIndent === '2em' ? '2em' : '0',
+  }
 
   // 预设驱动的 custom 背景（AMOLED/高对比等内置预设携带的背景）
   const customBg =
@@ -719,21 +752,64 @@ export function applyReaderTypography(settings: AppSettings): void {
       : settings.readerBackgroundCustom
   const isDark = resolveTheme(settings.themeMode, prefersDarkScheme()) === 'dark'
   const bgHex = resolveReaderBackground(settings.readerBackground, customBg, isDark)
-  if (bgHex === null) {
-    root.style.removeProperty('--lumi-reader-bg')
-    root.style.removeProperty('--lumi-reader-text')
-    root.style.removeProperty('--lumi-reader-heading')
-    root.style.removeProperty('--lumi-reader-muted')
-    root.style.removeProperty('--lumi-reader-border')
-    root.style.removeProperty('--lumi-reader-link')
-  } else {
+  if (bgHex !== null) {
     const palette = readerTextPalette(bgHex)
-    root.style.setProperty('--lumi-reader-bg', bgHex)
-    root.style.setProperty('--lumi-reader-text', palette.text)
-    root.style.setProperty('--lumi-reader-heading', palette.heading)
-    root.style.setProperty('--lumi-reader-muted', palette.muted)
-    root.style.setProperty('--lumi-reader-border', palette.border)
-    root.style.setProperty('--lumi-reader-link', palette.link)
+    vars['--lumi-reader-bg'] = bgHex
+    vars['--lumi-reader-text'] = palette.text
+    vars['--lumi-reader-heading'] = palette.heading
+    vars['--lumi-reader-muted'] = palette.muted
+    vars['--lumi-reader-border'] = palette.border
+    vars['--lumi-reader-link'] = palette.link
+  }
+  return vars
+}
+
+/** 背景调色板变量集合（follow 模式下这些键需从 root 移除以回落主题默认）。 */
+const READER_BG_PALETTE_VARS = [
+  '--lumi-reader-bg',
+  '--lumi-reader-text',
+  '--lumi-reader-heading',
+  '--lumi-reader-muted',
+  '--lumi-reader-border',
+  '--lumi-reader-link',
+] as const
+
+/** Reader 排版 CSS 变量挂载（Gate B 由 Reader 消费；此处为挂载逻辑）。 */
+export function applyReaderTypography(settings: AppSettings): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  const vars = readerTypographyVars(settings)
+  for (const [key, value] of Object.entries(vars)) {
+    root.style.setProperty(key, value)
+  }
+  // follow（未解析背景）→ 移除调色板回落 tokens 默认
+  for (const key of READER_BG_PALETTE_VARS) {
+    if (!(key in vars)) root.style.removeProperty(key)
+  }
+
+  // 0017：图片模式：灰度/隐藏由 .article-content img 消费
+  root.dataset.readerImages = settings.readerImageMode
+
+  // 0012 Gate 4：标点悬挂 progressive enhancement —— CSS 侧用
+  // @supports 包裹；简繁转换标记（展示层 transform，ArticleContent 消费）
+  root.dataset.readerHangingPunctuation = settings.readerHangingPunctuation ? 'true' : 'false'
+  root.dataset.readerChineseConversion = settings.readerChineseConversion
+
+  // P14：背景图片分层（设备本地 data URL；遮罩强度 0–0.8 由
+  // index.css .lumi-reader-bg-image 消费——图片上叠 reader 背景色遮罩）。
+  // 无图片时移除变量：图层为 none + 全透明遮罩，视觉零变化。
+  if (settings.readerBackgroundImage !== null) {
+    root.style.setProperty(
+      '--lumi-reader-bg-image',
+      `url("${settings.readerBackgroundImage}")`,
+    )
+    root.style.setProperty(
+      '--lumi-reader-bg-overlay',
+      String(settings.readerBackgroundImageOverlay / 100),
+    )
+  } else {
+    root.style.removeProperty('--lumi-reader-bg-image')
+    root.style.removeProperty('--lumi-reader-bg-overlay')
   }
 }
 
@@ -841,6 +917,9 @@ const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
   'readerPageMargin',
   'readerBackground',
   'readerBackgroundCustom',
+  // P14：恢复默认阅读设置时一并清除背景图片与遮罩
+  'readerBackgroundImage',
+  'readerBackgroundImageOverlay',
   'readerJustify',
   'readerImageMode',
   'readerTextIndent',
