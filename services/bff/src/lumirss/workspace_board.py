@@ -83,6 +83,14 @@ class WorkspaceBoardStore:
         )
         if member is None:
             raise BoardItemNotFound(clean_ref)
+        # P15：状态真实变化才 bump workspaces.revision（重复写同状态仍是
+        # 幂等重放——不制造跨设备 409 噪声）。写法保持既有 INSERT/UPDATE
+        # 两段式（无 UPSERT 语法）。
+        current = await self._db.fetch_one(
+            "SELECT status FROM workspace_item_status WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, clean_ref),
+        )
+        status_changed = current is None or str(current["status"]) != status
         now = utc_now()
 
         def _insert(conn: sqlite3.Connection) -> int:
@@ -90,6 +98,11 @@ class WorkspaceBoardStore:
                 "INSERT INTO workspace_item_status (workspace_id, item_ref, status, updated_at) VALUES (?, ?, ?, ?)",
                 (workspace_id, clean_ref, status, now),
             )
+            if status_changed:
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (workspace_id,),
+                )
             return cursor.rowcount
 
         def _update(conn: sqlite3.Connection) -> int:
@@ -97,6 +110,11 @@ class WorkspaceBoardStore:
                 "UPDATE workspace_item_status SET status = ?, updated_at = ? WHERE workspace_id = ? AND item_ref = ?",
                 (status, now, workspace_id, clean_ref),
             )
+            if status_changed:
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (workspace_id,),
+                )
             return cursor.rowcount
 
         try:

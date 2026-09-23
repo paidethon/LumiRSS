@@ -1197,6 +1197,9 @@ class Workspace(BaseModel):
     # F084：归档状态（默认导航隐藏；深链接仍可打开）
     archived: bool = False
     archivedAt: str | None = None
+    # P15：条目域变更计数（add/remove/reorder/status +1）；重排序可带
+    # expectedRevision 做乐观并发，不匹配 → 409。
+    revision: int = 1
 
 
 class WorkspaceListResponse(BaseModel):
@@ -1228,11 +1231,15 @@ class WorkspaceItemsResponse(BaseModel):
 
 
 class WorkspaceReorderRequest(BaseModel):
-    """PATCH /api/v1/workspaces/{id}/items — refs in their new order."""
+    """PATCH /api/v1/workspaces/{id}/items — refs in their new order.
+
+    P15：``expectedRevision`` 可选（If-Match 式乐观并发）；缺省 = 旧
+    行为（不校验），保证既有调用方零改动。"""
 
     model_config = {"extra": "forbid"}
 
     itemRefs: list[str]
+    expectedRevision: int | None = None
 
 
 class ResolvedItem(BaseModel):
@@ -1257,6 +1264,30 @@ class WorkspaceItemsResolvedResponse(BaseModel):
     """Envelope for GET /api/v1/workspaces/{id}/contents (resolved views)."""
 
     items: list[ResolvedItem]
+
+
+class WorkspaceResumePutRequest(BaseModel):
+    """PUT /api/v1/workspaces/{id}/resume — one member ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceResumePointer(BaseModel):
+    """「上次看到哪」指针（P15）：ref + 保存时的位置快照。"""
+
+    itemRef: str
+    positionAtSave: int | None = None
+    updatedAt: str
+
+
+class WorkspaceResumeResponse(BaseModel):
+    """Envelope for GET/PUT /api/v1/workspaces/{id}/resume（无指针时
+    pointer=null，GET 永远 200——「没有指针」是正常态而非错误）。"""
+
+    workspaceId: str
+    pointer: WorkspaceResumePointer | None = None
 
 
 class ResolveRequest(BaseModel):

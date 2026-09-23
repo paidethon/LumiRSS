@@ -101,6 +101,8 @@ import {
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
+  getWorkspaceResume,
+  putWorkspaceResume,
   createInboxSource,
   deleteInboxItem,
   deleteInboxSource,
@@ -1398,9 +1400,33 @@ export function useReadLaterMemberMutation() {
 export function useReorderWorkspaceItemsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; itemRefs: string[] }) =>
-      reorderWorkspaceItems(vars.workspaceId, vars.itemRefs),
+    mutationFn: (vars: { workspaceId: string; itemRefs: string[]; expectedRevision?: number }) =>
+      reorderWorkspaceItems(vars.workspaceId, vars.itemRefs, vars.expectedRevision),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** P15：续读指针查询（每工作区一个；pointer=null = 无）。 */
+export function useWorkspaceResume(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'resume'],
+    queryFn: ({ signal }) => getWorkspaceResume(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+/** P15：保存续读指针（条目打开时调用；失败静默降级——指针是体验增强，
+ * 不应因一次 404/网络错误打断阅读动作本身）。 */
+export function usePutWorkspaceResumeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
+      putWorkspaceResume(vars.workspaceId, vars.itemRef),
+    onSuccess: (_data, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['workspace', vars.workspaceId, 'resume'],
+      })
+    },
   })
 }
 

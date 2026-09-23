@@ -6399,7 +6399,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Reorder Workspace Items */
+        /**
+         * Reorder Workspace Items
+         * @description P15：``expectedRevision`` 可选（If-Match 式）；与当前 revision
+         *     不匹配 → 409 workspace_revision_conflict（错误体带 currentRevision），
+         *     客户端重取后重试；不传 = 旧行为（last-write-wins），兼容既有调用方。
+         */
         patch: operations["reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch"];
         trace?: never;
     };
@@ -6458,6 +6463,33 @@ export interface paths {
          * @description F088：资料包预览（计数 + 体积估算 + 可选快照清单；缺失诚实跳过）。
          */
         post: operations["preview_research_pack_api_v1_workspaces__workspace_id__research_pack_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Resume
+         * @description P15：读取续读指针；无指针（含未知工作区）返回 pointer=null。
+         */
+        get: operations["get_workspace_resume_api_v1_workspaces__workspace_id__resume_get"];
+        /**
+         * Put Workspace Resume
+         * @description P15：保存「上次看到哪」指针（每工作区一个；PUT 幂等 upsert）。
+         *
+         *     校验与 add_item 同构：404 未知工作区 / 404 条目不在工作区。
+         *     不 bump revision（阅读光标 ≠ 共享条目状态，见 store 注释）。
+         */
+        put: operations["put_workspace_resume_api_v1_workspaces__workspace_id__resume_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12606,6 +12638,11 @@ export interface components {
             position: number;
             /** Reserved */
             reserved: boolean;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
         };
         /** WorkspaceBoardResponse */
         WorkspaceBoardResponse: {
@@ -12709,10 +12746,45 @@ export interface components {
         /**
          * WorkspaceReorderRequest
          * @description PATCH /api/v1/workspaces/{id}/items — refs in their new order.
+         *
+         *     P15：``expectedRevision`` 可选（If-Match 式乐观并发）；缺省 = 旧
+         *     行为（不校验），保证既有调用方零改动。
          */
         WorkspaceReorderRequest: {
+            /** Expectedrevision */
+            expectedRevision?: number | null;
             /** Itemrefs */
             itemRefs: string[];
+        };
+        /**
+         * WorkspaceResumePointer
+         * @description 「上次看到哪」指针（P15）：ref + 保存时的位置快照。
+         */
+        WorkspaceResumePointer: {
+            /** Itemref */
+            itemRef: string;
+            /** Positionatsave */
+            positionAtSave?: number | null;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * WorkspaceResumePutRequest
+         * @description PUT /api/v1/workspaces/{id}/resume — one member ItemRef.
+         */
+        WorkspaceResumePutRequest: {
+            /** Itemref */
+            itemRef: string;
+        };
+        /**
+         * WorkspaceResumeResponse
+         * @description Envelope for GET/PUT /api/v1/workspaces/{id}/resume（无指针时
+         *     pointer=null，GET 永远 200——「没有指针」是正常态而非错误）。
+         */
+        WorkspaceResumeResponse: {
+            pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
+            /** Workspaceid */
+            workspaceId: string;
         };
         /**
          * WorkspaceTemplate
@@ -24367,6 +24439,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_resume_api_v1_workspaces__workspace_id__resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResumeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_workspace_resume_api_v1_workspaces__workspace_id__resume_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceResumePutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResumeResponse"];
                 };
             };
             /** @description Validation Error */

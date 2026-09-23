@@ -234,3 +234,45 @@ def test_reorder_reaches_items_past_the_first_page(client, fake_rss_entries):
     positions = {i["itemRef"]: i["position"] for i in listing.json()["items"]}
     assert positions[ordered[0]] == 1
     assert positions[ordered[-1]] == 250
+
+
+def test_revision_visible_in_list_and_detail_and_bumps_on_mutation(client):
+    """P15：list/detail 携带 revision；条目域变更（add/remove/reorder）
+    如实 +1 —— 跨设备乐观并发的凭据（409 流程见 test_workspace_resume）。"""
+    created = client.post("/api/v1/workspaces", json={"name": "修订"})
+    assert created.status_code == 201
+    workspace_id = created.json()["id"]
+
+    listing = client.get("/api/v1/workspaces").json()["items"]
+    summary = next(w for w in listing if w["id"] == workspace_id)
+    assert int(summary["revision"]) == 1
+    detail = client.get(f"/api/v1/workspaces/{workspace_id}").json()
+    assert int(detail["revision"]) == 1
+
+    ref = client.post(
+        "/api/v1/library/bookmarks",
+        json={"url": "https://example.com/rev", "title": "修订条目"},
+    ).json()["ref"]
+    assert (
+        client.post(
+            f"/api/v1/workspaces/{workspace_id}/items", json={"itemRef": ref}
+        ).status_code
+        == 201
+    )
+    assert int(client.get(f"/api/v1/workspaces/{workspace_id}").json()["revision"]) == 2
+
+    # 旧调用方不带 expectedRevision 的 reorder：行为不变 + revision 前进。
+    reordered = client.patch(
+        f"/api/v1/workspaces/{workspace_id}/items", json={"itemRefs": [ref]}
+    )
+    assert reordered.status_code == 200
+    assert "items" in reordered.json()
+    assert int(client.get(f"/api/v1/workspaces/{workspace_id}").json()["revision"]) == 3
+
+    assert (
+        client.delete(
+            f"/api/v1/workspaces/{workspace_id}/items/{ref}"
+        ).status_code
+        == 204
+    )
+    assert int(client.get(f"/api/v1/workspaces/{workspace_id}").json()["revision"]) == 4
