@@ -17,6 +17,7 @@ from lumirss.models import (
     BacklogSampleItem,
     EntryDetail,
     EntryListResponse,
+    EntryRevisionsResponse,
 )
 from lumirss.util import utc_now
 
@@ -55,6 +56,7 @@ async def entries(
     categoryId: str | None = None,
     cursor: str | None = None,
     includeHidden: bool = False,
+    sort: Literal["received"] | None = None,
 ) -> EntryListResponse:
     """One filtered page of entries — list fields only, never bodies.
 
@@ -70,6 +72,11 @@ async def entries(
     - categoryId：FreshRSS 分类（greader label stream，适配器含默认
       分类本地化名 fallback）；
     - feedUrl 与 categoryId 互斥（两者同时出现 → 400）。
+
+    N034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）
+    降序重排（服务端执行，query param 真实生效）；上游 continuation
+    分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内
+    条目附带 timeCredibility（投影摄取时分类的发布时间异常）。
     """
     if sourceType is not None and sourceType != "rss":
         raise InvalidEntryReference("sourceType must be 'rss' (only source type today).")
@@ -142,6 +149,24 @@ async def entries(
         else:
             filtered_count += 1
     items = kept  # type: ignore[assignment]
+    # N034：投影摄取元数据（一次有界 IN 查询）——timeCredibility 附加 +
+    # sort=received 页内接收时间降序。投影未覆盖的条目两字段保持
+    # None / 原序（未知不冒充已知）。
+    from lumirss.entry_history import EntryHistoryStore, credibility_codes
+
+    intake = await EntryHistoryStore(request.app.state.db).intake_meta(
+        [item.entryRef for item in items]
+    )
+    for item in items:
+        meta = intake.get(item.entryRef)
+        if meta is not None:
+            item.timeCredibility = credibility_codes(int(meta["timeFlags"]))
+    if sort == "received":
+        items.sort(
+            key=lambda item: (
+                -(int(intake[item.entryRef]["fetchedAt"]) if item.entryRef in intake else 0)
+            )
+        )
     next_cursor = (
         encode_cursor(
             page.upstreamContinuation,
@@ -178,6 +203,14 @@ async def entry_detail(
     detail = await adapter.get_entry(item_id)
     detail.extractPolicy = "rss"
     detail.extractionFailed = False
+    # N032：content_variants 块基于 RSS 交付内容计算（变体关注上游交付
+    # 的正文变化，与 web 提取策略正交；触发条件与保留版本见
+    # EntryHistoryStore.variants_block）。渲染仍由 Web 经同一净化边界。
+    from lumirss.entry_history import EntryHistoryStore
+
+    detail.contentVariants = await EntryHistoryStore(
+        request.app.state.db
+    ).variants_block(entry_ref, current_html=detail.contentHtml)
     feed_url = getattr(detail, "feedUrl", None)
     if not feed_url:
         return JSONResponse(detail.model_dump())
@@ -234,6 +267,23 @@ async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request
     return Response(status_code=204)
 
 
+@router.get(
+    "/api/v1/entries/{entry_ref}/revisions",
+    response_model=EntryRevisionsResponse,
+    response_model_exclude_none=False,
+)
+async def entry_revisions(entry_ref: str, request: Request) -> EntryRevisionsResponse:
+    """N031：单篇文章的有界修订历史（只读，纯投影查询，不触上游）。
+
+    修订 = FreshRSS 以同一 id 重新交付但内容哈希变化的摄取记录；行内
+    只有元数据（结构差异摘要 + 哈希），绝无全文副本。无记录 → 空表
+    200（条目可能存在于 FreshRSS 但从未修订过）。
+    """
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.entry_history import EntryHistoryStore
+
+    revisions = await EntryHistoryStore(request.app.state.db).revisions(entry_ref)
+    return EntryRevisionsResponse(entryRef=entry_ref, revisions=revisions)
 
 
 # -- F024 积压整理助手 --------------------------------------------------------

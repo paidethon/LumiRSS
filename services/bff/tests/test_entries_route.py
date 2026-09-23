@@ -104,6 +104,7 @@ def test_entries_route_returns_items_envelope():
             "snippet": None,
             "coverUrl": None,
             "hiddenByRule": None,  # F045
+            "timeCredibility": None,  # N034（投影未覆盖 fake 条目 → null）
         }
         # 0006 Test C — the list never carries any body fields.
         assert "contentHtml" not in body["items"][0]
@@ -167,6 +168,7 @@ def test_entry_detail_route_returns_detail():
             "enclosure": [],  # F011 透传（fixture 无 enclosure → 空数组）
             "extractPolicy": "rss",  # F048
             "extractionFailed": False,
+            "contentVariants": None,  # N032（未触发 → null）
         }
     finally:
         app.state.freshrss_adapter = None

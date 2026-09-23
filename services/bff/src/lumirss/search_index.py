@@ -30,6 +30,7 @@ from lumirss.cursor import InvalidCursor
 from lumirss.opaque_ref import decode_opaque_ref, encode_opaque_ref
 
 from .adapters.freshrss import ConfigError, FreshRSSAdapter
+from .entry_intake import content_hash
 from .models import EntryDocument
 from .search_meta_store import SearchFeedStore
 from .search_store import SearchStore
@@ -136,8 +137,11 @@ class SearchIndexService:
         await self._feeds.meta_set("rebuild_incomplete", "1")
         await self._refresh_feed_categories(int(started))
         await self._db.execute("DROP TABLE IF EXISTS search_rebuild_stage")
+        # N031/N032/N034/N040：stage 表携带 intake 元数据列——
+        # content_max_len 从活投影带入（子查询）、content_hash/time_flags
+        # 按 stage 时刻计算、crawled_at 来自适配器——swap 后投影语义不变。
         await self._db.execute(
-            "CREATE TABLE search_rebuild_stage (item_id TEXT UNIQUE NOT NULL, entry_ref TEXT UNIQUE NOT NULL, feed_url TEXT NOT NULL, feed_title TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', content_text TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, starred INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL)"
+            "CREATE TABLE search_rebuild_stage (item_id TEXT UNIQUE NOT NULL, entry_ref TEXT UNIQUE NOT NULL, feed_url TEXT NOT NULL, feed_title TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', content_text TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, starred INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL, content_max_len INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL DEFAULT '', time_flags INTEGER NOT NULL DEFAULT 0, crawled_at TEXT)"
         )
         pages = 0
         total = 0
@@ -196,6 +200,8 @@ class SearchIndexService:
         scanned = 0
         updated = 0
         # Hoisted: a full-table state read per page was pure repeat work.
+        # N031：state 额外携带 content_hash —— 同一 id 重新交付但内容
+        # 哈希变化的条目必须进入 replace 管线（修订/变体在写入路径捕获）。
         known = await self._known_states()
         for _page in range(max_pages):
             page = await self._adapter.list_entry_documents(
@@ -205,11 +211,13 @@ class SearchIndexService:
             for doc in page.documents:
                 scanned += 1
                 state = known.get(doc.item_id)
+                doc_hash = content_hash(doc.contentHtml or "")
                 if (
                     state is not None
                     and state["published_at"] == doc.publishedAt
                     and state["read"] == int(doc.read)
                     and state["starred"] == int(doc.starred)
+                    and state["content_hash"] == doc_hash
                 ):
                     continue
                 changed.append(doc)
@@ -217,6 +225,7 @@ class SearchIndexService:
                     "published_at": doc.publishedAt,
                     "read": int(doc.read),
                     "starred": int(doc.starred),
+                    "content_hash": doc_hash,
                 }
                 updated += 1
             if changed:
@@ -492,6 +501,7 @@ class SearchIndexService:
                 "published_at": row["published_at"],
                 "read": row["read"],
                 "starred": row["starred"],
+                "content_hash": row["content_hash"],
             }
         return states
 

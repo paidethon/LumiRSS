@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
+    CollectionTiming,
     SourceOverrideList,
     SourceOverrideResult,
     SourceOverrideUpdate,
@@ -365,6 +366,10 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
       （投影落后 ≠ 没有新内容）；
     - lastPublishedAt：该订阅在投影中最新的发布时间；
     - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+
+    N040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS
+    收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取
+    时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。
     """
     from datetime import datetime, timedelta
 
@@ -384,7 +389,7 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
             (since,),
         )
         sync_rows = await db.fetch_all(
-            "SELECT feed_url, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
+            "SELECT feed_url, MAX(published_at) AS overall_published, MAX(crawled_at) AS overall_crawled, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
         )
     except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
         window_rows = []
@@ -393,21 +398,41 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
     }
-    synced = {
-        str(row["feed_url"]): _epoch_to_iso(int(row["latest_fetched"]))
-        for row in sync_rows
-        if row["latest_fetched"] is not None
-    }
+    timings: dict[str, dict[str, object]] = {}
+    for row in sync_rows:
+        crawled = row["overall_crawled"]
+        projected_epoch = int(row["latest_fetched"]) if row["latest_fetched"] is not None else None
+        published = row["overall_published"]
+        timing: dict[str, object] = {
+            "upstreamPublishedLatest": str(published) if published else None,
+            "freshrssFetchedLatest": str(crawled) if crawled else None,
+            "freshrssFetchedBasis": (
+                "crawlTimestampMsec（FreshRSS 首次收录，非周期抓取时间）"
+                if crawled
+                else "未提供 by upstream"
+            ),
+            "lumiProjectedLatest": (
+                _epoch_to_iso(projected_epoch) if projected_epoch is not None else None
+            ),
+            "latencyHint": _latency_hint(published, crawled, projected_epoch),
+        }
+        timings[str(row["feed_url"])] = timing
     items: list[SubscriptionVolumeItem] = []
     for subscription in subscriptions:
         hit = counts.get(subscription.feed_url)
+        timing = timings.get(subscription.feed_url)
         items.append(
             SubscriptionVolumeItem(
                 feedUrl=subscription.feed_url,
                 title=subscription.title,
                 publishedCount=hit[0] if hit else None,
                 lastPublishedAt=hit[1] if hit else None,
-                lastSyncedAt=synced.get(subscription.feed_url),
+                lastSyncedAt=(
+                    timing["lumiProjectedLatest"] if timing else None
+                ),
+                collectionTiming=(
+                    CollectionTiming(**timing) if timing else None
+                ),
             )
         )
     return SubscriptionVolumeResponse(
@@ -417,3 +442,42 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         items=items,
         generatedAt=utc_now(),
     )
+
+
+def _latency_hint(published, crawled, projected_epoch) -> str | None:
+    """N040 最大延迟环节提示（数据不足或全为 0 → None，不臆造）。"""
+    from datetime import datetime
+
+    def _parse(value: object) -> datetime | None:
+        if not value:
+            return None
+        try:
+            text = str(value).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    published_dt = _parse(published)
+    crawled_dt = _parse(crawled)
+    gaps: list[tuple[float, str]] = []
+    if published_dt is not None and crawled_dt is not None:
+        gaps.append(
+            (max(0.0, (crawled_dt - published_dt).total_seconds()), "上游发布→FreshRSS 收录")
+        )
+    if crawled_dt is not None and projected_epoch is not None:
+        gaps.append(
+            (
+                max(0.0, projected_epoch - crawled_dt.timestamp()),
+                "FreshRSS 收录→Lumi 投影",
+            )
+        )
+    if not gaps:
+        return None
+    seconds, label = max(gaps, key=lambda item: item[0])
+    if seconds < 60:
+        return None
+    if seconds < 3600:
+        return f"{label} ≈{int(seconds // 60)} 分钟"
+    return f"{label} ≈{seconds / 3600:.1f} 小时"
