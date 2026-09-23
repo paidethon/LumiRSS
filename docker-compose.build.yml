@@ -1,0 +1,28 @@
+# Local image BUILD overlay — developer/CI use only.
+#
+# The production compose file (docker-compose.prod.yml) is prebuilt-only:
+# it carries no build: stanzas, and `./lumirss deploy --build` refuses to
+# run against it. This overlay restores the build capability locally so
+# the built images land on exactly the image names the prod stack pulls:
+#
+#   LUMIRSS_BUILD_COMMIT="$(git rev-parse HEAD)" \
+#     docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build
+#
+# CI builds are covered by .github/workflows/ci.yml (direct `docker build`,
+# never pushed) and .github/workflows/publish-images.yml (build + push to
+# GHCR + release-manifest.json). Never use this overlay for an upgrade of
+# a production host.
+
+services:
+  web:
+    build:
+      context: ./apps/web
+      args:
+        # 构建溯源（关于页展示）：git rev-parse HEAD 或 CI 的 github.sha。
+        VITE_GIT_COMMIT: ${LUMIRSS_BUILD_COMMIT:-}
+  bff:
+    build:
+      context: ./services/bff
+      args:
+        # 构建溯源（GET /api/v1/version）：判断线上 BFF 是否为旧镜像。
+        LUMIRSS_COMMIT: ${LUMIRSS_BUILD_COMMIT:-}
