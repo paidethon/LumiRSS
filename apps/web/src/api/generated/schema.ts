@@ -730,6 +730,11 @@ export interface paths {
          *
          *     Wrong-password and unknown-username share the generic failure shape
          *     and the same brute-force budget (no account oracle).
+         *
+         *     N007: when the account has TOTP enabled, a correct password does NOT
+         *     mint a session — the response is ``{totpRequired, pendingToken}`` and
+         *     the real session is issued by ``POST /auth/totp/verify`` (same
+         *     brute-force budget, one attempt per pending token).
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -778,6 +783,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Passkeys */
+        get: operations["list_passkeys_api_v1_auth_passkeys_get"];
+        put?: never;
+        /** Passkey Register Finish */
+        post: operations["passkey_register_finish_api_v1_auth_passkeys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Passkey Login */
+        post: operations["passkey_login_api_v1_auth_passkeys_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/login/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Passkey Login Options
+         * @description Username → allowCredentials. Unknown usernames and users without
+         *     passkeys get the SAME generic shape (empty allow-list,
+         *     ``passkeyAvailable: false``) — the endpoint reveals nothing.
+         */
+        post: operations["passkey_login_options_api_v1_auth_passkeys_login_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Passkey Register Options */
+        post: operations["passkey_register_options_api_v1_auth_passkeys_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Passkey */
+        delete: operations["delete_passkey_api_v1_auth_passkeys__credential_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password": {
         parameters: {
             query?: never;
@@ -791,6 +887,9 @@ export interface paths {
          * Change Password
          * @description Change own password: verify current, replace hash, revoke ALL of
          *     this user's sessions, then mint a fresh session for THIS device.
+         *
+         *     N007: when the account has TOTP enabled, a valid second factor
+         *     (``totpCode``) is REQUIRED — server-enforced, not front-end.
          */
         post: operations["change_password_api_v1_auth_password_post"];
         delete?: never;
@@ -878,6 +977,91 @@ export interface paths {
          * @description 撤销自己的一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。
          */
         delete: operations["revoke_auth_session_api_v1_auth_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Totp Status */
+        get: operations["totp_status_api_v1_auth_totp_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Disable */
+        post: operations["totp_disable_api_v1_auth_totp_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Enable */
+        post: operations["totp_enable_api_v1_auth_totp_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Setup */
+        post: operations["totp_setup_api_v1_auth_totp_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Verify */
+        post: operations["totp_verify_api_v1_auth_totp_verify_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -9770,6 +9954,22 @@ export interface components {
             status: "ok" | "failed";
         };
         /**
+         * LoginChallenge
+         * @description POST /api/v1/auth/login response when the account has TOTP enabled
+         *     (N007): the password was verified, but the session is minted only
+         *     after ``POST /auth/totp/verify`` with this short-lived pending token
+         *     (which is NOT a session and grants nothing on its own).
+         */
+        LoginChallenge: {
+            /** Pendingtoken */
+            pendingToken: string;
+            /**
+             * Totprequired
+             * @constant
+             */
+            totpRequired: true;
+        };
+        /**
          * LoginRequest
          * @description POST /api/v1/auth/login — username + password (multi-account);
          *     legacy single-user mode sends password only.
@@ -10604,14 +10804,78 @@ export interface components {
             title: string;
         };
         /**
+         * PasskeyDeleteRequest
+         * @description DELETE /auth/passkeys/{id} — password re-entry (server-enforced).
+         */
+        PasskeyDeleteRequest: {
+            /** Currentpassword */
+            currentPassword: string;
+            /** Totpcode */
+            totpCode?: string | null;
+        };
+        /**
+         * PasskeyLoginOptionsRequest
+         * @description POST /auth/passkeys/login/options — username lookup (no enumeration).
+         */
+        PasskeyLoginOptionsRequest: {
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * PasskeyLoginRequest
+         * @description POST /auth/passkeys/login — AuthenticationResponse + echoed challenge.
+         */
+        PasskeyLoginRequest: {
+            /** Challenge */
+            challenge: string;
+            /** Id */
+            id: string;
+            /** Rawid */
+            rawId: string;
+            /** Response */
+            response: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * PasskeyRegisterRequest
+         * @description POST /auth/passkeys — label + echoed challenge + RegistrationResponse.
+         */
+        PasskeyRegisterRequest: {
+            /** Challenge */
+            challenge: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Rawid */
+            rawId: string;
+            /** Response */
+            response: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+        };
+        /**
          * PasswordChangeRequest
          * @description POST /api/v1/auth/password — current + new password.
+         *
+         *     ``totpCode`` is REQUIRED when the account has TOTP enabled (N007
+         *     server-enforced second factor for sensitive operations); ignored
+         *     otherwise.
          */
         PasswordChangeRequest: {
             /** Currentpassword */
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+            /** Totpcode */
+            totpCode?: string | null;
         };
         /**
          * PoolAddBody
@@ -12432,6 +12696,28 @@ export interface components {
             /** Translatedtitle */
             translatedTitle: string;
         };
+        /** TotpDisableRequest */
+        TotpDisableRequest: {
+            /** Code */
+            code: string;
+            /** Currentpassword */
+            currentPassword: string;
+        };
+        /** TotpEnableRequest */
+        TotpEnableRequest: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * TotpVerifyRequest
+         * @description POST /auth/totp/verify — pending token + TOTP/recovery code.
+         */
+        TotpVerifyRequest: {
+            /** Code */
+            code: string;
+            /** Pendingtoken */
+            pendingToken: string;
+        };
         /**
          * TranslationSegmentBlockIn
          * @description One client-segmented content block.
@@ -14189,7 +14475,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuthStatus"];
+                    "application/json": components["schemas"]["AuthStatus"] | components["schemas"]["LoginChallenge"];
                 };
             };
             /** @description Validation Error */
@@ -14239,6 +14525,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    list_passkeys_api_v1_auth_passkeys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    passkey_register_finish_api_v1_auth_passkeys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_login_api_v1_auth_passkeys_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_login_options_api_v1_auth_passkeys_login_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginOptionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_register_options_api_v1_auth_passkeys_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    delete_passkey_api_v1_auth_passkeys__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -14366,6 +14826,145 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_status_api_v1_auth_totp_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    totp_disable_api_v1_auth_totp_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpDisableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_enable_api_v1_auth_totp_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_setup_api_v1_auth_totp_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    totp_verify_api_v1_auth_totp_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
             };
             /** @description Validation Error */
             422: {
