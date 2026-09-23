@@ -50,6 +50,7 @@ import uuid as _uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from lumirss.db_tx import transaction
@@ -237,8 +238,16 @@ class RagStatus:
 class RagService:
     """Index build + hybrid retrieval over the derived projections."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, db_path: str | Path | None = None) -> None:
         self._db = db
+        # 0067 isolation: pin the vec-connection file AT CONSTRUCTION.
+        # A RoutingDatabase resolves ``.path`` through the CURRENT user
+        # context; resolving it lazily at first vec use let whichever
+        # account touched a shared instance first pin THEIR file for
+        # everyone after (cross-account index leak). Callers build the
+        # service inside the owning user's context, so the pinned path
+        # is that owner's file for the instance's whole life.
+        self._db_path: Path | None = Path(db_path) if db_path is not None else None
         self._embedder = EmbeddingService()
         self._rebuild_lock = asyncio.Lock()
         self._vec_ready = False
@@ -248,6 +257,12 @@ class RagService:
 
     # -- vec connection (loaded once; extensions are per-connection) --------
 
+    @property
+    def _resolved_db_path(self) -> Path:
+        """The concrete file the vec connection binds to (pinned when the
+        builder supplied one; legacy ``db.path`` fallback otherwise)."""
+        return self._db_path if self._db_path is not None else self._db.path
+
     def _vec_connection(self) -> sqlite3.Connection:
         """One persistent connection with sqlite-vec loaded (manual
         transaction control: explicit BEGIN/COMMIT/ROLLBACK)."""
@@ -256,7 +271,7 @@ class RagService:
         import sqlite_vec
 
         connection = sqlite3.connect(
-            str(self._db.path), check_same_thread=False, timeout=5.0
+            str(self._resolved_db_path), check_same_thread=False, timeout=5.0
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=5000")
@@ -1161,7 +1176,10 @@ async def rag_incremental_loop(app_state: Any, interval: float) -> None:
         cache = app_state.user_services
         service: RagService | None = cache.get((uid, "rag_service"))
         if service is None:
-            probe = RagService(app_state.db)
+            # Built inside user_context(uid): db.path resolves to THIS
+            # user's file, and pinning it keeps the vec connection bound
+            # to the owner even if a call later escapes the context.
+            probe = RagService(app_state.db, db_path=app_state.db.path)
             if (await probe._setting("rag_enabled")) != "1":  # noqa: SLF001
                 return  # RAG never enabled for this user → no service
             service = probe

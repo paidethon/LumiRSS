@@ -315,6 +315,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for task in still_running:
             task.cancel()
         await asyncio.gather(*still_running, return_exceptions=True)
+    # 0067: every per-user RAG service holds one raw sqlite-vec connection
+    # to its owner's database file — close each built instance (plus the
+    # legacy basic-mode handle) so shutdown releases them all.
+    for key, service in list(getattr(app.state, "user_services", {}).items()):
+        if key[1] == "rag_service":
+            with contextlib.suppress(Exception):
+                service.close()
+    legacy_rag = getattr(app.state, "rag_service", None)
+    if legacy_rag is not None:
+        with contextlib.suppress(Exception):
+            legacy_rag.close()
     await app.state.http_client.aclose()
 
 
