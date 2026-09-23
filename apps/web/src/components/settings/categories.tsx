@@ -37,6 +37,9 @@ import type {
   ListTimeFormat,
   ReaderFontFamily,
   ReaderImageMode,
+  ReaderReadingMode,
+  ReaderTapZoneAxis,
+  ReaderTapZoneSize,
   TimelineOrder,
   UiFontStack,
   UiFontSize,
@@ -327,12 +330,44 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
           onCheckedChange: (v) => update({ readerCodeWrap: v }),
         },
         {
-          // 2026-09 移动端专项：按屏翻页（实验性交互，默认关）
-          type: 'toggle',
-          label: '按屏翻页',
-          description: '正文按屏为单位翻页（默认连续滚动）。',
-          checked: settings.readerPagedMode,
-          onCheckedChange: (v) => update({ readerPagedMode: v }),
+          // N052：阅读模式（设备本地）——滚动 / 分页（CSS 多栏横向翻页）。
+          // 取代旧「按屏翻页」开关：旧 readerPagedMode=true 的设备经
+          // normalizeSettings 迁移为分页；便携键保留仅为同步契约兼容。
+          type: 'select',
+          label: '阅读模式',
+          description: '正文滚动阅读，或分页阅读（整页翻页 + 点按翻页区）。',
+          value: settings.readerReadingMode,
+          options: [
+            { value: 'scroll', label: '滚动' },
+            { value: 'paged', label: '分页' },
+          ] satisfies { value: ReaderReadingMode; label: string }[],
+          onChange: (v) => update({ readerReadingMode: v as ReaderReadingMode }),
+        },
+        {
+          // N053：分页点按翻页区轴向（仅阅读模式 = 分页时生效）
+          type: 'select',
+          label: '点按翻页方向',
+          description: '分页阅读时，点按屏幕左右或上下边缘翻页。',
+          value: settings.readerTapZoneAxis,
+          options: [
+            { value: 'horizontal', label: '左右' },
+            { value: 'vertical', label: '上下' },
+          ] satisfies { value: ReaderTapZoneAxis; label: string }[],
+          onChange: (v) => update({ readerTapZoneAxis: v as ReaderTapZoneAxis }),
+        },
+        {
+          // N053：分页点按翻页区大小（关闭 / 小 / 大）
+          type: 'select',
+          label: '点按翻页区大小',
+          description:
+            '命中区占屏宽（或屏高）的比例：小 = 22%，大 = 40%；关闭后仅按钮与方向键翻页。点按链接、选择文字或横向滚动表格/代码时不会翻页。',
+          value: settings.readerTapZoneSize,
+          options: [
+            { value: 'off', label: '关闭' },
+            { value: 'small', label: '小' },
+            { value: 'large', label: '大' },
+          ] satisfies { value: ReaderTapZoneSize; label: string }[],
+          onChange: (v) => update({ readerTapZoneSize: v as ReaderTapZoneSize }),
         },
         { type: 'title', value: '自定义' },
         // 0010a F7（AC14）：自定义 CSS（仅作用于正文，自动前缀）

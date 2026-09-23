@@ -30,6 +30,8 @@ import { Select } from '../../ui/Select'
 export function ChineseTypographySettings() {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
+  // N055：缩进扩展（列表/引用）依赖首行缩进提供的缩进量。
+  const indentScopeReady = settings.readerTextIndent !== 'off'
 
   return (
     <div className="py-3">
@@ -37,7 +39,7 @@ export function ChineseTypographySettings() {
         中文排版
       </label>
       <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-        面向中文长文阅读习惯的排版选项；不影响代码块、列表与标题。
+        面向中文长文阅读习惯的排版选项；标题与代码块不受缩进影响。
       </p>
 
       <div className="mt-3 flex flex-col gap-3">
@@ -50,6 +52,63 @@ export function ChineseTypographySettings() {
             options={[
               { value: 'off', label: '关闭' },
               { value: '2em', label: '2 字符' },
+            ]}
+          />
+        </div>
+
+        {/* N055：首行缩进按块类型扩展（默认关；缩进总量关闭时不可用） */}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">列表缩进</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              {indentScopeReady ? '列表项首行随段落缩进' : '需先开启首行缩进'}
+            </p>
+          </div>
+          <Select
+            aria-label="列表缩进"
+            value={settings.readerIndentLists ? 'on' : 'off'}
+            disabled={!indentScopeReady}
+            onChange={(e) => update({ readerIndentLists: e.target.value === 'on' })}
+            options={[
+              { value: 'off', label: '关闭' },
+              { value: 'on', label: '开启' },
+            ]}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">引用缩进</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              {indentScopeReady ? '引用块首行随段落缩进' : '需先开启首行缩进'}
+            </p>
+          </div>
+          <Select
+            aria-label="引用缩进"
+            value={settings.readerIndentQuotes ? 'on' : 'off'}
+            disabled={!indentScopeReady}
+            onChange={(e) => update({ readerIndentQuotes: e.target.value === 'on' })}
+            options={[
+              { value: 'off', label: '关闭' },
+              { value: 'on', label: '开启' },
+            ]}
+          />
+        </div>
+
+        {/* N056：避头尾（line-break: strict；@supports 回退，CSS-only） */}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">避头尾</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              行首不出现句号、逗号等标点（浏览器支持程度不同）
+            </p>
+          </div>
+          <Select
+            aria-label="避头尾"
+            value={settings.readerLineBreakStrict ? 'on' : 'off'}
+            onChange={(e) => update({ readerLineBreakStrict: e.target.value === 'on' })}
+            options={[
+              { value: 'off', label: '关闭' },
+              { value: 'on', label: '开启' },
             ]}
           />
         </div>

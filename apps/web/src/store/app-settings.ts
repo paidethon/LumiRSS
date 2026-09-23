@@ -114,6 +114,14 @@ export type ReaderCodeHighlight = 'auto' | 'off'
 
 // ---- 2026-09 移动端专项（P0-2 / P1 / F01–F17 新增 portable 键） ----
 
+/** N052：阅读模式（设备本地）：连续滚动 / 分页（CSS 多栏横向翻页）。
+ * 不进 PORTABLE_KEYS——与便携键 readerPagedMode（F17 按屏平滑翻页，
+ * 服务端契约保持不动）并存；normalizeSettings 做一次性迁移：
+ * 旧 readerPagedMode=true 且未显式设置本键 → 'paged'。 */
+export type ReaderReadingMode = 'scroll' | 'paged'
+/** N053：分页点按翻页区轴向（左右 / 上下）与区域大小。 */
+export type ReaderTapZoneAxis = 'horizontal' | 'vertical'
+export type ReaderTapZoneSize = 'off' | 'small' | 'large'
 /** P0-2：正文读到底自动标为已读 */
 export type GlassEffect = 'auto' | 'on' | 'off'
 /** F01：列表密度三档 */
@@ -229,6 +237,12 @@ export interface AppSettings {
   readerTextIndent: ReaderTextIndent
   readerHangingPunctuation: boolean
   readerChineseConversion: ReaderChineseConversion
+  /** N055：首行缩进按块类型扩展（缩进量仍由 readerTextIndent 提供；
+   * 默认关——只有段落缩进，列表/引用不缩进，标题/代码永不缩进）。 */
+  readerIndentLists: boolean
+  readerIndentQuotes: boolean
+  /** N056：避头尾（line-break: strict；CSS-only 展示偏好，@supports 回退）。 */
+  readerLineBreakStrict: boolean
   /** 阅读时间估算开关（ReaderHeader 弱化显示） */
   readerShowReadingTime: boolean
   /** 代码高亮 + 主题 */
@@ -252,6 +266,11 @@ export interface AppSettings {
   readerShowReadingProgress: boolean
   readerCodeWrap: boolean
   readerPagedMode: boolean
+  /** N052：阅读模式（设备本地；'paged' = 分页阅读，优先于 readerPagedMode）。 */
+  readerReadingMode: ReaderReadingMode
+  /** N053：分页点按翻页区（设备本地；仅阅读模式 = 分页时生效）。 */
+  readerTapZoneAxis: ReaderTapZoneAxis
+  readerTapZoneSize: ReaderTapZoneSize
   searchHighlightMatches: boolean
   /** 布局（<1024 忽略；Gate C 接线） */
   sidebarWidth: number // clamp 220–300
@@ -295,6 +314,14 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFontUrlName: '',
   readerBionic: false,
   readerBlockRemoteImages: false,
+  // N055/N056：中文排版细化（默认关——维持既有排版，不悄悄改变观感）
+  readerIndentLists: false,
+  readerIndentQuotes: false,
+  readerLineBreakStrict: false,
+  // N052/N053：阅读模式与点按翻页区（设备本地交互偏好）
+  readerReadingMode: 'scroll',
+  readerTapZoneAxis: 'horizontal',
+  readerTapZoneSize: 'small',
   sidebarWidth: 240,
   sidebarCollapsed: false,
   timelineWidth: 400,
@@ -329,6 +356,9 @@ const LIST_DENSITIES = SETTING_ENUMS.listDensity
 const LIST_TIME_FORMATS = SETTING_ENUMS.listTimeFormat
 const TIMELINE_ORDERS = SETTING_ENUMS.timelineOrder
 const CARD_SWIPE_ACTIONS = SETTING_ENUMS.cardSwipeAction
+// N052/N053：阅读模式与点按翻页区（设备本地，值域本地定义）
+const READER_TAP_ZONE_AXES: readonly ReaderTapZoneAxis[] = ['horizontal', 'vertical']
+const READER_TAP_ZONE_SIZES: readonly ReaderTapZoneSize[] = ['off', 'small', 'large']
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -468,6 +498,15 @@ function pickBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
+/** N052：阅读模式归一化 + 一次性迁移。显式合法值优先；未显式设置本键
+ * 且旧 readerPagedMode（F17 按屏翻页）= true → 迁移为 'paged'（分页）；
+ * 其余回退默认 'scroll'。 */
+function pickReadingMode(value: unknown, legacyPagedMode: unknown): ReaderReadingMode {
+  if (value === 'scroll' || value === 'paged') return value
+  if (value === undefined && legacyPagedMode === true) return 'paged'
+  return DEFAULT_APP_SETTINGS.readerReadingMode
+}
+
 /** 把任意（不可信的）持久化 JSON 归一化为合法 AppSettings：
  * 逐字段校验，非法值回退默认；未知字段丢弃。 */
 export function normalizeSettings(raw: unknown): AppSettings {
@@ -563,6 +602,16 @@ export function normalizeSettings(raw: unknown): AppSettings {
       source.readerHangingPunctuation,
       DEFAULT_APP_SETTINGS.readerHangingPunctuation,
     ),
+    // N055/N056：缩进扩展与避头尾（逐字段校验，非法值回退默认）
+    readerIndentLists: pickBoolean(source.readerIndentLists, DEFAULT_APP_SETTINGS.readerIndentLists),
+    readerIndentQuotes: pickBoolean(
+      source.readerIndentQuotes,
+      DEFAULT_APP_SETTINGS.readerIndentQuotes,
+    ),
+    readerLineBreakStrict: pickBoolean(
+      source.readerLineBreakStrict,
+      DEFAULT_APP_SETTINGS.readerLineBreakStrict,
+    ),
     readerChineseConversion: pickString(
       source.readerChineseConversion,
       READER_CHINESE_CONVERSIONS,
@@ -628,6 +677,18 @@ export function normalizeSettings(raw: unknown): AppSettings {
     ),
     readerCodeWrap: pickBoolean(source.readerCodeWrap, DEFAULT_APP_SETTINGS.readerCodeWrap),
     readerPagedMode: pickBoolean(source.readerPagedMode, DEFAULT_APP_SETTINGS.readerPagedMode),
+    // N052/N053：阅读模式（含 F17 → 分页的一次性迁移）与点按翻页区
+    readerReadingMode: pickReadingMode(source.readerReadingMode, source.readerPagedMode),
+    readerTapZoneAxis: pickString(
+      source.readerTapZoneAxis,
+      READER_TAP_ZONE_AXES,
+      DEFAULT_APP_SETTINGS.readerTapZoneAxis,
+    ),
+    readerTapZoneSize: pickString(
+      source.readerTapZoneSize,
+      READER_TAP_ZONE_SIZES,
+      DEFAULT_APP_SETTINGS.readerTapZoneSize,
+    ),
     searchHighlightMatches: pickBoolean(
       source.searchHighlightMatches,
       DEFAULT_APP_SETTINGS.searchHighlightMatches,
@@ -795,6 +856,13 @@ export function applyReaderTypography(settings: AppSettings): void {
   root.dataset.readerHangingPunctuation = settings.readerHangingPunctuation ? 'true' : 'false'
   root.dataset.readerChineseConversion = settings.readerChineseConversion
 
+  // NE1 N055/N056：缩进按块类型扩展 + 避头尾（CSS 规则在 index.css；
+  // 缩进量仍由 --lumi-reader-text-indent 提供，off 时以下全部自然失效；
+  // 标点悬挂保持独立设置，互不依赖）。
+  root.dataset.readerIndentLists = settings.readerIndentLists ? 'true' : 'false'
+  root.dataset.readerIndentQuotes = settings.readerIndentQuotes ? 'true' : 'false'
+  root.dataset.readerLineBreakStrict = settings.readerLineBreakStrict ? 'true' : 'false'
+
   // P14：背景图片分层（设备本地 data URL；遮罩强度 0–0.8 由
   // index.css .lumi-reader-bg-image 消费——图片上叠 reader 背景色遮罩）。
   // 无图片时移除变量：图层为 none + 全透明遮罩，视觉零变化。
@@ -923,6 +991,10 @@ const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
   'readerJustify',
   'readerImageMode',
   'readerTextIndent',
+  // N055/N056：缩进扩展与避头尾属排版项，随「恢复默认阅读设置」一并还原
+  'readerIndentLists',
+  'readerIndentQuotes',
+  'readerLineBreakStrict',
   'readerHangingPunctuation',
   'readerChineseConversion',
   'readerShowReadingTime',

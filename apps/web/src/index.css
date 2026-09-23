@@ -118,6 +118,38 @@ body {
   }
 }
 
+/* ---- NE1 N055：首行缩进按块类型扩展 ----
+ * 缩进量仍由 --lumi-reader-text-indent 提供（readerTextIndent，off = 0
+ * 时以下规则自然失效）；开关经 html data 属性（applyReaderTypography
+ * 挂载）。标题与代码/pre 不在选择器内——永不缩进。 */
+html[data-reader-indent-lists='true'] .article-content li {
+  text-indent: var(--lumi-reader-text-indent, 0);
+}
+html[data-reader-indent-quotes='true'] .article-content blockquote {
+  text-indent: var(--lumi-reader-text-indent, 0);
+}
+
+/* ---- NE1 N056：避头尾（readerLineBreakStrict）----
+ * line-break: strict 禁止行首标点（。、」等）与行末前括号；
+ * word-break 恢复 normal（默认是 break-word）以保证长 token 仍由
+ * overflow-wrap 兜底换行，不横向溢出。@supports 回退：不支持的浏览器
+ * 保持普通排版。与标点悬挂（独立设置）互不影响。CSS-only——不改 DOM。 */
+@supports (line-break: strict) {
+  html[data-reader-line-break-strict='true'] .article-content {
+    line-break: strict;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+}
+
+/* ---- NE1 N051：章节化阅读（ArticleToc 章节模式）----
+ * 章节外的同级块由 lib/article-chapters 打 .lumi-chapter-hidden；
+ * !important 对抗正文既有 display 规则（表格/双语 overlay 等），退出
+ * 章节时类整体摘除，原文档顺序与链接不动。 */
+.article-content .lumi-chapter-hidden {
+  display: none !important;
+}
+
 /* 0012 Gate 9：词首强调（实验性视觉模式，默认关闭）。
  * 不宣称速度/理解收益；仅拉丁词首视觉强调。 */
 .article-content .lumi-bionic {
@@ -244,6 +276,30 @@ html[data-reader-images='hidden'] .article-content img {
  * 回到顶部/翻页/锚点定位的行为边界更可预期。 */
 .lumi-reader-scroll {
   overscroll-behavior: contain;
+}
+
+/* ---- NE1 N052：分页阅读（CSS 多栏 + 横向位移翻页）----
+ * .lumi-paged-clip 挂在 Reader 滚动容器上：分页时取消纵横滚动
+ * （overflow hidden，Tailwind overflow-y-auto 在 import 先序、此规则
+ * 后序覆盖之）；正文每页左右留白 = 容器 padding（page margin 变量）。
+ * .lumi-paged-track 挂在正文 article 上：height / column-width /
+ * column-gap / transform 由 ReaderPager 按实测尺寸内联写入；
+ * column-fill: auto 让各栏按高度顺序填充、末页自然收尾不被拉伸；
+ * 翻页位移过渡仅在允许动效时启用（减少动效 → 瞬时跳页）。 */
+.lumi-paged-clip {
+  overflow: hidden;
+}
+.lumi-paged-track {
+  column-fill: auto;
+  transition: transform var(--lumi-motion-slow, 200ms) var(--lumi-ease, ease);
+}
+html[data-motion-reduce='true'] .lumi-paged-track {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lumi-paged-track {
+    transition: none;
+  }
 }
 
 /* ---- P14：阅读背景图片（设备本地，data URL 不出浏览器）----

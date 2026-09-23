@@ -314,6 +314,11 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     if (target !== null) {
       const el = container.querySelector(`#${CSS.escape(target)}`)
       if (el !== null) {
+        // N051：章节模式（ArticleToc）先切到包含该段的章节，随后定位
+        // 才可见可滚（隐藏块 scrollIntoView 无效）。
+        document.dispatchEvent(
+          new CustomEvent('lumi:para-navigate', { detail: { element: el } }),
+        )
         el.scrollIntoView({ block: 'center' })
         el.classList.add('lumi-para-highlight')
         window.setTimeout(() => el.classList.remove('lumi-para-highlight'), 2500)

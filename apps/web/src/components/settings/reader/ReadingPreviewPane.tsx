@@ -37,11 +37,23 @@ export function ReaderSampleArticle({ className }: { className?: string }) {
         </p>
         <h3>小节标题</h3>
         <p>另一个段落，用于观察段距与首行缩进的实际效果。</p>
+        {/* N055/N056：列表与引用样例（列表缩进/引用缩进开关）+ 中英混排
+            标点样例（避头尾开关：行首标点、行末前括号的断行观察点）。 */}
         <ul>
           <li>列表项一：检查项目符号与行距</li>
-          <li>列表项二：列表内段落不缩进</li>
+          <li>
+            列表项二：开启「列表缩进」后，列表项首行与段落一样缩进两字符
+          </li>
         </ul>
-        <blockquote>引用块：检查左边框、缩进与弱化文字颜色。</blockquote>
+        <blockquote>
+          引用块：检查左边框、缩进与弱化文字颜色；开启「引用缩进」后首行
+          随段落缩进。
+        </blockquote>
+        <p>
+          中英混排样例 Mixed Text：示例 3.14 倍、「引号」与（全角括号），
+          English words、numbers 42 与中文混排——检查避头尾（行首不落
+          句号/逗号/后引号）与标点悬挂是否各自独立生效。
+        </p>
         <pre>
           <code>{'const reader = { preview: true }'}</code>
         </pre>
