@@ -675,7 +675,7 @@ class AiProfile(BaseModel):
 
     id: str
     label: str
-    provider: Literal["openai_compatible"]
+    provider: Literal["openai_compatible", "gemini"]
     baseUrl: str
     model: str
     enabled: bool

@@ -1,9 +1,12 @@
 """OpenAI-compatible AI provider (0015 Gate 3; extended 0016; recovery P0-08a/b).
 
-Exactly ONE provider abstraction and ONE HTTP implementation. There is
-deliberately no multi-provider routing, no fallback chains, no agent
-orchestration and no AI SDK — a direct OpenAI-compatible chat/completions
-call over the shared httpx client is the whole transport.
+One provider abstraction; the OpenAI-compatible transport below and the
+native Google Gemini transport (P17, ``ai_provider_gemini.py``) are the
+only two HTTP implementations. There is deliberately no multi-provider
+routing, no fallback chains, no agent orchestration and no AI SDK — a
+direct chat/completions call over the shared httpx client is the whole
+transport. Both implementations share the stable error family and the
+status→error mapping defined here.
 
 0016 extension: the protocol gains ONE generic ``complete(messages)``
 entry point shared by translation and article conversation; ``summarize``
@@ -194,22 +197,9 @@ class OpenAICompatibleProvider:
 
     def _map_status(self, response: httpx.Response) -> None:
         """Status → stable error family (bodies are never forwarded)."""
-        if response.status_code in (401, 403):
-            raise AiAuthError(
-                "The AI provider rejected the API key (server-side)."
-            )
-        if response.status_code == 404:
-            raise AiModelError(
-                "The configured model or endpoint was not found."
-            )
-        if response.status_code == 429:
-            raise AiRateLimited(
-                "The AI provider rate-limited this server. Please retry later."
-            )
-        if response.status_code >= 400:
-            raise AiUpstreamError(
-                f"The AI provider returned HTTP {response.status_code}."
-            )
+        error = status_error(response.status_code)
+        if error is not None:
+            raise error
 
     async def _post_chat(self, payload: dict) -> httpx.Response:
         """One POST /chat/completions with the shared error mapping."""
@@ -428,6 +418,64 @@ def aggregate_stream(events: Iterable[dict]) -> dict:
             for _index, call in sorted(calls.items())
         ]
     return message
+
+
+def status_error(status_code: int) -> AiProviderError | None:
+    """One shared status→error mapping for EVERY provider transport.
+
+    401/403 → auth, 404 → model/endpoint, 429 → rate limit, any other
+    4xx/5xx → upstream. Error messages are generic: upstream bodies are
+    never forwarded. Returns ``None`` for non-error statuses.
+    """
+    if status_code in (401, 403):
+        return AiAuthError(
+            "The AI provider rejected the API key (server-side)."
+        )
+    if status_code == 404:
+        return AiModelError(
+            "The configured model or endpoint was not found."
+        )
+    if status_code == 429:
+        return AiRateLimited(
+            "The AI provider rate-limited this server. Please retry later."
+        )
+    if status_code >= 400:
+        return AiUpstreamError(
+            f"The AI provider returned HTTP {status_code}."
+        )
+    return None
+
+
+def build_provider(
+    client: httpx.AsyncClient,
+    *,
+    provider: str,
+    base_url: str,
+    model: str,
+    api_key: str,
+) -> AIProvider:
+    """Build the concrete provider for one effective configuration.
+
+    ``provider`` is the validated profile provider (or the global
+    default, ``openai_compatible``). Only the exact value ``gemini``
+    selects the native Gemini transport; anything else (including legacy
+    rows) keeps the OpenAI-compatible default path byte-identical. A
+    gemini configuration without an explicit base URL targets the
+    official Generative Language endpoint.
+    """
+    if provider == "gemini":
+        from lumirss.ai_provider_gemini import GeminiProvider
+        from lumirss.ai_settings import GEMINI_BASE_URL
+
+        return GeminiProvider(
+            client,
+            base_url=base_url or GEMINI_BASE_URL,
+            model=model,
+            api_key=api_key,
+        )
+    return OpenAICompatibleProvider(
+        client, base_url=base_url, model=model, api_key=api_key
+    )
 
 
 def provider_from_settings(

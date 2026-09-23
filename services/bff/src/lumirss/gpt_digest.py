@@ -953,13 +953,14 @@ def _build_ai_deps(app_state: Any):
     profiles = AiProfileStore(app_state.db, app_state.secrets_store)
 
     async def provider_factory(base_url: str, model: str):
-        from lumirss.ai_provider import OpenAICompatibleProvider
+        from lumirss.ai_provider import build_provider
 
         effective = await profiles.effective_config(
             "summary", await settings_store.load(), ""
         )
-        return OpenAICompatibleProvider(
+        return build_provider(
             app_state.http_client,
+            provider=effective.provider,
             base_url=effective.base_url or base_url,
             model=effective.model or model,
             api_key=effective.api_key or "",
