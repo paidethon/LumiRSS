@@ -77,7 +77,7 @@ describe('O127 — ReaderHeader 移动端收纳（更多操作菜单）', () => 
     onOpenAiConversation: () => {},
     onOpenFind: () => {},
     onOpenLinks: () => {},
-    collectSpeechText: () => '第一段正文',
+    collectSpeechBlocks: () => ({ texts: ['第一段正文'], startIndex: 0 }),
     onAutoScrollToggle: () => {},
   }
 

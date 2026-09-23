@@ -27,9 +27,8 @@ import {
 } from '../lib/reader-focus'
 import {
   findStartBlockIndex,
-  joinBlockTexts,
   SPEECH_BLOCK_SELECTOR,
-  SPEECH_MAX_CHARS,
+  type SpeechCollection,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import ReaderHeader from './ReaderHeader'
@@ -370,8 +369,10 @@ const getFindRoot = useCallback(
   [],
 )
 
-// F19 朗读文本：视口顶部线所在段落往后（含）的全部正文文本。
-const collectSpeechText = useCallback(() => {
+// P18 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序，
+// 下标即块索引——引擎入队时空块跳过但原始下标保留，高亮按块定位）。
+// 总量上限（20k）由引擎入队时单点施加。
+const collectSpeechBlocks = useCallback((): SpeechCollection | null => {
   const container = scrollRef.current
   const article = container?.querySelector('.lumi-reader-article')
   if (container === null || article === undefined || article === null) return null
@@ -379,12 +380,10 @@ const collectSpeechText = useCallback(() => {
   if (blocks.length === 0) return null
   const containerTop = container.getBoundingClientRect().top
   const tops = blocks.map((block) => block.getBoundingClientRect().top)
-  const start = findStartBlockIndex(tops, containerTop)
-  const joined = joinBlockTexts(
-    blocks.slice(start).map((block) => block.textContent ?? ''),
-  )
-  if (joined === '') return null
-  return joined.slice(0, SPEECH_MAX_CHARS)
+  const startIndex = findStartBlockIndex(tops, containerTop)
+  const texts = blocks.map((block) => block.textContent ?? '')
+  if (texts.slice(startIndex).every((text) => text.trim() === '')) return null
+  return { texts, startIndex }
 }, [])
 
 // F18：切文章自动停止（自动滚屏/查找/回顶状态一并复位）。
@@ -693,7 +692,7 @@ const handleScroll = useCallback(() => {
             onOpenAiConversation={() => setAiConversationOpen(true)}
             onOpenFind={() => setFindOpen(true)}
             onOpenLinks={() => setLinksOpen(true)}
-            collectSpeechText={collectSpeechText}
+            collectSpeechBlocks={collectSpeechBlocks}
             autoScrollState={autoScroll}
             onAutoScrollToggle={() =>
               setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))

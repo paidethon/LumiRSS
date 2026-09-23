@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
   Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
@@ -25,9 +25,14 @@ import {
   type AutoScrollState,
 } from '../lib/reader-tools'
 import {
+  ReaderSpeechEngine,
   SPEECH_RATES,
-  speakText,
+  SPEECH_SLEEP_TIMER_MINUTES,
+  listVoices,
+  markSpeechBlockElement,
   speechSynthesisAvailable,
+  type SpeechBlockInfo,
+  type SpeechCollection,
   type SpeechRate,
 } from '../lib/reader-speech'
 import {
@@ -46,6 +51,8 @@ import type { ReaderViewMode } from '../lib/translation-blocks'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Menu, type MenuItemDef } from './ui/Menu'
+import { Popover } from './ui/Popover'
+import { Select } from './ui/Select'
 import { Tooltip } from './ui/Tooltip'
 import { cx } from './ui/cx'
 
@@ -121,78 +128,287 @@ function SaveSnapshotButton({
   )
 }
 
-/** F19 朗读控制状态（O127 hoist）：桌面工具栏按钮与移动端「更多操作」
- * 菜单项共享同一状态机。点击循环 空闲→朗读→暂停→继续；「停止朗读」
- * cancel 并复位。collectText 由 Reader 提供（取视口顶部最近段落往后的
- * 全部正文）；hook 在 ReaderHeader（key=entryRef）内 —— 卸载即 cancel，
- * 切文章自动停止朗读。 */
-function useSpeechControl(collectText: (() => string | null) | undefined) {
+/** P18 朗读控制状态（O127 hoist）：桌面工具栏按钮与移动端「更多操作」
+ * 菜单项共享同一状态机。底层为逐块引擎（ReaderSpeechEngine）：每段一条
+ * utterance，onBlockChange 驱动当前段高亮（data-speech-active）与面板
+ * 进度；睡眠定时在块边界检查。点击循环 空闲→朗读→暂停→继续；「停止
+ * 朗读」cancel 并复位。collectBlocks 由 Reader 提供（取视口顶部最近段
+ * 落往后的全部块文本 + 起点索引）；hook 在 ReaderHeader（key=entryRef）
+ * 内 —— 卸载即 stop，切文章自动停止朗读。 */
+function useSpeechControl(
+  collectBlocks: (() => SpeechCollection | null) | undefined,
+) {
   const [state, setState] = useState<'idle' | 'speaking' | 'paused'>('idle')
-  const [rate, setRate] = useState<SpeechRate>(1)
   const [error, setError] = useState<string | null>(null)
-  const textRef = useRef('')
+  /** 睡眠定时到点后的诚实提示（面板内展示；新会话/手动停止即清除）。 */
+  const [sleepStopped, setSleepStopped] = useState(false)
+  const [block, setBlock] = useState<(SpeechBlockInfo & { preview: string }) | null>(
+    null,
+  )
+  const speechRate = useAppSettings((s) => s.settings.speechRate)
+  const speechVoiceURI = useAppSettings((s) => s.settings.speechVoiceURI)
+  const speechSleepMinutes = useAppSettings((s) => s.settings.speechSleepTimerMinutes)
+  const updateSettings = useAppSettings((s) => s.update)
+  const engineRef = useRef<ReaderSpeechEngine | null>(null)
+  const textsRef = useRef<string[]>([])
   const stateRef = useRef(state)
   stateRef.current = state
   const available = speechSynthesisAvailable()
 
-  // 切文章（key 重挂载）/卸载：cancel 朗读，绝不跨文章延续。
+  // P18 段落跟踪：当前块 DOM 标记（正文左侧 accent 细条）；停止/卸载
+  // 即清除。标记走 lib/reader-speech 的纯 DOM helper（文章不在文档时
+  // 为无操作）。
+  useEffect(() => {
+    markSpeechBlockElement(state === 'idle' ? null : (block?.index ?? null))
+  }, [state, block])
+  // 切文章（key 重挂载）/卸载：stop 朗读（cancel + 清队列），绝不跨文章延续。
   useEffect(() => {
     return () => {
-      if (speechSynthesisAvailable()) window.speechSynthesis.cancel()
+      markSpeechBlockElement(null)
+      engineRef.current?.stop()
     }
   }, [])
 
-  const speakCurrent = (nextRate: SpeechRate) => {
-    speakText(textRef.current, {
-      rate: nextRate,
-      onEnd: () => setState('idle'),
-      onError: (message) => {
-        setError(message)
-        setState('idle')
-      },
-    })
-    setState('speaking')
+  const getEngine = () => {
+    if (engineRef.current === null) {
+      engineRef.current = new ReaderSpeechEngine(
+        { rate: speechRate, voiceURI: speechVoiceURI === '' ? null : speechVoiceURI, langPrefix: 'zh' },
+        {
+          onBlockChange: (info) => {
+            const preview = (textsRef.current[info.index] ?? '').trim().slice(0, 40)
+            setBlock({ ...info, preview })
+          },
+          onEnd: () => {
+            setState('idle')
+            setBlock(null)
+          },
+          onError: (message) => {
+            setError(message)
+            setState('idle')
+            setBlock(null)
+          },
+          onSleepTimer: () => {
+            setSleepStopped(true)
+            setState('idle')
+            setBlock(null)
+          },
+        },
+      )
+    }
+    return engineRef.current
   }
 
   const toggle = () => {
-    if (collectText === undefined) return
+    if (collectBlocks === undefined) return
     setError(null)
+    setSleepStopped(false)
     if (state === 'idle') {
-      const text = collectText()
-      if (text === null || text.trim() === '') {
+      const collection = collectBlocks()
+      if (collection === null) {
         setError('没有可朗读的正文。')
         return
       }
-      textRef.current = text
-      speakCurrent(rate)
+      textsRef.current = collection.texts
+      const engine = getEngine()
+      // 配置/定时以 settings store 当前值为准（不依赖渲染闭包）。
+      engine.setConfig({
+        rate: useAppSettings.getState().settings.speechRate,
+        voiceURI:
+          useAppSettings.getState().settings.speechVoiceURI === ''
+            ? null
+            : useAppSettings.getState().settings.speechVoiceURI,
+      })
+      const minutes = useAppSettings.getState().settings.speechSleepTimerMinutes
+      engine.armSleepTimer(minutes > 0 ? minutes : null)
+      engine.speakFrom(collection.texts, collection.startIndex)
+      if (!engine.speaking) {
+        // 收集结果全为空块 → 引擎未出声，诚实报错（不假装在读）。
+        setError('没有可朗读的正文。')
+        setBlock(null)
+        return
+      }
+      setState('speaking')
       return
     }
     if (state === 'speaking') {
-      window.speechSynthesis.pause()
+      engineRef.current?.pause()
       setState('paused')
       return
     }
-    window.speechSynthesis.resume()
+    engineRef.current?.resume()
     setState('speaking')
   }
 
   const stop = () => {
-    window.speechSynthesis.cancel()
+    engineRef.current?.stop()
     setState('idle')
+    setBlock(null)
     setError(null)
+    setSleepStopped(false)
   }
 
   const changeRate = (next: SpeechRate) => {
-    setRate(next)
-    // 朗读中调速：取消并按新语速从头重读同一段文本（诚实且立即可感）。
-    if (stateRef.current !== 'idle') speakCurrent(next)
+    updateSettings({ speechRate: next })
+    // 朗读中调速：取消当前块并按新语速重读当前段（P18 段落跟踪，不再
+    // 整篇从头）；暂停中只落配置，恢复后的块按新语速出声。
+    if (engineRef.current !== null && stateRef.current === 'speaking') {
+      engineRef.current.setConfig({ rate: next })
+    }
   }
 
-  return { available, state, rate, error, toggle, stop, changeRate }
+  const changeVoice = (uri: string) => {
+    updateSettings({ speechVoiceURI: uri })
+    if (engineRef.current !== null && stateRef.current === 'speaking') {
+      engineRef.current.setConfig({ voiceURI: uri === '' ? null : uri })
+    }
+  }
+
+  const changeSleepMinutes = (minutes: number) => {
+    updateSettings({ speechSleepTimerMinutes: minutes })
+    // 会话中改设定：deadline 即刻按新档位重新锚定（关 = 解除）。
+    if (engineRef.current !== null && stateRef.current !== 'idle') {
+      engineRef.current.armSleepTimer(minutes > 0 ? minutes : null)
+    }
+  }
+
+  return {
+    available,
+    state,
+    error,
+    sleepStopped,
+    block,
+    rate: speechRate,
+    voiceURI: speechVoiceURI,
+    sleepMinutes: speechSleepMinutes,
+    toggle,
+    stop,
+    changeRate,
+    changeVoice,
+    changeSleepMinutes,
+  }
 }
 
-/** F19 朗读：桌面工具栏控件（移动端入口在「更多操作」菜单；语速分段
- * 仍是桌面专用，与既有行为一致）。 */
+/** P18 朗读面板（Popover 内容）：当前段进度 + 预览、声音挑选、语速、
+ * 睡眠定时。偏好全部落 settings store（设备本地）。声音清单来自
+ * listVoices()（zh 组排最前——默认朗读语言；文章级语言元数据暂不可得，
+ * 这是诚实的近似：全量声音仍可选）。系统声音清单为空（尚未加载/无
+ * 声音）时只剩「自动」，不假装有候选项。 */
+const PANEL_ROW = 'flex min-h-9 items-center justify-between gap-3'
+
+function SpeechPanelControls({
+  speech,
+}: {
+  speech: ReturnType<typeof useSpeechControl>
+}) {
+  const voiceOptions = useMemo(() => {
+    const groups = [...listVoices()].sort((a, b) => {
+      const aZh = a.lang.startsWith('zh') ? 0 : 1
+      const bZh = b.lang.startsWith('zh') ? 0 : 1
+      return aZh - bZh || a.lang.localeCompare(b.lang)
+    })
+    return [
+      { value: '', label: '自动（中文优先）' },
+      ...groups.flatMap((group) =>
+        group.voices.map((voice) => ({
+          value: voice.voiceURI,
+          label: `${voice.name}（${group.lang}）`,
+        })),
+      ),
+    ]
+  }, [])
+
+  return (
+    <div className="flex w-full flex-col gap-2" role="group" aria-label="朗读设置">
+      {/* 状态行：当前段落进度 + 首行预览；睡眠定时停止 = 诚实提示 */}
+      {speech.sleepStopped ? (
+        <p aria-live="polite" className="text-sm text-[var(--lumi-text-secondary)]">
+          已停止（睡眠定时）
+        </p>
+      ) : speech.block !== null ? (
+        <div aria-live="polite" className="min-w-0">
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">
+            正在朗读 第 {speech.block.position} / {speech.block.total} 段
+            {speech.state === 'paused' ? '（已暂停）' : ''}
+          </p>
+          <p className="mt-0.5 truncate text-sm text-[var(--lumi-text-primary)]">
+            {speech.block.preview}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--lumi-text-secondary)]">未在朗读</p>
+      )}
+
+      <div className={PANEL_ROW}>
+        <span className="text-sm text-[var(--lumi-text-primary)]">声音</span>
+        <Select
+          aria-label="朗读声音"
+          value={speech.voiceURI}
+          onChange={(e) => speech.changeVoice(e.target.value)}
+          options={voiceOptions}
+          className="max-w-[11.5rem]"
+        />
+      </div>
+
+      <div className={PANEL_ROW}>
+        <span className="text-sm text-[var(--lumi-text-primary)]">语速</span>
+        <div role="group" aria-label="朗读语速" className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5">
+          {SPEECH_RATES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={speech.rate === value}
+              onClick={() => speech.changeRate(value)}
+              className={cx(
+                'min-h-7 min-w-9 rounded-[var(--lumi-radius-sm)] px-1 text-xs tabular-nums transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                speech.rate === value
+                  ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                  : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+              )}
+            >
+              {value}x
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={PANEL_ROW}>
+        <span className="text-sm text-[var(--lumi-text-primary)]">睡眠定时</span>
+        <div
+          role="group"
+          aria-label="朗读睡眠定时"
+          className="flex flex-wrap justify-end gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+        >
+          {SPEECH_SLEEP_TIMER_MINUTES.map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              aria-pressed={speech.sleepMinutes === minutes}
+              onClick={() => speech.changeSleepMinutes(minutes)}
+              className={cx(
+                'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                speech.sleepMinutes === minutes
+                  ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                  : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+              )}
+            >
+              {minutes === 0 ? '关' : `${minutes} 分`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 睡眠定时语义的诚实说明：块边界检查 + 暂停可能推迟实际停止 */}
+      <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
+        定时在段落边界检查；暂停期间不推进段落，实际停止可能晚于设定。
+      </p>
+    </div>
+  )
+}
+
+/** F19/P18 朗读：桌面工具栏控件（移动端入口在「更多操作」菜单；语速
+ * 分段与 P18 朗读设置面板是桌面专用，与既有行为一致）。面板触发按钮
+ * 在朗读中以右上角 accent 圆点作微妙进行中指示（无动画，减少动效
+ * 偏好天然满足）。 */
 function SpeechToolbarControls({
   speech,
 }: {
@@ -247,7 +463,7 @@ function SpeechToolbarControls({
               onClick={speech.stop}
             />
           </Tooltip>
-          {/* 语速 segmented（0.75 / 1 / 1.25 / 1.5）；朗读中调速即重读 */}
+          {/* 语速 segmented（0.75 / 1 / 1.25 / 1.5）；朗读中调速即重读当前段 */}
           <div
             role="group"
             aria-label="朗读语速"
@@ -272,6 +488,33 @@ function SpeechToolbarControls({
           </div>
         </>
       )}
+      {/* P18 朗读设置面板：当前段进度/预览、声音挑选、语速、睡眠定时 */}
+      <Popover
+        width={320}
+        trigger={({ triggerProps }) => (
+          <Tooltip content="朗读设置">
+            <IconButton
+              {...triggerProps}
+              icon={
+                <span className="relative inline-flex">
+                  <Volume2 aria-hidden />
+                  {speech.state !== 'idle' && (
+                    <span
+                      aria-hidden
+                      data-lumi-speaking-indicator=""
+                      className="absolute -right-1 -top-0.5 size-1.5 rounded-full bg-[var(--lumi-accent-text)]"
+                    />
+                  )}
+                </span>
+              }
+              label="朗读设置"
+              touch
+            />
+          </Tooltip>
+        )}
+      >
+        {() => <SpeechPanelControls speech={speech} />}
+      </Popover>
     </>
   )
 }
@@ -520,7 +763,7 @@ export default function ReaderHeader({
   onOpenAiConversation,
   onOpenFind,
   onOpenLinks,
-  collectSpeechText,
+  collectSpeechBlocks,
   autoScrollState = 'off',
   onAutoScrollToggle,
   focusMode,
@@ -536,8 +779,9 @@ export default function ReaderHeader({
   onOpenFind?: () => void
   /** F054：文中链接清单（Reader 持有面板状态）。 */
   onOpenLinks?: () => void
-  /** F19：收集「从视口顶部段落开始」的朗读文本（Reader 提供容器几何）。 */
-  collectSpeechText?: () => string | null
+  /** F19/P18：收集「从视口顶部段落开始」的朗读块（Reader 提供容器几何；
+   * texts 下标即 DOM 块序，引擎逐块出声）。 */
+  collectSpeechBlocks?: () => SpeechCollection | null
   /** F18：自动滚屏状态 + 切换（Reader 持有 rAF 循环）。 */
   autoScrollState?: AutoScrollState
   onAutoScrollToggle?: () => void
@@ -606,7 +850,7 @@ export default function ReaderHeader({
 
   // O127：低频动作状态 hoist——桌面控件与移动端菜单项共享。
   const snapshot = useSnapshotAction(articleUrl)
-  const speech = useSpeechControl(collectSpeechText)
+  const speech = useSpeechControl(collectSpeechBlocks)
   const share = useShareAction(detail.title, articleUrl)
   const quote = useQuoteCopyAction(detail.title, detail.feedTitle, articleUrl)
 
@@ -672,7 +916,7 @@ export default function ReaderHeader({
           }
           break
         case 'speech':
-          if (collectSpeechText !== undefined && speech.available) {
+          if (collectSpeechBlocks !== undefined && speech.available) {
             const speechLabel =
               speech.state === 'idle' ? '朗读' : speech.state === 'speaking' ? '暂停朗读' : '继续朗读'
             moreItems.push({
@@ -972,7 +1216,7 @@ export default function ReaderHeader({
           </Tooltip>
         )
       case 'speech':
-        if (collectSpeechText === undefined) return null
+        if (collectSpeechBlocks === undefined) return null
         return <SpeechToolbarControls speech={speech} />
       case 'share':
         return <ShareToolbarButton share={share} />

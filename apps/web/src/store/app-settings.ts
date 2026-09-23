@@ -42,6 +42,11 @@ import {
   defaultReaderToolbarOrder,
   normalizeReaderToolbarOrder,
 } from '../lib/reader-toolbar'
+import {
+  normalizeSpeechRate,
+  normalizeSpeechSleepMinutes,
+  type SpeechRate,
+} from '../lib/reader-speech'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
@@ -245,6 +250,12 @@ export interface AppSettings {
    * 不进 PORTABLE_KEYS——工具栏排布是设备本地偏好，不参与服务端同步。 */
   readerToolbarDesktopOrder: string[]
   readerToolbarMobileOrder: string[]
+  /** P18 朗读引擎（设备本地；档位/归一化来源 lib/reader-speech）：
+   * 首选声音 voiceURI（'' = 自动，pickVoice 中文优先）、语速档位、
+   * 睡眠定时分钟数（0 = 关）。 */
+  speechVoiceURI: string
+  speechRate: SpeechRate
+  speechSleepTimerMinutes: number
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -275,6 +286,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   // P07：默认序 = 既有视觉序的忠实快照（registry 派生，见 lib/reader-toolbar.ts）
   readerToolbarDesktopOrder: defaultReaderToolbarOrder('desktop'),
   readerToolbarMobileOrder: defaultReaderToolbarOrder('mobile'),
+  // P18 朗读引擎（设备本地）
+  speechVoiceURI: '',
+  speechRate: 1,
+  speechSleepTimerMinutes: 0,
 }
 
 // ---- 解析 / 迁移（纯函数，可测试） ----
@@ -621,6 +636,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
       source.readerToolbarMobileOrder,
       'mobile',
     ),
+    // P18 朗读引擎：档位外值回退默认（声音 URI 截断防滥用）
+    speechVoiceURI:
+      typeof source.speechVoiceURI === 'string'
+        ? source.speechVoiceURI.slice(0, 256)
+        : DEFAULT_APP_SETTINGS.speechVoiceURI,
+    speechRate: normalizeSpeechRate(source.speechRate),
+    speechSleepTimerMinutes: normalizeSpeechSleepMinutes(source.speechSleepTimerMinutes),
   }
 }
 
