@@ -2,6 +2,7 @@
 
 
 import asyncio
+import logging
 from typing import Literal
 
 import httpx
@@ -19,18 +20,38 @@ from lumirss.models import (
     FeedPreviewResult,
     RssHubCatalog,
     RssHubConfigView,
+    RssHubFavoriteItem,
+    RssHubRecentItem,
 )
 from lumirss.routers.ai_settings import SecretValuePut
 from lumirss.rsshub import (
     RssHubInvalidParameters,
     RssHubNotConfigured,
+    RssHubRouteNotFound,
 )
 from lumirss.rsshub_control import (
     RssHubInvalidValue,
     config_view,
 )
+from lumirss.rsshub_route_store import RssHubRouteStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_route_store(request: Request) -> RssHubRouteStore:
+    """N021/N025 store over the routing database (per-user by context)."""
+    return RssHubRouteStore(request.app.state.db)
+
+
+def _catalog_route(route_id: str):
+    from lumirss.rsshub import _CATALOG_BY_ID
+
+    route = _CATALOG_BY_ID.get(route_id)
+    if route is None:
+        raise RssHubRouteNotFound(f"Unknown RSSHub route '{route_id}'.")
+    return route
 
 
 class RssHubPreviewRequest(BaseModel):
@@ -128,11 +149,99 @@ async def rsshub_preview(
     instance, parses offline and reads the subscription list for
     alreadySubscribed. The returned feedUrl is the FreshRSS-facing
     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
+
+    N021: a SUCCESSFUL preview upserts the route into the per-user
+    最近使用 list (sensitive parameter values are masked to '***'
+    before anything is stored). Failed previews never record.
     """
     override = _e2e_base_override(body.baseUrl)
     service = _get_rsshub_service(request)
     preview = await service.preview(body.routeId, body.params, base_override=override)
+    await _record_recent(request, body.routeId, body.params)
     return _preview_json(preview)
+
+
+async def _record_recent(
+    request: Request, route_id: str, params: dict[str, str]
+) -> None:
+    """N021: best-effort 最近使用 upsert after a successful route use.
+
+    The route use itself already succeeded — a metadata write failure
+    must not turn it into an error response; it is logged instead.
+    Storage is masked upstream (``mask_params``), so no sensitive value
+    can reach this call site's arguments anyway.
+    """
+    try:
+        await _get_route_store(request).record_recent(
+            template_id=route_id, params=params, success=True
+        )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        logger.exception("rsshub route recent-recording failed for %s", route_id)
+
+
+# ---- N021: route favorites & 最近使用 ---------------------------------------
+
+
+class RssHubFavoritePut(BaseModel):
+    """PUT /api/v1/rsshub/routes/favorites body (route id + params + label)."""
+
+    routeId: str = Field(min_length=1)
+    params: dict[str, str] = Field(default_factory=dict)
+    label: str = Field(default="", max_length=120)
+
+
+@router.get(
+    "/api/v1/rsshub/routes/favorites",
+    response_model=list[RssHubFavoriteItem],
+    response_model_exclude_none=False,
+)
+async def list_rsshub_favorites(request: Request) -> list[dict[str, object]]:
+    """N021 favorites (per-user, cross-device). Sensitive parameter
+    values are stored as '***' sentinels and are the only thing that can
+    come back here."""
+    return await _get_route_store(request).list_favorites()
+
+
+@router.put(
+    "/api/v1/rsshub/routes/favorites",
+    response_model=RssHubFavoriteItem,
+    response_model_exclude_none=False,
+)
+async def put_rsshub_favorite(
+    body: RssHubFavoritePut, request: Request
+) -> dict[str, object]:
+    """Star (or re-label) one route — upsert on route_key.
+
+    routeId must exist in the Lumi catalog; params are stored MASKED
+    (F047 敏感键 → '***'), so a favorite never carries a secret."""
+    _catalog_route(body.routeId)
+    return await _get_route_store(request).put_favorite(
+        template_id=body.routeId, params=body.params, label=body.label
+    )
+
+
+@router.delete("/api/v1/rsshub/routes/favorites/{route_key}", status_code=204)
+async def delete_rsshub_favorite(
+    route_key: str, request: Request
+) -> Response:
+    """Unstar one favorite; 404 when the user has no such favorite."""
+    deleted = await _get_route_store(request).delete_favorite(route_key)
+    if not deleted:
+        from lumirss.rsshub import RssHubFavoriteNotFound
+
+        raise RssHubFavoriteNotFound("Route favorite not found.")
+    return Response(status_code=204)
+
+
+@router.get(
+    "/api/v1/rsshub/routes/recent",
+    response_model=list[RssHubRecentItem],
+    response_model_exclude_none=False,
+)
+async def list_rsshub_recent(request: Request) -> list[dict[str, object]]:
+    """N021 最近使用 — rows appear here only after a SUCCESSFUL preview
+    or subscribe (failed attempts never record)."""
+    return await _get_route_store(request).list_recent()
 
 
 async def _probe_rsshub(client: httpx.AsyncClient, url: str, source: str) -> dict[str, object]:

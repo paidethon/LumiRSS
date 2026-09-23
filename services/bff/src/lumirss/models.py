@@ -372,6 +372,26 @@ class RssHubCatalog(BaseModel):
     routes: list[RssHubRoute]
 
 
+class RssHubFavoriteItem(BaseModel):
+    """One N021 route favorite (params carry masked sensitive values only)."""
+
+    routeKey: str
+    templateId: str
+    label: str
+    params: dict[str, str]
+    createdAt: str
+
+
+class RssHubRecentItem(BaseModel):
+    """One N021 recently used route (params carry masked sensitive values)."""
+
+    routeKey: str
+    templateId: str
+    params: dict[str, str]
+    lastUsedAt: str
+    lastSuccessAt: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # OPML import (0013 Gate 4)
 # ---------------------------------------------------------------------------

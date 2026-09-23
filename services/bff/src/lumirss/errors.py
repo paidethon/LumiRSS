@@ -165,6 +165,7 @@ from lumirss.restore import (
     RestorePreviewRequired,
 )
 from lumirss.rsshub import (
+    RssHubFavoriteNotFound,
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
@@ -251,6 +252,8 @@ _ERROR_RESPONSES = {
     RssHubRouteNotFound: (404, "rsshub_route_not_found"),
     RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
     RssHubFetchError: (502, "rsshub_fetch_error"),
+    # N021 route favorites
+    RssHubFavoriteNotFound: (404, "rsshub_favorite_not_found"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
@@ -437,6 +440,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubNotConfigured)
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
+    @app.exception_handler(RssHubFavoriteNotFound)
     @app.exception_handler(RssHubFetchError)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)

@@ -124,7 +124,35 @@ async def create_subscription(
         category_id=subscription.categoryId,
         title=subscription.title,
     )
+    await _record_route_use(request, subscription.feedUrl)
     return _subscription_json(created)
+
+
+async def _record_route_use(request: Request, feed_url: str) -> None:
+    """N021：成功订阅若命中 Lumi RSSHub 目录路由 → 记录最近使用。
+
+    服务端从 feedUrl 路径反推路由与参数（不信任客户端上报）；参数
+    在 store 内统一脱敏（敏感键 → '***'）。元数据写入失败不影响
+    订阅结果——只记日志。"""
+    import urllib.parse
+
+    from lumirss.rsshub import match_route_path
+    from lumirss.rsshub_route_store import RssHubRouteStore
+
+    try:
+        path = urllib.parse.urlsplit(feed_url).path
+        matched = match_route_path(path)
+        if matched is not None:
+            route, params = matched
+            await RssHubRouteStore(request.app.state.db).record_recent(
+                template_id=route.id, params=params, success=True
+            )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "rsshub route recent-recording failed on subscribe"
+        )
 
 
 @router.patch("/api/v1/subscriptions/{subscription_ref}", status_code=204)

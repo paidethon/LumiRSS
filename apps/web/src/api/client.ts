@@ -42,6 +42,8 @@ import type {
   RestorePreview,
   RestoreResult,
   RssHubConfig,
+  RssHubFavoriteItem,
+  RssHubRecentItem,
   RssHubRoutesResponse,
   SearchResponse,
   ServerSettings,
@@ -896,6 +898,40 @@ export async function previewRssHub(
     contentType: 'application/json',
   })
   return (await response.json()) as FeedPreviewMetadata
+}
+
+// ---- N021 路由收藏与最近使用（服务端持久化，跨设备） ----
+
+/** N021：收藏列表（敏感参数值只以 '***' 哨兵出现）。 */
+export async function getRssHubFavorites(signal?: AbortSignal): Promise<RssHubFavoriteItem[]> {
+  return request<RssHubFavoriteItem[]>(`${API_BASE}/rsshub/routes/favorites`, signal)
+}
+
+/** N021：收藏 / 改标签（服务端按 route_key upsert）。 */
+export async function putRssHubFavorite(input: {
+  routeId: string
+  params?: Record<string, string>
+  label?: string
+}): Promise<RssHubFavoriteItem> {
+  const response = await rawRequest(`${API_BASE}/rsshub/routes/favorites`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubFavoriteItem
+}
+
+/** N021：取消收藏（routeKey 来自收藏列表，客户端不自行拼装）。 */
+export async function deleteRssHubFavorite(routeKey: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/rsshub/routes/favorites/${encodeURIComponent(routeKey)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** N021：最近使用（仅成功过的 preview/subscribe 会出现在这里）。 */
+export async function getRssHubRecent(signal?: AbortSignal): Promise<RssHubRecentItem[]> {
+  return request<RssHubRecentItem[]>(`${API_BASE}/rsshub/routes/recent`, signal)
 }
 
 /** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */

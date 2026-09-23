@@ -53,6 +53,9 @@ export type SourceDiscoveryResponse = Schemas['SourceDiscoveryResponse']
 export type RssHubParameter = Schemas['RssHubParameter']
 export type RssHubRoute = Schemas['RssHubRoute']
 export type RssHubRoutesResponse = Schemas['RssHubCatalog']
+// N021 路由收藏 / 最近使用（params 内敏感值只以 '***' 哨兵出现）
+export type RssHubFavoriteItem = Schemas['RssHubFavoriteItem']
+export type RssHubRecentItem = Schemas['RssHubRecentItem']
 
 // ---- 0015/0016 AI ----
 

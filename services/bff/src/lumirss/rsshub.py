@@ -48,6 +48,7 @@ from lumirss.http_fetch import follow_redirects, origin_of
 __all__ = [
     "CATALOG",
     "RssHubFetchError",
+    "RssHubFavoriteNotFound",
     "RssHubInvalidParameters",
     "RssHubNotConfigured",
     "RssHubParameter",
@@ -55,6 +56,7 @@ __all__ = [
     "RssHubRouteNotFound",
     "RssHubService",
     "build_path",
+    "match_route_path",
 ]
 
 _MAX_REDIRECTS = 5
@@ -71,6 +73,10 @@ class RssHubRouteNotFound(AdapterError):
 
 class RssHubInvalidParameters(AdapterError):
     """Route parameters are missing, unknown or fail pattern validation."""
+
+
+class RssHubFavoriteNotFound(AdapterError):
+    """N021: the referenced route favorite does not exist for this user."""
 
 
 class RssHubFetchError(AdapterError):
@@ -241,6 +247,38 @@ CATALOG: tuple[RssHubRoute, ...] = (
 )
 
 _CATALOG_BY_ID = {route.id: route for route in CATALOG}
+
+
+def _template_pattern(template: str) -> tuple[re.Pattern[str], tuple[str, ...]]:
+    """Compile one path template to an anchored matcher + placeholder keys."""
+    keys = tuple(re.findall(r"\{(\w+)\}", template))
+    parts = re.split(r"\{\w+\}", template)
+    pattern = "^" + "([^/]+)".join(re.escape(part) for part in parts) + "$"
+    return re.compile(pattern), keys
+
+
+_TEMPLATE_MATCHERS = tuple(
+    (route, *_template_pattern(route.path_template)) for route in CATALOG
+)
+
+
+def match_route_path(path: str) -> tuple[RssHubRoute, dict[str, str]] | None:
+    """Match an absolute feed URL path against the Lumi catalog.
+
+    Returns (route, decoded params) when the path instantiates a known
+    template — used server-side to attribute a generic subscription to
+    its RSSHub route (N021/N025 recording) without trusting any client
+    supplied route id. Unknown paths → None.
+    """
+    for route, pattern, keys in _TEMPLATE_MATCHERS:
+        matched = pattern.match(path)
+        if matched:
+            params = {
+                key: urllib.parse.unquote(group)
+                for key, group in zip(keys, matched.groups(), strict=True)
+            }
+            return route, params
+    return None
 
 
 def _quote_segment(value: str) -> str:

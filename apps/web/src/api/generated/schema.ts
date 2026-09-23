@@ -4798,6 +4798,10 @@ export interface paths {
          *     instance, parses offline and reads the subscription list for
          *     alreadySubscribed. The returned feedUrl is the FreshRSS-facing
          *     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
+         *
+         *     N021: a SUCCESSFUL preview upserts the route into the per-user
+         *     最近使用 list (sensitive parameter values are masked to '***'
+         *     before anything is stored). Failed previews never record.
          */
         post: operations["rsshub_preview_api_v1_rsshub_preview_post"];
         delete?: never;
@@ -4823,6 +4827,76 @@ export interface paths {
          *     construction happens server-side on preview.
          */
         get: operations["rsshub_routes_api_v1_rsshub_routes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Favorites
+         * @description N021 favorites (per-user, cross-device). Sensitive parameter
+         *     values are stored as '***' sentinels and are the only thing that can
+         *     come back here.
+         */
+        get: operations["list_rsshub_favorites_api_v1_rsshub_routes_favorites_get"];
+        /**
+         * Put Rsshub Favorite
+         * @description Star (or re-label) one route — upsert on route_key.
+         *
+         *     routeId must exist in the Lumi catalog; params are stored MASKED
+         *     (F047 敏感键 → '***'), so a favorite never carries a secret.
+         */
+        put: operations["put_rsshub_favorite_api_v1_rsshub_routes_favorites_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites/{route_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Rsshub Favorite
+         * @description Unstar one favorite; 404 when the user has no such favorite.
+         */
+        delete: operations["delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Recent
+         * @description N021 最近使用 — rows appear here only after a SUCCESSFUL preview
+         *     or subscribe (failed attempts never record).
+         */
+        get: operations["list_rsshub_recent_api_v1_rsshub_routes_recent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11456,6 +11530,41 @@ export interface components {
             configured: boolean;
         };
         /**
+         * RssHubFavoriteItem
+         * @description One N021 route favorite (params carry masked sensitive values only).
+         */
+        RssHubFavoriteItem: {
+            /** Createdat */
+            createdAt: string;
+            /** Label */
+            label: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubFavoritePut
+         * @description PUT /api/v1/rsshub/routes/favorites body (route id + params + label).
+         */
+        RssHubFavoritePut: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Routeid */
+            routeId: string;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -11490,6 +11599,24 @@ export interface components {
             };
             /** Routeid */
             routeId: string;
+        };
+        /**
+         * RssHubRecentItem
+         * @description One N021 recently used route (params carry masked sensitive values).
+         */
+        RssHubRecentItem: {
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Lastusedat */
+            lastUsedAt: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
         };
         /**
          * RssHubRoute
@@ -21473,6 +21600,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubCatalog"];
+                };
+            };
+        };
+    };
+    list_rsshub_favorites_api_v1_rsshub_routes_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"][];
+                };
+            };
+        };
+    };
+    put_rsshub_favorite_api_v1_rsshub_routes_favorites_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubFavoritePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_recent_api_v1_rsshub_routes_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRecentItem"][];
                 };
             };
         };

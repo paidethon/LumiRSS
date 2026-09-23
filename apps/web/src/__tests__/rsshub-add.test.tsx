@@ -98,7 +98,12 @@ function withProviders(ui: React.ReactNode) {
 async function renderRssHubTab(
   map: Record<string, () => Response>,
 ): Promise<ReturnType<typeof makeFetchHandler>> {
-  const fetchState = makeFetchHandler(map)
+  const fetchState = makeFetchHandler({
+    // N021：收藏/最近使用列表默认为空（关注目录行为的用例不感知）。
+    'GET /api/v1/rsshub/routes/favorites': () => jsonResponse([]),
+    'GET /api/v1/rsshub/routes/recent': () => jsonResponse([]),
+    ...map,
+  })
   vi.stubGlobal('fetch', fetchState.fn)
   render(withProviders(<AddSourceDialog open onClose={() => {}} />))
   fireEvent.click(screen.getByRole('tab', { name: 'RSSHub' }))

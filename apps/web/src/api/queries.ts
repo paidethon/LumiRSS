@@ -98,6 +98,8 @@ import {
   getReadLaterTimeline,
   getRagStatus,
   getRssHubConfig,
+  getRssHubFavorites,
+  getRssHubRecent,
   getRssHubRoutes,
   getSubscriptions,
   getWebDavSettings,
@@ -132,6 +134,7 @@ import {
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  putRssHubFavorite,
   rebuildRag,
   removeLibraryFavorite,
   removeWorkspaceItem,
@@ -143,6 +146,7 @@ import {
   saveLibreTranslateKey,
   searchEntries,
   createSavedSearchView,
+  deleteRssHubFavorite,
   deleteSavedSearchView,
   getSavedSearchViews,
   renameSavedSearchView,
@@ -704,6 +708,47 @@ export function useRssHubPreviewMutation() {
   return useMutation({
     mutationFn: (vars: { routeId: string; params: Record<string, string> }) =>
       previewRssHub(vars.routeId, vars.params),
+  })
+}
+
+/** N021：路由收藏（服务端持久化，跨设备）。 */
+export function useRssHubFavorites(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-favorites'],
+    queryFn: ({ signal }) => getRssHubFavorites(signal),
+    enabled,
+  })
+}
+
+/** N021：最近使用（仅成功 preview/subscribe 过的路由）。 */
+export function useRssHubRecent(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-recent'],
+    queryFn: ({ signal }) => getRssHubRecent(signal),
+    enabled,
+  })
+}
+
+/** N021：收藏 / 改标签（成功后失效收藏缓存）。 */
+export function usePutRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params?: Record<string, string>; label?: string }) =>
+      putRssHubFavorite(vars),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
+  })
+}
+
+/** N021：取消收藏（成功后失效收藏缓存）。 */
+export function useDeleteRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => deleteRssHubFavorite(routeKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
   })
 }
 
