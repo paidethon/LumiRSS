@@ -25,6 +25,7 @@ import type {
   EntryConversation,
   EntryDetail,
   EntryListResponse,
+  EntryRevisionsResponse,
   EntrySummary,
   EntryTranslation,
   Feed,
@@ -645,6 +646,8 @@ export async function getEntries(
     sourceType?: string | null
     categoryId?: string | null
     cursor?: string | null
+    /** N034：按投影接收时间排序（服务端执行）。 */
+    sort?: 'received' | null
   },
   signal?: AbortSignal,
 ): Promise<EntryListResponse> {  const query = new URLSearchParams()
@@ -668,7 +671,21 @@ export async function getEntries(
     // cursor 是 opaque string：原样传递，绝不 decode / parse / 修改。
     query.set('cursor', params.cursor)
   }
+  if (params.sort != null) {
+    query.set('sort', params.sort)
+  }
   return request<EntryListResponse>(`${API_BASE}/entries?${query}`, signal)
+}
+
+/** N031：单篇文章的有界修订历史（纯投影查询，不触上游）。 */
+export async function getEntryRevisions(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<EntryRevisionsResponse> {
+  return request<EntryRevisionsResponse>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/revisions`,
+    signal,
+  )
 }
 
 /** 0022 全局搜索：q 必填；cursor / libraryCursor opaque 原样透传

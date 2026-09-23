@@ -237,10 +237,12 @@ describe('F05 按来源分组', () => {
 })
 
 describe('F06 排序切换（诚实客户端降级）', () => {
-  it('切换按钮同步 settings；oldest 时 reverse + 常驻诚实标注；newest 恢复', async () => {
+  it('切换按钮同步 settings；oldest 时 reverse + 常驻诚实标注；received 走服务端；newest 恢复', async () => {
+    const entryUrls: string[] = []
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/api/v1/entries')) {
+      if (url.includes('/api/v1/entries?')) {
+        entryUrls.push(url)
         return jsonResponse({ items: [entry('e1.a'), entry('e1.b')], nextCursor: null })
       }
       if (url.includes('/api/v1/feeds')) return jsonResponse([])
@@ -261,18 +263,37 @@ describe('F06 排序切换（诚实客户端降级）', () => {
     expect(useAppSettings.getState().settings.timelineOrder).toBe('oldest')
     expect(toggle).toHaveTextContent('最早优先')
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
-    // 客户端 reverse：已加载范围内 e1.b 在前
-    expect(uniqueRowRefs(container).slice(0, 2)).toEqual(['e1.b', 'e1.a'])
+    // 客户端 reverse：已加载范围内 e1.b 在前（order 进入 queryKey →
+    // 切换会重拉一页，需等待新查询返回）
+    await waitFor(() =>
+      expect(uniqueRowRefs(container).slice(0, 2)).toEqual(['e1.b', 'e1.a']),
+    )
     // 诚实标注：服务端分页仍为最新优先
     expect(screen.getByTestId('timeline-order-note')).toHaveTextContent(
       '最早优先（当前已加载范围内排序，服务端分页仍为最新优先）',
     )
 
-    // 切回 newest：顺序与标注恢复
+    // N034：第二次点击 → 按接收时间（服务端 sort=received；三态循环）。
+    // 该 mock 未投影接收时间 → 服务端按收到的顺序原样返回（a, b），
+    // 客户端不再 reverse；诚实标注可见。
+    fireEvent.click(toggle)
+    expect(useAppSettings.getState().settings.timelineOrder).toBe('received')
+    expect(toggle).toHaveTextContent('按接收时间')
+    expect(screen.getByTestId('timeline-order-received-note')).toHaveTextContent(
+      '按接收时间（服务端排序；页边界仍由上游分页决定）',
+    )
+    await waitFor(() =>
+      expect(
+        entryUrls.some((u) => u.includes('sort=received')),
+      ).toBe(true),
+    )
+
+    // 切回 newest：顺序与标注恢复（三态循环闭环）
     fireEvent.click(toggle)
     expect(useAppSettings.getState().settings.timelineOrder).toBe('newest')
     expect(uniqueRowRefs(container).slice(0, 2)).toEqual(['e1.a', 'e1.b'])
     expect(screen.queryByTestId('timeline-order-note')).toBeNull()
+    expect(screen.queryByTestId('timeline-order-received-note')).toBeNull()
   })
 })
 

@@ -27,6 +27,11 @@ export type EntryListResponse = Schemas['EntryListResponse']
 /** contentHtml 是不可信的上游 RSS HTML：BFF 只搬运，sanitize 在渲染前
  * 由 DOMPurify 完成（见 lib/sanitize-article-html.ts）。 */
 export type EntryDetail = Schemas['EntryDetail']
+/** N032：正文明显变短时的版本选择块（上游当前 / 上次完整版本）。 */
+export type ContentVariantsBlock = Schemas['ContentVariantsBlock']
+/** N031：文章修订（有界元数据 + 结构差异摘要）。 */
+export type EntryRevision = Schemas['EntryRevision']
+export type EntryRevisionsResponse = Schemas['EntryRevisionsResponse']
 
 export interface ApiErrorResponse {
   error: { type: string; message: string }
