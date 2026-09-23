@@ -1562,14 +1562,22 @@ import {
   getFavorites,
   getObsidianNote,
   getObsidianStatus,
+  getObsidianExportTemplate,
+  createObsidianDevice,
+  updateObsidianDevice,
+  deleteObsidianDevice,
   listApiSources,
   listMailBridgeLists,
+  listObsidianDevices,
   listObsidianNotes,
   previewApiSource,
+  previewObsidianExportTemplate,
+  requestObsidianExportHandoff,
   rescanObsidian,
   sendDigestNow,
   updateApiSource,
   updateDigestSettings,
+  updateObsidianExportTemplate,
   updateObsidianSettings,
 } from './client'
 import type {
@@ -1578,6 +1586,7 @@ import type {
   ApiSourceUpdateInput,
   DigestEntryRefInput,
   DigestSettingsUpdate,
+  ObsidianDeviceProfilePayload,
 } from './client'
 
 // ---- API 来源 ----
@@ -2032,6 +2041,82 @@ export function useObsidianNoteDetail(noteRef: string | null) {
     queryKey: ['obsidian', 'notes', 'detail', noteRef],
     queryFn: ({ signal }) => getObsidianNote(noteRef!, signal),
     enabled: noteRef !== null,
+  })
+}
+
+// ---- P16：多设备交接（设备档案 / 导出模板；用户级数据） ----
+
+/** 设备档案列表（URI 生成的唯一设备信息来源）。 */
+export function useObsidianDevices() {
+  return useQuery({
+    queryKey: ['obsidian', 'devices'],
+    queryFn: ({ signal }) => listObsidianDevices(signal),
+  })
+}
+
+function useInvalidateObsidianDevices() {
+  const queryClient = useQueryClient()
+  return async () => {
+    await queryClient.invalidateQueries({ queryKey: ['obsidian', 'devices'] })
+  }
+}
+
+export function useCreateObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (payload: ObsidianDeviceProfilePayload) => createObsidianDevice(payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (vars: { deviceId: string; payload: ObsidianDeviceProfilePayload }) =>
+      updateObsidianDevice(vars.deviceId, vars.payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (deviceId: string) => deleteObsidianDevice(deviceId),
+    onSuccess: invalidate,
+  })
+}
+
+/** 导出模板（template='' 表示跟随默认模板）。 */
+export function useObsidianExportTemplate() {
+  return useQuery({
+    queryKey: ['obsidian', 'export-template'],
+    queryFn: ({ signal }) => getObsidianExportTemplate(signal),
+  })
+}
+
+export function useUpdateObsidianExportTemplateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (template: string) => updateObsidianExportTemplate(template),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'export-template'] })
+    },
+  })
+}
+
+/** 模板预览（编辑器防抖调用；unknownVars 由 UI 诚实列出）。 */
+export function useObsidianTemplatePreviewMutation() {
+  return useMutation({
+    mutationFn: (vars: { template: string; entryRef?: string | null }) =>
+      previewObsidianExportTemplate(vars.template, vars.entryRef),
+  })
+}
+
+/** 导出到 Obsidian 交接（uri / file 裁决在服务端）。 */
+export function useObsidianExportHandoffMutation() {
+  return useMutation({
+    mutationFn: (vars: { entryRef: string; deviceId: string }) =>
+      requestObsidianExportHandoff(vars.entryRef, vars.deviceId),
   })
 }
 
