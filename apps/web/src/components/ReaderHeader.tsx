@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
   Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
-  Search, Share2, Square, Star, Volume2,
+  Search, Settings2, Share2, Square, Star, Volume2,
 } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useAiSettings, useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
@@ -35,6 +35,12 @@ import {
   exportEntryAsMarkdown,
   type ExportInput,
 } from '../lib/reader-export'
+import {
+  readerToolbarAction,
+  resolveReaderToolbarVisible,
+  type ReaderToolbarActionId,
+} from '../lib/reader-toolbar'
+import ReaderToolbarCustomizeDialog from './ReaderToolbarCustomizeDialog'
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { Button } from './ui/Button'
@@ -415,7 +421,13 @@ function QuoteToolbarMenu({
  * 链接 / 朗读 / 分享 / 复制引用 / 打印）折进既有「更多操作」菜单。
  * 桌面用 `contents` 包装组保持平铺布局与顺序逐项不变（<lg 时该组
  * display:none）；「更多操作」菜单按断点增补菜单项（useIsMobile），
- * 两断点共享同一 hoisted 动作状态（快照/朗读/分享/引用）。 */
+ * 两断点共享同一 hoisted 动作状态（快照/朗读/分享/引用）。
+ *
+ * P07：工具栏动作进注册表（lib/reader-toolbar.ts）——用户可通过
+ * 「更多操作 → 自定义工具栏」按断点调序 / 显隐（设备本地持久化，
+ * store/app-settings.ts 两键）；本组件只消费归一化后的序渲染，
+ * 动作行为与 aria 标签逐字不变，已读 / 稍后读 / Aa / 标题元信息
+ * 不在可配置范围。 */
 /** Gate：语言视图三态控件（原文/双语/仅译文）。
  * 桌面 = 三段分段按钮；窄屏 = 紧凑 Menu（不遮挡/不挤出工具栏）。
  * 两态 Switch 表达不了三态，这里用显式的选项组。
@@ -545,6 +557,16 @@ export default function ReaderHeader({
   // O127：移动端（<lg）低频动作收进「更多操作」菜单（jsdom 无
   // matchMedia → 视为移动端，与 useIsMobile 既有约定一致）。
   const isMobile = useIsMobile()
+  // P07：工具栏排布——注册表 + 设备本地的两套归一化序决定「排布与显隐」，
+  // 动作行为本身不变。桌面/移动端各自 resolve（隐藏的动作不渲染）。
+  const storedDesktopOrder = useAppSettings((s) => s.settings.readerToolbarDesktopOrder)
+  const storedMobileOrder = useAppSettings((s) => s.settings.readerToolbarMobileOrder)
+  const desktopVisibleIds = resolveReaderToolbarVisible(storedDesktopOrder, 'desktop')
+  const mobileVisibleIds = resolveReaderToolbarVisible(storedMobileOrder, 'mobile')
+  // 移动端：primary 动作留工具栏，其余折进「更多操作」菜单（O127 语义）。
+  const mobileInlineIds = mobileVisibleIds.filter((id) => readerToolbarAction(id).primary)
+  const mobileMenuIds = mobileVisibleIds.filter((id) => !readerToolbarAction(id).primary)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
   // P0-11：本地引擎支持门控——engine=browser 且此浏览器没有 Translator
   // API（localTranslatorAvailable() 此前导出零调用）→ 控件禁用 + 原因。
   const aiSettings = useAiSettings()
@@ -588,121 +610,147 @@ export default function ReaderHeader({
   const share = useShareAction(detail.title, articleUrl)
   const quote = useQuoteCopyAction(detail.title, detail.feedTitle, articleUrl)
 
-  /** 「更多操作」菜单项（O127）：移动端把低频动作并入本菜单；桌面
-      仅保留原有三项（自动滚屏 / 导出）。 */
+  /** 「更多操作」菜单项：移动端把非 primary 的可见动作按移动端序并入
+      本菜单（O127 语义不变；quote 展开为纯文本/Markdown 两个格式项，
+      朗读追加停止项——可用性门槛与既有条件一致）；两断点尾部固定
+      自动滚屏 / 导出，最后是 P07「自定义工具栏」入口。 */
   const moreItems: MenuItemDef[] = []
-  if (isMobile && onOpenFind !== undefined) {
-    moreItems.push({
-      key: 'find',
-      content: (
-        <span className="flex items-center gap-2">
-          <Search aria-hidden className="size-4" />
-          文内查找
-        </span>
-      ),
-    })
-  }
-  if (isMobile && onOpenLinks !== undefined) {
-    moreItems.push({
-      key: 'links',
-      content: (
-        <span className="flex items-center gap-2">
-          <Link2 aria-hidden className="size-4" />
-          文中链接
-        </span>
-      ),
-    })
-  }
-  if (isMobile && onOpenAiConversation !== undefined) {
-    moreItems.push({
-      key: 'ai',
-      content: (
-        <span className="flex items-center gap-2">
-          <MessageSquare aria-hidden className="size-4" />
-          AI 对话
-        </span>
-      ),
-    })
-  }
-  if (isMobile && articleUrl !== null) {
-    moreItems.push({
-      key: 'snapshot',
-      disabled: snapshot.pending,
-      content: (
-        <span className="flex items-center gap-2">
-          <Camera aria-hidden className="size-4" />
-          {snapshot.tooltip}
-        </span>
-      ),
-    })
-  }
-  if (isMobile && collectSpeechText !== undefined && speech.available) {
-    const speechLabel =
-      speech.state === 'idle' ? '朗读' : speech.state === 'speaking' ? '暂停朗读' : '继续朗读'
-    moreItems.push({
-      key: 'speech',
-      content: (
-        <span className="flex items-center gap-2">
-          {speech.state === 'speaking' ? (
-            <Pause aria-hidden className="size-4" />
-          ) : speech.state === 'paused' ? (
-            <Play aria-hidden className="size-4" />
-          ) : (
-            <Volume2 aria-hidden className="size-4" />
-          )}
-          {speechLabel}
-        </span>
-      ),
-    })
-    if (speech.state !== 'idle') {
-      moreItems.push({
-        key: 'speech-stop',
-        content: (
-          <span className="flex items-center gap-2">
-            <Square aria-hidden className="size-4" />
-            停止朗读
-          </span>
-        ),
-      })
-    }
-  }
   if (isMobile) {
-    moreItems.push({
-      key: 'share',
-      content: (
-        <span className="flex items-center gap-2">
-          <Share2 aria-hidden className="size-4" />
-          {share.canShare ? '分享' : '复制链接'}
-        </span>
-      ),
-    })
-    moreItems.push({
-      key: 'quote-plain',
-      content: (
-        <span className="flex items-center gap-2">
-          <Quote aria-hidden className="size-4" />
-          复制为纯文本
-        </span>
-      ),
-    })
-    moreItems.push({
-      key: 'quote-markdown',
-      content: (
-        <span className="flex items-center gap-2">
-          <Quote aria-hidden className="size-4" />
-          复制为 Markdown
-        </span>
-      ),
-    })
-    moreItems.push({
-      key: 'print',
-      content: (
-        <span className="flex items-center gap-2">
-          <Printer aria-hidden className="size-4" />
-          打印
-        </span>
-      ),
-    })
+    for (const id of mobileMenuIds) {
+      switch (id) {
+        case 'find':
+          if (onOpenFind !== undefined) {
+            moreItems.push({
+              key: 'find',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Search aria-hidden className="size-4" />
+                  文内查找
+                </span>
+              ),
+            })
+          }
+          break
+        case 'links':
+          if (onOpenLinks !== undefined) {
+            moreItems.push({
+              key: 'links',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Link2 aria-hidden className="size-4" />
+                  文中链接
+                </span>
+              ),
+            })
+          }
+          break
+        case 'ai':
+          if (onOpenAiConversation !== undefined) {
+            moreItems.push({
+              key: 'ai',
+              content: (
+                <span className="flex items-center gap-2">
+                  <MessageSquare aria-hidden className="size-4" />
+                  AI 对话
+                </span>
+              ),
+            })
+          }
+          break
+        case 'snapshot':
+          if (articleUrl !== null) {
+            moreItems.push({
+              key: 'snapshot',
+              disabled: snapshot.pending,
+              content: (
+                <span className="flex items-center gap-2">
+                  <Camera aria-hidden className="size-4" />
+                  {snapshot.tooltip}
+                </span>
+              ),
+            })
+          }
+          break
+        case 'speech':
+          if (collectSpeechText !== undefined && speech.available) {
+            const speechLabel =
+              speech.state === 'idle' ? '朗读' : speech.state === 'speaking' ? '暂停朗读' : '继续朗读'
+            moreItems.push({
+              key: 'speech',
+              content: (
+                <span className="flex items-center gap-2">
+                  {speech.state === 'speaking' ? (
+                    <Pause aria-hidden className="size-4" />
+                  ) : speech.state === 'paused' ? (
+                    <Play aria-hidden className="size-4" />
+                  ) : (
+                    <Volume2 aria-hidden className="size-4" />
+                  )}
+                  {speechLabel}
+                </span>
+              ),
+            })
+            if (speech.state !== 'idle') {
+              moreItems.push({
+                key: 'speech-stop',
+                content: (
+                  <span className="flex items-center gap-2">
+                    <Square aria-hidden className="size-4" />
+                    停止朗读
+                  </span>
+                ),
+              })
+            }
+          }
+          break
+        case 'share':
+          moreItems.push({
+            key: 'share',
+            content: (
+              <span className="flex items-center gap-2">
+                <Share2 aria-hidden className="size-4" />
+                {share.canShare ? '分享' : '复制链接'}
+              </span>
+            ),
+          })
+          break
+        case 'quote':
+          moreItems.push(
+            {
+              key: 'quote-plain',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Quote aria-hidden className="size-4" />
+                  复制为纯文本
+                </span>
+              ),
+            },
+            {
+              key: 'quote-markdown',
+              content: (
+                <span className="flex items-center gap-2">
+                  <Quote aria-hidden className="size-4" />
+                  复制为 Markdown
+                </span>
+              ),
+            },
+          )
+          break
+        case 'print':
+          moreItems.push({
+            key: 'print',
+            content: (
+              <span className="flex items-center gap-2">
+                <Printer aria-hidden className="size-4" />
+                打印
+              </span>
+            ),
+          })
+          break
+        default:
+          break
+      }
+    }
   }
   // F18/F22：自动滚屏 / 导出（原「更多操作」三项，两断点共有）。
   if (onAutoScrollToggle !== undefined) {
@@ -744,6 +792,17 @@ export default function ReaderHeader({
       ),
     },
   )
+  // P07：工具栏自定义入口（两断点共有；「更多操作」锁定不可移除，
+  // 入口恒可达）。
+  moreItems.push({
+    key: 'customize',
+    content: (
+      <span className="flex items-center gap-2">
+        <Settings2 aria-hidden className="size-4" />
+        自定义工具栏
+      </span>
+    ),
+  })
 
   const handleMoreSelect = (key: string) => {
     if (key === 'find') {
@@ -794,11 +853,168 @@ export default function ReaderHeader({
       exportEntryAsMarkdown(exportInput)
       return
     }
-    if (key === 'export-html') exportEntryAsHtml(exportInput)
+    if (key === 'export-html') {
+      exportEntryAsHtml(exportInput)
+      return
+    }
+    if (key === 'customize') {
+      setCustomizeOpen(true)
+    }
+  }
+
+  /** P07 inline 排布：桌面序是共享 DOM 的主干（一个 DOM 只能有一个
+   * 顺序；两断点都 inline 的动作跟随桌面序落位）；桌面隐藏而移动端
+   * inline 可见的动作追加在尾部。show 表达 CSS 折叠方向：
+   * - 'desktop'：`contents max-lg:hidden`（<lg 折进「更多操作」菜单，
+   *   按钮仍在 DOM——与 O127 折叠组一致，两断点共享 hoisted 状态）；
+   * - 'mobile'：`hidden lg:contents`（仅 ≥lg 显示）。 */
+  type InlineShow = 'both' | 'desktop' | 'mobile'
+  const inlinePlan: { id: ReaderToolbarActionId; show: InlineShow }[] = desktopVisibleIds.map(
+    (id) => ({
+      id,
+      show: mobileInlineIds.includes(id) ? ('both' as const) : ('desktop' as const),
+    }),
+  )
+  for (const id of mobileInlineIds) {
+    if (!desktopVisibleIds.includes(id)) inlinePlan.push({ id, show: 'mobile' })
+  }
+
+  /** 单个注册表动作的工具栏节点（可用性门槛与既有条件渲染一致；
+   * 返回 null = 该动作当前不可用，不渲染）。 */
+  const renderToolbarAction = (id: ReaderToolbarActionId): ReactNode => {
+    switch (id) {
+      case 'star':
+        return pending ? (
+          <IconButton
+            icon={<Loader2 aria-hidden className="animate-spin" />}
+            label="处理中"
+            disabled
+          />
+        ) : (
+          <Tooltip content={detail.starred ? '取消收藏' : '收藏'}>
+            <IconButton
+              icon={
+                <Star
+                  aria-hidden
+                  className={cx(
+                    detail.starred &&
+                      'fill-[var(--lumi-category-orange)] text-[var(--lumi-category-orange)]',
+                  )}
+                />
+              }
+              label={detail.starred ? '取消收藏' : '收藏'}
+              aria-pressed={detail.starred}
+              touch
+              onClick={() =>
+                mutation.mutate({
+                  entryRef: detail.entryRef,
+                  patch: { starred: !detail.starred },
+                })
+              }
+            />
+          </Tooltip>
+        )
+      case 'open-original':
+        // 只放行 safeExternalHttpUrl 通过的绝对 http/https（不可信输入）
+        if (articleUrl === null) return null
+        return (
+          <a
+            href={articleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 text-sm text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          >
+            <ExternalLink aria-hidden className="size-3.5" />
+            打开原文
+          </a>
+        )
+      case 'snapshot':
+        if (articleUrl === null) return null
+        return <SaveSnapshotButton snapshot={snapshot} />
+      case 'ai':
+        if (onOpenAiConversation === undefined) return null
+        return (
+          <Tooltip content="AI 对话">
+            <IconButton
+              icon={<MessageSquare aria-hidden />}
+              label="AI 对话"
+              touch
+              onClick={onOpenAiConversation}
+            />
+          </Tooltip>
+        )
+      case 'language':
+        if (onViewModeChange === undefined) return null
+        return (
+          <LanguageViewControl
+            value={viewMode ?? 'original'}
+            onChange={onViewModeChange}
+            disabledReason={translationDisabledReason}
+          />
+        )
+      case 'find':
+        if (onOpenFind === undefined) return null
+        return (
+          <Tooltip content="文内查找">
+            <IconButton
+              icon={<Search aria-hidden />}
+              label="文内查找"
+              touch
+              onClick={onOpenFind}
+            />
+          </Tooltip>
+        )
+      case 'links':
+        if (onOpenLinks === undefined) return null
+        return (
+          <Tooltip content="文中链接">
+            <IconButton icon={<Link2 aria-hidden />} label="文中链接" touch onClick={onOpenLinks} />
+          </Tooltip>
+        )
+      case 'speech':
+        if (collectSpeechText === undefined) return null
+        return <SpeechToolbarControls speech={speech} />
+      case 'share':
+        return <ShareToolbarButton share={share} />
+      case 'quote':
+        return <QuoteToolbarMenu quote={quote} />
+      case 'print':
+        return (
+          <Tooltip content="打印">
+            <IconButton
+              icon={<Printer aria-hidden />}
+              label="打印"
+              touch
+              onClick={() => {
+                if (typeof window.print === 'function') window.print()
+              }}
+            />
+          </Tooltip>
+        )
+      case 'more':
+        if (!(onAutoScrollToggle !== undefined || isMobile)) return null
+        return (
+          <Menu
+            trigger={({ triggerProps }) => (
+              <Tooltip content="更多操作">
+                <IconButton
+                  {...triggerProps}
+                  icon={<MoreHorizontal aria-hidden />}
+                  label="更多操作"
+                  touch
+                />
+              </Tooltip>
+            )}
+            items={moreItems}
+            onSelect={handleMoreSelect}
+          />
+        )
+    }
   }
 
   return (
-    <header className="border-b border-[var(--lumi-separator)] pb-5">
+    <>
+      <header className="border-b border-[var(--lumi-separator)] pb-5">
       {/* 元信息行（弱化）：来源（P2：可点击进入该订阅范围）· 作者 ·
           时间 · 阅读时间。来源缺失降级「来源未知」。 */}
       <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-[var(--lumi-text-tertiary)]">
@@ -910,143 +1126,26 @@ export default function ReaderHeader({
           </span>
         )}
 
-        {pending ? (
-          <IconButton
-            icon={<Loader2 aria-hidden className="animate-spin" />}
-            label="处理中"
-            disabled
-          />
-        ) : (
-          <Tooltip content={detail.starred ? '取消收藏' : '收藏'}>
-            <IconButton
-              icon={
-                <Star
-                  aria-hidden
-                  className={cx(
-                    detail.starred &&
-                      'fill-[var(--lumi-category-orange)] text-[var(--lumi-category-orange)]',
-                  )}
-                />
-              }
-              label={detail.starred ? '取消收藏' : '收藏'}
-              aria-pressed={detail.starred}
-              touch
-              onClick={() =>
-                mutation.mutate({
-                  entryRef: detail.entryRef,
-                  patch: { starred: !detail.starred },
-                })
-              }
-            />
-          </Tooltip>
-        )}
-
-        {articleUrl !== null && (
-          <a
-            href={articleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 text-sm text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-          >
-            <ExternalLink aria-hidden className="size-3.5" />
-            打开原文
-          </a>
-        )}
-
-        {/* 桌面组 1：快照 / AI 对话（<lg 折进「更多操作」菜单） */}
-        <div className="contents max-lg:hidden">
-          {/* phase2 Gate 3：保存快照——只在原文是绝对 http/https 时出现
-              （articleUrl 已过 safeExternalHttpUrl）。 */}
-          {articleUrl !== null && <SaveSnapshotButton snapshot={snapshot} />}
-
-          {/* 0016：文章限定 AI 对话入口（右侧面板；Reader 持有开关） */}
-          {onOpenAiConversation !== undefined && (
-            <Tooltip content="AI 对话">
-              <IconButton
-                icon={<MessageSquare aria-hidden />}
-                label="AI 对话"
-                touch
-                onClick={onOpenAiConversation}
-              />
-            </Tooltip>
-          )}
-        </div>
-
-        {/* Gate：语言视图（原文/双语/仅译文）——高频，两断点都留在
-            工具栏（移动端为紧凑 Menu）。Reader 持有状态，正文区消费。
-            P0-11：不支持的平台禁用 + 原因，不再让用户点开才发现不可用。 */}
-        {onViewModeChange !== undefined && (
-          <LanguageViewControl
-            value={viewMode ?? 'original'}
-            onChange={onViewModeChange}
-            disabledReason={translationDisabledReason}
-          />
-        )}
-
-        {/* 桌面组 2：查找 / 链接 / 朗读 / 分享 / 复制引用 / 打印
-            （<lg 折进「更多操作」菜单） */}
-        <div className="contents max-lg:hidden">
-          {/* F13：文内查找（Reader 持有查找条状态） */}
-          {onOpenFind !== undefined && (
-            <Tooltip content="文内查找">
-              <IconButton
-                icon={<Search aria-hidden />}
-                label="文内查找"
-                touch
-                onClick={onOpenFind}
-              />
-            </Tooltip>
-          )}
-
-          {/* F054：文中链接清单 */}
-          {onOpenLinks !== undefined && (
-            <Tooltip content="文中链接">
-              <IconButton icon={<Link2 aria-hidden />} label="文中链接" touch onClick={onOpenLinks} />
-            </Tooltip>
-          )}
-
-          {/* F19：朗读（collectText 由 Reader 提供；未提供不渲染） */}
-          {collectSpeechText !== undefined && (
-            <SpeechToolbarControls speech={speech} />
-          )}
-
-          {/* F21：分享 / 复制链接（navigator.share 能力决定行为，回退诚实） */}
-          <ShareToolbarButton share={share} />
-
-          {/* F24：复制引用（纯文本 / Markdown 格式菜单） */}
-          <QuoteToolbarMenu quote={quote} />
-
-          {/* F23：打印（window.print；不承诺 PDF） */}
-          <Tooltip content="打印">
-            <IconButton
-              icon={<Printer aria-hidden />}
-              label="打印"
-              touch
-              onClick={() => {
-                if (typeof window.print === 'function') window.print()
-              }}
-            />
-          </Tooltip>
-        </div>
-
-        {/* F18/F22/O127：更多操作菜单——移动端并入低频动作；桌面维持
-            原三项。onSelect 分发到 hoisted 动作（与桌面控件同一状态）。 */}
-        {(onAutoScrollToggle !== undefined || isMobile) && (
-          <Menu
-            trigger={({ triggerProps }) => (
-              <Tooltip content="更多操作">
-                <IconButton
-                  {...triggerProps}
-                  icon={<MoreHorizontal aria-hidden />}
-                  label="更多操作"
-                  touch
-                />
-              </Tooltip>
-            )}
-            items={moreItems}
-            onSelect={handleMoreSelect}
-          />
-        )}
+        {/* P07：注册表驱动的工具栏排布。可见动作按桌面序落位（共享 DOM
+            只能有一个顺序，两断点都 inline 的动作跟随桌面序）；非移动端
+            inline 动作包 `contents max-lg:hidden`（<lg 折进「更多操作」
+            菜单，按钮仍在 DOM——两断点共享同一 hoisted 状态，与 O127
+            一致）；仅移动端 inline 的动作包 `hidden lg:contents`。
+            「更多操作」是锁定动作，按序渲染在自身位置；已读 / 稍后读 /
+            Aa 面板与标题元信息块不在注册表内（恒展示）。 */}
+        {inlinePlan.map(({ id, show }) => {
+          const node = renderToolbarAction(id)
+          if (node === null) return null
+          if (show === 'both') return <Fragment key={id}>{node}</Fragment>
+          return (
+            <div
+              key={id}
+              className={show === 'desktop' ? 'contents max-lg:hidden' : 'hidden lg:contents'}
+            >
+              {node}
+            </div>
+          )
+        })}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心
             同一 settings source，不遮挡正文关键操作。F15/F17/专注：
@@ -1095,6 +1194,17 @@ export default function ReaderHeader({
           状态更新失败：{mutation.error instanceof Error ? mutation.error.message : '请稍后重试。'}
         </p>
       )}
-    </header>
+      </header>
+
+      {/* P07：自定义工具栏对话框（Escape / 焦点陷阱 / 滚动锁由 Dialog
+          原语承载；保存写回 app-settings 的设备本地两键）。仅打开时
+          挂载——工作副本以 store 当前值初始化，关闭即丢弃。 */}
+      {customizeOpen && (
+        <ReaderToolbarCustomizeDialog
+          open
+          onClose={() => setCustomizeOpen(false)}
+        />
+      )}
+    </>
   )
 }
