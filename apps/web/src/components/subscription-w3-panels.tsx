@@ -331,7 +331,96 @@ export function MuteListDialog({
   )
 }
 
-// ---- F048/F055 来源策略与阅读外观 --------------------------------------------
+// ---- F048/F055/N015 来源策略、阅读外观与分时静音 ----------------------------
+
+/** N015：一个分时静音窗口（days 与 JS getDay 对齐：0=周日 … 6=周六）。 */
+export interface MuteWindow {
+  days: number[]
+  start: string
+  end: string
+}
+
+/** N015：窗口行客户端校验（与服务端同规则；返回第一处问题或 null）。 */
+export function muteWindowError(windows: MuteWindow[]): string | null {
+  if (windows.length > 7) return '每来源最多 7 个静音窗口。'
+  for (const window of windows) {
+    if (window.days.length === 0) return '每个窗口至少选择一天。'
+    if (!/^\d{2}:\d{2}$/.test(window.start) || !/^\d{2}:\d{2}$/.test(window.end)) {
+      return '窗口时间必须是 HH:MM。'
+    }
+    if (window.start === window.end) return '窗口开始与结束不能相同。'
+  }
+  return null
+}
+
+const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'] as const
+
+function MuteWindowRow({
+  window,
+  index,
+  onChange,
+  onRemove,
+}: {
+  window: MuteWindow
+  index: number
+  onChange: (next: MuteWindow) => void
+  onRemove: () => void
+}) {
+  const toggleDay = (day: number) => {
+    const days = window.days.includes(day)
+      ? window.days.filter((d) => d !== day)
+      : [...window.days, day]
+    onChange({ ...window, days })
+  }
+  return (
+    <li
+      className="flex flex-wrap items-center gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-2.5 py-2 text-xs"
+      data-testid={`mute-window-${index}`}
+    >
+      <span className="flex gap-0.5" role="group" aria-label={`窗口 ${index + 1} 生效日`}>
+        {DAY_LABELS.map((label, day) => (
+          <button
+            key={day}
+            type="button"
+            aria-pressed={window.days.includes(day)}
+            aria-label={`周${label}`}
+            onClick={() => toggleDay(day)}
+            className={
+              window.days.includes(day)
+                ? 'size-7 rounded-[var(--lumi-radius-sm)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent)]'
+                : 'size-7 rounded-[var(--lumi-radius-sm)] text-[var(--lumi-text-tertiary)] hover:bg-[var(--lumi-surface-hover)]'
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </span>
+      <input
+        type="time"
+        aria-label={`窗口 ${index + 1} 开始`}
+        value={window.start}
+        onChange={(e) => onChange({ ...window, start: e.target.value })}
+        className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 py-1 text-xs"
+      />
+      <span aria-hidden>–</span>
+      <input
+        type="time"
+        aria-label={`窗口 ${index + 1} 结束`}
+        value={window.end}
+        onChange={(e) => onChange({ ...window, end: e.target.value })}
+        className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 py-1 text-xs"
+      />
+      <button
+        type="button"
+        aria-label={`删除窗口 ${index + 1}`}
+        onClick={onRemove}
+        className="ml-auto text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-danger)]"
+      >
+        <Trash2 aria-hidden className="size-3.5" />
+      </button>
+    </li>
+  )
+}
 
 export function SourcePolicyDialog({
   open,
@@ -358,21 +447,47 @@ export function SourcePolicyDialog({
   const [width, setWidth] = useState<number | ''>('')
   // F066：AI 使用范围（该来源是否参与 AI 消耗；派生数据保留不再更新）。
   const [aiDisabled, setAiDisabled] = useState(false)
+  // N015：分时静音窗口（每周循环；命中期间不出现在通用时间线）。
+  const [muteWindows, setMuteWindows] = useState<MuteWindow[]>([])
+  // 服务端值按「内容签名」同步（键为签名而非对象引用）：react-query 的
+  // data 引用在无关重渲染时会更换，按引用同步会把未保存编辑冲掉。
+  // 用户一旦编辑（editedRef）即停同步——编辑不被服务端重置；保存成功后
+  // 对话框关闭，下次打开重新同步。
+  const editedRef = useRef(false)
+  const serverSignature = current === undefined ? '' : JSON.stringify(current)
   useEffect(() => {
+    if (editedRef.current) return
     setPolicy((current?.extractPolicy as 'rss' | 'web' | undefined) ?? 'rss')
     const style = (current?.readerStyle ?? {}) as Record<string, number | undefined>
     setFontSize(typeof style.fontSize === 'number' ? style.fontSize : '')
     setLineHeight(typeof style.lineHeight === 'number' ? style.lineHeight : '')
     setWidth(typeof style.width === 'number' ? style.width : '')
     setAiDisabled(Boolean(current?.aiDisabled))
-  }, [current, overridesQuery.data])
+    const stored = current?.muteWindows
+    setMuteWindows(
+      Array.isArray(stored)
+        ? stored.map((w) => ({
+            days: [...(w.days as number[])],
+            start: String(w.start),
+            end: String(w.end),
+          }))
+        : [],
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSignature, open])
   const overrideActive =
     policy !== 'rss' || fontSize !== '' || lineHeight !== '' || width !== ''
+  const muteError = muteWindowError(muteWindows)
+  /** 标记用户已编辑：停掉服务端→表单的同步（保护未保存编辑）。 */
+  const markEdited = () => {
+    editedRef.current = true
+  }
   const saveMutation = useMutation({
     mutationFn: (patch: {
       extractPolicy: string
       readerStyle: Record<string, number> | null
       aiDisabled?: boolean
+      muteWindows?: MuteWindow[] | null
     }) =>
       setSourceOverride({ feedUrl, ...patch }),
     onSuccess: async () => {
@@ -389,7 +504,7 @@ export function SourcePolicyDialog({
         </p>
         <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
           正文策略
-          <select aria-label="正文策略" value={policy} onChange={(e) => setPolicy(e.target.value as 'rss' | 'web')} className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm">
+          <select aria-label="正文策略" value={policy} onChange={(e) => { markEdited(); setPolicy(e.target.value as 'rss' | 'web') }} className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm">
             <option value="rss">RSS 正文（默认）</option>
             <option value="web">抓取原文正文（全文型站点）</option>
           </select>
@@ -397,26 +512,70 @@ export function SourcePolicyDialog({
         <div className="grid grid-cols-3 gap-2">
           <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
             字号
-            <input aria-label="覆盖字号" type="number" min={12} max={28} value={fontSize} onChange={(e) => setFontSize(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls} placeholder="全局" />
+            <input aria-label="覆盖字号" type="number" min={12} max={28} value={fontSize} onChange={(e) => { markEdited(); setFontSize(e.target.value === '' ? '' : Number(e.target.value)) }} className={inputCls} placeholder="全局" />
           </label>
           <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
             行距
-            <input aria-label="覆盖行距" type="number" step={0.05} min={1.4} max={2.6} value={lineHeight} onChange={(e) => setLineHeight(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls} placeholder="全局" />
+            <input aria-label="覆盖行距" type="number" step={0.05} min={1.4} max={2.6} value={lineHeight} onChange={(e) => { markEdited(); setLineHeight(e.target.value === '' ? '' : Number(e.target.value)) }} className={inputCls} placeholder="全局" />
           </label>
           <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
             宽度（移动端忽略）
-            <input aria-label="覆盖宽度" type="number" min={480} max={1600} value={width} onChange={(e) => setWidth(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls} placeholder="全局" />
+            <input aria-label="覆盖宽度" type="number" min={480} max={1600} value={width} onChange={(e) => { markEdited(); setWidth(e.target.value === '' ? '' : Number(e.target.value)) }} className={inputCls} placeholder="全局" />
           </label>
         </div>
         {/* F066：AI 使用范围 */}
         <div className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] p-2.5">
-          <Switch checked={aiDisabled} onCheckedChange={setAiDisabled} label="禁用该来源的 AI" />
+          <Switch checked={aiDisabled} onCheckedChange={(v) => { markEdited(); setAiDisabled(v) }} label="禁用该来源的 AI" />
           <span className="text-xs text-[var(--lumi-text-secondary)]">
             AI 使用范围：<span data-testid="ai-scope-status">{aiDisabled ? '已禁用' : '允许 AI'}</span>
           </span>
           <span className="text-[11px] text-[var(--lumi-text-tertiary)]">
             禁用后：摘要/译文/对话返回 403，摘要译文等已生成内容保留但不再更新，图谱索引移除该来源；订阅数据不受影响。
           </span>
+        </div>
+        {/* N015：分时静音（每周循环窗口；只影响通用时间线，抓取/搜索不受影响） */}
+        <div className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] p-2.5">
+          <p className="text-xs font-medium text-[var(--lumi-text-primary)]">分时静音</p>
+          <p className="text-[11px] leading-relaxed text-[var(--lumi-text-tertiary)]">
+            静音窗口内的更新不出现在「全部/未读」时间线（按服务器本地时间，每周循环）；
+            抓取、搜索与来源页阅读不受影响。结束早于开始表示跨越午夜。
+          </p>
+          {muteWindows.length === 0 ? (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]" data-testid="mute-windows-empty">
+              未设置静音窗口。
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1.5" data-testid="mute-windows-list">
+              {muteWindows.map((window, index) => (
+                <MuteWindowRow
+                  key={index}
+                  window={window}
+                  index={index}
+                  onChange={(next) => {
+                    markEdited()
+                    setMuteWindows((prev) => prev.map((w, i) => (i === index ? next : w)))
+                  }}
+                  onRemove={() => { markEdited(); setMuteWindows((prev) => prev.filter((_, i) => i !== index)) }}
+                />
+              ))}
+            </ul>
+          )}
+          {muteError !== null && (
+            <p role="alert" className="text-xs text-[var(--lumi-danger)]" data-testid="mute-windows-error">
+              {muteError}
+            </p>
+          )}
+          <div>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="min-h-9"
+              disabled={muteWindows.length >= 7}
+              onClick={() => { markEdited(); setMuteWindows((prev) => [...prev, { days: [], start: '22:00', end: '06:00' }]) }}
+            >
+              添加静音窗口
+            </Button>
+          </div>
         </div>
         {saveMutation.isError && (
           <p role="alert" className="text-xs text-[var(--lumi-danger)]">{errMsg(saveMutation.error)}</p>
@@ -426,14 +585,14 @@ export function SourcePolicyDialog({
             size="sm"
             variant="ghost"
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false })}
+            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false, muteWindows: null })}
           >
             恢复跟随全局
           </Button>
           <Button
             size="sm"
             variant="primary"
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || muteError !== null}
             onClick={() =>
               saveMutation.mutate({
                 extractPolicy: policy,
@@ -443,6 +602,7 @@ export function SourcePolicyDialog({
                   ...(width !== '' ? { width } : {}),
                 },
                 aiDisabled,
+                muteWindows: muteWindows.length > 0 ? muteWindows : null,
               })
             }
           >

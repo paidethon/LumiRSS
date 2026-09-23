@@ -2152,6 +2152,8 @@ export async function setSourceOverride(patch: {
   readerStyle?: Record<string, number> | null
   /** F066：per-source AI 禁用（服务端执行点统一判定）。 */
   aiDisabled?: boolean
+  /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
+  muteWindows?: { days: number[]; start: string; end: string }[] | null
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
