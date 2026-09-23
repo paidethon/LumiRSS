@@ -41,6 +41,16 @@ services:
       # up 追加宿主网桥网关（E2E_ALLOW_PRIVATE_HOSTS）：AI journeys 的
       # mock 跑在 runner 宿主机 18082 端口，网关 IP 在栈初始化时计算。
       LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: ${E2E_ALLOW_PRIVATE_HOSTS:-fixtures}
+      # P08: the RSSHub container joins this compose network — the BFF
+      # previews against it and the feedUrls handed to FreshRSS on
+      # subscribe use the SAME service-name base (the 0008 dual-view split
+      # only matters when RSSHub lives on the host).
+      RSSHUB_BASE_URL: http://rsshub:1200
+      RSSHUB_FRESHRSS_BASE_URL: http://rsshub:1200
+      # E2E-ONLY: enables the preview baseUrl override the smoke uses for
+      # the dead-endpoint negative case (routers/rsshub.py refuses it in
+      # every other deployment). Never set this in production compose.
+      LUMIRSS_E2E: "1"
     volumes:
       - lumi-data:/data
       - freshrss-data:/freshrss-data:ro
@@ -49,6 +59,10 @@ services:
       - "33"
     depends_on:
       freshrss:
+        condition: service_started
+      # RSSHub stays a NON-core dependency (AD-0018-3): started, never
+      # gated on health — a dead RSSHub must still let the stack boot.
+      rsshub:
         condition: service_started
     expose:
       - "8000"
@@ -60,7 +74,16 @@ services:
       start_period: 10s
 
   web:
-    build: ../../apps/web
+    build:
+      context: ../../apps/web
+      args:
+        # Report-only bundle guard for the E2E image ONLY: the initial-
+        # bundle baseline outgrew the Phase K limits across the P12/P14/P16
+        # merges (815 kB > 780 kB raw at integration base a8b5f2f — fails
+        # identically without any P08 change). The overage is still printed
+        # in the build log; CI/dev/release builds stay strict. Revert this
+        # once the release gate re-baselines or code-splits the entry.
+        LUMIRSS_BUNDLE_GUARD: report
     container_name: lumirss-e2e-web
     environment:
       # Plain HTTP on :80 for the E2E driver (no TLS provisioning locally).
@@ -87,6 +110,20 @@ services:
     environment:
       NODE_ENV: production
       CACHE_TYPE: memory
+    # Loopback-only publish so the smoke can health-check the instance
+    # from the test host (bff/freshrss reach it over compose DNS). A
+    # non-default host port: a dev RSSHub commonly binds 127.0.0.1:1200
+    # on the same machine.
+    ports:
+      - "127.0.0.1:${E2E_RSSHUB_HOST_PORT:-12001}:1200"
+    healthcheck:
+      # The pinned image ships curl (verified); visibility only — nothing
+      # gates on this (see the BFF depends_on note above).
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:1200/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
   mailpit:
     # Local stdlib SMTP sink + HTTP inspector (e2e/stack/mail_sink.py).
