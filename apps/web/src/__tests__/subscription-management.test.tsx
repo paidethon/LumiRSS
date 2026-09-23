@@ -70,6 +70,22 @@ function withProviders(ui: React.ReactNode) {
   return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
 }
 
+/** N012 预览 stub（Lone Feed 无牵连工件）。 */
+const EMPTY_PREVIEW = {
+  subscriptionRef: REF_LONE,
+  feedUrl: 'https://lone.example/rss',
+  title: 'Lone Feed',
+  projectionEntries: 0,
+  unreadCount: 0,
+  workspaceItems: { count: 0, items: [] },
+  boardItems: { count: 0, items: [] },
+  libraryItems: { count: 0, items: [] },
+  annotations: { count: 0, items: [] },
+  inboxRules: { count: 0, items: [] },
+  sampleLimit: 50,
+  note: '预览为只读快照',
+}
+
 /** 状态化服务端：subscriptions / categories 可被 mutation 改写。 */
 function makeServer() {
   const state = {
@@ -81,9 +97,17 @@ function makeServer() {
     routes: {
       'GET /api/v1/subscriptions': () => jsonResponse(state.subscriptions),
       'GET /api/v1/categories': () => jsonResponse(state.categories),
+      // N013：订阅页展示接线拉取服务端别名（空表）
+      'GET /api/v1/sources/aliases': () => jsonResponse({ items: [] }),
+      // N012：退订对话框打开即拉取只读影响预览
+      [`GET /api/v1/subscriptions/${REF_LONE}/unsubscribe-preview`]: () =>
+        jsonResponse(EMPTY_PREVIEW),
+      // mutation invalidate 的副作用 refetch（feeds 也在失效清单里）
+      'GET /api/v1/feeds': () => jsonResponse([]),
       [`PATCH /api/v1/subscriptions/${REF_TECH}`]: () => empty204(),
       [`PATCH /api/v1/subscriptions/${REF_LONE}`]: () => empty204(),
-      [`DELETE /api/v1/subscriptions/${REF_LONE}`]: () => {
+      // N012：对话框默认「保留批注与工作区引用」→ keep_artifacts=true
+      [`DELETE /api/v1/subscriptions/${REF_LONE}?keep_artifacts=true`]: () => {
         state.subscriptions = state.subscriptions.filter(
           (s) => s.subscriptionRef !== REF_LONE,
         )
@@ -249,7 +273,8 @@ describe('取消订阅', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认取消订阅' }))
     await waitFor(() => {
       const del = fetchState.calls.find((c) => c.method === 'DELETE')
-      expect(del?.url).toBe(`/api/v1/subscriptions/${REF_LONE}`)
+      // N012：默认保留工件 → keep_artifacts=true
+      expect(del?.url).toBe(`/api/v1/subscriptions/${REF_LONE}?keep_artifacts=true`)
     })
     // invalidate → refetch → 行消失
     await waitFor(() => {

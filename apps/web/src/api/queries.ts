@@ -186,6 +186,7 @@ import {
   reorderDigestPool,
   rotateGptDigestFeedDryRun,
   rotateInboxSource,
+  fetchUnsubscribePreview,
 } from './client'
 import type {
   AiProfileInput,
@@ -620,15 +621,31 @@ export function useMoveSubscriptionMutation() {
   })
 }
 
-/** 0013 Gate 3：取消订阅（破坏性；调用方必须先完成二次确认）。 */
+/** 0013 Gate 3 / N012：取消订阅（破坏性；调用方必须先完成二次确认）。
+ *  keepArtifacts：true=保留批注/工作区引用；false=显式清理；缺省=legacy。 */
 export function useUnsubscribeMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { subscriptionRef: string }) =>
-      unsubscribeFeed(vars.subscriptionRef),
+    mutationFn: (vars: { subscriptionRef: string; keepArtifacts?: boolean }) =>
+      unsubscribeFeed(vars.subscriptionRef, vars.keepArtifacts),
     onSuccess: () => invalidateSubscriptionState(queryClient),
   })
 }
+
+/** N012：退订影响预览（只读；对话框打开时拉取，确认前必须可见）。 */
+export function useUnsubscribePreviewQuery(subscriptionRef: string | null) {
+  return useQuery({
+    queryKey: ['unsubscribe-preview', subscriptionRef],
+    queryFn: ({ signal }) => {
+      void signal
+      return fetchUnsubscribePreview(subscriptionRef as string)
+    },
+    enabled: subscriptionRef !== null,
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
 
 /** 0013 Gate 3：重命名分类。分类 id（user/-/label/<名>）会随名字变化，
  * 旧 id 的 entries query cache 也一并失效。 */

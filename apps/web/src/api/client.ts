@@ -785,9 +785,15 @@ export async function moveSubscription(
   })
 }
 
-/** 0013 Gate 3：取消订阅（破坏性操作，确认流程由 UI 负责；DELETE 204）。 */
-export async function unsubscribeFeed(subscriptionRef: string): Promise<void> {
-  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`, {
+/** 0013 Gate 3 / N012：取消订阅（破坏性操作，确认流程由 UI 负责）。
+ *  keepArtifacts：true=保留批注/工作区引用（204）；false=显式清理（200）；
+ *  缺省=legacy 行为（仅备注级联）。 */
+export async function unsubscribeFeed(
+  subscriptionRef: string,
+  keepArtifacts?: boolean,
+): Promise<void> {
+  const query = keepArtifacts === undefined ? '' : `?keep_artifacts=${keepArtifacts}`
+  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}${query}`, {
     method: 'DELETE',
   })
 }
@@ -2136,7 +2142,7 @@ export async function listSourceOverrides(): Promise<{ items: SourceOverrideResu
   return request<{ items: SourceOverrideResult[] }>(`${API_BASE}/sources/overrides`)
 }
 
-/** F11/F13/F001：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+/** F11/F13/F001/N015：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
 export async function setSourceOverride(patch: {
   feedUrl: string
   hiddenUntil?: string | null
@@ -2153,6 +2159,37 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+// ---- N012 退订影响预览 -------------------------------------------------------
+
+/** N012：退订影响预览（只读快照；计数如实、样本 ≤ sampleLimit）。 */
+export type UnsubscribePreview = {
+  subscriptionRef: string
+  feedUrl: string
+  title: string
+  projectionEntries: number
+  unreadCount: number
+  workspaceItems: {
+    count: number
+    items: { workspaceId: string; workspaceName: string; itemRef: string }[]
+  }
+  boardItems: { count: number; items: { workspaceId: string; itemRef: string; status: string }[] }
+  libraryItems: { count: number; items: { itemRef: string; rssItemRef: string; title: string }[] }
+  annotations: { count: number; items: { id: string; entryRef: string; excerpt: string }[] }
+  inboxRules: {
+    count: number
+    items: { id: number; field: string; operator: string; value: string; matchedSample: string }[]
+  }
+  sampleLimit: number
+  note: string
+}
+
+/** N012：退订影响预览（纯只读；先于任何确认/删除调用）。 */
+export async function fetchUnsubscribePreview(subscriptionRef: string): Promise<UnsubscribePreview> {
+  return request<UnsubscribePreview>(
+    `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/unsubscribe-preview`,
+  )
 }
 
 /** F001：按各自阈值超期的来源（basis 诚实标注判定依据）。 */
