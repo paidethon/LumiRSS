@@ -49,6 +49,14 @@ for (const name of LAZY_PREFIXES) {
 
 if (failures.length > 0) {
   console.error(`bundle guard FAILED:\n  - ${failures.join('\n  - ')}`)
+  // 显式 report-only 通道（默认永远严格）：仅 e2e 栈构建通过 build arg
+  // 设置 —— 已知的基线增长（P12/P14/P16 合并后首屏超限）由 release gate
+  // 另行收口，不能因此挡住跨服务 e2e 冒烟。超限仍然原样打印在构建日志
+  // 里；CI / 本地 / 发布构建不设置该变量，照旧 exit 1。
+  if (process.env.LUMIRSS_BUNDLE_GUARD === 'report') {
+    console.error('bundle guard REPORT-ONLY (LUMIRSS_BUNDLE_GUARD=report): overage logged, build allowed — release builds must run the guard strict.')
+    process.exit(0)
+  }
   process.exit(1)
 }
 console.log(

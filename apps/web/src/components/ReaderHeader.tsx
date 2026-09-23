@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
@@ -25,7 +25,9 @@ import {
   QUOTE_MAX_CHARS,
   type AutoScrollState,
 } from '../lib/reader-tools'
-import ObsidianExportDialog from './ObsidianExportDialog'
+// P16 导出到 Obsidian：懒加载入口（bundle guard 懒加载契约——阅读页
+// 首屏不携带对话框实现，仅在打开时拉取 chunk）。
+const ObsidianExportDialog = lazy(() => import('./ObsidianExportDialog'))
 import {
   ReaderSpeechEngine,
   SPEECH_RATES,
@@ -1469,13 +1471,15 @@ export default function ReaderHeader({
       )}
 
       {/* P16：导出到 Obsidian（选设备档案 → 服务端渲染模板 + URI/file 裁决）。
-          仅打开时挂载——设备列表查询不随阅读页空跑。 */}
+          仅打开时挂载——设备列表查询不随阅读页空跑；实现走懒 chunk。 */}
       {obsidianExportOpen && (
-        <ObsidianExportDialog
-          open
-          detail={detail}
-          onClose={() => setObsidianExportOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <ObsidianExportDialog
+            open
+            detail={detail}
+            onClose={() => setObsidianExportOpen(false)}
+          />
+        </Suspense>
       )}
     </>
   )
