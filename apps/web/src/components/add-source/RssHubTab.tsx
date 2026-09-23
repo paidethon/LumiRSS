@@ -22,12 +22,14 @@ import {
   useRssHubFavorites,
   useRssHubPreviewMutation,
   useRssHubRecent,
+  useRssHubRouteHistory,
   useRssHubRoutes,
   useSubscribeMutation,
 } from '../../api/queries'
 import type {
   FeedPreviewMetadata,
   RssHubRoute,
+  RssHubRouteRun,
 } from '../../api/types'
 import { formatRelativeTime } from '../../lib/date-format'
 import { managementErrorText } from '../../lib/management-errors'
@@ -55,6 +57,8 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
   const [localParamError, setLocalParamError] = useState<string | null>(null)
   const [preview, setPreview] = useState<FeedPreviewMetadata | null>(null)
   const [subscribed, setSubscribed] = useState(false)
+  // N025：服务端派生的 route_key（预览成功后可用于时间线/刷新）
+  const [routeKey, setRouteKey] = useState<string | null>(null)
 
   const busy =
     previewMutation.isPending || subscribeMutation.isPending || subscribed
@@ -111,6 +115,7 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
     setParamValues({ ...entry.params })
     setLocalParamError(null)
     setPreview(null)
+    setRouteKey(null)
     previewMutation.reset()
   }
 
@@ -119,6 +124,7 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
     setParamValues({})
     setLocalParamError(null)
     setPreview(null)
+    setRouteKey(null)
     previewMutation.reset()
   }
 
@@ -127,6 +133,7 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
     setParamValues({})
     setLocalParamError(null)
     setPreview(null)
+    setRouteKey(null)
     previewMutation.reset()
   }
 
@@ -152,7 +159,9 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
       {
         onSuccess: (metadata) => {
           setPreview(metadata)
-          // N021：成功 preview 已在服务端 upsert 最近使用——拉新列表
+          // N025：服务端派生 routeKey → 时间线可用；N021：成功 preview
+          // 已在服务端 upsert 最近使用——拉新列表
+          setRouteKey(metadata.routeKey ?? null)
           void queryClient.invalidateQueries({ queryKey: ['rsshub-recent'] })
         },
       },
@@ -430,15 +439,18 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
         </div>
       )}
 
-      {/* 预览成功：共享 预览 → 分类 → 订阅 阶段 */}
+      {/* 预览成功：共享 预览 → 分类 → 订阅 阶段 + N025 最近运行时间线 */}
       {preview !== null && (
-        <PreviewStage
-          preview={preview}
-          subscribeMutation={subscribeMutation}
-          subscribed={subscribed}
-          onSubscribed={() => setSubscribed(true)}
-          onBack={backToRoutes}
-        />
+        <div className="flex flex-col gap-3">
+          <PreviewStage
+            preview={preview}
+            subscribeMutation={subscribeMutation}
+            subscribed={subscribed}
+            onSubscribed={() => setSubscribed(true)}
+            onBack={backToRoutes}
+          />
+          <RouteRunTimeline routeKey={routeKey} />
+        </div>
       )}
 
       {/* 底部操作区 */}
@@ -535,5 +547,96 @@ function RouteEntrySection({
         )
       })}
     </section>
+  )
+}
+
+/** N025：失败分类 → 中文标签（未知分类诚实回显原值）。 */
+export function rsshubFailureClassLabel(failureClass: string): string {
+  const known: Record<string, string> = {
+    rsshub_unreachable: 'RSSHub 不可达',
+    upstream_reject: '上游拒绝',
+    auth_failure: '鉴权失败',
+    auth_error: '鉴权错误',
+    not_found: '路由不存在',
+    rate_limited: '被限流',
+    no_new_content: '无新内容',
+    bad_content: '内容异常',
+    network_error: '网络错误',
+  }
+  return known[failureClass] ?? failureClass
+}
+
+/** N025：最近运行时间线 — 状态点 / 时延 / 条目数 / 失败分类 / 相对时间。 */
+function RouteRunTimeline({ routeKey }: { routeKey: string | null }) {
+  const historyQuery = useRssHubRouteHistory(routeKey)
+  if (routeKey === null || !historyQuery.isEnabled) return null
+  const runs = historyQuery.data?.items ?? []
+  if (historyQuery.isPending && runs.length === 0) {
+    return (
+      <section aria-label="最近运行" className="flex flex-col gap-1.5">
+        <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </section>
+    )
+  }
+  if (runs.length === 0) {
+    return (
+      <section aria-label="最近运行" className="flex flex-col gap-1.5">
+        <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">该路由暂无运行记录。</p>
+      </section>
+    )
+  }
+  return (
+    <section aria-label="最近运行" className="flex flex-col gap-1.5">
+      <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+      <ul className="flex flex-col gap-1">
+        {runs.map((run) => (
+          <RunRow key={run.id} run={run} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function RunRow({ run }: { run: RssHubRouteRun }) {
+  const failed = run.status === 'failed'
+  const entries =
+    run.entryCount == null ? '—' : `${run.entryCount} 条`
+  return (
+    <li className="flex min-h-8 items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+      <span
+        aria-hidden
+        className={cx(
+          'size-2 shrink-0 rounded-full',
+          failed ? 'bg-[var(--lumi-danger)]' : 'bg-[var(--lumi-success)]',
+        )}
+      />
+      <span className="sr-only">{failed ? '失败' : '成功'}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {formatRelativeTime(run.ranAt)}
+        <span aria-hidden className="mx-1.5 text-[var(--lumi-text-tertiary)]">
+          ·
+        </span>
+        {entries}
+        <span aria-hidden className="mx-1.5 text-[var(--lumi-text-tertiary)]">
+          ·
+        </span>
+        {run.durationMs} ms
+        {run.failureClass != null && (
+          <span
+            className={cx(
+              'ml-1.5 rounded-[var(--lumi-radius-sm)] px-1.5 py-0.5 text-[11px]',
+              failed
+                ? 'bg-[var(--lumi-danger)]/10 text-[var(--lumi-danger)]'
+                : 'bg-[var(--lumi-surface-hover)] text-[var(--lumi-text-secondary)]',
+            )}
+          >
+            {rsshubFailureClassLabel(run.failureClass)}
+          </span>
+        )}
+      </span>
+    </li>
   )
 }

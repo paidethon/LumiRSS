@@ -100,6 +100,7 @@ import {
   getRssHubConfig,
   getRssHubFavorites,
   getRssHubRecent,
+  getRssHubRouteHistory,
   getRssHubRoutes,
   getSubscriptions,
   getWebDavSettings,
@@ -749,6 +750,15 @@ export function useDeleteRssHubFavoriteMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
     },
+  })
+}
+
+/** N025：路由健康时间线（routeKey 为 null 时不发请求——预览前无 key）。 */
+export function useRssHubRouteHistory(routeKey: string | null) {
+  return useQuery({
+    queryKey: ['rsshub-route-history', routeKey],
+    queryFn: ({ signal }) => getRssHubRouteHistory(routeKey as string, signal),
+    enabled: routeKey !== null,
   })
 }
 

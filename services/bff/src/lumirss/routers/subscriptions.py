@@ -2,6 +2,8 @@
 
 
 
+import time
+
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, model_validator
 
@@ -119,39 +121,120 @@ async def create_subscription(
     (no retry on timeout — clients re-read and reconcile).
     """
     control = _get_control_adapter(request)
-    created = await control.subscribe(
-        subscription.feedUrl,
-        category_id=subscription.categoryId,
-        title=subscription.title,
-    )
-    await _record_route_use(request, subscription.feedUrl)
+    matched = _matched_catalog_route(subscription.feedUrl)
+    started = time.monotonic()
+    try:
+        created = await control.subscribe(
+            subscription.feedUrl,
+            category_id=subscription.categoryId,
+            title=subscription.title,
+        )
+    except Exception as exc:
+        # N025：失败的订阅尝试也进路由时间线（FreshRSS 侧会抓取 feed，
+        # 失败即一次真实的上游尝试）。分类复用 F050 词汇表。
+        if matched is not None:
+            await _record_route_run(
+                request,
+                matched,
+                status="failed",
+                duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+                failure_class=_subscribe_failure_class(exc),
+            )
+        raise
+    if matched is not None:
+        await _record_route_run(
+            request,
+            matched,
+            status="ok",
+            duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+            failure_class=None,
+        )
+        await _record_route_use(request, matched)
     return _subscription_json(created)
 
 
-async def _record_route_use(request: Request, feed_url: str) -> None:
-    """N021：成功订阅若命中 Lumi RSSHub 目录路由 → 记录最近使用。
+class _RouteUse:
+    """One catalog route derived server-side from a feed URL path."""
 
-    服务端从 feedUrl 路径反推路由与参数（不信任客户端上报）；参数
-    在 store 内统一脱敏（敏感键 → '***'）。元数据写入失败不影响
-    订阅结果——只记日志。"""
+    __slots__ = ("template_id", "route_key", "params")
+
+    def __init__(
+        self, template_id: str, route_key: str, params: dict[str, str]
+    ) -> None:
+        self.template_id = template_id
+        self.route_key = route_key
+        self.params = params
+
+
+def _matched_catalog_route(feed_url: str) -> _RouteUse | None:
+    """从 feedUrl 路径反推 Lumi 目录路由（不信任客户端上报）。"""
     import urllib.parse
 
     from lumirss.rsshub import match_route_path
+    from lumirss.rsshub_route_store import compute_route_key
+
+    path = urllib.parse.urlsplit(feed_url).path
+    matched = match_route_path(path)
+    if matched is None:
+        return None
+    route, params = matched
+    return _RouteUse(route.id, compute_route_key(route.id, params), params)
+
+
+def _subscribe_failure_class(exc: Exception) -> str | None:
+    """订阅失败 → F050 词汇表的稳定分类（其余异常不强行归类）。"""
+    from lumirss.adapters.freshrss import AuthenticationError, UpstreamConnectionError
+
+    if isinstance(exc, AuthenticationError):
+        return "auth_error"
+    if isinstance(exc, UpstreamConnectionError):
+        return "network_error"
+    return None
+
+
+async def _record_route_use(request: Request, matched: _RouteUse) -> None:
+    """N021：成功订阅命中的目录路由 → 最近使用（参数在 store 内统一
+    脱敏；元数据写入失败不影响订阅结果——只记日志）。"""
     from lumirss.rsshub_route_store import RssHubRouteStore
 
     try:
-        path = urllib.parse.urlsplit(feed_url).path
-        matched = match_route_path(path)
-        if matched is not None:
-            route, params = matched
-            await RssHubRouteStore(request.app.state.db).record_recent(
-                template_id=route.id, params=params, success=True
-            )
+        await RssHubRouteStore(request.app.state.db).record_recent(
+            template_id=matched.template_id,
+            params=matched.params,
+            success=True,
+        )
     except Exception:  # noqa: BLE001 — metadata only, never fail the use
         import logging
 
         logging.getLogger(__name__).exception(
             "rsshub route recent-recording failed on subscribe"
+        )
+
+
+async def _record_route_run(
+    request: Request,
+    matched: _RouteUse,
+    *,
+    status: str,
+    duration_ms: int,
+    failure_class: str | None,
+) -> None:
+    """N025：订阅尝试的时间线写入（best-effort，失败只记日志）。"""
+    from lumirss.rsshub_route_store import RssHubRouteStore
+
+    try:
+        await RssHubRouteStore(request.app.state.db).record_run(
+            route_key=matched.route_key,
+            status=status,
+            duration_ms=duration_ms,
+            entry_count=None,
+            failure_class=failure_class,
+        )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "rsshub route run-recording failed on subscribe"
         )
 
 

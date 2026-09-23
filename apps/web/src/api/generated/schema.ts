@@ -4800,8 +4800,10 @@ export interface paths {
          *     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
          *
          *     N021: a SUCCESSFUL preview upserts the route into the per-user
-         *     最近使用 list (sensitive parameter values are masked to '***'
-         *     before anything is stored). Failed previews never record.
+         *     最近使用 list. N025: every attempt that reaches the fetch stage is
+         *     written to the route health timeline (last 20 kept per route).
+         *     Sensitive parameter values are masked to '***' before anything is
+         *     stored. Failed previews never record a 最近使用 entry.
          */
         post: operations["rsshub_preview_api_v1_rsshub_preview_post"];
         delete?: never;
@@ -4879,6 +4881,27 @@ export interface paths {
          * @description Unstar one favorite; 404 when the user has no such favorite.
          */
         delete: operations["delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route History
+         * @description N025 最近运行 — bounded health timeline for ONE route key
+         *     (newest first; the table itself prunes to the last 20 per route).
+         */
+        get: operations["rsshub_route_history_api_v1_rsshub_routes_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -11601,6 +11624,33 @@ export interface components {
             routeId: string;
         };
         /**
+         * RssHubPreviewResult
+         * @description POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+         *
+         *     N021/N025: the key (template id + masked params signature) is built
+         *     server-side; clients use it for favorites/recents/history/refresh
+         *     and never assemble it themselves.
+         */
+        RssHubPreviewResult: {
+            /** Alreadysubscribed */
+            alreadySubscribed: boolean;
+            /** Description */
+            description?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "rss" | "atom";
+            /** Routekey */
+            routeKey: string;
+            /** Siteurl */
+            siteUrl?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
          * RssHubRecentItem
          * @description One N021 recently used route (params carry masked sensitive values).
          */
@@ -11633,6 +11683,38 @@ export interface components {
             pathTemplate: string;
             /** Title */
             title: string;
+        };
+        /**
+         * RssHubRouteRun
+         * @description One N025 route health timeline row (no secrets — route keys are
+         *     masked server-side before storage).
+         */
+        RssHubRouteRun: {
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Failureclass */
+            failureClass?: string | null;
+            /** Id */
+            id: number;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed";
+        };
+        /**
+         * RssHubRouteRuns
+         * @description GET /api/v1/rsshub/routes/history — bounded run list, newest first.
+         */
+        RssHubRouteRuns: {
+            /** Items */
+            items: components["schemas"]["RssHubRouteRun"][];
         };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
@@ -21570,7 +21652,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedPreviewResult"];
+                    "application/json": components["schemas"]["RssHubPreviewResult"];
                 };
             };
             /** @description Validation Error */
@@ -21674,6 +21756,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_route_history_api_v1_rsshub_routes_history_get: {
+        parameters: {
+            query: {
+                routeKey: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteRuns"];
+                };
             };
             /** @description Validation Error */
             422: {

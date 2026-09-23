@@ -102,6 +102,9 @@ async function renderRssHubTab(
     // N021：收藏/最近使用列表默认为空（关注目录行为的用例不感知）。
     'GET /api/v1/rsshub/routes/favorites': () => jsonResponse([]),
     'GET /api/v1/rsshub/routes/recent': () => jsonResponse([]),
+    // N025：默认空时间线。
+    'GET /api/v1/rsshub/routes/history': () =>
+      jsonResponse({ items: [] }),
     ...map,
   })
   vi.stubGlobal('fetch', fetchState.fn)

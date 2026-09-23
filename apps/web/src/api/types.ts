@@ -39,6 +39,8 @@ export type AuthStatusView = Schemas['AuthStatus']
 // ---- 0013 订阅管理 / 预览 / OPML ----
 
 export type FeedPreviewMetadata = Schemas['FeedPreviewResult']
+// RSSHub 预览在共享预览形状上附加服务端派生的 routeKey（N021/N025）
+export type RssHubPreviewMetadata = Schemas['RssHubPreviewResult']
 export type OpmlImportPreview = Schemas['OpmlImportPreview']
 export type OpmlImportAdded = Schemas['OpmlImportAdded']
 export type OpmlImportResult = Schemas['OpmlImportResult']
@@ -56,6 +58,9 @@ export type RssHubRoutesResponse = Schemas['RssHubCatalog']
 // N021 路由收藏 / 最近使用（params 内敏感值只以 '***' 哨兵出现）
 export type RssHubFavoriteItem = Schemas['RssHubFavoriteItem']
 export type RssHubRecentItem = Schemas['RssHubRecentItem']
+// N025 路由健康时间线
+export type RssHubRouteRun = Schemas['RssHubRouteRun']
+export type RssHubRouteRuns = Schemas['RssHubRouteRuns']
 
 // ---- 0015/0016 AI ----
 

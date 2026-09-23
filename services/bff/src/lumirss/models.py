@@ -392,6 +392,35 @@ class RssHubRecentItem(BaseModel):
     lastSuccessAt: str | None = None
 
 
+class RssHubPreviewResult(FeedPreviewResult):
+    """POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+
+    N021/N025: the key (template id + masked params signature) is built
+    server-side; clients use it for favorites/recents/history/refresh
+    and never assemble it themselves."""
+
+    routeKey: str
+
+
+class RssHubRouteRun(BaseModel):
+    """One N025 route health timeline row (no secrets — route keys are
+    masked server-side before storage)."""
+
+    id: int
+    routeKey: str
+    ranAt: str
+    status: Literal["ok", "failed"]
+    durationMs: int
+    entryCount: int | None = None
+    failureClass: str | None = None
+
+
+class RssHubRouteRuns(BaseModel):
+    """GET /api/v1/rsshub/routes/history — bounded run list, newest first."""
+
+    items: list[RssHubRouteRun]
+
+
 # ---------------------------------------------------------------------------
 # OPML import (0013 Gate 4)
 # ---------------------------------------------------------------------------

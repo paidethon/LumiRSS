@@ -11251,6 +11251,66 @@
     "title": "RssHubPreviewRequest",
     "type": "object"
    },
+   "RssHubPreviewResult": {
+    "description": "POST /api/v1/rsshub/preview — adds the server-derived routeKey.\n\nN021/N025: the key (template id + masked params signature) is built\nserver-side; clients use it for favorites/recents/history/refresh\nand never assemble it themselves.",
+    "properties": {
+     "alreadySubscribed": {
+      "title": "Alreadysubscribed",
+      "type": "boolean"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "format": {
+      "enum": [
+       "rss",
+       "atom"
+      ],
+      "title": "Format",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "siteUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Siteurl"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "feedUrl",
+     "format",
+     "alreadySubscribed",
+     "routeKey"
+    ],
+    "title": "RssHubPreviewResult",
+    "type": "object"
+   },
    "RssHubRecentItem": {
     "description": "One N021 recently used route (params carry masked sensitive values).",
     "properties": {
@@ -11329,6 +11389,83 @@
      "parameters"
     ],
     "title": "RssHubRoute",
+    "type": "object"
+   },
+   "RssHubRouteRun": {
+    "description": "One N025 route health timeline row (no secrets — route keys are\nmasked server-side before storage).",
+    "properties": {
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "failureClass": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failureclass"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "routeKey",
+     "ranAt",
+     "status",
+     "durationMs"
+    ],
+    "title": "RssHubRouteRun",
+    "type": "object"
+   },
+   "RssHubRouteRuns": {
+    "description": "GET /api/v1/rsshub/routes/history — bounded run list, newest first.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubRouteRun"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "RssHubRouteRuns",
     "type": "object"
    },
    "SaveAsTemplateRequest": {
@@ -25001,7 +25138,7 @@
   },
   "/api/v1/rsshub/preview": {
    "post": {
-    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list (sensitive parameter values are masked to '***'\nbefore anything is stored). Failed previews never record.",
+    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.",
     "operationId": "rsshub_preview_api_v1_rsshub_preview_post",
     "requestBody": {
      "content": {
@@ -25018,7 +25155,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/FeedPreviewResult"
+         "$ref": "#/components/schemas/RssHubPreviewResult"
         }
        }
       },
@@ -25148,6 +25285,60 @@
      }
     },
     "summary": "Delete Rsshub Favorite"
+   }
+  },
+  "/api/v1/rsshub/routes/history": {
+   "get": {
+    "description": "N025 最近运行 — bounded health timeline for ONE route key\n(newest first; the table itself prunes to the last 20 per route).",
+    "operationId": "rsshub_route_history_api_v1_rsshub_routes_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "routeKey",
+      "required": true,
+      "schema": {
+       "maxLength": 500,
+       "minLength": 1,
+       "title": "Routekey",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRouteRuns"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Route History"
    }
   },
   "/api/v1/rsshub/routes/recent": {

@@ -3,10 +3,11 @@
 
 import asyncio
 import logging
+import time
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from lumirss.config import LumiSettings, _validate_service_base_url
@@ -16,15 +17,18 @@ from lumirss.deps import (
     _get_rsshub_service,
     _preview_json,
 )
+from lumirss.feed_preview import FeedTooLarge, NotAFeedError
 from lumirss.models import (
-    FeedPreviewResult,
     RssHubCatalog,
     RssHubConfigView,
     RssHubFavoriteItem,
+    RssHubPreviewResult,
     RssHubRecentItem,
+    RssHubRouteRuns,
 )
 from lumirss.routers.ai_settings import SecretValuePut
 from lumirss.rsshub import (
+    RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
     RssHubRouteNotFound,
@@ -33,7 +37,7 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     config_view,
 )
-from lumirss.rsshub_route_store import RssHubRouteStore
+from lumirss.rsshub_route_store import RssHubRouteStore, compute_route_key
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +140,7 @@ def _e2e_base_override(base_url: str | None) -> str | None:
 
 @router.post(
     "/api/v1/rsshub/preview",
-    response_model=FeedPreviewResult,
+    response_model=RssHubPreviewResult,
     response_model_exclude_none=False,
 )
 async def rsshub_preview(
@@ -151,14 +155,69 @@ async def rsshub_preview(
     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
 
     N021: a SUCCESSFUL preview upserts the route into the per-user
-    最近使用 list (sensitive parameter values are masked to '***'
-    before anything is stored). Failed previews never record.
+    最近使用 list. N025: every attempt that reaches the fetch stage is
+    written to the route health timeline (last 20 kept per route).
+    Sensitive parameter values are masked to '***' before anything is
+    stored. Failed previews never record a 最近使用 entry.
     """
     override = _e2e_base_override(body.baseUrl)
     service = _get_rsshub_service(request)
-    preview = await service.preview(body.routeId, body.params, base_override=override)
+    route_key = compute_route_key(body.routeId, body.params)
+    started = time.monotonic()
+    try:
+        preview = await service.preview(body.routeId, body.params, base_override=override)
+    except (RssHubFetchError, NotAFeedError, FeedTooLarge) as exc:
+        # Fetch-stage failure → timeline row (N025). Request/validation
+        # errors (unknown route, bad params, not configured) never
+        # reached the wire and are NOT route health events.
+        await _record_run(
+            request,
+            route_key,
+            status="failed",
+            duration_ms=_elapsed_ms(started),
+            entry_count=None,
+            failure_class=getattr(exc, "failure_class", None),
+        )
+        raise
+    await _record_run(
+        request,
+        route_key,
+        status="ok",
+        duration_ms=_elapsed_ms(started),
+        entry_count=preview.entry_count,
+        failure_class=None,
+    )
     await _record_recent(request, body.routeId, body.params)
-    return _preview_json(preview)
+    data = _preview_json(preview)
+    data["routeKey"] = route_key
+    return data
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.monotonic() - started) * 1000))
+
+
+async def _record_run(
+    request: Request,
+    route_key: str,
+    *,
+    status: str,
+    duration_ms: int,
+    entry_count: int | None,
+    failure_class: str | None,
+) -> None:
+    """N025: best-effort timeline write — a metadata failure must never
+    turn an already-completed route use into an error response."""
+    try:
+        await _get_route_store(request).record_run(
+            route_key=route_key,
+            status=status,
+            duration_ms=duration_ms,
+            entry_count=entry_count,
+            failure_class=failure_class,
+        )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        logger.exception("rsshub route run-recording failed for %s", route_key)
 
 
 async def _record_recent(
@@ -242,6 +301,21 @@ async def list_rsshub_recent(request: Request) -> list[dict[str, object]]:
     """N021 最近使用 — rows appear here only after a SUCCESSFUL preview
     or subscribe (failed attempts never record)."""
     return await _get_route_store(request).list_recent()
+
+
+@router.get(
+    "/api/v1/rsshub/routes/history",
+    response_model=RssHubRouteRuns,
+    response_model_exclude_none=False,
+)
+async def rsshub_route_history(
+    request: Request,
+    routeKey: str = Query(min_length=1, max_length=500),
+    limit: int = Query(default=20, ge=1, le=20),
+) -> dict[str, object]:
+    """N025 最近运行 — bounded health timeline for ONE route key
+    (newest first; the table itself prunes to the last 20 per route)."""
+    return {"items": await _get_route_store(request).list_runs(routeKey, limit=limit)}
 
 
 async def _probe_rsshub(client: httpx.AsyncClient, url: str, source: str) -> dict[str, object]:

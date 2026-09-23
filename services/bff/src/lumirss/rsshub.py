@@ -40,6 +40,7 @@ from lumirss.adapters.freshrss import AdapterError
 from lumirss.config import RssHubSettings
 from lumirss.feed_preview import (
     FeedPreview,
+    count_feed_entries,
     parse_feed_document,
     read_bounded_body,
 )
@@ -390,6 +391,8 @@ class RssHubService:
             description=description,
             format=feed_format,
             already_subscribed=already_subscribed,
+            # N025: route timeline keeps a per-run entry count.
+            entry_count=count_feed_entries(body),
         )
 
     async def _fetch_feed(
