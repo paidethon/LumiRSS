@@ -53,6 +53,25 @@ def compute_route_key(template_id: str, params: dict[str, str]) -> str:
     return f"{template_id}|{signature}" if signature else template_id
 
 
+def parse_route_key(route_key: str) -> tuple[str, dict[str, str]] | None:
+    """compute_route_key 的逆运算（N027 refresh 用）。
+
+    注意：敏感参数值在 route_key 里已是 '***' 哨兵——调用方必须拒绝
+    含哨兵值的重建请求（真实值从未存储，无法还原）。
+    """
+    template_id, sep, signature = route_key.partition("|")
+    if not template_id or "|" in signature:
+        return None
+    params: dict[str, str] = {}
+    if sep:
+        for pair in signature.split("&"):
+            key, eq, value = pair.partition("=")
+            if not key or not eq:
+                return None
+            params[key] = value
+    return template_id, params
+
+
 def _params_json(params: dict[str, str]) -> str:
     return json.dumps(mask_params(params), ensure_ascii=False, sort_keys=True)
 

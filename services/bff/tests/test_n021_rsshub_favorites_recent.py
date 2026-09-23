@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumirss.main import app
-from lumirss.rsshub import RssHubService
+from lumirss.rsshub import RssHubPreviewCache, RssHubService
 from lumirss.storage import Database
 from lumirss.subscriptionref import encode_subscription_ref
 
@@ -69,6 +69,8 @@ def rsshub_client(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     with TestClient(app) as test_client:
         app.state.db = Database(tmp_path / "lumi.sqlite")
+        # N027：本套件关注服务端记录行为——预览缓存禁用（TTL=0 永不过期即未命中）
+        app.state.rsshub_preview_cache = RssHubPreviewCache(ttl_s=0.0)
         yield test_client
     app.state.rsshub_service = None
 

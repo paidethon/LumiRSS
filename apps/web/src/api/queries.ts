@@ -102,6 +102,7 @@ import {
   getRssHubRecent,
   getRssHubRouteHistory,
   getRssHubRoutes,
+  refreshRssHubRoute,
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
@@ -759,6 +760,19 @@ export function useRssHubRouteHistory(routeKey: string | null) {
     queryKey: ['rsshub-route-history', routeKey],
     queryFn: ({ signal }) => getRssHubRouteHistory(routeKey as string, signal),
     enabled: routeKey !== null,
+  })
+}
+
+/** N027：强制重取单路由（成功后失效该路由时间线缓存）。 */
+export function useRssHubRefreshMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => refreshRssHubRoute(routeKey),
+    onSuccess: async (_data, routeKey) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['rsshub-route-history', routeKey],
+      })
+    },
   })
 }
 

@@ -4804,8 +4804,41 @@ export interface paths {
          *     written to the route health timeline (last 20 kept per route).
          *     Sensitive parameter values are masked to '***' before anything is
          *     stored. Failed previews never record a 最近使用 entry.
+         *
+         *     N027: successful previews are cached per (user, route_key) with a
+         *     short TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``
+         *     and does NOT re-fetch, re-record a timeline row, or touch 最近使用 —
+         *     it was not an upstream attempt. The E2E base override always
+         *     bypasses the cache.
          */
         post: operations["rsshub_preview_api_v1_rsshub_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rsshub Refresh
+         * @description N027: force a re-fetch of exactly ONE route (per-user rate limited).
+         *
+         *     The route key is parsed server-side back into template id + params.
+         *     Sensitive parameter values were never stored ('***' sentinel only),
+         *     so refreshing such a route is refused — the user re-enters them in a
+         *     normal preview. Rate limit: 6 refreshes/minute/user, then a stable
+         *     429 with Retry-After. Only THIS route's cache entry is dropped;
+         *     other routes and any global caches are untouched.
+         */
+        post: operations["rsshub_refresh_api_v1_rsshub_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11402,6 +11435,16 @@ export interface components {
             dueAt: string;
         };
         /**
+         * RssHubCacheInfo
+         * @description N027: preview freshness (fresh=True when computed for this request).
+         */
+        RssHubCacheInfo: {
+            /** Ages */
+            ageS: number;
+            /** Fresh */
+            fresh: boolean;
+        };
+        /**
          * RssHubCatalog
          * @description GET /api/v1/rsshub/routes (static catalog; configured = instance set).
          */
@@ -11629,11 +11672,12 @@ export interface components {
          *
          *     N021/N025: the key (template id + masked params signature) is built
          *     server-side; clients use it for favorites/recents/history/refresh
-         *     and never assemble it themselves.
+         *     and never assemble it themselves. N027 adds cache freshness.
          */
         RssHubPreviewResult: {
             /** Alreadysubscribed */
             alreadySubscribed: boolean;
+            cache: components["schemas"]["RssHubCacheInfo"];
             /** Description */
             description?: string | null;
             /** Feedurl */
@@ -11667,6 +11711,31 @@ export interface components {
             routeKey: string;
             /** Templateid */
             templateId: string;
+        };
+        /**
+         * RssHubRefreshRequest
+         * @description POST /api/v1/rsshub/refresh body (server-derived route key).
+         */
+        RssHubRefreshRequest: {
+            /** Routekey */
+            routeKey: string;
+        };
+        /**
+         * RssHubRefreshResult
+         * @description POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.
+         */
+        RssHubRefreshResult: {
+            cache: components["schemas"]["RssHubCacheInfo"];
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /** Title */
+            title: string;
         };
         /**
          * RssHubRoute
@@ -21653,6 +21722,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_refresh_api_v1_rsshub_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRefreshResult"];
                 };
             };
             /** @description Validation Error */

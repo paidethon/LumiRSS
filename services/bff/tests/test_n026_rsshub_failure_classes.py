@@ -29,6 +29,7 @@ from lumirss.rsshub import (
     FAILURE_RSSHUB_UNREACHABLE,
     FAILURE_UPSTREAM_REJECT,
     RssHubFetchError,
+    RssHubPreviewCache,
     RssHubService,
     looks_like_rsshub_error_page,
 )
@@ -143,6 +144,8 @@ def probe_client(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
     with TestClient(app) as test_client:
         app.state.db = Database(tmp_path / "lumi.sqlite")
+        # N027：本套件关注故障分类——预览缓存禁用（TTL=0 即未命中）
+        app.state.rsshub_preview_cache = RssHubPreviewCache(ttl_s=0.0)
         yield test_client
     app.state.rsshub_route_probe = None
 

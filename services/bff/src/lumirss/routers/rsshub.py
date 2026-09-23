@@ -15,6 +15,7 @@ from lumirss.config import LumiSettings, _validate_service_base_url
 from lumirss.deps import (
     _get_rsshub_control_store,
     _get_rsshub_credentials_store,
+    _get_rsshub_preview_cache,
     _get_rsshub_service,
     _preview_json,
 )
@@ -25,6 +26,7 @@ from lumirss.models import (
     RssHubFavoriteItem,
     RssHubPreviewResult,
     RssHubRecentItem,
+    RssHubRefreshResult,
     RssHubRouteRuns,
 )
 from lumirss.routers.ai_settings import SecretValuePut
@@ -35,13 +37,20 @@ from lumirss.rsshub import (
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
+    RssHubRefreshRateLimited,
     RssHubRouteNotFound,
 )
 from lumirss.rsshub_control import (
     RssHubInvalidValue,
     config_view,
 )
-from lumirss.rsshub_route_store import RssHubRouteStore, compute_route_key
+from lumirss.rsshub_route_store import (
+    RssHubRouteStore,
+    compute_route_key,
+    parse_route_key,
+)
+from lumirss.user_scope import require_user_id
+from lumirss.util import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -163,9 +172,25 @@ async def rsshub_preview(
     written to the route health timeline (last 20 kept per route).
     Sensitive parameter values are masked to '***' before anything is
     stored. Failed previews never record a 最近使用 entry.
+
+    N027: successful previews are cached per (user, route_key) with a
+    short TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``
+    and does NOT re-fetch, re-record a timeline row, or touch 最近使用 —
+    it was not an upstream attempt. The E2E base override always
+    bypasses the cache.
     """
     override = _e2e_base_override(body.baseUrl)
     route_key = compute_route_key(body.routeId, body.params)
+    user_id = require_user_id()
+    cache = _get_rsshub_preview_cache(request)
+    if override is None:
+        hit = cache.get(user_id, route_key)
+        if hit is not None:
+            cached_preview, age_s = hit
+            data = _preview_json(cached_preview)
+            data["routeKey"] = route_key
+            data["cache"] = {"ageS": age_s, "fresh": False}
+            return data
     started = time.monotonic()
     try:
         preview = await _do_preview(
@@ -201,8 +226,11 @@ async def rsshub_preview(
         failure_class=failure_class,
     )
     await _record_recent(request, body.routeId, body.params)
+    if override is None:
+        cache.put(user_id, route_key, preview)
     data = _preview_json(preview)
     data["routeKey"] = route_key
+    data["cache"] = {"ageS": 0.0, "fresh": True}
     return data
 
 
@@ -369,6 +397,117 @@ async def rsshub_route_history(
     """N025 最近运行 — bounded health timeline for ONE route key
     (newest first; the table itself prunes to the last 20 per route)."""
     return {"items": await _get_route_store(request).list_runs(routeKey, limit=limit)}
+
+
+# ---- N027: 预览缓存控制（强制刷新 + 每用户限速） -----------------------------
+
+_REFRESH_RATE_LIMIT = 6
+_REFRESH_RATE_WINDOW_S = 60.0
+# 每用户令牌桶：uid -> (tokens, last_refill_monotonic)。进程内状态——
+# 重启即重置，与预览缓存同一生命周期。
+_refresh_buckets: dict[str, tuple[float, float]] = {}
+
+
+class RssHubRefreshRequest(BaseModel):
+    """POST /api/v1/rsshub/refresh body (server-derived route key)."""
+
+    routeKey: str = Field(min_length=1, max_length=500)
+
+
+def _refresh_retry_after(request: Request, user_id: str) -> int:
+    """Per-user token bucket. 0 = allowed (consumes one token), else the
+    number of seconds until the next token. Tests override the rate via
+    ``app.state.rsshub_refresh_rate = (limit, window_s)``."""
+    limit, window_s = getattr(
+        request.app.state,
+        "rsshub_refresh_rate",
+        None,
+    ) or (_REFRESH_RATE_LIMIT, _REFRESH_RATE_WINDOW_S)
+    refill_per_s = limit / window_s
+    now = time.monotonic()
+    tokens, last = _refresh_buckets.get(user_id, (float(limit), now))
+    tokens = min(float(limit), tokens + (now - last) * refill_per_s)
+    if tokens < 1.0:
+        _refresh_buckets[user_id] = (tokens, now)
+        import math
+
+        return max(1, math.ceil((1.0 - tokens) / refill_per_s))
+    tokens -= 1.0
+    _refresh_buckets[user_id] = (tokens, now)
+    return 0
+
+
+@router.post(
+    "/api/v1/rsshub/refresh",
+    response_model=RssHubRefreshResult,
+    response_model_exclude_none=False,
+)
+async def rsshub_refresh(
+    body: RssHubRefreshRequest, request: Request
+) -> dict[str, object]:
+    """N027: force a re-fetch of exactly ONE route (per-user rate limited).
+
+    The route key is parsed server-side back into template id + params.
+    Sensitive parameter values were never stored ('***' sentinel only),
+    so refreshing such a route is refused — the user re-enters them in a
+    normal preview. Rate limit: 6 refreshes/minute/user, then a stable
+    429 with Retry-After. Only THIS route's cache entry is dropped;
+    other routes and any global caches are untouched.
+    """
+    parsed = parse_route_key(body.routeKey)
+    if parsed is None:
+        raise RssHubInvalidParameters("Malformed RSSHub route key.")
+    template_id, params = parsed
+    _catalog_route(template_id)
+    if any(value == "***" for value in params.values()):
+        raise RssHubInvalidParameters(
+            "This route has sensitive parameter values that are never "
+            "stored; run a new preview with the values instead."
+        )
+    retry_after = _refresh_retry_after(request, require_user_id())
+    if retry_after > 0:
+        raise RssHubRefreshRateLimited(retry_after)
+    user_id = require_user_id()
+    _get_rsshub_preview_cache(request).invalidate(user_id, body.routeKey)
+    started = time.monotonic()
+    try:
+        preview = await _do_preview(
+            request, template_id, params, base_override=None
+        )
+    except (RssHubFetchError, NotAFeedError, FeedTooLarge) as exc:
+        failure_class = getattr(exc, "failure_class", None)
+        if failure_class is None and isinstance(exc, (NotAFeedError, FeedTooLarge)):
+            failure_class = FAILURE_BAD_CONTENT
+        await _record_run(
+            request,
+            body.routeKey,
+            status="failed",
+            duration_ms=_elapsed_ms(started),
+            entry_count=None,
+            failure_class=failure_class,
+        )
+        raise
+    failure_class = await _no_new_content_class(
+        request, body.routeKey, preview.entry_count
+    )
+    await _record_run(
+        request,
+        body.routeKey,
+        status="ok",
+        duration_ms=_elapsed_ms(started),
+        entry_count=preview.entry_count,
+        failure_class=failure_class,
+    )
+    await _record_recent(request, template_id, params)
+    _get_rsshub_preview_cache(request).put(user_id, body.routeKey, preview)
+    return {
+        "routeKey": body.routeKey,
+        "title": preview.title,
+        "entryCount": preview.entry_count,
+        "ranAt": utc_now(),
+        "durationMs": _elapsed_ms(started),
+        "cache": {"ageS": 0.0, "fresh": True},
+    }
 
 
 async def _probe_rsshub(client: httpx.AsyncClient, url: str, source: str) -> dict[str, object]:

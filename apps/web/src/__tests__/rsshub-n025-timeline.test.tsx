@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AddSourceDialog from '../components/AddSourceDialog'
-import { rsshubFailureClassLabel } from '../components/add-source/RssHubTab'
+import { rsshubFailureClassLabel } from '../lib/rsshub-params'
 import { useReaderUi } from '../store/reader-ui'
 
 const ROUTES = {

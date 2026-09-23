@@ -15,13 +15,14 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, History, Loader2, Satellite, Search, Star } from 'lucide-react'
+import { AlertCircle, History, Loader2, RefreshCw, Satellite, Search, Star } from 'lucide-react'
 import {
   useDeleteRssHubFavoriteMutation,
   usePutRssHubFavoriteMutation,
   useRssHubFavorites,
   useRssHubPreviewMutation,
   useRssHubRecent,
+  useRssHubRefreshMutation,
   useRssHubRouteHistory,
   useRssHubRoutes,
   useSubscribeMutation,
@@ -33,6 +34,7 @@ import type {
 } from '../../api/types'
 import { formatRelativeTime } from '../../lib/date-format'
 import { managementErrorText } from '../../lib/management-errors'
+import { rsshubFailureClassLabel } from '../../lib/rsshub-params'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { IconButton } from '../ui/IconButton'
@@ -550,31 +552,46 @@ function RouteEntrySection({
   )
 }
 
-/** N025：失败分类 → 中文标签（未知分类诚实回显原值）。 */
-export function rsshubFailureClassLabel(failureClass: string): string {
-  const known: Record<string, string> = {
-    rsshub_unreachable: 'RSSHub 不可达',
-    upstream_reject: '上游拒绝',
-    auth_failure: '鉴权失败',
-    auth_error: '鉴权错误',
-    not_found: '路由不存在',
-    rate_limited: '被限流',
-    no_new_content: '无新内容',
-    bad_content: '内容异常',
-    network_error: '网络错误',
-  }
-  return known[failureClass] ?? failureClass
-}
-
 /** N025：最近运行时间线 — 状态点 / 时延 / 条目数 / 失败分类 / 相对时间。 */
 function RouteRunTimeline({ routeKey }: { routeKey: string | null }) {
   const historyQuery = useRssHubRouteHistory(routeKey)
+  const refreshMutation = useRssHubRefreshMutation()
   if (routeKey === null || !historyQuery.isEnabled) return null
   const runs = historyQuery.data?.items ?? []
+  const refreshError = refreshMutation.error
+  const retryAfterSeconds =
+    refreshError instanceof Error
+      ? ((refreshError as Error & { retryAfterSeconds?: number | null }).retryAfterSeconds ?? null)
+      : null
+
+  function refresh() {
+    if (routeKey === null) return
+    refreshMutation.mutate(routeKey)
+  }
+
+  const header = (
+    <div className="flex items-center justify-between gap-2">
+      <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+      <IconButton
+        icon={
+          refreshMutation.isPending ? (
+            <Loader2 aria-hidden className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw aria-hidden className="size-3.5" />
+          )
+        }
+        label="强制刷新该路由"
+        size="sm"
+        touch
+        disabled={refreshMutation.isPending}
+        onClick={refresh}
+      />
+    </div>
+  )
   if (historyQuery.isPending && runs.length === 0) {
     return (
       <section aria-label="最近运行" className="flex flex-col gap-1.5">
-        <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+        {header}
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-8 w-full" />
       </section>
@@ -583,20 +600,62 @@ function RouteRunTimeline({ routeKey }: { routeKey: string | null }) {
   if (runs.length === 0) {
     return (
       <section aria-label="最近运行" className="flex flex-col gap-1.5">
-        <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+        {header}
         <p className="text-xs text-[var(--lumi-text-tertiary)]">该路由暂无运行记录。</p>
+        {refreshMutation.isSuccess && (
+          <p className="text-xs text-[var(--lumi-text-secondary)]" role="status">
+            已刷新，本次获取 {refreshMutation.data.entryCount ?? 0} 条内容。
+          </p>
+        )}
+        {refreshError !== null && (
+          <RefreshErrorNote
+            error={refreshError}
+            retryAfterSeconds={retryAfterSeconds}
+          />
+        )}
       </section>
     )
   }
   return (
     <section aria-label="最近运行" className="flex flex-col gap-1.5">
-      <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">最近运行</p>
+      {header}
       <ul className="flex flex-col gap-1">
         {runs.map((run) => (
           <RunRow key={run.id} run={run} />
         ))}
       </ul>
+      {refreshMutation.isSuccess && (
+        <p className="text-xs text-[var(--lumi-text-secondary)]" role="status">
+          已刷新，本次获取 {refreshMutation.data.entryCount ?? 0} 条内容。
+        </p>
+      )}
+      {refreshError !== null && (
+        <RefreshErrorNote error={refreshError} retryAfterSeconds={retryAfterSeconds} />
+      )}
     </section>
+  )
+}
+
+function RefreshErrorNote({
+  error,
+  retryAfterSeconds,
+}: {
+  error: Error
+  retryAfterSeconds: number | null
+}) {
+  const text = managementErrorText(error)
+  return (
+    <p role="alert" className="flex items-start gap-1.5 text-xs text-[var(--lumi-danger)]">
+      <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+      <span className="min-w-0">
+        {text.title}
+        {retryAfterSeconds !== null && retryAfterSeconds > 0 && (
+          <span className="block text-[11px] opacity-80">
+            约 {retryAfterSeconds} 秒后可再次刷新。
+          </span>
+        )}
+      </span>
+    </p>
   )
 }
 

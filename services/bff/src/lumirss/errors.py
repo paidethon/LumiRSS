@@ -169,6 +169,7 @@ from lumirss.rsshub import (
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
+    RssHubRefreshRateLimited,
     RssHubRouteNotFound,
 )
 from lumirss.rsshub_control import (
@@ -599,6 +600,24 @@ def register_error_handlers(app) -> None:
                     "type": "rsshub_fetch_error",
                     "message": str(exc),
                     "failureClass": exc.failure_class,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubRefreshRateLimited)
+    async def rsshub_refresh_rate_limited_handler(
+        request: Request, exc: RssHubRefreshRateLimited
+    ) -> JSONResponse:
+        """N027：刷新限速 → 429 + Retry-After 秒（稳定错误类型
+        rsshub_refresh_rate_limited；响应体同时带 retryAfterSeconds）。"""
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after_s)},
+            content={
+                "error": {
+                    "type": "rsshub_refresh_rate_limited",
+                    "message": str(exc),
+                    "retryAfterSeconds": exc.retry_after_s,
                 }
             },
         )

@@ -10745,6 +10745,25 @@
     "title": "ReviewQueuePostpone",
     "type": "object"
    },
+   "RssHubCacheInfo": {
+    "description": "N027: preview freshness (fresh=True when computed for this request).",
+    "properties": {
+     "ageS": {
+      "title": "Ages",
+      "type": "number"
+     },
+     "fresh": {
+      "title": "Fresh",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ageS",
+     "fresh"
+    ],
+    "title": "RssHubCacheInfo",
+    "type": "object"
+   },
    "RssHubCatalog": {
     "description": "GET /api/v1/rsshub/routes (static catalog; configured = instance set).",
     "properties": {
@@ -11252,11 +11271,14 @@
     "type": "object"
    },
    "RssHubPreviewResult": {
-    "description": "POST /api/v1/rsshub/preview — adds the server-derived routeKey.\n\nN021/N025: the key (template id + masked params signature) is built\nserver-side; clients use it for favorites/recents/history/refresh\nand never assemble it themselves.",
+    "description": "POST /api/v1/rsshub/preview — adds the server-derived routeKey.\n\nN021/N025: the key (template id + masked params signature) is built\nserver-side; clients use it for favorites/recents/history/refresh\nand never assemble it themselves. N027 adds cache freshness.",
     "properties": {
      "alreadySubscribed": {
       "title": "Alreadysubscribed",
       "type": "boolean"
+     },
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
      },
      "description": {
       "anyOf": [
@@ -11306,7 +11328,8 @@
      "feedUrl",
      "format",
      "alreadySubscribed",
-     "routeKey"
+     "routeKey",
+     "cache"
     ],
     "title": "RssHubPreviewResult",
     "type": "object"
@@ -11352,6 +11375,66 @@
      "lastUsedAt"
     ],
     "title": "RssHubRecentItem",
+    "type": "object"
+   },
+   "RssHubRefreshRequest": {
+    "description": "POST /api/v1/rsshub/refresh body (server-derived route key).",
+    "properties": {
+     "routeKey": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Routekey",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey"
+    ],
+    "title": "RssHubRefreshRequest",
+    "type": "object"
+   },
+   "RssHubRefreshResult": {
+    "description": "POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.",
+    "properties": {
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
+     },
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "title",
+     "ranAt",
+     "durationMs",
+     "cache"
+    ],
+    "title": "RssHubRefreshResult",
     "type": "object"
    },
    "RssHubRoute": {
@@ -25138,7 +25221,7 @@
   },
   "/api/v1/rsshub/preview": {
    "post": {
-    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.",
+    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.\n\nN027: successful previews are cached per (user, route_key) with a\nshort TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``\nand does NOT re-fetch, re-record a timeline row, or touch 最近使用 —\nit was not an upstream attempt. The E2E base override always\nbypasses the cache.",
     "operationId": "rsshub_preview_api_v1_rsshub_preview_post",
     "requestBody": {
      "content": {
@@ -25173,6 +25256,45 @@
      }
     },
     "summary": "Rsshub Preview"
+   }
+  },
+  "/api/v1/rsshub/refresh": {
+   "post": {
+    "description": "N027: force a re-fetch of exactly ONE route (per-user rate limited).\n\nThe route key is parsed server-side back into template id + params.\nSensitive parameter values were never stored ('***' sentinel only),\nso refreshing such a route is refused — the user re-enters them in a\nnormal preview. Rate limit: 6 refreshes/minute/user, then a stable\n429 with Retry-After. Only THIS route's cache entry is dropped;\nother routes and any global caches are untouched.",
+    "operationId": "rsshub_refresh_api_v1_rsshub_refresh_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubRefreshRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRefreshResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Refresh"
    }
   },
   "/api/v1/rsshub/routes": {

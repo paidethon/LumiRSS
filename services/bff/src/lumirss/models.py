@@ -392,14 +392,33 @@ class RssHubRecentItem(BaseModel):
     lastSuccessAt: str | None = None
 
 
+class RssHubCacheInfo(BaseModel):
+    """N027: preview freshness (fresh=True when computed for this request)."""
+
+    ageS: float
+    fresh: bool
+
+
 class RssHubPreviewResult(FeedPreviewResult):
     """POST /api/v1/rsshub/preview — adds the server-derived routeKey.
 
     N021/N025: the key (template id + masked params signature) is built
     server-side; clients use it for favorites/recents/history/refresh
-    and never assemble it themselves."""
+    and never assemble it themselves. N027 adds cache freshness."""
 
     routeKey: str
+    cache: RssHubCacheInfo
+
+
+class RssHubRefreshResult(BaseModel):
+    """POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route."""
+
+    routeKey: str
+    title: str
+    entryCount: int | None = None
+    ranAt: str
+    durationMs: int
+    cache: RssHubCacheInfo
 
 
 class RssHubRouteRun(BaseModel):

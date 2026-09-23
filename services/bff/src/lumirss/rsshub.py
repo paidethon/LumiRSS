@@ -30,7 +30,9 @@ the host view (127.0.0.1:1200) differs from the container view
 """
 
 import re
+import time
 import urllib.parse
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -64,6 +66,8 @@ __all__ = [
     "RssHubInvalidParameters",
     "RssHubNotConfigured",
     "RssHubParameter",
+    "RssHubPreviewCache",
+    "RssHubRefreshRateLimited",
     "RssHubRoute",
     "RssHubRouteNotFound",
     "RssHubService",
@@ -99,6 +103,52 @@ _ERROR_PAGE_MARKERS = ("rsshub",)
 _ERROR_PAGE_WORDS = ("error", "错误")
 
 
+class RssHubPreviewCache:
+    """N027: per-user in-memory preview cache (TTL + LRU, bounded).
+
+    Keyed by ``(user_id, route_key)`` so accounts never share cached
+    previews. TTL is sliding-expiry by stored-at monotonic time; the LRU
+    bound evicts the least recently USED entry beyond capacity. Purely
+    process-local — a restart is a cold cache, and ``invalidate`` only
+    ever drops the ONE route requested (never a global clear).
+    """
+
+    def __init__(self, *, ttl_s: float = 300.0, capacity: int = 50) -> None:
+        self._ttl_s = ttl_s
+        self._capacity = capacity
+        self._entries: OrderedDict[tuple[str, str], tuple[float, FeedPreview]] = (
+            OrderedDict()
+        )
+
+    def get(self, user_id: str, route_key: str) -> tuple[FeedPreview, float] | None:
+        """Cache hit → (preview, age_s); expired/missing → None."""
+        key = (user_id, route_key)
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        stored_at, preview = entry
+        age_s = time.monotonic() - stored_at
+        if age_s >= self._ttl_s:
+            del self._entries[key]
+            return None
+        self._entries.move_to_end(key)
+        return preview, age_s
+
+    def put(self, user_id: str, route_key: str, preview: FeedPreview) -> None:
+        self._entries[(user_id, route_key)] = (time.monotonic(), preview)
+        self._entries.move_to_end((user_id, route_key))
+        while len(self._entries) > self._capacity:
+            self._entries.popitem(last=False)
+
+    def invalidate(self, user_id: str, route_key: str) -> bool:
+        """Drop exactly one route's entry; returns whether it existed."""
+        key = (user_id, route_key)
+        if key in self._entries:
+            del self._entries[key]
+            return True
+        return False
+
+
 class RssHubNotConfigured(AdapterError):
     """RSSHUB_BASE_URL is missing or invalid in the BFF configuration."""
 
@@ -113,6 +163,16 @@ class RssHubInvalidParameters(AdapterError):
 
 class RssHubFavoriteNotFound(AdapterError):
     """N021: the referenced route favorite does not exist for this user."""
+
+
+class RssHubRefreshRateLimited(AdapterError):
+    """N027: the per-user refresh budget (6/min) is exhausted."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        super().__init__(
+            f"Too many refreshes; retry after {retry_after_s} seconds."
+        )
+        self.retry_after_s = retry_after_s
 
 
 class RssHubFetchError(AdapterError):

@@ -61,6 +61,8 @@ export type RssHubRecentItem = Schemas['RssHubRecentItem']
 // N025 路由健康时间线
 export type RssHubRouteRun = Schemas['RssHubRouteRun']
 export type RssHubRouteRuns = Schemas['RssHubRouteRuns']
+// N027 预览缓存控制（refresh 单路由强制重取）
+export type RssHubRefreshResult = Schemas['RssHubRefreshResult']
 
 // ---- 0015/0016 AI ----
 

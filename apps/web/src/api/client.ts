@@ -45,6 +45,7 @@ import type {
   RssHubFavoriteItem,
   RssHubPreviewMetadata,
   RssHubRecentItem,
+  RssHubRefreshResult,
   RssHubRouteRuns,
   RssHubRoutesResponse,
   SearchResponse,
@@ -943,6 +944,16 @@ export async function getRssHubRouteHistory(
 ): Promise<RssHubRouteRuns> {
   const params = new URLSearchParams({ routeKey })
   return request<RssHubRouteRuns>(`${API_BASE}/rsshub/routes/history?${params}`, signal)
+}
+
+/** N027：强制重取该路由（绕过预览缓存；429 时抛带 retryAfterSeconds 的 ApiError）。 */
+export async function refreshRssHubRoute(routeKey: string): Promise<RssHubRefreshResult> {
+  const response = await rawRequest(`${API_BASE}/rsshub/refresh`, {
+    method: 'POST',
+    body: JSON.stringify({ routeKey }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubRefreshResult
 }
 
 /** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */
