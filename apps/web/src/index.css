@@ -314,6 +314,21 @@ html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .arti
   transition: none;
 }
 
+/* ---- P18 朗读段落跟踪（[data-speech-active]） ----
+ * 当前朗读块左侧 accent 细条。inset box-shadow 贴在盒内：无布局位移；
+ * 无动画/过渡——减少动效偏好（data-motion-reduce 与 prefers-reduced-
+ * motion）天然满足。标记由 lib/reader-speech markSpeechBlockElement
+ * 管理（speech 引擎 onBlockChange 驱动，停止/卸载清除）。 */
+.lumi-reader-article [data-speech-active] {
+  box-shadow: inset 3px 0 0 0 var(--lumi-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 语义兜底：本标记本无动画；声明在此防未来有人给它加过渡。 */
+  .lumi-reader-article [data-speech-active] {
+    transition: none;
+  }
+}
+
 .article-content img {
   max-width: 100%; /* 图片适应 Reader 宽度 */
   height: auto;
