@@ -18,18 +18,19 @@ sudo ./lumirss deploy
 `deploy` 会：preflight（docker/compose/curl、DNS、80/443 占用、磁盘）→
 生成并引导填写 `.env.prod`（自动生成 `LUMIRSS_INTERNAL_TOKEN`；交互式
 询问域名与登录账号，密码经 `caddy hash-password` 生成 `$$` 转义后的
-bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→ `up -d` →
+bcrypt 哈希）→ 拉取 GHCR 预构建镜像（**prebuilt-only**：拉取失败立即
+中止，旧栈保持运行，绝不回退本地构建）→ `up -d` →
 等待 `/health/ready` → 打印 status。
 
 非交互部署（如脚本/云-init）：`LUMIRSS_DOMAIN`、`LUMIRSS_AUTH_USER`、
 `LUMIRSS_AUTH_HASH`、`LUMIRSS_AUTH_PASSWORD` 环境变量覆盖询问；
-`./lumirss deploy --dry-run` 只做配置校验；`--build` 强制本地构建。
+`./lumirss deploy --dry-run` 只做配置校验。
 
 ## 2. 生命周期子命令
 
 | 命令 | 作用 |
 |---|---|
-| `./lumirss update [--build]` | 备份 → 拉取/构建镜像 → `up -d` → 健康检查 |
+| `./lumirss update` | 备份 → 拉取镜像 → `up -d` → 健康检查 |
 | `./lumirss status` | 容器状态、健康、web/bff 版本（commit）与镜像 tag |
 | `./lumirss logs [service] [-f]` | 全栈或单服务日志 |
 | `./lumirss backup` | lumi-data + freshrss-data 卷 tar.gz + 配置归档到 `./backups/`（`LUMIRSS_BACKUP_DIR` 可改） |
@@ -39,12 +40,35 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
 | `./lumirss set-password` | 安装/轮换 owner 登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进控制库，明文任何地方不落盘**。成员账号的密码重置走 `/admin`（见 [invite-members.md](invite-members.md)） |
 | `./lumirss freshrss-init` | 安装/启用内部 FreshRSS 与 BFF 用户（幂等） |
+| `./lumirss export-images [--out DIR]` | `docker save` 两个 pinned 镜像 → `lumirss-images-<tag>.tar` + `SHA256SUMS`（`release-manifest.json` 存在时一并打包）——离线/air-gapped 主机用 |
+| `./lumirss import-images <DIR>` | 校验 `SHA256SUMS`（失败拒载）→ `docker load` 导出的镜像 |
 
 镜像默认取 GHCR：`ghcr.io/paidethon/lumirss-web` /
 `ghcr.io/paidethon/lumirss-bff`，tag 由 `LUMIRSS_IMAGE_TAG` 控制
-（默认 `latest`）；compose 的 `build:` 段是本地构建回退
-（`./lumirss deploy --build` 或拉取失败时自动使用，构建时注入
-`LUMIRSS_BUILD_COMMIT` 作版本溯源）。
+（默认 `latest`）。
+
+**生产路径 prebuilt-only**：`docker-compose.prod.yml` 不含 `build:` 段，
+`deploy` / `update --build` 直接拒绝执行。拉取失败且本地无镜像时脚本
+中止，**旧栈保持运行**；本地已有镜像（如离线导入过）则直接使用。
+本地构建只属于开发/CI，走 overlay：
+
+```bash
+LUMIRSS_BUILD_COMMIT="$(git rev-parse HEAD)" \
+  docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build
+```
+
+CI 每次发布把 image digest 写进 `release-manifest.json`（version、git
+SHA、双镜像 digest、生成时间）+ `SHA256SUMS`：始终上传为 workflow
+artifact，tag 构建时若对应 GitHub Release 已存在则附加到 Release
+（工作流本身不创建 Release）。
+
+### 离线（air-gapped）升级
+
+1. 联网机器：`./lumirss export-images --out ./offline`；
+2. 搬运 `offline/` 到目标机：`./lumirss import-images ./offline`
+   （先校验 SHA256SUMS 再 `docker load`）；
+3. `./lumirss update`：拉取失败时若本地已有镜像会直接使用（不构建），
+   否则中止并保留旧栈。
 
 > 在同一台机器上测试而不影响正式栈：设置独立的
 > `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` / `COMPOSE_PROJECT_NAME`
@@ -94,7 +118,8 @@ sudo ./lumirss deploy --external-caddy
 
 ```bash
 cp .env.prod.example .env.prod   # 填写真实值；$ 必须写成 $$（见配置参考）
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 - 唯一公网入口是 `web`（Caddy，80/443）；FreshRSS / RSSHub 只在内部网络。
@@ -200,7 +225,12 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 
 手工等价：确认容器健康 → 在 UI 创建完整备份 →
 `git pull && git checkout <release-tag>` →
-`docker compose -f docker-compose.prod.yml up -d --build` → 就绪检查。
+`docker compose -f docker-compose.prod.yml pull` →
+`docker compose -f docker-compose.prod.yml up -d` → 就绪检查。
+
+拉取失败（网络/registry 不可达）时 `update` 直接中止，旧栈继续运行；
+本地已有目标镜像（离线导入，见 §2 的 air-gapped 流程）则跳过拉取直接
+升级。绝不本地构建替代线上镜像——构建产物没有发布产物的溯源与 digest。
 
 回滚：`./lumirss rollback`（上一镜像 tag + 上一份配置快照）。SQLite
 schema 不做二进制降级；数据库不兼容时唯一受支持路径是恢复升级前备份
