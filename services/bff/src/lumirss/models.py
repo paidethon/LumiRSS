@@ -1936,6 +1936,104 @@ class NoteListResponse(BaseModel):
     items: list[NoteView]
 
 
+# ---------------------------------------------------------------------------
+# P16：多设备交接 —— 设备档案 / 导出模板 / 交接结果（每用户，非 owner 专属）
+# ---------------------------------------------------------------------------
+
+
+class ObsidianDeviceProfile(BaseModel):
+    """One device where the user runs Obsidian (URI generation ONLY).
+
+    Device profiles never describe server-side vault paths — the vault
+    the BFF reads is mounted server-side (env or manual), while these
+    names describe the user's OWN Obsidian app for obsidian:// links."""
+
+    id: str
+    label: str
+    vaultName: str
+    vaultIdentifier: str = ""
+    platform: Literal["windows", "ios", "ipados", "other"] = "other"
+    createdAt: str
+
+
+class ObsidianDeviceProfileList(BaseModel):
+    """Envelope for GET /api/v1/obsidian/devices."""
+
+    items: list[ObsidianDeviceProfile]
+
+
+class ObsidianDeviceProfilePayload(BaseModel):
+    """POST/PUT body — full payload both for create and update."""
+
+    model_config = {"extra": "forbid"}
+
+    label: str = Field(min_length=1, max_length=100)
+    vaultName: str = Field(min_length=1, max_length=200)
+    vaultIdentifier: str = Field(default="", max_length=200)
+    platform: Literal["windows", "ios", "ipados", "other"] = "other"
+
+
+class ObsidianExportTemplateView(BaseModel):
+    """GET /api/v1/obsidian/export-template."""
+
+    template: str
+    defaultTemplate: str
+    allowedVars: list[str]
+
+
+class ObsidianExportTemplateUpdate(BaseModel):
+    """PUT /api/v1/obsidian/export-template body."""
+
+    model_config = {"extra": "forbid"}
+
+    template: str = Field(max_length=20000)
+
+
+class ObsidianTemplatePreviewRequest(BaseModel):
+    """POST /api/v1/obsidian/export-template/preview body.
+
+    ``entryRef`` omitted → renders against fixture text (settings page);
+    present → renders against the real article (reader-side preview)."""
+
+    model_config = {"extra": "forbid"}
+
+    template: str = Field(max_length=20000)
+    entryRef: str | None = None
+
+
+class ObsidianTemplatePreviewResult(BaseModel):
+    """Rendered preview + honest unknown-variable list (UI validation)."""
+
+    text: str
+    unknownVars: list[str] = []
+    source: Literal["entry", "fixture"] = "fixture"
+
+
+class ObsidianExportHandoffRequest(BaseModel):
+    """POST /api/v1/obsidian/export-handoff body."""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    deviceId: str
+
+
+class ObsidianExportHandoffResult(BaseModel):
+    """Honest handoff verdict — the UI must never claim a vault write.
+
+    ``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.
+    ``mode='file'`` → URI budget exceeded (reason='tooLong') → download
+    ``filename`` + clipboard fallback instead."""
+
+    mode: Literal["uri", "file"]
+    uri: str | None = None
+    reason: str | None = None
+    filename: str
+    content: str
+    unknownVars: list[str] = []
+    deviceLabel: str = ""
+
+
 class TagItemsResponse(BaseModel):
     """GET /api/v1/tags/{id}/items — one tag's refs, resolved server-side."""
 

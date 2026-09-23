@@ -1709,6 +1709,12 @@ export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
 export type NoteView = G6Schemas['NoteView']
 export type NoteListResponse = G6Schemas['NoteListResponse']
+export type ObsidianDeviceProfile = G6Schemas['ObsidianDeviceProfile']
+export type ObsidianDeviceProfileList = G6Schemas['ObsidianDeviceProfileList']
+export type ObsidianDeviceProfilePayload = G6Schemas['ObsidianDeviceProfilePayload']
+export type ObsidianExportTemplateView = G6Schemas['ObsidianExportTemplateView']
+export type ObsidianTemplatePreviewResult = G6Schemas['ObsidianTemplatePreviewResult']
+export type ObsidianExportHandoffResult = G6Schemas['ObsidianExportHandoffResult']
 export type FavoritesResponse = G6Schemas['FavoritesResponse']
 export type LibrarySearchItem = G6Schemas['LibrarySearchItem']
 
@@ -2449,6 +2455,94 @@ export async function getObsidianNote(
     `${API_BASE}/obsidian/notes/${encodeURIComponent(toLibraryItemId(noteRef))}`,
     signal,
   )
+}
+
+// ---- P16：多设备交接（设备档案 / 导出模板 / 交接；全部用户级） ----
+
+/** 设备档案列表（描述用户各设备上的 Obsidian vault，仅用于 URI 生成）。 */
+export async function listObsidianDevices(signal?: AbortSignal): Promise<ObsidianDeviceProfileList> {
+  return request<ObsidianDeviceProfileList>(`${API_BASE}/obsidian/devices`, signal)
+}
+
+/** 新建设备档案（201 返回服务端创建的完整行）。 */
+export async function createObsidianDevice(
+  payload: ObsidianDeviceProfilePayload,
+): Promise<ObsidianDeviceProfile> {
+  const response = await rawRequest(`${API_BASE}/obsidian/devices`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianDeviceProfile
+}
+
+/** 更新设备档案（全量载荷；他人/不存在的 id = 404，路由即隔离）。 */
+export async function updateObsidianDevice(
+  deviceId: string,
+  payload: ObsidianDeviceProfilePayload,
+): Promise<ObsidianDeviceProfile> {
+  const response = await rawRequest(
+    `${API_BASE}/obsidian/devices/${encodeURIComponent(deviceId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ObsidianDeviceProfile
+}
+
+/** 删除设备档案（204；不存在 = 404）。 */
+export async function deleteObsidianDevice(deviceId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/obsidian/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 导出模板视图：template 为空串 = 跟随 defaultTemplate。 */
+export async function getObsidianExportTemplate(
+  signal?: AbortSignal,
+): Promise<ObsidianExportTemplateView> {
+  return request<ObsidianExportTemplateView>(`${API_BASE}/obsidian/export-template`, signal)
+}
+
+/** 保存导出模板（template='' = 回到默认模板）。 */
+export async function updateObsidianExportTemplate(
+  template: string,
+): Promise<ObsidianExportTemplateView> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-template`, {
+    method: 'PUT',
+    body: JSON.stringify({ template }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportTemplateView
+}
+
+/** 模板实时预览：entryRef 缺省 = 夹具文本；unknownVars 诚实上报。 */
+export async function previewObsidianExportTemplate(
+  template: string,
+  entryRef?: string | null,
+): Promise<ObsidianTemplatePreviewResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-template/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ template, entryRef: entryRef ?? null }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianTemplatePreviewResult
+}
+
+/** 导出到 Obsidian 交接：mode='uri' → 打开 uri（用户在 Obsidian 确认
+ * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。 */
+export async function requestObsidianExportHandoff(
+  entryRef: string,
+  deviceId: string,
+): Promise<ObsidianExportHandoffResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-handoff`, {
+    method: 'POST',
+    body: JSON.stringify({ entryRef, deviceId }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportHandoffResult
 }
 
 // ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----

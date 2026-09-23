@@ -39,6 +39,7 @@ import type { NoteView, ObsidianStatus } from '../../api/client'
 import { dateTimeFormatter } from '../../lib/date-format'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { NoteLinksPanel } from '../NoteLinksPanel'
+import ObsidianDevicesSection from '../obsidian/ObsidianDevicesSection'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -430,10 +431,16 @@ export default function ObsidianPage() {
   }
 
   // 可用 = DB 配置了路径，或部署环境固定了根（env 挂载模式——此时
-  // 不问路径，直接进入状态视图）。
-  return data.vaultPath !== '' || data.envRootConfigured === true ? (
-    <ConfiguredView status={data} />
-  ) : (
-    <ConnectView />
+  // 不问路径，直接进入状态视图）。P16：页面尾部追加「设备与导出」
+  // （用户级：设备档案 + 导出模板；与上方 Vault 模式解耦，附诚实说明）。
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {data.vaultPath !== '' || data.envRootConfigured === true ? (
+        <ConfiguredView status={data} />
+      ) : (
+        <ConnectView />
+      )}
+      <ObsidianDevicesSection envRootConfigured={data.envRootConfigured === true} />
+    </div>
   )
 }

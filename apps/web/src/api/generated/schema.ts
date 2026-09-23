@@ -3743,6 +3743,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/obsidian/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Obsidian Devices */
+        get: operations["list_obsidian_devices_api_v1_obsidian_devices_get"];
+        put?: never;
+        /** Create Obsidian Device */
+        post: operations["create_obsidian_device_api_v1_obsidian_devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Obsidian Device */
+        put: operations["update_obsidian_device_api_v1_obsidian_devices__device_id__put"];
+        post?: never;
+        /** Delete Obsidian Device */
+        delete: operations["delete_obsidian_device_api_v1_obsidian_devices__device_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Obsidian Handoff
+         * @description Compose + render + decide URI vs file fallback for one article.
+         *
+         *     Honest handoff: ``mode='uri'`` means the obsidian://new link was
+         *     built (the USER's Obsidian does any writing after confirmation);
+         *     ``mode='file'`` with reason='tooLong' means the content exceeded the
+         *     URI budget and the client falls back to download + clipboard.
+         */
+        post: operations["export_obsidian_handoff_api_v1_obsidian_export_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Obsidian Export Template */
+        get: operations["get_obsidian_export_template_api_v1_obsidian_export_template_get"];
+        /** Set Obsidian Export Template */
+        put: operations["set_obsidian_export_template_api_v1_obsidian_export_template_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-template/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Obsidian Export Template
+         * @description Live preview for the template editor.
+         *
+         *     ``entryRef`` given → renders the REAL article (reader handoff
+         *     preview); omitted → fixture text. Unknown variables are reported
+         *     honestly instead of passing through silently.
+         */
+        post: operations["preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/notes": {
         parameters: {
             query?: never;
@@ -10003,6 +10106,127 @@ export interface components {
             wikilinks?: string[] | null;
         };
         /**
+         * ObsidianDeviceProfile
+         * @description One device where the user runs Obsidian (URI generation ONLY).
+         *
+         *     Device profiles never describe server-side vault paths — the vault
+         *     the BFF reads is mounted server-side (env or manual), while these
+         *     names describe the user's OWN Obsidian app for obsidian:// links.
+         */
+        ObsidianDeviceProfile: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Platform
+             * @default other
+             * @enum {string}
+             */
+            platform: "windows" | "ios" | "ipados" | "other";
+            /**
+             * Vaultidentifier
+             * @default
+             */
+            vaultIdentifier: string;
+            /** Vaultname */
+            vaultName: string;
+        };
+        /**
+         * ObsidianDeviceProfileList
+         * @description Envelope for GET /api/v1/obsidian/devices.
+         */
+        ObsidianDeviceProfileList: {
+            /** Items */
+            items: components["schemas"]["ObsidianDeviceProfile"][];
+        };
+        /**
+         * ObsidianDeviceProfilePayload
+         * @description POST/PUT body — full payload both for create and update.
+         */
+        ObsidianDeviceProfilePayload: {
+            /** Label */
+            label: string;
+            /**
+             * Platform
+             * @default other
+             * @enum {string}
+             */
+            platform: "windows" | "ios" | "ipados" | "other";
+            /**
+             * Vaultidentifier
+             * @default
+             */
+            vaultIdentifier: string;
+            /** Vaultname */
+            vaultName: string;
+        };
+        /**
+         * ObsidianExportHandoffRequest
+         * @description POST /api/v1/obsidian/export-handoff body.
+         */
+        ObsidianExportHandoffRequest: {
+            /** Deviceid */
+            deviceId: string;
+            /** Entryref */
+            entryRef: string;
+        };
+        /**
+         * ObsidianExportHandoffResult
+         * @description Honest handoff verdict — the UI must never claim a vault write.
+         *
+         *     ``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.
+         *     ``mode='file'`` → URI budget exceeded (reason='tooLong') → download
+         *     ``filename`` + clipboard fallback instead.
+         */
+        ObsidianExportHandoffResult: {
+            /** Content */
+            content: string;
+            /**
+             * Devicelabel
+             * @default
+             */
+            deviceLabel: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "uri" | "file";
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Unknownvars
+             * @default []
+             */
+            unknownVars: string[];
+            /** Uri */
+            uri?: string | null;
+        };
+        /**
+         * ObsidianExportTemplateUpdate
+         * @description PUT /api/v1/obsidian/export-template body.
+         */
+        ObsidianExportTemplateUpdate: {
+            /** Template */
+            template: string;
+        };
+        /**
+         * ObsidianExportTemplateView
+         * @description GET /api/v1/obsidian/export-template.
+         */
+        ObsidianExportTemplateView: {
+            /** Allowedvars */
+            allowedVars: string[];
+            /** Defaulttemplate */
+            defaultTemplate: string;
+            /** Template */
+            template: string;
+        };
+        /**
          * ObsidianNoteSetting
          * @description PUT /api/v1/obsidian/settings.
          */
@@ -10071,6 +10295,38 @@ export interface components {
             noteCount: number;
             /** Vaultpath */
             vaultPath: string;
+        };
+        /**
+         * ObsidianTemplatePreviewRequest
+         * @description POST /api/v1/obsidian/export-template/preview body.
+         *
+         *     ``entryRef`` omitted → renders against fixture text (settings page);
+         *     present → renders against the real article (reader-side preview).
+         */
+        ObsidianTemplatePreviewRequest: {
+            /** Entryref */
+            entryRef?: string | null;
+            /** Template */
+            template: string;
+        };
+        /**
+         * ObsidianTemplatePreviewResult
+         * @description Rendered preview + honest unknown-variable list (UI validation).
+         */
+        ObsidianTemplatePreviewResult: {
+            /**
+             * Source
+             * @default fixture
+             * @enum {string}
+             */
+            source: "entry" | "fixture";
+            /** Text */
+            text: string;
+            /**
+             * Unknownvars
+             * @default []
+             */
+            unknownVars: string[];
         };
         /**
          * OperationsBackupStatus
@@ -19272,6 +19528,242 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_obsidian_devices_api_v1_obsidian_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfileList"];
+                };
+            };
+        };
+    };
+    create_obsidian_device_api_v1_obsidian_devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianDeviceProfilePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_obsidian_device_api_v1_obsidian_devices__device_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianDeviceProfilePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_obsidian_device_api_v1_obsidian_devices__device_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_obsidian_handoff_api_v1_obsidian_export_handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportHandoffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportHandoffResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_obsidian_export_template_api_v1_obsidian_export_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportTemplateView"];
+                };
+            };
+        };
+    };
+    set_obsidian_export_template_api_v1_obsidian_export_template_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianTemplatePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianTemplatePreviewResult"];
                 };
             };
             /** @description Validation Error */

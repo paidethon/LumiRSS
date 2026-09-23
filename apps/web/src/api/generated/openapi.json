@@ -8205,6 +8205,235 @@
     "title": "NoteView",
     "type": "object"
    },
+   "ObsidianDeviceProfile": {
+    "description": "One device where the user runs Obsidian (URI generation ONLY).\n\nDevice profiles never describe server-side vault paths — the vault\nthe BFF reads is mounted server-side (env or manual), while these\nnames describe the user's OWN Obsidian app for obsidian:// links.",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "platform": {
+      "default": "other",
+      "enum": [
+       "windows",
+       "ios",
+       "ipados",
+       "other"
+      ],
+      "title": "Platform",
+      "type": "string"
+     },
+     "vaultIdentifier": {
+      "default": "",
+      "title": "Vaultidentifier",
+      "type": "string"
+     },
+     "vaultName": {
+      "title": "Vaultname",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "vaultName",
+     "createdAt"
+    ],
+    "title": "ObsidianDeviceProfile",
+    "type": "object"
+   },
+   "ObsidianDeviceProfileList": {
+    "description": "Envelope for GET /api/v1/obsidian/devices.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ObsidianDeviceProfile"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "ObsidianDeviceProfileList",
+    "type": "object"
+   },
+   "ObsidianDeviceProfilePayload": {
+    "additionalProperties": false,
+    "description": "POST/PUT body — full payload both for create and update.",
+    "properties": {
+     "label": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     },
+     "platform": {
+      "default": "other",
+      "enum": [
+       "windows",
+       "ios",
+       "ipados",
+       "other"
+      ],
+      "title": "Platform",
+      "type": "string"
+     },
+     "vaultIdentifier": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Vaultidentifier",
+      "type": "string"
+     },
+     "vaultName": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Vaultname",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "vaultName"
+    ],
+    "title": "ObsidianDeviceProfilePayload",
+    "type": "object"
+   },
+   "ObsidianExportHandoffRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/obsidian/export-handoff body.",
+    "properties": {
+     "deviceId": {
+      "title": "Deviceid",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "deviceId"
+    ],
+    "title": "ObsidianExportHandoffRequest",
+    "type": "object"
+   },
+   "ObsidianExportHandoffResult": {
+    "description": "Honest handoff verdict — the UI must never claim a vault write.\n\n``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.\n``mode='file'`` → URI budget exceeded (reason='tooLong') → download\n``filename`` + clipboard fallback instead.",
+    "properties": {
+     "content": {
+      "title": "Content",
+      "type": "string"
+     },
+     "deviceLabel": {
+      "default": "",
+      "title": "Devicelabel",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "mode": {
+      "enum": [
+       "uri",
+       "file"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "unknownVars": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Unknownvars",
+      "type": "array"
+     },
+     "uri": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Uri"
+     }
+    },
+    "required": [
+     "mode",
+     "filename",
+     "content"
+    ],
+    "title": "ObsidianExportHandoffResult",
+    "type": "object"
+   },
+   "ObsidianExportTemplateUpdate": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/obsidian/export-template body.",
+    "properties": {
+     "template": {
+      "maxLength": 20000,
+      "title": "Template",
+      "type": "string"
+     }
+    },
+    "required": [
+     "template"
+    ],
+    "title": "ObsidianExportTemplateUpdate",
+    "type": "object"
+   },
+   "ObsidianExportTemplateView": {
+    "description": "GET /api/v1/obsidian/export-template.",
+    "properties": {
+     "allowedVars": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Allowedvars",
+      "type": "array"
+     },
+     "defaultTemplate": {
+      "title": "Defaulttemplate",
+      "type": "string"
+     },
+     "template": {
+      "title": "Template",
+      "type": "string"
+     }
+    },
+    "required": [
+     "template",
+     "defaultTemplate",
+     "allowedVars"
+    ],
+    "title": "ObsidianExportTemplateView",
+    "type": "object"
+   },
    "ObsidianNoteSetting": {
     "additionalProperties": false,
     "description": "PUT /api/v1/obsidian/settings.",
@@ -8337,6 +8566,64 @@
      "vaultPath"
     ],
     "title": "ObsidianStatus",
+    "type": "object"
+   },
+   "ObsidianTemplatePreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/obsidian/export-template/preview body.\n\n``entryRef`` omitted → renders against fixture text (settings page);\npresent → renders against the real article (reader-side preview).",
+    "properties": {
+     "entryRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entryref"
+     },
+     "template": {
+      "maxLength": 20000,
+      "title": "Template",
+      "type": "string"
+     }
+    },
+    "required": [
+     "template"
+    ],
+    "title": "ObsidianTemplatePreviewRequest",
+    "type": "object"
+   },
+   "ObsidianTemplatePreviewResult": {
+    "description": "Rendered preview + honest unknown-variable list (UI validation).",
+    "properties": {
+     "source": {
+      "default": "fixture",
+      "enum": [
+       "entry",
+       "fixture"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "unknownVars": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Unknownvars",
+      "type": "array"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "ObsidianTemplatePreviewResult",
     "type": "object"
    },
    "OperationsBackupStatus": {
@@ -22433,6 +22720,271 @@
      }
     },
     "summary": "Move Mail Rule"
+   }
+  },
+  "/api/v1/obsidian/devices": {
+   "get": {
+    "operationId": "list_obsidian_devices_api_v1_obsidian_devices_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianDeviceProfileList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Obsidian Devices"
+   },
+   "post": {
+    "operationId": "create_obsidian_device_api_v1_obsidian_devices_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianDeviceProfilePayload"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianDeviceProfile"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Obsidian Device"
+   }
+  },
+  "/api/v1/obsidian/devices/{device_id}": {
+   "delete": {
+    "operationId": "delete_obsidian_device_api_v1_obsidian_devices__device_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "device_id",
+      "required": true,
+      "schema": {
+       "title": "Device Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Obsidian Device"
+   },
+   "put": {
+    "operationId": "update_obsidian_device_api_v1_obsidian_devices__device_id__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "device_id",
+      "required": true,
+      "schema": {
+       "title": "Device Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianDeviceProfilePayload"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianDeviceProfile"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Obsidian Device"
+   }
+  },
+  "/api/v1/obsidian/export-handoff": {
+   "post": {
+    "description": "Compose + render + decide URI vs file fallback for one article.\n\nHonest handoff: ``mode='uri'`` means the obsidian://new link was\nbuilt (the USER's Obsidian does any writing after confirmation);\n``mode='file'`` with reason='tooLong' means the content exceeded the\nURI budget and the client falls back to download + clipboard.",
+    "operationId": "export_obsidian_handoff_api_v1_obsidian_export_handoff_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportHandoffRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianExportHandoffResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Obsidian Handoff"
+   }
+  },
+  "/api/v1/obsidian/export-template": {
+   "get": {
+    "operationId": "get_obsidian_export_template_api_v1_obsidian_export_template_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianExportTemplateView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Obsidian Export Template"
+   },
+   "put": {
+    "operationId": "set_obsidian_export_template_api_v1_obsidian_export_template_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportTemplateUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianExportTemplateView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Obsidian Export Template"
+   }
+  },
+  "/api/v1/obsidian/export-template/preview": {
+   "post": {
+    "description": "Live preview for the template editor.\n\n``entryRef`` given → renders the REAL article (reader handoff\npreview); omitted → fixture text. Unknown variables are reported\nhonestly instead of passing through silently.",
+    "operationId": "preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianTemplatePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianTemplatePreviewResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Obsidian Export Template"
    }
   },
   "/api/v1/obsidian/notes": {

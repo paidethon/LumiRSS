@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
   Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
   Search, Settings2, Share2, Square, Star, Volume2,
@@ -24,6 +25,7 @@ import {
   QUOTE_MAX_CHARS,
   type AutoScrollState,
 } from '../lib/reader-tools'
+import ObsidianExportDialog from './ObsidianExportDialog'
 import {
   ReaderSpeechEngine,
   SPEECH_RATES,
@@ -811,6 +813,8 @@ export default function ReaderHeader({
   const mobileInlineIds = mobileVisibleIds.filter((id) => readerToolbarAction(id).primary)
   const mobileMenuIds = mobileVisibleIds.filter((id) => !readerToolbarAction(id).primary)
   const [customizeOpen, setCustomizeOpen] = useState(false)
+  // P16：导出到 Obsidian 对话框（与导出 Markdown/HTML 同一「更多操作」出口）。
+  const [obsidianExportOpen, setObsidianExportOpen] = useState(false)
   // P0-11：本地引擎支持门控——engine=browser 且此浏览器没有 Translator
   // API（localTranslatorAvailable() 此前导出零调用）→ 控件禁用 + 原因。
   const aiSettings = useAiSettings()
@@ -1036,6 +1040,16 @@ export default function ReaderHeader({
       ),
     },
   )
+  // P16：导出到 Obsidian（选设备 → obsidian://new 交接；tooLong → 文件）。
+  moreItems.push({
+    key: 'export-obsidian',
+    content: (
+      <span className="flex items-center gap-2">
+        <BookMarked aria-hidden className="size-4" />
+        导出到 Obsidian
+      </span>
+    ),
+  })
   // P07：工具栏自定义入口（两断点共有；「更多操作」锁定不可移除，
   // 入口恒可达）。
   moreItems.push({
@@ -1099,6 +1113,10 @@ export default function ReaderHeader({
     }
     if (key === 'export-html') {
       exportEntryAsHtml(exportInput)
+      return
+    }
+    if (key === 'export-obsidian') {
+      setObsidianExportOpen(true)
       return
     }
     if (key === 'customize') {
@@ -1447,6 +1465,16 @@ export default function ReaderHeader({
         <ReaderToolbarCustomizeDialog
           open
           onClose={() => setCustomizeOpen(false)}
+        />
+      )}
+
+      {/* P16：导出到 Obsidian（选设备档案 → 服务端渲染模板 + URI/file 裁决）。
+          仅打开时挂载——设备列表查询不随阅读页空跑。 */}
+      {obsidianExportOpen && (
+        <ObsidianExportDialog
+          open
+          detail={detail}
+          onClose={() => setObsidianExportOpen(false)}
         />
       )}
     </>
