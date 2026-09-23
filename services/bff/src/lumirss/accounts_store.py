@@ -174,6 +174,29 @@ class AccountsStore:
         rows = await self._db.fetch_all("SELECT id FROM users WHERE status = 'active' ORDER BY created_at ASC")
         return [str(r["id"]) for r in rows]
 
+    async def count_active_admins(self) -> int:
+        """Active delegated administrators (role='admin', status='active').
+
+        The pause guard (O152) counts ONLY delegated admins: the owner is
+        a separate role that this API can never pause or demote at all,
+        so a deployment with just the owner has zero removable admins and
+        a deployment with one admin must keep it. Drives both the pause
+        guard and the owner-only role demotion guard.
+        """
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active'")
+        return int(row["n"]) if row else 0
+
+    async def set_user_role(self, user_id: str, role: str) -> bool:
+        """Owner-only role provisioning write. Returns False when the
+        user does not exist; the owner row itself is never writable
+        (the operator cannot demote or re-role the root account)."""
+        if role not in ("owner", "admin", "member"):
+            raise AccountError("Unknown role.")
+        await self._db.migrate()
+        cursor = await self._db.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND role != 'owner'", (role, _now(), user_id))
+        return bool(cursor)
+
     # ---- invites (O146) ---------------------------------------------------
 
     async def create_invite(self, *, created_by: str, ttl_hours: int = INVITE_TTL_HOURS_DEFAULT, label: str | None = None, kind: str = "signup", target_user: str | None = None) -> tuple[str, dict[str, object]]:

@@ -4,6 +4,8 @@ Scope of admin power (deliberately minimal, O151):
 - create / revoke invitations (signup + recovery kinds);
 - list users, pause / resume members (never the owner; never the last
   active admin);
+- provision roles — owner-only: grant / revoke the admin role (never
+  the owner's own role; never the last active admin);
 - revoke a member's sessions;
 - register FreshRSS pool accounts (deployment-side CLI creates them;
   this API only registers the binding material);
@@ -52,6 +54,18 @@ async def _require_admin(request: Request) -> dict[str, str] | None:
     return principal
 
 
+def _require_owner(request: Request) -> dict[str, str] | None:
+    """Server-verified principal with the OWNER role.
+
+    Role provisioning is deliberately stricter than the rest of the admin
+    surface: an admin must never be able to mint another admin (or demote
+    one) — power over roles belongs to the operator alone."""
+    principal = principal_of(request.scope)
+    if principal is None or principal.get("role") != "owner":
+        return None
+    return principal
+
+
 class InviteCreateRequest(BaseModel):
     """POST /admin/invites."""
 
@@ -73,6 +87,16 @@ class PoolAddRequest(BaseModel):
     freshrssBaseUrl: str = Field(min_length=1, max_length=256)
     apiPassword: str = Field(min_length=1, max_length=256)
     publicUrl: str = Field(default="", max_length=256)
+
+
+class UserRoleRequest(BaseModel):
+    """POST /admin/users/{id}/role — owner-only provisioning body.
+
+    Anything outside ``member``/``admin`` (including ``owner`` — there is
+    exactly one owner and it is never assignable through the API) is a
+    validation error (422)."""
+
+    role: str = Field(pattern="^(member|admin)$")
 
 
 @router.get("/users", response_model=None, response_model_exclude_none=True)
@@ -157,6 +181,46 @@ async def resume_user(user_id: str, request: Request) -> JSONResponse:
     return await _set_member_status(user_id, request, "active")
 
 
+@router.post("/users/{user_id}/role", response_model=None, response_model_exclude_none=True)
+async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -> JSONResponse:
+    """Owner-only role provisioning (0067).
+
+    Activation admits everyone as ``member``; ONLY the owner can grant or
+    revoke the ``admin`` role afterwards. Rules, all stable-shaped:
+    - admins get 403 (an admin can never mint or demote another admin);
+    - the owner account is untargetable (403) — no demotion, no re-role;
+    - demoting the last active admin is refused (403) so a delegation
+      mistake can never lock the operator out of admin surfaces;
+    - unknown user → 404, unknown role → 422 (body validation);
+    - every accepted change is audited (no credentials involved)."""
+    principal = _require_owner(request)
+    if principal is None:
+        return _forbid("Owner role required.")
+    accounts = _accounts(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    if user["role"] == "owner":
+        return _forbid("The owner account role cannot be changed.")
+    if user["role"] == "admin" and body.role == "member" and user["status"] == "active":
+        active_admins = await accounts.count_active_admins()
+        if active_admins <= 1:
+            return _forbid("Cannot demote the last active administrator.")
+    changed = await accounts.set_user_role(user_id, body.role)
+    if not changed:
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"type": "conflict", "message": "Role change did not apply (concurrent update?)."}},
+            headers=_NO_STORE,
+        )
+    await accounts.audit(actor=principal["user_id"], action="user_role_change", object_type="user", object_id=user_id, detail=body.role)
+    return {"id": user_id, "role": body.role}
+
+
 async def _set_member_status(user_id: str, request: Request, status: str) -> JSONResponse:
     """Pause/resume with the two hard guards (O152): the owner account
     can never be targeted, and the last active admin cannot be paused."""
@@ -173,7 +237,7 @@ async def _set_member_status(user_id: str, request: Request, status: str) -> JSO
         )
     if user["role"] == "owner":
         return _forbid("The owner account cannot be paused or resumed here.")
-    if status == "paused" and user["role"] in ("owner", "admin"):
+    if status == "paused" and user["role"] == "admin" and user["status"] == "active":
         active_admins = await accounts.count_active_admins()
         if active_admins <= 1:
             return _forbid("Cannot pause the last active administrator.")
