@@ -246,6 +246,33 @@ html[data-reader-images='hidden'] .article-content img {
   overscroll-behavior: contain;
 }
 
+/* ---- P14：阅读背景图片（设备本地，data URL 不出浏览器）----
+ * 图层顺序（自上而下）：可读性遮罩 → 图片 → 容器背景色。
+ * - 遮罩 = reader 背景色按 --lumi-reader-bg-overlay（0–0.8）与透明
+ *   color-mix，保证文字对比始终由所选背景色的文字调色板主导；
+ * - 无图片时 applyReaderTypography 移除 --lumi-reader-bg-image 且
+ *   overlay 为 0 → 两层均不可见，视觉与无图片时零差异；
+ * - 默认 background-attachment（scroll）= 壁纸固定在阅读容器内，
+ *   不随正文滚动（滚动的是文字层）。 */
+.lumi-reader-bg-image {
+  background-image: linear-gradient(
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      ),
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      )
+    ),
+    var(--lumi-reader-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 /* ---- F13：文内查找高亮（CSS Custom Highlight API） ----
  * registry 名由 lib/reader-find.ts 定义（lumi-find-all/current）；
  * 不支持该 API 的浏览器不渲染高亮（查找条降级为计数 + 滚动定位）。 */

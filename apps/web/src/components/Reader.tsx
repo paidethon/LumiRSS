@@ -565,7 +565,7 @@ const handleScroll = useCallback(() => {
 
   if (selectedEntryRef === null) {
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <ReaderPlaceholder />
       </div>
     )
@@ -573,7 +573,7 @@ const handleScroll = useCallback(() => {
 
   if (isPending) {
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="mx-auto flex max-w-[46rem] flex-col gap-3 p-8 max-lg:px-5" aria-label="文章加载中">
           <Skeleton className="h-3 w-2/5" />
           <Skeleton className="h-8 w-11/12" />
@@ -594,7 +594,7 @@ const handleScroll = useCallback(() => {
       error instanceof ApiError && error.status === 404
     if (isNotFound) {
       return (
-        <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+        <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
           <div className="flex h-full items-center justify-center p-8">
             <div className="max-w-sm text-center">
               <p className="text-base font-medium text-[var(--lumi-text-primary)]">
@@ -613,7 +613,7 @@ const handleScroll = useCallback(() => {
       )
     }
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-sm text-center" role="alert">
             <p className="text-base font-medium text-[var(--lumi-text-primary)]">文章加载失败</p>
@@ -666,7 +666,7 @@ const handleScroll = useCallback(() => {
       <div
         ref={setScrollContainer}
         onScroll={handleScroll}
-        className="lumi-reader-scroll h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
+        className="lumi-reader-scroll lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
       >
       <article
         className="lumi-reader lumi-reader-article mx-auto py-6"
