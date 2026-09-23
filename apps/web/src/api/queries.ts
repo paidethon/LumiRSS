@@ -186,6 +186,11 @@ import {
   reorderDigestPool,
   rotateGptDigestFeedDryRun,
   rotateInboxSource,
+  deleteSourceAlias,
+  fetchUnsubscribePreview,
+  listSourceAliasHistory,
+  listSourceAliases,
+  setSourceAlias,
 } from './client'
 import type {
   AiProfileInput,
@@ -620,13 +625,71 @@ export function useMoveSubscriptionMutation() {
   })
 }
 
-/** 0013 Gate 3：取消订阅（破坏性；调用方必须先完成二次确认）。 */
+/** 0013 Gate 3 / N012：取消订阅（破坏性；调用方必须先完成二次确认）。
+ *  keepArtifacts：true=保留批注/工作区引用；false=显式清理；缺省=legacy。 */
 export function useUnsubscribeMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { subscriptionRef: string }) =>
-      unsubscribeFeed(vars.subscriptionRef),
+    mutationFn: (vars: { subscriptionRef: string; keepArtifacts?: boolean }) =>
+      unsubscribeFeed(vars.subscriptionRef, vars.keepArtifacts),
     onSuccess: () => invalidateSubscriptionState(queryClient),
+  })
+}
+
+/** N012：退订影响预览（只读；对话框打开时拉取，确认前必须可见）。 */
+export function useUnsubscribePreviewQuery(subscriptionRef: string | null) {
+  return useQuery({
+    queryKey: ['unsubscribe-preview', subscriptionRef],
+    queryFn: ({ signal }) => {
+      void signal
+      return fetchUnsubscribePreview(subscriptionRef as string)
+    },
+    enabled: subscriptionRef !== null,
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+/** N013：全部来源别名（展示「服务端赢」；本地 localStorage 只是离线回退）。 */
+export function useSourceAliasesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['source-aliases'],
+    queryFn: listSourceAliases,
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+/** N013：设置/更名来源别名（服务端真源；成功后失效别名缓存）。 */
+export function useSetSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { feedUrl: string; customName: string }) =>
+      setSourceAlias(vars.feedUrl, vars.customName),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：清除来源别名（历史保留；成功后失效别名缓存）。 */
+export function useDeleteSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedUrl: string) => deleteSourceAlias(feedUrl),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：某来源的改名历史（对话框打开时才拉取）。 */
+export function useSourceAliasHistoryQuery(feedUrl: string | null) {
+  return useQuery({
+    queryKey: ['source-alias-history', feedUrl],
+    queryFn: () => listSourceAliasHistory(feedUrl as string),
+    enabled: feedUrl !== null,
   })
 }
 

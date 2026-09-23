@@ -49,6 +49,14 @@
   绑定按账号隔离）；FreshRSS 账号池预建与原子分配；数据层拆分为控制库
   + 每用户库（[ADR 0005](decisions/0005-invite-multi-account.md)）。
   运营者操作见 [how-to/invite-members.md](how-to/invite-members.md)。
+- **来源管理增强（N012/N013/N015）**：退订影响预览（只读聚合工作区
+  引用/看板状态/RSS 书签/批注/投影未读/收件箱规则命中；DELETE 支持
+  `keep_artifacts`：true 保留工件（冻结 ref 以 stale 卡片呈现）、false
+  显式清理、缺席保持 legacy）；来源改名服务端真源（`source_aliases` +
+  每 feed 20 条改名历史含上游名快照，上游改名永不覆盖别名，展示服务端
+  赢、localStorage 只作离线回退）；来源分时静音（每周循环窗口
+  `mute_windows`，与 hiddenUntil/showFrom 同消费点——只影响通用时间线，
+  抓取/搜索/阅读不受影响）。
 - 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、公开注册 /
   多租户形态、外部向量库服务（sqlite-vec 单文件已够）。
 

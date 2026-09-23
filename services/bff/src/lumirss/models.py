@@ -1829,7 +1829,7 @@ class TaskRecordList(BaseModel):
 
 
 class SourceOverrideResult(BaseModel):
-    """F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
+    """F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
 
     feedUrl: str
     hiddenUntil: str | None = None
@@ -1840,6 +1840,8 @@ class SourceOverrideResult(BaseModel):
     readerStyle: dict[str, object] | None = None
     # F066：per-source AI 禁用（派生数据保留，仅不再更新/不被 AI 消费）。
     aiDisabled: bool = False
+    # N015：分时静音窗口（每周循环；[]/None = 未启用）。
+    muteWindows: list[dict[str, object]] | None = None
     updatedAt: str = ""
 
 
@@ -1857,6 +1859,41 @@ class SourceOverrideUpdate(BaseModel):
     extractPolicy: str | None = None  # F048：'rss' | 'web'
     readerStyle: dict[str, object] | None = None  # F055：fontSize/lineHeight/width 子集
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
+    # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
+    muteWindows: list[dict[str, object]] | None = None
+
+
+class SourceAliasView(BaseModel):
+    """N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。"""
+
+    feedUrl: str
+    customName: str
+    updatedAt: str = ""
+
+
+class SourceAliasList(BaseModel):
+    items: list[SourceAliasView] = []
+
+
+class SourceAliasUpdate(BaseModel):
+    """PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。"""
+
+    feedUrl: str = Field(min_length=1)
+    customName: str = Field(min_length=1, max_length=200)
+
+
+class SourceAliasHistoryItem(BaseModel):
+    """N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。"""
+
+    id: int
+    feedUrl: str
+    oldCustomName: str | None = None
+    upstreamNameAtSave: str | None = None
+    changedAt: str = ""
+
+
+class SourceAliasHistoryList(BaseModel):
+    items: list[SourceAliasHistoryItem] = []
 
 
 class StaleSourceItem(BaseModel):

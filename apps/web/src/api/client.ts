@@ -994,9 +994,19 @@ export async function moveSubscription(
   })
 }
 
-/** 0013 Gate 3：取消订阅（破坏性操作，确认流程由 UI 负责；DELETE 204）。 */
-export async function unsubscribeFeed(subscriptionRef: string): Promise<void> {
-  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`, {
+/** 0013 Gate 3 / N012：取消订阅（破坏性操作，确认流程由 UI 负责）。
+ *  keepArtifacts：true=保留批注/工作区引用（204）；false=显式清理（200）；
+ *  缺省=legacy 行为（仅备注级联）。 */
+export async function unsubscribeFeed(
+  subscriptionRef: string,
+  keepArtifacts?: boolean,
+): Promise<void> {
+  // 契约扫描按「形状」提取路径：路径段单独成模板（单一占位符），
+  // 查询串拼接在其后，保持 /subscriptions/{} 形状可校验。
+  const path = `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`
+  const url =
+    keepArtifacts === undefined ? path : `${path}?keep_artifacts=${keepArtifacts}`
+  await rawRequest(url, {
     method: 'DELETE',
   })
 }
@@ -2345,7 +2355,7 @@ export async function listSourceOverrides(): Promise<{ items: SourceOverrideResu
   return request<{ items: SourceOverrideResult[] }>(`${API_BASE}/sources/overrides`)
 }
 
-/** F11/F13/F001：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+/** F11/F13/F001/N015：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
 export async function setSourceOverride(patch: {
   feedUrl: string
   hiddenUntil?: string | null
@@ -2355,6 +2365,8 @@ export async function setSourceOverride(patch: {
   readerStyle?: Record<string, number> | null
   /** F066：per-source AI 禁用（服务端执行点统一判定）。 */
   aiDisabled?: boolean
+  /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
+  muteWindows?: { days: number[]; start: string; end: string }[] | null
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -2362,6 +2374,85 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+/** N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。 */
+export type SourceAliasView = {
+  feedUrl: string
+  customName: string
+  updatedAt: string
+}
+
+/** N013：一条改名历史（oldCustomName 为 null = 首设别名）。 */
+export type SourceAliasHistoryItem = {
+  id: number
+  feedUrl: string
+  oldCustomName: string | null
+  upstreamNameAtSave: string | null
+  changedAt: string
+}
+
+/** N013：全部来源别名（时间线/订阅展示「服务端赢」的数据源）。 */
+export async function listSourceAliases(): Promise<{ items: SourceAliasView[] }> {
+  return request<{ items: SourceAliasView[] }>(`${API_BASE}/sources/aliases`)
+}
+
+/** N013：设置/更名来源别名（upsert + 变化时服务端写历史）。 */
+export async function setSourceAlias(feedUrl: string, customName: string): Promise<SourceAliasView> {
+  const response = await rawRequest(`${API_BASE}/sources/alias`, {
+    method: 'PUT',
+    body: JSON.stringify({ feedUrl, customName }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceAliasView
+}
+
+/** N013：某来源的改名历史（新→旧；≤20；删除别名不删历史）。 */
+export async function listSourceAliasHistory(
+  feedUrl: string,
+  limit = 20,
+): Promise<{ items: SourceAliasHistoryItem[] }> {
+  return request<{ items: SourceAliasHistoryItem[] }>(
+    `${API_BASE}/sources/alias/history?feedUrl=${encodeURIComponent(feedUrl)}&limit=${limit}`,
+  )
+}
+
+/** N013：清除来源别名（历史保留；恢复 = 用历史旧名重新 setSourceAlias）。 */
+export async function deleteSourceAlias(feedUrl: string): Promise<void> {
+  await rawRequest(`${API_BASE}/sources/alias?feedUrl=${encodeURIComponent(feedUrl)}`, {
+    method: 'DELETE',
+  })
+}
+
+// ---- N012 退订影响预览 -------------------------------------------------------
+
+/** N012：退订影响预览（只读快照；计数如实、样本 ≤ sampleLimit）。 */
+export type UnsubscribePreview = {
+  subscriptionRef: string
+  feedUrl: string
+  title: string
+  projectionEntries: number
+  unreadCount: number
+  workspaceItems: {
+    count: number
+    items: { workspaceId: string; workspaceName: string; itemRef: string }[]
+  }
+  boardItems: { count: number; items: { workspaceId: string; itemRef: string; status: string }[] }
+  libraryItems: { count: number; items: { itemRef: string; rssItemRef: string; title: string }[] }
+  annotations: { count: number; items: { id: string; entryRef: string; excerpt: string }[] }
+  inboxRules: {
+    count: number
+    items: { id: number; field: string; operator: string; value: string; matchedSample: string }[]
+  }
+  sampleLimit: number
+  note: string
+}
+
+/** N012：退订影响预览（纯只读；先于任何确认/删除调用）。 */
+export async function fetchUnsubscribePreview(subscriptionRef: string): Promise<UnsubscribePreview> {
+  return request<UnsubscribePreview>(
+    `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}/unsubscribe-preview`,
+  )
 }
 
 /** F001：按各自阈值超期的来源（basis 诚实标注判定依据）。 */

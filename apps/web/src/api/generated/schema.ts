@@ -5622,6 +5622,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/alias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Source Alias
+         * @description 设置/更名来源别名（upsert；custom_name 变化时写一条历史）。
+         *
+         *     upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
+         *     NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。
+         */
+        put: operations["set_source_alias_api_v1_sources_alias_put"];
+        post?: never;
+        /**
+         * Delete Source Alias
+         * @description 清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。
+         */
+        delete: operations["delete_source_alias_api_v1_sources_alias_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/alias/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Alias History
+         * @description 某来源的改名历史（新→旧，≤20；删除别名不删历史）。
+         */
+        get: operations["source_alias_history_api_v1_sources_alias_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Aliases
+         * @description 全部来源别名（时间线/订阅展示的「服务端赢」数据源）。
+         */
+        get: operations["list_source_aliases_api_v1_sources_aliases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -5636,11 +5703,14 @@ export interface paths {
         get: operations["list_source_overrides_api_v1_sources_overrides_get"];
         /**
          * Set Source Override
-         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
+         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001
+         *     staleAlertHours / N015 muteWindows）。
          *
          *     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
          *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
-         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。
+         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；
+         *     muteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，
+         *     end<start 跨午夜，≤7 窗口/来源；非法 → 422）。
          */
         put: operations["set_source_override_api_v1_sources_overrides_put"];
         post?: never;
@@ -5947,6 +6017,13 @@ export interface paths {
          *
          *     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
          *     FreshRSS RSS 域数据不在此路径触碰。
+         *
+         *     N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
+         *     - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
+         *       解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
+         *     - false：显式清理——批注与该来源条目的工作区引用/看板状态一并
+         *       删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。
+         *     确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。
          */
         delete: operations["delete_subscription_api_v1_subscriptions__subscription_ref__delete"];
         options?: never;
@@ -6014,6 +6091,31 @@ export interface paths {
          *     「Article HTML: transforms → DOMPurify」管线无关（本字段不进文章管线）。
          */
         patch: operations["update_source_notes_api_v1_subscriptions__subscription_ref__notes_patch"];
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unsubscribe Preview
+         * @description N012 退订影响预览（只读，200 先于任何 mutation）。
+         *
+         *     汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /
+         *     RSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数
+         *     如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变
+         *     （测试固定该负向契约）。
+         */
+        get: operations["unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/tags": {
@@ -12093,6 +12195,66 @@ export interface components {
             uuid: string;
         };
         /**
+         * SourceAliasHistoryItem
+         * @description N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。
+         */
+        SourceAliasHistoryItem: {
+            /**
+             * Changedat
+             * @default
+             */
+            changedAt: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: number;
+            /** Oldcustomname */
+            oldCustomName?: string | null;
+            /** Upstreamnameatsave */
+            upstreamNameAtSave?: string | null;
+        };
+        /** SourceAliasHistoryList */
+        SourceAliasHistoryList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasHistoryItem"][];
+        };
+        /** SourceAliasList */
+        SourceAliasList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasView"][];
+        };
+        /**
+         * SourceAliasUpdate
+         * @description PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。
+         */
+        SourceAliasUpdate: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * SourceAliasView
+         * @description N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。
+         */
+        SourceAliasView: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /**
          * SourceDiscoveryRequest
          * @description POST /api/v1/source-discovery body (0014): a public website URL.
          */
@@ -12155,7 +12317,7 @@ export interface components {
         };
         /**
          * SourceOverrideResult
-         * @description F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。
+         * @description F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。
          */
         SourceOverrideResult: {
             /**
@@ -12172,6 +12334,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;
@@ -12199,6 +12365,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;
@@ -23022,6 +23192,120 @@ export interface operations {
             };
         };
     };
+    set_source_alias_api_v1_sources_alias_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAliasUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_alias_api_v1_sources_alias_delete: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_alias_history_api_v1_sources_alias_history_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasHistoryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_aliases_api_v1_sources_aliases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasList"];
+                };
+            };
+        };
+    };
     list_source_overrides_api_v1_sources_overrides_get: {
         parameters: {
             query?: never;
@@ -23450,7 +23734,9 @@ export interface operations {
     };
     delete_subscription_api_v1_subscriptions__subscription_ref__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                keep_artifacts?: boolean | null;
+            };
             header?: never;
             path: {
                 subscription_ref: string;
@@ -23598,6 +23884,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceNotesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

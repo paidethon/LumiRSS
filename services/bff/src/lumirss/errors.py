@@ -139,6 +139,7 @@ from lumirss.mail_digest import (
 )
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
+from lumirss.mute_windows import MuteWindowsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
     VaultPermissionDenied,
@@ -184,6 +185,7 @@ from lumirss.saved_search_store import (
 from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
+from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
@@ -377,6 +379,11 @@ _ERROR_RESPONSES = {
     # F030 问答模板
     QaTemplateNotFound: (404, "qa_template_not_found"),
     QaTemplateInvalid: (422, "invalid_qa_template"),
+    # N013 来源别名 + 改名历史
+    SourceAliasInvalid: (422, "invalid_source_alias"),
+    SourceAliasNotFound: (404, "source_alias_not_found"),
+    # N015 来源分时静音窗口
+    MuteWindowsInvalid: (422, "invalid_mute_windows"),
     # W5: F081–F100
     BatchEditInvalid: (422, "invalid_batch_edit"),
     MergeInvalid: (422, "invalid_merge"),
@@ -533,6 +540,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SummaryVersionNotFound)
     @app.exception_handler(QaTemplateNotFound)
     @app.exception_handler(QaTemplateInvalid)
+    @app.exception_handler(SourceAliasInvalid)
+    @app.exception_handler(SourceAliasNotFound)
+    @app.exception_handler(MuteWindowsInvalid)
     # W5: F081–F100
     @app.exception_handler(BatchEditInvalid)
     @app.exception_handler(MergeInvalid)
