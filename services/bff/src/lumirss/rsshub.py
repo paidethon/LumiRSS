@@ -32,6 +32,7 @@ the host view (127.0.0.1:1200) differs from the container view
 import re
 import urllib.parse
 from dataclasses import dataclass
+from datetime import timedelta
 
 import httpx
 from pydantic import ValidationError
@@ -40,6 +41,7 @@ from lumirss.adapters.freshrss import AdapterError
 from lumirss.config import RssHubSettings
 from lumirss.feed_preview import (
     FeedPreview,
+    NotAFeedError,
     count_feed_entries,
     parse_feed_document,
     read_bounded_body,
@@ -48,6 +50,15 @@ from lumirss.http_fetch import follow_redirects, origin_of
 
 __all__ = [
     "CATALOG",
+    "FAILURE_AUTH_FAILURE",
+    "FAILURE_BAD_CONTENT",
+    "FAILURE_NETWORK_ERROR",
+    "FAILURE_NO_NEW_CONTENT",
+    "FAILURE_NOT_FOUND",
+    "FAILURE_RATE_LIMITED",
+    "FAILURE_RSSHUB_UNREACHABLE",
+    "FAILURE_UPSTREAM_REJECT",
+    "NO_NEW_CONTENT_WINDOW",
     "RssHubFetchError",
     "RssHubFavoriteNotFound",
     "RssHubInvalidParameters",
@@ -57,11 +68,35 @@ __all__ = [
     "RssHubRouteNotFound",
     "RssHubService",
     "build_path",
+    "looks_like_rsshub_error_page",
     "match_route_path",
 ]
 
 _MAX_REDIRECTS = 5
 _HEADERS = {"User-Agent": "LumiRSS/0.1 (+self-hosted rsshub preview)"}
+
+# N026 稳定失败分类（时间线行 + preview 错误体的 failureClass）。
+# 连接/超时到 RSSHub 源站 → rsshub_unreachable；RSSHub 把上游 4xx/5xx
+# 或错误页（非 feed 内容）原样吐回来 → upstream_reject；RSSHub 对 Lumi
+# 返回 401/403（如 access key 错）→ auth_failure；feed 正常但 0 条目
+# 且窗口内曾有内容 → no_new_content。其余沿用 F050 词汇表映射。
+FAILURE_RSSHUB_UNREACHABLE = "rsshub_unreachable"
+FAILURE_UPSTREAM_REJECT = "upstream_reject"
+FAILURE_AUTH_FAILURE = "auth_failure"
+FAILURE_NOT_FOUND = "not_found"
+FAILURE_RATE_LIMITED = "rate_limited"
+FAILURE_NO_NEW_CONTENT = "no_new_content"
+FAILURE_BAD_CONTENT = "bad_content"
+FAILURE_NETWORK_ERROR = "network_error"
+
+# no_new_content 判定窗口：窗口内存在 entry_count>0 的成功运行才算
+# 「曾有内容、现在枯竭」，避免把新路由的首次 0 条目误判为故障。
+NO_NEW_CONTENT_WINDOW = timedelta(hours=6)
+
+# RSSHub 错误页特征（200 + HTML 错误页而非 feed）。中英文实例都出现
+# 「RSSHub」字样 + 错误词；只在前 2KB 找，避免误伤正常 feed。
+_ERROR_PAGE_MARKERS = ("rsshub",)
+_ERROR_PAGE_WORDS = ("error", "错误")
 
 
 class RssHubNotConfigured(AdapterError):
@@ -81,7 +116,18 @@ class RssHubFavoriteNotFound(AdapterError):
 
 
 class RssHubFetchError(AdapterError):
-    """The RSSHub instance could not produce a feed (network/status/timeout)."""
+    """The RSSHub instance could not produce a feed (network/status/timeout).
+
+    N026: ``failure_class`` carries the stable route-context failure
+    class; the default keeps historical callers ("network_error")
+    working unchanged.
+    """
+
+    def __init__(
+        self, message: str, *, failure_class: str = FAILURE_NETWORK_ERROR
+    ) -> None:
+        super().__init__(message)
+        self.failure_class = failure_class
 
 
 @dataclass(frozen=True)
@@ -378,7 +424,17 @@ class RssHubService:
         path = build_path(route, params)
         base = base_override if base_override else settings.RSSHUB_BASE_URL
         body, _final_url = await self._fetch_feed(base, path)
-        title, site_url, description, feed_format = parse_feed_document(body)
+        try:
+            title, site_url, description, feed_format = parse_feed_document(body)
+        except NotAFeedError:
+            # N026: a 200 HTML error page ("RSSHub 内部错误" etc.) is an
+            # upstream rejection — a different failure than random garbage.
+            if looks_like_rsshub_error_page(body):
+                raise RssHubFetchError(
+                    "RSSHub returned an error page instead of a feed.",
+                    failure_class=FAILURE_UPSTREAM_REJECT,
+                ) from None
+            raise
         subscription_url = f"{settings.freshrss_base_url}{path}"
         existing = await self._control.list_subscriptions()
         already_subscribed = any(
@@ -428,8 +484,27 @@ class RssHubService:
         )
         try:
             if response.status_code != 200:
+                # N026：按路由语境分辨 RSSHub 的拒绝方式，而非全部坍缩成
+                # network_error。401/403 是「我们访问 RSSHub」的鉴权问题。
+                status = response.status_code
+                if status in (401, 403):
+                    raise RssHubFetchError(
+                        f"RSSHub answered HTTP {status}.",
+                        failure_class=FAILURE_AUTH_FAILURE,
+                    )
+                if status in (404, 410):
+                    raise RssHubFetchError(
+                        f"RSSHub answered HTTP {status}.",
+                        failure_class=FAILURE_NOT_FOUND,
+                    )
+                if status == 429:
+                    raise RssHubFetchError(
+                        f"RSSHub answered HTTP {status}.",
+                        failure_class=FAILURE_RATE_LIMITED,
+                    )
                 raise RssHubFetchError(
-                    f"RSSHub answered HTTP {response.status_code}."
+                    f"RSSHub answered HTTP {status}.",
+                    failure_class=FAILURE_UPSTREAM_REJECT,
                 )
             return await read_bounded_body(response), final_url
         finally:
@@ -440,6 +515,23 @@ class RssHubService:
         try:
             return await self._client.send(request, stream=True)
         except httpx.HTTPError as exc:
+            # N026: connect/timeout to the RSSHub origin — distinct from
+            # upstream rejections so the timeline never collapses them.
             raise RssHubFetchError(
-                "The RSSHub instance could not be reached."
+                "The RSSHub instance could not be reached.",
+                failure_class=FAILURE_RSSHUB_UNREACHABLE,
             ) from exc
+
+
+def looks_like_rsshub_error_page(body: bytes) -> bool:
+    """N026: RSSHub answers 200 with an HTML error page (not a feed).
+
+    Bounded sniff of the first 2KB: the RSSHub mention plus an error
+    word. Real feeds whose title happens to mention RSSHub AND an error
+    word in the first 2KB are vanishingly rare; parse_feed_document
+    stays the authority on feed-ness — this only upgrades the CLASS.
+    """
+    head = body[:2048].decode("utf-8", errors="ignore").lower()
+    return any(marker in head for marker in _ERROR_PAGE_MARKERS) and any(
+        word in head for word in _ERROR_PAGE_WORDS
+    )

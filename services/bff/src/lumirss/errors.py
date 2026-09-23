@@ -441,7 +441,6 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
     @app.exception_handler(RssHubFavoriteNotFound)
-    @app.exception_handler(RssHubFetchError)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
@@ -581,6 +580,25 @@ def register_error_handlers(app) -> None:
                     "type": "workspace_revision_conflict",
                     "message": str(exc),
                     "currentRevision": exc.current_revision,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubFetchError)
+    async def rsshub_fetch_error_handler(
+        request: Request, exc: RssHubFetchError
+    ) -> JSONResponse:
+        """N026：502 rsshub_fetch_error 稳定类型不变，额外携带
+        failureClass（rsshub_unreachable / upstream_reject / auth_failure
+        / not_found / rate_limited / network_error）——路由健康时间线与
+        Web 文案据此分辨故障，不再全部坍缩成网络错误。"""
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "rsshub_fetch_error",
+                    "message": str(exc),
+                    "failureClass": exc.failure_class,
                 }
             },
         )

@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
@@ -28,6 +29,9 @@ from lumirss.models import (
 )
 from lumirss.routers.ai_settings import SecretValuePut
 from lumirss.rsshub import (
+    FAILURE_BAD_CONTENT,
+    FAILURE_NO_NEW_CONTENT,
+    NO_NEW_CONTENT_WINDOW,
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
@@ -161,36 +165,85 @@ async def rsshub_preview(
     stored. Failed previews never record a 最近使用 entry.
     """
     override = _e2e_base_override(body.baseUrl)
-    service = _get_rsshub_service(request)
     route_key = compute_route_key(body.routeId, body.params)
     started = time.monotonic()
     try:
-        preview = await service.preview(body.routeId, body.params, base_override=override)
+        preview = await _do_preview(
+            request, body.routeId, body.params, base_override=override
+        )
     except (RssHubFetchError, NotAFeedError, FeedTooLarge) as exc:
-        # Fetch-stage failure → timeline row (N025). Request/validation
-        # errors (unknown route, bad params, not configured) never
-        # reached the wire and are NOT route health events.
+        # Fetch-stage failure → timeline row (N025) with the N026 stable
+        # failure class. Request/validation errors (unknown route, bad
+        # params, not configured) never reached the wire and are NOT
+        # route health events.
+        failure_class = getattr(exc, "failure_class", None)
+        if failure_class is None and isinstance(exc, (NotAFeedError, FeedTooLarge)):
+            # Fetched content was unusable — F050 vocabulary for that.
+            failure_class = FAILURE_BAD_CONTENT
         await _record_run(
             request,
             route_key,
             status="failed",
             duration_ms=_elapsed_ms(started),
             entry_count=None,
-            failure_class=getattr(exc, "failure_class", None),
+            failure_class=failure_class,
         )
         raise
+    failure_class = await _no_new_content_class(
+        request, route_key, preview.entry_count
+    )
     await _record_run(
         request,
         route_key,
         status="ok",
         duration_ms=_elapsed_ms(started),
         entry_count=preview.entry_count,
-        failure_class=None,
+        failure_class=failure_class,
     )
     await _record_recent(request, body.routeId, body.params)
     data = _preview_json(preview)
     data["routeKey"] = route_key
     return data
+
+
+async def _do_preview(
+    request: Request,
+    route_id: str,
+    params: dict[str, str],
+    *,
+    base_override: str | None,
+):
+    """One preview attempt — real service, or the injected probe.
+
+    ``app.state.rsshub_route_probe`` (N026 fault injection, F050
+    health_probe pattern): an async callable(route_id, params,
+    base_override) returning a FeedPreview or raising a classified
+    RssHubFetchError, so tests can drive the full route path (error
+    surface + timeline classification) without touching the network.
+    The real service (and its control adapter) is only built when no
+    probe is installed.
+    """
+    probe = getattr(request.app.state, "rsshub_route_probe", None)
+    if probe is not None:
+        return await probe(route_id, params, base_override=base_override)
+    return await _get_rsshub_service(request).preview(
+        route_id, params, base_override=base_override
+    )
+
+
+async def _no_new_content_class(
+    request: Request, route_key: str, entry_count: int | None
+) -> str | None:
+    """N026: feed ok but 0 entries on a route that HAD entries inside the
+    window → no_new_content. A new route's first 0-entry fetch is normal
+    (status ok, no failure class)."""
+    if entry_count != 0:
+        return None
+    since = (datetime.now(UTC) - NO_NEW_CONTENT_WINDOW).isoformat()
+    had_entries = await _get_route_store(request).last_success_with_entries(
+        route_key, since_iso=since
+    )
+    return FAILURE_NO_NEW_CONTENT if had_entries else None
 
 
 def _elapsed_ms(started: float) -> int:
