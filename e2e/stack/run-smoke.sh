@@ -456,6 +456,17 @@ main() {
       if [[ -n "$gateway" ]]; then
         E2E_ALLOW_PRIVATE_HOSTS="fixtures,$gateway" $COMPOSE up -d --build bff >/dev/null 2>&1
       fi
+      # The gateway env append above can RECREATE the bff — wait (bounded)
+      # for /health/live so a following `all` never races the boot with a
+      # cascade of false FAILs.
+      local ready=""
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        ready=$($COMPOSE exec -T bff python -c \
+          "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status)" 2>/dev/null || true)
+        [[ "$ready" == "200" ]] && break
+        sleep 3
+      done
+      [[ "$ready" == "200" ]] || echo "WARNING: bff /health/live not ready after 30s — continuing anyway"
       echo "init complete"
       ;;
     all)
