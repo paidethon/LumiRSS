@@ -792,8 +792,12 @@ export async function unsubscribeFeed(
   subscriptionRef: string,
   keepArtifacts?: boolean,
 ): Promise<void> {
-  const query = keepArtifacts === undefined ? '' : `?keep_artifacts=${keepArtifacts}`
-  await rawRequest(`${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}${query}`, {
+  // 契约扫描按「形状」提取路径：路径段单独成模板（单一占位符），
+  // 查询串拼接在其后，保持 /subscriptions/{} 形状可校验。
+  const path = `${API_BASE}/subscriptions/${encodeURIComponent(subscriptionRef)}`
+  const url =
+    keepArtifacts === undefined ? path : `${path}?keep_artifacts=${keepArtifacts}`
+  await rawRequest(url, {
     method: 'DELETE',
   })
 }
