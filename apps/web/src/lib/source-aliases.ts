@@ -83,3 +83,17 @@ export function clearSourceAlias(feedTitle: string): void {
 
 /** 上限（设置页提示用） */
 export const SOURCE_ALIAS_LIMIT = MAX_ALIASES
+
+/** N013：解析展示名 —— 服务端别名（feedUrl 键）赢；localStorage 别名
+ * （feedTitle 键）只是设备本地离线回退；都没有则原样返回上游标题。 */
+export function resolveDisplayTitle(
+  feedUrl: string | null | undefined,
+  feedTitle: string,
+  serverAliases: Map<string, string> | undefined,
+): string {
+  if (serverAliases !== undefined && feedUrl != null && feedUrl !== '') {
+    const server = serverAliases.get(feedUrl)
+    if (server !== undefined && server !== '') return server
+  }
+  return resolveSourceAlias(feedTitle)
+}

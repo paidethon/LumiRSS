@@ -186,7 +186,11 @@ import {
   reorderDigestPool,
   rotateGptDigestFeedDryRun,
   rotateInboxSource,
+  deleteSourceAlias,
   fetchUnsubscribePreview,
+  listSourceAliasHistory,
+  listSourceAliases,
+  setSourceAlias,
 } from './client'
 import type {
   AiProfileInput,
@@ -646,6 +650,48 @@ export function useUnsubscribePreviewQuery(subscriptionRef: string | null) {
   })
 }
 
+/** N013：全部来源别名（展示「服务端赢」；本地 localStorage 只是离线回退）。 */
+export function useSourceAliasesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['source-aliases'],
+    queryFn: listSourceAliases,
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+/** N013：设置/更名来源别名（服务端真源；成功后失效别名缓存）。 */
+export function useSetSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { feedUrl: string; customName: string }) =>
+      setSourceAlias(vars.feedUrl, vars.customName),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：清除来源别名（历史保留；成功后失效别名缓存）。 */
+export function useDeleteSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedUrl: string) => deleteSourceAlias(feedUrl),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：某来源的改名历史（对话框打开时才拉取）。 */
+export function useSourceAliasHistoryQuery(feedUrl: string | null) {
+  return useQuery({
+    queryKey: ['source-alias-history', feedUrl],
+    queryFn: () => listSourceAliasHistory(feedUrl as string),
+    enabled: feedUrl !== null,
+  })
+}
 
 /** 0013 Gate 3：重命名分类。分类 id（user/-/label/<名>）会随名字变化，
  * 旧 id 的 entries query cache 也一并失效。 */

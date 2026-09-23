@@ -2161,6 +2161,54 @@ export async function setSourceOverride(patch: {
   return (await response.json()) as SourceOverrideResult
 }
 
+/** N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。 */
+export type SourceAliasView = {
+  feedUrl: string
+  customName: string
+  updatedAt: string
+}
+
+/** N013：一条改名历史（oldCustomName 为 null = 首设别名）。 */
+export type SourceAliasHistoryItem = {
+  id: number
+  feedUrl: string
+  oldCustomName: string | null
+  upstreamNameAtSave: string | null
+  changedAt: string
+}
+
+/** N013：全部来源别名（时间线/订阅展示「服务端赢」的数据源）。 */
+export async function listSourceAliases(): Promise<{ items: SourceAliasView[] }> {
+  return request<{ items: SourceAliasView[] }>(`${API_BASE}/sources/aliases`)
+}
+
+/** N013：设置/更名来源别名（upsert + 变化时服务端写历史）。 */
+export async function setSourceAlias(feedUrl: string, customName: string): Promise<SourceAliasView> {
+  const response = await rawRequest(`${API_BASE}/sources/alias`, {
+    method: 'PUT',
+    body: JSON.stringify({ feedUrl, customName }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceAliasView
+}
+
+/** N013：某来源的改名历史（新→旧；≤20；删除别名不删历史）。 */
+export async function listSourceAliasHistory(
+  feedUrl: string,
+  limit = 20,
+): Promise<{ items: SourceAliasHistoryItem[] }> {
+  return request<{ items: SourceAliasHistoryItem[] }>(
+    `${API_BASE}/sources/alias/history?feedUrl=${encodeURIComponent(feedUrl)}&limit=${limit}`,
+  )
+}
+
+/** N013：清除来源别名（历史保留；恢复 = 用历史旧名重新 setSourceAlias）。 */
+export async function deleteSourceAlias(feedUrl: string): Promise<void> {
+  await rawRequest(`${API_BASE}/sources/alias?feedUrl=${encodeURIComponent(feedUrl)}`, {
+    method: 'DELETE',
+  })
+}
+
 // ---- N012 退订影响预览 -------------------------------------------------------
 
 /** N012：退订影响预览（只读快照；计数如实、样本 ≤ sampleLimit）。 */
