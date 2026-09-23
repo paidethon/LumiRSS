@@ -90,6 +90,11 @@ def system_env(monkeypatch, tmp_path):
     # Secret-shaped env: the endpoint must never echo any of these back.
     monkeypatch.setenv("FRESHRSS_API_PASSWORD", SECRET_LIKE)
     monkeypatch.setenv("AI_API_KEY", SECRET_LIKE)
+    # A developer .env or ambient env must not turn the probe "configured":
+    # without base URL/username FreshRSSSettings() stays invalid (unconfigured),
+    # so the endpoint never performs a real network probe in tests.
+    monkeypatch.setenv("FRESHRSS_BASE_URL", "")
+    monkeypatch.setenv("FRESHRSS_USERNAME", "")
     import lumirss.middleware as middleware
 
     middleware._rate_windows.clear()
