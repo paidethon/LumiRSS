@@ -5591,11 +5591,14 @@ export interface paths {
         get: operations["list_source_overrides_api_v1_sources_overrides_get"];
         /**
          * Set Source Override
-         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
+         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001
+         *     staleAlertHours / N015 muteWindows）。
          *
          *     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
          *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
-         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。
+         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；
+         *     muteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，
+         *     end<start 跨午夜，≤7 窗口/来源；非法 → 422）。
          */
         put: operations["set_source_override_api_v1_sources_overrides_put"];
         post?: never;
@@ -12133,7 +12136,7 @@ export interface components {
         };
         /**
          * SourceOverrideResult
-         * @description F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。
+         * @description F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。
          */
         SourceOverrideResult: {
             /**
@@ -12150,6 +12153,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;

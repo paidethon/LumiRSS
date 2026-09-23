@@ -1816,7 +1816,7 @@ class TaskRecordList(BaseModel):
 
 
 class SourceOverrideResult(BaseModel):
-    """F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
+    """F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
 
     feedUrl: str
     hiddenUntil: str | None = None
@@ -1827,6 +1827,8 @@ class SourceOverrideResult(BaseModel):
     readerStyle: dict[str, object] | None = None
     # F066：per-source AI 禁用（派生数据保留，仅不再更新/不被 AI 消费）。
     aiDisabled: bool = False
+    # N015：分时静音窗口（每周循环；[]/None = 未启用）。
+    muteWindows: list[dict[str, object]] | None = None
     updatedAt: str = ""
 
 

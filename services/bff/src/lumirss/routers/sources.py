@@ -226,11 +226,15 @@ async def _drop_feed_from_rag(request: Request, feed_url: str) -> None:
 
 @router.put("/api/v1/sources/overrides", response_model=SourceOverrideResult)
 async def set_source_override(payload: SourceOverrideUpdate, request: Request) -> SourceOverrideResult:
-    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
+    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001
+    staleAlertHours / N015 muteWindows）。
 
     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
-    staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。"""
+    staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；
+    muteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，
+    end<start 跨午夜，≤7 窗口/来源；非法 → 422）。"""
+    from lumirss.mute_windows import set_mute_windows
     from lumirss.source_overrides import (
         SourceOverrideStore,
         canonical_utc,
@@ -272,6 +276,9 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
     if "readerStyle" in fields:
         style = validate_reader_style(payload.readerStyle)
         await store.set_reader_style(payload.feedUrl, style)
+    # N015：分时静音窗口（子集校验，非法 → 422 稳定错误）。
+    if "muteWindows" in fields:
+        await set_mute_windows(request.app.state.db, payload.feedUrl, payload.muteWindows)
     # F066：per-source AI 禁用（服务端执行点统一判定，非仅 UI 隐藏）。
     if "aiDisabled" in fields:
         from lumirss.source_ai_gate import set_ai_disabled
@@ -289,6 +296,7 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
             "extractPolicy": "rss",
             "readerStyle": None,
             "aiDisabled": False,
+            "muteWindows": None,
             "updatedAt": utc_now(),
         }
     return SourceOverrideResult(**result)
