@@ -105,20 +105,21 @@ describe('外观分类 · 侧滑返回（新接入 UI）', () => {
 })
 
 describe('阅读分类 · 阅读行为组（新接入 UI）', () => {
-  it('三个新开关（阅读进度/代码换行/按屏翻页）默认值正确，切换写回 store', async () => {
+  it('两个开关（阅读进度/代码换行）默认值正确，切换写回 store；N052 阅读模式默认滚动、可切分页', async () => {
     render(withProviders(<SettingsModal open onClose={() => {}} />))
     await openCategory('阅读')
     const progress = screen.getByRole('switch', { name: '显示阅读进度' })
     const codeWrap = screen.getByRole('switch', { name: '代码自动换行' })
-    const paged = screen.getByRole('switch', { name: '按屏翻页' })
     expect(progress).toBeChecked() // 默认 true
     expect(codeWrap).not.toBeChecked() // 默认 false
-    expect(paged).not.toBeChecked() // 默认 false
     fireEvent.click(codeWrap)
-    fireEvent.click(paged)
+    // N052：「按屏翻页」开关演进为「阅读模式」select（滚动/分页）
+    const mode = screen.getByRole('combobox', { name: '阅读模式' })
+    expect(mode).toHaveValue('scroll')
+    fireEvent.change(mode, { target: { value: 'paged' } })
     const s = useAppSettings.getState().settings
     expect(s.readerCodeWrap).toBe(true)
-    expect(s.readerPagedMode).toBe(true)
+    expect(s.readerReadingMode).toBe('paged')
     expect(s.readerShowReadingProgress).toBe(true)
   })
 
@@ -150,6 +151,6 @@ describe('桌面/移动共享（新增项两端同现）', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回设置' }))
     fireEvent.click(screen.getByRole('button', { name: '阅读' }))
     expect(screen.getByRole('switch', { name: '显示阅读进度' })).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: '按屏翻页' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '阅读模式' })).toBeInTheDocument()
   })
 })

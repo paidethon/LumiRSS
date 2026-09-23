@@ -65,6 +65,11 @@ const AnnotationsLayer = lazy(() =>
 const ReadingRuler = lazy(() =>
   import('./ReadingRuler').then((m) => ({ default: m.ReadingRuler })),
 )
+// Bundle guard：N052 分页阅读非首读默认路径（阅读模式默认滚动）——
+// 与行辅助线同一 lazy 分包模式。
+const ReaderPager = lazy(() =>
+  import('./ReaderPager').then((m) => ({ default: m.ReaderPager })),
+)
 const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
 const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
 const QuizPanel = lazy(() => import('./QuizPanel').then((m) => ({ default: m.QuizPanel })))
@@ -216,6 +221,9 @@ export default function Reader() {
   // F11：进度条开关；F17：按屏翻页开关（均来自 settings store）。
   const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
+  // N052：阅读模式（设备本地）——'paged' = 分页阅读，优先于 F17 按屏翻页。
+  const readerReadingMode = useAppSettings((s) => s.settings.readerReadingMode)
+  const pagedReading = readerReadingMode === 'paged'
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
   // F055 消费端：按 entry 的 feed 匹配 source_overrides.readerStyle
   // （fontSize/lineHeight/width 三键，全局仍是基础、覆盖仅这三键；
@@ -268,6 +276,8 @@ export default function Reader() {
   /** F20/R05：正文容器 ref（AnnotationsLayer 选区监听 / ReadingRuler
    * 指针跟随用；与 scrollRef 同一 DOM 节点，通过双写保持同步）。 */
   const articleScrollRef = useRef<HTMLDivElement | null>(null)
+  // N052：正文 article 元素（分页多栏 track，ReaderPager 施加样式用）。
+  const articleElementRef = useRef<HTMLElement | null>(null)
   // F054：正文容器（收集文中链接）；F048：提取失败徽标状态。
   const contentRef = useRef<HTMLElement | null>(null)
 
@@ -676,6 +686,7 @@ const handleScroll = useCallback(() => {
         className="lumi-reader-scroll lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
       >
       <article
+        ref={articleElementRef}
         className="lumi-reader lumi-reader-article mx-auto py-6"
         style={
           {
@@ -821,8 +832,9 @@ const handleScroll = useCallback(() => {
         )}
       </article>
       </div>
-      {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响） */}
-      {readerPagedMode && (
+      {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响）。
+          N052：阅读模式 = 分页时由 ReaderPager 接管翻页，F17 不重复出现。 */}
+      {!pagedReading && readerPagedMode && (
         <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-1.5" data-lumi-paged-nav="">
           <IconButton
             size="lg"
@@ -842,6 +854,16 @@ const handleScroll = useCallback(() => {
           />
         </div>
       )}
+      {/* N052/N053：分页阅读（多栏横向翻页 + 点按翻页区 + 页码指示）。
+          局部 Suspense：lazy 首帧挂起只影响翻页 UI 本身。 */}
+      <Suspense fallback={null}>
+        <ReaderPager
+          enabled={pagedReading}
+          containerRef={scrollRef}
+          articleRef={articleElementRef}
+          entryRef={detailEntryRef}
+        />
+      </Suspense>
       {/* F25：回到顶部 / 返回刚才位置（>600px 且未到底出现；用户滚动重置） */}
       {backMode !== null && (
         <div className="absolute bottom-6 right-4 z-10" data-lumi-back-nav="">
