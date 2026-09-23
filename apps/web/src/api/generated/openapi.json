@@ -13851,6 +13851,11 @@
      "reserved": {
       "title": "Reserved",
       "type": "boolean"
+     },
+     "revision": {
+      "default": 1,
+      "title": "Revision",
+      "type": "integer"
      }
     },
     "required": [
@@ -14097,8 +14102,19 @@
    },
    "WorkspaceReorderRequest": {
     "additionalProperties": false,
-    "description": "PATCH /api/v1/workspaces/{id}/items — refs in their new order.",
+    "description": "PATCH /api/v1/workspaces/{id}/items — refs in their new order.\n\nP15：``expectedRevision`` 可选（If-Match 式乐观并发）；缺省 = 旧\n行为（不校验），保证既有调用方零改动。",
     "properties": {
+     "expectedRevision": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expectedrevision"
+     },
      "itemRefs": {
       "items": {
        "type": "string"
@@ -14111,6 +14127,75 @@
      "itemRefs"
     ],
     "title": "WorkspaceReorderRequest",
+    "type": "object"
+   },
+   "WorkspaceResumePointer": {
+    "description": "「上次看到哪」指针（P15）：ref + 保存时的位置快照。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "positionAtSave": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Positionatsave"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "updatedAt"
+    ],
+    "title": "WorkspaceResumePointer",
+    "type": "object"
+   },
+   "WorkspaceResumePutRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/workspaces/{id}/resume — one member ItemRef.",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceResumePutRequest",
+    "type": "object"
+   },
+   "WorkspaceResumeResponse": {
+    "description": "Envelope for GET/PUT /api/v1/workspaces/{id}/resume（无指针时\npointer=null，GET 永远 200——「没有指针」是正常态而非错误）。",
+    "properties": {
+     "pointer": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/WorkspaceResumePointer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId"
+    ],
+    "title": "WorkspaceResumeResponse",
     "type": "object"
    },
    "WorkspaceTemplate": {
@@ -28437,6 +28522,7 @@
     "summary": "List Workspace Items"
    },
    "patch": {
+    "description": "P15：``expectedRevision`` 可选（If-Match 式）；与当前 revision\n不匹配 → 409 workspace_revision_conflict（错误体带 currentRevision），\n客户端重取后重试；不传 = 旧行为（last-write-wins），兼容既有调用方。",
     "operationId": "reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch",
     "parameters": [
      {
@@ -28683,6 +28769,94 @@
      }
     },
     "summary": "Preview Research Pack"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/resume": {
+   "get": {
+    "description": "P15：读取续读指针；无指针（含未知工作区）返回 pointer=null。",
+    "operationId": "get_workspace_resume_api_v1_workspaces__workspace_id__resume_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceResumeResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Workspace Resume"
+   },
+   "put": {
+    "description": "P15：保存「上次看到哪」指针（每工作区一个；PUT 幂等 upsert）。\n\n校验与 add_item 同构：404 未知工作区 / 404 条目不在工作区。\n不 bump revision（阅读光标 ≠ 共享条目状态，见 store 注释）。",
+    "operationId": "put_workspace_resume_api_v1_workspaces__workspace_id__resume_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceResumePutRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceResumeResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Workspace Resume"
    }
   },
   "/api/v1/workspaces/{workspace_id}/save-as-template": {

@@ -127,6 +127,9 @@ export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
+/** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */
+export type WorkspaceResumePointer = Schemas['WorkspaceResumePointer']
+export type WorkspaceResumeResponse = Schemas['WorkspaceResumeResponse']
 /** P0-01：服务端稍后读时间线（server-driven list；cursor opaque）。 */
 export type ReadLaterItem = Schemas['ReadLaterItem']
 export type ReadLaterTimelineResponse = Schemas['ReadLaterTimelineResponse']

@@ -60,6 +60,7 @@ import type {
   WorkspaceItemsResolvedResponse,
   WorkspaceItemsResponse,
   WorkspaceListResponse,
+  WorkspaceResumeResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -1505,20 +1506,54 @@ export async function getWorkspaceContents(
   )
 }
 
-/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。 */
+/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。
+ * P15：`expectedRevision` 可选（If-Match 式乐观并发）；工作区已在其它
+ * 设备被改动时 BFF 返回 409 workspace_revision_conflict（ApiError.status
+ * === 409），调用方应重取后重试，绝不静默覆盖。 */
 export async function reorderWorkspaceItems(
   workspaceId: string,
   itemRefs: string[],
+  expectedRevision?: number,
 ): Promise<WorkspaceItemsResponse> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ itemRefs }),
+      body: JSON.stringify(
+        expectedRevision === undefined ? { itemRefs } : { itemRefs, expectedRevision },
+      ),
       contentType: 'application/json',
     },
   )
   return (await response.json()) as WorkspaceItemsResponse
+}
+
+/** P15：读取「上次看到哪」续读指针（pointer=null = 无指针；含未知工作区）。 */
+export async function getWorkspaceResume(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceResumeResponse> {
+  return request<WorkspaceResumeResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/resume`,
+    signal,
+  )
+}
+
+/** P15：保存续读指针（条目打开时调用；PUT 幂等 upsert）。
+ * 只指向工作区成员——非成员/未知工作区 → 404（诚实失败，不静默）。 */
+export async function putWorkspaceResume(
+  workspaceId: string,
+  itemRef: string,
+): Promise<WorkspaceResumeResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/resume`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemRef }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceResumeResponse
 }
 
 /** P0-10：重命名工作区（PATCH；保留工作区 read-later 由 BFF 拒绝）。 */
