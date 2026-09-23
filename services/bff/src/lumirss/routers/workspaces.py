@@ -31,6 +31,9 @@ from lumirss.models import (
     WorkspaceListResponse,
     WorkspacePatch,
     WorkspaceReorderRequest,
+    WorkspaceResumePointer,
+    WorkspaceResumePutRequest,
+    WorkspaceResumeResponse,
 )
 from lumirss.sources import (
     ItemRefUnresolvable,
@@ -93,6 +96,7 @@ def _workspace_model(summary) -> Workspace:
         description=summary.description,
         archived=summary.archived,
         archivedAt=summary.archived_at,
+        revision=summary.revision,
     )
 
 
@@ -231,8 +235,13 @@ async def list_workspace_items(
 async def reorder_workspace_items(
     workspace_id: str, payload: WorkspaceReorderRequest, request: Request
 ) -> WorkspaceItemsResponse:
+    """P15：``expectedRevision`` 可选（If-Match 式）；与当前 revision
+    不匹配 → 409 workspace_revision_conflict（错误体带 currentRevision），
+    客户端重取后重试；不传 = 旧行为（last-write-wins），兼容既有调用方。"""
     store: WorkspaceStore = _get_workspace_store(request)
-    await store.reorder_items(workspace_id, payload.itemRefs)
+    await store.reorder_items(
+        workspace_id, payload.itemRefs, payload.expectedRevision
+    )
     items = await store.list_items(workspace_id)
     return WorkspaceItemsResponse(items=[_item_model(item) for item in items])
 
@@ -248,6 +257,53 @@ async def remove_workspace_item(
     if not removed:
         raise WorkspaceInvalid("Item is not a member of this workspace.")
     return Response(status_code=204)
+
+
+@router.put(
+    "/api/v1/workspaces/{workspace_id}/resume",
+    response_model=WorkspaceResumeResponse,
+)
+async def put_workspace_resume(
+    workspace_id: str, payload: WorkspaceResumePutRequest, request: Request
+) -> WorkspaceResumeResponse:
+    """P15：保存「上次看到哪」指针（每工作区一个；PUT 幂等 upsert）。
+
+    校验与 add_item 同构：404 未知工作区 / 404 条目不在工作区。
+    不 bump revision（阅读光标 ≠ 共享条目状态，见 store 注释）。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    pointer = await store.set_resume(workspace_id, payload.itemRef)
+    return WorkspaceResumeResponse(
+        workspaceId=workspace_id,
+        pointer=WorkspaceResumePointer(
+            itemRef=pointer.item_ref,
+            positionAtSave=pointer.position_at_save,
+            updatedAt=pointer.updated_at,
+        ),
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/resume",
+    response_model=WorkspaceResumeResponse,
+)
+async def get_workspace_resume(
+    workspace_id: str, request: Request
+) -> WorkspaceResumeResponse:
+    """P15：读取续读指针；无指针（含未知工作区）返回 pointer=null。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    pointer = await store.get_resume(workspace_id)
+    return WorkspaceResumeResponse(
+        workspaceId=workspace_id,
+        pointer=(
+            WorkspaceResumePointer(
+                itemRef=pointer.item_ref,
+                positionAtSave=pointer.position_at_save,
+                updatedAt=pointer.updated_at,
+            )
+            if pointer is not None
+            else None
+        ),
+    )
 
 
 @router.get(

@@ -209,6 +209,7 @@ from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
     WorkspaceNotFound,
+    WorkspaceRevisionConflict,
 )
 
 _ERROR_RESPONSES = {
@@ -304,6 +305,8 @@ _ERROR_RESPONSES = {
     WorkspaceInvalid: (400, "invalid_workspace"),
     WorkspaceNotFound: (404, "workspace_not_found"),
     ReservedWorkspaceError: (409, "reserved_workspace"),
+    # P15（响应体额外带 currentRevision —— 见专用 handler）
+    WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -559,6 +562,23 @@ def register_error_handlers(app) -> None:
         return JSONResponse(
             status_code=status,
             content={"error": {"type": error_type, "message": str(exc)}},
+        )
+
+    @app.exception_handler(WorkspaceRevisionConflict)
+    async def workspace_revision_conflict_handler(
+        request: Request, exc: WorkspaceRevisionConflict
+    ) -> JSONResponse:
+        """P15：409 冲突体额外携带 currentRevision——客户端不解析也能
+        重取；解析后可直接用它重试（省一次 detail 往返）。"""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "workspace_revision_conflict",
+                    "message": str(exc),
+                    "currentRevision": exc.current_revision,
+                }
+            },
         )
 
 
