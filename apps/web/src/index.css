@@ -563,6 +563,10 @@ html.dark:not([data-glass='off']) .lumi-glass {
     font-size: 10px;
     color: #444;
   }
+  /* P05：段落链接按钮不打印（button 通则已覆盖，显式声明防未来放宽） */
+  .lumi-para-link {
+    display: none !important;
+  }
 }
 
 /* F015：段落定位高亮（2.5s 自动移除，由 ArticleContent 控制） */
@@ -577,6 +581,73 @@ html.dark:not([data-glass='off']) .lumi-glass {
   }
   100% {
     background: transparent;
+  }
+}
+
+/* ---- P05：段落「复制链接」图标按钮（ArticleContent 渲染后装饰） ----
+ * 纯图标 affordance（可访问名 = aria-label「复制段落链接」，正文流中
+ * 无可见文案）：
+ * - 细指针设备（桌面）：默认透明、不参与交互；段落 hover 或焦点进入
+ *   段落（:focus-within）时显现；
+ * - 键盘：:focus-visible 在任何设备上都显现（可见焦点不依赖 hover）；
+ * - 粗指针（触屏）：reader 无可复用的长按/选区菜单可接线 → 直接
+ *   display:none，不占布局空间（MQ4 not 语法；不支持的旧浏览器按
+ *   默认隐藏态降级——不可见也不可交互，安全）；
+ * - 命中区：视觉 22px，::before 外扩 ±11px 至 ≥44×44（a11y 触控规范），
+ *   不撑大正文行高。 */
+.lumi-para-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: 4px;
+  border: none;
+  border-radius: var(--lumi-radius-sm, 4px);
+  background: transparent;
+  color: var(--lumi-text-tertiary);
+  vertical-align: middle;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--lumi-motion-fast, 110ms) var(--lumi-ease, ease);
+}
+.lumi-para-link::before {
+  content: '';
+  position: absolute;
+  inset: -11px;
+}
+.lumi-para-link:hover {
+  color: var(--lumi-text-primary);
+  background: var(--lumi-surface-hover);
+}
+/* 键盘可达：任何指针类型下聚焦即显现（含 hover:none 设备）。 */
+.lumi-para-link:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+}
+.lumi-para-link[data-state='copied'] {
+  color: var(--lumi-accent-text);
+}
+.lumi-para-link[data-state='error'] {
+  color: var(--lumi-danger);
+}
+@media (hover: hover) and (pointer: fine) {
+  .article-content > p:hover > .lumi-para-link,
+  .article-content > p:focus-within > .lumi-para-link {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+/* 触屏（粗指针）：按钮不占布局、不出现内联入口。 */
+@media not ((hover: hover) and (pointer: fine)) {
+  .lumi-para-link {
+    display: none;
   }
 }
 
