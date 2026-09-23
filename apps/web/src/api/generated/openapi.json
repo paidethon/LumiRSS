@@ -12098,6 +12098,16 @@
       ],
       "title": "Description"
      },
+     "encodingInspection": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/EncodingInspection"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "feedUrl": {
       "title": "Feedurl",
       "type": "string"

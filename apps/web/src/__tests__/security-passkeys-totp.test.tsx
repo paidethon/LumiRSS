@@ -17,6 +17,7 @@ const fakeSecret = (prefix: string) => {
   return prefix + Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('')
 }
 const PASSWORD = fakeSecret('correct-')
+const NEW_PASSWORD = fakeSecret('brand-new-')
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -189,8 +190,8 @@ describe('N007 改密的二次验证字段（安全页）', () => {
     // 「当前密码」有两个同标签输入（改密 + disable）→ 用 form 范围内的第一个。
     const inputs = screen.getAllByLabelText('当前密码')
     fireEvent.change(inputs[0], { target: { value: PASSWORD } })
-    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'brand-new-pass' } })
-    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'brand-new-pass' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: NEW_PASSWORD } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: NEW_PASSWORD } })
     expect(screen.getByLabelText('两步验证码')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('两步验证码'), { target: { value: '246810' } })
     fireEvent.click(screen.getByRole('button', { name: '更新密码' }))
@@ -199,7 +200,7 @@ describe('N007 改密的二次验证字段（安全页）', () => {
       expect(call).toBeDefined()
       expect(JSON.parse(call![1].body)).toEqual({
         currentPassword: PASSWORD,
-        newPassword: 'brand-new-pass',
+        newPassword: NEW_PASSWORD,
         totpCode: '246810',
       })
     })
@@ -208,7 +209,7 @@ describe('N007 改密的二次验证字段（安全页）', () => {
   it('TOTP 未开启 → 无验证码字段', async () => {
     renderSecurity([])
     fireEvent.change(await screen.findByLabelText('当前密码'), { target: { value: PASSWORD } })
-    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'brand-new-pass' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: NEW_PASSWORD } })
     expect(screen.queryByLabelText('两步验证码')).not.toBeInTheDocument()
   })
 })

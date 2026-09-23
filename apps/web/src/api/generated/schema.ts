@@ -12488,6 +12488,7 @@ export interface components {
             cache: components["schemas"]["RssHubCacheInfo"];
             /** Description */
             description?: string | null;
+            encodingInspection?: components["schemas"]["EncodingInspection"] | null;
             /** Feedurl */
             feedUrl: string;
             /**
