@@ -11,6 +11,13 @@ import {
 } from '@tanstack/react-query'
 import {
   addLibraryFavorite,
+  deletePasskey,
+  disableTotp,
+  enableTotp,
+  finishPasskeyRegistration,
+  getTotpStatus,
+  listPasskeys,
+  setupTotp,
   addWorkspaceItem,
   applyRssHubConfig,
   clearAiProfileSecret,
@@ -2957,6 +2964,58 @@ export function useRevokeSessionMutation() {
   return useMutation({
     mutationFn: revokeAuthSession,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-sessions'] }),
+  })
+}
+
+// ---- N006 通行密钥 / N007 两步验证（账户安全面） ----
+
+export function usePasskeys() {
+  return useQuery({ queryKey: ['auth-passkeys'], queryFn: ({ signal }) => listPasskeys(signal) })
+}
+
+export function useRegisterPasskeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { label: string; challenge: string; credential: Record<string, unknown> }) =>
+      finishPasskeyRegistration(input),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-passkeys'] }),
+  })
+}
+
+export function useDeletePasskeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { credentialId: string; currentPassword: string; totpCode?: string }) =>
+      deletePasskey(input.credentialId, input.currentPassword, input.totpCode),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-passkeys'] }),
+  })
+}
+
+export function useTotpStatus() {
+  return useQuery({ queryKey: ['auth-totp'], queryFn: ({ signal }) => getTotpStatus(signal) })
+}
+
+export function useTotpSetupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: setupTotp,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
+  })
+}
+
+export function useTotpEnableMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => enableTotp(code),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
+  })
+}
+
+export function useTotpDisableMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { code: string; currentPassword: string }) => disableTotp(input.code, input.currentPassword),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
   })
 }
 

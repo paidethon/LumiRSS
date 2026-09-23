@@ -13,8 +13,10 @@ import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../../api/client'
 import { useAuthStore } from '../../store/auth'
-import { useAuthSessions, useRevokeSessionMutation } from '../../api/queries'
+import { useAuthSessions, useRevokeSessionMutation, useTotpStatus } from '../../api/queries'
 import { Button } from '../ui/Button'
+import { PasskeysSection } from './PasskeysSection'
+import { TotpSection } from './TotpSection'
 
 const MIN_PASSWORD = 8
 
@@ -51,15 +53,21 @@ export function AccountSecuritySection() {
   const mode = useAuthStore((s) => s.mode)
   const setStatus = useAuthStore((s) => s.setStatus)
   const queryClient = useQueryClient()
+  const totpQuery = useTotpStatus()
 
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [totpCode, setTotpCode] = useState('')
   const [pendingChange, setPendingChange] = useState(false)
   const [pendingLogout, setPendingLogout] = useState<'none' | 'current' | 'all'>('none')
   const [feedback, setFeedback] = useState<Feedback>({ kind: 'none' })
 
   if (mode !== 'session') return null
+
+  // N007：两步验证开启时，改密需要 6 位验证码（服务端强制，这里只是
+  // 收集输入；查询失败按未开启处理，错误由服务端边界返回）。
+  const totpEnabled = totpQuery.data?.enabled === true
 
   async function handleChangePassword(event: React.FormEvent) {
     event.preventDefault()
@@ -75,10 +83,11 @@ export function AccountSecuritySection() {
     setPendingChange(true)
     setFeedback({ kind: 'none' })
     try {
-      await changePassword(current, next)
+      await changePassword(current, next, totpEnabled ? totpCode.trim() : undefined)
       setCurrent('')
       setNext('')
       setConfirm('')
+      setTotpCode('')
       setFeedback({
         kind: 'ok',
         message: '密码已更新；其他设备已全部退出，本设备保持登录。',
@@ -152,6 +161,28 @@ export function AccountSecuritySection() {
           disabled={pendingChange}
           required
         />
+        {totpEnabled && (
+          <div>
+            <label
+              htmlFor="account-totp-code"
+              className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
+            >
+              两步验证码
+            </label>
+            <input
+              id="account-totp-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={64}
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value)}
+              disabled={pendingChange}
+              placeholder="6 位验证码，或恢复码"
+              className="min-h-10 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 font-mono text-sm tracking-widest text-[var(--lumi-text-primary)] transition-colors duration-[var(--lumi-motion-fast)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
+            />
+          </div>
+        )}
         {feedback.kind !== 'none' && (
           <p
             role="alert"
@@ -199,6 +230,9 @@ export function AccountSecuritySection() {
         </div>
       </div>
       <SessionsPanel />
+      {/* N006 通行密钥 + N007 两步验证（session 模式专属账户安全面）。 */}
+      <TotpSection />
+      <PasskeysSection totpEnabled={totpEnabled} />
     </section>
   )
 }

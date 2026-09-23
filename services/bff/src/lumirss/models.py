@@ -680,10 +680,25 @@ class LoginRequest(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    """POST /api/v1/auth/password — current + new password."""
+    """POST /api/v1/auth/password — current + new password.
+
+    ``totpCode`` is REQUIRED when the account has TOTP enabled (N007
+    server-enforced second factor for sensitive operations); ignored
+    otherwise."""
 
     currentPassword: str = Field(min_length=1, max_length=256)
     newPassword: str = Field(min_length=1, max_length=256)
+    totpCode: str | None = Field(default=None, max_length=64)
+
+
+class LoginChallenge(BaseModel):
+    """POST /api/v1/auth/login response when the account has TOTP enabled
+    (N007): the password was verified, but the session is minted only
+    after ``POST /auth/totp/verify`` with this short-lived pending token
+    (which is NOT a session and grants nothing on its own)."""
+
+    totpRequired: Literal[True]
+    pendingToken: str
 
 
 class ActivationSourceResult(BaseModel):

@@ -7470,6 +7470,26 @@
     "title": "LibreTranslateTestResult",
     "type": "object"
    },
+   "LoginChallenge": {
+    "description": "POST /api/v1/auth/login response when the account has TOTP enabled\n(N007): the password was verified, but the session is minted only\nafter ``POST /auth/totp/verify`` with this short-lived pending token\n(which is NOT a session and grants nothing on its own).",
+    "properties": {
+     "pendingToken": {
+      "title": "Pendingtoken",
+      "type": "string"
+     },
+     "totpRequired": {
+      "const": true,
+      "title": "Totprequired",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "totpRequired",
+     "pendingToken"
+    ],
+    "title": "LoginChallenge",
+    "type": "object"
+   },
    "LoginRequest": {
     "description": "POST /api/v1/auth/login — username + password (multi-account);\nlegacy single-user mode sends password only.",
     "properties": {
@@ -9311,8 +9331,162 @@
     "title": "OpmlImportSkipped",
     "type": "object"
    },
+   "PasskeyDeleteRequest": {
+    "description": "DELETE /auth/passkeys/{id} — password re-entry (server-enforced).",
+    "properties": {
+     "currentPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Currentpassword",
+      "type": "string"
+     },
+     "totpCode": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Totpcode"
+     }
+    },
+    "required": [
+     "currentPassword"
+    ],
+    "title": "PasskeyDeleteRequest",
+    "type": "object"
+   },
+   "PasskeyLoginOptionsRequest": {
+    "description": "POST /auth/passkeys/login/options — username lookup (no enumeration).",
+    "properties": {
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     }
+    },
+    "title": "PasskeyLoginOptionsRequest",
+    "type": "object"
+   },
+   "PasskeyLoginRequest": {
+    "description": "POST /auth/passkeys/login — AuthenticationResponse + echoed challenge.",
+    "properties": {
+     "challenge": {
+      "maxLength": 512,
+      "minLength": 16,
+      "title": "Challenge",
+      "type": "string"
+     },
+     "id": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Id",
+      "type": "string"
+     },
+     "rawId": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Rawid",
+      "type": "string"
+     },
+     "response": {
+      "additionalProperties": true,
+      "minProperties": 1,
+      "title": "Response",
+      "type": "object"
+     },
+     "type": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Type",
+      "type": "string"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     }
+    },
+    "required": [
+     "challenge",
+     "id",
+     "rawId",
+     "type",
+     "response"
+    ],
+    "title": "PasskeyLoginRequest",
+    "type": "object"
+   },
+   "PasskeyRegisterRequest": {
+    "description": "POST /auth/passkeys — label + echoed challenge + RegistrationResponse.",
+    "properties": {
+     "challenge": {
+      "maxLength": 512,
+      "minLength": 16,
+      "title": "Challenge",
+      "type": "string"
+     },
+     "id": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     },
+     "rawId": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Rawid",
+      "type": "string"
+     },
+     "response": {
+      "additionalProperties": true,
+      "minProperties": 1,
+      "title": "Response",
+      "type": "object"
+     },
+     "type": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "challenge",
+     "id",
+     "rawId",
+     "type",
+     "response"
+    ],
+    "title": "PasskeyRegisterRequest",
+    "type": "object"
+   },
    "PasswordChangeRequest": {
-    "description": "POST /api/v1/auth/password — current + new password.",
+    "description": "POST /api/v1/auth/password — current + new password.\n\n``totpCode`` is REQUIRED when the account has TOTP enabled (N007\nserver-enforced second factor for sensitive operations); ignored\notherwise.",
     "properties": {
      "currentPassword": {
       "maxLength": 256,
@@ -9325,6 +9499,18 @@
       "minLength": 1,
       "title": "Newpassword",
       "type": "string"
+     },
+     "totpCode": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Totpcode"
      }
     },
     "required": [
@@ -14000,6 +14186,66 @@
     "title": "TitleTranslationView",
     "type": "object"
    },
+   "TotpDisableRequest": {
+    "properties": {
+     "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+     },
+     "currentPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Currentpassword",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "currentPassword"
+    ],
+    "title": "TotpDisableRequest",
+    "type": "object"
+   },
+   "TotpEnableRequest": {
+    "properties": {
+     "code": {
+      "maxLength": 16,
+      "minLength": 6,
+      "title": "Code",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code"
+    ],
+    "title": "TotpEnableRequest",
+    "type": "object"
+   },
+   "TotpVerifyRequest": {
+    "description": "POST /auth/totp/verify — pending token + TOTP/recovery code.",
+    "properties": {
+     "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+     },
+     "pendingToken": {
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Pendingtoken",
+      "type": "string"
+     }
+    },
+    "required": [
+     "pendingToken",
+     "code"
+    ],
+    "title": "TotpVerifyRequest",
+    "type": "object"
+   },
    "TranslationSegmentBlockIn": {
     "description": "One client-segmented content block.",
     "properties": {
@@ -16700,7 +16946,7 @@
   },
   "/api/v1/auth/login": {
    "post": {
-    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).",
+    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).\n\nN007: when the account has TOTP enabled, a correct password does NOT\nmint a session — the response is ``{totpRequired, pendingToken}`` and\nthe real session is issued by ``POST /auth/totp/verify`` (same\nbrute-force budget, one attempt per pending token).",
     "operationId": "login_api_v1_auth_login_post",
     "requestBody": {
      "content": {
@@ -16717,7 +16963,15 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/AuthStatus"
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/AuthStatus"
+          },
+          {
+           "$ref": "#/components/schemas/LoginChallenge"
+          }
+         ],
+         "title": "Response Login Api V1 Auth Login Post"
         }
        }
       },
@@ -16775,9 +17029,196 @@
     "summary": "Logout All"
    }
   },
+  "/api/v1/auth/passkeys": {
+   "get": {
+    "operationId": "list_passkeys_api_v1_auth_passkeys_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Passkeys"
+   },
+   "post": {
+    "operationId": "passkey_register_finish_api_v1_auth_passkeys_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyRegisterRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Register Finish"
+   }
+  },
+  "/api/v1/auth/passkeys/login": {
+   "post": {
+    "operationId": "passkey_login_api_v1_auth_passkeys_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyLoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Login"
+   }
+  },
+  "/api/v1/auth/passkeys/login/options": {
+   "post": {
+    "description": "Username → allowCredentials. Unknown usernames and users without\npasskeys get the SAME generic shape (empty allow-list,\n``passkeyAvailable: false``) — the endpoint reveals nothing.",
+    "operationId": "passkey_login_options_api_v1_auth_passkeys_login_options_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyLoginOptionsRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Passkey Login Options Api V1 Auth Passkeys Login Options Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Login Options"
+   }
+  },
+  "/api/v1/auth/passkeys/options": {
+   "post": {
+    "operationId": "passkey_register_options_api_v1_auth_passkeys_options_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Passkey Register Options"
+   }
+  },
+  "/api/v1/auth/passkeys/{credential_id}": {
+   "delete": {
+    "operationId": "delete_passkey_api_v1_auth_passkeys__credential_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyDeleteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Passkey"
+   }
+  },
   "/api/v1/auth/password": {
    "post": {
-    "description": "Change own password: verify current, replace hash, revoke ALL of\nthis user's sessions, then mint a fresh session for THIS device.",
+    "description": "Change own password: verify current, replace hash, revoke ALL of\nthis user's sessions, then mint a fresh session for THIS device.\n\nN007: when the account has TOTP enabled, a valid second factor\n(``totpCode``) is REQUIRED — server-enforced, not front-end.",
     "operationId": "change_password_api_v1_auth_password_post",
     "requestBody": {
      "content": {
@@ -16920,6 +17361,148 @@
      }
     },
     "summary": "Revoke Auth Session"
+   }
+  },
+  "/api/v1/auth/totp": {
+   "get": {
+    "operationId": "totp_status_api_v1_auth_totp_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Totp Status"
+   }
+  },
+  "/api/v1/auth/totp/disable": {
+   "post": {
+    "operationId": "totp_disable_api_v1_auth_totp_disable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpDisableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Disable"
+   }
+  },
+  "/api/v1/auth/totp/enable": {
+   "post": {
+    "operationId": "totp_enable_api_v1_auth_totp_enable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpEnableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Enable"
+   }
+  },
+  "/api/v1/auth/totp/setup": {
+   "post": {
+    "operationId": "totp_setup_api_v1_auth_totp_setup_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Totp Setup"
+   }
+  },
+  "/api/v1/auth/totp/verify": {
+   "post": {
+    "operationId": "totp_verify_api_v1_auth_totp_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpVerifyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Verify"
    }
   },
   "/api/v1/authors": {

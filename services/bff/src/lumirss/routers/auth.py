@@ -50,9 +50,11 @@ from lumirss.middleware import (
 from lumirss.models import (
     ActivationSourceResult,
     AuthStatus,
+    LoginChallenge,
     LoginRequest,
     PasswordChangeRequest,
 )
+from lumirss.totp import TotpStore, check_second_factor
 
 router = APIRouter()
 
@@ -124,14 +126,21 @@ async def _current_user_id(request: Request) -> str | None:
 
 @router.post(
     "/api/v1/auth/login",
-    response_model=AuthStatus,
+    response_model=AuthStatus | LoginChallenge,
     response_model_exclude_none=True,
 )
-async def login(body: LoginRequest, request: Request, response: Response) -> AuthStatus:
+async def login(
+    body: LoginRequest, request: Request, response: Response
+) -> AuthStatus | LoginChallenge | JSONResponse:
     """Verify credentials, mint a per-user session.
 
     Wrong-password and unknown-username share the generic failure shape
     and the same brute-force budget (no account oracle).
+
+    N007: when the account has TOTP enabled, a correct password does NOT
+    mint a session — the response is ``{totpRequired, pendingToken}`` and
+    the real session is issued by ``POST /auth/totp/verify`` (same
+    brute-force budget, one attempt per pending token).
     """
     if LumiSettings().LUMIRSS_AUTH_MODE != "session":
         # Legacy single-user mode: the reverse proxy owns credentials.
@@ -150,9 +159,22 @@ async def login(body: LoginRequest, request: Request, response: Response) -> Aut
     if user is None:
         register_login_failure(request.scope)
         return _reject(401, "invalid_credentials", "Incorrect username or password.")
+    user_id = str(user["id"])
+    # N007: TOTP-enabled accounts take the two-step path. The pending
+    # token is short-lived, single-use, hash-stored — not a session.
+    # NOTE: the brute-force budget is only reset when a session is
+    # actually minted — a correct password with pending second step does
+    # NOT clear accumulated failures (each verify attempt counts).
+    totp_store = TotpStore(request.app.state.control_db)
+    if await totp_store.is_enabled(user_id):
+        pending_token = await totp_store.create_pending_login(user_id)
+        await _control(request).audit(
+            actor=user_id, action="login_totp_pending", object_type="user", object_id=user_id
+        )
+        return LoginChallenge(totpRequired=True, pendingToken=pending_token)
     reset_login_failures(request.scope)
-    await _control(request).audit(actor=str(user["id"]), action="login", object_type="user", object_id=str(user["id"]))
-    return await _mint_session(request, response, str(user["id"]))
+    await _control(request).audit(actor=user_id, action="login", object_type="user", object_id=user_id)
+    return await _mint_session(request, response, user_id)
 
 
 @router.get(
@@ -214,9 +236,12 @@ async def logout_all(request: Request, response: Response) -> AuthStatus:
 )
 async def change_password(
     body: PasswordChangeRequest, request: Request, response: Response
-) -> AuthStatus:
+) -> AuthStatus | JSONResponse:
     """Change own password: verify current, replace hash, revoke ALL of
-    this user's sessions, then mint a fresh session for THIS device."""
+    this user's sessions, then mint a fresh session for THIS device.
+
+    N007: when the account has TOTP enabled, a valid second factor
+    (``totpCode``) is REQUIRED — server-enforced, not front-end."""
     user_id = await _current_user_id(request)
     if user_id is None:
         return _reject(401, "session_required", "Login required.")
@@ -225,6 +250,13 @@ async def change_password(
         return _reject(401, "session_required", "Login required.")
     if not verify_password_hash(body.currentPassword, str(user["password_hash"])):
         return _reject(401, "invalid_credentials", "Incorrect current password.")
+    second = await check_second_factor(
+        request.app.state.control_db, request.app.state.secrets_store, user_id, body.totpCode
+    )
+    if second == "missing":
+        return _reject(400, "totp_code_required", "两步验证已开启，需要验证码。")
+    if second == "invalid":
+        return _reject(401, "totp_code_invalid", "验证码无效。")
     if len(body.newPassword) < MIN_PASSWORD_LENGTH:
         return _reject(400, "weak_password", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
     if len(body.newPassword.encode("utf-8")) > MAX_PASSWORD_BYTES:

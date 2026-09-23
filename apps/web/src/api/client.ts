@@ -235,6 +235,176 @@ export async function loginPassword(password: string): Promise<AuthStatusView> {
   return (await response.json()) as AuthStatusView
 }
 
+/** N007 两步验证：密码正确但账号开启了 TOTP 时，登录响应是
+ * {totpRequired, pendingToken}（短时效、非会话），随后以
+ * verifyTotpLogin 换发真会话。 */
+export interface LoginChallengeView {
+  totpRequired: true
+  pendingToken: string
+}
+
+export type LoginResponse = AuthStatusView | LoginChallengeView
+
+export function isTotpChallenge(response: LoginResponse): response is LoginChallengeView {
+  return (response as LoginChallengeView).totpRequired === true
+}
+
+// ---- N006 通行密钥 / N007 两步验证（账户安全 + 登录面） ----
+// 契约类型在本模块声明（additive，与 0067 端点同一策略；BFF 是唯一
+// 真源，generated/schema 由 pnpm api:generate 再生成兜底）。
+
+/** 通行密钥列表项：id/label/时间戳 —— 服务端契约保证绝不含密钥材料。 */
+export interface PasskeyCredential {
+  id: string
+  label: string
+  /** epoch 秒（BFF 控制库行）。 */
+  createdAt: number
+  lastUsedAt: number | null
+}
+
+/** 注册/登录 ceremony options（WebAuthn publicKey JSON，base64url 字段）。 */
+export interface PasskeyOptionsResponse {
+  publicKey: Record<string, unknown>
+  /** 单次挑战：finish 时原样回传给服务端核销。 */
+  challenge: string
+}
+
+export interface PasskeyLoginOptionsResponse extends PasskeyOptionsResponse {
+  /** 该用户名下有已注册的通行密钥（未知用户/无密钥 → false，同形）。 */
+  passkeyAvailable: boolean
+}
+
+export interface TotpSetupView {
+  secret: string
+  otpauthUri: string
+}
+
+export interface TotpStatusView {
+  enabled: boolean
+  recoveryCodesRemaining: number
+}
+
+/** 通行密钥注册开始（session 会话内）。 */
+export async function beginPasskeyRegistration(): Promise<PasskeyOptionsResponse> {
+  const response = await rawRequest(`${API_BASE}/auth/passkeys/options`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as PasskeyOptionsResponse
+}
+
+/** 通行密钥注册完成（challenge 回传核销 + RegistrationResponse）。 */
+export async function finishPasskeyRegistration(body: {
+  label: string
+  challenge: string
+  credential: Record<string, unknown>
+}): Promise<PasskeyCredential> {
+  const response = await rawRequest(`${API_BASE}/auth/passkeys`, {
+    method: 'POST',
+    body: JSON.stringify({
+      label: body.label,
+      challenge: body.challenge,
+      ...body.credential,
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as PasskeyCredential
+}
+
+/** 通行密钥列表（id/label/created/last-used，绝无密钥材料）。 */
+export async function listPasskeys(signal?: AbortSignal): Promise<PasskeyCredential[]> {
+  return request<PasskeyCredential[]>(`${API_BASE}/auth/passkeys`, signal)
+}
+
+/** 删除通行密钥：服务端强制当前密码（+TOTP 验证码，当两步验证开启）。 */
+export async function deletePasskey(
+  credentialId: string,
+  currentPassword: string,
+  totpCode?: string,
+): Promise<void> {
+  await rawRequest(`${API_BASE}/auth/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({
+      currentPassword,
+      ...(totpCode ? { totpCode } : {}),
+    }),
+    contentType: 'application/json',
+  })
+}
+
+/** 通行密钥登录 options（公开；未知用户名返回诚实通用响应）。 */
+export async function beginPasskeyLogin(username: string): Promise<PasskeyLoginOptionsResponse> {
+  const response = await rawRequest(`${API_BASE}/auth/passkeys/login/options`, {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as PasskeyLoginOptionsResponse
+}
+
+/** 通行密钥登录完成：成功 = 与密码登录同一会话 Cookie 流程。 */
+export async function finishPasskeyLogin(body: {
+  username: string
+  challenge: string
+  credential: Record<string, unknown>
+}): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/passkeys/login`, {
+    method: 'POST',
+    body: JSON.stringify({
+      username: body.username,
+      challenge: body.challenge,
+      ...body.credential,
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+/** TOTP 状态（是否开启 + 剩余恢复码数量）。 */
+export async function getTotpStatus(signal?: AbortSignal): Promise<TotpStatusView> {
+  return request<TotpStatusView>(`${API_BASE}/auth/totp`, signal)
+}
+
+/** TOTP setup：秘密 + otpauth URI 只出现一次（手动录入，无 QR 依赖）。 */
+export async function setupTotp(): Promise<TotpSetupView> {
+  const response = await rawRequest(`${API_BASE}/auth/totp/setup`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as TotpSetupView
+}
+
+/** TOTP enable：验证一个验证码后开启；恢复码明文只返回这一次。 */
+export async function enableTotp(code: string): Promise<{ recoveryCodes: string[] }> {
+  const response = await rawRequest(`${API_BASE}/auth/totp/enable`, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as { recoveryCodes: string[] }
+}
+
+/** TOTP disable：服务端强制「当前密码 + 验证码/恢复码」。 */
+export async function disableTotp(code: string, currentPassword: string): Promise<void> {
+  await rawRequest(`${API_BASE}/auth/totp/disable`, {
+    method: 'POST',
+    body: JSON.stringify({ code, currentPassword }),
+    contentType: 'application/json',
+  })
+}
+
+/** 两步登录完成：pendingToken + 验证码（或恢复码）→ 真会话。 */
+export async function verifyTotpLogin(pendingToken: string, code: string): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/totp/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ pendingToken, code }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
 /** 登出当前设备（服务端撤销本 session + 过期 Cookie）。 */
 export async function logoutCurrent(): Promise<void> {
   await rawRequest(`${API_BASE}/auth/logout`, { method: 'POST' })
@@ -250,10 +420,15 @@ export async function logoutEverywhere(): Promise<void> {
 export async function changePassword(
   currentPassword: string,
   newPassword: string,
+  totpCode?: string,
 ): Promise<AuthStatusView> {
   const response = await rawRequest(`${API_BASE}/auth/password`, {
     method: 'POST',
-    body: JSON.stringify({ currentPassword, newPassword }),
+    body: JSON.stringify({
+      currentPassword,
+      newPassword,
+      ...(totpCode ? { totpCode } : {}),
+    }),
     contentType: 'application/json',
   })
   return (await response.json()) as AuthStatusView
@@ -375,13 +550,13 @@ function normalizeInvite(row: Record<string, unknown>): AdminInvite {
 /** 登录（多账户：username + password）。成功 = 浏览器拿到会话 Cookie；
  * 响应体只含 authenticated/expiresAt，身份由随后的 GET /auth/session
  * 补齐（服务端核实，绝不取自响应体之外）。 */
-export async function loginAccount(username: string, password: string): Promise<AuthStatusView> {
+export async function loginAccount(username: string, password: string): Promise<LoginResponse> {
   const response = await rawRequest(`${API_BASE}/auth/login`, {
     method: 'POST',
     body: JSON.stringify({ username, password }),
     contentType: 'application/json',
   })
-  return (await response.json()) as AuthStatusView
+  return (await response.json()) as LoginResponse
 }
 
 /** 邀请激活预览（公开；不消耗 token）。notBefore/serverTime 由服务端
