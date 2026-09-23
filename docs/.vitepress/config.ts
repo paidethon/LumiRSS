@@ -117,6 +117,7 @@ export default defineConfig({
           items: [
             { text: '配置键', link: '/reference/configuration' },
             { text: '测试与 CI', link: '/reference/testing' },
+            { text: '性能与负载', link: '/reference/performance' },
           ],
         },
         {
