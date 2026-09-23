@@ -24,6 +24,7 @@ with bound parameters.
 """
 
 import hashlib
+import json
 import re
 import secrets
 import time
@@ -47,6 +48,16 @@ _DUMMY_HASH = "$2b$12$vhJVUwWKwRIo3qc4ocmguOr4GOSWGI7L/nC8cCzWdVmM76atBdI1y"
 INVITE_TTL_HOURS_DEFAULT = 72
 INVITE_TTL_HOURS_MAX = 24 * 30
 
+# N004 funnel bucket sums over the aliased invites table (``i``). Same
+# definitions as the totals query — pending = unused & not expired.
+_BUCKET_SUMS = (
+    " COUNT(*) AS generated,"
+    " COALESCE(SUM(CASE WHEN i.used_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS activated,"
+    " COALESCE(SUM(CASE WHEN i.used_at IS NULL AND i.revoked_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS revoked,"
+    " COALESCE(SUM(CASE WHEN i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at <= ? THEN 1 ELSE 0 END), 0) AS expired,"
+    " COALESCE(SUM(CASE WHEN i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ? THEN 1 ELSE 0 END), 0) AS pending"
+)
+
 
 class AccountError(Exception):
     """Base class for account-store failures (stable API error types)."""
@@ -69,7 +80,30 @@ class UserNotFound(AccountError):
 
 
 class InviteInvalid(AccountError):
-    """Expired / revoked / unknown / already-used invitation."""
+    """Expired / revoked / unknown / already-used invitation.
+
+    ``invite_id`` carries the row id when the token matched a known
+    invite but was rejected (audit correlation); None for unknown
+    tokens — never any token material.
+    """
+
+    def __init__(self, message: str, *, invite_id: str | None = None) -> None:
+        super().__init__(message)
+        self.invite_id = invite_id
+
+
+class InviteNotActive(AccountError):
+    """Scheduled invite redeemed before its not_before (server clock)."""
+
+    def __init__(self, message: str, *, invite_id: str, not_before: int, now: int) -> None:
+        super().__init__(message)
+        self.invite_id = invite_id
+        self.not_before = not_before
+        self.now = now
+
+
+class SchemeNotFound(AccountError):
+    """Unknown invite scheme id."""
 
 
 class PoolEmpty(AccountError):
@@ -151,9 +185,16 @@ class AccountsStore:
         return dict(row) if row else None
 
     async def list_users(self, limit: int = 200) -> list[dict[str, object]]:
-        """Directory listing — never includes password hashes."""
+        """Directory listing — never includes password hashes. Includes
+        the invite-scheme name (N001) as directory metadata only; a
+        deleted scheme degrades to NULL, never hides the member."""
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT id, username, role, status, display_name, created_at, updated_at, password_updated_at FROM users ORDER BY created_at ASC LIMIT ?", (max(1, min(limit, 500)),))
+        rows = await self._db.fetch_all(
+            "SELECT u.id, u.username, u.role, u.status, u.display_name, u.created_at, u.updated_at, u.password_updated_at, s.name AS scheme_name"
+            " FROM users u LEFT JOIN invite_schemes s ON s.id = u.scheme_id"
+            " ORDER BY u.created_at ASC LIMIT ?",
+            (max(1, min(limit, 500)),),
+        )
         return [dict(r) for r in rows]
 
     async def set_user_status(self, user_id: str, status: str) -> bool:
@@ -213,15 +254,117 @@ class AccountsStore:
         cursor = await self._db.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND role != 'owner'", (role, _now(), user_id))
         return bool(cursor)
 
-    # ---- invites (O146) ---------------------------------------------------
+    # ---- invite schemes (N001) ---------------------------------------------
 
-    async def create_invite(self, *, created_by: str, ttl_hours: int = INVITE_TTL_HOURS_DEFAULT, label: str | None = None, kind: str = "signup", target_user: str | None = None) -> tuple[str, dict[str, object]]:
+    async def create_scheme(self, *, name: str, ttl_hours: int, initial_source_urls: list[str] | None = None, freshrss_pool_hold: bool = False, quota_note: str | None = None, created_by: str | None = None) -> dict[str, object]:
+        """Save one named invite scheme (template for batch generation)."""
+        clean_name = name.strip()
+        if not clean_name:
+            raise AccountError("Scheme name must not be blank.")
+        ttl = max(1, min(int(ttl_hours), INVITE_TTL_HOURS_MAX))
+        urls: list[str] = []
+        for url in initial_source_urls or []:
+            stripped = url.strip()
+            if stripped and stripped not in urls:
+                urls.append(stripped)
+        scheme_id = f"s{secrets.token_hex(8)}"
+        await self._db.migrate()
+        await self._db.execute(
+            "INSERT INTO invite_schemes (id, name, ttl_hours, initial_source_urls, freshrss_pool_hold, quota_note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (scheme_id, clean_name, ttl, json.dumps(urls), 1 if freshrss_pool_hold else 0, quota_note, created_by, _now()),
+        )
+        scheme = await self.get_scheme(scheme_id)
+        assert scheme is not None  # just inserted
+        return scheme
+
+    @staticmethod
+    def _scheme_row(row: object) -> dict[str, object]:
+        data: dict[str, object] = dict(row)  # pyright: ignore[reportArgumentType]
+        try:
+            urls = json.loads(str(data.get("initial_source_urls") or "[]"))
+        except ValueError:
+            urls = []
+        data["initial_source_urls"] = [str(u) for u in urls] if isinstance(urls, list) else []
+        return data
+
+    async def get_scheme(self, scheme_id: str) -> dict[str, object] | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT id, name, ttl_hours, initial_source_urls, freshrss_pool_hold, quota_note, created_by, created_at FROM invite_schemes WHERE id = ?", (scheme_id,))
+        return self._scheme_row(row) if row else None
+
+    async def list_schemes(self, limit: int = 200) -> list[dict[str, object]]:
+        await self._db.migrate()
+        rows = await self._db.fetch_all("SELECT id, name, ttl_hours, initial_source_urls, freshrss_pool_hold, quota_note, created_by, created_at FROM invite_schemes ORDER BY created_at DESC LIMIT ?", (max(1, min(limit, 500)),))
+        return [self._scheme_row(r) for r in rows]
+
+    async def delete_scheme(self, scheme_id: str) -> bool:
+        """Delete a scheme template. Existing invites/accounts keep their
+        scheme_id — the label degrades honestly via LEFT JOIN instead of
+        being rewritten anywhere."""
+        await self._db.migrate()
+        cursor = await self._db.execute("DELETE FROM invite_schemes WHERE id = ?", (scheme_id,))
+        return bool(cursor)
+
+    async def set_user_scheme(self, user_id: str, scheme_id: str) -> None:
+        """Record which scheme an account was activated through (N001)."""
+        await self._db.migrate()
+        await self._db.execute("UPDATE users SET scheme_id = ?, updated_at = ? WHERE id = ?", (scheme_id, _now(), user_id))
+
+    # ---- invites (O146, N001/N002/N003) ------------------------------------
+
+    async def _hold_pool_account(self) -> str:
+        """Atomically move one ready pool entry to held (N003).
+
+        Returns the FreshRSS username of the held account; raises
+        PoolEmpty when nothing is ready or the candidate raced away —
+        an invite is never created with a half-committed hold.
+        """
+        row = await self._db.fetch_one("SELECT id, freshrss_username FROM freshrss_pool WHERE state = 'ready' ORDER BY id ASC LIMIT 1")
+        if row is None:
+            raise PoolEmpty("No ready FreshRSS account in the pool to hold.")
+        cursor = await self._db.execute("UPDATE freshrss_pool SET state = 'held', held_invite = ? WHERE id = ? AND state = 'ready'", (str(row["freshrss_username"]), int(row["id"])))
+        if not cursor:  # concurrent hold grabbed it — honest failure
+            raise PoolEmpty("No ready FreshRSS account in the pool to hold.")
+        return str(row["freshrss_username"])
+
+    async def _release_held_account(self, freshrss_username: str | None) -> None:
+        """held → ready (revoke / expiry path). Assigned rows are never
+        touched and pool rows are never deleted."""
+        if not freshrss_username:
+            return
+        await self._db.migrate()
+        await self._db.execute("UPDATE freshrss_pool SET state = 'ready', held_invite = NULL WHERE freshrss_username = ? AND state = 'held'", (freshrss_username,))
+
+    async def release_expired_holds(self) -> int:
+        """Auto-release holds of expired unused invites (N003).
+
+        Invites expire by wall-clock comparison, so expiry release is
+        enforced lazily wherever pool state is read or assigned — an
+        expired invite's slot becomes reusable without any sweeper.
+        """
+        await self._db.migrate()
+        cursor = await self._db.execute(
+            "UPDATE freshrss_pool SET state = 'ready', held_invite = NULL WHERE state = 'held' AND held_invite IS NOT NULL AND EXISTS ("
+            "SELECT 1 FROM invites WHERE invites.held_pool_account = freshrss_pool.freshrss_username"
+            " AND invites.used_at IS NULL AND invites.revoked_at IS NULL AND invites.expires_at <= ?)",
+            (_now(),),
+        )
+        return int(cursor or 0)
+
+    async def create_invite(self, *, created_by: str, ttl_hours: int = INVITE_TTL_HOURS_DEFAULT, label: str | None = None, kind: str = "signup", target_user: str | None = None, scheme_id: str | None = None, not_before: int | None = None, hold_pool: bool = False) -> tuple[str, dict[str, object]]:
         """Create one invitation; returns (raw_token, invite_row).
 
         kind='signup' admits a new member; kind='recovery' resets the
         password of ``target_user`` (admin-initiated recovery, O150 — no
         email service required and nothing is pretended to be sent). The
         raw token appears exactly once; the database keeps its SHA-256.
+
+        N001: ``scheme_id`` stamps the generating scheme on the row.
+        N002: ``not_before`` (epoch seconds, server clock) schedules the
+        earliest activation instant.
+        N003: ``hold_pool`` reserves one ready FreshRSS pool account at
+        creation (ready → held); raising PoolEmpty fails the whole
+        create honestly instead of silently downgrading to no hold.
         """
         if kind not in ("signup", "recovery"):
             raise AccountError("Unknown invite kind.")
@@ -229,39 +372,114 @@ class AccountsStore:
             raise AccountError("Recovery invites need a target user.")
         ttl = max(1, min(int(ttl_hours), INVITE_TTL_HOURS_MAX))
         await self._db.migrate()
+        held: str | None = None
+        if hold_pool:
+            if kind != "signup":
+                raise AccountError("Only signup invites can hold a pool account.")
+            held = await self._hold_pool_account()
         raw = new_token("inv")
         invite_id = f"i{secrets.token_hex(8)}"
         now = _now()
-        await self._db.execute("INSERT INTO invites (id, token_hash, created_by, kind, target_user, label, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (invite_id, hash_token(raw), created_by, kind, target_user, label, now, now + ttl * 3600))
-        row = await self._db.fetch_one("SELECT id, created_by, kind, target_user, label, created_at, expires_at FROM invites WHERE id = ?", (invite_id,))
+        try:
+            await self._db.execute(
+                "INSERT INTO invites (id, token_hash, created_by, kind, target_user, label, scheme_id, not_before, held_pool_account, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (invite_id, hash_token(raw), created_by, kind, target_user, label, scheme_id, not_before, held, now, now + ttl * 3600),
+            )
+        except Exception:
+            if held is not None:  # never leak a hold on a failed insert
+                await self._release_held_account(held)
+            raise
+        row = await self._db.fetch_one("SELECT id, created_by, kind, target_user, label, scheme_id, not_before, held_pool_account, created_at, expires_at FROM invites WHERE id = ?", (invite_id,))
         return raw, (dict(row) if row else {})
 
     async def redeem_invite(self, raw_token: str) -> dict[str, object]:
         """Atomically consume one invitation; returns its row.
 
-        Raises InviteInvalid for unknown/expired/revoked/used tokens. The
-        conditional UPDATE makes concurrent redemptions single-winner.
+        Raises InviteInvalid for unknown/expired/revoked/used tokens and
+        InviteNotActive (server-clock comparison only) for scheduled
+        invites redeemed before not_before (N002). The conditional
+        UPDATE makes concurrent redemptions single-winner — the
+        pre-checks only pick the honest error type.
         """
         await self._db.migrate()
         token_hash = hash_token(raw_token)
         now = _now()
-        cursor = await self._db.execute("UPDATE invites SET used_at = ?, used_by = COALESCE(used_by, target_user) WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?", (now, token_hash, now))
+        pre = await self._db.fetch_one("SELECT id, not_before, expires_at, used_at, revoked_at FROM invites WHERE token_hash = ?", (token_hash,))
+        if pre is not None:
+            invite_id = str(pre["id"])
+            if pre["used_at"] is not None or pre["revoked_at"] is not None:
+                raise InviteInvalid("Invitation is invalid, expired or already used.", invite_id=invite_id)
+            if pre["not_before"] is not None and int(pre["not_before"]) > now:
+                raise InviteNotActive("Invitation is not active yet.", invite_id=invite_id, not_before=int(pre["not_before"]), now=now)
+            if int(pre["expires_at"]) <= now:
+                raise InviteInvalid("Invitation is invalid, expired or already used.", invite_id=invite_id)
+        cursor = await self._db.execute(
+            "UPDATE invites SET used_at = ?, used_by = COALESCE(used_by, target_user) WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ? AND (not_before IS NULL OR not_before <= ?)",
+            (now, token_hash, now, now),
+        )
         if not cursor:
             raise InviteInvalid("Invitation is invalid, expired or already used.")
-        row = await self._db.fetch_one("SELECT id, created_by, kind, target_user, label, created_at, expires_at, used_at, used_by FROM invites WHERE token_hash = ?", (token_hash,))
+        row = await self._db.fetch_one("SELECT id, created_by, kind, target_user, label, scheme_id, not_before, held_pool_account, created_at, expires_at, used_at, used_by FROM invites WHERE token_hash = ?", (token_hash,))
         if row is None:
             raise InviteInvalid("Invitation is invalid.")
         return dict(row)
 
     async def revoke_invite(self, invite_id: str) -> bool:
+        """Revoke an unused invite; its pool hold (if any) auto-releases
+        back to ready (N003)."""
         await self._db.migrate()
         cursor = await self._db.execute("UPDATE invites SET revoked_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL", (_now(), invite_id))
+        if cursor:
+            row = await self._db.fetch_one("SELECT held_pool_account FROM invites WHERE id = ?", (invite_id,))
+            if row is not None and row["held_pool_account"] is not None:
+                await self._release_held_account(str(row["held_pool_account"]))
         return bool(cursor)
 
     async def list_invites(self, limit: int = 100) -> list[dict[str, object]]:
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT id, created_by, kind, target_user, label, created_at, expires_at, used_at, used_by, revoked_at FROM invites ORDER BY created_at DESC LIMIT ?", (max(1, min(limit, 500)),))
+        rows = await self._db.fetch_all("SELECT id, created_by, kind, target_user, label, scheme_id, not_before, held_pool_account, created_at, expires_at, used_at, used_by, revoked_at FROM invites ORDER BY created_at DESC LIMIT ?", (max(1, min(limit, 500)),))
         return [dict(r) for r in rows]
+
+    async def invite_funnel(self, scheme_id: str | None = None) -> dict[str, object]:
+        """Invite funnel counts from real rows (N004) — never any token
+        or token hash. pending = unused and not expired (scheduled
+        invites count as pending until they activate)."""
+        await self._db.migrate()
+        now = _now()
+        filter_clause = " WHERE i.scheme_id IS ?" if scheme_id is not None else ""
+        filter_params: tuple[object, ...] = (scheme_id,) if scheme_id is not None else ()
+        totals_row = await self._db.fetch_one(
+            "SELECT" + _BUCKET_SUMS + " FROM invites i" + filter_clause,
+            (now, now, *filter_params),
+        )
+        data = dict(totals_row) if totals_row else {}
+        totals = {key: int(data.get(key, 0) or 0) for key in ("generated", "activated", "revoked", "expired", "pending")}
+        rows = await self._db.fetch_all(
+            "SELECT i.scheme_id AS scheme_id, s.name AS scheme_name," + _BUCKET_SUMS
+            + " FROM invites i LEFT JOIN invite_schemes s ON s.id = i.scheme_id"
+            + filter_clause + " GROUP BY i.scheme_id, s.name ORDER BY generated DESC",
+            (now, now, *filter_params),
+        )
+        by_scheme: list[dict[str, object]] = []
+        for row in rows:
+            grouped = dict(row)
+            by_scheme.append({
+                "schemeId": grouped.get("scheme_id"),
+                "schemeName": grouped.get("scheme_name"),
+                **{key: int(grouped.get(key, 0) or 0) for key in ("generated", "activated", "revoked", "expired", "pending")},
+            })
+        if scheme_id is None:
+            failed_row = await self._db.fetch_one(
+                "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'invite_activation_failed'", ()
+            )
+        else:
+            failed_row = await self._db.fetch_one(
+                "SELECT COUNT(*) AS n FROM audit_log a JOIN invites i ON i.id = a.object_id"
+                " WHERE a.action = 'invite_activation_failed' AND i.scheme_id IS ?",
+                (scheme_id,),
+            )
+        totals["failedActivation"] = int(failed_row["n"]) if failed_row else 0
+        return {"totals": totals, "byScheme": by_scheme}
 
     # ---- FreshRSS pool (O155) ---------------------------------------------
 
@@ -281,8 +499,15 @@ class AccountsStore:
         row = await self._db.fetch_one("SELECT id, freshrss_username, base_url, state, created_at FROM freshrss_pool WHERE freshrss_username = ?", (freshrss_username,))
         return dict(row) if row else {}
 
-    async def pool_assign(self, user_id: str) -> dict[str, object] | None:
+    async def pool_assign(self, user_id: str, held_freshrss_username: str | None = None) -> dict[str, object] | None:
         """Atomically assign one ready pool entry to a user.
+
+        When the redeeming invite holds a pool account (N003), THAT
+        account is converted held → assigned first — a hold is a claim,
+        never a suggestion. Falls through to the plain ready path when
+        the held row is gone (already converted by a concurrent twin).
+        Expired holds are swept first so an expired invite never keeps a
+        slot hostage.
 
         Returns the assigned row or None when the pool is empty — the
         activation flow surfaces an honest "FreshRSS account not ready
@@ -291,6 +516,16 @@ class AccountsStore:
         the returned username.
         """
         await self._db.migrate()
+        await self.release_expired_holds()
+        if held_freshrss_username:
+            row = await self._db.fetch_one("SELECT id, freshrss_username, base_url FROM freshrss_pool WHERE freshrss_username = ? AND state = 'held'", (held_freshrss_username,))
+            if row is not None:
+                cursor = await self._db.execute(
+                    "UPDATE freshrss_pool SET state = 'assigned', held_invite = NULL, assigned_user = ?, assigned_at = ? WHERE id = ? AND state = 'held'",
+                    (user_id, _now(), int(row["id"])),
+                )
+                if cursor:
+                    return dict(row)
         row = await self._db.fetch_one("SELECT id, freshrss_username, base_url FROM freshrss_pool WHERE state = 'ready' ORDER BY id ASC LIMIT 1")
         if row is None:
             return None
@@ -306,9 +541,10 @@ class AccountsStore:
 
     async def pool_status(self) -> dict[str, int]:
         await self._db.migrate()
+        await self.release_expired_holds()
         rows = await self._db.fetch_all("SELECT state, COUNT(*) AS n FROM freshrss_pool GROUP BY state")
         counts = {str(r["state"]): int(r["n"]) for r in rows}
-        return {"ready": counts.get("ready", 0), "assigned": counts.get("assigned", 0)}
+        return {"ready": counts.get("ready", 0), "held": counts.get("held", 0), "assigned": counts.get("assigned", 0)}
 
     # ---- audit (O172) -------------------------------------------------------
 
@@ -340,7 +576,7 @@ class AccountsStore:
 
     async def get_invite_state_by_token(self, token_hash: str) -> dict[str, object] | None:
         await self._db.migrate()
-        row = await self._db.fetch_one("SELECT expires_at, used_at, revoked_at, kind FROM invites WHERE token_hash = ?", (token_hash,))
+        row = await self._db.fetch_one("SELECT id, expires_at, not_before, used_at, revoked_at, kind FROM invites WHERE token_hash = ?", (token_hash,))
         return dict(row) if row else None
 
     async def restore_unused_invite(self, token_hash: str) -> None:

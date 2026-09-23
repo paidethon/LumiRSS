@@ -618,6 +618,17 @@ class PasswordChangeRequest(BaseModel):
     newPassword: str = Field(min_length=1, max_length=256)
 
 
+class ActivationSourceResult(BaseModel):
+    """One scheme initial-source subscription attempt (N001).
+
+    ``ok=False`` is an honest per-URL failure record — activation itself
+    is never blocked or rolled back by a source failure."""
+
+    url: str
+    ok: bool
+    error: str | None = None
+
+
 class AuthStatus(BaseModel):
     """Login / session-status payload; expiresAt is an ISO-8601 instant.
 
@@ -625,7 +636,8 @@ class AuthStatus(BaseModel):
     Basic Auth (the app must not render its own login gate), "session" =
     BFF sessions (gate on ``authenticated``). userId/username/role carry
     the server-verified identity for the account menu — the client never
-    declares who it is."""
+    declares who it is. initialSources is only present on the invite
+    activation response (N001); every other surface omits it entirely."""
 
     authenticated: bool
     mode: Literal["basic", "session"] = "session"
@@ -633,6 +645,7 @@ class AuthStatus(BaseModel):
     userId: str | None = None
     username: str | None = None
     role: Literal["owner", "admin", "member"] | None = None
+    initialSources: list[ActivationSourceResult] | None = None
 
 
 class ApiVersionInfo(BaseModel):
