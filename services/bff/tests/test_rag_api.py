@@ -102,7 +102,12 @@ def test_rebuild_and_search_over_http(client):
             app.state.rag_service = None
 
 
-def test_disable_route_resets_enabled(client):
+def test_disable_route_resets_enabled(client, monkeypatch):
+    # Hermetic on machines without fastembed: the enable gate must see the
+    # runtime as AVAILABLE (the fake embedder below answers the warmup).
+    import lumirss.rag as rag_module
+
+    monkeypatch.setattr(rag_module, "_FASTEMBED_AVAILABLE", True)
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
