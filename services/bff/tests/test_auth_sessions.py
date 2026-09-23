@@ -446,3 +446,161 @@ def test_basic_mode_is_default_and_unchanged(monkeypatch, tmp_path):
     with _client(tmp_path) as client:
         app.state.db = Database(tmp_path / "lumi.sqlite")
         assert client.get("/api/v1/settings").status_code == 200
+
+
+# ---- 0067 auth edges: user-id validation, legacy hashes, byte ceiling -------
+#
+# The rules under test live in user_scope.validate_user_id (format =
+# alphanumeric only — separators, dots, whitespace and traversal can never
+# select a database file — and length ≤ 40) and in accounts_store's
+# bcrypt ceiling (this build of the library RAISES beyond 72 BYTES, so
+# over-long passwords are rejected at the boundary with a stable 400 and
+# can never turn a login into a 500).
+
+
+def test_validate_user_id_accepts_server_shaped_ids():
+    from lumirss.user_scope import validate_user_id
+
+    assert validate_user_id("u1") == "u1"
+    assert validate_user_id("u" + "0f" * 8) == "u" + "0f" * 8  # 17 chars
+    assert validate_user_id("a" * 40) == "a" * 40  # exactly the cap
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",  # empty
+        "../etc/passwd",  # traversal
+        "..%2Fowner",  # encoded traversal
+        "u1/u2",  # path separator
+        "u1\\u2",  # windows separator
+        "u-1",  # separator character
+        "u_1",  # separator character
+        "..hidden",  # dot prefix
+        "u1 x",  # whitespace
+        "u1;x",  # shell-ish punctuation
+        "u1\n",  # control character
+        "a" * 41,  # over the length cap
+    ],
+)
+def test_validate_user_id_rejects_garbage(bad):
+    from lumirss.user_scope import NoUserContextError, validate_user_id
+
+    with pytest.raises(NoUserContextError):
+        validate_user_id(bad)
+
+
+def test_bind_user_context_rejects_forged_id():
+    from lumirss.user_scope import NoUserContextError, bind_user_context
+
+    with pytest.raises(NoUserContextError):
+        bind_user_context("../../etc/passwd")
+
+
+def test_forged_user_id_in_admin_path_is_404(logged_in):
+    """A garbage path-param id never selects a database file: ids that
+    reach the handler get the stable 404 user_not_found envelope, and
+    slash-encoded traversal never even matches a route (Starlette 404)."""
+    for garbage in ("..%2F..%2Fetc%2Fpasswd", "uDEADBEEF-...--", "a" * 41):
+        response = logged_in.post(f"/api/v1/admin/users/{garbage}/pause")
+        assert response.status_code == 404, garbage
+    for garbage in ("uDEADBEEF-...--", "a" * 41):  # route-matched → handler envelope
+        response = logged_in.post(f"/api/v1/admin/users/{garbage}/pause")
+        assert response.json()["error"]["type"] == "user_not_found", garbage
+    role = logged_in.post(
+        "/api/v1/admin/users/..%2F..%2Fetc%2Fpasswd/role", json={"role": "member"}
+    )
+    assert role.status_code == 404
+
+
+def _create_member(db_path, username: str, password: str | None, *, precomputed_hash: str | None = None) -> None:
+    import asyncio
+
+    from lumirss.accounts_store import AccountsStore, hash_password
+
+    async def run():
+        database = Database(db_path / "lumi.sqlite")
+        await database.migrate()
+        store = AccountsStore(database)
+        await store.create_user(
+            username=username,
+            password_hash=precomputed_hash or hash_password(password),
+            role="member",
+        )
+
+    asyncio.run(run())
+
+
+def test_legacy_bcrypt_hash_login(session_env):
+    """A row hashed by the legacy path (plain bcrypt, any cost) must keep
+    authenticating — the control store never re-hashes logins."""
+    import bcrypt as _bcrypt
+
+    legacy_password = "legacy-secret-93"
+    legacy_hash = _bcrypt.hashpw(
+        legacy_password.encode("utf-8"), _bcrypt.gensalt(rounds=4)
+    ).decode("utf-8")
+    _create_member(session_env, "oldmember", None, precomputed_hash=legacy_hash)
+    with _client(session_env) as client:
+        app.state.db = Database(session_env / "lumi.sqlite")
+        ok = _login(client, username="oldmember", password=legacy_password)
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["authenticated"] is True
+        # …and the wrong password against that same legacy row is 401.
+        bad = _login(client, username="oldmember", password=WRONG_PASSWORD)
+        assert bad.status_code == 401
+
+
+def test_long_password_rejected_at_boundary_login_never_500s(session_env):
+    """bcrypt (this build) refuses > 72 BYTES: setting such a password is
+    a stable 400, and attempting to log in with one fails closed with 401
+    (constant-shape dummy check) — never a 500 from the hash library."""
+    long_password = "N" * 100  # 100 ASCII chars = 100 bytes > 72
+    # Store level: the documented actual behavior is a rejection.
+    from lumirss.accounts_store import WeakPassword, hash_password, verify_password_hash
+
+    with pytest.raises(WeakPassword):
+        hash_password(long_password)
+    assert verify_password_hash(long_password, None) is False
+    # HTTP level: set is rejected at the boundary; login is 401.
+    _create_member(session_env, "polylong", "startpass-77")
+    with _client(session_env) as client:
+        app.state.db = Database(session_env / "lumi.sqlite")
+        assert _login(client, username="polylong", password="startpass-77").status_code == 200
+        changed = client.post(
+            "/api/v1/auth/password",
+            json={"currentPassword": "startpass-77", "newPassword": long_password},
+        )
+        assert changed.status_code == 400
+        assert changed.json()["error"]["type"] == "weak_password"
+        overlong = _login(client, username="polylong", password=long_password)
+        assert overlong.status_code == 401
+        assert overlong.json()["error"]["type"] == "invalid_credentials"
+
+
+def test_unicode_password_roundtrip_and_wrong_password_401(session_env):
+    """CJK/emoji passwords (multi-byte, under the byte ceiling) hash and
+    verify consistently: set → login round-trips; wrong password 401s."""
+    unicode_password = "量子猫密码🚀测试"  # 8 chars, 25 UTF-8 bytes
+    assert len(unicode_password.encode("utf-8")) <= 72
+    _create_member(session_env, "polyglot", unicode_password)
+    with _client(session_env) as client:
+        app.state.db = Database(session_env / "lumi.sqlite")
+        ok = _login(client, username="polyglot", password=unicode_password)
+        assert ok.status_code == 200, ok.text
+        # Re-set the SAME unicode password through the change endpoint and
+        # log back in — bytes in, bytes out, no silent mutation.
+        changed = client.post(
+            "/api/v1/auth/password",
+            json={"currentPassword": unicode_password, "newPassword": unicode_password + "二"},
+        )
+        assert changed.status_code == 200, changed.text
+        fresh = client.post(
+            "/api/v1/auth/login",
+            json={"username": "polyglot", "password": unicode_password + "二"},
+        )
+        assert fresh.status_code == 200
+        # The old password no longer works.
+        assert _login(client, username="polyglot", password=unicode_password).status_code == 401
+        # And plain wrong passwords stay 401 after all of the above.
+        assert _login(client, username="polyglot", password=WRONG_PASSWORD).status_code == 401

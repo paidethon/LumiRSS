@@ -34,6 +34,12 @@ from lumirss.storage import Database
 
 _TOKEN_BYTES = 32
 MIN_PASSWORD_LENGTH = 8
+# bcrypt operates on at most 72 BYTES and this build of the library
+# RAISES on longer input (no silent truncation) — reject over-long
+# passwords with a stable 400 instead of a 500 at hash/verify time.
+# Multi-byte passwords (CJK/emoji) hit the ceiling much earlier in
+# characters, so the limit is bytes, not len().
+MAX_PASSWORD_BYTES = 72
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 # Public constant hashed at build time — timing equalizer only, no secret.
 _DUMMY_HASH = "$2b$12$vhJVUwWKwRIo3qc4ocmguOr4GOSWGI7L/nC8cCzWdVmM76atBdI1y"
@@ -73,14 +79,24 @@ class PoolEmpty(AccountError):
 def hash_password(password: str) -> str:
     if len(password) < MIN_PASSWORD_LENGTH:
         raise WeakPassword("Password must be at least 8 characters.")
+    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        raise WeakPassword(
+            f"Password must be at most {MAX_PASSWORD_BYTES} bytes "
+            "(multi-byte scripts count every byte)."
+        )
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_password_hash(password: str, stored: str | None) -> bool:
-    """Constant-shape verification: a missing hash burns one bcrypt too."""
+    """Constant-shape verification: a missing hash burns one bcrypt too.
+
+    An over-long password can never match any storable hash (setting is
+    rejected at MAX_PASSWORD_BYTES), so it burns the same dummy check and
+    returns False — login fails closed with 401, never a 500.
+    """
     supplied = password.encode("utf-8")
-    if not stored:
-        bcrypt.checkpw(supplied, _DUMMY_HASH.encode("utf-8"))
+    if not stored or len(supplied) > MAX_PASSWORD_BYTES:
+        bcrypt.checkpw(supplied[:MAX_PASSWORD_BYTES], _DUMMY_HASH.encode("utf-8"))
         return False
     return bcrypt.checkpw(supplied, stored.encode("utf-8"))
 
