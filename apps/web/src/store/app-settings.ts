@@ -38,6 +38,10 @@ import {
   prefixCustomCss,
 } from '../lib/reader-style'
 import { fontFamilyName, fontIdFromUrl } from '../lib/reader-fonts'
+import {
+  defaultReaderToolbarOrder,
+  normalizeReaderToolbarOrder,
+} from '../lib/reader-toolbar'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
@@ -236,6 +240,11 @@ export interface AppSettings {
   sidebarCollapsed: boolean
   timelineWidth: number // clamp 360–460
   timelineCollapsed: boolean
+  /** P07 阅读器工具栏自定义（设备本地，两断点各自记忆）：
+   * 元素为动作 id 或隐藏占位 '-id'，格式与归一化见 lib/reader-toolbar.ts。
+   * 不进 PORTABLE_KEYS——工具栏排布是设备本地偏好，不参与服务端同步。 */
+  readerToolbarDesktopOrder: string[]
+  readerToolbarMobileOrder: string[]
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -263,6 +272,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sidebarCollapsed: false,
   timelineWidth: 400,
   timelineCollapsed: false,
+  // P07：默认序 = 既有视觉序的忠实快照（registry 派生，见 lib/reader-toolbar.ts）
+  readerToolbarDesktopOrder: defaultReaderToolbarOrder('desktop'),
+  readerToolbarMobileOrder: defaultReaderToolbarOrder('mobile'),
 }
 
 // ---- 解析 / 迁移（纯函数，可测试） ----
@@ -600,6 +612,15 @@ export function normalizeSettings(raw: unknown): AppSettings {
       typeof source.timelineCollapsed === 'boolean'
         ? source.timelineCollapsed
         : DEFAULT_APP_SETTINGS.timelineCollapsed,
+    // P07：工具栏排布逐项归一化（去重 / 丢未知 / 补缺项 / 锁定收藏与更多）
+    readerToolbarDesktopOrder: normalizeReaderToolbarOrder(
+      source.readerToolbarDesktopOrder,
+      'desktop',
+    ),
+    readerToolbarMobileOrder: normalizeReaderToolbarOrder(
+      source.readerToolbarMobileOrder,
+      'mobile',
+    ),
   }
 }
 
