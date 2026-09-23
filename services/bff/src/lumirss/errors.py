@@ -145,6 +145,12 @@ from lumirss.obsidian import (
     VaultRootLocked,
     VaultUnreachable,
 )
+from lumirss.obsidian_devices import (
+    DeviceProfileInvalid,
+    DeviceProfileNotFound,
+)
+from lumirss.obsidian_template import TemplateTooLong
+from lumirss.obsidian_uri import ObsidianUriInvalid
 from lumirss.opml import (
     OpmlInvalid,
     OpmlTooLarge,
@@ -203,6 +209,7 @@ from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
     WorkspaceNotFound,
+    WorkspaceRevisionConflict,
 )
 
 _ERROR_RESPONSES = {
@@ -298,6 +305,8 @@ _ERROR_RESPONSES = {
     WorkspaceInvalid: (400, "invalid_workspace"),
     WorkspaceNotFound: (404, "workspace_not_found"),
     ReservedWorkspaceError: (409, "reserved_workspace"),
+    # P15（响应体额外带 currentRevision —— 见专用 handler）
+    WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -325,6 +334,11 @@ _ERROR_RESPONSES = {
     VaultPermissionDenied: (403, "vault_permission_denied"),
     NoteNotFound: (404, "note_not_found"),
     VaultRootLocked: (409, "vault_root_locked"),
+    # P16 obsidian devices / export handoff
+    DeviceProfileInvalid: (422, "invalid_device_profile"),
+    DeviceProfileNotFound: (404, "device_profile_not_found"),
+    ObsidianUriInvalid: (422, "invalid_obsidian_uri"),
+    TemplateTooLong: (422, "template_too_long"),
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
@@ -488,6 +502,10 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(VaultPermissionDenied)
     @app.exception_handler(NoteNotFound)
     @app.exception_handler(VaultRootLocked)
+    @app.exception_handler(DeviceProfileInvalid)
+    @app.exception_handler(DeviceProfileNotFound)
+    @app.exception_handler(ObsidianUriInvalid)
+    @app.exception_handler(TemplateTooLong)
     @app.exception_handler(RagModelUnavailable)
     @app.exception_handler(RagRebuildBusy)
     @app.exception_handler(AgentProviderUnavailable)
@@ -544,6 +562,23 @@ def register_error_handlers(app) -> None:
         return JSONResponse(
             status_code=status,
             content={"error": {"type": error_type, "message": str(exc)}},
+        )
+
+    @app.exception_handler(WorkspaceRevisionConflict)
+    async def workspace_revision_conflict_handler(
+        request: Request, exc: WorkspaceRevisionConflict
+    ) -> JSONResponse:
+        """P15：409 冲突体额外携带 currentRevision——客户端不解析也能
+        重取；解析后可直接用它重试（省一次 detail 往返）。"""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "workspace_revision_conflict",
+                    "message": str(exc),
+                    "currentRevision": exc.current_revision,
+                }
+            },
         )
 
 

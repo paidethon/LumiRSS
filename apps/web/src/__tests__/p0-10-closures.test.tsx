@@ -73,6 +73,7 @@ function workspaceFixture(over: Partial<Workspace> = {}): Workspace {
     archived: false,
     reserved: false,
     description: '',
+    revision: 1,
     ...over,
   }
 }

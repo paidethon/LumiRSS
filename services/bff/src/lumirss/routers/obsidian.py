@@ -10,10 +10,19 @@ from lumirss.models import (
     LibraryFavoriteRequest,
     NoteListResponse,
     NoteView,
+    ObsidianDeviceProfile,
+    ObsidianDeviceProfileList,
+    ObsidianDeviceProfilePayload,
+    ObsidianExportHandoffRequest,
+    ObsidianExportHandoffResult,
+    ObsidianExportTemplateUpdate,
+    ObsidianExportTemplateView,
     ObsidianNoteSetting,
     ObsidianRescanResult,
     ObsidianSettings,
     ObsidianStatus,
+    ObsidianTemplatePreviewRequest,
+    ObsidianTemplatePreviewResult,
 )
 from lumirss.obsidian import NoteNotFound
 
@@ -194,3 +203,222 @@ async def list_note_broken_links(note_uuid: str, request: Request) -> Any:
     from lumirss.obsidian_backlinks import broken_links_for
 
     return {"items": await broken_links_for(request.app.state.db, note_uuid)}
+
+
+# ---------------------------------------------------------------------------
+# P16：多设备交接 —— 设备档案 / 导出模板 / 导出交接。
+# 用户级（user-scoped）：设备档案描述用户自己设备上的 Obsidian，只服务
+# obsidian:// URI 生成；与服务器端 vault_path（env 挂载/手动路径，owner
+# 的扫描面）解耦 —— 因此这里刻意【不带】_require_owner 门槛，任何登录
+# 账户管理自己的设备与模板。Vault 依旧只读（ADR 0004）：obsidian://new
+# 只是把内容交给用户本机的 Obsidian，保存由用户在 Obsidian 里确认。
+# ---------------------------------------------------------------------------
+
+
+def _device_store(request: Request):
+    from lumirss.obsidian_devices import ObsidianDeviceStore
+
+    return ObsidianDeviceStore(request.app.state.db)
+
+
+def _template_store(request: Request):
+    from lumirss.obsidian_devices import ObsidianExportSettingsStore
+
+    return ObsidianExportSettingsStore(request.app.state.db)
+
+
+@router.get(
+    "/api/v1/obsidian/devices", response_model=ObsidianDeviceProfileList
+)
+async def list_obsidian_devices(request: Request) -> ObsidianDeviceProfileList:
+    items = await _device_store(request).list_profiles()
+    return ObsidianDeviceProfileList(
+        items=[
+            ObsidianDeviceProfile(
+                id=item["id"],
+                label=item["label"],
+                vaultName=item["vault_name"],
+                vaultIdentifier=item["vault_identifier"],
+                platform=item["platform"],  # type: ignore[arg-type]
+                createdAt=item["created_at"],
+            )
+            for item in items
+        ]
+    )
+
+
+@router.post(
+    "/api/v1/obsidian/devices",
+    response_model=ObsidianDeviceProfile,
+    status_code=201,
+)
+async def create_obsidian_device(
+    payload: ObsidianDeviceProfilePayload, request: Request
+) -> ObsidianDeviceProfile:
+    profile = await _device_store(request).create(
+        label=payload.label,
+        vault_name=payload.vaultName,
+        vault_identifier=payload.vaultIdentifier,
+        platform=payload.platform,
+    )
+    return ObsidianDeviceProfile(
+        id=profile["id"],
+        label=profile["label"],
+        vaultName=profile["vault_name"],
+        vaultIdentifier=profile["vault_identifier"],
+        platform=profile["platform"],  # type: ignore[arg-type]
+        createdAt=profile["created_at"],
+    )
+
+
+@router.put("/api/v1/obsidian/devices/{device_id}", response_model=ObsidianDeviceProfile)
+async def update_obsidian_device(
+    device_id: str, payload: ObsidianDeviceProfilePayload, request: Request
+) -> ObsidianDeviceProfile:
+    from lumirss.obsidian_devices import DeviceProfileNotFound
+
+    profile = await _device_store(request).update(
+        device_id,
+        label=payload.label,
+        vault_name=payload.vaultName,
+        vault_identifier=payload.vaultIdentifier,
+        platform=payload.platform,
+    )
+    if profile is None:
+        raise DeviceProfileNotFound(device_id)
+    return ObsidianDeviceProfile(
+        id=profile["id"],
+        label=profile["label"],
+        vaultName=profile["vault_name"],
+        vaultIdentifier=profile["vault_identifier"],
+        platform=profile["platform"],  # type: ignore[arg-type]
+        createdAt=profile["created_at"],
+    )
+
+
+@router.delete("/api/v1/obsidian/devices/{device_id}", status_code=204)
+async def delete_obsidian_device(
+    device_id: str, request: Request
+) -> Response:
+    from lumirss.obsidian_devices import DeviceProfileNotFound
+
+    deleted = await _device_store(request).delete(device_id)
+    if not deleted:
+        raise DeviceProfileNotFound(device_id)
+    return Response(status_code=204)
+
+
+@router.get(
+    "/api/v1/obsidian/export-template", response_model=ObsidianExportTemplateView
+)
+async def get_obsidian_export_template(
+    request: Request,
+) -> ObsidianExportTemplateView:
+    from lumirss.obsidian_template import (
+        ALLOWED_TEMPLATE_VARS,
+        DEFAULT_TEMPLATE,
+    )
+
+    stored = await _template_store(request).get_stored_template()
+    return ObsidianExportTemplateView(
+        template=stored,
+        defaultTemplate=DEFAULT_TEMPLATE,
+        allowedVars=list(ALLOWED_TEMPLATE_VARS),
+    )
+
+
+@router.put(
+    "/api/v1/obsidian/export-template", response_model=ObsidianExportTemplateView
+)
+async def set_obsidian_export_template(
+    payload: ObsidianExportTemplateUpdate, request: Request
+) -> ObsidianExportTemplateView:
+    from lumirss.obsidian_template import (
+        ALLOWED_TEMPLATE_VARS,
+        DEFAULT_TEMPLATE,
+    )
+
+    stored = await _template_store(request).set_template(payload.template)
+    return ObsidianExportTemplateView(
+        template=stored,
+        defaultTemplate=DEFAULT_TEMPLATE,
+        allowedVars=list(ALLOWED_TEMPLATE_VARS),
+    )
+
+
+@router.post(
+    "/api/v1/obsidian/export-template/preview",
+    response_model=ObsidianTemplatePreviewResult,
+)
+async def preview_obsidian_export_template(
+    payload: ObsidianTemplatePreviewRequest, request: Request
+) -> ObsidianTemplatePreviewResult:
+    """Live preview for the template editor.
+
+    ``entryRef`` given → renders the REAL article (reader handoff
+    preview); omitted → fixture text. Unknown variables are reported
+    honestly instead of passing through silently."""
+    from lumirss.deps import _get_adapter
+    from lumirss.entryref import decode_entry_ref
+    from lumirss.obsidian_handoff import (
+        FIXTURE_CONTEXT,
+        build_export_context,
+        render_export_markdown,
+    )
+
+    if payload.entryRef:
+        item_id = decode_entry_ref(payload.entryRef)
+        detail = await _get_adapter(request).get_entry(item_id)
+        # 预览不带批注（批注清单在阅读页交接时由服务端注入）。
+        context = build_export_context(detail, [])
+        source = "entry"
+    else:
+        context = FIXTURE_CONTEXT
+        source = "fixture"
+    rendered = render_export_markdown(payload.template, context)
+    return ObsidianTemplatePreviewResult(
+        text=rendered.text, unknownVars=rendered.unknown_vars, source=source
+    )
+
+
+@router.post(
+    "/api/v1/obsidian/export-handoff",
+    response_model=ObsidianExportHandoffResult,
+)
+async def export_obsidian_handoff(
+    payload: ObsidianExportHandoffRequest, request: Request
+) -> ObsidianExportHandoffResult:
+    """Compose + render + decide URI vs file fallback for one article.
+
+    Honest handoff: ``mode='uri'`` means the obsidian://new link was
+    built (the USER's Obsidian does any writing after confirmation);
+    ``mode='file'`` with reason='tooLong' means the content exceeded the
+    URI budget and the client falls back to download + clipboard."""
+    from lumirss.deps import _get_adapter
+    from lumirss.entryref import decode_entry_ref
+    from lumirss.obsidian_devices import DeviceProfileNotFound
+    from lumirss.obsidian_handoff import prepare_handoff_for_entry
+
+    store = _device_store(request)
+    profile = await store.get(payload.deviceId)
+    if profile is None:
+        raise DeviceProfileNotFound(payload.deviceId)
+    item_id = decode_entry_ref(payload.entryRef)
+    detail = await _get_adapter(request).get_entry(item_id)
+    template = await _template_store(request).get_template()
+    prepared = await prepare_handoff_for_entry(
+        request.app.state.db,
+        detail,
+        profile=profile,
+        entry_ref=payload.entryRef,
+        template=template,
+    )
+    return ObsidianExportHandoffResult(
+        mode=prepared.mode,  # type: ignore[arg-type]
+        uri=prepared.uri,
+        reason=prepared.reason,
+        filename=prepared.filename,
+        content=prepared.content,
+        unknownVars=prepared.unknown_vars,
+        deviceLabel=prepared.device_label,
+    )

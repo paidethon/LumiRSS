@@ -112,6 +112,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Status
+         * @description Admin-only deployment diagnostics (P11). See the block comment above
+         *     for the non-secret guarantee and the deliberate scoping: cross-user /
+         *     system-wide facts live ONLY behind this gate; the per-user
+         *     /api/v1/operations/* endpoints stay own-scope by design.
+         */
+        get: operations["system_status_api_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -196,6 +219,35 @@ export interface paths {
         put?: never;
         /** Revoke User Sessions */
         post: operations["revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Role
+         * @description Owner-only role provisioning (0067).
+         *
+         *     Activation admits everyone as ``member``; ONLY the owner can grant or
+         *     revoke the ``admin`` role afterwards. Rules, all stable-shaped:
+         *     - admins get 403 (an admin can never mint or demote another admin);
+         *     - the owner account is untargetable (403) — no demotion, no re-role;
+         *     - demoting the last active admin is refused (403) so a delegation
+         *       mistake can never lock the operator out of admin surfaces;
+         *     - unknown user → 404, unknown role → 422 (body validation);
+         *     - every accepted change is audited (no credentials involved).
+         */
+        post: operations["set_user_role_api_v1_admin_users__user_id__role_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1815,6 +1867,36 @@ export interface paths {
          *     名或回环地址）永不暴露给浏览器，URL 不携带凭据。
          */
         get: operations["freshrss_ui_api_v1_freshrss_ui_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/freshrss/native-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freshrss Native Url
+         * @description P09 委托入口：本账户 FreshRSS 原生界面的可直达坐标。
+         *
+         *     返回**恰好** ``{origin, username}``：origin 是绑定里浏览器可达的
+         *     public_url（内部 FRESHRSS_BASE_URL 永不回显——它可能是浏览器无法
+         *     且不应到达的 Docker 主机名，与 /api/v1/freshrss-ui 同一安全决策），
+         *     username 是该账户在 FreshRSS 侧的登录名（让原生界面里的身份可
+         *     识别）。密码与 greader token 不在模型里，契约上无凭据可泄。
+         *
+         *     绑定未完成或未配置浏览器可达地址 → 409 ``freshrss_native_url_unavailable``
+         *     （诚实的"暂不可用"状态，UI 显示待定文案、绝不渲染假链接）。
+         *     身份由会话/内部令牌中间件统一强制（/api/* 全量门禁）。
+         */
+        get: operations["freshrss_native_url_api_v1_freshrss_native_url_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3691,6 +3773,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/obsidian/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Obsidian Devices */
+        get: operations["list_obsidian_devices_api_v1_obsidian_devices_get"];
+        put?: never;
+        /** Create Obsidian Device */
+        post: operations["create_obsidian_device_api_v1_obsidian_devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Obsidian Device */
+        put: operations["update_obsidian_device_api_v1_obsidian_devices__device_id__put"];
+        post?: never;
+        /** Delete Obsidian Device */
+        delete: operations["delete_obsidian_device_api_v1_obsidian_devices__device_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Obsidian Handoff
+         * @description Compose + render + decide URI vs file fallback for one article.
+         *
+         *     Honest handoff: ``mode='uri'`` means the obsidian://new link was
+         *     built (the USER's Obsidian does any writing after confirmation);
+         *     ``mode='file'`` with reason='tooLong' means the content exceeded the
+         *     URI budget and the client falls back to download + clipboard.
+         */
+        post: operations["export_obsidian_handoff_api_v1_obsidian_export_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Obsidian Export Template */
+        get: operations["get_obsidian_export_template_api_v1_obsidian_export_template_get"];
+        /** Set Obsidian Export Template */
+        put: operations["set_obsidian_export_template_api_v1_obsidian_export_template_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-template/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Obsidian Export Template
+         * @description Live preview for the template editor.
+         *
+         *     ``entryRef`` given → renders the REAL article (reader handoff
+         *     preview); omitted → fixture text. Unknown variables are reported
+         *     honestly instead of passing through silently.
+         */
+        post: operations["preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/notes": {
         parameters: {
             query?: never;
@@ -5120,7 +5305,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Ai Profile
-         * @description Update profile metadata (label / baseUrl / model / enabled).
+         * @description Update profile metadata (label / provider / baseUrl / model / enabled).
          */
         patch: operations["patch_ai_profile_api_v1_settings_ai_profiles__profile_id__patch"];
         trace?: never;
@@ -6244,7 +6429,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Reorder Workspace Items */
+        /**
+         * Reorder Workspace Items
+         * @description P15：``expectedRevision`` 可选（If-Match 式）；与当前 revision
+         *     不匹配 → 409 workspace_revision_conflict（错误体带 currentRevision），
+         *     客户端重取后重试；不传 = 旧行为（last-write-wins），兼容既有调用方。
+         */
         patch: operations["reorder_workspace_items_api_v1_workspaces__workspace_id__items_patch"];
         trace?: never;
     };
@@ -6303,6 +6493,33 @@ export interface paths {
          * @description F088：资料包预览（计数 + 体积估算 + 可选快照清单；缺失诚实跳过）。
          */
         post: operations["preview_research_pack_api_v1_workspaces__workspace_id__research_pack_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Resume
+         * @description P15：读取续读指针；无指针（含未知工作区）返回 pointer=null。
+         */
+        get: operations["get_workspace_resume_api_v1_workspaces__workspace_id__resume_get"];
+        /**
+         * Put Workspace Resume
+         * @description P15：保存「上次看到哪」指针（每工作区一个；PUT 幂等 upsert）。
+         *
+         *     校验与 add_item 同构：404 未知工作区 / 404 条目不在工作区。
+         *     不 bump revision（阅读光标 ≠ 共享条目状态，见 store 注释）。
+         */
+        put: operations["put_workspace_resume_api_v1_workspaces__workspace_id__resume_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6578,15 +6795,19 @@ export interface components {
             model: string;
             /**
              * Provider
-             * @constant
+             * @enum {string}
              */
-            provider: "openai_compatible";
+            provider: "openai_compatible" | "gemini";
             /** Updatedat */
             updatedAt: string;
         };
         /**
          * AiProfileCreate
          * @description POST /api/v1/settings/ai/profiles body (metadata only, no key).
+         *
+         *     ``provider`` selects the transport: an OpenAI-compatible endpoint
+         *     (default, baseUrl used as-is) or the native Google Gemini API (P17 —
+         *     the official endpoint is forced server-side, baseUrl ignored).
          */
         AiProfileCreate: {
             /**
@@ -6606,6 +6827,12 @@ export interface components {
              * @default
              */
             model: string;
+            /**
+             * Provider
+             * @default openai_compatible
+             * @enum {string}
+             */
+            provider: "openai_compatible" | "gemini";
         };
         /**
          * AiProfileUpdate
@@ -6620,6 +6847,8 @@ export interface components {
             label?: string | null;
             /** Model */
             model?: string | null;
+            /** Provider */
+            provider?: ("openai_compatible" | "gemini") | null;
         };
         /**
          * AiPurposeStatus
@@ -8591,6 +8820,21 @@ export interface components {
             title: string;
         };
         /**
+         * FreshRssNativeUrl
+         * @description GET /api/v1/freshrss/native-url — 委托入口数据（P09）。
+         *
+         *     响应**恰好**两个字段：浏览器可达的 FreshRSS 站点根（origin，来自
+         *     绑定的 public_url）+ 该账户的 FreshRSS 用户名（原生界面登录可识别）。
+         *     API 密码 / greader token 等任何凭据永不进入此响应——模型没有承载
+         *     它们的字段，契约上就不可能泄露。
+         */
+        FreshRssNativeUrl: {
+            /** Origin */
+            origin: string;
+            /** Username */
+            username: string;
+        };
+        /**
          * FreshRssUiInfo
          * @description GET /api/v1/freshrss-ui (null url = not configured, UI hides it).
          */
@@ -9939,6 +10183,127 @@ export interface components {
             wikilinks?: string[] | null;
         };
         /**
+         * ObsidianDeviceProfile
+         * @description One device where the user runs Obsidian (URI generation ONLY).
+         *
+         *     Device profiles never describe server-side vault paths — the vault
+         *     the BFF reads is mounted server-side (env or manual), while these
+         *     names describe the user's OWN Obsidian app for obsidian:// links.
+         */
+        ObsidianDeviceProfile: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Platform
+             * @default other
+             * @enum {string}
+             */
+            platform: "windows" | "ios" | "ipados" | "other";
+            /**
+             * Vaultidentifier
+             * @default
+             */
+            vaultIdentifier: string;
+            /** Vaultname */
+            vaultName: string;
+        };
+        /**
+         * ObsidianDeviceProfileList
+         * @description Envelope for GET /api/v1/obsidian/devices.
+         */
+        ObsidianDeviceProfileList: {
+            /** Items */
+            items: components["schemas"]["ObsidianDeviceProfile"][];
+        };
+        /**
+         * ObsidianDeviceProfilePayload
+         * @description POST/PUT body — full payload both for create and update.
+         */
+        ObsidianDeviceProfilePayload: {
+            /** Label */
+            label: string;
+            /**
+             * Platform
+             * @default other
+             * @enum {string}
+             */
+            platform: "windows" | "ios" | "ipados" | "other";
+            /**
+             * Vaultidentifier
+             * @default
+             */
+            vaultIdentifier: string;
+            /** Vaultname */
+            vaultName: string;
+        };
+        /**
+         * ObsidianExportHandoffRequest
+         * @description POST /api/v1/obsidian/export-handoff body.
+         */
+        ObsidianExportHandoffRequest: {
+            /** Deviceid */
+            deviceId: string;
+            /** Entryref */
+            entryRef: string;
+        };
+        /**
+         * ObsidianExportHandoffResult
+         * @description Honest handoff verdict — the UI must never claim a vault write.
+         *
+         *     ``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.
+         *     ``mode='file'`` → URI budget exceeded (reason='tooLong') → download
+         *     ``filename`` + clipboard fallback instead.
+         */
+        ObsidianExportHandoffResult: {
+            /** Content */
+            content: string;
+            /**
+             * Devicelabel
+             * @default
+             */
+            deviceLabel: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "uri" | "file";
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Unknownvars
+             * @default []
+             */
+            unknownVars: string[];
+            /** Uri */
+            uri?: string | null;
+        };
+        /**
+         * ObsidianExportTemplateUpdate
+         * @description PUT /api/v1/obsidian/export-template body.
+         */
+        ObsidianExportTemplateUpdate: {
+            /** Template */
+            template: string;
+        };
+        /**
+         * ObsidianExportTemplateView
+         * @description GET /api/v1/obsidian/export-template.
+         */
+        ObsidianExportTemplateView: {
+            /** Allowedvars */
+            allowedVars: string[];
+            /** Defaulttemplate */
+            defaultTemplate: string;
+            /** Template */
+            template: string;
+        };
+        /**
          * ObsidianNoteSetting
          * @description PUT /api/v1/obsidian/settings.
          */
@@ -10007,6 +10372,38 @@ export interface components {
             noteCount: number;
             /** Vaultpath */
             vaultPath: string;
+        };
+        /**
+         * ObsidianTemplatePreviewRequest
+         * @description POST /api/v1/obsidian/export-template/preview body.
+         *
+         *     ``entryRef`` omitted → renders against fixture text (settings page);
+         *     present → renders against the real article (reader-side preview).
+         */
+        ObsidianTemplatePreviewRequest: {
+            /** Entryref */
+            entryRef?: string | null;
+            /** Template */
+            template: string;
+        };
+        /**
+         * ObsidianTemplatePreviewResult
+         * @description Rendered preview + honest unknown-variable list (UI validation).
+         */
+        ObsidianTemplatePreviewResult: {
+            /**
+             * Source
+             * @default fixture
+             * @enum {string}
+             */
+            source: "entry" | "fixture";
+            /** Text */
+            text: string;
+            /**
+             * Unknownvars
+             * @default []
+             */
+            unknownVars: string[];
         };
         /**
          * OperationsBackupStatus
@@ -11079,8 +11476,14 @@ export interface components {
         /**
          * RssHubPreviewRequest
          * @description POST /api/v1/rsshub/preview body (0014): route + parameter values.
+         *
+         *     ``baseUrl`` is an E2E-ONLY fetch-base override — see
+         *     ``_e2e_base_override`` for the gate contract. The Web client never
+         *     sends it.
          */
         RssHubPreviewRequest: {
+            /** Baseurl */
+            baseUrl?: string | null;
             /** Params */
             params?: {
                 [key: string]: string;
@@ -12123,6 +12526,18 @@ export interface components {
              */
             items: components["schemas"]["TrashItem"][];
         };
+        /**
+         * UserRoleRequest
+         * @description POST /admin/users/{id}/role — owner-only provisioning body.
+         *
+         *     Anything outside ``member``/``admin`` (including ``owner`` — there is
+         *     exactly one owner and it is never assignable through the API) is a
+         *     validation error (422).
+         */
+        UserRoleRequest: {
+            /** Role */
+            role: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -12274,6 +12689,11 @@ export interface components {
             position: number;
             /** Reserved */
             reserved: boolean;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
         };
         /** WorkspaceBoardResponse */
         WorkspaceBoardResponse: {
@@ -12377,10 +12797,45 @@ export interface components {
         /**
          * WorkspaceReorderRequest
          * @description PATCH /api/v1/workspaces/{id}/items — refs in their new order.
+         *
+         *     P15：``expectedRevision`` 可选（If-Match 式乐观并发）；缺省 = 旧
+         *     行为（不校验），保证既有调用方零改动。
          */
         WorkspaceReorderRequest: {
+            /** Expectedrevision */
+            expectedRevision?: number | null;
             /** Itemrefs */
             itemRefs: string[];
+        };
+        /**
+         * WorkspaceResumePointer
+         * @description 「上次看到哪」指针（P15）：ref + 保存时的位置快照。
+         */
+        WorkspaceResumePointer: {
+            /** Itemref */
+            itemRef: string;
+            /** Positionatsave */
+            positionAtSave?: number | null;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * WorkspaceResumePutRequest
+         * @description PUT /api/v1/workspaces/{id}/resume — one member ItemRef.
+         */
+        WorkspaceResumePutRequest: {
+            /** Itemref */
+            itemRef: string;
+        };
+        /**
+         * WorkspaceResumeResponse
+         * @description Envelope for GET/PUT /api/v1/workspaces/{id}/resume（无指针时
+         *     pointer=null，GET 永远 200——「没有指针」是正常态而非错误）。
+         */
+        WorkspaceResumeResponse: {
+            pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
+            /** Workspaceid */
+            workspaceId: string;
         };
         /**
          * WorkspaceTemplate
@@ -12617,6 +13072,26 @@ export interface operations {
             };
         };
     };
+    system_status_api_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: never;
@@ -12740,6 +13215,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_role_api_v1_admin_users__user_id__role_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRoleRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -15505,6 +16015,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreshRssUiInfo"];
+                };
+            };
+        };
+    };
+    freshrss_native_url_api_v1_freshrss_native_url_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreshRssNativeUrl"];
                 };
             };
         };
@@ -19141,6 +19671,242 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_obsidian_devices_api_v1_obsidian_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfileList"];
+                };
+            };
+        };
+    };
+    create_obsidian_device_api_v1_obsidian_devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianDeviceProfilePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_obsidian_device_api_v1_obsidian_devices__device_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianDeviceProfilePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianDeviceProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_obsidian_device_api_v1_obsidian_devices__device_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_obsidian_handoff_api_v1_obsidian_export_handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportHandoffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportHandoffResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_obsidian_export_template_api_v1_obsidian_export_template_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportTemplateView"];
+                };
+            };
+        };
+    };
+    set_obsidian_export_template_api_v1_obsidian_export_template_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianTemplatePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianTemplatePreviewResult"];
                 };
             };
             /** @description Validation Error */
@@ -23744,6 +24510,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_resume_api_v1_workspaces__workspace_id__resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResumeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_workspace_resume_api_v1_workspaces__workspace_id__resume_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceResumePutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResumeResponse"];
                 };
             };
             /** @description Validation Error */

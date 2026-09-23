@@ -6,6 +6,13 @@ import { useId } from 'react'
 import { normalizeSettings, useAppSettings } from '../../store/app-settings'
 import { prefixCustomCss, READER_BACKGROUNDS } from '../../lib/reader-style'
 import {
+  BG_IMAGE_OVERLAY_MAX,
+  BG_IMAGE_OVERLAY_MIN,
+  processBackgroundImageFile,
+} from '../../lib/reader-bg-image'
+import { Image as ImageIcon } from 'lucide-react'
+import { Slider } from '../ui/Slider'
+import {
   backupCurrentCustomCss,
   loadBackupCustomCss,
   validateCustomCss,
@@ -173,6 +180,123 @@ export function ReaderBackgroundPicker() {
           <span className="text-xs text-[var(--lumi-text-tertiary)]">
             当前 {settings.readerBackgroundCustom}
           </span>
+        </div>
+      )}
+      <ReaderBackgroundImageSection />
+    </div>
+  )
+}
+
+/** ReaderBackgroundImageSection — P14 背景图片（设备本地、隐私优先）。
+ * 本机图片 → canvas 降采样重编码（≤2MB data URL，lib/reader-bg-image）→
+ * 可读性检查给出建议遮罩与提示；图片以 data URL 存 settings 键
+ * readerBackgroundImage（设备本地，绝不进 PORTABLE_KEYS），全程零网络。
+ * 遮罩不透明度 0–80%（默认 40%），用户可调并持久化。 */
+function ReaderBackgroundImageSection() {
+  const settings = useAppSettings((s) => s.settings)
+  const update = useAppSettings((s) => s.update)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
+
+  const hasImage = settings.readerBackgroundImage !== null
+
+  const handleFile = (file: File) => {
+    setBusy(true)
+    setError(null)
+    setHint(null)
+    void processBackgroundImageFile(file).then((result) => {
+      setBusy(false)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      // 可读性检查：直接应用建议遮罩（用户可随后用 slider 微调）
+      update({
+        readerBackgroundImage: result.dataUrl,
+        readerBackgroundImageOverlay: result.recommendedOverlay,
+      })
+      setHint(result.hint.text)
+    })
+  }
+
+  return (
+    <div className="mt-3 border-t border-[var(--lumi-separator)] pt-3">
+      <label
+        htmlFor="reader-bg-image-file"
+        className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]"
+      >
+        背景图片
+      </label>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        以本机图片作为阅读背景。图片仅保存在本设备浏览器中，不会上传到任何服务器；
+        自动压缩到 2MB 以内并给出遮罩建议。
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-1.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3 py-1.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ImageIcon aria-hidden className="size-3.5" />
+          {hasImage ? '更换图片…' : '选择图片…'}
+        </button>
+        {hasImage && (
+          <button
+            type="button"
+            onClick={() => {
+              update({ readerBackgroundImage: null })
+              setHint(null)
+              setError(null)
+            }}
+            className="rounded-[var(--lumi-radius-md)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-danger)]"
+          >
+            移除图片
+          </button>
+        )}
+        <input
+          ref={fileRef}
+          id="reader-bg-image-file"
+          type="file"
+          accept="image/*"
+          aria-label="选择背景图片"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) handleFile(f)
+            e.target.value = ''
+          }}
+        />
+      </div>
+      {busy && (
+        <p role="status" className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+          正在本地处理图片…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-xs leading-relaxed text-[var(--lumi-danger)]">
+          {error}
+        </p>
+      )}
+      {!busy && hint !== null && (
+        <p role="status" className="mt-2 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+          {hint}
+        </p>
+      )}
+      {hasImage && (
+        <div className="mt-3">
+          <Slider
+            label="图片遮罩不透明度"
+            min={BG_IMAGE_OVERLAY_MIN}
+            max={BG_IMAGE_OVERLAY_MAX}
+            step={5}
+            value={settings.readerBackgroundImageOverlay}
+            onChange={(v) => update({ readerBackgroundImageOverlay: v })}
+            formatValue={(v) => `${v}%`}
+            description="图片上的遮罩强度：越高越接近纯色背景，文字越清晰。"
+          />
         </div>
       )}
     </div>

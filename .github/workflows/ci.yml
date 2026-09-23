@@ -177,6 +177,25 @@ jobs:
             config > /dev/null \
             && echo "external-caddy compose config OK"
 
+      # Dev/CI-only build overlay must stay mergeable with the (now
+      # prebuilt-only) production file.
+      - name: Validate build overlay merge
+        run: |
+          LUMIRSS_BUILD_COMMIT=ci docker compose \
+            -f docker-compose.prod.yml -f docker-compose.build.yml \
+            config > /dev/null \
+            && echo "build overlay compose config OK"
+
+      # Optional ON-DEMAND LibreTranslate fragment: never part of
+      # deploy/update, but './lumirss translate' composes exactly these two
+      # files, so the merge must keep rendering.
+      - name: Validate translate fragment merge
+        run: |
+          docker compose \
+            -f docker-compose.prod.yml -f docker-compose.translate.yml \
+            config > /dev/null \
+            && echo "translate fragment compose config OK"
+
   docker-build:
     name: Production image build (no push)
     runs-on: ubuntu-latest

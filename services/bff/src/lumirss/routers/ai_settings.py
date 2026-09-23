@@ -165,12 +165,18 @@ class SecretValuePut(BaseModel):
 
 
 class AiProfileCreate(BaseModel):
-    """POST /api/v1/settings/ai/profiles body (metadata only, no key)."""
+    """POST /api/v1/settings/ai/profiles body (metadata only, no key).
+
+    ``provider`` selects the transport: an OpenAI-compatible endpoint
+    (default, baseUrl used as-is) or the native Google Gemini API (P17 —
+    the official endpoint is forced server-side, baseUrl ignored).
+    """
 
     label: str = Field(min_length=1)
     baseUrl: str = ""
     model: str = ""
     enabled: bool = True
+    provider: Literal["openai_compatible", "gemini"] = "openai_compatible"
 
 
 class AiProfileUpdate(BaseModel):
@@ -180,6 +186,7 @@ class AiProfileUpdate(BaseModel):
     baseUrl: str | None = None
     model: str | None = None
     enabled: bool | None = None
+    provider: Literal["openai_compatible", "gemini"] | None = None
 
 
 class AiPurposesUpdate(BaseModel):
@@ -281,6 +288,7 @@ async def create_ai_profile(
         base_url=body.baseUrl,
         model=body.model,
         enabled=body.enabled,
+        provider=body.provider,
     )
 
 
@@ -291,13 +299,14 @@ async def create_ai_profile(
 async def patch_ai_profile(
     profile_id: str, body: AiProfileUpdate, request: Request
 ) -> dict[str, object]:
-    """Update profile metadata (label / baseUrl / model / enabled)."""
+    """Update profile metadata (label / provider / baseUrl / model / enabled)."""
     return await _get_ai_profile_store(request).update_profile(
         profile_id,
         label=body.label,
         base_url=body.baseUrl,
         model=body.model,
         enabled=body.enabled,
+        provider=body.provider,
     )
 
 

@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from lumirss.accounts_store import (
+    MAX_PASSWORD_BYTES,
     USERNAME_RE,
     AccountError,
     AccountsStore,
@@ -220,6 +221,10 @@ async def change_password(
         return _reject(401, "invalid_credentials", "Incorrect current password.")
     if len(body.newPassword) < MIN_PASSWORD_LENGTH:
         return _reject(400, "weak_password", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+    if len(body.newPassword.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        # bcrypt refuses input beyond 72 bytes; reject at the boundary
+        # with a stable 400 instead of a 500 at hash time.
+        return _reject(400, "weak_password", f"Password must be at most {MAX_PASSWORD_BYTES} bytes (multi-byte scripts count every byte).")
     await _control(request).set_password_hash(user_id, hash_password(body.newPassword))
     await _sessions(request).revoke_all_sessions(user_id=user_id)
     await _control(request).audit(actor=user_id, action="password_change", object_type="user", object_id=user_id)

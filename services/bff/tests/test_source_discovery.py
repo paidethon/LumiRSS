@@ -7,6 +7,7 @@ adapter here, by design).
 """
 
 import socket
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -374,6 +375,28 @@ def ok_json(data: httpx.Response):
     assert data.status_code == 200
 
 
+@pytest.fixture(autouse=True)
+def _isolated_control_db(monkeypatch, tmp_path):
+    """Route-level tests drive the real ASGI stack, whose auth middleware
+    resolves the request identity from the control database. Pin
+    LUMIRSS_DB_PATH to a temp file so the lifespan run in post_discovery
+    (owner migration included) never touches a developer's real data dir —
+    same isolation the shared `client` fixture provides TestClient tests."""
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
+
+
+@asynccontextmanager
+async def _start_app():
+    """Run the real app lifespan so the auth middleware sees a started
+    app (control db + owner identity); requests against a bare ASGI
+    transport fail closed with 401 session_required. Same repair as
+    tests/test_rsshub.py — the fakes are injected after startup, the way
+    test_feeds_route.py injects into a started TestClient."""
+    async with app.router.lifespan_context(app):
+        app.state.rsshub_service = None
+        yield
+
+
 async def post_discovery(url: str, handler, resolver_map=None):
     """Route-level call with injected MockTransport + fake resolver."""
     from lumirss.source_discovery import SourceDiscoveryService as Svc
@@ -389,22 +412,24 @@ async def post_discovery(url: str, handler, resolver_map=None):
             delegate=httpx.MockTransport(handler),
         )
 
-    app.state.http_client = httpx.AsyncClient()
-    app.state.source_discovery_service = Svc(
-        resolver=resolver, pin_factory=pin_factory
-    )
-    try:
-        from httpx import ASGITransport
+    async with _start_app():
+        lifespan_client, app.state.http_client = app.state.http_client, httpx.AsyncClient()
+        await lifespan_client.aclose()
+        app.state.source_discovery_service = Svc(
+            resolver=resolver, pin_factory=pin_factory
+        )
+        try:
+            from httpx import ASGITransport
 
-        transport = ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as route_client:
-            return await route_client.post(
-                "/api/v1/source-discovery", json={"url": url}
-            )
-    finally:
-        await app.state.http_client.aclose()
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as route_client:
+                return await route_client.post(
+                    "/api/v1/source-discovery", json={"url": url}
+                )
+        finally:
+            await app.state.http_client.aclose()
 
 
 @pytest.mark.anyio

@@ -10,6 +10,13 @@ WORKDIR /app
 # contract): --build-arg VITE_GIT_COMMIT=<git sha> from compose / CI.
 ARG VITE_GIT_COMMIT=""
 ENV VITE_GIT_COMMIT=${VITE_GIT_COMMIT}
+# Bundle-guard mode passthrough (default empty = strict, exit 1 on
+# overage). Only the e2e stack compose sets LUMIRSS_BUNDLE_GUARD=report
+# so a known pre-existing baseline overage cannot block the cross-service
+# smoke; the overage is still printed to the build log. CI/dev/release
+# builds leave this unset.
+ARG LUMIRSS_BUNDLE_GUARD=""
+ENV LUMIRSS_BUNDLE_GUARD=${LUMIRSS_BUNDLE_GUARD}
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY . .

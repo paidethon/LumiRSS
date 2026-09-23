@@ -18,9 +18,11 @@ import { pushNavHistory } from '../lib/nav-history'
  * phase2 M2：+ clips（网页剪藏）/ snapshots（网页快照）。
  * phase2 G6：+ obsidian（Obsidian 库，只读投影）。
  * phase2 G7/G8：+ agent（工作台）/ graph（图谱，含标签列表等价路径）。
- * 0021：+ inbox（收件箱——推送式来源的工作台入口）。 */
+ * 0021：+ inbox（收件箱——推送式来源的工作台入口）。
+ * P04：+ sources（统一来源管理页——GET /api/v1/sources 的注册表总览）。 */
 export type AppSection =
   | 'home'
+  | 'sources'
   | 'subscriptions'
   | 'search'
   | 'favorites'

@@ -1,7 +1,7 @@
-/** Gate D 测试 — 底部导航岛（0011 Gate 1 重构：四一级入口）。
+/** Gate D 测试 — 底部导航岛（0011 Gate 1 重构：四一级入口；P04 订阅→来源）。
  *
  * 0011 Spec AC1/AC6：
- * - 四 tab（首页/订阅/搜索/收藏），设置不在底栏（已移至 SidebarHeader）；
+ * - 四 tab（首页/来源/搜索/收藏），设置不在底栏（已移至 SidebarHeader）；
  * - aria-current="page" 反映 AppSection；
  * - Reader 打开时隐藏。 */
 
@@ -21,24 +21,24 @@ function renderTabBar() {
 }
 
 describe('MobileTabBar — 0011 四入口导航岛', () => {
-  it('四个 Tab：首页 / 订阅 / 搜索 / 收藏（nav landmark，无设置）', () => {
+  it('四个 Tab：首页 / 来源 / 搜索 / 收藏（nav landmark，无设置）', () => {
     renderTabBar()
     const nav = screen.getByRole('navigation', { name: '底部导航' })
     const tabs = nav.querySelectorAll('button')
     expect(tabs).toHaveLength(4)
     expect(screen.getByRole('button', { name: /首页/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /订阅/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /来源/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /搜索/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /收藏/ })).toBeInTheDocument()
     // 设置不在底栏（0011 硬性要求）
     expect(nav.textContent).not.toContain('设置')
   })
 
-  it('点击订阅 → section=subscriptions（保留 home 的 view 筛选）', () => {
+  it('点击来源 → section=sources（P04：替换原订阅 tab；保留 home 的 view 筛选）', () => {
     useReaderUi.setState({ section: 'home', view: 'unread', scope: { kind: 'all' }, selectedEntryRef: null })
     renderTabBar()
-    fireEvent.click(screen.getByRole('button', { name: /订阅/ }))
-    expect(useReaderUi.getState().section).toBe('subscriptions')
+    fireEvent.click(screen.getByRole('button', { name: /来源/ }))
+    expect(useReaderUi.getState().section).toBe('sources')
     // section 切换不清空 home 的筛选状态（返回首页时恢复）
     expect(useReaderUi.getState().view).toBe('unread')
   })

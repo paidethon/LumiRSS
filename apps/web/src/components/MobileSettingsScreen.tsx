@@ -21,6 +21,7 @@ import type { SettingsOpenDetail } from './settings/settings-bridge'
 import { Sheet } from './ui/Sheet'
 import { IconButton } from './ui/IconButton'
 import { useIsMobile } from '../lib/use-is-mobile'
+import { MobileReadingPreview } from './settings/reader/ReadingPreviewPane'
 
 export default function MobileSettingsScreen({
   open,
@@ -132,6 +133,9 @@ function SubPage({ id, onBack }: { id: CategoryId; onBack: () => void }) {
         className="flex-1 overflow-y-auto px-4 py-3"
         style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
       >
+        {/* P14：阅读分类顶部可折叠实时预览（桌面为 side-by-side 右栏，
+            移动端空间有限 → 默认收起，展开后与桌面同一预览内容）。 */}
+        {id === 'reading' && <MobileReadingPreview />}
         <SettingItemList items={items} />
       </div>
     </>

@@ -86,6 +86,7 @@ function workspaceFixture(over: Partial<Workspace> = {}): Workspace {
     archived: false,
     reserved: false,
     description: '',
+    revision: 1,
     ...over,
   }
 }
@@ -333,10 +334,12 @@ describe('WorkspacesPage', () => {
     expect(moveUps[0]).toBeDisabled() // 首卡无上移
     fireEvent.click(moveUps[1])
     await waitFor(() =>
-      expect(mocks.reorderWorkspaceItems).toHaveBeenCalledWith('ws-2', [
-        'rss:e2.b',
-        'rss:e1.a',
-      ]),
+      // P15：第三参 expectedRevision（fixture revision=1；If-Match 式）。
+      expect(mocks.reorderWorkspaceItems).toHaveBeenCalledWith(
+        'ws-2',
+        ['rss:e2.b', 'rss:e1.a'],
+        1,
+      ),
     )
     // 移除第一张卡
     fireEvent.click(screen.getAllByRole('button', { name: '移除' })[0])

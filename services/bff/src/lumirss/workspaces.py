@@ -40,6 +40,19 @@ class ReservedWorkspaceError(Exception):
     """The operation targets the immutable read-later workspace."""
 
 
+class WorkspaceRevisionConflict(Exception):
+    """P15：乐观并发拒绝——工作区条目域已被另一设备改动（映射 409）。
+
+    ``current_revision`` 随错误体返回，客户端重取后可用新 revision 重试。"""
+
+    def __init__(self, workspace_id: str, current_revision: int) -> None:
+        self.workspace_id = workspace_id
+        self.current_revision = current_revision
+        super().__init__(
+            f"Workspace was updated on another device (revision {current_revision}); refetch and retry."
+        )
+
+
 @dataclass(frozen=True)
 class WorkspaceSummary:
     id: str
@@ -50,6 +63,9 @@ class WorkspaceSummary:
     description: str = ""
     archived: bool = False
     archived_at: str | None = None
+    # P15：条目域变更计数（add/remove/reorder/status 时 +1）；重排序的
+    # 乐观并发以此为凭据。
+    revision: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +77,7 @@ class WorkspaceSummary:
             "description": self.description,
             "archived": self.archived,
             "archivedAt": self.archived_at,
+            "revision": self.revision,
         }
 
 
@@ -77,6 +94,25 @@ class WorkspaceItem:
             "itemRef": self.item_ref,
             "position": self.position,
             "addedAt": self.added_at,
+        }
+
+
+@dataclass(frozen=True)
+class WorkspaceResume:
+    """P15：「上次看到哪」指针（每工作区一行）。
+
+    ``position_at_save`` 是保存时刻该条目的位置快照——仅用于呈现
+    「当时读到第几条」，条目后续被重排时快照不跟随（诚实标注保存时刻）。"""
+
+    item_ref: str
+    position_at_save: int | None
+    updated_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "itemRef": self.item_ref,
+            "positionAtSave": self.position_at_save,
+            "updatedAt": self.updated_at,
         }
 
 
@@ -124,10 +160,10 @@ class WorkspaceStore:
     ) -> list[WorkspaceSummary]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT w.id, w.name, w.description, w.position, w.archived_at, COUNT(wi.item_ref) AS n"
+            "SELECT w.id, w.name, w.description, w.position, w.archived_at, w.revision, COUNT(wi.item_ref) AS n"
             " FROM workspaces w LEFT JOIN workspace_items wi ON wi.workspace_id = w.id"
             " WHERE (? = 1 OR w.archived_at IS NULL)"
-            " GROUP BY w.id, w.name, w.description, w.position, w.archived_at ORDER BY w.position ASC, w.id ASC",
+            " GROUP BY w.id, w.name, w.description, w.position, w.archived_at, w.revision ORDER BY w.position ASC, w.id ASC",
             (1 if include_archived else 0,),
         )
         return [
@@ -140,6 +176,7 @@ class WorkspaceStore:
                 description=str(row["description"] or ""),
                 archived=row["archived_at"] is not None,
                 archived_at=str(row["archived_at"]) if row["archived_at"] else None,
+                revision=int(row["revision"]),
             )
             for row in rows
         ]
@@ -223,11 +260,20 @@ class WorkspaceStore:
         )
         next_position = (int(pos_row["p"]) if pos_row is not None else 0) + 1
         now = utc_now()
-        try:
-            await self._db.execute(
+
+        def _insert(conn: sqlite3.Connection) -> None:
+            conn.execute(
                 "INSERT INTO workspace_items (workspace_id, item_ref, position, added_at) VALUES (?, ?, ?, ?)",
                 (workspace_id, parsed.format(), next_position, now),
             )
+            # P15：真实新增才 bump（幂等重放不制造并发噪声）。
+            conn.execute(
+                "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                (workspace_id,),
+            )
+
+        try:
+            await transaction(self._db, _insert)
         except sqlite3.IntegrityError:
             # Concurrent add of the same ref: converge on the unique pair.
             existing = await self._db.fetch_one(
@@ -246,20 +292,31 @@ class WorkspaceStore:
         )
 
     async def remove_item(self, workspace_id: str, item_ref: str) -> bool:
-        """Remove one member; False when the pair does not exist."""
+        """Remove one member; False when the pair does not exist.
+
+        P15：删除同时（同一事务）清掉指向该条目的续读指针并 bump
+        revision——指针绝不悬空指向已移出的条目。"""
         await self._db.migrate()
         parsed = parse_item_ref(item_ref)
-        row = await self._db.fetch_one(
-            "SELECT item_ref FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
-            (workspace_id, parsed.format()),
-        )
-        if row is None:
-            return False
-        await self._db.execute(
-            "DELETE FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
-            (workspace_id, parsed.format()),
-        )
-        return True
+
+        def _tx(conn: sqlite3.Connection) -> bool:
+            cursor = conn.execute(
+                "DELETE FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                (workspace_id, parsed.format()),
+            )
+            if cursor.rowcount == 0:
+                return False
+            conn.execute(
+                "DELETE FROM workspace_resume WHERE workspace_id = ? AND item_ref = ?",
+                (workspace_id, parsed.format()),
+            )
+            conn.execute(
+                "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                (workspace_id,),
+            )
+            return True
+
+        return await transaction(self._db, _tx)
 
     async def list_items(
         self, workspace_id: str, *, limit: int = _DEFAULT_ITEM_LIMIT
@@ -370,12 +427,19 @@ class WorkspaceStore:
         return [(str(r["item_ref"]), str(r["snoozed_until"])) for r in rows]
 
     async def reorder_items(
-        self, workspace_id: str, ordered_refs: list[str]
+        self,
+        workspace_id: str,
+        ordered_refs: list[str],
+        expected_revision: int | None = None,
     ) -> int:
         """Assign positions 1..N for the given refs (bounded batch).
 
         Refs not included keep their relative order after the moved block;
         unknown refs are refused rather than silently ignored.
+
+        P15：``expected_revision``（If-Match 式，可选——旧调用方不传则
+        行为不变）在写事务内先比对，不匹配 → WorkspaceRevisionConflict
+        （409 + 当前 revision），绝不静默覆盖另一设备的排序。
         """
         if not ordered_refs:
             raise WorkspaceInvalid("Reorder batch must not be empty.")
@@ -397,6 +461,16 @@ class WorkspaceStore:
             raise WorkspaceInvalid("Reorder contains refs not in the workspace.")
 
         def _tx(conn: sqlite3.Connection) -> int:
+            if expected_revision is not None:
+                row = conn.execute(
+                    "SELECT revision FROM workspaces WHERE id = ?",
+                    (workspace_id,),
+                ).fetchone()
+                current = int(row["revision"]) if row is not None else None
+                if current is None:
+                    raise WorkspaceNotFound(workspace_id)
+                if current != expected_revision:
+                    raise WorkspaceRevisionConflict(workspace_id, current)
             moved = 0
             for index, ref in enumerate(parsed, start=1):
                 cursor = conn.execute(
@@ -404,9 +478,77 @@ class WorkspaceStore:
                     (index, workspace_id, ref),
                 )
                 moved += cursor.rowcount
+            conn.execute(
+                "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                (workspace_id,),
+            )
             return moved
 
         return await transaction(self._db, _tx)
+
+    # -- resume pointer (P15) ----------------------------------------------
+
+    async def get_resume(self, workspace_id: str) -> WorkspaceResume | None:
+        """当前续读指针；无（或工作区不存在）返回 None。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT item_ref, position_at_save, updated_at FROM workspace_resume WHERE workspace_id = ?",
+            (workspace_id,),
+        )
+        if row is None:
+            return None
+        return WorkspaceResume(
+            item_ref=str(row["item_ref"]),
+            position_at_save=(
+                int(row["position_at_save"])
+                if row["position_at_save"] is not None
+                else None
+            ),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def set_resume(self, workspace_id: str, item_ref: str) -> WorkspaceResume:
+        """保存/覆盖续读指针（PUT 幂等 upsert）。
+
+        校验与 add_item 同构：工作区不存在 → WorkspaceNotFound；
+        ref 非法 → InvalidItemRef；条目不是成员 → WorkspaceNotFound。
+        不 bump revision：指针是每设备的阅读光标，不是共享条目状态。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one("SELECT id FROM workspaces WHERE id = ?", (workspace_id,))
+        if row is None:
+            raise WorkspaceNotFound(workspace_id)
+        parsed = parse_item_ref(item_ref)
+        member = await self._db.fetch_one(
+            "SELECT position FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, parsed.format()),
+        )
+        if member is None:
+            raise WorkspaceNotFound(f"workspace item {item_ref}")
+        position = int(member["position"])
+        now = utc_now()
+
+        def _upsert(conn: sqlite3.Connection) -> None:
+            existing = conn.execute(
+                "SELECT workspace_id FROM workspace_resume WHERE workspace_id = ?",
+                (workspace_id,),
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO workspace_resume (workspace_id, item_ref, position_at_save, updated_at) VALUES (?, ?, ?, ?)",
+                    (workspace_id, parsed.format(), position, now),
+                )
+            else:
+                conn.execute(
+                    "UPDATE workspace_resume SET item_ref = ?, position_at_save = ?, updated_at = ? WHERE workspace_id = ?",
+                    (parsed.format(), position, now, workspace_id),
+                )
+
+        await transaction(self._db, _upsert)
+        return WorkspaceResume(
+            item_ref=parsed.format(),
+            position_at_save=position,
+            updated_at=now,
+        )
 
 
 def utc_now_compact() -> str:

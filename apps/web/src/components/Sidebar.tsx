@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Globe,
   Inbox,
+  Layers,
   Link2,
   Mail,
   Plus,
@@ -501,6 +502,20 @@ function Sidebar({
           onNavigate={onNavigate}
           onAddSource={isDesktop ? () => setAddSourceOpen(true) : undefined}
         />
+
+        {/* P04：统一来源页（GET /api/v1/sources 的分组总览 + 管理深链）。
+            RSS 订阅行保留在上（scope 直达 + 分类树），订阅中心 section
+            仍可从来源页 RSS 组深链进入。 */}
+        <NavItem
+          active={section === 'sources'}
+          onClick={() => {
+            selectSection('sources')
+            onNavigate?.()
+          }}
+        >
+          <Layers aria-hidden className={icon16} />
+          来源
+        </NavItem>
 
         {/* phase2 M1：书签（library 域）已可用——section 导航，替代原
             Phase 2 禁用占位（保持同位置，信息来源组内）。

@@ -1,9 +1,10 @@
-/** 管理台（/admin → AdminScreen）Web 测试 — 0067。
+/** 管理台（/admin → AdminScreen）Web 测试 — 0067 + P11。
  *
  * 覆盖：member 访问 403 提示页、成员列表（角色/状态徽标 + 暂停/
  * 恢复/撤销会话/重置密码，危险操作确认对话框）、重置密码一次性
  * 链接展示、邀请创建（一次性完整链接 + 复制）/ 列表 / 撤销、
- * FreshRSS 池状态（计数 + 登记 + 成员绑定列表）。
+ * FreshRSS 池状态（计数 + 登记 + 成员绑定列表）、系统面板（版本/
+ * 运行时/计数/服务健康/后台任务 + 审计尾部 + 刷新 + 错误态）。
  *
  * 统一 vi.mock('../api/client')（保留 ApiError 等真实导出）；
  * BFF 不参与测试。admin 列表的 snake_case/epoch 秒形状由 client
@@ -13,7 +14,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, type AdminInvite, type AdminUser } from '../api/client'
+import {
+  ApiError,
+  type AdminAuditEntry,
+  type AdminInvite,
+  type AdminSystemInfo,
+  type AdminUser,
+} from '../api/client'
 import AdminScreen from '../components/admin/AdminScreen'
 import { useAuthStore, type AuthIdentity } from '../store/auth'
 
@@ -30,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   resetAdminUserPassword: vi.fn(),
   getFreshRssPool: vi.fn(),
   registerFreshRssPool: vi.fn(),
+  getAdminSystem: vi.fn(),
+  listAdminAudit: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -46,6 +55,8 @@ vi.mock('../api/client', async (importOriginal) => {
     resetAdminUserPassword: mocks.resetAdminUserPassword,
     getFreshRssPool: mocks.getFreshRssPool,
     registerFreshRssPool: mocks.registerFreshRssPool,
+    getAdminSystem: mocks.getAdminSystem,
+    listAdminAudit: mocks.listAdminAudit,
   }
 })
 
@@ -76,9 +87,59 @@ const INVITES: AdminInvite[] = [
   },
 ]
 
+/** P11 系统面板 fixture：与真实 BFF /admin/system 响应同构（已归一 DTO）。 */
+const SYSTEM: AdminSystemInfo = {
+  version: '0.2.0',
+  commit: 'abc1234dead',
+  python: '3.12.1',
+  uptimeS: 90_061,
+  process: { rssBytes: 120_586_240, peakRssBytes: 130_023_424, cpuTimeS: 42.7 },
+  counts: {
+    users: 3,
+    activeUsers: 2,
+    invites: 5,
+    freshrssPoolReady: 2,
+    freshrssPoolAssigned: 1,
+    sessions: 4,
+    feeds: 12,
+    entriesIndexed: 345,
+    libraryItems: 67,
+  },
+  services: [
+    { name: 'sqlite', configured: true, status: 'healthy', latencyMs: null },
+    { name: 'freshrss', configured: true, status: 'healthy', latencyMs: 23 },
+    { name: 'rsshub', configured: false, status: 'unconfigured', latencyMs: null },
+    { name: 'obsidian', configured: false, status: 'unconfigured', latencyMs: null },
+    { name: 'webdav', configured: false, status: 'unconfigured', latencyMs: null },
+    { name: 'ai', configured: true, status: 'configured', latencyMs: null },
+    { name: 'imap', configured: false, status: 'unconfigured', latencyMs: null },
+  ],
+  tasks: [
+    { name: 'search_sync', enabled: true, state: 'running', lastRunAt: null },
+    { name: 'obsidian_scan', enabled: false, state: 'off', lastRunAt: null },
+    { name: 'digest_scheduler', enabled: true, state: 'running', lastRunAt: null },
+    { name: 'mail_imap', enabled: true, state: 'running', lastRunAt: null },
+    { name: 'gpt_digest_scheduler', enabled: true, state: 'running', lastRunAt: null },
+    { name: 'rag_idle', enabled: true, state: 'running', lastRunAt: null },
+    { name: 'rag_index', enabled: false, state: 'off', lastRunAt: null },
+  ],
+}
+
+/** 审计尾部 fixture（操作者只以 id 出现——API 已脱敏的同款形状）。 */
+const AUDIT: AdminAuditEntry[] = [
+  { at: ISO(-60_000), actor: 'u1', action: 'invite_create_signup', objectType: 'invite', objectId: 'i9', outcome: 'ok', detail: null },
+  { at: ISO(-7_200_000), actor: 'u1', action: 'user_role_change', objectType: 'user', objectId: 'u3', outcome: 'ok', detail: 'admin' },
+  { at: null, actor: 'u1', action: 'future_unknown_action', objectType: null, objectId: null, outcome: 'error', detail: null },
+]
+
 function renderAdmin() {
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      // retry:false：错误态用例不被 TanStack 默认重试拖慢（行为不变）。
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <AdminScreen />
     </QueryClientProvider>,
   )
@@ -99,6 +160,8 @@ beforeEach(() => {
       { id: 'u9', username: 'erin', bound: false, boundTo: null },
     ],
   })
+  mocks.getAdminSystem.mockResolvedValue(SYSTEM)
+  mocks.listAdminAudit.mockResolvedValue(AUDIT)
 })
 
 describe('权限门（后端 403 的前端转述）', () => {
@@ -110,6 +173,9 @@ describe('权限门（后端 403 的前端转述）', () => {
     expect(screen.queryByLabelText('成员列表')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('邀请管理')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('FreshRSS 池')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('系统状态')).not.toBeInTheDocument()
+    // 越权渲染不发生 → 系统查询也不该发出。
+    expect(mocks.getAdminSystem).not.toHaveBeenCalled()
   })
 
   it('身份未核实 → 显示核实中（不发管理查询前的越权渲染）', () => {
@@ -264,5 +330,82 @@ describe('FreshRSS 池', () => {
     fireEvent.change(screen.getByLabelText('API 密码（只写）'), { target: { value: SYNTHETIC_POOL_SECRET } })
     fireEvent.click(screen.getByRole('button', { name: '登记入池' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('already registered')
+  })
+})
+
+describe('系统面板（P11）', () => {
+  it('渲染版本/运行时/内存与存储计数', async () => {
+    renderAdmin()
+    const runtime = await screen.findByTestId('admin-system-runtime')
+    expect(runtime).toHaveTextContent('0.2.0 (abc1234)')
+    expect(runtime).toHaveTextContent('3.12.1')
+    expect(runtime).toHaveTextContent('1 天 1 小时')
+    expect(runtime).toHaveTextContent('115 MB / 124 MB')
+    expect(runtime).toHaveTextContent('42.7 秒')
+    const counts = screen.getByTestId('admin-system-counts')
+    expect(counts).toHaveTextContent('3（2）')
+    expect(counts).toHaveTextContent('2 / 1')
+    expect(counts).toHaveTextContent('12 / 345 / 67')
+  })
+
+  it('服务健康列表：已配置正常态/未配置态/延迟，状态带文字标签', async () => {
+    renderAdmin()
+    const services = await screen.findByTestId('admin-system-services')
+    expect(services).toHaveTextContent('Lumi 数据库')
+    expect(services).toHaveTextContent('FreshRSS')
+    expect(within(services).getByText('23 ms')).toBeInTheDocument()
+    expect(services).toHaveTextContent('未配置')
+    // 「正常」出现多次（sqlite/freshrss），用列表内全体文本断言。
+    expect(services).toHaveTextContent('正常')
+    expect(services).toHaveTextContent('已配置')
+  })
+
+  it('后台任务列表：运行中与未启用如实区分', async () => {
+    renderAdmin()
+    const tasks = await screen.findByTestId('admin-system-tasks')
+    expect(tasks).toHaveTextContent('订阅投影同步')
+    expect(tasks).toHaveTextContent('运行中')
+    expect(tasks).toHaveTextContent('Obsidian 扫描')
+    expect(tasks).toHaveTextContent('未启用')
+  })
+
+  it('审计尾部渲染最近动态（未知动作原样透出，非 ok 结果带徽标）', async () => {
+    renderAdmin()
+    const audit = await screen.findByTestId('admin-audit-list')
+    expect(audit).toHaveTextContent('创建注册邀请')
+    expect(audit).toHaveTextContent('1 分钟前')
+    expect(audit).toHaveTextContent('变更角色')
+    expect(audit).toHaveTextContent('admin')
+    // 审计不含用户名——操作者 id 不渲染为成员名。
+    expect(audit).toHaveTextContent('future_unknown_action')
+    expect(within(audit).getByText('error')).toBeInTheDocument()
+  })
+
+  it('审计为空 → 诚实空态', async () => {
+    mocks.listAdminAudit.mockResolvedValue([])
+    renderAdmin()
+    await screen.findByTestId('admin-system-audit')
+    expect(screen.getByText('暂无操作记录。')).toBeInTheDocument()
+  })
+
+  it('系统接口失败 → 区块内诚实报错，其余区块不受影响', async () => {
+    mocks.getAdminSystem.mockRejectedValue(new ApiError(403, 'forbidden', 'Administrator role required.'))
+    renderAdmin()
+    const section = await screen.findByTestId('admin-system')
+    expect(await within(section).findByRole('alert')).toHaveTextContent('需要管理员权限')
+    // 成员列表（独立查询）照常渲染。
+    expect(screen.getByTestId('admin-user-list')).toBeInTheDocument()
+  })
+
+  it('刷新按钮 → 重取系统与审计两个查询', async () => {
+    renderAdmin()
+    await screen.findByTestId('admin-system-runtime')
+    expect(mocks.getAdminSystem).toHaveBeenCalledTimes(1)
+    expect(mocks.listAdminAudit).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('admin-system-refresh'))
+    await waitFor(() => {
+      expect(mocks.getAdminSystem).toHaveBeenCalledTimes(2)
+      expect(mocks.listAdminAudit).toHaveBeenCalledTimes(2)
+    })
   })
 })

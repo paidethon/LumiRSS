@@ -41,6 +41,7 @@ export default function MobileHeader() {
   const homeTitle = view === 'all' || view === 'unread' ? scopeLabel : VIEW_LABELS[view]
   const SECTION_TITLES: Record<AppSection, string> = {
     home: homeTitle,
+    sources: '来源',
     subscriptions: '订阅',
     search: '搜索',
     favorites: '收藏',

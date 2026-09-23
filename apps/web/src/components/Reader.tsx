@@ -27,13 +27,19 @@ import {
 } from '../lib/reader-focus'
 import {
   findStartBlockIndex,
-  joinBlockTexts,
   SPEECH_BLOCK_SELECTOR,
-  SPEECH_MAX_CHARS,
+  type SpeechCollection,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
-import ReaderHeader from './ReaderHeader'
 import ArticleContent from './ArticleContent'
+// bundle guard：阅读工具栏只在选中文章后出现，且本就挂在局部
+// `<Suspense fallback={null}>` 边界里——与下方摘要/对话/查找条同一
+// 模式改 lazy 分包（首开瞬时 null，chunk 缓存后同步渲染）。正文
+// 渲染管线 ArticleContent 仍保持静态（首读关键路径零 lazy 不变）。
+// P12/P14/P16 合并后首屏超 780/235 门槛，此举单独降 ~68 kB raw /
+// ~21 kB gzip（810→742 / 244→223），随 reader-export、本地翻译引擎
+// 与其专属 base-ui 部件一并移出首屏。
+const ReaderHeader = lazy(() => import('./ReaderHeader'))
 // bundle guard：摘要/来源/反链/对话面板非正文首帧结构（各自已有局部
 // Suspense 边界 / 条件挂载）——lazy 分包。正文首读关键路径（原始渲染）
 // 保持静态：original 模式直渲 ArticleContent；双语/仅译文才挂 lazy
@@ -370,8 +376,10 @@ const getFindRoot = useCallback(
   [],
 )
 
-// F19 朗读文本：视口顶部线所在段落往后（含）的全部正文文本。
-const collectSpeechText = useCallback(() => {
+// P18 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序，
+// 下标即块索引——引擎入队时空块跳过但原始下标保留，高亮按块定位）。
+// 总量上限（20k）由引擎入队时单点施加。
+const collectSpeechBlocks = useCallback((): SpeechCollection | null => {
   const container = scrollRef.current
   const article = container?.querySelector('.lumi-reader-article')
   if (container === null || article === undefined || article === null) return null
@@ -379,12 +387,10 @@ const collectSpeechText = useCallback(() => {
   if (blocks.length === 0) return null
   const containerTop = container.getBoundingClientRect().top
   const tops = blocks.map((block) => block.getBoundingClientRect().top)
-  const start = findStartBlockIndex(tops, containerTop)
-  const joined = joinBlockTexts(
-    blocks.slice(start).map((block) => block.textContent ?? ''),
-  )
-  if (joined === '') return null
-  return joined.slice(0, SPEECH_MAX_CHARS)
+  const startIndex = findStartBlockIndex(tops, containerTop)
+  const texts = blocks.map((block) => block.textContent ?? '')
+  if (texts.slice(startIndex).every((text) => text.trim() === '')) return null
+  return { texts, startIndex }
 }, [])
 
 // F18：切文章自动停止（自动滚屏/查找/回顶状态一并复位）。
@@ -566,7 +572,7 @@ const handleScroll = useCallback(() => {
 
   if (selectedEntryRef === null) {
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <ReaderPlaceholder />
       </div>
     )
@@ -574,7 +580,7 @@ const handleScroll = useCallback(() => {
 
   if (isPending) {
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="mx-auto flex max-w-[46rem] flex-col gap-3 p-8 max-lg:px-5" aria-label="文章加载中">
           <Skeleton className="h-3 w-2/5" />
           <Skeleton className="h-8 w-11/12" />
@@ -595,7 +601,7 @@ const handleScroll = useCallback(() => {
       error instanceof ApiError && error.status === 404
     if (isNotFound) {
       return (
-        <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+        <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
           <div className="flex h-full items-center justify-center p-8">
             <div className="max-w-sm text-center">
               <p className="text-base font-medium text-[var(--lumi-text-primary)]">
@@ -614,7 +620,7 @@ const handleScroll = useCallback(() => {
       )
     }
     return (
-      <div ref={setScrollContainer} className="h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
+      <div ref={setScrollContainer} className="lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]">
         <div className="flex h-full items-center justify-center p-8">
           <div className="max-w-sm text-center" role="alert">
             <p className="text-base font-medium text-[var(--lumi-text-primary)]">文章加载失败</p>
@@ -667,7 +673,7 @@ const handleScroll = useCallback(() => {
       <div
         ref={setScrollContainer}
         onScroll={handleScroll}
-        className="lumi-reader-scroll h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
+        className="lumi-reader-scroll lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
       >
       <article
         className="lumi-reader lumi-reader-article mx-auto py-6"
@@ -693,7 +699,7 @@ const handleScroll = useCallback(() => {
             onOpenAiConversation={() => setAiConversationOpen(true)}
             onOpenFind={() => setFindOpen(true)}
             onOpenLinks={() => setLinksOpen(true)}
-            collectSpeechText={collectSpeechText}
+            collectSpeechBlocks={collectSpeechBlocks}
             autoScrollState={autoScroll}
             onAutoScrollToggle={() =>
               setAutoScroll((current) => (current === 'running' ? 'paused' : 'running'))

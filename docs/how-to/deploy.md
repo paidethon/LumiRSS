@@ -18,18 +18,19 @@ sudo ./lumirss deploy
 `deploy` 会：preflight（docker/compose/curl、DNS、80/443 占用、磁盘）→
 生成并引导填写 `.env.prod`（自动生成 `LUMIRSS_INTERNAL_TOKEN`；交互式
 询问域名与登录账号，密码经 `caddy hash-password` 生成 `$$` 转义后的
-bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→ `up -d` →
+bcrypt 哈希）→ 拉取 GHCR 预构建镜像（**prebuilt-only**：拉取失败立即
+中止，旧栈保持运行，绝不回退本地构建）→ `up -d` →
 等待 `/health/ready` → 打印 status。
 
 非交互部署（如脚本/云-init）：`LUMIRSS_DOMAIN`、`LUMIRSS_AUTH_USER`、
 `LUMIRSS_AUTH_HASH`、`LUMIRSS_AUTH_PASSWORD` 环境变量覆盖询问；
-`./lumirss deploy --dry-run` 只做配置校验；`--build` 强制本地构建。
+`./lumirss deploy --dry-run` 只做配置校验。
 
 ## 2. 生命周期子命令
 
 | 命令 | 作用 |
 |---|---|
-| `./lumirss update [--build]` | 备份 → 拉取/构建镜像 → `up -d` → 健康检查 |
+| `./lumirss update` | 备份 → 拉取镜像 → `up -d` → 健康检查 |
 | `./lumirss status` | 容器状态、健康、web/bff 版本（commit）与镜像 tag |
 | `./lumirss logs [service] [-f]` | 全栈或单服务日志 |
 | `./lumirss backup` | lumi-data + freshrss-data 卷 tar.gz + 配置归档到 `./backups/`（`LUMIRSS_BACKUP_DIR` 可改） |
@@ -39,12 +40,35 @@ bcrypt 哈希）→ 拉取 GHCR 预构建镜像（失败自动本地构建）→
 | `./lumirss caddy-config` | 打印宿主 Caddy 站点块（`BEGIN/END LUMIRSS` 管理标记；external 模式用） |
 | `./lumirss set-password` | 安装/轮换 owner 登录密码（session 模式）。交互输入或 stdin / `LUMIRSS_NEW_PASSWORD` 运行时秘密；**只把 bcrypt 哈希写进控制库，明文任何地方不落盘**。成员账号的密码重置走 `/admin`（见 [invite-members.md](invite-members.md)） |
 | `./lumirss freshrss-init` | 安装/启用内部 FreshRSS 与 BFF 用户（幂等） |
+| `./lumirss export-images [--out DIR]` | `docker save` 两个 pinned 镜像 → `lumirss-images-<tag>.tar` + `SHA256SUMS`（`release-manifest.json` 存在时一并打包）——离线/air-gapped 主机用 |
+| `./lumirss import-images <DIR>` | 校验 `SHA256SUMS`（失败拒载）→ `docker load` 导出的镜像 |
 
 镜像默认取 GHCR：`ghcr.io/paidethon/lumirss-web` /
 `ghcr.io/paidethon/lumirss-bff`，tag 由 `LUMIRSS_IMAGE_TAG` 控制
-（默认 `latest`）；compose 的 `build:` 段是本地构建回退
-（`./lumirss deploy --build` 或拉取失败时自动使用，构建时注入
-`LUMIRSS_BUILD_COMMIT` 作版本溯源）。
+（默认 `latest`）。
+
+**生产路径 prebuilt-only**：`docker-compose.prod.yml` 不含 `build:` 段，
+`deploy` / `update --build` 直接拒绝执行。拉取失败且本地无镜像时脚本
+中止，**旧栈保持运行**；本地已有镜像（如离线导入过）则直接使用。
+本地构建只属于开发/CI，走 overlay：
+
+```bash
+LUMIRSS_BUILD_COMMIT="$(git rev-parse HEAD)" \
+  docker compose -f docker-compose.prod.yml -f docker-compose.build.yml build
+```
+
+CI 每次发布把 image digest 写进 `release-manifest.json`（version、git
+SHA、双镜像 digest、生成时间）+ `SHA256SUMS`：始终上传为 workflow
+artifact，tag 构建时若对应 GitHub Release 已存在则附加到 Release
+（工作流本身不创建 Release）。
+
+### 离线（air-gapped）升级
+
+1. 联网机器：`./lumirss export-images --out ./offline`；
+2. 搬运 `offline/` 到目标机：`./lumirss import-images ./offline`
+   （先校验 SHA256SUMS 再 `docker load`）；
+3. `./lumirss update`：拉取失败时若本地已有镜像会直接使用（不构建），
+   否则中止并保留旧栈。
 
 > 在同一台机器上测试而不影响正式栈：设置独立的
 > `LUMIRSS_HTTP_PORT` / `LUMIRSS_HTTPS_PORT` / `COMPOSE_PROJECT_NAME`
@@ -94,7 +118,8 @@ sudo ./lumirss deploy --external-caddy
 
 ```bash
 cp .env.prod.example .env.prod   # 填写真实值；$ 必须写成 $$（见配置参考）
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 - 唯一公网入口是 `web`（Caddy，80/443）；FreshRSS / RSSHub 只在内部网络。
@@ -114,6 +139,10 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec bff \
   python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5).status)"
 ```
+
+可选增强服务（如自托管 LibreTranslate 机器翻译）不在这份默认栈里，
+用独立的按需 compose fragment 管理（`./lumirss translate up|stop|status`），
+见 [optional-services.md](optional-services.md)。
 
 公网入口自检：`curl -fsS -o /dev/null http://127.0.0.1/`（`DOMAIN` 强制
 HTTPS 时用 `https://<DOMAIN>/`；自签本地证书需 `-k`）。
@@ -200,8 +229,75 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 
 手工等价：确认容器健康 → 在 UI 创建完整备份 →
 `git pull && git checkout <release-tag>` →
-`docker compose -f docker-compose.prod.yml up -d --build` → 就绪检查。
+`docker compose -f docker-compose.prod.yml pull` →
+`docker compose -f docker-compose.prod.yml up -d` → 就绪检查。
+
+拉取失败（网络/registry 不可达）时 `update` 直接中止，旧栈继续运行；
+本地已有目标镜像（离线导入，见 §2 的 air-gapped 流程）则跳过拉取直接
+升级。绝不本地构建替代线上镜像——构建产物没有发布产物的溯源与 digest。
 
 回滚：`./lumirss rollback`（上一镜像 tag + 上一份配置快照）。SQLite
 schema 不做二进制降级；数据库不兼容时唯一受支持路径是恢复升级前备份
 （见 [backup-restore.md](backup-restore.md)）。
+
+## 8. 项目进度看板（/project/，可选静态页面）
+
+仓库自带一个零依赖静态看板，展示 `docs/implementation-status.json`
+任务台账的进度摘要（220 项任务按阶段/状态筛选）。生成产物在
+`tools/progress-dashboard/dist/`（`index.html` + `project-data.js`，
+纯静态、无构建依赖、不访问任何后端）：
+
+```bash
+npm run build:dashboard    # 从台账重新生成 dist/（确定性输出）
+npm run check:dashboard    # 校验 dist/ 与台账一致（漂移守卫）
+```
+
+台账更新后重新生成并提交 `dist/`，再把两个文件同步到服务器。两种接法
+（都在**宿主 Caddy** 侧操作，LumiRSS 容器不需要任何改动）：
+
+### 8a. 复制到宿主目录 + handle_path 片段
+
+把 `dist/` 里的两个文件复制到宿主一个目录（如 `/var/www/lumirss-project`），
+然后在宿主 Caddyfile 的 `rss.oouo.top` 站点块内、`# BEGIN LUMIRSS`
+管理块**之外**加一段（`handle_path` 排序在 `reverse_proxy` 之前，
+命中 `/project/*` 即终止，其余路径照常反代到 LumiRSS）：
+
+```caddyfile
+rss.oouo.top {
+    handle_path /project/* {
+        root * /var/www/lumirss-project
+        file_server
+    }
+    # BEGIN LUMIRSS — generated by './lumirss caddy-config'; managed block.
+    reverse_proxy 127.0.0.1:18080
+    # END LUMIRSS
+}
+```
+
+后续更新看板只需重新覆盖 `/var/www/lumirss-project/` 下的两个文件，
+无需动 Caddy。
+
+### 8b. 直接服务仓库内 dist/（file_server 指向仓库路径）
+
+不想复制文件时，`root` 直接指到仓库检出内的 dist 目录也可（注意运行
+Caddy 的用户需要该路径的读权限；git pull 后即生效）：
+
+```caddyfile
+    handle_path /project/* {
+        root * /srv/LumiRSS/tools/progress-dashboard/dist
+        file_server
+    }
+```
+
+### 校验与重载
+
+改完宿主 Caddy 配置后，先校验再重载（校验失败不会影响现有站点）：
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+```
+
+自检：`curl -fsS -o /dev/null -w '%{http_code}\n' https://rss.oouo.top/project/`
+应返回 200。看板为纯静态公开内容（任务统计 + 架构一句话说明），不含
+任何上游凭据、服务器路径或账号数据；如不想公开，可在该 `handle_path`
+块内加 `basic_auth`（同 §5b）。

@@ -21,10 +21,12 @@ RSS 来源，项目自有的 FastAPI BFF 与 React Web / PWA 客户端。
 |---|---|
 | 本地跑起来 / 自托管快速上手 | [getting-started.md](getting-started.md) |
 | 部署 / 升级 / 回滚 / 运维 | [how-to/deploy.md](how-to/deploy.md) |
+| 可选增强服务（按需 LibreTranslate 机器翻译） | [how-to/optional-services.md](how-to/optional-services.md) |
 | 邀请朋友加入（运营者） | [how-to/invite-members.md](how-to/invite-members.md) |
 | 备份 / 恢复 / 灾难恢复 | [how-to/backup-restore.md](how-to/backup-restore.md) |
 | 排查故障 | [how-to/troubleshoot.md](how-to/troubleshoot.md) |
 | 查配置键含义 | [reference/configuration.md](reference/configuration.md) |
+| 查 FreshRSS 能力覆盖 / 委托边界 | [reference/freshrss-coverage.md](reference/freshrss-coverage.md) |
 | 跑测试 / CI 门禁 | [reference/testing.md](reference/testing.md) |
 | 理解系统架构（数据流 / 边界 / 不变量） | [explanation/architecture.md](explanation/architecture.md) |
 | 快速读懂项目（边界图 / 两条时序 / 追踪方法） | [explanation/project-map.md](explanation/project-map.md) |

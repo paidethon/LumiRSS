@@ -21,6 +21,17 @@ import { scopeKey, type ContentScope } from './navigation'
 import { useEntryStateMutation } from '../api/queries'
 import { effectiveBinding, formatCombo, loadCustomShortcuts } from './custom-shortcuts'
 
+/** P13：IME 输入法组合中的按键不得触发任何快捷键。
+ * - `isComposing === true`：组合进行中（safari 兼容：keyup 也可能带 229）；
+ * - `keyCode === 229`：部分浏览器在组合期间派发的旧式「处理中」码。
+ * 纯函数（只读字段），供全局处理器 / 命令面板 / 快捷键捕获 UI 复用与单测。 */
+export function shouldIgnoreKeyEvent(e: {
+  isComposing?: boolean | null
+  keyCode?: number | null
+}): boolean {
+  return e.isComposing === true || e.keyCode === 229
+}
+
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName.toLowerCase()
@@ -97,8 +108,9 @@ export interface ShortcutOptions {
 }
 
 /** F037：把 KeyboardEvent 折叠成与绑定表同构的 combo token。
- * e.key 已是移位后的字符（如 '?'、'/'），单字符非字母时不再叠加 shift。 */
-function pressedCombo(e: KeyboardEvent): string {
+ * e.key 已是移位后的字符（如 '?'、'/'），单字符非字母时不再叠加 shift。
+ * P13：导出供设置页捕获 UI 复用（与实际按键匹配保持同一折叠规则）。 */
+export function eventToCombo(e: KeyboardEvent): string {
   const mods: string[] = []
   if (e.ctrlKey || e.metaKey) mods.push('mod')
   if (e.altKey) mods.push('alt')
@@ -128,7 +140,9 @@ export function useKeyboardShortcuts(options: ShortcutOptions = {}): void {
     const custom = loadCustomShortcuts()
     const bind = (id: string) => effectiveBinding(id, DEFAULT_BINDINGS, custom)
     const onKeyDown = (e: KeyboardEvent) => {
-      const pressed = pressedCombo(e)
+      // P13：IME 组合中的按键不触发任何快捷键（必须在折叠 combo 之前返回）
+      if (shouldIgnoreKeyEvent(e)) return
+      const pressed = eventToCombo(e)
       // F30：Ctrl/⌘+K 唤起/关闭命令面板（toggle，可用 mod+k 覆盖）。既有纪律
       // 保持：输入框聚焦时不劫持——命令面板自身输入框的 Ctrl+K 关闭由面板
       // 内部处理；也不受 isModalOpen 门控（面板本身是浮层，toggle 语义自洽）。

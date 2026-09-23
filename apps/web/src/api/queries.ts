@@ -92,6 +92,7 @@ import {
   getEntrySummary,
   getEntryTranslation,
   getFeeds,
+  getFreshRssNativeUrl,
   getFreshRssUiUrl,
   getOperationsStatus,
   getReadLaterTimeline,
@@ -101,6 +102,8 @@ import {
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
+  getWorkspaceResume,
+  putWorkspaceResume,
   createInboxSource,
   deleteInboxItem,
   deleteInboxSource,
@@ -664,6 +667,17 @@ export function useFreshRssUiUrl() {
   return useQuery({
     queryKey: ['freshrss-ui'],
     queryFn: ({ signal }) => getFreshRssUiUrl(signal),
+  })
+}
+
+/** P09 委托入口：FreshRSS 原生界面坐标（{origin, username}）。绑定待定
+ * → 409（isError），UI 显示诚实待定文案、绝不渲染假链接。409 是「正常
+ * 的待定数据状态」而非故障，不做自动重试。 */
+export function useFreshRssNativeUrl() {
+  return useQuery({
+    queryKey: ['freshrss-native-url'],
+    queryFn: ({ signal }) => getFreshRssNativeUrl(signal),
+    retry: false,
   })
 }
 
@@ -1398,9 +1412,33 @@ export function useReadLaterMemberMutation() {
 export function useReorderWorkspaceItemsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; itemRefs: string[] }) =>
-      reorderWorkspaceItems(vars.workspaceId, vars.itemRefs),
+    mutationFn: (vars: { workspaceId: string; itemRefs: string[]; expectedRevision?: number }) =>
+      reorderWorkspaceItems(vars.workspaceId, vars.itemRefs, vars.expectedRevision),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** P15：续读指针查询（每工作区一个；pointer=null = 无）。 */
+export function useWorkspaceResume(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'resume'],
+    queryFn: ({ signal }) => getWorkspaceResume(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+/** P15：保存续读指针（条目打开时调用；失败静默降级——指针是体验增强，
+ * 不应因一次 404/网络错误打断阅读动作本身）。 */
+export function usePutWorkspaceResumeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
+      putWorkspaceResume(vars.workspaceId, vars.itemRef),
+    onSuccess: (_data, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['workspace', vars.workspaceId, 'resume'],
+      })
+    },
   })
 }
 
@@ -1562,14 +1600,22 @@ import {
   getFavorites,
   getObsidianNote,
   getObsidianStatus,
+  getObsidianExportTemplate,
+  createObsidianDevice,
+  updateObsidianDevice,
+  deleteObsidianDevice,
   listApiSources,
   listMailBridgeLists,
+  listObsidianDevices,
   listObsidianNotes,
   previewApiSource,
+  previewObsidianExportTemplate,
+  requestObsidianExportHandoff,
   rescanObsidian,
   sendDigestNow,
   updateApiSource,
   updateDigestSettings,
+  updateObsidianExportTemplate,
   updateObsidianSettings,
 } from './client'
 import type {
@@ -1578,6 +1624,7 @@ import type {
   ApiSourceUpdateInput,
   DigestEntryRefInput,
   DigestSettingsUpdate,
+  ObsidianDeviceProfilePayload,
 } from './client'
 
 // ---- API 来源 ----
@@ -2032,6 +2079,82 @@ export function useObsidianNoteDetail(noteRef: string | null) {
     queryKey: ['obsidian', 'notes', 'detail', noteRef],
     queryFn: ({ signal }) => getObsidianNote(noteRef!, signal),
     enabled: noteRef !== null,
+  })
+}
+
+// ---- P16：多设备交接（设备档案 / 导出模板；用户级数据） ----
+
+/** 设备档案列表（URI 生成的唯一设备信息来源）。 */
+export function useObsidianDevices() {
+  return useQuery({
+    queryKey: ['obsidian', 'devices'],
+    queryFn: ({ signal }) => listObsidianDevices(signal),
+  })
+}
+
+function useInvalidateObsidianDevices() {
+  const queryClient = useQueryClient()
+  return async () => {
+    await queryClient.invalidateQueries({ queryKey: ['obsidian', 'devices'] })
+  }
+}
+
+export function useCreateObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (payload: ObsidianDeviceProfilePayload) => createObsidianDevice(payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (vars: { deviceId: string; payload: ObsidianDeviceProfilePayload }) =>
+      updateObsidianDevice(vars.deviceId, vars.payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteObsidianDeviceMutation() {
+  const invalidate = useInvalidateObsidianDevices()
+  return useMutation({
+    mutationFn: (deviceId: string) => deleteObsidianDevice(deviceId),
+    onSuccess: invalidate,
+  })
+}
+
+/** 导出模板（template='' 表示跟随默认模板）。 */
+export function useObsidianExportTemplate() {
+  return useQuery({
+    queryKey: ['obsidian', 'export-template'],
+    queryFn: ({ signal }) => getObsidianExportTemplate(signal),
+  })
+}
+
+export function useUpdateObsidianExportTemplateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (template: string) => updateObsidianExportTemplate(template),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'export-template'] })
+    },
+  })
+}
+
+/** 模板预览（编辑器防抖调用；unknownVars 由 UI 诚实列出）。 */
+export function useObsidianTemplatePreviewMutation() {
+  return useMutation({
+    mutationFn: (vars: { template: string; entryRef?: string | null }) =>
+      previewObsidianExportTemplate(vars.template, vars.entryRef),
+  })
+}
+
+/** 导出到 Obsidian 交接（uri / file 裁决在服务端）。 */
+export function useObsidianExportHandoffMutation() {
+  return useMutation({
+    mutationFn: (vars: { entryRef: string; deviceId: string }) =>
+      requestObsidianExportHandoff(vars.entryRef, vars.deviceId),
   })
 }
 

@@ -85,7 +85,16 @@ function RailItem({
   )
 }
 
-export default function SidebarCollapsedRail() {
+/** P03：平板层复用——`alwaysVisible` 让折叠 rail 不依赖 lg: 媒体查询
+ * （tablet 档 <1024，lg: 恒不激活，由 App 的 tier 判定负责挂载）；
+ * `onExpand` 覆盖展开动作（平板层的展开/收起是会话内方向默认，
+ * 不写持久化设置，避免方向切换泄漏到桌面档）。缺省行为完全不变。 */
+interface SidebarCollapsedRailProps {
+  alwaysVisible?: boolean
+  onExpand?: () => void
+}
+
+export default function SidebarCollapsedRail({ alwaysVisible = false, onExpand }: SidebarCollapsedRailProps) {
   const view = useReaderUi((s) => s.view)
   const scope = useReaderUi((s) => s.scope)
   const section = useReaderUi((s) => s.section)
@@ -103,13 +112,16 @@ export default function SidebarCollapsedRail() {
   return (
     <nav
       aria-label="主导航（已折叠）"
-      className="hidden shrink-0 flex-col items-center gap-1 bg-[var(--lumi-sidebar)] px-1.5 py-2 lg:flex"
+      className={cx(
+        'shrink-0 flex-col items-center gap-1 bg-[var(--lumi-sidebar)] px-1.5 py-2',
+        alwaysVisible ? 'flex' : 'hidden lg:flex',
+      )}
       style={{ width: '3.5rem' }}
     >
       {/* 展开（折叠控制保留在顶部，§6） */}
       <button
         type="button"
-        onClick={() => update({ sidebarCollapsed: false })}
+        onClick={onExpand ?? (() => update({ sidebarCollapsed: false }))}
         aria-label="展开侧栏"
         title="展开侧栏"
         className="flex size-10 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"

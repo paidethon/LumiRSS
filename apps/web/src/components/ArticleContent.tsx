@@ -29,6 +29,63 @@ import type { LightboxImage } from './ArticleLightbox'
 // Bundle guard：灯箱只在点击图片/表格展开时可见——懒加载分包。
 const ArticleLightbox = lazy(() => import('./ArticleLightbox'))
 
+// ---- P05：段落「复制链接」图标按钮（渲染后 DOM 装饰，同 code-copy 模式） ----
+// 图标取 lucide Link2 / Check / X 的 path（与 ReaderHeader 的 lucide-react
+// 图标同一套形状，DOM 装饰场景内联 SVG 字符串）。反馈：成功图标变 ✓
+// （强调色）+ aria-live「链接已复制」；失败图标变 ✕ + aria-live
+// 「复制失败」——失败可见，不假装成功。~1.5s 后还原。
+const PARA_LINK_FEEDBACK_MS = 1500
+
+const PARA_LINK_SVG = (paths: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`
+
+const ICON_LINK = PARA_LINK_SVG(
+  '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+)
+const ICON_CHECK = PARA_LINK_SVG('<path d="M20 6 9 17l-5-5"/>')
+const ICON_ERROR = PARA_LINK_SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')
+
+/** 构造段落复制链接按钮：纯图标（可访问名由 aria-label 提供，正文流
+ * 中无文案）；点击复制 `${origin}/?entry=&para=` 段落链接，成功/失败
+ * 反馈见上。readId 在点击时读取（装饰后段落 id 可能仍会被后续规则
+ * 补写，取最新值）。 */
+function createParaLinkButton(
+  readId: () => string,
+  entryRef: string,
+): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'lumi-para-link'
+  button.setAttribute('aria-label', '复制段落链接')
+  button.title = '复制段落链接'
+  button.innerHTML =
+    // aria-live 节点先于消息存在（可靠的播报）；文本由复制结果写入。
+    `${ICON_LINK}<span class="sr-only" role="status" aria-live="polite"></span>`
+  const status = button.querySelector('span[role="status"]')
+  let revertTimer: number | undefined
+  const showStatus = (state: 'copied' | 'error', icon: string, message: string) => {
+    window.clearTimeout(revertTimer)
+    button.dataset.state = state
+    // 仅替换图标节点，保留 aria-live span（避免重建后播报丢失）。
+    if (button.firstChild instanceof Element) button.firstChild.outerHTML = icon
+    if (status !== null) status.textContent = message
+    revertTimer = window.setTimeout(() => {
+      button.dataset.state = ''
+      if (button.firstChild instanceof Element) button.firstChild.outerHTML = ICON_LINK
+      if (status !== null) status.textContent = ''
+    }, PARA_LINK_FEEDBACK_MS)
+  }
+  button.addEventListener('click', () => {
+    void navigator.clipboard
+      .writeText(buildParaLink(window.location.origin, entryRef, readId()))
+      .then(
+        () => showStatus('copied', ICON_CHECK, '链接已复制'),
+        () => showStatus('error', ICON_ERROR, '复制失败'),
+      )
+  })
+  return button
+}
+
 /** ArticleContent — 正文渲染边界（0006 建立；0012 Gate 4 升级为
  * presentation pipeline）。
  *
@@ -219,8 +276,10 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // F015：段落定位缺失提示（诚实：正文变化 → 不跳错段）
   const [paraMissing, setParaMissing] = useState(false)
 
-  // F015：段落 id 注入 + hover「复制段落链接」装饰；消费段落定位目标
-  // （滚动 + 2.5s 高亮；目标段落不存在 → 诚实提示，不跳错段）。
+  // F015：段落 id 注入 + P05 hover/键盘悬显的「复制段落链接」图标按钮
+  // 装饰（纯图标 + aria-label，文案不在正文流里；复制成功/失败以图标
+  // 状态 + aria-live 即时反馈，见 .lumi-para-link CSS）；消费段落定位
+  // 目标（滚动 + 2.5s 高亮；目标段落不存在 → 诚实提示，不跳错段）。
   useEffect(() => {
     const container = contentRef.current
     if (container === null || !hasHtml) return
@@ -230,20 +289,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       if (text === '') return
       if (!p.id) p.id = paraStableId(text, index)
       if (p.querySelector(':scope > button.lumi-para-link') !== null) return
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'lumi-para-link'
-      button.textContent = '复制段落链接'
-      button.setAttribute(
-        'aria-label',
-        '复制段落链接',
-      )
-      button.addEventListener('click', () => {
-        void navigator.clipboard
-          .writeText(buildParaLink(window.location.origin, detail.entryRef, p.id))
-          .catch(() => {})
-      })
-      p.appendChild(button)
+      p.appendChild(createParaLinkButton(() => p.id, detail.entryRef))
     })
     const target = takeParaTargetForEntry(detail.entryRef)
     if (target !== null) {

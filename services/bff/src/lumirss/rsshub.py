@@ -311,7 +311,11 @@ class RssHubService:
         return list(CATALOG)
 
     async def preview(
-        self, route_id: str, params: dict[str, str]
+        self,
+        route_id: str,
+        params: dict[str, str],
+        *,
+        base_override: str | None = None,
     ) -> FeedPreview:
         """Construct + fetch + parse the generated feed (non-mutating).
 
@@ -319,6 +323,12 @@ class RssHubService:
         ``feed_url`` being the FreshRSS-facing subscription URL (built
         from RSSHUB_FRESHRSS_BASE_URL — FreshRSS fetches the feed, not
         the BFF).
+
+        ``base_override`` is E2E-only (see routers/rsshub.py): it swaps
+        the base the BFF itself dials so a test can pin a dead endpoint
+        and assert the stable error class. It NEVER changes the returned
+        subscription URL — that stays built from the configured
+        RSSHUB_FRESHRSS_BASE_URL.
         """
         settings = self.load_settings()
         route = _CATALOG_BY_ID.get(route_id)
@@ -327,7 +337,7 @@ class RssHubService:
                 f"Unknown RSSHub route '{route_id}'."
             )
         path = build_path(route, params)
-        base = settings.RSSHUB_BASE_URL
+        base = base_override if base_override else settings.RSSHUB_BASE_URL
         body, _final_url = await self._fetch_feed(base, path)
         title, site_url, description, feed_format = parse_feed_document(body)
         subscription_url = f"{settings.freshrss_base_url}{path}"

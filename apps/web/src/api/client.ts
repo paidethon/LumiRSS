@@ -4,6 +4,7 @@
 import { sessionExpired } from '../store/auth'
 import type {
   AiProfile,
+  AiProfileProvider,
   AiPurposeKey,
   AiPurposes,
   AiSettings,
@@ -28,6 +29,7 @@ import type {
   EntryTranslation,
   Feed,
   FeedPreviewMetadata,
+  FreshRssNativeUrl,
   FreshRssUiInfo,
   InboxItemList,
   InboxSource,
@@ -59,6 +61,7 @@ import type {
   WorkspaceItemsResolvedResponse,
   WorkspaceItemsResponse,
   WorkspaceListResponse,
+  WorkspaceResumeResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -496,6 +499,134 @@ export async function registerFreshRssPool(input: FreshRssPoolInput): Promise<vo
   })
 }
 
+// ---- P11 管理台系统面板（/admin/system；admin-only，服务端派生、无秘密） ----
+
+export interface AdminSystemService {
+  name: string
+  configured: boolean
+  /** healthy/unconfigured/unauthenticated/unavailable/configured（服务端固定词表）。 */
+  status: string
+  latencyMs: number | null
+}
+
+export interface AdminSystemTask {
+  name: string
+  enabled: boolean
+  /** running/completed/cancelled/failed/off（off = 生命周期未创建该任务）。 */
+  state: string
+  /** 目前没有任何调度器记录 last-run —— 服务端如实恒为 null。 */
+  lastRunAt: string | null
+}
+
+export interface AdminSystemCounts {
+  users: number
+  activeUsers: number
+  invites: number
+  freshrssPoolReady: number
+  freshrssPoolAssigned: number
+  sessions: number
+  /** 以下三个是「当前请求管理员自己库」的投影计数（无跨成员内容）。 */
+  feeds: number
+  entriesIndexed: number
+  libraryItems: number
+}
+
+export interface AdminSystemInfo {
+  version: string
+  commit: string
+  python: string
+  /** 进程运行秒数；/proc 不可用（非 Linux）时如实为 null。 */
+  uptimeS: number | null
+  process: {
+    rssBytes: number | null
+    peakRssBytes: number | null
+    cpuTimeS: number | null
+  }
+  counts: AdminSystemCounts
+  services: AdminSystemService[]
+  tasks: AdminSystemTask[]
+}
+
+/** 系统诊断（只含数字/布尔/固定状态串——绝不含秘密值或 env dump）。 */
+export async function getAdminSystem(signal?: AbortSignal): Promise<AdminSystemInfo> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/system`, signal)
+  const process = (body.process ?? {}) as Record<string, unknown>
+  const counts = (body.counts ?? {}) as Record<string, unknown>
+  const services = Array.isArray(body.services) ? body.services : []
+  const tasks = Array.isArray(body.tasks) ? body.tasks : []
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  return {
+    version: String(body.version ?? ''),
+    commit: typeof body.commit === 'string' ? body.commit : '',
+    python: typeof body.python === 'string' ? body.python : '',
+    uptimeS: num(body.uptimeS),
+    process: {
+      rssBytes: num(process.rssBytes),
+      peakRssBytes: num(process.peakRssBytes),
+      cpuTimeS: num(process.cpuTimeS),
+    },
+    counts: {
+      users: num(counts.users) ?? 0,
+      activeUsers: num(counts.activeUsers) ?? 0,
+      invites: num(counts.invites) ?? 0,
+      freshrssPoolReady: num(counts.freshrssPoolReady) ?? 0,
+      freshrssPoolAssigned: num(counts.freshrssPoolAssigned) ?? 0,
+      sessions: num(counts.sessions) ?? 0,
+      feeds: num(counts.feeds) ?? 0,
+      entriesIndexed: num(counts.entriesIndexed) ?? 0,
+      libraryItems: num(counts.libraryItems) ?? 0,
+    },
+    services: services.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      return {
+        name: String(row.name ?? ''),
+        configured: row.configured === true,
+        status: String(row.status ?? 'unknown'),
+        latencyMs: num(row.latencyMs),
+      }
+    }),
+    tasks: tasks.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      return {
+        name: String(row.name ?? ''),
+        enabled: row.enabled === true,
+        state: String(row.state ?? 'unknown'),
+        lastRunAt: toIso(row.lastRunAt),
+      }
+    }),
+  }
+}
+
+export interface AdminAuditEntry {
+  /** epoch 秒在此归一为 ISO。 */
+  at: string | null
+  /** 操作者只以用户 id 出现（审计不含用户名/凭据）。 */
+  actor: string
+  action: string
+  objectType: string | null
+  objectId: string | null
+  outcome: string
+  detail: string | null
+}
+
+/** 审计尾部（admin/audit 原始行归一；不含正文与凭据）。 */
+export async function listAdminAudit(signal?: AbortSignal, limit = 20): Promise<AdminAuditEntry[]> {
+  const rows = await request<unknown[]>(`${API_BASE}/admin/audit?limit=${limit}`, signal)
+  return rows.map((raw) => {
+    const row = (raw ?? {}) as Record<string, unknown>
+    return {
+      at: toIso(row.ts),
+      actor: String(row.actor ?? ''),
+      action: String(row.action ?? ''),
+      objectType: pickString(row.object_type),
+      objectId: pickString(row.object_id),
+      outcome: String(row.outcome ?? 'ok'),
+      detail: pickString(row.detail),
+    }
+  })
+}
+
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——
  * POST 语义与 Mutation 一致，避免预览中途被取消造成状态不一致）。 */
 export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata> {
@@ -729,6 +860,13 @@ export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUi
   return request<FreshRssUiInfo>(`${API_BASE}/freshrss-ui`, signal)
 }
 
+/** P09 委托入口：本账户 FreshRSS 原生界面坐标（恰好 {origin, username}，
+ * 无凭据字段）。绑定待定 → 409 freshrss_native_url_unavailable（诚实
+ * 待定态，UI 不渲染假链接）。 */
+export async function getFreshRssNativeUrl(signal?: AbortSignal): Promise<FreshRssNativeUrl> {
+  return request<FreshRssNativeUrl>(`${API_BASE}/freshrss/native-url`, signal)
+}
+
 /** 0014：网站 → RSS/Atom 候选发现（无副作用；不接 AbortSignal——与其它
  * mutation 语义一致，一旦发出就允许完成）。 */
 export async function discoverFeeds(url: string): Promise<SourceDiscoveryResponse> {
@@ -792,6 +930,8 @@ export interface AiProfileInput {
   baseUrl?: string
   model?: string
   enabled?: boolean
+  /** gemini 时 BFF 强制使用官方接口地址（baseUrl 被忽略）。 */
+  provider?: AiProfileProvider
 }
 
 export async function createAiProfile(input: AiProfileInput): Promise<AiProfile> {
@@ -1374,20 +1514,54 @@ export async function getWorkspaceContents(
   )
 }
 
-/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。 */
+/** 重排序：按新顺序传完整 itemRefs（≤500，BFF 校验）。
+ * P15：`expectedRevision` 可选（If-Match 式乐观并发）；工作区已在其它
+ * 设备被改动时 BFF 返回 409 workspace_revision_conflict（ApiError.status
+ * === 409），调用方应重取后重试，绝不静默覆盖。 */
 export async function reorderWorkspaceItems(
   workspaceId: string,
   itemRefs: string[],
+  expectedRevision?: number,
 ): Promise<WorkspaceItemsResponse> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ itemRefs }),
+      body: JSON.stringify(
+        expectedRevision === undefined ? { itemRefs } : { itemRefs, expectedRevision },
+      ),
       contentType: 'application/json',
     },
   )
   return (await response.json()) as WorkspaceItemsResponse
+}
+
+/** P15：读取「上次看到哪」续读指针（pointer=null = 无指针；含未知工作区）。 */
+export async function getWorkspaceResume(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceResumeResponse> {
+  return request<WorkspaceResumeResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/resume`,
+    signal,
+  )
+}
+
+/** P15：保存续读指针（条目打开时调用；PUT 幂等 upsert）。
+ * 只指向工作区成员——非成员/未知工作区 → 404（诚实失败，不静默）。 */
+export async function putWorkspaceResume(
+  workspaceId: string,
+  itemRef: string,
+): Promise<WorkspaceResumeResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/resume`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemRef }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceResumeResponse
 }
 
 /** P0-10：重命名工作区（PATCH；保留工作区 read-later 由 BFF 拒绝）。 */
@@ -1578,6 +1752,12 @@ export type ObsidianSettings = G6Schemas['ObsidianSettings']
 export type ObsidianRescanResult = G6Schemas['ObsidianRescanResult']
 export type NoteView = G6Schemas['NoteView']
 export type NoteListResponse = G6Schemas['NoteListResponse']
+export type ObsidianDeviceProfile = G6Schemas['ObsidianDeviceProfile']
+export type ObsidianDeviceProfileList = G6Schemas['ObsidianDeviceProfileList']
+export type ObsidianDeviceProfilePayload = G6Schemas['ObsidianDeviceProfilePayload']
+export type ObsidianExportTemplateView = G6Schemas['ObsidianExportTemplateView']
+export type ObsidianTemplatePreviewResult = G6Schemas['ObsidianTemplatePreviewResult']
+export type ObsidianExportHandoffResult = G6Schemas['ObsidianExportHandoffResult']
 export type FavoritesResponse = G6Schemas['FavoritesResponse']
 export type LibrarySearchItem = G6Schemas['LibrarySearchItem']
 
@@ -2318,6 +2498,94 @@ export async function getObsidianNote(
     `${API_BASE}/obsidian/notes/${encodeURIComponent(toLibraryItemId(noteRef))}`,
     signal,
   )
+}
+
+// ---- P16：多设备交接（设备档案 / 导出模板 / 交接；全部用户级） ----
+
+/** 设备档案列表（描述用户各设备上的 Obsidian vault，仅用于 URI 生成）。 */
+export async function listObsidianDevices(signal?: AbortSignal): Promise<ObsidianDeviceProfileList> {
+  return request<ObsidianDeviceProfileList>(`${API_BASE}/obsidian/devices`, signal)
+}
+
+/** 新建设备档案（201 返回服务端创建的完整行）。 */
+export async function createObsidianDevice(
+  payload: ObsidianDeviceProfilePayload,
+): Promise<ObsidianDeviceProfile> {
+  const response = await rawRequest(`${API_BASE}/obsidian/devices`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianDeviceProfile
+}
+
+/** 更新设备档案（全量载荷；他人/不存在的 id = 404，路由即隔离）。 */
+export async function updateObsidianDevice(
+  deviceId: string,
+  payload: ObsidianDeviceProfilePayload,
+): Promise<ObsidianDeviceProfile> {
+  const response = await rawRequest(
+    `${API_BASE}/obsidian/devices/${encodeURIComponent(deviceId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ObsidianDeviceProfile
+}
+
+/** 删除设备档案（204；不存在 = 404）。 */
+export async function deleteObsidianDevice(deviceId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/obsidian/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 导出模板视图：template 为空串 = 跟随 defaultTemplate。 */
+export async function getObsidianExportTemplate(
+  signal?: AbortSignal,
+): Promise<ObsidianExportTemplateView> {
+  return request<ObsidianExportTemplateView>(`${API_BASE}/obsidian/export-template`, signal)
+}
+
+/** 保存导出模板（template='' = 回到默认模板）。 */
+export async function updateObsidianExportTemplate(
+  template: string,
+): Promise<ObsidianExportTemplateView> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-template`, {
+    method: 'PUT',
+    body: JSON.stringify({ template }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportTemplateView
+}
+
+/** 模板实时预览：entryRef 缺省 = 夹具文本；unknownVars 诚实上报。 */
+export async function previewObsidianExportTemplate(
+  template: string,
+  entryRef?: string | null,
+): Promise<ObsidianTemplatePreviewResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-template/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ template, entryRef: entryRef ?? null }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianTemplatePreviewResult
+}
+
+/** 导出到 Obsidian 交接：mode='uri' → 打开 uri（用户在 Obsidian 确认
+ * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。 */
+export async function requestObsidianExportHandoff(
+  entryRef: string,
+  deviceId: string,
+): Promise<ObsidianExportHandoffResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-handoff`, {
+    method: 'POST',
+    body: JSON.stringify({ entryRef, deviceId }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportHandoffResult
 }
 
 // ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----

@@ -529,6 +529,18 @@ class FreshRssUiInfo(BaseModel):
     url: str | None = None
 
 
+class FreshRssNativeUrl(BaseModel):
+    """GET /api/v1/freshrss/native-url — 委托入口数据（P09）。
+
+    响应**恰好**两个字段：浏览器可达的 FreshRSS 站点根（origin，来自
+    绑定的 public_url）+ 该账户的 FreshRSS 用户名（原生界面登录可识别）。
+    API 密码 / greader token 等任何凭据永不进入此响应——模型没有承载
+    它们的字段，契约上就不可能泄露。"""
+
+    origin: str
+    username: str
+
+
 class TrashItem(BaseModel):
     """F019：回收站条目（kind: bookmark | clip）。30 天过期由既有清理
     机制承担；当前若无调度器则仅在文档标注，不新建调度器。"""
@@ -675,7 +687,7 @@ class AiProfile(BaseModel):
 
     id: str
     label: str
-    provider: Literal["openai_compatible"]
+    provider: Literal["openai_compatible", "gemini"]
     baseUrl: str
     model: str
     enabled: bool
@@ -1197,6 +1209,9 @@ class Workspace(BaseModel):
     # F084：归档状态（默认导航隐藏；深链接仍可打开）
     archived: bool = False
     archivedAt: str | None = None
+    # P15：条目域变更计数（add/remove/reorder/status +1）；重排序可带
+    # expectedRevision 做乐观并发，不匹配 → 409。
+    revision: int = 1
 
 
 class WorkspaceListResponse(BaseModel):
@@ -1228,11 +1243,15 @@ class WorkspaceItemsResponse(BaseModel):
 
 
 class WorkspaceReorderRequest(BaseModel):
-    """PATCH /api/v1/workspaces/{id}/items — refs in their new order."""
+    """PATCH /api/v1/workspaces/{id}/items — refs in their new order.
+
+    P15：``expectedRevision`` 可选（If-Match 式乐观并发）；缺省 = 旧
+    行为（不校验），保证既有调用方零改动。"""
 
     model_config = {"extra": "forbid"}
 
     itemRefs: list[str]
+    expectedRevision: int | None = None
 
 
 class ResolvedItem(BaseModel):
@@ -1257,6 +1276,30 @@ class WorkspaceItemsResolvedResponse(BaseModel):
     """Envelope for GET /api/v1/workspaces/{id}/contents (resolved views)."""
 
     items: list[ResolvedItem]
+
+
+class WorkspaceResumePutRequest(BaseModel):
+    """PUT /api/v1/workspaces/{id}/resume — one member ItemRef."""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceResumePointer(BaseModel):
+    """「上次看到哪」指针（P15）：ref + 保存时的位置快照。"""
+
+    itemRef: str
+    positionAtSave: int | None = None
+    updatedAt: str
+
+
+class WorkspaceResumeResponse(BaseModel):
+    """Envelope for GET/PUT /api/v1/workspaces/{id}/resume（无指针时
+    pointer=null，GET 永远 200——「没有指针」是正常态而非错误）。"""
+
+    workspaceId: str
+    pointer: WorkspaceResumePointer | None = None
 
 
 class ResolveRequest(BaseModel):
@@ -1934,6 +1977,104 @@ class NoteListResponse(BaseModel):
     """Envelope for GET /api/v1/obsidian/notes."""
 
     items: list[NoteView]
+
+
+# ---------------------------------------------------------------------------
+# P16：多设备交接 —— 设备档案 / 导出模板 / 交接结果（每用户，非 owner 专属）
+# ---------------------------------------------------------------------------
+
+
+class ObsidianDeviceProfile(BaseModel):
+    """One device where the user runs Obsidian (URI generation ONLY).
+
+    Device profiles never describe server-side vault paths — the vault
+    the BFF reads is mounted server-side (env or manual), while these
+    names describe the user's OWN Obsidian app for obsidian:// links."""
+
+    id: str
+    label: str
+    vaultName: str
+    vaultIdentifier: str = ""
+    platform: Literal["windows", "ios", "ipados", "other"] = "other"
+    createdAt: str
+
+
+class ObsidianDeviceProfileList(BaseModel):
+    """Envelope for GET /api/v1/obsidian/devices."""
+
+    items: list[ObsidianDeviceProfile]
+
+
+class ObsidianDeviceProfilePayload(BaseModel):
+    """POST/PUT body — full payload both for create and update."""
+
+    model_config = {"extra": "forbid"}
+
+    label: str = Field(min_length=1, max_length=100)
+    vaultName: str = Field(min_length=1, max_length=200)
+    vaultIdentifier: str = Field(default="", max_length=200)
+    platform: Literal["windows", "ios", "ipados", "other"] = "other"
+
+
+class ObsidianExportTemplateView(BaseModel):
+    """GET /api/v1/obsidian/export-template."""
+
+    template: str
+    defaultTemplate: str
+    allowedVars: list[str]
+
+
+class ObsidianExportTemplateUpdate(BaseModel):
+    """PUT /api/v1/obsidian/export-template body."""
+
+    model_config = {"extra": "forbid"}
+
+    template: str = Field(max_length=20000)
+
+
+class ObsidianTemplatePreviewRequest(BaseModel):
+    """POST /api/v1/obsidian/export-template/preview body.
+
+    ``entryRef`` omitted → renders against fixture text (settings page);
+    present → renders against the real article (reader-side preview)."""
+
+    model_config = {"extra": "forbid"}
+
+    template: str = Field(max_length=20000)
+    entryRef: str | None = None
+
+
+class ObsidianTemplatePreviewResult(BaseModel):
+    """Rendered preview + honest unknown-variable list (UI validation)."""
+
+    text: str
+    unknownVars: list[str] = []
+    source: Literal["entry", "fixture"] = "fixture"
+
+
+class ObsidianExportHandoffRequest(BaseModel):
+    """POST /api/v1/obsidian/export-handoff body."""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    deviceId: str
+
+
+class ObsidianExportHandoffResult(BaseModel):
+    """Honest handoff verdict — the UI must never claim a vault write.
+
+    ``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.
+    ``mode='file'`` → URI budget exceeded (reason='tooLong') → download
+    ``filename`` + clipboard fallback instead."""
+
+    mode: Literal["uri", "file"]
+    uri: str | None = None
+    reason: str | None = None
+    filename: str
+    content: str
+    unknownVars: list[str] = []
+    deviceLabel: str = ""
 
 
 class TagItemsResponse(BaseModel):

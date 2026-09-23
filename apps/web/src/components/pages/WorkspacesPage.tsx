@@ -9,25 +9,30 @@
  *   保留工作区不提供这两个入口；
  * - 选中工作区的内容卡片列表（UnifiedContentCard）：移除（DELETE
  *   item，幂等契约由 BFF 承载）、上移/下移（PATCH 重排序，传完整新
- *   顺序——真实按钮，键盘可达即排序可达）；stale 条目给「建议移除」
- *   提示；rss/library 条目有安全外链时直接可打开；
+ *   顺序 + expectedRevision 乐观并发——409 = 其他设备已更新：诚实提示
+ *   并重取，绝不静默覆盖）；stale 条目给「建议移除」提示；rss/library
+ *   条目有安全外链时直接可打开；
+ * - P15 续读：打开条目即 PUT 续读指针（每工作区一个）；指针存在且指向
+ *   列表内条目时显示「继续上次」chip（滚动定位 + 复用既有打开路由）；
  * - 诚实状态：加载 Skeleton / 空态 / 错误重试，与书签页一致。
  */
 
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowDown, ArrowUp, FolderOpen, LayoutDashboard, Loader2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, FolderOpen, History, LayoutDashboard, Loader2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { MarkdownImportPanel } from '../MarkdownImportPanel'
 import {
   useCreateWorkspaceMutation,
   useDeleteWorkspaceMutation,
+  usePutWorkspaceResumeMutation,
   useRemoveWorkspaceItemMutation,
   useRenameWorkspaceMutation,
   useReorderWorkspaceItemsMutation,
   useWorkspaceContents,
+  useWorkspaceResume,
   useWorkspaces,
 } from '../../api/queries'
-import { exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
+import { ApiError, exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import {
   ArchivedBar,
@@ -35,6 +40,7 @@ import {
   SaveAsTemplateDialog,
   TemplatesDialog,
 } from '../WorkspaceExtras'
+import { isOpenable, openResolvedItem } from '../../lib/open-item'
 import type { ResolvedItem } from '../../api/types'
 import type { Workspace } from '../../api/types'
 import { Button } from '../ui/Button'
@@ -302,13 +308,30 @@ function DeleteWorkspaceDialog({
     </Dialog>
   )
 }
-/** 单张内容卡 + 行内动作：上移 / 下移 / 移除。 */
+/** P15：该错误是否为跨设备 revision 冲突（409 workspace_revision_conflict）——
+ * 页面级诚实提示 + 重取，行内不再重复报错。 */
+function isRevisionConflict(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.type === 'workspace_revision_conflict'
+  )
+}
+
+/** 单张内容卡 + 行内动作：上移 / 下移 / 移除。
+ * P15：重排序携带 expectedRevision（If-Match 式）；409 冲突时上报页面
+ * （诚实提示「已在其他设备更新，已刷新」+ 重取），绝不静默覆盖。
+ * 条目打开时回报 onItemOpened（保存续读指针）。 */
 function ContentCardRow({
   item,
   workspaceId,
   index,
   total,
   orderedRefs,
+  revision,
+  onReorderConflict,
+  onItemOpened,
+  registerEl,
 }: {
   item: ResolvedItem
   workspaceId: string
@@ -316,11 +339,20 @@ function ContentCardRow({
   total: number
   /** 当前展示顺序的全部 itemRef（contents 返回顺序） */
   orderedRefs: string[]
+  /** 当前工作区 revision（workspaces 列表查询；成功后失效重取保持新鲜） */
+  revision: number | undefined
+  /** 重排序 409 冲突：页面级提示 + 重取由父级处理 */
+  onReorderConflict: () => void
+  /** 条目被打开（默认打开路由成功后）：父级保存续读指针 */
+  onItemOpened: (itemRef: string) => void
+  /** 注册 <li> DOM（续读 chip 点击时滚动定位） */
+  registerEl: (el: HTMLLIElement | null) => void
 }) {
   const remove = useRemoveWorkspaceItemMutation()
   const reorder = useReorderWorkspaceItemsMutation()
   const busy = remove.isPending || reorder.isPending
-  const actionError = remove.error ?? reorder.error
+  const reorderConflicted = reorder.isError && isRevisionConflict(reorder.error)
+  const actionError = remove.error ?? (reorderConflicted ? null : reorder.error)
 
   const move = (delta: -1 | 1) => {
     const target = index + delta
@@ -328,13 +360,28 @@ function ContentCardRow({
     const next = [...orderedRefs]
     const [moved] = next.splice(index, 1)
     next.splice(target, 0, moved)
-    reorder.mutate({ workspaceId, itemRefs: next })
+    reorder.mutate(
+      { workspaceId, itemRefs: next, expectedRevision: revision },
+      {
+        onError: (error) => {
+          if (isRevisionConflict(error)) onReorderConflict()
+        },
+      },
+    )
+  }
+
+  // P15：可打开的条目在打开时回报（PUT 续读指针）；打开路由与卡片默认
+  // 行为一致（lib/open-item.ts 按 kind 路由），不改变打开语义。
+  const openable = !item.stale && isOpenable(item)
+  const handleOpen = () => {
+    if (openResolvedItem(item)) onItemOpened(item.ref)
   }
 
   return (
-    <li>
+    <li ref={registerEl} className="scroll-mt-4" data-workspace-item={item.ref}>
       <UnifiedContentCard
         item={item}
+        onOpen={openable ? handleOpen : undefined}
         actions={
           <span className="ml-auto flex items-center gap-1">
             <IconButton
@@ -383,7 +430,7 @@ function ContentCardRow({
           </a>
         </p>
       )}
-      {(remove.isError || reorder.isError) && (
+      {(remove.isError || (reorder.isError && !reorderConflicted)) && actionError !== null && (
         <p role="alert" className="mt-1 px-1 text-xs text-[var(--lumi-danger)]">
           操作失败：
           {actionError instanceof Error ? actionError.message : '请稍后重试。'}
@@ -434,6 +481,57 @@ export default function WorkspacesPage() {
 
   const contents = useWorkspaceContents(effectiveSelectedId)
   const resolvedItems = contents.data?.items ?? []
+
+  // ---- P15：续读指针 + 跨设备并发诚实提示 ----
+  const resume = useWorkspaceResume(effectiveSelectedId)
+  const putResume = usePutWorkspaceResumeMutation()
+  // 409 冲突提示（页面级；重取后以服务端状态为准，绝不静默覆盖）。
+  const [conflictNotice, setConflictNotice] = useState(false)
+  // 已点击消费过的续读 ref（点击后 chip 收起；指针换目标后重新出现）。
+  const [resumeConsumedRef, setResumeConsumedRef] = useState<string | null>(null)
+  const itemEls = useRef(new Map<string, HTMLLIElement>())
+
+  const handleItemOpened = useCallback(
+    (itemRef: string) => {
+      if (effectiveSelectedId === null) return
+      // 打开即保存（规格允许的简单路径）；失败静默降级——指针是体验
+      // 增强，不因一次 404/网络错误打断阅读动作。
+      putResume.mutate({ workspaceId: effectiveSelectedId, itemRef })
+    },
+    [effectiveSelectedId, putResume],
+  )
+
+  const handleReorderConflict = useCallback(() => {
+    setConflictNotice(true)
+    void queryClient.invalidateQueries({ queryKey: ['workspace'] })
+    void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+  }, [queryClient])
+
+  const resumePointer = resume.data?.pointer ?? null
+  const resumeItem =
+    resumePointer !== null
+      ? (resolvedItems.find((it) => it.ref === resumePointer.itemRef) ?? null)
+      : null
+  const showResumeChip =
+    view === 'list' &&
+    contents.isSuccess &&
+    resumePointer !== null &&
+    resumeItem !== null &&
+    resumeConsumedRef !== resumePointer.itemRef
+
+  const handleResumeClick = () => {
+    if (resumeItem === null) return
+    setResumeConsumedRef(resumeItem.ref)
+    const el = itemEls.current.get(resumeItem.ref)
+    const reduceMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (el !== undefined && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
+    }
+    // 复用既有打开路由（lib/open-item.ts）；打开成功也回报指针（幂等）。
+    if (openResolvedItem(resumeItem)) handleItemOpened(resumeItem.ref)
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -603,6 +701,47 @@ export default function WorkspacesPage() {
             {selectedDescription}
           </p>
         ) : null}
+        {/* P15：跨设备冲突诚实提示（409 后已重取，内容以服务端为准）。 */}
+        {conflictNotice && (
+          <div
+            role="status"
+            data-workspace-conflict-notice
+            className="mt-2 flex items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2 text-xs text-[var(--lumi-text-secondary)]"
+          >
+            <History aria-hidden className="size-3.5 shrink-0" />
+            <span>提示：工作区已在其他设备更新，已刷新</span>
+            <button
+              type="button"
+              onClick={() => setConflictNotice(false)}
+              className={cx(
+                'ml-auto min-h-7 rounded-[var(--lumi-radius-full)] px-2.5 text-xs text-[var(--lumi-text-secondary)]',
+                'transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              )}
+            >
+              知道了
+            </button>
+          </div>
+        )}
+        {/* P15：续读 chip —— 指针指向的条目仍在列表中时显示；stale/已移除
+            则诚实隐藏（不假装可跳转）。 */}
+        {showResumeChip && resumeItem !== null && (
+          <button
+            type="button"
+            data-workspace-resume-chip
+            onClick={handleResumeClick}
+            className={cx(
+              'mt-3 flex min-h-8 max-w-full items-center gap-1.5 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 py-1 text-xs',
+              'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            )}
+          >
+            <History aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">
+              继续上次：<span className="font-medium">{resumeItem.title}</span>
+            </span>
+          </button>
+        )}
         {/* 选中工作区的内容：看板（F085/F086）或列表 */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
           <WorkspaceBoardView workspaceId={effectiveSelectedId} />
@@ -648,6 +787,13 @@ export default function WorkspacesPage() {
                   index={index}
                   total={resolvedItems.length}
                   orderedRefs={resolvedItems.map((it) => it.ref)}
+                  revision={selectedWorkspace?.revision}
+                  onReorderConflict={handleReorderConflict}
+                  onItemOpened={handleItemOpened}
+                  registerEl={(el) => {
+                    if (el === null) itemEls.current.delete(item.ref)
+                    else itemEls.current.set(item.ref, el)
+                  }}
                 />
               ))}
             </ul>

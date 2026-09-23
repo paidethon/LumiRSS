@@ -43,6 +43,8 @@ export type OpmlImportPreview = Schemas['OpmlImportPreview']
 export type OpmlImportAdded = Schemas['OpmlImportAdded']
 export type OpmlImportResult = Schemas['OpmlImportResult']
 export type FreshRssUiInfo = Schemas['FreshRssUiInfo']
+// P09 委托入口：恰好 {origin, username}，无凭据字段（契约由 BFF 模型固定）
+export type FreshRssNativeUrl = Schemas['FreshRssNativeUrl']
 
 // ---- 0014 source discovery / RSSHub 目录 ----
 
@@ -59,6 +61,7 @@ export type AiPurposeKey = 'summary' | 'translation' | 'chat'
 export type AiPurposes = Schemas['AiSettingsView']['purposes']
 export type AiPurposeStatus = Schemas['AiPurposeStatus']
 export type AiProfile = Schemas['AiProfile']
+export type AiProfileProvider = AiProfile['provider']
 export type AiSettingsUpdate = Schemas['AiSettingsUpdate']
 export type SummaryStatus = Schemas['EntrySummaryVersions']['status']
 export type EntrySummary = Schemas['EntrySummaryVersions']
@@ -126,6 +129,9 @@ export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
+/** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */
+export type WorkspaceResumePointer = Schemas['WorkspaceResumePointer']
+export type WorkspaceResumeResponse = Schemas['WorkspaceResumeResponse']
 /** P0-01：服务端稍后读时间线（server-driven list；cursor opaque）。 */
 export type ReadLaterItem = Schemas['ReadLaterItem']
 export type ReadLaterTimelineResponse = Schemas['ReadLaterTimelineResponse']

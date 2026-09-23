@@ -2,9 +2,10 @@
 
 Extends the 0015 single-server-key model: the user may now define any
 number of NAMED profiles ("GLM 摘要", "DeepSeek 翻译", …) entirely from
-the browser, each with its own OpenAI-compatible base URL / model and its
-own API key, and map the three AI purposes (summary / translation /
-article conversation) onto them independently.
+the browser, each with its own provider type (an OpenAI-compatible base
+URL, or the native Google Gemini API with the fixed official endpoint —
+P17), its own model and its own API key, and map the three AI purposes
+(summary / translation / article conversation) onto them independently.
 
 Security model (unchanged invariants, one new storage namespace):
 
@@ -25,13 +26,17 @@ from dataclasses import dataclass
 from typing import Literal
 
 from lumirss.ai_settings import (
+    GEMINI_BASE_URL,
     KEY_BASE_URL,
     KEY_MODEL,
     KEY_PROVIDER,
+    PROVIDER_GEMINI,
+    PROVIDER_OPENAI_COMPATIBLE,
     AiSettingsStore,
     InvalidAiSettings,
     _validate_base_url,
     _validate_model,
+    _validate_profile_provider,
 )
 from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
@@ -183,9 +188,12 @@ class AiProfileStore:
         base_url: str = "",
         model: str = "",
         enabled: bool = True,
+        provider: str = PROVIDER_OPENAI_COMPATIBLE,
     ) -> dict[str, object]:
         await self._migrate()
-        values = self._validate_fields(label=label, base_url=base_url, model=model)
+        values = self._validate_fields(
+            label=label, base_url=base_url, model=model, provider=provider
+        )
         profile_id = uuid.uuid4().hex[:20]
         now = _utc_now()
         await self._db.execute(
@@ -211,6 +219,7 @@ class AiProfileStore:
         base_url: str | None = None,
         model: str | None = None,
         enabled: bool | None = None,
+        provider: str | None = None,
     ) -> dict[str, object]:
         await self._migrate()
         row = await self._fetch_row(profile_id)
@@ -220,6 +229,7 @@ class AiProfileStore:
             label=label if label is not None else row["label"],
             base_url=base_url if base_url is not None else row["base_url"],
             model=model if model is not None else row["model"],
+            provider=provider if provider is not None else row["provider"],
         )
         await self._db.execute(
             "UPDATE ai_profiles SET label = ?, base_url = ?, model = ?, enabled = ?, updated_at = ? WHERE id = ?",
@@ -363,7 +373,7 @@ class AiProfileStore:
                     profile_label=row["label"],
                     base_url=row["base_url"],
                     model=row["model"],
-                    provider=provider,
+                    provider=str(row["provider"]),
                     api_key=key if has_key else None,
                     key_source="profile_secret" if has_key else "missing",
                 )
@@ -388,17 +398,28 @@ class AiProfileStore:
         )
 
     def _validate_fields(
-        self, *, label: str, base_url: str, model: str
+        self,
+        *,
+        label: str,
+        base_url: str,
+        model: str,
+        provider: str,
     ) -> dict[str, str]:
         try:
             clean_label = _validate_label(label)
-            clean_base = _validate_base_url(base_url)
+            clean_provider = _validate_profile_provider(provider)
             clean_model = _validate_model(model)
+            if clean_provider == PROVIDER_GEMINI:
+                # Gemini profiles target the official endpoint ONLY; any
+                # user-supplied base URL is ignored, never stored.
+                clean_base = GEMINI_BASE_URL
+            else:
+                clean_base = _validate_base_url(base_url)
         except ValueError as exc:
             raise InvalidAiSettings(str(exc)) from exc
         return {
             "label": clean_label,
-            "provider": "openai_compatible",
+            "provider": clean_provider,
             "base_url": clean_base,
             "model": clean_model,
         }

@@ -13,6 +13,7 @@ from lumirss.models import (
     Category,
     DuplicateSuspectGroup,
     DuplicateSuspectsResponse,
+    FreshRssNativeUrl,
     FreshRssUiInfo,
     SourceNotesList,
     SourceNotesUpdate,
@@ -547,6 +548,47 @@ async def freshrss_ui(request: Request) -> dict[str, str | None]:
         return {"url": None}
     url = str(row["public_url"]) if row and row["public_url"] else None
     return {"url": url or None}
+
+
+@router.get(
+    "/api/v1/freshrss/native-url",
+    response_model=FreshRssNativeUrl,
+)
+async def freshrss_native_url(request: Request) -> Response:
+    """P09 委托入口：本账户 FreshRSS 原生界面的可直达坐标。
+
+    返回**恰好** ``{origin, username}``：origin 是绑定里浏览器可达的
+    public_url（内部 FRESHRSS_BASE_URL 永不回显——它可能是浏览器无法
+    且不应到达的 Docker 主机名，与 /api/v1/freshrss-ui 同一安全决策），
+    username 是该账户在 FreshRSS 侧的登录名（让原生界面里的身份可
+    识别）。密码与 greader token 不在模型里，契约上无凭据可泄。
+
+    绑定未完成或未配置浏览器可达地址 → 409 ``freshrss_native_url_unavailable``
+    （诚实的"暂不可用"状态，UI 显示待定文案、绝不渲染假链接）。
+    身份由会话/内部令牌中间件统一强制（/api/* 全量门禁）。
+    """
+    from fastapi.responses import JSONResponse
+
+    try:
+        await request.app.state.db.migrate()
+        row = await request.app.state.db.fetch_one(
+            "SELECT public_url, username FROM freshrss_binding WHERE id = 1"
+        )
+    except Exception:  # noqa: BLE001 — 数据库异常与未绑定同等诚实处理
+        row = None
+    origin = str(row["public_url"] or "").rstrip("/") if row else ""
+    username = str(row["username"] or "") if row else ""
+    if not origin or not username:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "freshrss_native_url_unavailable",
+                    "message": "FreshRSS 绑定尚未完成或未配置浏览器可达地址，原生界面入口暂不可用。",
+                }
+            },
+        )
+    return JSONResponse(content={"origin": origin, "username": username})
 
 
 async def _probe_feed_url(

@@ -1,0 +1,88 @@
+# Optional ON-DEMAND self-hosted LibreTranslate (machine translation) — P19.
+#
+# This fragment is NOT part of './lumirss deploy' / 'update'. The service is
+# started and stopped explicitly on a small host (see docs/how-to/
+# optional-services.md):
+#
+#   ./lumirss translate up        # compose the two files below, service only
+#   ./lumirss translate stop
+#   ./lumirss translate status
+#   # manual equivalent:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.translate.yml \
+#     up -d libretranslate
+#
+# Image: libretranslate/libretranslate:v1.9.6 — latest stable tag at
+# pinning time (hub.docker.com, checked 2026-09-23; prior stable v1.9.5
+# 2026-03-03). The published image ships WITHOUT models baked in
+# (build arg with_models=false); on the very first start the app still
+# downloads the en+zh packages into the volume below because fewer than
+# two packages are installed (verified boot() in libretranslate/init.py),
+# and afterwards never re-checks on startup — one bounded download,
+# ~200-400 MB disk in the named volume. Delete the volume to reclaim it.
+#
+# Env notes (honest, checked against the v1.9.6 source):
+# - LT_UPDATE_MODELS is the v1.9.x env name ("update language models at
+#   startup"); the LT_UPDATE_MODELS_ON_STARTUP spelling seen in older
+#   upstream docs is NOT read by this version.
+# - LT_CHAR_CACHE (seen in older upstream docs) does not exist in v1.9.x,
+#   and LT_TRANSLATION_CACHE only caches per-API-key responses — inert
+#   with LT_API_KEYS=false. So no cache envs are set at all.
+# - LT_THREADS=1: one gunicorn worker = one copy of the models in RAM.
+#   Keep the 420 MB limit honest on a 2 GB host; the BFF batches segment
+#   requests anyway and gives up after its own 20 s timeout.
+#
+# Network: published to HOST LOOPBACK ONLY (127.0.0.1:<port>) for operator
+# verification (curl /languages, './lumirss translate status'). The BFF
+# never dials the host port — point the Lumi translation settings at
+# http://lumirss-libretranslate:5000 (compose service network name).
+# The image has no curl (python:3.11-slim based), so the healthcheck uses
+# the image's own venv python; start_period covers the one-time model
+# download on first start.
+
+services:
+  libretranslate:
+    image: libretranslate/libretranslate:v1.9.6
+    container_name: lumirss-libretranslate
+    # On-demand BY DESIGN (2 GB host): must not come back on its own after
+    # a host reboot or './lumirss update' — start it when you need it.
+    restart: "no"
+    ports:
+      - "127.0.0.1:${LUMIRSS_TRANSLATE_PORT:-50050}:5000"
+    environment:
+      # Smallest useful pair for this operator: en<->zh packages only.
+      LT_LOAD_ONLY: "en,zh"
+      # Never phone home on (re)start; models persist in the named volume.
+      # (First start still installs the pair once — see the header note.)
+      LT_UPDATE_MODELS: "false"
+      # Loopback/in-network only — no public exposure, no key database.
+      LT_API_KEYS: "false"
+      # One gunicorn worker: bounds RAM to a single copy of the models.
+      LT_THREADS: "1"
+    volumes:
+      # Model/download cache (argostranslate lives under ~/.local/share).
+      # Named volume: survives restarts, deletable to reclaim ~200-400 MB.
+      - lumirss-libretranslate-models:/home/libretranslate/.local
+    healthcheck:
+      test:
+        - CMD
+        - /app/venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/languages', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # First start downloads the en/zh models (~200-400 MB) before the
+      # HTTP server answers; probes during start_period do not count as
+      # failures.
+      start_period: 300s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 420m
+    mem_reservation: 256m
+    cpus: 1.0
+
+volumes:
+  lumirss-libretranslate-models:

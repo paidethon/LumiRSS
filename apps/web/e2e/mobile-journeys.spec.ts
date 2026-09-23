@@ -39,8 +39,8 @@ async function openFirstEntry(page: Page) {
 
 test('M1 — 底部导航与抽屉：一级入口 / 搜索诚实 / 设置触达', async ({ page }) => {
   await page.goto('/')
-  // 底部导航一级入口（时间线 / 订阅 / 搜索 / 收藏）
-  for (const name of ['首页', '订阅', '搜索', '收藏']) {
+  // 底部导航一级入口（时间线 / 来源 / 搜索 / 收藏；P04：订阅→来源）
+  for (const name of ['首页', '来源', '搜索', '收藏']) {
     await expect(page.getByRole('button', { name, exact: true }).first()).toBeVisible()
   }
   // 底部栏不遮挡内容：页面可以滚动到底且无横向溢出

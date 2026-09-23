@@ -9,7 +9,7 @@
 | BFF 单元/集成测试 | `services/bff/tests/`（pytest） | 上游网络全部 mock，DB 用临时文件 |
 | Web 单元/组件测试 | `apps/web/src/**/__tests__/`（vitest） | 含 CSP 哈希漂移、API 契约对齐等钉子测试 |
 | E2E（Playwright） | `apps/web/e2e/` | 桌面/移动完整 journey × 多视口 × 明暗主题，axe 可访问性门禁；另有确定性 CI smoke |
-| 生产级 compose 冒烟 | `e2e/stack/`（`docker-compose.e2e.yml` + `run-smoke.sh`） | 生产拓扑真实栈（含 FreshRSS/RSSHub/Mailpit/fixtures/AI 桩/只读 vault）release-gate 冒烟，15 项 PASS/FAIL 汇总 |
+| 生产级 compose 冒烟 | `e2e/stack/`（`docker-compose.e2e.yml` + `run-smoke.sh`） | 生产拓扑真实栈（含 FreshRSS/RSSHub/Mailpit/fixtures/AI 桩/只读 vault）release-gate 冒烟，22 项 PASS/FAIL/SKIP 汇总；RSSHub 链路里依赖外网的两项需 `LUMIRSS_E2E_ALLOW_NETWORK=1`（未设则如实 SKIP），其余（含经 `/test/1` 确定性路由的 订阅→FreshRSS 抓取→条目 链路）离线可跑 |
 | 生产 compose 校验 | `docker-compose.prod.yml config` | 配置可渲染 |
 
 ## 标准命令

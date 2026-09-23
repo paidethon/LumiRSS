@@ -7,6 +7,8 @@ injected via monkeypatched RssHubSettings so tests never read the real
 .env.
 """
 
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -346,28 +348,55 @@ async def test_preview_oversized_feed():
 # --- route level ------------------------------------------------------------
 
 
-async def route_request(path: str, *, json=None, base: str = BASE_URL):
+@pytest.fixture(autouse=True)
+def _isolated_control_db(monkeypatch, tmp_path):
+    """Route-level tests drive the real ASGI stack, whose auth middleware
+    resolves the request identity from the control database. Pin
+    LUMIRSS_DB_PATH to a temp file so the lifespan run below (owner
+    migration included) never touches a developer's real data dir —
+    same isolation the shared `client` fixture provides TestClient tests."""
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
+
+
+@asynccontextmanager
+async def _start_app_with(client):
+    """Run the real app lifespan, then swap in the test HTTP client.
+
+    The session/basic auth middleware now gates every /api route: without
+    a started app there is no control database and no owner identity, so
+    requests fail closed with 401. Running the lifespan gives the
+    middleware exactly what a production request has; the fakes are then
+    injected after startup, the same way test_feeds_route.py injects its
+    fake adapter into a started TestClient."""
     from lumirss.source_discovery import SourceDiscoveryService
 
+    async with app.router.lifespan_context(app):
+        lifespan_client, app.state.http_client = app.state.http_client, client
+        await lifespan_client.aclose()
+        app.state.rsshub_service = None
+        app.state.source_discovery_service = SourceDiscoveryService()
+        yield
+
+
+async def route_request(path: str, *, json=None, base: str = BASE_URL):
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(lambda r: httpx.Response(200, content=RSS_DOC))
     )
     control = FakeControl()
     service = RssHubService(client, control)
     service.load_settings = lambda: FakeSettings(base)
-    app.state.http_client = client
-    app.state.rsshub_service = service
-    app.state.source_discovery_service = SourceDiscoveryService()
     try:
-        from httpx import ASGITransport
+        async with _start_app_with(client):
+            app.state.rsshub_service = service
+            from httpx import ASGITransport
 
-        transport = ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
-        ) as route_client:
-            if json is None:
-                return await route_client.get(path)
-            return await route_client.post(path, json=json)
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as route_client:
+                if json is None:
+                    return await route_client.get(path)
+                return await route_client.post(path, json=json)
     finally:
         await client.aclose()
 
@@ -398,16 +427,16 @@ async def test_route_routes_catalog_reports_not_configured():
         service.load_settings = lambda: (_ for _ in ()).throw(
             RssHubNotConfigured("x")
         )
-        app.state.http_client = client
-        app.state.rsshub_service = service
         try:
-            from httpx import ASGITransport
+            async with _start_app_with(client):
+                app.state.rsshub_service = service
+                from httpx import ASGITransport
 
-            transport = ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://testserver"
-            ) as route_client:
-                return await route_client.get("/api/v1/rsshub/routes")
+                transport = ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as route_client:
+                    return await route_client.get("/api/v1/rsshub/routes")
         finally:
             await client.aclose()
 
@@ -458,22 +487,83 @@ async def test_route_preview_upstream_error_502():
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         service = RssHubService(client, FakeControl())
         service.load_settings = lambda: FakeSettings()
-        app.state.http_client = client
-        app.state.rsshub_service = service
         try:
-            from httpx import ASGITransport
+            async with _start_app_with(client):
+                app.state.rsshub_service = service
+                from httpx import ASGITransport
 
-            transport = ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://testserver"
-            ) as route_client:
-                return await route_client.post(
-                    "/api/v1/rsshub/preview",
-                    json={"routeId": "hackernews", "params": {}},
-                )
+                transport = ASGITransport(app=app)
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://testserver"
+                ) as route_client:
+                    return await route_client.post(
+                        "/api/v1/rsshub/preview",
+                        json={"routeId": "hackernews", "params": {}},
+                    )
         finally:
             await client.aclose()
 
     response = await run()
     assert response.status_code == 502
     assert response.json()["error"]["type"] == "rsshub_fetch_error"
+
+
+# --- E2E-only baseUrl override (LUMIRSS_E2E gate) --------------------------
+# The cross-service smoke (e2e/stack/run-smoke.sh) pins a dead endpoint via
+# baseUrl to assert the stable 502 rsshub_fetch_error class. These tests fix
+# the gate contract: refused (no dial) everywhere except when the BFF itself
+# runs with LUMIRSS_E2E=1, structurally validated when allowed, and the
+# override never leaks into the returned subscription feedUrl. They exercise
+# the gate helper and the service directly — the module's ASGI route harness
+# predates the session gate and is repaired separately.
+# (Gate contract mirrored end-to-end by e2e smoke check 22.)
+
+
+def test_preview_base_override_refused_outside_e2e(monkeypatch):
+    from lumirss.routers.rsshub import _e2e_base_override
+
+    monkeypatch.delenv("LUMIRSS_E2E", raising=False)
+    with pytest.raises(RssHubInvalidParameters):
+        _e2e_base_override("http://freshrss:9")
+    # Absence is always fine — regular deployments never send the field.
+    assert _e2e_base_override(None) is None
+
+
+def test_preview_base_override_invalid_url_rejected(monkeypatch):
+    from lumirss.routers.rsshub import _e2e_base_override
+
+    monkeypatch.setenv("LUMIRSS_E2E", "1")
+    with pytest.raises(RssHubInvalidParameters):
+        _e2e_base_override("not-a-url")
+    with pytest.raises(RssHubInvalidParameters):
+        _e2e_base_override("http://user:pw@rsshub:1200")
+    assert _e2e_base_override("http://freshrss:9") == "http://freshrss:9"
+
+
+@pytest.mark.anyio
+async def test_service_preview_base_override_dials_override_keeps_subscription_url():
+    """With the override the BFF dials the override base, while the
+    returned feedUrl still comes from the configured FreshRSS base."""
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, content=RSS_DOC)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    service = RssHubService(client, FakeControl())
+    service.load_settings = lambda: FakeSettings(
+        base=BASE_URL, freshrss=FRESHRSS_BASE_URL
+    )
+    try:
+        preview = await service.preview(
+            "hackernews",
+            {},
+            base_override="http://rsshub-override.test:9",
+        )
+    finally:
+        await client.aclose()
+
+    assert seen == ["http://rsshub-override.test:9/hackernews"]
+    assert preview.feed_url == f"{FRESHRSS_BASE_URL}/hackernews"

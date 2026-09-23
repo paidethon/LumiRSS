@@ -3,6 +3,9 @@ name: Publish images
 # Builds and pushes the BFF + Web images to GHCR on every merge to main
 # and on version tags. `latest` tracks main; version tags are immutable
 # references for update/rollback (LUMIRSS_IMAGE_TAG in .env.prod pins).
+# Each run also emits an unsigned (plain-checksum) release-manifest.json
+# + SHA256SUMS: workflow artifact always, attached to the tag's GitHub
+# Release when one already exists (this workflow never creates releases).
 
 on:
   push:
@@ -13,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # release-asset upload only (guarded step below); no other contents writes
   packages: write
 
 concurrency:
@@ -49,6 +52,7 @@ jobs:
           fi
 
       - name: Build and push BFF image
+        id: bff
         uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.10.0
         with:
           context: ./services/bff
@@ -60,6 +64,7 @@ jobs:
             ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-bff:latest', steps.tags.outputs.repo) || '' }}
 
       - name: Build and push Web image
+        id: web
         uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
         with:
           context: ./apps/web
@@ -69,3 +74,59 @@ jobs:
           tags: |
             ghcr.io/${{ steps.tags.outputs.repo }}/lumirss-web:${{ steps.tags.outputs.version }}
             ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/lumirss-web:latest', steps.tags.outputs.repo) || '' }}
+
+      # Plain advisory manifest: no signing infrastructure (kept out of
+      # scope for this project size), but every value an operator needs to
+      # verify what they run. './lumirss export-images' picks this file up
+      # automatically when it sits next to the checkout.
+      - name: Emit release manifest + SHA256SUMS
+        run: |
+          set -euo pipefail
+          repo="${{ steps.tags.outputs.repo }}"
+          version="${{ steps.tags.outputs.version }}"
+          bff_digest="${{ steps.bff.outputs.digest }}"
+          web_digest="${{ steps.web.outputs.digest }}"
+          test -n "$bff_digest" && test -n "$web_digest"
+          cat > release-manifest.json <<JSON
+          {
+            "schema": "lumirss-release-manifest/v1",
+            "name": "LumiRSS",
+            "version": "$version",
+            "git_sha": "$GITHUB_SHA",
+            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "images": {
+              "bff": "ghcr.io/$repo/lumirss-bff@$bff_digest",
+              "web": "ghcr.io/$repo/lumirss-web@$web_digest"
+            },
+            "note": "Unsigned advisory manifest (plain checksums, no signing infra). Verify with SHA256SUMS; pin LUMIRSS_IMAGE_TAG=$version in .env.prod."
+          }
+          JSON
+          sha256sum release-manifest.json > SHA256SUMS
+          cat release-manifest.json
+
+      - name: Upload manifest artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-manifest
+          path: |
+            release-manifest.json
+            SHA256SUMS
+          if-no-files-found: error
+
+      # Attach the manifest to the GitHub Release matching the tag, but
+      # only when a release already exists (e.g. cut by the maintainer):
+      # this workflow deliberately never creates releases.
+      - name: Attach manifest to the tag's GitHub Release (when one exists)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "no existing release for $tag — manifest stays a workflow artifact"
+            exit 0
+          fi
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
+            release-manifest.json SHA256SUMS
+          echo "manifest attached to release $tag"

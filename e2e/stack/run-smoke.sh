@@ -7,6 +7,10 @@
 # vault. Every check prints PASS/FAIL; the summary is the release
 # evidence. Browser-only flows (translation activation matrix) are
 # marked BROWSER — they need a headed Chrome run and are NOT faked here.
+# Checks that need the EXTERNAL internet (RSSHub catalog routes fetch
+# real upstream sites) SKIP with an honest label unless
+# LUMIRSS_E2E_ALLOW_NETWORK=1; the RSSHub chain itself runs offline via
+# the instance's deterministic built-in /test/1 route.
 #
 #   docker compose -f e2e/stack/docker-compose.e2e.yml up -d --build
 #   e2e/stack/run-smoke.sh up     # init + smoke
@@ -33,6 +37,8 @@ RESULT=()
 
 pass() { RESULT+=("PASS $1"); echo "PASS  $1"; }
 fail() { RESULT+=("FAIL $1"); echo "FAIL  $1"; }
+skip() { RESULT+=("SKIP $1"); echo "SKIP  $1"; }
+allow_network() { [[ "${LUMIRSS_E2E_ALLOW_NETWORK:-0}" == "1" ]]; }
 check() { # check <name> <exit-status>
   if [[ "$2" == "0" ]]; then pass "$1"; else fail "$1"; fi
 }
@@ -95,7 +101,10 @@ smoke_read_later_server_side() { # 2. read-later 服务端时间线
     fail "02 read-later timeline (no rss entry available to save)"; return
   fi
   ref="rss:$ref"
-  internal -X POST /api/v1/workspaces/read-later/items \
+  # internal() takes <path> FIRST — the historical `internal -X POST …`
+  # order curled a garbage URL (silent stderr noise) and the count below
+  # only passed on stale volume data.
+  internal /api/v1/workspaces/read-later/items -X POST \
     -H 'content-type: application/json' -d "{\"itemRef\": \"$ref\"}" >/dev/null
   local count
   count=$(internal '/api/v1/workspaces/read-later/timeline?limit=50' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["items"]))')
@@ -301,6 +310,123 @@ smoke_backup() { # 17. backup 作业被接受（restore 演练见 gate 报告）
   check "17 backup job accepted (restore rehearsal in gate report)" $?
 }
 
+# --- P08: RSSHub → FreshRSS → per-user entries chain (18–24) ---------------
+# The instance is the pinned diygod/rsshub container; the BFF previews via
+# RSSHUB_BASE_URL and builds subscription feedUrls from
+# RSSHUB_FRESHRSS_BASE_URL (both http://rsshub:1200 on this network). The
+# two externally-networked checks (21/23) SKIP without
+# LUMIRSS_E2E_ALLOW_NETWORK=1; everything else is fully offline.
+
+smoke_rsshub_health() { # 18. rsshub /healthz（宿主侧有界等待）
+  local port="${E2E_RSSHUB_HOST_PORT:-12001}" code=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+      "http://127.0.0.1:$port/healthz" 2>/dev/null || true)
+    [[ "$code" == "200" ]] && break
+    sleep 3
+  done
+  [[ "$code" == "200" ]] || { fail "18 rsshub /healthz never answered 200 on 127.0.0.1:$port (last: '${code:-none}')"; return; }
+  pass "18 rsshub /healthz up and reachable from the test host (127.0.0.1:$port)"
+}
+
+smoke_rsshub_freshrss_dns() { # 19. freshrss 容器按服务名 DNS 抵达 rsshub
+  # Bounded (5s stream timeout) — proves the freshrss container resolves
+  # the compose service name AND gets a healthy answer, the exact view
+  # it needs to fetch RSSHub feeds after subscribe.
+  $COMPOSE exec -T freshrss php -r '
+$c = stream_context_create(["http" => ["timeout" => 5]]);
+$b = @file_get_contents("http://rsshub:1200/healthz", false, $c);
+echo ($b === false) ? "unreachable" : "healthy:" . trim($b);
+' | grep -q '^healthy:ok$'
+  check "19 freshrss reaches rsshub over compose service DNS" $?
+}
+
+smoke_rsshub_catalog() { # 20. BFF 目录端点：configured + ≥1 路由
+  api GET /api/v1/rsshub/routes | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["configured"] is True, d
+assert len(d["routes"]) >= 1, d
+'
+  check "20 BFF rsshub catalog configured with >=1 route" $?
+}
+
+smoke_rsshub_preview() { # 21. BFF 预览目录路由（readhub 需外网 → 守卫）
+  allow_network || { skip "21 BFF preview of a catalog route (needs external internet; set LUMIRSS_E2E_ALLOW_NETWORK=1)"; return; }
+  local feed_url
+  feed_url=$(api POST /api/v1/rsshub/preview -H 'content-type: application/json' \
+    -d '{"routeId": "readhub", "params": {}}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("feedUrl", ""))' 2>/dev/null || true)
+  # Exact equality proves the RSSHUB_FRESHRSS_BASE_URL wiring: the
+  # subscription URL must be the freshrss-facing service-name base.
+  [[ "$feed_url" == "http://rsshub:1200/readhub" ]]
+  check "21 BFF preview builds the freshrss-facing rsshub feedUrl" $?
+}
+
+smoke_rsshub_chain() { # 22. 订阅 → freshrss 实抓 → per-user entries（离线确定性）
+  # /test/1 is RSSHub's built-in deterministic route (no external
+  # internet): five fixed items titled Title1..Title5. Subscribing to it
+  # exercises the exact production path: POST /api/v1/subscriptions →
+  # FreshRSS fetches http://rsshub:1200/test/1 itself → actualize → the
+  # per-user GET /api/v1/entries timeline shows the entry.
+  local feed='http://rsshub:1200/test/1' code found=""
+  code=$(api POST /api/v1/subscriptions -o /dev/null -w '%{http_code}' \
+    -H 'content-type: application/json' -d "{\"feedUrl\": \"$feed\"}")
+  [[ "$code" == "201" || "$code" == "409" ]] || { fail "22 subscribe $feed refused (HTTP $code)"; return; }
+  api GET /api/v1/subscriptions | python3 -c '
+import json, sys
+subs = json.load(sys.stdin)
+assert any(s["feedUrl"] == "http://rsshub:1200/test/1" for s in subs), subs
+' || { fail "22 rsshub subscription missing from GET /api/v1/subscriptions"; return; }
+  for _ in 1 2 3 4; do
+    $COMPOSE exec -T freshrss php ./cli/actualize-user.php --user e2e >/dev/null 2>&1 || true
+    found=$(api GET /api/v1/entries -G \
+      --data-urlencode "feedUrl=$feed" --data-urlencode "sourceType=rss" \
+      | python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; print("yes" if any(i["title"] == "Title1" for i in items) else "no")' 2>/dev/null || true)
+    [[ "$found" == "yes" ]] && break
+    sleep 6
+  done
+  [[ "$found" == "yes" ]]
+  check "22 rsshub subscribe -> freshrss fetch -> entries show deterministic Title1" $?
+}
+
+smoke_rsshub_preview_chain() { # 23. preview→订阅→抓取→entries 全链（需外网 → 守卫）
+  allow_network || { skip "23 preview -> subscribe -> freshrss -> entries full chain (needs external internet; set LUMIRSS_E2E_ALLOW_NETWORK=1)"; return; }
+  local feed_url code found=""
+  feed_url=$(api POST /api/v1/rsshub/preview -H 'content-type: application/json' \
+    -d '{"routeId": "readhub", "params": {}}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("feedUrl", ""))' 2>/dev/null || true)
+  [[ -n "$feed_url" ]] || { fail "23 preview returned no feedUrl"; return; }
+  code=$(api POST /api/v1/subscriptions -o /dev/null -w '%{http_code}' \
+    -H 'content-type: application/json' -d "{\"feedUrl\": \"$feed_url\"}")
+  [[ "$code" == "201" || "$code" == "409" ]] || { fail "23 subscribe $feed_url refused (HTTP $code)"; return; }
+  for _ in 1 2 3 4; do
+    $COMPOSE exec -T freshrss php ./cli/actualize-user.php --user e2e >/dev/null 2>&1 || true
+    found=$(api GET /api/v1/entries -G --data-urlencode "feedUrl=$feed_url" \
+      | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["items"]))' 2>/dev/null || true)
+    [[ "${found:-0}" -ge 1 ]] && break
+    sleep 6
+  done
+  [[ "${found:-0}" -ge 1 ]]
+  check "23 preview feedUrl subscribed and freshrss fetched >=1 entry" $?
+}
+
+smoke_rsshub_dead_base() { # 24. 负向：死端点 → 稳定 502 rsshub_fetch_error
+  # E2E-only preview baseUrl override (gated by LUMIRSS_E2E=1 in the BFF):
+  # a dead port inside the compose must yield the STABLE error class as
+  # JSON — never a 500 HTML page. One request, both code and body.
+  local out code payload
+  out=$(api POST /api/v1/rsshub/preview -w '\n%{http_code}' \
+    -H 'content-type: application/json' \
+    -d '{"routeId": "readhub", "params": {}, "baseUrl": "http://freshrss:9"}')
+  code=$(echo "$out" | tail -n1)
+  payload=$(echo "$out" | sed '$d')
+  [[ "$code" == "502" ]] || { fail "24 dead rsshub base answered HTTP $code (want stable 502)"; return; }
+  echo "$payload" | grep -q '"type":"rsshub_fetch_error"' || { fail "24 wrong error body: $payload"; return; }
+  ! echo "$payload" | grep -qiE '<html|internal server error'
+  check "24 dead rsshub endpoint -> stable 502 rsshub_fetch_error (JSON, never 500 HTML)" $?
+}
+
 main() {
   local what="${1:-all}"
   case "$what" in
@@ -330,6 +456,17 @@ main() {
       if [[ -n "$gateway" ]]; then
         E2E_ALLOW_PRIVATE_HOSTS="fixtures,$gateway" $COMPOSE up -d --build bff >/dev/null 2>&1
       fi
+      # The gateway env append above can RECREATE the bff — wait (bounded)
+      # for /health/live so a following `all` never races the boot with a
+      # cascade of false FAILs.
+      local ready=""
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        ready=$($COMPOSE exec -T bff python -c \
+          "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status)" 2>/dev/null || true)
+        [[ "$ready" == "200" ]] && break
+        sleep 3
+      done
+      [[ "$ready" == "200" ]] || echo "WARNING: bff /health/live not ready after 30s — continuing anyway"
       echo "init complete"
       ;;
     all)
@@ -349,6 +486,14 @@ main() {
       smoke_agent_thread
       smoke_tags_favorites
       smoke_backup
+      # P08: RSSHub chain — 21/23 SKIP without LUMIRSS_E2E_ALLOW_NETWORK=1.
+      smoke_rsshub_health
+      smoke_rsshub_freshrss_dns
+      smoke_rsshub_catalog
+      smoke_rsshub_preview
+      smoke_rsshub_chain
+      smoke_rsshub_preview_chain
+      smoke_rsshub_dead_base
       echo
       printf '%s\n' "${RESULT[@]:-no checks}"
       ;;

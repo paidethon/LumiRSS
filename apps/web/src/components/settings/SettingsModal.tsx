@@ -26,6 +26,7 @@ import {
 } from './categories'
 import type { SettingsOpenDetail } from './settings-bridge'
 import { cx } from '../ui/cx'
+import { ReadingPreviewPane } from './reader/ReadingPreviewPane'
 
 export default function SettingsModal({
   open,
@@ -85,14 +86,30 @@ export default function SettingsModal({
           ))}
         </nav>
 
-        {/* 右内容（Folo 实测：px-32 等效、独立滚动） */}
+        {/* 右内容（Folo 实测：px-32 等效、独立滚动）。
+            P14：阅读分类 side-by-side 实时预览——左列表 + 右预览栏；
+            其余分类维持单列。预览栏 ≥lg 视口出现（窄 Modal 不挤占列表）。 */}
         <div className="min-w-0 flex-1 pl-6">
           <h2 className="mb-2 text-base font-semibold text-[var(--lumi-text-primary)]">
             {categoryLabel(category)}
           </h2>
-          <div className="h-[calc(100%-2rem)] overflow-y-auto pr-1">
-            <SettingItemList items={items} />
-          </div>
+          {category === 'reading' ? (
+            <div className="flex h-[calc(100%-2rem)] min-h-0 gap-4">
+              <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+                <SettingItemList items={items} />
+              </div>
+              <aside
+                aria-label="阅读样式实时预览"
+                className="hidden w-72 shrink-0 overflow-y-auto lg:block"
+              >
+                <ReadingPreviewPane />
+              </aside>
+            </div>
+          ) : (
+            <div className="h-[calc(100%-2rem)] overflow-y-auto pr-1">
+              <SettingItemList items={items} />
+            </div>
+          )}
         </div>
       </div>
     </Dialog>

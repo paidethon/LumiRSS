@@ -15,6 +15,7 @@ import { resetPrivacyOnBoot } from './lib/privacy-mask'
 import { startVersionCheck } from './lib/version-check'
 import { EdgeSwipeBack } from './lib/edge-swipe'
 import { useAppRoute } from './lib/app-route'
+import { useTabletPortrait, useViewportTier } from './lib/use-viewport-tier'
 
 // F113：演示隐私遮罩是“会话内”开关——刷新即重置。模块加载（早于任何
 // 组件首渲染）清掉上次会话残留标记，抽屉开关态与 DOM 遮蔽态保持一致。
@@ -68,6 +69,8 @@ import { Skeleton } from './components/ui/Skeleton'
 const FavoritesPage = lazy(() => import('./components/pages/FavoritesPage'))
 const SearchPage = lazy(() => import('./components/pages/SearchPage'))
 const SubscriptionsPage = lazy(() => import('./components/pages/SubscriptionsPage'))
+// P04：统一来源管理页（底栏「来源」tab / 侧栏「来源」入口）
+const SourcesPage = lazy(() => import('./components/pages/SourcesPage'))
 // phase2 M1：书签 / 工作区列表页（与 Search 同模式：桌面 Timeline 列位）
 const BookmarksPage = lazy(() => import('./components/pages/BookmarksPage'))
 const WorkspacesPage = lazy(() => import('./components/pages/WorkspacesPage'))
@@ -106,14 +109,19 @@ const TIMELINE_MAX = 460
  * 上方 section 区承载。其余 section 保持 Sidebar | Timeline | Reader。 */
 const FULL_WIDTH_SECTIONS: ReadonlySet<string> = new Set(['agent', 'graph'])
 
-/** 响应式 Web Shell（0010 Gate C + 0011）。
+/** 响应式 Web Shell（0010 Gate C + 0011 + P03 平板层）。
  *
- * >=1024px（lg）：Sidebar | sep | Timeline | sep | Reader。
+ * >=1024px（desktop 档，CSS lg:）：Sidebar | sep | Timeline | sep | Reader。
  *   - 栏宽由 app-settings 驱动（拖拽/持久化）；
  *   - 0011 阻断修复 §25–§28：Timeline 隐藏 = 完全退出布局列（不残留
  *     窄栏），隐藏时 toggle 移到 Reader 列顶部；selection 清空时
  *     自动恢复 Timeline（§28 auto-restore）。
- * <1024px：Mobile Header + 单主内容区（AppSection 切换）+ 导航抽屉。 */
+ * 768–1023.99px（tablet 档，P03）：常驻可折叠 Sidebar（竖排 ≤834 默认
+ *   折叠 rail / 横排 >834 默认展开）+ Timeline | Reader 双栏（横排并排、
+ *   竖排 Reader 覆盖时间线）——复用桌面列组件，无底栏 / 无拖拽分隔条。
+ * <768px（compact 档）：Mobile Header + 单主内容区（AppSection 切换）+
+ *   导航抽屉 + 底部导航岛。
+ * 档位判定：lib/use-viewport-tier.ts（单一 matchMedia 订阅）。 */
 export default function App() {
   const section = useReaderUi((s) => s.section)
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
@@ -175,23 +183,38 @@ export default function App() {
   const sidebarCollapsed = settings.sidebarCollapsed
   const timelineCollapsed = settings.timelineCollapsed
 
-  // phase2 修复：移动一级 section 区此前仅靠 lg:hidden 视觉隐藏，DOM 里
-  // 始终存在第二份 SearchPage/收藏页实例（live E2E 的 strict mode 抓到
-  // 重复文本）。JS 层判定 <1024 才挂载；matchMedia 不可用（jsdom）时
-  // 保持原渲染行为。
-  const [mobileViewport, setMobileViewport] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return true
-    }
-    return window.matchMedia('(max-width: 63.99rem)').matches
-  })
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia('(max-width: 63.99rem)')
-    const onChange = () => setMobileViewport(mq.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
+  // P03：视口分层（compact <768 / tablet 768–1023.99 / desktop ≥1024）。
+  // mobileViewport 保留原语义（<1024）——移动一级 section 区、EdgeSwipeBack
+  // 等此前 <1024 生效的路径不回归；JS 层判定替代 matchMedia 内联实现
+  //（jsdom 无 matchMedia → tier 'compact'，原渲染行为不变）。
+  const tier = useViewportTier()
+  const mobileViewport = tier !== 'desktop'
+  // 平板层（P03）：竖排（≤834）Reader 覆盖时间线 + 侧栏默认折叠 rail；
+  // 横排（>834）Timeline/Reader 双栏并排 + 侧栏默认展开。折叠选择是
+  // 会话内状态（null = 跟随方向默认）——不写持久化设置，避免方向切换
+  // 把桌面档的侧栏状态一起改掉。
+  const tabletPortrait = useTabletPortrait()
+  const tabletLandscape = tier === 'tablet' && !tabletPortrait
+  const [tabletSidebarCollapsed, setTabletSidebarCollapsed] = useState<boolean | null>(null)
+  const tabletRailCollapsed = tabletSidebarCollapsed ?? tabletPortrait
+
+  // P03 Timeline/Reader 列（tablet 层）：横排双栏复用桌面列组件——Timeline
+  // 定宽（既有 timelineWidth 设置）、Reader 占剩余宽度；类不带 lg: 前缀
+  //（<1024 时 lg: 恒不激活，desktop 档的 lg: 类原样保留，两档互不干扰）。
+  const timelineWidthCls =
+    tier === 'tablet'
+      ? tabletLandscape
+        ? 'w-auto shrink-0 grow-0 basis-[var(--lumi-timeline-width)]'
+        : 'w-full flex-1'
+      : 'w-full flex-1 lg:w-auto lg:flex-none lg:basis-[var(--lumi-timeline-width)]'
+  // Reader 打开：desktop / compact 同既有契约（列表 desktop 保留列位、
+  // <1024 隐藏）；tablet 横排例外——双栏并排，列表常驻。
+  const timelineReaderOpenCls =
+    selectedEntryRef !== null && !tabletLandscape
+      ? tier === 'desktop'
+        ? ' hidden lg:flex'
+        : ' hidden'
+      : ''
 
   // §28：selection 从非空 → 空且 Timeline 当前隐藏 → 自动恢复（避免
   // “侧栏 + 巨大空白 Reader + 文章列表被藏”的状态）。基于 prev ref
@@ -223,45 +246,71 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-[var(--lumi-canvas)]">
-      {/* Mobile 顶栏：<1024 显示；>=1024 不占任何布局空间 */}
-      <MobileHeader />
+      {/* Mobile 顶栏：compact 与平板竖排显示；平板横排 / 桌面的导航由
+          常驻侧栏承担（横排双栏列表常驻，无需 Reader 返回控件） */}
+      {!tabletLandscape && <MobileHeader />}
 
-      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ===== 桌面 Sidebar（可折叠 + 可拖宽，仅 lg） =====
+      {/* P03：main 行方向从 lg 提前到 md——tablet 档（768–1023）同样
+          侧栏 | 内容 横排；compact（<768）仍纵向 section 堆叠 */}
+      <main className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* ===== Sidebar（desktop lg：可折叠 + 可拖宽；tablet：常驻可折叠，
+            竖排默认折叠 rail / 横排默认展开，无拖拽分隔条（触摸优先）；
+            compact：保持既有 DOM 契约挂载但由 CSS 隐藏——导航实际走
+            MobileHeader / Drawer / TabBar）=====
             0011 修正补充：折叠态改为 SidebarCollapsedRail（icon-only
             导航栏，含 tooltip/active/disabled/设置），不再只渲染展开按钮 */}
-        {sidebarCollapsed ? (
-          <SidebarCollapsedRail />
-        ) : (
-          <>
+        {/* 折叠态判定：desktop 沿用持久化设置；tablet 用会话内方向默认
+            （竖排收起 / 横排展开，展开动作经 onExpand 改会话状态）；
+            compact 沿用持久化设置（rail/aside 仍挂载、由 CSS 隐藏——
+            保留既有 DOM 契约，移动端导航实际走 Header/Drawer/TabBar）。 */}
+        {(() => {
+          const railCollapsed =
+            tier === 'tablet' ? tabletRailCollapsed : sidebarCollapsed
+          return railCollapsed ? (
+            <SidebarCollapsedRail
+              alwaysVisible={tier === 'tablet'}
+              onExpand={tier === 'tablet' ? () => setTabletSidebarCollapsed(false) : undefined}
+            />
+          ) : (
             <aside
-              className="hidden shrink-0 overflow-y-auto bg-[var(--lumi-sidebar)] lg:block"
+              className={
+                tier === 'tablet'
+                  ? 'block shrink-0 overflow-y-auto bg-[var(--lumi-sidebar)]'
+                  : 'hidden shrink-0 overflow-y-auto bg-[var(--lumi-sidebar)] lg:block'
+              }
               style={{ width: settings.sidebarWidth }}
             >
               <div className="sticky top-0 z-10 flex justify-end bg-[var(--lumi-sidebar)] pr-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => update({ sidebarCollapsed: true })}
+                  onClick={
+                    tier === 'tablet'
+                      ? () => setTabletSidebarCollapsed(true)
+                      : () => update({ sidebarCollapsed: true })
+                  }
                   aria-label="折叠侧栏"
-                  className="flex size-7 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  className={`flex items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] ${
+                    tier === 'tablet' ? 'size-11' : 'size-7'
+                  }`}
                 >
                   <PanelLeftClose aria-hidden className="size-4" />
                 </button>
               </div>
               <Sidebar />
             </aside>
-            <div className="hidden lg:flex">
-              <PaneSeparator
-                label="侧栏宽度"
-                value={settings.sidebarWidth}
-                min={SIDEBAR_MIN}
-                max={SIDEBAR_MAX}
-                onChange={(w) => update({ sidebarWidth: w })}
-                onReset={() => update({ sidebarWidth: 240 })}
-              />
-            </div>
-          </>
-        )}
+          )
+        })()}
+        {/* 侧栏拖宽分隔条：桌面精确指针交互（<1024 由 CSS 隐藏） */}
+        <div className="hidden lg:flex">
+          <PaneSeparator
+            label="侧栏宽度"
+            value={settings.sidebarWidth}
+            min={SIDEBAR_MIN}
+            max={SIDEBAR_MAX}
+            onChange={(w) => update({ sidebarWidth: w })}
+            onReset={() => update({ sidebarWidth: 240 })}
+          />
+        </div>
 
         {/* ===== 移动端一级页面区（0011）：订阅/搜索/收藏，仅 <1024 =====
             （selectSection 会清空 selectedEntryRef，与 Reader 不共存）
@@ -275,7 +324,9 @@ export default function App() {
               selectedEntryRef !== null ? 'max-lg:hidden' : ''
             }`}
             aria-label={
-              section === 'subscriptions'
+              section === 'sources'
+                ? '来源'
+                : section === 'subscriptions'
                 ? '订阅'
                 : section === 'search'
                   ? '搜索'
@@ -298,6 +349,11 @@ export default function App() {
                               : '收藏'
             }
           >
+            {section === 'sources' && (
+              <Suspense fallback={<PageSkeleton />}>
+                <SourcesPage />
+              </Suspense>
+            )}
             {section === 'subscriptions' && (
               <Suspense fallback={<PageSkeleton />}>
                 <SubscriptionsPage />
@@ -370,19 +426,19 @@ export default function App() {
           </section>
         )}
 
-        {/* ===== Timeline（桌面可隐藏，仅 lg 有分隔条；移动端 home section 显示） =====
+        {/* ===== Timeline（桌面可隐藏，仅 lg 有分隔条；移动端 home section 显示；
+            P03：tablet 横排双栏定宽常驻，竖排同移动契约） =====
             0011 阻断修复：桌面栏宽不再用 inline flexBasis（<1024 时 main 为
             flex-col，flexBasis 会把列表高度锁死在 360–460px）——CSS 变量 +
-            响应式 flex 类：<1024px w-full + flex-1；≥1024px lg:basis-[宽度]。
-            0011 §25/§26：隐藏 = 桌面完全退出布局列（不渲染 section 与分隔
-            条，无窄栏）；toggle 移到 Reader 列顶（隐藏时）+ 列表头（可见时）。
-            移动端不受 timelineCollapsed 影响（该状态是桌面概念）。 */}
+            响应式 flex 类。0011 §25/§26：隐藏 = 桌面完全退出布局列（不渲染
+            section 与分隔条，无窄栏）；toggle 移到 Reader 列顶（隐藏时）+
+            列表头（可见时）。移动端不受 timelineCollapsed 影响（该状态是
+            桌面概念）。
+            P03 宽度/可见性类见组件体 timelineWidthCls / timelineReaderOpenCls。 */}
         {/* 全宽 section（agent/graph）不挂载 Timeline 列本体 */}
         {!FULL_WIDTH_SECTIONS.has(section) && (
         <section
-          className={`flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-[var(--lumi-surface)] lg:w-auto lg:flex-none lg:basis-[var(--lumi-timeline-width)] ${
-            selectedEntryRef === null ? '' : 'hidden lg:flex'
-          }${section !== 'home' ? ' max-lg:hidden' : ''}${
+          className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--lumi-surface)] ${timelineWidthCls}${timelineReaderOpenCls}${section !== 'home' ? ' max-lg:hidden' : ''}${
             timelineCollapsed ? ' lg:hidden' : ''
           }`}
           style={{ '--lumi-timeline-width': `${settings.timelineWidth}px` } as React.CSSProperties}
@@ -433,6 +489,12 @@ export default function App() {
                 <ObsidianPage />
               </Suspense>
             </div>
+          ) : section === 'sources' ? (
+            <div className="hidden min-h-0 flex-1 flex-col lg:flex">
+              <Suspense fallback={<PageSkeleton />}>
+                <SourcesPage />
+              </Suspense>
+            </div>
           ) : (
             <EntryList />
           )}
@@ -453,13 +515,15 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== Reader（flex-1 占满剩余；全宽 section 不挂载 =====
+        {/* ===== Reader（flex-1 占满剩余；全宽 section 不挂载。
+            P03：tablet 横排未选文章也渲染（占位面板，占剩余宽度），
+            竖排/compact 仍按「选中才显示」（覆盖时间线）=====
             0011 §27：Timeline 隐藏时 toggle 移到 Reader 列顶部左侧
             （同一功能的 toggle，非第二个功能；不产生纵向窄栏）。 */}
         {!FULL_WIDTH_SECTIONS.has(section) && (
         <section
           className={`min-h-0 min-w-0 flex-1 bg-[var(--lumi-surface)] ${
-            selectedEntryRef === null ? 'hidden lg:block' : 'lg:block'
+            selectedEntryRef === null ? (tabletLandscape ? 'lg:block' : 'hidden lg:block') : 'lg:block'
           }`}
         >
           {timelineCollapsed && (
@@ -494,8 +558,9 @@ export default function App() {
         <UndoSnackbar />
       </Suspense>
 
-      {/* 0011 Gate 1：<768 底部导航岛（首页/订阅/搜索/收藏）；Reader 打开时隐藏 */}
-      <MobileTabBar />
+      {/* 0011 Gate 1：<768 底部导航岛（首页/订阅/搜索/收藏）；Reader 打开时隐藏。
+          P03：仅 compact 档渲染——平板档（768–1023）导航走常驻侧栏，底栏隐藏 */}
+      {tier === 'compact' && <MobileTabBar />}
 
       {/* Phase M：克制的安装引导（standalone / 已关闭时零渲染）。
           局部 Suspense：lazy 首帧挂起绝不外溢到 root（root 挂起 = 整树

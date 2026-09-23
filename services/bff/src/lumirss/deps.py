@@ -336,10 +336,11 @@ def _provider_factory_for(request: Request, purpose: str):
             await _get_ai_settings_store(request).load(),
             LumiSettings().AI_API_KEY.get_secret_value(),
         )
-        from lumirss.ai_provider import OpenAICompatibleProvider
+        from lumirss.ai_provider import build_provider
 
-        return OpenAICompatibleProvider(
+        return build_provider(
             request.app.state.http_client,
+            provider=effective.provider,
             base_url=effective.base_url or base_url,
             model=effective.model or model,
             api_key=effective.api_key or "",
@@ -551,22 +552,73 @@ def _get_tag_store(request: Request) -> TagStore:
 
 
 def _get_rag_service(request: Request) -> RagService:
-    """RAG projection service (phase2 G7) over the shared Lumi database."""
-    return _cached_on_app_state(
-        request,
-        "rag_service",
-        lambda: RagService(request.app.state.db),
-    )
+    """Per-user RAG projection service (phase2 G7; 0067 isolation fix).
+
+    RagService holds ONE persistent sqlite-vec connection bound to a
+    concrete database file: a process-wide instance would pin whichever
+    user's file resolved first and then serve that user's semantic index
+    to every other account (cross-account leak). The instance is
+    therefore cached strictly per verified user — the SAME
+    ``(uid, "rag_service")`` slot the RAG background/idle loops use — and
+    the file is pinned at construction, inside the owning request's user
+    context. Session mode NEVER reads or mirrors the legacy
+    ``app.state.rag_service`` handle (a shared handle here is exactly the
+    leak); basic/single-owner mode keeps it as the injection path.
+    """
+    from lumirss.user_scope import NoUserContextError, current_user_id
+
+    session_mode = LumiSettings().LUMIRSS_AUTH_MODE == "session"
+    if not session_mode:
+        injected = request.app.state.rag_service
+        if injected is not None:
+            return injected
+    uid = current_user_id()
+    if uid is None:
+        if session_mode:
+            # Multi-user: an identity-less RAG handle has no honest owner
+            # (O145 — no silent fallback to a default database).
+            raise NoUserContextError("No authenticated user in this context.")
+        value = RagService(request.app.state.db, db_path=request.app.state.db.path)
+        request.app.state.rag_service = value
+        return value
+    cache = request.app.state.user_services
+    key = (uid, "rag_service")
+    service = cache.get(key)
+    if service is None:
+        service = RagService(request.app.state.db, db_path=request.app.state.db.path)
+        cache[key] = service
+        if not session_mode:
+            # Legacy handle semantics: one user ⇒ tests/operators read
+            # the instance back from app.state (never mirrored in
+            # session mode — a second user must not inherit it).
+            request.app.state.rag_service = service
+    return service
+
+
+def _existing_rag_service(request: Request) -> RagService | None:
+    """The already-built RAG service for THIS user, if any (never builds).
+
+    Request-path best-effort hooks (invalidation) must not pay for a
+    service the user never created; in session mode the per-user cache
+    slot is authoritative, in basic mode the legacy handle."""
+    from lumirss.user_scope import current_user_id
+
+    if LumiSettings().LUMIRSS_AUTH_MODE == "session":
+        uid = current_user_id()
+        if uid is None:
+            return None
+        return request.app.state.user_services.get((uid, "rag_service"))
+    return request.app.state.rag_service
 
 
 async def _rag_mark_stale(request: Request, refs: list[str]) -> None:
     """Best-effort RAG index invalidation after owned-content deletes
-    (P0-07e). Only acts when a RAG service instance already exists —
-    users who never touch RAG never pay for it; failures never mask the
-    delete that triggered them, but they ARE logged (a silently skipped
-    invalidation leaves deleted content searchable until the next
-    rebuild)."""
-    rag: RagService | None = getattr(request.app.state, "rag_service", None)
+    (P0-07e). Only acts when a RAG service instance already exists for
+    the current user — users who never touch RAG never pay for it;
+    failures never mask the delete that triggered them, but they ARE
+    logged (a silently skipped invalidation leaves deleted content
+    searchable until the next rebuild)."""
+    rag = _existing_rag_service(request)
     if rag is None:
         return
     try:
@@ -677,10 +729,11 @@ async def _provider_or_none(request: Request):
         return None
     if not effective.base_url or not effective.model:
         return None
-    from lumirss.ai_provider import OpenAICompatibleProvider
+    from lumirss.ai_provider import build_provider
 
-    return OpenAICompatibleProvider(
+    return build_provider(
         request.app.state.http_client,
+        provider=effective.provider,
         base_url=effective.base_url,
         model=effective.model,
         api_key=effective.api_key or "",
