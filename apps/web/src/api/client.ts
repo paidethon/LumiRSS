@@ -29,6 +29,7 @@ import type {
   EntryTranslation,
   Feed,
   FeedPreviewMetadata,
+  FreshRssNativeUrl,
   FreshRssUiInfo,
   InboxItemList,
   InboxSource,
@@ -856,6 +857,13 @@ export async function importOpml(
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
   return request<FreshRssUiInfo>(`${API_BASE}/freshrss-ui`, signal)
+}
+
+/** P09 委托入口：本账户 FreshRSS 原生界面坐标（恰好 {origin, username}，
+ * 无凭据字段）。绑定待定 → 409 freshrss_native_url_unavailable（诚实
+ * 待定态，UI 不渲染假链接）。 */
+export async function getFreshRssNativeUrl(signal?: AbortSignal): Promise<FreshRssNativeUrl> {
+  return request<FreshRssNativeUrl>(`${API_BASE}/freshrss/native-url`, signal)
 }
 
 /** 0014：网站 → RSS/Atom 候选发现（无副作用；不接 AbortSignal——与其它

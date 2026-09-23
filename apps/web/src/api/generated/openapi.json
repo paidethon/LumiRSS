@@ -5153,6 +5153,25 @@
     "title": "FeedPreviewResult",
     "type": "object"
    },
+   "FreshRssNativeUrl": {
+    "description": "GET /api/v1/freshrss/native-url — 委托入口数据（P09）。\n\n响应**恰好**两个字段：浏览器可达的 FreshRSS 站点根（origin，来自\n绑定的 public_url）+ 该账户的 FreshRSS 用户名（原生界面登录可识别）。\nAPI 密码 / greader token 等任何凭据永不进入此响应——模型没有承载\n它们的字段，契约上就不可能泄露。",
+    "properties": {
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "username": {
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "origin",
+     "username"
+    ],
+    "title": "FreshRssNativeUrl",
+    "type": "object"
+   },
    "FreshRssUiInfo": {
     "description": "GET /api/v1/freshrss-ui (null url = not configured, UI hides it).",
     "properties": {
@@ -18120,6 +18139,25 @@
      }
     },
     "summary": "Freshrss Ui"
+   }
+  },
+  "/api/v1/freshrss/native-url": {
+   "get": {
+    "description": "P09 委托入口：本账户 FreshRSS 原生界面的可直达坐标。\n\n返回**恰好** ``{origin, username}``：origin 是绑定里浏览器可达的\npublic_url（内部 FRESHRSS_BASE_URL 永不回显——它可能是浏览器无法\n且不应到达的 Docker 主机名，与 /api/v1/freshrss-ui 同一安全决策），\nusername 是该账户在 FreshRSS 侧的登录名（让原生界面里的身份可\n识别）。密码与 greader token 不在模型里，契约上无凭据可泄。\n\n绑定未完成或未配置浏览器可达地址 → 409 ``freshrss_native_url_unavailable``\n（诚实的\"暂不可用\"状态，UI 显示待定文案、绝不渲染假链接）。\n身份由会话/内部令牌中间件统一强制（/api/* 全量门禁）。",
+    "operationId": "freshrss_native_url_api_v1_freshrss_native_url_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FreshRssNativeUrl"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Freshrss Native Url"
    }
   },
   "/api/v1/glossary": {

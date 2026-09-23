@@ -92,6 +92,7 @@ import {
   getEntrySummary,
   getEntryTranslation,
   getFeeds,
+  getFreshRssNativeUrl,
   getFreshRssUiUrl,
   getOperationsStatus,
   getReadLaterTimeline,
@@ -664,6 +665,17 @@ export function useFreshRssUiUrl() {
   return useQuery({
     queryKey: ['freshrss-ui'],
     queryFn: ({ signal }) => getFreshRssUiUrl(signal),
+  })
+}
+
+/** P09 委托入口：FreshRSS 原生界面坐标（{origin, username}）。绑定待定
+ * → 409（isError），UI 显示诚实待定文案、绝不渲染假链接。409 是「正常
+ * 的待定数据状态」而非故障，不做自动重试。 */
+export function useFreshRssNativeUrl() {
+  return useQuery({
+    queryKey: ['freshrss-native-url'],
+    queryFn: ({ signal }) => getFreshRssNativeUrl(signal),
+    retry: false,
   })
 }
 

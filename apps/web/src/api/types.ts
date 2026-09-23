@@ -43,6 +43,8 @@ export type OpmlImportPreview = Schemas['OpmlImportPreview']
 export type OpmlImportAdded = Schemas['OpmlImportAdded']
 export type OpmlImportResult = Schemas['OpmlImportResult']
 export type FreshRssUiInfo = Schemas['FreshRssUiInfo']
+// P09 委托入口：恰好 {origin, username}，无凭据字段（契约由 BFF 模型固定）
+export type FreshRssNativeUrl = Schemas['FreshRssNativeUrl']
 
 // ---- 0014 source discovery / RSSHub 目录 ----
 

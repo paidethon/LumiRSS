@@ -1,4 +1,4 @@
-/** Gate 4 测试 — 0013 OPML 导入/导出 + FreshRSS 状态/逃生入口。
+/** Gate 4 测试 — 0013 OPML 导入/导出 + FreshRSS 状态/P09 委托入口。
  *
  * 覆盖：
  * - OpmlImportDialog（订阅页外壳）：选文件 → 预览（无写入请求）→
@@ -6,8 +6,8 @@
  * - 超大文件本地拦截（不发请求）；opml_invalid 诚实错误文案；
  *   全部重复 → 确认禁用（无事可做）；
  * - SourcesSettingsSection（设置外壳）：OPML 导出下载、FreshRSS 状态
- *   （成功/连接错误/凭据错误）、escape hatch（有 url 渲染链接 / null
- *   不渲染链接 + 诚实说明）。
+ *   （成功/连接错误/凭据错误）、P09 委托入口（配置了 origin 渲染外链
+ *   noopener noreferrer / 绑定待定 409 → 诚实待定文案，不渲染假链接）。
  * fetch 全部 mock，无真实网络。 */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -242,7 +242,8 @@ describe('SourcesSettingsSection（设置外壳）', () => {
   }
   const baseRoutes = {
     'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
-    'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+    'GET /api/v1/freshrss/native-url': () =>
+      jsonResponse({ error: { type: 'freshrss_native_url_unavailable', message: '绑定待定' } }, 409),
     'GET /api/v1/operations/status': () => jsonResponse(OPERATIONS_OK),
   }
 
@@ -293,8 +294,9 @@ describe('SourcesSettingsSection（设置外壳）', () => {
     vi.stubGlobal('fetch', fetchState.fn)
     render(withProviders(<SourcesSettingsSection />))
     expect(await screen.findByText('服务正常，当前 1 个订阅源')).toBeInTheDocument()
-    // 未配置 public URL → 不渲染外链；Lumi 内管理入口（订阅中心）始终可用
-    expect(screen.queryByText('高级：在 FreshRSS 中管理')).toBeNull()
+    // 绑定待定（409）→ 诚实待定文案，不渲染外链；Lumi 内管理入口（订阅中心）始终可用
+    expect(await screen.findByText(/原生界面入口暂未开放/)).toBeInTheDocument()
+    expect(screen.queryByText('高级：打开 FreshRSS 原生界面')).toBeNull()
     expect(screen.getByRole('button', { name: '打开订阅中心' })).toBeInTheDocument()
   })
 
@@ -302,7 +304,8 @@ describe('SourcesSettingsSection（设置外壳）', () => {
     const fetchState = makeFetch({
       'GET /api/v1/subscriptions': () =>
         jsonResponse({ error: { type: 'authentication_error', message: 'bad creds' } }, 502),
-      'GET /api/v1/freshrss-ui': () => jsonResponse({ url: null }),
+      'GET /api/v1/freshrss/native-url': () =>
+        jsonResponse({ error: { type: 'freshrss_native_url_unavailable', message: '绑定待定' } }, 409),
     })
     vi.stubGlobal('fetch', fetchState.fn)
     render(withProviders(<SourcesSettingsSection />))
@@ -314,17 +317,32 @@ describe('SourcesSettingsSection（设置外壳）', () => {
     expect(screen.queryByText(/最后/)).toBeNull()
   })
 
-  it('escape hatch：配置了 public URL → 渲染外链（noopener noreferrer）', async () => {
+  it('P09 委托入口：配置了 origin → 渲染外链（noopener noreferrer + 委托文案）', async () => {
     const fetchState = makeFetch({
       'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
-      'GET /api/v1/freshrss-ui': () => jsonResponse({ url: 'https://rss.example.com' }),
+      'GET /api/v1/freshrss/native-url': () =>
+        jsonResponse({ origin: 'https://rss.example.com', username: 'alice' }),
     })
     vi.stubGlobal('fetch', fetchState.fn)
     render(withProviders(<SourcesSettingsSection />))
-    const link = await screen.findByRole('link', { name: /在 FreshRSS 中管理/ })
+    const link = await screen.findByRole('link', { name: /打开 FreshRSS 原生界面/ })
     expect(link).toHaveAttribute('href', 'https://rss.example.com')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    // 诚实委托文案 + 可识别的 FreshRSS 身份（绝不出现凭据）
+    expect(screen.getByText(/委托：由 FreshRSS 提供（账号 alice）/)).toBeInTheDocument()
+  })
+
+  it('P09 委托入口：非待定错误（500）→ 诚实错误文案，不渲染假链接', async () => {
+    const fetchState = makeFetch({
+      'GET /api/v1/subscriptions': () => jsonResponse(SUBSCRIPTIONS),
+      'GET /api/v1/freshrss/native-url': () =>
+        jsonResponse({ error: { type: 'internal_error', message: 'boom' } }, 500),
+    })
+    vi.stubGlobal('fetch', fetchState.fn)
+    render(withProviders(<SourcesSettingsSection />))
+    expect(await screen.findByText(/原生界面入口状态未知/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /打开 FreshRSS 原生界面/ })).toBeNull()
   })
 })
 

@@ -5,9 +5,10 @@
  * - OPML 导出：BFF 代理 FreshRSS subscription/export，浏览器不接触
  *   FreshRSS 凭据；内容只有订阅 + 分类（无设置 dump / API key）。
  * - OPML 导入：完整 preview → confirm → result 闭环（OpmlImportFlow）。
- * - FreshRSS 高级逃生入口：仅当服务端显式配置了浏览器可达的
- *   FRESHRSS_PUBLIC_URL 才渲染「在 FreshRSS 中管理」；未配置 →
- *   诚实说明，不渲染假链接。
+ * - FreshRSS 原生界面（P09 委托入口）：仅当服务端为**本账户**配置了
+ *   浏览器可达地址（/api/v1/freshrss/native-url 返回 {origin, username}）
+ *   才渲染「高级：打开 FreshRSS 原生界面」；绑定待定 → 诚实文案，
+ *   不渲染假链接。
  * - 服务状态只报告有真实依据的错误（订阅列表请求的 error type），
  *   不编造「健康 98%」之类的伪指标。 */
 
@@ -16,11 +17,11 @@
  * 高级管理分两层：
  * - Lumi 内（订阅中心）：添加/取消订阅、移动订阅、分类重命名、OPML
  *   导入导出——全部经 BFF 控制平面真实可用，一键直达；
- * - FreshRSS 原生（可选逃生入口）：仅当服务端显式配置了浏览器可达的
- *   FRESHRSS_PUBLIC_URL 才渲染链接；未配置不渲染假链接。 */
+ * - FreshRSS 原生（P09 委托入口，可选）：仅当服务端为该账户返回了
+ *   浏览器可达 origin 才渲染；文案明确标注「委托：由 FreshRSS 提供」。 */
 
 import { AlertCircle, CheckCircle2, Download, ExternalLink, Upload } from 'lucide-react'
-import { useOperationsStatus, useSubscriptions } from '../../api/queries'
+import { useFreshRssNativeUrl, useOperationsStatus, useSubscriptions } from '../../api/queries'
 import type { ApiError } from '../../api/client'
 import {
   OpmlErrorCard,
@@ -28,7 +29,6 @@ import {
   OpmlPreviewItemsCard,
   OpmlResultCard,
 } from '../OpmlImportFlow'
-import { useFreshRssUiUrl } from '../../api/queries'
 import { useOpmlExportFlow, useOpmlImportFlow } from '../../lib/opml-import'
 import { managementErrorText } from '../../lib/management-errors'
 import { useReaderUi } from '../../store/reader-ui'
@@ -175,10 +175,10 @@ function useFreshRssServiceStatus(): { loading: boolean; label: string; healthy:
   }
 }
 
-/** FreshRSS 状态 + Lumi 内管理入口 + 可选逃生链接。 */
+/** FreshRSS 状态 + Lumi 内管理入口 + P09 委托入口（原生界面外链）。 */
 function FreshRssStatusBlock() {
   const subscriptions = useSubscriptions()
-  const ui = useFreshRssUiUrl()
+  const native = useFreshRssNativeUrl()
   const service = useFreshRssServiceStatus()
   const selectSection = useReaderUi((s) => s.selectSection)
 
@@ -239,18 +239,40 @@ function FreshRssStatusBlock() {
           添加 / 取消订阅、移动分类、重命名分类与 OPML 导入导出都在订阅中心完成。
         </span>
       </div>
-      {/* FreshRSS 原生逃生入口：只有显式配置的浏览器可达 public URL 才渲染 */}
-      {ui.data?.url != null && (
+      {/* P09 委托入口：仅当服务端为本账户返回浏览器可达 origin 才渲染；
+          绑定待定（409）→ 诚实待定文案，绝不渲染假链接。 */}
+      {native.isPending ? null : native.isError ? (
+        (native.error as ApiError | null)?.status === 409 ? (
+          <p
+            role="status"
+            className="mt-2.5 flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            高级：FreshRSS 原生界面入口暂未开放（委托：由 FreshRSS 提供；待账户绑定配置完成后可用）。
+          </p>
+        ) : (
+          <p
+            role="alert"
+            className="mt-2.5 flex items-start gap-1.5 text-xs leading-relaxed text-[var(--lumi-danger)]"
+          >
+            <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            FreshRSS 原生界面入口状态未知（加载失败），请稍后重试。
+          </p>
+        )
+      ) : (
         <p className="mt-2.5">
           <a
-            href={ui.data.url}
+            href={native.data.origin}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-[var(--lumi-accent-text)] hover:underline"
           >
-            高级：在 FreshRSS 中管理
+            高级：打开 FreshRSS 原生界面
             <ExternalLink aria-hidden className="size-3" />
           </a>
+          <span className="ml-1.5 text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+            委托：由 FreshRSS 提供（账号 {native.data.username}）
+          </span>
         </p>
       )}
     </div>
