@@ -699,7 +699,7 @@ function formatUptime(seconds: number | null): string {
   return `${minutes} 分`
 }
 
-const stateBadge = (text: string, tone: 'ok' | 'warn' | 'muted'): string =>
+const stateBadge = (_text: string, tone: 'ok' | 'warn' | 'muted'): string =>
   `${badgeBase} ${
     tone === 'ok'
       ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
