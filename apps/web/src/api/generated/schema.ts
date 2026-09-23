@@ -5835,6 +5835,13 @@ export interface paths {
          *
          *     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
          *     FreshRSS RSS 域数据不在此路径触碰。
+         *
+         *     N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
+         *     - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
+         *       解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
+         *     - false：显式清理——批注与该来源条目的工作区引用/看板状态一并
+         *       删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。
+         *     确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。
          */
         delete: operations["delete_subscription_api_v1_subscriptions__subscription_ref__delete"];
         options?: never;
@@ -5902,6 +5909,31 @@ export interface paths {
          *     「Article HTML: transforms → DOMPurify」管线无关（本字段不进文章管线）。
          */
         patch: operations["update_source_notes_api_v1_subscriptions__subscription_ref__notes_patch"];
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unsubscribe Preview
+         * @description N012 退订影响预览（只读，200 先于任何 mutation）。
+         *
+         *     汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /
+         *     RSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数
+         *     如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变
+         *     （测试固定该负向契约）。
+         */
+        get: operations["unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/tags": {
@@ -23119,7 +23151,9 @@ export interface operations {
     };
     delete_subscription_api_v1_subscriptions__subscription_ref__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                keep_artifacts?: boolean | null;
+            };
             header?: never;
             path: {
                 subscription_ref: string;
@@ -23267,6 +23301,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceNotesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -27005,7 +27005,7 @@
   },
   "/api/v1/subscriptions/{subscription_ref}": {
    "delete": {
-    "description": "Unsubscribe (destructive; confirmation belongs to the Web UI).\n\nF005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——\nFreshRSS RSS 域数据不在此路径触碰。",
+    "description": "Unsubscribe (destructive; confirmation belongs to the Web UI).\n\nF005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——\nFreshRSS RSS 域数据不在此路径触碰。\n\nN012 keep_artifacts（可选；缺席 = 既有行为原样保留）：\n- true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，\n  解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；\n- false：显式清理——批注与该来源条目的工作区引用/看板状态一并\n  删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。\n确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。",
     "operationId": "delete_subscription_api_v1_subscriptions__subscription_ref__delete",
     "parameters": [
      {
@@ -27015,6 +27015,22 @@
       "schema": {
        "title": "Subscription Ref",
        "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "keep_artifacts",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Keep Artifacts"
       }
      }
     ],
@@ -27211,6 +27227,44 @@
      }
     },
     "summary": "Update Source Notes"
+   }
+  },
+  "/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview": {
+   "get": {
+    "description": "N012 退订影响预览（只读，200 先于任何 mutation）。\n\n汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /\nRSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数\n如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变\n（测试固定该负向契约）。",
+    "operationId": "unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subscription_ref",
+      "required": true,
+      "schema": {
+       "title": "Subscription Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unsubscribe Preview"
    }
   },
   "/api/v1/tags": {
