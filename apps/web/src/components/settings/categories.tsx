@@ -42,8 +42,6 @@ import type {
   UiFontSize,
 } from '../../store/app-settings'
 import type { ThemeMode } from '../../lib/theme'
-import { effectiveShortcuts } from '../../lib/keyboard-shortcuts'
-import { loadCustomShortcuts } from '../../lib/custom-shortcuts'
 import type { SettingItemDef } from './SettingItem'
 import {
   AccentColorPicker,
@@ -71,6 +69,8 @@ import { MailSection } from './MailSection'
 import { GptDigestSection } from './GptDigestSection'
 // 会话认证（LUMIRSS_AUTH_MODE=session）：改密 + 登出（basic 模式自隐藏）
 import { AccountSecuritySection } from './AccountSecuritySection'
+// P13：快捷键分配 UI（捕获 / 冲突覆盖 / 导入导出；引擎 lib/custom-shortcuts）
+import { ShortcutsSettingsSection } from './ShortcutsSettingsSection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
 import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
@@ -465,35 +465,12 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
       ]
     case 'shortcuts':
+      // P13：快捷键分配 UI（捕获 / 冲突覆盖 / 清除 / 恢复默认 / 导入导出）。
+      // 单一真源仍为 SHORTCUT_ACTIONS + effectiveShortcuts（帮助弹窗同源）。
       return [
         {
           type: 'custom',
-          node: (
-            <div className="py-2">
-              <p className="mb-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
-                列表上下文中的基础快捷键；输入框聚焦时不生效。用户自定义覆盖默认值（与「?」帮助弹窗同步）。
-              </p>
-              <dl className="divide-y divide-[var(--lumi-separator)]">
-                {effectiveShortcuts(loadCustomShortcuts()).map((s) => (
-                  <div key={s.id} className="flex items-center justify-between gap-4 py-2.5">
-                    <dt className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]">
-                      {s.action}
-                      {s.overridden && (
-                        <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-tertiary)]">
-                          已自定义
-                        </span>
-                      )}
-                    </dt>
-                    <dd>
-                      <kbd className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-0.5 font-mono text-xs text-[var(--lumi-text-secondary)]">
-                        {s.keys}
-                      </kbd>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ),
+          node: <ShortcutsSettingsSection />,
         },
       ]
     case 'translation':
