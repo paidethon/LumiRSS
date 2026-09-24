@@ -130,6 +130,7 @@ from lumirss.lumi_notes_lifecycle import (
 from lumirss.lumi_notes_lifecycle import (
     NoteNotFound as LumiNoteNotFound,
 )
+from lumirss.mail_attachments import MailAttachmentNotFound
 from lumirss.mail_bridge import (
     MailBridgeInvalid,
     MailBridgeNotFound,
@@ -345,6 +346,8 @@ _ERROR_RESPONSES = {
     ClipLocked: (409, "clip_locked"),
     # N122 候选版本缺失（查看/应用/丢弃候选时无候选可操作）
     CandidateNotFound: (404, "clip_candidate_not_found"),
+    # N125 邮件附件缺失（跨用户/不存在同型 404，不泄露存在性）
+    MailAttachmentNotFound: (404, "mail_attachment_not_found"),
     AssetNotFound: (404, "asset_not_found"),
     AssetQuotaExceeded: (413, "quota_exceeded"),
     AssetTooLarge: (413, "snapshot_too_large"),
@@ -525,6 +528,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ClipNotFound)
     @app.exception_handler(ClipLocked)
     @app.exception_handler(CandidateNotFound)
+    @app.exception_handler(MailAttachmentNotFound)
     @app.exception_handler(AssetNotFound)
     @app.exception_handler(AssetQuotaExceeded)
     @app.exception_handler(AssetTooLarge)
