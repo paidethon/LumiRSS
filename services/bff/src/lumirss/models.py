@@ -3054,6 +3054,125 @@ class SavedSearchCount(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# N142 / N143 / N145 — 搜索理解与排障
+# ---------------------------------------------------------------------------
+
+
+class SearchParseQueryBody(BaseModel):
+    """POST /api/v1/search/parse-query body（N142）。"""
+
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=200)
+
+
+class SearchParseRecognized(BaseModel):
+    """一个被转成条件的片段（kind + 原文）。"""
+
+    kind: Literal["date", "source", "phrase", "exclude"]
+    text: str
+
+
+class SearchParseResult(BaseModel):
+    """N142：filters 与保存视图 filters_json 同构（白名单子集）；
+    remainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默
+    丢弃。"""
+
+    filters: dict[str, str] = {}
+    remainingText: str = ""
+    unrecognized: list[str] = []
+    recognized: list[SearchParseRecognized] = []
+
+
+class SearchWhyMissedBody(BaseModel):
+    """POST /api/v1/search/why-missed body（N143）——与 GET /search 同参
+    （除分页/同义词）；entryRef 必须属于当前用户，否则 404。"""
+
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=200)
+    entryRef: str = Field(min_length=1, max_length=600)
+    feedUrl: str | None = None
+    categoryId: str | None = None
+    state: str | None = None
+    favorite: bool = False
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    intitle: str | None = None
+    phrase: str | None = None
+    exclude: str | None = None
+    hasSummary: bool | None = None
+
+
+class SearchWhyMissedReason(BaseModel):
+    """一个排除原因（kind + 中文 detail，UI 可直接展示）。"""
+
+    kind: Literal[
+        "term",
+        "intitle",
+        "phrase",
+        "exclude",
+        "source",
+        "category",
+        "unread",
+        "starred",
+        "date",
+        "hasSummary",
+    ]
+    detail: str
+
+
+class SearchWhyMissedEntry(BaseModel):
+    """被诊断条目的最小元数据（不携带正文全文）。"""
+
+    entryRef: str
+    title: str
+    feedTitle: str
+    publishedAt: str
+
+
+class SearchWhyMissedResult(BaseModel):
+    """N143：matched=false → reasons 列出每个未通过的条件；
+    matched=true → 应出现在结果中，rank 为按时间排序的位置（超出
+    2000 上界时 rankCapped=true 诚实标注）。"""
+
+    matched: bool
+    reasons: list[SearchWhyMissedReason] = []
+    entry: SearchWhyMissedEntry
+    rank: int | None = None
+    rankCapped: bool = False
+
+
+class SearchDistributionSource(BaseModel):
+    """N145：单来源命中计数。"""
+
+    feedUrl: str
+    feedTitle: str
+    count: int
+
+
+class SearchDistributionDay(BaseModel):
+    """N145：单日命中计数（窗口内补零后逐日出）。"""
+
+    day: str
+    count: int
+
+
+class SearchDistributionResult(BaseModel):
+    """N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。
+
+    sources 最多 20 条（超界 sourcesComplete=false 诚实标注）；
+    days 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。"""
+
+    total: int
+    sources: list[SearchDistributionSource] = []
+    sourcesComplete: bool = True
+    days: list[SearchDistributionDay] = []
+    dayFrom: str
+    dayTo: str
+
+
+# ---------------------------------------------------------------------------
 # F022 收件箱归类规则
 # ---------------------------------------------------------------------------
 

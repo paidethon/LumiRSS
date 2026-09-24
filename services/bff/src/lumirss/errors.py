@@ -184,6 +184,7 @@ from lumirss.saved_search_store import (
     SavedSearchLimit,
     SavedSearchNotFound,
 )
+from lumirss.search_debug import SearchEntryNotFound
 from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
@@ -299,6 +300,8 @@ _ERROR_RESPONSES = {
     RequestBodyTooLarge: (413, "request_too_large"),
     # 0022 global search
     SearchQueryError: (400, "invalid_search_query"),
+    # N143 why-missed：ref 不在本用户作用域（含他人条目 → 不泄露存在性）
+    SearchEntryNotFound: (404, "search_entry_not_found"),
     # session authentication (LUMIRSS_AUTH_MODE=session)
     InvalidCredentials: (401, "invalid_credentials"),
     PasswordNotInitialized: (503, "auth_not_initialized"),
@@ -485,6 +488,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SecretsStoreError)
     @app.exception_handler(RequestBodyTooLarge)
     @app.exception_handler(SearchQueryError)
+    @app.exception_handler(SearchEntryNotFound)
     @app.exception_handler(InvalidCredentials)
     @app.exception_handler(PasswordNotInitialized)
     @app.exception_handler(WeakPassword)

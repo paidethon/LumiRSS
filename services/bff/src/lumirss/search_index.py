@@ -115,6 +115,14 @@ class SearchIndexService:
         # background sync loop) would DROP each other's staging table.
         self._rebuild_lock = asyncio.Lock()
 
+    @property
+    def store(self) -> SearchStore:
+        """Read-path store — N142 source resolution / N143 row lookup /
+        N145 aggregates resolve against the SAME projection this service
+        queries (tests override the whole service; prod = the routed
+        per-user DB either way)."""
+        return self._store
+
     # -- sync ---------------------------------------------------------------
 
     async def rebuild(self, *, max_pages: int = _REBUILD_MAX_PAGES) -> dict:
