@@ -113,6 +113,7 @@ import {
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
+  getWorkspaceGroups,
   getWorkspaceResume,
   putWorkspaceResume,
   createInboxSource,
@@ -136,8 +137,14 @@ import {
   listTagsForItem,
   listWorkspaceItems,
   listWorkspaces,
+  listWorkspaceSnapshots,
   lookupTranslationSegments,
   moveSubscription,
+  moveWorkspaceItemGroup,
+  captureWorkspaceSnapshot,
+  deleteWorkspaceSnapshot,
+  restoreWorkspaceSnapshot,
+  setWorkspaceItemPinned,
   patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
@@ -1475,8 +1482,8 @@ export function useAddWorkspaceItemMutation() {
 export function useRemoveWorkspaceItemMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
-      removeWorkspaceItem(vars.workspaceId, vars.itemRef),
+    mutationFn: (vars: { workspaceId: string; itemRef: string; force?: boolean }) =>
+      removeWorkspaceItem(vars.workspaceId, vars.itemRef, { force: vars.force }),
     onSuccess: () => invalidateWorkspaceState(queryClient),
   })
 }
@@ -1557,6 +1564,87 @@ export function useReorderWorkspaceItemsMutation() {
   return useMutation({
     mutationFn: (vars: { workspaceId: string; itemRefs: string[]; expectedRevision?: number }) =>
       reorderWorkspaceItems(vars.workspaceId, vars.itemRefs, vars.expectedRevision),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。 */
+export function useWorkspaceGroups(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'groups'],
+    queryFn: ({ signal }) => getWorkspaceGroups(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+/** N101：移动条目到分组（groupName=null = 移回未分组）。 */
+export function useSetItemGroupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string; groupName: string | null }) =>
+      moveWorkspaceItemGroup(vars.workspaceId, vars.itemRef, vars.groupName),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** N102：设置固定标记（set 语义非 toggle）。 */
+export function useSetItemPinnedMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string; pinned: boolean }) =>
+      setWorkspaceItemPinned(vars.workspaceId, vars.itemRef, vars.pinned),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+// ---- N105：工作区会话快照 ----
+
+export function useWorkspaceSessionSnapshots(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-snapshots', workspaceId],
+    queryFn: ({ signal }) => listWorkspaceSnapshots(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+export function useCaptureWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; name: string }) =>
+      captureWorkspaceSnapshot(vars.workspaceId, vars.name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-snapshots'] })
+    },
+  })
+}
+
+export function useDeleteWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; snapshotId: string }) =>
+      deleteWorkspaceSnapshot(vars.workspaceId, vars.snapshotId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-snapshots'] })
+    },
+  })
+}
+
+/** 恢复快照；成功后失效工作区全部状态（顺序/分组/固定/成员都可能变）。 */
+export function useRestoreWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      workspaceId: string
+      snapshotId: string
+      mode: 'reorder' | 'replace'
+      force?: boolean
+    }) =>
+      restoreWorkspaceSnapshot(
+        vars.workspaceId,
+        vars.snapshotId,
+        vars.mode,
+        vars.force ?? false,
+      ),
     onSuccess: () => invalidateWorkspaceState(queryClient),
   })
 }

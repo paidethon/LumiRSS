@@ -142,6 +142,13 @@ export type Workspace = Schemas['Workspace']
 export type WorkspaceListResponse = Schemas['WorkspaceListResponse']
 export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
+/** N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。 */
+export type WorkspaceGroupsResponse = Schemas['WorkspaceGroupsResponse']
+export type WorkspaceGroup = Schemas['WorkspaceGroup']
+/** N105：工作区会话快照（元数据视图）。 */
+export type WorkspaceSnapshot = Schemas['WorkspaceSnapshot']
+export type WorkspaceSnapshotList = Schemas['WorkspaceSnapshotList']
+export type WorkspaceSnapshotRestoreResult = Schemas['WorkspaceSnapshotRestoreResult']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
 /** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */

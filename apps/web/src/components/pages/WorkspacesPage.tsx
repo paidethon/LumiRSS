@@ -14,21 +14,53 @@
  *   条目有安全外链时直接可打开；
  * - P15 续读：打开条目即 PUT 续读指针（每工作区一个）；指针存在且指向
  *   列表内条目时显示「继续上次」chip（滚动定位 + 复用既有打开路由）；
+ * - N101 分组：分组视图（GET /groups）渲染为可折叠分组区（固定区在最
+ *   前；未分组 = 隐式前置组）；折叠状态仅存本机（localStorage）；
+ *   「移动到分组」走行内菜单（拖拽不在本里程碑）；
+ * - N102 固定：行内菜单 固定/取消固定（set 语义）；固定条目移除被
+ *   BFF 拒绝（409 workspace_item_pinned）→ 行内诚实提示 + 强制移除；
+ * - N103 临时预览：「预览」按钮打开页内预览窗格（同刻至多一个，打开
+ *   另一个 = 整体替换）；窗格含本机笔记草稿——未保存草稿拦截替换
+ *   （诚实提示 + 保存/放弃）；「添加到工作区」把预览条目提升为成员；
+ * - N104 最近关闭：关闭的预览与被移除的条目进入本机 LRU（20），
+ *   「最近关闭」面板可恢复（恢复 = 打开预览；已打开则不重复）；
+ * - N105 快照：会话快照区（保存/恢复/删除，见 WorkspaceSnapshotsPanel）；
  * - 诚实状态：加载 Skeleton / 空态 / 错误重试，与书签页一致。
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowDown, ArrowUp, FolderOpen, History, LayoutDashboard, Loader2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  FolderOpen,
+  History,
+  LayoutDashboard,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { MarkdownImportPanel } from '../MarkdownImportPanel'
 import {
+  useAddWorkspaceItemMutation,
   useCreateWorkspaceMutation,
   useDeleteWorkspaceMutation,
   usePutWorkspaceResumeMutation,
   useRemoveWorkspaceItemMutation,
   useRenameWorkspaceMutation,
   useReorderWorkspaceItemsMutation,
+  useSetItemGroupMutation,
+  useSetItemPinnedMutation,
   useWorkspaceContents,
+  useWorkspaceGroups,
   useWorkspaceResume,
   useWorkspaces,
 } from '../../api/queries'
@@ -40,9 +72,28 @@ import {
   SaveAsTemplateDialog,
   TemplatesDialog,
 } from '../WorkspaceExtras'
+import { WorkspaceSnapshotsPanel } from '../WorkspaceSnapshotsPanel'
+import {
+  PreviewDraftActions,
+  PreviewDraftNotice,
+  WorkspacePreviewPane,
+} from '../WorkspacePreviewPane'
+import type { PreviewTarget } from '../WorkspacePreviewPane'
 import { isOpenable, openResolvedItem } from '../../lib/open-item'
+import {
+  clearRecentlyClosed,
+  discardPreviewDraft,
+  hasUnsavedDraft,
+  loadCollapsedGroups,
+  loadPreviewDraft,
+  loadRecentlyClosed,
+  pushRecentlyClosed,
+  saveCollapsedGroups,
+  savePreviewDraft,
+} from '../../lib/workspace-tabs'
+import type { RecentClosedItem } from '../../lib/workspace-tabs'
 import type { ResolvedItem } from '../../api/types'
-import type { Workspace } from '../../api/types'
+import type { Workspace, WorkspaceGroupsResponse } from '../../api/types'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -318,9 +369,13 @@ function isRevisionConflict(error: unknown): boolean {
   )
 }
 
-/** 单张内容卡 + 行内动作：上移 / 下移 / 移除。
+/** 单张内容卡 + 行内动作：预览 / 上移 / 下移 / 菜单（固定、移动到分组、
+ * 移除）。
  * P15：重排序携带 expectedRevision（If-Match 式）；409 冲突时上报页面
  * （诚实提示「已在其他设备更新，已刷新」+ 重取），绝不静默覆盖。
+ * N102：移除固定条目 → 409 workspace_item_pinned → 行内诚实提示 +
+ * 强制移除（force=1 显式确认），绝不静默删除用户显式固定的内容。
+ * N103：预览按钮回报 onPreview（打开页内预览窗格，不导航）。
  * 条目打开时回报 onItemOpened（保存续读指针）。 */
 function ContentCardRow({
   item,
@@ -329,29 +384,47 @@ function ContentCardRow({
   total,
   orderedRefs,
   revision,
+  pinned,
   onReorderConflict,
   onItemOpened,
+  onPreview,
+  onMoveToGroup,
+  onRemoved,
   registerEl,
 }: {
   item: ResolvedItem
   workspaceId: string
   index: number
   total: number
-  /** 当前展示顺序的全部 itemRef（contents 返回顺序） */
+  /** 当前展示顺序的全部 itemRef（所在分区的展示顺序） */
   orderedRefs: string[]
   /** 当前工作区 revision（workspaces 列表查询；成功后失效重取保持新鲜） */
   revision: number | undefined
+  /** N102：条目是否固定。 */
+  pinned: boolean
   /** 重排序 409 冲突：页面级提示 + 重取由父级处理 */
   onReorderConflict: () => void
   /** 条目被打开（默认打开路由成功后）：父级保存续读指针 */
   onItemOpened: (itemRef: string) => void
+  /** N103：打开页内预览窗格（替换当前预览）。 */
+  onPreview: (item: ResolvedItem) => void
+  /** N101：打开「移动到分组」Dialog。 */
+  onMoveToGroup: (item: ResolvedItem) => void
+  /** N104：移除成功后回报（进入最近关闭 LRU）。 */
+  onRemoved: (item: ResolvedItem) => void
   /** 注册 <li> DOM（续读 chip 点击时滚动定位） */
   registerEl: (el: HTMLLIElement | null) => void
 }) {
   const remove = useRemoveWorkspaceItemMutation()
   const reorder = useReorderWorkspaceItemsMutation()
-  const busy = remove.isPending || reorder.isPending
+  const setPinned = useSetItemPinnedMutation()
+  const busy = remove.isPending || reorder.isPending || setPinned.isPending
   const reorderConflicted = reorder.isError && isRevisionConflict(reorder.error)
+  const removePinnedConflicted =
+    remove.isError &&
+    remove.error instanceof ApiError &&
+    remove.error.status === 409 &&
+    remove.error.type === 'workspace_item_pinned'
   const actionError = remove.error ?? (reorderConflicted ? null : reorder.error)
 
   const move = (delta: -1 | 1) => {
@@ -379,11 +452,24 @@ function ContentCardRow({
 
   return (
     <li ref={registerEl} className="scroll-mt-4" data-workspace-item={item.ref}>
+      {pinned && (
+        <p className="mb-1 flex items-center gap-1 px-1 text-[11px] text-[var(--lumi-text-tertiary)]">
+          <Pin aria-hidden className="size-3" />
+          已固定（移除需强制确认）
+        </p>
+      )}
       <UnifiedContentCard
         item={item}
         onOpen={openable ? handleOpen : undefined}
         actions={
           <span className="ml-auto flex items-center gap-1">
+            <IconButton
+              icon={<Eye aria-hidden className="size-4" />}
+              label="预览"
+              size="sm"
+              touch
+              onClick={() => onPreview(item)}
+            />
             <IconButton
               icon={<ArrowUp aria-hidden className="size-4" />}
               label="上移"
@@ -400,23 +486,89 @@ function ContentCardRow({
               disabled={index === total - 1 || busy}
               onClick={() => move(1)}
             />
-            <IconButton
-              icon={
-                remove.isPending ? (
-                  <Loader2 aria-hidden className="size-4 animate-spin" />
-                ) : (
-                  <Trash2 aria-hidden className="size-4" />
-                )
-              }
-              label="移除"
-              size="sm"
-              touch
-              disabled={remove.isPending}
-              onClick={() => remove.mutate({ workspaceId, itemRef: item.ref })}
+            <Menu
+              trigger={({ triggerProps }) => (
+                <IconButton
+                  {...triggerProps}
+                  icon={<MoreVertical aria-hidden className="size-4" />}
+                  label={`「${item.title}」条目操作`}
+                  size="sm"
+                  touch
+                />
+              )}
+              items={[
+                {
+                  key: 'pin',
+                  content: (
+                    <>
+                      {pinned ? (
+                        <PinOff aria-hidden className="mr-2 inline size-3.5" />
+                      ) : (
+                        <Pin aria-hidden className="mr-2 inline size-3.5" />
+                      )}
+                      {pinned ? '取消固定' : '固定'}
+                    </>
+                  ),
+                },
+                { key: 'move-group', content: '移动到分组…' },
+                {
+                  key: 'remove',
+                  content: (
+                    <>
+                      <Trash2 aria-hidden className="mr-2 inline size-3.5" />
+                      移除
+                    </>
+                  ),
+                },
+              ]}
+              onSelect={(key) => {
+                if (key === 'pin') {
+                  setPinned.mutate({
+                    workspaceId,
+                    itemRef: item.ref,
+                    pinned: !pinned,
+                  })
+                }
+                if (key === 'move-group') onMoveToGroup(item)
+                if (key === 'remove') {
+                  remove.mutate(
+                    { workspaceId, itemRef: item.ref },
+                    { onSuccess: () => onRemoved(item) },
+                  )
+                }
+              }}
             />
           </span>
         }
       />
+      {removePinnedConflicted && (
+        <div
+          role="alert"
+          data-testid="workspace-pinned-conflict"
+          className="mt-1 flex flex-wrap items-center gap-2 px-1 text-xs text-[var(--lumi-text-secondary)]"
+        >
+          <Pin aria-hidden className="size-3.5 shrink-0" />
+          <span>该条目已固定：常规移除被拒绝（需显式确认）。</span>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() =>
+              remove.mutate(
+                { workspaceId, itemRef: item.ref, force: true },
+                { onSuccess: () => onRemoved(item) },
+              )
+            }
+          >
+            {remove.isPending ? (
+              <Loader2 aria-hidden className="size-4 animate-spin" />
+            ) : (
+              <Trash2 aria-hidden className="size-4" />
+            )}
+            强制移除
+          </Button>
+        </div>
+      )}
       {item.stale && (
         <p className="mt-1 px-1 text-xs text-[var(--lumi-text-tertiary)]">
           {staleState(item.staleReason).hint}{' '}
@@ -430,15 +582,138 @@ function ContentCardRow({
           </a>
         </p>
       )}
-      {(remove.isError || (reorder.isError && !reorderConflicted)) && actionError !== null && (
-        <p role="alert" className="mt-1 px-1 text-xs text-[var(--lumi-danger)]">
-          操作失败：
-          {actionError instanceof Error ? actionError.message : '请稍后重试。'}
-        </p>
-      )}
+      {(remove.isError && !removePinnedConflicted) || (reorder.isError && !reorderConflicted) ? (
+        actionError !== null && (
+          <p role="alert" className="mt-1 px-1 text-xs text-[var(--lumi-danger)]">
+            操作失败：
+            {actionError instanceof Error ? actionError.message : '请稍后重试。'}
+          </p>
+        )
+      ) : null}
     </li>
   )
 }
+
+/** N101：移动到分组 Dialog（行内菜单入口；拖拽不在本里程碑）。
+ * 单选：未分组 / 既有组 / 新建分组。提交 = PATCH items/{ref}/group。 */
+function MoveToGroupDialog({
+  workspaceId,
+  item,
+  groupNames,
+  currentGroup,
+  onClose,
+}: {
+  workspaceId: string
+  item: ResolvedItem
+  groupNames: string[]
+  currentGroup: string | null
+  onClose: () => void
+}) {
+  const UNGROUPED = '__ungrouped__'
+  const NEW_GROUP = '__new__'
+  const [selected, setSelected] = useState(currentGroup ?? UNGROUPED)
+  const [newName, setNewName] = useState('')
+  const move = useSetItemGroupMutation()
+
+  const targetGroup =
+    selected === UNGROUPED
+      ? null
+      : selected === NEW_GROUP
+        ? newName.trim()
+        : selected
+  const canSubmit = targetGroup !== null && targetGroup !== '' && !move.isPending
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="移动到分组"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={move.isPending}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={() =>
+              move.mutate(
+                { workspaceId, itemRef: item.ref, groupName: targetGroup },
+                { onSuccess: onClose },
+              )
+            }
+          >
+            {move.isPending ? '移动中…' : '移动'}
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-2 text-xs text-[var(--lumi-text-secondary)]">
+        将「{item.title}」移动到：
+      </p>
+      <fieldset className="flex flex-col gap-1.5">
+        <label className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]">
+          <input
+            type="radio"
+            name="move-group-target"
+            value={UNGROUPED}
+            checked={selected === UNGROUPED}
+            onChange={() => setSelected(UNGROUPED)}
+          />
+          未分组
+        </label>
+        {groupNames.map((name) => (
+          <label
+            key={name}
+            className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]"
+          >
+            <input
+              type="radio"
+              name="move-group-target"
+              value={name}
+              checked={selected === name}
+              onChange={() => setSelected(name)}
+            />
+            {name}
+          </label>
+        ))}
+        <label className="flex items-center gap-2 text-sm text-[var(--lumi-text-primary)]">
+          <input
+            type="radio"
+            name="move-group-target"
+            value={NEW_GROUP}
+            checked={selected === NEW_GROUP}
+            onChange={() => setSelected(NEW_GROUP)}
+          />
+          新建分组
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            maxLength={64}
+            aria-label="新分组名称"
+            placeholder="组名（≤64 字）"
+            onFocus={() => setSelected(NEW_GROUP)}
+            className={cx(
+              'min-h-7 flex-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-xs',
+              'text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)]',
+              'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+            )}
+          />
+        </label>
+      </fieldset>
+      {move.isError && (
+        <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
+          {move.error instanceof Error ? move.error.message : '移动失败，请稍后重试。'}
+        </p>
+      )}
+    </Dialog>
+  )
+}
+
+/** 空内容占位（稳定引用，供 useMemo 依赖）。 */
+const EMPTY_RESOLVED_ITEMS: ResolvedItem[] = []
 
 export default function WorkspacesPage() {
   const workspaces = useWorkspaces()
@@ -480,7 +755,44 @@ export default function WorkspacesPage() {
   const selectedWorkspace = wsItems.find((w) => w.id === effectiveSelectedId) ?? null
 
   const contents = useWorkspaceContents(effectiveSelectedId)
-  const resolvedItems = contents.data?.items ?? []
+  // 稳定引用（空态复用同一常量数组）：下游 useMemo 依赖它而不必每渲染重算。
+  const resolvedItems = useMemo(
+    () => contents.data?.items ?? EMPTY_RESOLVED_ITEMS,
+    [contents.data],
+  )
+  // N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。
+  // 加载中/失败 → 诚实回退为原始顺序平铺（绝不伪造分组）。
+  const groupsQuery = useWorkspaceGroups(effectiveSelectedId)
+  const groupData: WorkspaceGroupsResponse | null = groupsQuery.data ?? null
+
+  // ---- N101：分组折叠状态（仅本机 localStorage；换工作区重载） ----
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  // ---- N103：临时预览（同刻至多一个）+ 本机笔记草稿 + 拦截提示 ----
+  const [preview, setPreview] = useState<PreviewTarget | null>(null)
+  const [previewDraft, setPreviewDraft] = useState('')
+  const [previewBlocked, setPreviewBlocked] = useState(false)
+  // N103：提升动作（添加到工作区）。
+  const addMember = useAddWorkspaceItemMutation()
+  // ---- N104：最近关闭（本机 LRU 20） ----
+  const [recentlyClosed, setRecentlyClosed] = useState<RecentClosedItem[]>(() =>
+    loadRecentlyClosed(),
+  )
+  // N101：移动到分组 Dialog 目标。
+  const [moveGroupTarget, setMoveGroupTarget] = useState<ResolvedItem | null>(null)
+
+  // 换工作区：重载本机折叠状态 + 关闭预览（预览属于原工作区上下文）。
+  const workspaceKey = effectiveSelectedId ?? ''
+  const prevWorkspaceKey = useRef(workspaceKey)
+  if (prevWorkspaceKey.current !== workspaceKey) {
+    prevWorkspaceKey.current = workspaceKey
+    // 渲染期重置（React 官方推荐的「跟随 props/state 重置」模式）：
+    // localStorage 读取在渲染期一次性完成，无 effect 时序问题。
+    setCollapsedGroups(loadCollapsedGroups(workspaceKey))
+    setPreview(null)
+    setPreviewDraft('')
+    setPreviewBlocked(false)
+    setMoveGroupTarget(null)
+  }
 
   // ---- P15：续读指针 + 跨设备并发诚实提示 ----
   const resume = useWorkspaceResume(effectiveSelectedId)
@@ -532,6 +844,184 @@ export default function WorkspacesPage() {
     // 复用既有打开路由（lib/open-item.ts）；打开成功也回报指针（幂等）。
     if (openResolvedItem(resumeItem)) handleItemOpened(resumeItem.ref)
   }
+
+  // ---- N103：预览打开/关闭（未保存草稿拦截替换）+ N104 最近关闭 ----
+
+  const handlePreviewDraftChange = (text: string) => {
+    setPreviewDraft(text)
+    // 草稿编辑成功解除拦截（提示只在「会丢内容」的时刻有意义）。
+    setPreviewBlocked(false)
+  }
+
+  const openPreview = (target: PreviewTarget) => {
+    if (effectiveSelectedId === null) return
+    // N103：同刻至多一个预览——当前预览有未保存草稿时拦截替换（诚实
+    // 提示 + 保存/放弃出口），绝不静默丢弃用户输入。
+    if (
+      preview !== null &&
+      hasUnsavedDraft(effectiveSelectedId, preview.ref, previewDraft)
+    ) {
+      setPreviewBlocked(true)
+      return
+    }
+    setPreview(target)
+    setPreviewDraft(loadPreviewDraft(effectiveSelectedId, target.ref))
+    setPreviewBlocked(false)
+  }
+
+  const closePreview = () => {
+    if (preview === null || effectiveSelectedId === null) return
+    if (hasUnsavedDraft(effectiveSelectedId, preview.ref, previewDraft)) {
+      setPreviewBlocked(true)
+      return
+    }
+    // N104：关闭的预览进入本机最近关闭 LRU（恢复 = 重新打开预览）。
+    setRecentlyClosed(
+      pushRecentlyClosed({
+        ref: preview.ref,
+        title: preview.title,
+        url: preview.url ?? null,
+        workspaceId: effectiveSelectedId,
+      }),
+    )
+    setPreview(null)
+    setPreviewDraft('')
+    setPreviewBlocked(false)
+  }
+
+  const saveDraft = () => {
+    if (preview === null || effectiveSelectedId === null) return
+    savePreviewDraft(effectiveSelectedId, preview.ref, previewDraft)
+    setPreviewBlocked(false)
+  }
+
+  const discardDraft = () => {
+    if (preview === null || effectiveSelectedId === null) return
+    discardPreviewDraft(effectiveSelectedId, preview.ref)
+    setPreviewDraft('')
+    setPreviewBlocked(false)
+  }
+
+  const restoreRecentlyClosed = (entry: RecentClosedItem) => {
+    // 已打开同一预览 → 不重复打开（也不重复置换）。
+    if (preview?.ref === entry.ref) return
+    openPreview({
+      ref: entry.ref,
+      title: entry.title,
+      url: entry.url,
+    })
+  }
+
+  // N104：条目被移出工作区（含强制移除）→ 记入最近关闭（可快速找回）。
+  const handleItemRemoved = useCallback(
+    (item: ResolvedItem) => {
+      if (effectiveSelectedId === null) return
+      setRecentlyClosed(
+        pushRecentlyClosed({
+          ref: item.ref,
+          title: item.title,
+          url: item.url ?? null,
+          workspaceId: effectiveSelectedId,
+        }),
+      )
+    },
+    [effectiveSelectedId],
+  )
+
+  const toggleGroupCollapsed = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      saveCollapsedGroups(workspaceKey, next)
+      return next
+    })
+  }
+
+  // ---- N101：分组渲染结构（分组视图不可用时回退平铺） ----
+  const memberRefs = useMemo(() => {
+    const refs = new Set<string>()
+    if (groupData !== null) {
+      for (const item of groupData.pinned) refs.add(item.itemRef)
+      for (const group of groupData.groups) {
+        for (const item of group.items) refs.add(item.itemRef)
+      }
+    } else {
+      for (const item of resolvedItems) refs.add(item.ref)
+    }
+    return refs
+  }, [groupData, resolvedItems])
+
+  interface GroupSection {
+    key: string
+    label: string
+    group: string | null
+    pinnedSection: boolean
+    items: ResolvedItem[]
+  }
+
+  const sections: GroupSection[] = useMemo(() => {
+    const resolvedByRef = new Map(resolvedItems.map((it) => [it.ref, it]))
+    const pick = (refs: { itemRef: string }[]): ResolvedItem[] =>
+      refs
+        .map((wi) => resolvedByRef.get(wi.itemRef))
+        .filter((it): it is ResolvedItem => it !== undefined)
+    if (groupData === null) return []
+    const result: GroupSection[] = []
+    if (groupData.pinned.length > 0) {
+      result.push({
+        key: 'pinned',
+        label: '固定',
+        group: null,
+        pinnedSection: true,
+        items: pick(groupData.pinned),
+      })
+    }
+    for (const group of groupData.groups) {
+      result.push({
+        key: group.name ?? '__ungrouped__',
+        label: group.name ?? '未分组',
+        group: group.name,
+        pinnedSection: false,
+        items: pick(group.items),
+      })
+    }
+    return result
+  }, [groupData, resolvedItems])
+
+  const groupNames = useMemo(
+    () =>
+      groupData === null
+        ? []
+        : groupData.groups
+            .map((g) => g.name)
+            .filter((name): name is string => name !== null),
+    [groupData],
+  )
+
+  /** 回退平铺（分组视图加载中/失败时按原始顺序渲染，行为与旧版一致）。 */
+  const renderFlatRows = () =>
+    resolvedItems.map((item, index) => (
+      <ContentCardRow
+        key={item.ref}
+        item={item}
+        workspaceId={effectiveSelectedId ?? ''}
+        index={index}
+        total={resolvedItems.length}
+        orderedRefs={resolvedItems.map((it) => it.ref)}
+        revision={selectedWorkspace?.revision}
+        pinned={false}
+        onReorderConflict={handleReorderConflict}
+        onItemOpened={handleItemOpened}
+        onPreview={openPreview}
+        onMoveToGroup={setMoveGroupTarget}
+        onRemoved={handleItemRemoved}
+        registerEl={(el) => {
+          if (el === null) itemEls.current.delete(item.ref)
+          else itemEls.current.set(item.ref, el)
+        }}
+      />
+    ))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -742,6 +1232,72 @@ export default function WorkspacesPage() {
             </span>
           </button>
         )}
+        {/* N103：未保存草稿拦截提示（保存/放弃后可继续替换或关闭）。 */}
+        {previewBlocked && preview !== null && (
+          <div className="mt-3">
+            <PreviewDraftNotice
+              actions={<PreviewDraftActions onSave={saveDraft} onDiscard={discardDraft} />}
+            />
+          </div>
+        )}
+        {/* N103：预览窗格（同刻至多一个；打开另一个 = 整体替换）。 */}
+        {preview !== null && effectiveSelectedId !== null && (
+          <div className="mt-3" data-workspace-preview-slot>
+            <WorkspacePreviewPane
+              target={preview}
+              draftText={previewDraft}
+              onDraftChange={handlePreviewDraftChange}
+              isMember={memberRefs.has(preview.ref)}
+              promotePending={addMember.isPending}
+              onPromote={() =>
+                addMember.mutate({
+                  workspaceId: effectiveSelectedId,
+                  itemRef: preview.ref,
+                })
+              }
+              onClose={closePreview}
+            />
+          </div>
+        )}
+        {/* N104：最近关闭（本机 LRU；恢复 = 打开预览，不导航）。 */}
+        {view === 'list' && recentlyClosed.length > 0 && (
+          <section
+            aria-label="最近关闭"
+            data-testid="workspace-recently-closed"
+            className="mt-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3"
+          >
+            <div className="flex items-center gap-2">
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--lumi-text-primary)]">
+                <History aria-hidden className="size-4" />
+                最近关闭
+                <span className="text-xs font-normal text-[var(--lumi-text-tertiary)]">
+                  本机记录 · 最多 20 条
+                </span>
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto"
+                onClick={() => setRecentlyClosed(clearRecentlyClosed())}
+              >
+                清空
+              </Button>
+            </div>
+            <ul className="mt-2 flex flex-col gap-1" aria-label="最近关闭条目">
+              {recentlyClosed.map((entry) => (
+                <li
+                  key={entry.ref}
+                  className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]"
+                >
+                  <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+                  <Button variant="secondary" size="sm" onClick={() => restoreRecentlyClosed(entry)}>
+                    恢复
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {/* 选中工作区的内容：看板（F085/F086）或列表 */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
           <WorkspaceBoardView workspaceId={effectiveSelectedId} />
@@ -777,27 +1333,86 @@ export default function WorkspacesPage() {
                 description="阅读时通过文章操作菜单「添加到工作区」把内容加入这里。"
               />
             </div>
+          ) : groupsQuery.isError ? (
+            <>
+              <p role="status" className="mt-3 text-xs text-[var(--lumi-text-tertiary)]">
+                分组视图加载失败，已按原始顺序显示。
+              </p>
+              <ul className="mt-3 flex flex-col gap-2.5" aria-label="工作区内容">
+                {renderFlatRows()}
+              </ul>
+            </>
+          ) : sections.length > 0 ? (
+            <div className="mt-3 flex flex-col gap-3" data-testid="workspace-grouped-list">
+              {sections.map((section) => {
+                const collapsed = collapsedGroups.has(section.key)
+                return (
+                  <section key={section.key} aria-label={`分组 ${section.label}`}>
+                    <button
+                      type="button"
+                      data-testid={`workspace-group-toggle-${section.key}`}
+                      aria-expanded={!collapsed}
+                      onClick={() => toggleGroupCollapsed(section.key)}
+                      className={cx(
+                        'flex min-h-8 w-full items-center gap-1.5 rounded-[var(--lumi-radius-full)] px-2 text-xs',
+                        'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+                        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                      )}
+                    >
+                      {collapsed ? (
+                        <ChevronRight aria-hidden className="size-3.5" />
+                      ) : (
+                        <ChevronDown aria-hidden className="size-3.5" />
+                      )}
+                      {section.pinnedSection && <Pin aria-hidden className="size-3.5" />}
+                      <span className="font-medium text-[var(--lumi-text-primary)]">
+                        {section.label}
+                      </span>
+                      <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[11px]">
+                        {section.items.length}
+                      </span>
+                    </button>
+                    {!collapsed && (
+                      <ul
+                        className="mt-2 flex flex-col gap-2.5"
+                        aria-label={`分组 ${section.label} 内容`}
+                      >
+                        {section.items.map((item, index) => (
+                          <ContentCardRow
+                            key={item.ref}
+                            item={item}
+                            workspaceId={effectiveSelectedId}
+                            index={index}
+                            total={section.items.length}
+                            orderedRefs={section.items.map((it) => it.ref)}
+                            revision={selectedWorkspace?.revision}
+                            pinned={section.pinnedSection}
+                            onReorderConflict={handleReorderConflict}
+                            onItemOpened={handleItemOpened}
+                            onPreview={openPreview}
+                            onMoveToGroup={setMoveGroupTarget}
+                            onRemoved={handleItemRemoved}
+                            registerEl={(el) => {
+                              if (el === null) itemEls.current.delete(item.ref)
+                              else itemEls.current.set(item.ref, el)
+                            }}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )
+              })}
+            </div>
           ) : (
             <ul className="mt-3 flex flex-col gap-2.5" aria-label="工作区内容">
-              {resolvedItems.map((item, index) => (
-                <ContentCardRow
-                  key={item.ref}
-                  item={item}
-                  workspaceId={effectiveSelectedId}
-                  index={index}
-                  total={resolvedItems.length}
-                  orderedRefs={resolvedItems.map((it) => it.ref)}
-                  revision={selectedWorkspace?.revision}
-                  onReorderConflict={handleReorderConflict}
-                  onItemOpened={handleItemOpened}
-                  registerEl={(el) => {
-                    if (el === null) itemEls.current.delete(item.ref)
-                    else itemEls.current.set(item.ref, el)
-                  }}
-                />
-              ))}
+              {renderFlatRows()}
             </ul>
           )
+        )}
+        {/* N105：会话快照区（保存 / 恢复 / 删除）。 */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
+          <WorkspaceSnapshotsPanel workspaceId={effectiveSelectedId} />
         )}
       </div>
       {createOpen && (
@@ -827,6 +1442,19 @@ export default function WorkspacesPage() {
       )}
       {zipExportOpen && selectedWorkspace !== null && (
         <ResearchPackExportDialog workspaceId={selectedWorkspace.id} onClose={() => setZipExportOpen(false)} />
+      )}
+      {moveGroupTarget !== null && effectiveSelectedId !== null && (
+        <MoveToGroupDialog
+          workspaceId={effectiveSelectedId}
+          item={moveGroupTarget}
+          groupNames={groupNames}
+          currentGroup={
+            groupData?.groups.find((g) =>
+              g.items.some((it) => it.itemRef === moveGroupTarget.ref),
+            )?.name ?? null
+          }
+          onClose={() => setMoveGroupTarget(null)}
+        />
       )}
     </div>
   )
