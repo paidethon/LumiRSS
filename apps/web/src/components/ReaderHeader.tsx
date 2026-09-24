@@ -62,7 +62,8 @@ import {
   resolveReaderToolbarVisible,
   type ReaderToolbarActionId,
 } from '../lib/reader-toolbar'
-import ReaderToolbarCustomizeDialog from './ReaderToolbarCustomizeDialog'
+// 工具栏定制是低频动作——懒加载分包，不进首屏 chunk（bundle guard）。
+const ReaderToolbarCustomizeDialog = lazy(() => import('./ReaderToolbarCustomizeDialog'))
 import ReaderAaPanel from './ReaderAaPanel'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import { Button } from './ui/Button'

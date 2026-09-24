@@ -12,7 +12,6 @@ import { clearSearchHistoryOnLogout } from './lib/search-history'
 import { useAuthStore } from './store/auth'
 import { clearAllDrafts } from './lib/draft-store'
 import { resetPrivacyOnBoot } from './lib/privacy-mask'
-import { startVersionCheck } from './lib/version-check'
 import { EdgeSwipeBack } from './lib/edge-swipe'
 import { useAppRoute } from './lib/app-route'
 import { useTabletPortrait, useViewportTier } from './lib/use-viewport-tier'
@@ -50,9 +49,10 @@ import EntryList from './components/EntryList'
 // Bundle guard：对话框非首屏关键路径——懒加载分包（Suspense
 // 瞬时 null 无感；与既有 MobileSettingsScreen/一级页 lazy 契约一致）。
 import MobileHeader from './components/MobileHeader'
-import MobileNavigationDrawer from './components/MobileNavigationDrawer'
 import MobileTabBar from './components/MobileTabBar'
 import SidebarCollapsedRail from './components/SidebarCollapsedRail'
+// 抽屉只在点开菜单后渲染——懒加载分包，不进首屏 chunk（bundle guard）。
+const MobileNavigationDrawer = lazy(() => import('./components/MobileNavigationDrawer'))
 const ShortcutsHelpDialog = lazy(() => import('./components/ShortcutsHelpDialog'))
 const UndoSnackbar = lazy(() => import('./components/UndoSnackbar'))
 const SettingsConflictDialog = lazy(() => import('./components/SettingsConflictDialog'))
@@ -129,13 +129,19 @@ export default function App() {
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
   // F117：版本轮询（30min fetch /version.json；版本不同 → 更新确认 toast）
   const [newVersion, setNewVersion] = useState<string | null>(null)
-  useEffect(
-    () =>
-      startVersionCheck({
+  // 版本轮询是后台任务非首屏关键路径——动态 import 不进首屏 chunk
+  // （bundle guard）；30min 间隔，加载完成前少一轮轮询无感知。
+  useEffect(() => {
+    let cancelled = false
+    void import('./lib/version-check').then((m) =>
+      cancelled ? undefined : m.startVersionCheck({
         onNewVersion: (build) => setNewVersion(build),
       }),
-    [],
-  )
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
   // 0010 Gate B：全局键盘快捷键（j/k/u/s///?；输入框聚焦时不劫持）
   useKeyboardShortcuts({
     onShowShortcutsHelp: () => setShortcutsHelpOpen(true),
@@ -546,7 +552,9 @@ export default function App() {
       </main>
 
       {/* Mobile 导航抽屉：仅 <1024 有意义；关闭时不渲染 */}
-      <MobileNavigationDrawer />
+      <Suspense fallback={null}>
+        <MobileNavigationDrawer />
+      </Suspense>
 
       {/* P1.3：移动端左缘侧滑返回（渐进增强；无全局 touch-action 改写） */}
       {swipeBackGesture && mobileViewport && (
