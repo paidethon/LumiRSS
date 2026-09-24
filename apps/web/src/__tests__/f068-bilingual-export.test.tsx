@@ -69,8 +69,8 @@ const DETAIL = {
 } as unknown as EntryDetail
 
 const STATES: TranslationSegmentState[] = [
-  { index: 0, status: 'success', translatedText: '第一段机翻。', cached: true, revisionStale: false },
-  { index: 1, status: 'success', translatedText: '第二段机翻。', cached: true, userRevision: '第二段我改过。', revisedAt: '2026-09-19T01:00:00Z', revisionStale: false },
+  { index: 0, status: 'success', translatedText: '第一段机翻。', cached: true, revisionStale: false, noTranslate: false, protectedTerms: [] },
+  { index: 1, status: 'success', translatedText: '第二段机翻。', cached: true, userRevision: '第二段我改过。', revisedAt: '2026-09-19T01:00:00Z', revisionStale: false, noTranslate: false, protectedTerms: [] },
 ]
 
 const BLOCKS = [
