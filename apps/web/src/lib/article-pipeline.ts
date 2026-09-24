@@ -211,6 +211,16 @@ function applyBionic(root: Node): void {
   }
 }
 
+// ---- F070：首图破格标记 ----
+
+/** 给正文第一张 img 打破格标记（属性级 transform：唯一修改是 data-*，
+ * DOMPurify 默认 ALLOW_DATA_ATTR 下存活；最终输出仍整体过 sanitize）。
+ * 破格满宽本身由 CSS（index.css [data-lumi-first-image]）消费。 */
+function markFirstImage(doc: Document): void {
+  const img = doc.body.querySelector('img')
+  if (img !== null) img.setAttribute('data-lumi-first-image', 'true')
+}
+
 // ---- 管线入口 ----
 
 export interface ArticlePipelineOptions {
@@ -222,6 +232,9 @@ export interface ArticlePipelineOptions {
   footnotes?: boolean
   /** F060：数学公式渲染（KaTeX 动态加载）。默认开。 */
   math?: boolean
+  /** F070：首图破格（给正文第一张 img 打 data-lumi-first-image 标记，
+   * 满宽由 CSS 消费）。默认关。 */
+  firstImageFullBleed?: boolean
 }
 
 /** raw RSS HTML → inert DOM → transforms → DOMPurify 终点。
@@ -238,7 +251,15 @@ export async function renderArticleHtml(
     options.codeTheme !== null && containsCodeBlock(rawHtml)
   const needsFootnotes = options.footnotes !== false
   const needsMath = options.math !== false && containsMathMarkerSafe(rawHtml)
-  if (!needsConversion && !needsBionic && !needsHighlight && !needsFootnotes && !needsMath) {
+  const needsFirstImageMark = options.firstImageFullBleed === true
+  if (
+    !needsConversion &&
+    !needsBionic &&
+    !needsHighlight &&
+    !needsFootnotes &&
+    !needsMath &&
+    !needsFirstImageMark
+  ) {
     return sanitizeArticleHtml(rawHtml)
   }
 
@@ -247,6 +268,7 @@ export async function renderArticleHtml(
 
   if (needsFootnotes) transformFootnotes(doc)
   if (needsMath) await renderMathInDom(doc.body)
+  if (needsFirstImageMark) markFirstImage(doc)
   if (needsConversion) {
     const converter = await getConverter(options.conversion)
     if (converter !== null) convertTextNodes(doc.body, converter)

@@ -127,6 +127,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const imageMode = useAppSettings((s) => s.settings.readerImageMode)
   // F009：默认不加载远程图片（本地/快照资源不受影响；单图点击恢复）
   const blockRemote = useAppSettings((s) => s.settings.readerBlockRemoteImages)
+  // F070：首图破格（管线给首图打 data 标记，CSS 消费满宽）
+  const firstImageFullBleed = useAppSettings((s) => s.settings.readerFirstImageFullBleed)
   const [imagesAllowed, setImagesAllowed] = useState(false)
   useEffect(() => {
     setImagesAllowed(false)
@@ -216,6 +218,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       codeTheme: resolvedCodeTheme,
       footnotes: true,
       math: true,
+      firstImageFullBleed,
     }).then((out) => {
       if (!cancelled) setHtml(out)
     })
@@ -229,6 +232,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     conversion,
     bionic,
     resolvedCodeTheme,
+    firstImageFullBleed,
   ])
 
   // 目录提取（pool #03）：在 DOMPurify 输出之上给 h2–h4 注入确定性 id

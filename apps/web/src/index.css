@@ -57,6 +57,8 @@ body {
   /* 0010a F6：字体族/对齐（store 挂变量；默认跟随界面） */
   font-family: var(--lumi-reader-font-family, inherit);
   text-align: var(--lumi-reader-text-align, start);
+  /* F068：正文字重档位（300–700；store 挂变量，默认常规） */
+  font-weight: var(--lumi-reader-font-weight, 400);
   text-justify: inter-ideograph;
   color: var(--lumi-reader-text, var(--lumi-text-primary));
   word-break: break-word;
@@ -413,8 +415,71 @@ html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .arti
 }
 
 .article-content img {
-  max-width: 100%; /* 图片适应 Reader 宽度 */
+  max-width: var(--lumi-reader-image-max-width, 100%); /* F069：图片宽度档位（默认适应 Reader 宽度） */
   height: auto;
+}
+
+/* ---- F069：图片最大宽度档位（<100% 时居中，避免靠左失衡） ---- */
+html[data-reader-image-max-width='75%'] .article-content img,
+html[data-reader-image-max-width='60%'] .article-content img {
+  display: block;
+  margin-inline: auto;
+}
+
+/* ---- F070：首图破格满宽（管线给第一张 img 打 data-lumi-first-image；
+ * 桌面 ≥1024px 破出页边距满宽——移动端窄屏破格意义小且易溢出）。
+ * max-width: none 抵消 F069 档位约束（破格是显式用户选择）。 ---- */
+@media (min-width: 1024px) {
+  html[data-reader-first-image-full-bleed='true'] .article-content img[data-lumi-first-image] {
+    max-width: none;
+    width: calc(100% + 2 * var(--lumi-reader-page-margin, 2rem));
+    margin-inline: calc(-1 * var(--lumi-reader-page-margin, 2rem));
+  }
+}
+
+/* ---- F071：figure caption（figcaption）显示模式 ----
+ * show：默认（既有观感）；hidden：整段隐藏；hover：默认隐藏，
+ * figure 悬停 / 键盘聚焦（focus-within）时淡入。 ---- */
+html[data-reader-caption-mode='hidden'] .article-content figcaption {
+  display: none;
+}
+html[data-reader-caption-mode='hover'] .article-content figcaption {
+  opacity: 0;
+  transition: opacity var(--lumi-motion-fast, 150ms) var(--lumi-ease, ease);
+}
+html[data-reader-caption-mode='hover'] .article-content figure:hover figcaption,
+html[data-reader-caption-mode='hover'] .article-content figure:focus-within figcaption {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-reader-caption-mode='hover'] .article-content figcaption {
+    transition: none;
+  }
+}
+
+/* ---- F064：纸张质感纹理（纯 CSS 噪点，不引图片资源）----
+ * 只叠在 paper 背景档（light #fffefb / dark #1d1f24）上；两层错位
+ * 圆点渐变模拟纸纤维，中性灰低透明度在明暗两套纸色上都成立。 ---- */
+html[data-reader-paper-texture='true'][data-reader-bg-preset='paper'] .lumi-reader-bg-image {
+  background-image:
+    radial-gradient(rgba(127, 112, 84, 0.055) 1px, transparent 1.3px),
+    radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1.3px),
+    linear-gradient(
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      ),
+      color-mix(
+        in srgb,
+        var(--lumi-reader-bg) calc(var(--lumi-reader-bg-overlay, 0) * 100%),
+        transparent
+      )
+    ),
+    var(--lumi-reader-bg-image, none);
+  background-size: 23px 23px, 17px 17px, cover, cover;
+  background-position: 0 0, 8px 11px, center, center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
 }
 
 .article-content figure {

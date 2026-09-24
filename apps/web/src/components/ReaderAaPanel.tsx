@@ -17,8 +17,11 @@ import { useAppSettings } from '../store/app-settings'
 import {
   READER_NUMERIC_RANGES,
   type ReaderBackground,
+  type ReaderCaptionMode,
   type ReaderChineseConversion,
   type ReaderFontFamily,
+  type ReaderFontWeight,
+  type ReaderImageMaxWidth,
   type ReaderReadingMode,
 } from '../store/app-settings'
 import { useIsMobile } from '../lib/use-is-mobile'
@@ -198,6 +201,61 @@ function AaControls({
             ]}
           />
         </div>
+        {/* R5 批1：F068 字重 / F069 图片宽度 / F071 caption / F070 首图破格 /
+            F064 纸张纹理（全部设备本设置；默认值维持既有观感） */}
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">字重</span>
+          <Select
+            aria-label="正文字重"
+            value={String(settings.readerFontWeight)}
+            onChange={(e) => update({ readerFontWeight: Number(e.target.value) as ReaderFontWeight })}
+            options={[
+              { value: '300', label: '细' },
+              { value: '400', label: '常规' },
+              { value: '500', label: '中等' },
+              { value: '600', label: '半粗' },
+              { value: '700', label: '粗' },
+            ]}
+          />
+        </div>
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">图片宽度</span>
+          <Select
+            aria-label="图片最大宽度"
+            value={settings.readerImageMaxWidth}
+            onChange={(e) => update({ readerImageMaxWidth: e.target.value as ReaderImageMaxWidth })}
+            options={[
+              { value: '100%', label: '100%' },
+              { value: '75%', label: '75%' },
+              { value: '60%', label: '60%' },
+            ]}
+          />
+        </div>
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">图片说明</span>
+          <Select
+            aria-label="图片说明显示"
+            value={settings.readerCaptionMode}
+            onChange={(e) => update({ readerCaptionMode: e.target.value as ReaderCaptionMode })}
+            options={[
+              { value: 'show', label: '显示' },
+              { value: 'hover', label: '悬停显示' },
+              { value: 'hidden', label: '隐藏' },
+            ]}
+          />
+        </div>
+        <SwitchRow
+          id="aa-first-image-bleed"
+          title="首图破格满宽"
+          checked={settings.readerFirstImageFullBleed}
+          onChange={(v) => update({ readerFirstImageFullBleed: v })}
+        />
+        <SwitchRow
+          id="aa-paper-texture"
+          title="纸张质感纹理"
+          checked={settings.readerPaperTexture}
+          onChange={(v) => update({ readerPaperTexture: v })}
+        />
         {/* F15：代码自动换行（settings：readerCodeWrap） */}
         <SwitchRow
           id="aa-code-wrap"
