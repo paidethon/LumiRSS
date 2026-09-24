@@ -2483,10 +2483,14 @@ export interface paths {
         get?: never;
         /**
          * Revise Gpt Digest Issue
-         * @description F08：人工编辑标题/条目/排序后重新发布同一期。
+         * @description F08 + N173：人工修订同一期后重新发布。
          *
-         *     修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空
-         *     新增）；entry id 不变、updated 前移，订阅端不产生新刊次。
+         *     - F08 全量：提交 title+sections（sourceIds 必须存在于生成时的引用
+         *       集，不可凭空新增）；entry id 不变、updated 前移。
+         *     - N173 逐句：``sentenceOps``（revise 改写 / delete 删除）直接作用
+         *       在当前内容上（省略 title/sections 时）；改写后的句子匹配不到生
+         *       成时引用 → 映射重算为待核实——绝不凭空延续引用。
+         *     两种路径都会重算句子映射并重渲染 body_html（Atom 订阅同步）。
          */
         put: operations["revise_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__put"];
         post?: never;
@@ -2579,6 +2583,52 @@ export interface paths {
          *     引用集）：校验失败保留 draft 并报 422，绝不半发布。
          */
         post: operations["publish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Polish Gpt Digest Issue
+         * @description N172：仅重跑润色阶段（选材/总结成果保留不动）。
+         *
+         *     语义：同 issue_key 修订（entry id 不变、updated 前移、状态不变）；
+         *     成功清除 meta.polishFailed。失败 502 polish_failed，期号保持原样。
+         */
+        post: operations["retry_polish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__retry_polish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/trim-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trim Preview Gpt Digest Issue
+         * @description N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。
+         *
+         *     零写入、零模型调用（对已存期号按当前配置现算）；未配置
+         *     targetReadingMinutes 时诚实说明并返回原样。
+         */
+        get: operations["trim_preview_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__trim_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10310,18 +10360,54 @@ export interface components {
             items: components["schemas"]["GlossaryTerm"][];
         };
         /**
+         * GptDigestColumn
+         * @description N174：一个固定栏目（名称精确参与校验；count=条目上限）。
+         */
+        GptDigestColumn: {
+            /**
+             * Count
+             * @default 5
+             */
+            count: number;
+            /**
+             * Emptypolicy
+             * @default hide
+             * @enum {string}
+             */
+            emptyPolicy: "hide" | "placeholder";
+            /** Name */
+            name: string;
+        };
+        /**
          * GptDigestConfig
          * @description F01/F02：一份主题日报配置（token 不在此响应中）。
          *
          *     ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
          *     （用 hour），期号退化为日期。
+         *     N171：``days`` 为发布日集合（0=周一…6=周日；空 = 每天）；
+         *     ``weekendHours`` 为周六/周日的独立时点（空 = 沿用平日计划）。
          */
         GptDigestConfig: {
+            /**
+             * Clusterenabled
+             * @default false
+             */
+            clusterEnabled: boolean;
+            /**
+             * Columns
+             * @default []
+             */
+            columns: components["schemas"]["GptDigestColumn"][];
             /**
              * Createdat
              * @default
              */
             createdAt: string;
+            /**
+             * Days
+             * @default []
+             */
+            days: number[];
             /** Enabled */
             enabled: boolean;
             /**
@@ -10365,10 +10451,27 @@ export interface components {
              */
             sourceKind: string;
             /**
+             * Stagemodels
+             * @default {}
+             */
+            stageModels: {
+                [key: string]: string;
+            };
+            /**
+             * Targetreadingminutes
+             * @default 0
+             */
+            targetReadingMinutes: number;
+            /**
              * Timezone
              * @default
              */
             timezone: string;
+            /**
+             * Weekendhours
+             * @default []
+             */
+            weekendHours: number[];
             /**
              * Windowhours
              * @default 24
@@ -10388,6 +10491,12 @@ export interface components {
          * @description PUT /api/v1/gpt-digest/configs/{id} — partial（enabled=false = 暂停）。
          */
         GptDigestConfigUpdate: {
+            /** Clusterenabled */
+            clusterEnabled?: boolean | null;
+            /** Columns */
+            columns?: components["schemas"]["GptDigestColumn"][] | null;
+            /** Days */
+            days?: number[] | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Feedurlallow */
@@ -10406,8 +10515,16 @@ export interface components {
             slots?: number[] | null;
             /** Sourcekind */
             sourceKind?: string | null;
+            /** Stagemodels */
+            stageModels?: {
+                [key: string]: string;
+            } | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes?: number | null;
             /** Timezone */
             timezone?: string | null;
+            /** Weekendhours */
+            weekendHours?: number[] | null;
             /** Windowhours */
             windowHours?: number | null;
         };
@@ -10416,6 +10533,12 @@ export interface components {
          * @description POST /api/v1/gpt-digest/configs（新配置默认 paused）。
          */
         GptDigestCreate: {
+            /** Clusterenabled */
+            clusterEnabled?: boolean | null;
+            /** Columns */
+            columns?: components["schemas"]["GptDigestColumn"][] | null;
+            /** Days */
+            days?: number[] | null;
             /** Feedurlallow */
             feedUrlAllow?: string | null;
             /** Hour */
@@ -10432,8 +10555,16 @@ export interface components {
             slots?: number[] | null;
             /** Sourcekind */
             sourceKind?: string | null;
+            /** Stagemodels */
+            stageModels?: {
+                [key: string]: string;
+            } | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes?: number | null;
             /** Timezone */
             timezone?: string | null;
+            /** Weekendhours */
+            weekendHours?: number[] | null;
             /** Windowhours */
             windowHours?: number | null;
         };
@@ -10471,6 +10602,11 @@ export interface components {
         /**
          * GptDigestIssue
          * @description 一期日报；列表与详情共用（列表 limit 小、正文不重）。
+         *
+         *     N172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /
+         *     N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。
+         *     N173：``sentenceMap`` 为逐句事实检查映射（人工改写未匹配到的句子
+         *     verified=False → UI 标注「待核实」）。
          */
         GptDigestIssue: {
             /**
@@ -10480,6 +10616,13 @@ export interface components {
             createdAt: string;
             /** Issuekey */
             issueKey: string;
+            /**
+             * Meta
+             * @default {}
+             */
+            meta: {
+                [key: string]: unknown;
+            };
             /**
              * Model
              * @default
@@ -10502,6 +10645,11 @@ export interface components {
              * @default []
              */
             sections: components["schemas"]["GptDigestSection"][];
+            /**
+             * Sentencemap
+             * @default []
+             */
+            sentenceMap: components["schemas"]["GptDigestSentence"][];
             /** Status */
             status: string;
             /** Title */
@@ -10522,17 +10670,24 @@ export interface components {
         };
         /**
          * GptDigestIssueRevise
-         * @description PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+         * @description PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — 人工修订。
          *
-         *     sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。
+         *     两种用法（可并用）：F08 全量提交（title+sections）；N173 逐句操作
+         *     （sentenceOps——省略 title/sections 时在当前内容上应用）。sections
+         *     结构沿用生成时 schema；sourceIds 只能引用既有引用集。
          */
         GptDigestIssueRevise: {
             /** Sections */
-            sections: {
+            sections?: {
                 [key: string]: unknown;
-            }[];
+            }[] | null;
+            /**
+             * Sentenceops
+             * @default []
+             */
+            sentenceOps: components["schemas"]["GptDigestSentenceOp"][];
             /** Title */
-            title: string;
+            title?: string | null;
         };
         /** GptDigestItem */
         GptDigestItem: {
@@ -10545,6 +10700,29 @@ export interface components {
             summary: string;
             /** Uncertainty */
             uncertainty?: string | null;
+        };
+        /**
+         * GptDigestLeftoverItem
+         * @description N175：素材篮条目——被裁剪的完整条目（绝不静默删除）。
+         */
+        GptDigestLeftoverItem: {
+            /**
+             * Refs
+             * @default []
+             */
+            refs: components["schemas"]["GptDigestRef"][];
+            /**
+             * Sectionheading
+             * @default
+             */
+            sectionHeading: string;
+            /**
+             * Sourceids
+             * @default []
+             */
+            sourceIds: string[];
+            /** Summary */
+            summary: string;
         };
         /**
          * GptDigestPoolInvalid
@@ -10665,6 +10843,47 @@ export interface components {
             items: components["schemas"]["GptDigestItem"][];
         };
         /**
+         * GptDigestSentence
+         * @description N173：事实检查视图里的一句总结 + 其来源引用。
+         */
+        GptDigestSentence: {
+            /**
+             * Refs
+             * @default []
+             */
+            refs: string[];
+            /** Sentence */
+            sentence: string;
+            /**
+             * Verified
+             * @default true
+             */
+            verified: boolean;
+        };
+        /**
+         * GptDigestSentenceOp
+         * @description N173：逐句修订操作（revise 改写文本 / delete 删除整句）。
+         *
+         *     索引为 (sectionIndex, itemIndex, sentenceIndex)；revise 必须给出
+         *     非空 text。改写/新增的句子匹配不到生成时引用 → 待核实（服务端
+         *     重算映射，不凭空延续引用）。
+         */
+        GptDigestSentenceOp: {
+            /** Itemindex */
+            itemIndex: number;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "revise" | "delete";
+            /** Sectionindex */
+            sectionIndex: number;
+            /** Sentenceindex */
+            sentenceIndex: number;
+            /** Text */
+            text?: string | null;
+        };
+        /**
          * GptDigestSettings
          * @description GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。
          */
@@ -10715,6 +10934,25 @@ export interface components {
             timezone?: string | null;
             /** Windowhours */
             windowHours?: number | null;
+        };
+        /**
+         * GptDigestTrimPreview
+         * @description GET …/trim-preview — N175 裁剪预览（零写入、零模型调用）。
+         */
+        GptDigestTrimPreview: {
+            /** Afterminutes */
+            afterMinutes: number;
+            /** Beforeminutes */
+            beforeMinutes: number;
+            /**
+             * Moved
+             * @default []
+             */
+            moved: components["schemas"]["GptDigestLeftoverItem"][];
+            /** Note */
+            note?: string | null;
+            /** Targetreadingminutes */
+            targetReadingMinutes: number;
         };
         /**
          * GraphEdge
@@ -19559,6 +19797,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_polish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__retry_polish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trim_preview_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__trim_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                config_id: number;
+                issue_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GptDigestTrimPreview"];
                 };
             };
             /** @description Validation Error */

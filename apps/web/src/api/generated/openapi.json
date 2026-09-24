@@ -6011,13 +6011,64 @@
     "title": "GlossaryTermList",
     "type": "object"
    },
-   "GptDigestConfig": {
-    "description": "F01/F02：一份主题日报配置（token 不在此响应中）。\n\n``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点\n（用 hour），期号退化为日期。",
+   "GptDigestColumn": {
+    "description": "N174：一个固定栏目（名称精确参与校验；count=条目上限）。",
     "properties": {
+     "count": {
+      "default": 5,
+      "maximum": 20.0,
+      "minimum": 1.0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "emptyPolicy": {
+      "default": "hide",
+      "enum": [
+       "hide",
+       "placeholder"
+      ],
+      "title": "Emptypolicy",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "GptDigestColumn",
+    "type": "object"
+   },
+   "GptDigestConfig": {
+    "description": "F01/F02：一份主题日报配置（token 不在此响应中）。\n\n``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点\n（用 hour），期号退化为日期。\nN171：``days`` 为发布日集合（0=周一…6=周日；空 = 每天）；\n``weekendHours`` 为周六/周日的独立时点（空 = 沿用平日计划）。",
+    "properties": {
+     "clusterEnabled": {
+      "default": false,
+      "title": "Clusterenabled",
+      "type": "boolean"
+     },
+     "columns": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestColumn"
+      },
+      "title": "Columns",
+      "type": "array"
+     },
      "createdAt": {
       "default": "",
       "title": "Createdat",
       "type": "string"
+     },
+     "days": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Days",
+      "type": "array"
      },
      "enabled": {
       "title": "Enabled",
@@ -6090,10 +6141,31 @@
       "title": "Sourcekind",
       "type": "string"
      },
+     "stageModels": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "default": {},
+      "title": "Stagemodels",
+      "type": "object"
+     },
+     "targetReadingMinutes": {
+      "default": 0,
+      "title": "Targetreadingminutes",
+      "type": "integer"
+     },
      "timezone": {
       "default": "",
       "title": "Timezone",
       "type": "string"
+     },
+     "weekendHours": {
+      "default": [],
+      "items": {
+       "type": "integer"
+      },
+      "title": "Weekendhours",
+      "type": "array"
      },
      "windowHours": {
       "default": 24,
@@ -6127,6 +6199,45 @@
    "GptDigestConfigUpdate": {
     "description": "PUT /api/v1/gpt-digest/configs/{id} — partial（enabled=false = 暂停）。",
     "properties": {
+     "clusterEnabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Clusterenabled"
+     },
+     "columns": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/GptDigestColumn"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Columns"
+     },
+     "days": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Days"
+     },
      "enabled": {
       "anyOf": [
        {
@@ -6229,6 +6340,31 @@
       ],
       "title": "Sourcekind"
      },
+     "stageModels": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stagemodels"
+     },
+     "targetReadingMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetreadingminutes"
+     },
      "timezone": {
       "anyOf": [
        {
@@ -6239,6 +6375,20 @@
        }
       ],
       "title": "Timezone"
+     },
+     "weekendHours": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Weekendhours"
      },
      "windowHours": {
       "anyOf": [
@@ -6258,6 +6408,45 @@
    "GptDigestCreate": {
     "description": "POST /api/v1/gpt-digest/configs（新配置默认 paused）。",
     "properties": {
+     "clusterEnabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Clusterenabled"
+     },
+     "columns": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/GptDigestColumn"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Columns"
+     },
+     "days": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Days"
+     },
      "feedUrlAllow": {
       "anyOf": [
        {
@@ -6342,6 +6531,31 @@
       ],
       "title": "Sourcekind"
      },
+     "stageModels": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stagemodels"
+     },
+     "targetReadingMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetreadingminutes"
+     },
      "timezone": {
       "anyOf": [
        {
@@ -6352,6 +6566,20 @@
        }
       ],
       "title": "Timezone"
+     },
+     "weekendHours": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Weekendhours"
      },
      "windowHours": {
       "anyOf": [
@@ -6415,7 +6643,7 @@
     "type": "object"
    },
    "GptDigestIssue": {
-    "description": "一期日报；列表与详情共用（列表 limit 小、正文不重）。",
+    "description": "一期日报；列表与详情共用（列表 limit 小、正文不重）。\n\nN172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /\nN174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。\nN173：``sentenceMap`` 为逐句事实检查映射（人工改写未匹配到的句子\nverified=False → UI 标注「待核实」）。",
     "properties": {
      "createdAt": {
       "default": "",
@@ -6425,6 +6653,12 @@
      "issueKey": {
       "title": "Issuekey",
       "type": "string"
+     },
+     "meta": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Meta",
+      "type": "object"
      },
      "model": {
       "default": "",
@@ -6450,6 +6684,14 @@
        "$ref": "#/components/schemas/GptDigestSection"
       },
       "title": "Sections",
+      "type": "array"
+     },
+     "sentenceMap": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestSentence"
+      },
+      "title": "Sentencemap",
       "type": "array"
      },
      "status": {
@@ -6489,25 +6731,43 @@
     "type": "object"
    },
    "GptDigestIssueRevise": {
-    "description": "PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。\n\nsections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。",
+    "description": "PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — 人工修订。\n\n两种用法（可并用）：F08 全量提交（title+sections）；N173 逐句操作\n（sentenceOps——省略 title/sections 时在当前内容上应用）。sections\n结构沿用生成时 schema；sourceIds 只能引用既有引用集。",
     "properties": {
      "sections": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sections"
+     },
+     "sentenceOps": {
+      "default": [],
       "items": {
-       "additionalProperties": true,
-       "type": "object"
+       "$ref": "#/components/schemas/GptDigestSentenceOp"
       },
-      "title": "Sections",
+      "title": "Sentenceops",
       "type": "array"
      },
      "title": {
-      "title": "Title",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
      }
     },
-    "required": [
-     "title",
-     "sections"
-    ],
     "title": "GptDigestIssueRevise",
     "type": "object"
    },
@@ -6541,6 +6801,41 @@
      "summary"
     ],
     "title": "GptDigestItem",
+    "type": "object"
+   },
+   "GptDigestLeftoverItem": {
+    "description": "N175：素材篮条目——被裁剪的完整条目（绝不静默删除）。",
+    "properties": {
+     "refs": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestRef"
+      },
+      "title": "Refs",
+      "type": "array"
+     },
+     "sectionHeading": {
+      "default": "",
+      "title": "Sectionheading",
+      "type": "string"
+     },
+     "sourceIds": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sourceids",
+      "type": "array"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     }
+    },
+    "required": [
+     "summary"
+    ],
+    "title": "GptDigestLeftoverItem",
     "type": "object"
    },
    "GptDigestPoolInvalid": {
@@ -6747,6 +7042,81 @@
     "title": "GptDigestSection",
     "type": "object"
    },
+   "GptDigestSentence": {
+    "description": "N173：事实检查视图里的一句总结 + 其来源引用。",
+    "properties": {
+     "refs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Refs",
+      "type": "array"
+     },
+     "sentence": {
+      "title": "Sentence",
+      "type": "string"
+     },
+     "verified": {
+      "default": true,
+      "title": "Verified",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "sentence"
+    ],
+    "title": "GptDigestSentence",
+    "type": "object"
+   },
+   "GptDigestSentenceOp": {
+    "description": "N173：逐句修订操作（revise 改写文本 / delete 删除整句）。\n\n索引为 (sectionIndex, itemIndex, sentenceIndex)；revise 必须给出\n非空 text。改写/新增的句子匹配不到生成时引用 → 待核实（服务端\n重算映射，不凭空延续引用）。",
+    "properties": {
+     "itemIndex": {
+      "minimum": 0.0,
+      "title": "Itemindex",
+      "type": "integer"
+     },
+     "op": {
+      "enum": [
+       "revise",
+       "delete"
+      ],
+      "title": "Op",
+      "type": "string"
+     },
+     "sectionIndex": {
+      "minimum": 0.0,
+      "title": "Sectionindex",
+      "type": "integer"
+     },
+     "sentenceIndex": {
+      "minimum": 0.0,
+      "title": "Sentenceindex",
+      "type": "integer"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "maxLength": 4000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     }
+    },
+    "required": [
+     "op",
+     "sectionIndex",
+     "itemIndex",
+     "sentenceIndex"
+    ],
+    "title": "GptDigestSentenceOp",
+    "type": "object"
+   },
    "GptDigestSettings": {
     "description": "GPT 日报配置（订阅 token 不在此响应中，见 /api/v1/gpt-digest/feed）。",
     "properties": {
@@ -6879,6 +7249,49 @@
      }
     },
     "title": "GptDigestSettingsUpdate",
+    "type": "object"
+   },
+   "GptDigestTrimPreview": {
+    "description": "GET …/trim-preview — N175 裁剪预览（零写入、零模型调用）。",
+    "properties": {
+     "afterMinutes": {
+      "title": "Afterminutes",
+      "type": "number"
+     },
+     "beforeMinutes": {
+      "title": "Beforeminutes",
+      "type": "number"
+     },
+     "moved": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GptDigestLeftoverItem"
+      },
+      "title": "Moved",
+      "type": "array"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "targetReadingMinutes": {
+      "title": "Targetreadingminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "targetReadingMinutes",
+     "beforeMinutes",
+     "afterMinutes"
+    ],
+    "title": "GptDigestTrimPreview",
     "type": "object"
    },
    "GraphEdge": {
@@ -22291,7 +22704,7 @@
   },
   "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}": {
    "put": {
-    "description": "F08：人工编辑标题/条目/排序后重新发布同一期。\n\n修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空\n新增）；entry id 不变、updated 前移，订阅端不产生新刊次。",
+    "description": "F08 + N173：人工修订同一期后重新发布。\n\n- F08 全量：提交 title+sections（sourceIds 必须存在于生成时的引用\n  集，不可凭空新增）；entry id 不变、updated 前移。\n- N173 逐句：``sentenceOps``（revise 改写 / delete 删除）直接作用\n  在当前内容上（省略 title/sections 时）；改写后的句子匹配不到生\n  成时引用 → 映射重算为待核实——绝不凭空延续引用。\n两种路径都会重算句子映射并重渲染 body_html（Atom 订阅同步）。",
     "operationId": "revise_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__put",
     "parameters": [
      {
@@ -22534,6 +22947,102 @@
      }
     },
     "summary": "Publish Gpt Digest Issue"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish": {
+   "post": {
+    "description": "N172：仅重跑润色阶段（选材/总结成果保留不动）。\n\n语义：同 issue_key 修订（entry id 不变、updated 前移、状态不变）；\n成功清除 meta.polishFailed。失败 502 polish_failed，期号保持原样。",
+    "operationId": "retry_polish_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__retry_polish_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "issue_key",
+      "required": true,
+      "schema": {
+       "title": "Issue Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Retry Polish Gpt Digest Issue"
+   }
+  },
+  "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/trim-preview": {
+   "get": {
+    "description": "N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。\n\n零写入、零模型调用（对已存期号按当前配置现算）；未配置\ntargetReadingMinutes 时诚实说明并返回原样。",
+    "operationId": "trim_preview_gpt_digest_issue_api_v1_gpt_digest_configs__config_id__issues__issue_key__trim_preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "config_id",
+      "required": true,
+      "schema": {
+       "title": "Config Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "issue_key",
+      "required": true,
+      "schema": {
+       "title": "Issue Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GptDigestTrimPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Trim Preview Gpt Digest Issue"
    }
   },
   "/api/v1/gpt-digest/configs/{config_id}/missing-dates": {
