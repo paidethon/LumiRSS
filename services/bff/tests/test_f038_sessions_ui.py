@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import secrets
 import tempfile
 from pathlib import Path
 
@@ -10,8 +11,6 @@ from fastapi.testclient import TestClient
 
 from lumirss.auth_store import AuthStore
 from lumirss.main import app
-import secrets
-
 from lumirss.storage import Database
 
 PASSWORD = secrets.token_urlsafe(16)

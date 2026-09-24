@@ -46,6 +46,8 @@ from lumirss.models import (
     AgentMessage,
     AgentMessageCreate,
     AgentMessageListResponse,
+    AgentScopePreviewRequest,
+    AgentScopeSummary,
     AgentThread,
     AgentThreadListResponse,
     AgentThreadSearchHit,
@@ -371,6 +373,47 @@ async def update_thread_settings(
     except KeyError as exc:
         raise ThreadNotFound("会话不存在。") from exc
     return AgentThreadSettings(**settings)
+
+
+@router.post(
+    "/api/v1/agent/scope-preview",
+    response_model=AgentScopeSummary,
+)
+async def preview_scope(payload: AgentScopePreviewRequest, request: Request):
+    """N151：授权范围摘要（kind × refCount × toolCount）——工作台范围
+    选择器保存前的服务端预览；refCount 查询时解析（有界），toolCount
+    与回合执行前的权限评估同口径（白名单 ∩ policy，readonly 剔除写）。"""
+    from lumirss.agent_scope import effective_scope
+
+    from ..deps import _get_agent_loop, _get_workspace_store
+
+    tool_policy = (
+        {
+            "mode": payload.toolPolicy.mode,
+            "allowedTools": payload.toolPolicy.allowedTools,
+            "maxOpsPerTurn": payload.toolPolicy.maxOpsPerTurn,
+        }
+        if payload.toolPolicy is not None
+        else None
+    )
+    scope: dict | None = None
+    if payload.scope is not None:
+        scope = (
+            payload.scope.model_dump()
+            if hasattr(payload.scope, "model_dump")
+            else dict(payload.scope)
+        )
+    effective = await effective_scope(
+        request.app.state.db,
+        _get_workspace_store(request),
+        scope,
+    )
+    loop = _get_agent_loop(request)
+    return AgentScopeSummary(
+        kind=effective["kind"],
+        refCount=effective["refCount"],
+        toolCount=len(loop.effective_tool_names(tool_policy)),
+    )
 
 
 @router.post(

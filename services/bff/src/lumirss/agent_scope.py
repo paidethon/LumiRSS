@@ -7,9 +7,37 @@
 无写站点（纯读）。
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from lumirss.storage import Database
+
+ScopeKind = Literal["all", "workspace", "entryRefs"]
+
+
+def scope_kind(scope: dict[str, Any] | None) -> ScopeKind:
+    """N151：范围种类（未锁定 = all；kind 与 refCount 组成 effectiveScope）。"""
+    if not scope:
+        return "all"
+    if "workspaceId" in scope:
+        return "workspace"
+    if "entryRefs" in scope:
+        return "entryRefs"
+    return "all"
+
+
+async def effective_scope(
+    db: Database, workspace_store: Any, scope: dict[str, Any] | None
+) -> dict[str, Any]:
+    """N151：查询时服务端解析 {kind, refCount}（授权范围回显）。
+
+    refCount = 该 scope 实际解析到的 ref 数量（有界：工作区成员单页
+    上限、entryRefs 清理后计数）；未锁定（all）→ refCount=None（不设
+    上界的诚实表达，绝不伪造一个全库计数）。"""
+    kind = scope_kind(scope)
+    if kind == "all":
+        return {"kind": "all", "refCount": None}
+    allowed = await allowed_refs_for_scope(db, workspace_store, scope)
+    return {"kind": kind, "refCount": len(allowed or set())}
 
 
 async def allowed_refs_for_scope(
