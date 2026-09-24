@@ -221,6 +221,75 @@ describe('LoginScreen（0067 多账户）', () => {
   })
 })
 
+describe('F015 登录后回 ?next= 认证前目标', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ status: 'unauthenticated', mode: 'session', identity: null })
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+  })
+
+  function renderLogin() {
+    return render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LoginScreen />
+      </QueryClientProvider>,
+    )
+  }
+
+  function loginSuccessfully(): void {
+    const fetchMock = vi.fn().mockImplementation((url: string | URL) => {
+      if (String(url).endsWith('/auth/session')) {
+        return Promise.resolve(
+          jsonResponse({
+            authenticated: true,
+            mode: 'session',
+            userId: 'u1',
+            username: 'alice',
+            role: 'member',
+          }),
+        )
+      }
+      return Promise.resolve(probe('session', true))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'alice' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: GOOD_PASSWORD } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+  }
+
+  it('?next=/library（合法同源路径）→ 登录成功后跳 /library', async () => {
+    window.history.replaceState(null, '', '/?next=%2Flibrary')
+    loginSuccessfully()
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe('authenticated')
+    })
+    expect(window.location.pathname).toBe('/library')
+  })
+
+  it('?next=//evil.com（协议相对 URL）→ 非法，回退默认首页 /', async () => {
+    window.history.replaceState(null, '', '/?next=%2F%2Fevil.com')
+    loginSuccessfully()
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe('authenticated')
+    })
+    expect(window.location.pathname).toBe('/')
+    expect(window.location.hostname).not.toBe('evil.com')
+  })
+
+  it('?next=https://evil.example（带 scheme）→ 非法，回退默认首页 /', async () => {
+    window.history.replaceState(null, '', '/?next=https%3A%2F%2Fevil.example%2Fphish')
+    loginSuccessfully()
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe('authenticated')
+    })
+    expect(window.location.pathname).toBe('/')
+  })
+})
+
 describe('探测契约（AuthGate 行为的纯逻辑部分）', () => {
   it('basic 模式探测结果如实上报 mode', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(probe('basic', true)))
