@@ -3343,10 +3343,11 @@ export async function removeLibraryFavorite(ref: string): Promise<void> {
 
 // ---- phase2 G7/G8：Agent 工作台 / 标签 / 关系图谱 / RAG ----
 // 契约类型：凡 OpenAPI 已收录的信封一律用 generated 别名（下方
-// `Schemas['…']`），绝不手写复制。AgentMessage / RagStatus / ItemTag
-// 所属端点目前返回无 response_model 的 dict（OpenAPI 抓不到），暂以
-// 本地 interface 对照 BFF routers 维护——补 response_model 后应换成
-// 生成别名（BFF 合同缺口，见 ROADMAP Next）。
+// `Schemas['…']`），绝不手写复制。E04 已给 Agent/RAG 全部端点补上
+// response_model（AgentMessageListResponse / RagStatus 等已入
+// generated schema）；本地 AgentMessage 仍保留 Record 形态的
+// content——消费方按索引防御式读取（AgentWorkbenchPage），换生成
+// 别名需改为窄化访问，属后续重构，非契约缺口。
 
 type Schemas = components['schemas']
 
@@ -3569,7 +3570,8 @@ export interface RagStatus {
   enabled: boolean
   chunks: number
   model: string
-  vecTable: string | boolean
+  // E04 对齐服务端契约（RagStatus.vecTable: boolean；历史上误写宽类型）。
+  vecTable: boolean
   lastRebuildAt: string | null
   lastError: string | null
   fastembedAvailable: boolean
@@ -5191,8 +5193,10 @@ export async function listNoteBrokenLinks(uuid: string): Promise<{ items: { raw:
 // ===========================================================================
 // W5：F081–F100（批量编辑 / 合并 / 模板 / 归档 / 看板 / 目标 / 失效检查 /
 // 资料包 ZIP / 剪藏修订 / 笔记生命周期 / RAG 排除·作业·一致性 /
-// Agent 范围·权限·搜索·导出·预演·分支）。类型为本地 interface 对照 BFF
-// routers 维护（与 AgentMessage 同惯例：补 response_model 后换生成别名）。
+// Agent 范围·权限·搜索·导出·预演·分支）。E04 起 Agent W5 与 RAG 端点
+// 的响应均已入 generated schema（AgentThreadSettings /
+// AgentThreadSearchHit / AgentBranchResult / AgentApprovalPreview /
+// RagRebuildPauseResult 等）；本地 interface 为收窄视图，逐步替换中。
 // ===========================================================================
 
 // ---- F081 批量元数据编辑 ---------------------------------------------------

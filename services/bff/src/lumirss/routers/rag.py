@@ -10,11 +10,13 @@ from lumirss.models import (
     RagExclusionPut,
     RagInconsistencyItem,
     RagInconsistencyList,
+    RagRebuildPauseResult,
     RagRebuildResult,
     RagRepairRequest,
     RagRepairResult,
     RagSearchItem,
     RagSearchResponse,
+    RagStatus,
 )
 from lumirss.rag import MODEL_ID as MODEL_ID_EXPORT
 from lumirss.rag import RagService
@@ -24,12 +26,12 @@ from ..deps import _get_rag_service
 router = APIRouter()
 
 
-@router.get("/api/v1/rag/status")
-async def rag_status(request: Request) -> dict:
+@router.get("/api/v1/rag/status", response_model=RagStatus)
+async def rag_status(request: Request) -> RagStatus:
     """Everything the enable/rebuild UI needs: index counts, model
     info, resource state, last error."""
     service: RagService = _get_rag_service(request)
-    return await service.status()
+    return RagStatus(**await service.status())
 
 
 @router.post("/api/v1/rag/enable", response_model=RagEnableResult)
@@ -136,14 +138,16 @@ async def put_rag_exclusion(payload: RagExclusionPut, request: Request) -> RagEx
     )
 
 
-@router.post("/api/v1/rag/rebuild/pause")
-async def rag_rebuild_pause(request: Request):
+@router.post(
+    "/api/v1/rag/rebuild/pause", response_model=RagRebuildPauseResult
+)
+async def rag_rebuild_pause(request: Request) -> RagRebuildPauseResult:
     """F093：请求暂停（当前批完成后停；游标持久化）。"""
     service: RagService = _get_rag_service(request)
     job_id = await service.pause_rebuild()
     if job_id is None:
-        return {"paused": False, "jobId": None}
-    return {"paused": True, "jobId": job_id, "status": "pausing"}
+        return RagRebuildPauseResult(paused=False)
+    return RagRebuildPauseResult(paused=True, jobId=job_id, status="pausing")
 
 
 @router.post("/api/v1/rag/rebuild/resume", response_model=RagRebuildResult)

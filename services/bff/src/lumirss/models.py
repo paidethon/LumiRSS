@@ -2632,6 +2632,152 @@ class AgentApprovalDecision(BaseModel):
     decision: str
 
 
+# E04 contract repair: the agent message / turn endpoints previously
+# returned bare dicts, so the OpenAPI schema (and the generated web
+# types) degraded to `{}`. The models below pin the wire format; the
+# message content union covers every variant the loop actually writes
+# (assistant text/tool calls/streaming, tool results wrapped untrusted,
+# server-minted approval rows, branched transcripts).
+
+
+class AgentToolCall(BaseModel):
+    """One assistant tool invocation; arguments stay raw protocol text."""
+
+    model_config = {"extra": "forbid"}
+
+    callId: str
+    name: str
+    argumentsText: str
+
+
+class AgentToolResult(BaseModel):
+    """Tool output wrapped as untrusted data (injection boundary)."""
+
+    model_config = {"extra": "forbid"}
+
+    untrusted: bool
+    payload: dict[str, object]
+
+
+class AgentUserContent(BaseModel):
+    """role=user message body."""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+
+
+class AgentAssistantContent(BaseModel):
+    """role=assistant message body (streaming marker / cancel note /
+    branch-truncation notice / toolCalls while the loop is mid-turn)."""
+
+    model_config = {"extra": "forbid"}
+
+    text: str
+    toolCalls: list[AgentToolCall] = []
+    streaming: bool | None = None
+    cancelled: bool | None = None
+    branchTruncated: bool | None = None
+
+
+class AgentToolContent(BaseModel):
+    """role=tool message body.
+
+    ``result`` is the untrusted envelope (or a bare string in branched
+    transcripts); ``callId`` is dropped when a branch copies the row as
+    a non-executable transcript record."""
+
+    model_config = {"extra": "forbid"}
+
+    callId: str | None = None
+    name: str
+    result: AgentToolResult | str | None = None
+    error: str | None = None
+    approved: bool | None = None
+    branchTranscript: bool | None = None
+
+
+class AgentApprovalContent(BaseModel):
+    """role=approval message body (server-minted by create_approval)."""
+
+    model_config = {"extra": "forbid"}
+
+    approvalId: str
+    threadId: str
+    callId: str
+    tool: str
+    args: dict[str, object]
+    status: str
+    expiresInMinutes: int | None = None
+
+
+AgentMessageRole = Literal["user", "assistant", "tool", "approval"]
+
+AgentMessageContent = (
+    AgentUserContent
+    | AgentAssistantContent
+    | AgentToolContent
+    | AgentApprovalContent
+)
+
+
+class AgentMessage(BaseModel):
+    """One persisted conversation message (storage row, wire format)."""
+
+    id: str
+    threadId: str
+    seq: int
+    role: AgentMessageRole
+    content: AgentMessageContent
+    citations: list[str] = []
+    createdAt: str
+
+
+class AgentCitationDetail(BaseModel):
+    """One citation ref resolved through the shared Source Registry."""
+
+    ref: str
+    domain: str
+    kind: str
+    title: str
+    source: str
+    datetime: str | None = None
+    excerpt: str | None = None
+    url: str | None = None
+    stale: bool = False
+    staleReason: str | None = None
+    payload: dict[str, object] = {}
+
+
+class AgentMessageListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads/{id}/messages."""
+
+    items: list[AgentMessage]
+    citationDetails: list[AgentCitationDetail] = []
+
+
+class AgentTurnAccepted(BaseModel):
+    """202 body for POST /api/v1/agent/threads/{id}/messages."""
+
+    status: Literal["processing"]
+
+
+class AgentApprovalResult(BaseModel):
+    """POST /api/v1/agent/threads/{id}/approvals — honest terminal
+    variants: rejected / tool_denied / completed."""
+
+    status: Literal["rejected", "tool_denied", "completed"]
+    message: AgentMessage | None = None
+    reason: str | None = None
+
+
+class AgentCancelResult(BaseModel):
+    """POST /api/v1/agent/threads/{id}/cancel."""
+
+    cancelled: bool
+    status: Literal["cancelling", "cancelled"]
+
+
 class RagSearchItem(BaseModel):
     """One fused retrieval hit (ref resolves to real content).
 
@@ -2667,6 +2813,34 @@ class RagEnableResult(BaseModel):
     """Explicit model-enable acknowledgement."""
 
     enabled: bool
+
+
+class RagJobSummary(BaseModel):
+    """F093 最近一次重建作业的进度段（stage/done/remaining）。"""
+
+    jobId: str
+    kind: str
+    status: str
+    stage: str | None = None
+    done: int = 0
+    remaining: int | None = None
+    updatedAt: str
+
+
+class RagStatus(BaseModel):
+    """GET /api/v1/rag/status — everything the enable/rebuild UI needs."""
+
+    enabled: bool
+    chunks: int
+    model: str
+    dim: int
+    vecTable: bool
+    vecRows: int
+    modelLoaded: bool
+    lastRebuildAt: str | None = None
+    lastError: str | None = None
+    fastembedAvailable: bool
+    job: RagJobSummary | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -3737,3 +3911,104 @@ class AgentBranchRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     messageIndex: int = Field(ge=0)
+
+
+# ---------------------------------------------------------------------------
+# Agent W5 contract repair (E04) — F094 settings / F095 search / F099
+# branch / F097 preview responses previously returned bare dicts.
+# ---------------------------------------------------------------------------
+
+
+class AgentWorkspaceScope(BaseModel):
+    """F094 范围锁定：锁定到单个工作区。"""
+
+    model_config = {"extra": "forbid"}
+
+    workspaceId: str
+
+
+class AgentEntryRefsScope(BaseModel):
+    """F094 范围锁定：锁定到显式条目列表。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRefs: list[str]
+
+
+AgentThreadScope = AgentWorkspaceScope | AgentEntryRefsScope
+
+
+class AgentToolPolicy(BaseModel):
+    """F098 会话工具权限（键皆可缺省；validate_tool_policy 只落提供的键）。"""
+
+    model_config = {"extra": "forbid"}
+
+    mode: Literal["all", "readonly"] | None = None
+    allowedTools: list[str] | None = None
+    maxOpsPerTurn: int | None = None
+
+
+class AgentThreadSettings(BaseModel):
+    """PATCH /api/v1/agent/threads/{id} response（下轮生效）。"""
+
+    id: str
+    title: str
+    scope: AgentThreadScope | None = None
+    toolPolicy: AgentToolPolicy | None = None
+    branchOf: str | None = None
+
+
+class AgentThreadSearchHit(BaseModel):
+    """F095 一条会话消息搜索命中（snippet 含前后文）。"""
+
+    threadId: str
+    threadTitle: str
+    messageIndex: int
+    role: str
+    snippet: str
+
+
+class AgentThreadSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/threads/search."""
+
+    items: list[AgentThreadSearchHit]
+    truncated: bool
+
+
+class AgentBranchResult(BaseModel):
+    """F099 POST /api/v1/agent/threads/{id}/branch 响应。"""
+
+    thread: AgentThread
+    branchOf: str
+    copiedMessages: int
+    truncated: bool
+
+
+class RagRebuildPauseResult(BaseModel):
+    """F093 POST /api/v1/rag/rebuild/pause — paused=false 表示没有
+    可暂停的作业（jobId/status 同时缺省）。"""
+
+    paused: bool
+    jobId: str | None = None
+    status: str | None = None
+
+
+class AgentApprovalPreviewChange(BaseModel):
+    """F097 预演逐字段变化（from → to；敏感值已打码为 ***）。"""
+
+    model_config = {"populate_by_name": True}
+
+    field: str
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+
+
+class AgentApprovalPreview(BaseModel):
+    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。"""
+
+    approvalId: str
+    tool: str
+    target: str
+    changes: list[AgentApprovalPreviewChange] = []
+    uncertain: list[str] = []
+    note: str
