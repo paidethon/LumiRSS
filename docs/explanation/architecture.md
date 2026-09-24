@@ -13,7 +13,12 @@
 5. **AI is optional and non-blocking.** AI 未配置或失败不影响阅读、状态写入与来源管理；GET 类 AI 端点绝不触发 Provider 调用。
 6. **Untrusted content is sanitized as the final boundary.** 文章 HTML 经受控 transform 后必须通过 DOMPurify 才能进入 React。
 7. **Honest state.** read/star 写入用 set 语义；分页 cursor 与 `entryRef` 均为 opaque；打开文章不自动标为已读；所有网络状态都有 loading/empty/error UI。
-8. **Accounts are invite-only and data is scoped server-side.** 运营者经 `/admin` 发一次性限时邀请，受邀者在 `/activate` 自设用户名密码激活；私有数据永远按服务端验证的身份路由（见下「控制库与每用户库」）。
+8. **Accounts are server-gated and data is scoped server-side.** 默认
+   邀请制：运营者经 `/admin` 发一次性限时邀请，受邀者在 `/activate`
+   自设用户名密码激活；可选公开注册（`POST /auth/register`）是实例级
+   开关、默认关闭，存控制库、服务端强制，注册只创建 member。私有数据
+   永远按服务端验证的身份路由（见下「控制库与每用户库」与
+   [ADR 0006](../decisions/0006-public-registration.md)）。
 
 ## Data flow
 
@@ -35,9 +40,11 @@ Non-RSS → RSSHub-generated feed ──┤
 ## Control database and per-user databases（邀请制多账户的数据分层）
 
 - **控制库**（`LUMIRSS_DB_PATH`，即 `data/lumi.sqlite`）只存账户控制面：
-  `users`（邀请制账号，bcrypt 口令哈希）、`invites`（一次性限时邀请，
+  `users`（账号，bcrypt 口令哈希）、`invites`（一次性限时邀请，
   只存 token SHA-256）、`freshrss_pool`（预建账号登记与原子分配）、
-  `audit_log`、`token_owner_index` 与机器会话。
+  `instance_settings`（实例级开关，如默认关闭的
+  `allow_public_registration`）、`audit_log`、`token_owner_index` 与
+  机器会话。
 - **每用户业务库**：每个账号的全部业务数据（库域、工作区、标签、AI、
   设置、搜索投影、FreshRSS 绑定凭据引用）位于
   `<data_dir>/users/<uid>/lumi.sqlite`，旁边是 per-user `secrets.json`；
@@ -157,14 +164,15 @@ Internet / private access
 ## Deferred（不得描述为已存在）
 
 - Web clipping 浏览器扩展；Obsidian 写回（vault 永远只读）；MCP surface；
-- 多租户 / 公开注册 / 公共互联网硬化（邀请制小规模多账户已实现，
-  见 [ADR 0005](../decisions/0005-invite-multi-account.md)；
-  [how-to/invite-members.md](../how-to/invite-members.md)）；
+- 多租户形态 / 公共互联网硬化（邀请制小规模多账户与可选公开注册——
+  默认关闭——已实现，见 [ADR 0006](../decisions/0006-public-registration.md)
+  与 [how-to/invite-members.md](../how-to/invite-members.md)；打开注册
+  后的公网暴露面由运营者自行评估，公共互联网加固仍不在范围）；
 - PWA Push / 后台同步（app-shell 离线缓存已实现——`public/sw.js` 缓存
   静态资源与导航回退；API / 认证响应永不入缓存）；
 - AI：streaming、fallback 链、多供应商自动路由。
 
 ## Related
 
-- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库 / [0005 邀请制多账户与控制库·每用户库](../decisions/0005-invite-multi-account.md)（均 Accepted）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
+- ADR：[0001 FreshRSS owns RSS state](../decisions/0001-freshrss-owns-rss-state.md) / Web 只与 BFF 通信 / 不建 RSS 影子库 / [0005 邀请制多账户与控制库·每用户库](../decisions/0005-invite-multi-account.md) / [0006 可选公开注册](../decisions/0006-public-registration.md)（均 Accepted，0005 部分被 0006 取代）；Build vs Reuse 边界：[reuse-policy.md](reuse-policy.md)。
 - API 家族清单以生成的 OpenAPI schema 为准（`cd services/bff && uv run python scripts/export_openapi.py`，Web 侧 `pnpm api:check` 有 drift 门禁）。

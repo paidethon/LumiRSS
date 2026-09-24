@@ -1,9 +1,10 @@
 # 邀请成员（运营者指南）
 
-> 面向运营者（owner / admin）。LumiRSS 是**邀请制多账户**：没有公开注册，
-> 新成员只能经运营者发出的一次性限时邀请激活。每个账号拥有独立的订阅、
-> 阅读状态、资料库、AI 配置与 FreshRSS 绑定。管理界面入口：`/admin`
-> （仅 owner / admin 角色可见）；对应 API 前缀 `POST|GET /api/v1/admin/*`。
+> 面向运营者（owner / admin）。LumiRSS 默认**邀请制多账户**：新成员经
+> 运营者发出的一次性限时邀请激活；可选公开注册是实例级开关、默认关闭
+> （见 §6）。每个账号拥有独立的订阅、阅读状态、资料库、AI 配置与
+> FreshRSS 绑定。管理界面入口：`/admin`（仅 owner / admin 角色可见）；
+> 对应 API 前缀 `POST|GET /api/v1/admin/*`。
 
 ## 1. 发出邀请 {#invite}
 
@@ -58,6 +59,21 @@ scripts/freshrss_pool.sh 3 http://freshrss admin http://127.0.0.1:8000
 3. 把恢复链接交给该成员，他在 `/activate` 页面自设新密码。
 
 不存在邮件发送环节——不假装发信，链接由运营者亲手转交。
+
+## 6. 可选公开注册（默认关闭） {#registration-policy}
+
+- **升级后默认关闭，需 admin 显式开启**：`GET/PUT
+  /api/v1/admin/registration-policy`（admin 会话）。开关存控制库
+  （`allow_public_registration`），不是 env；每次变更落审计（含改动前
+  后值与操作者）。
+- 开启后 `POST /api/v1/auth/register` 开放自助注册（路径限流 10 次/60 秒
+  并纳入 CSRF Origin 校验）；**角色恒为 member**，客户端不可指定；
+  FreshRSS 池原子分配，池空则诚实显示「待就绪」，之后补池即可（同 §3）。
+  当前 Web 界面尚未提供注册入口与策略开关，均经 API 操作。
+- 关闭时注册统一返回 403 `registration_disabled`，不泄露用户名是否存在。
+  是否在公网实例开启由运营者自行评估暴露面（限流与 CSRF 只是边界之一，
+  不是公共互联网加固保证）；见
+  [../decisions/0006-public-registration.md](../decisions/0006-public-registration.md)。
 
 ## 相关
 

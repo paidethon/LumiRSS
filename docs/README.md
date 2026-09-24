@@ -32,7 +32,7 @@ RSS 来源，项目自有的 FastAPI BFF 与 React Web / PWA 客户端。
 | 快速读懂项目（边界图 / 两条时序 / 追踪方法） | [explanation/project-map.md](explanation/project-map.md) |
 | 搞懂全局搜索原理 | [explanation/search.md](explanation/search.md) |
 | 复用 vs 自研边界 / 生成物规则 | [explanation/reuse-policy.md](explanation/reuse-policy.md) |
-| 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) · [0005](decisions/0005-invite-multi-account.md) |
+| 关键架构决定（ADR） | [0001](decisions/0001-freshrss-owns-rss-state.md) · [0002](decisions/0002-web-only-talks-to-bff.md) · [0003](decisions/0003-no-rss-shadow-database.md) · [0004](decisions/0004-phase2-data-ownership.md) · [0005](decisions/0005-invite-multi-account.md) · [0006](decisions/0006-public-registration.md) |
 | 改 UI / 视觉与交互 | [design/design-system.md](design/design-system.md)（背景：[design/README.md](design/README.md)） |
 | 产品范围与原则 | [product/PRD.md](product/PRD.md) |
 | 许可证 / 上游引用 | [LICENSE_AUDIT.md](upstream/LICENSE_AUDIT.md) · [UPSTREAMS.md](upstream/UPSTREAMS.md) |

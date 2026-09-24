@@ -56,6 +56,14 @@
   绑定按账号隔离）；FreshRSS 账号池预建与原子分配；数据层拆分为控制库
   + 每用户库（[ADR 0005](decisions/0005-invite-multi-account.md)）。
   运营者操作见 [how-to/invite-members.md](how-to/invite-members.md)。
+- **公开注册（默认关闭）已实现**：实例级开关
+  `allow_public_registration` 存控制库（迁移 0089），升级与全新安装
+  均保持关闭，由 admin 经注册策略 API 显式开启；注册只创建 member，
+  FreshRSS 池原子分配、空池诚实 pending，服务端强制、关闭时统一 403
+  不构成用户名 oracle（[ADR 0006](decisions/0006-public-registration.md)）。
+- **BFF 结构化访问日志已实现**：每请求一行 JSON（request_id/路由/
+  status/duration_ms/actor），`LUMIRSS_ACCESS_LOG=off` 可静默，绝记
+  query string / 请求体 / header。
 - **来源管理增强（N012/N013/N015）**：退订影响预览（只读聚合工作区
   引用/看板状态/RSS 书签/批注/投影未读/收件箱规则命中；DELETE 支持
   `keep_artifacts`：true 保留工件（冻结 ref 以 stale 卡片呈现）、false
@@ -64,14 +72,14 @@
   赢、localStorage 只作离线回退）；来源分时静音（每周循环窗口
   `mute_windows`，与 hiddenUntil/showFrom 同消费点——只影响通用时间线，
   抓取/搜索/阅读不受影响）。
-- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、公开注册 /
-  多租户形态、外部向量库服务（sqlite-vec 单文件已够）。
+- 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、多租户形态、
+  外部向量库服务（sqlite-vec 单文件已够）。
 
 ## Next（候选，立项由用户批准的 spec 决定）
 
-- BFF 结构化日志与关联 ID（发布时已知限制，operations/status 已含延迟
-  与错误分类）；
-- BFF 生产镜像依赖 pin；web（Caddy）服务 healthcheck（发布时已知限制）；
+- web（Caddy）服务 healthcheck（发布时已知限制；FreshRSS/RSSHub 的
+  compose healthcheck 与 BFF 生产镜像依赖 pin——uv.lock 冻结安装——
+  均已落地）；
 - Agent 消息 / RAG 状态端点补 `response_model`（OpenAPI 未收录，
   Web 侧暂以本地 interface 对照维护）；
 - 剪藏/快照阅读体验打磨；
@@ -80,7 +88,8 @@
 
 ## Explicitly deferred / rejected
 
-- 公开注册 / 多租户、公共互联网硬化（邀请制小规模多账户已实现；
+- 多租户形态、公共互联网硬化（邀请制小规模多账户与默认关闭的可选公开
+  注册已实现，见 [ADR 0006](decisions/0006-public-registration.md)；
   对公网开放前的加固仍不在范围内）；
 - PWA Push / 后台同步（app-shell 离线缓存已实现；其余明确延后）；
 - Folo 产品克隆、社区/社交、算法推荐、原生移动 App；
