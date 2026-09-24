@@ -242,6 +242,8 @@ export interface AppSettings {
   readerCodeFontSize: ReaderCodeFontSize
   /** F073：代码块行号（设备本；管线按行包 span + CSS counter）。 */
   readerCodeLineNumbers: boolean
+  /** F063：连续阅读护眼提醒间隔（分钟；0 = 关；设备本计时，不上传）。 */
+  readerBreakReminderMinutes: number
   /** 阅读样式 P1（0010a F7） */
   readerPresetId: string // 'default' 或用户预设 id
   readerPresets: ReaderPreset[] // 用户派生预设（内置不存）
@@ -369,6 +371,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   // R5 批2：代码块排版（设备本；默认与既有观感一致：中档字号、无行号）
   readerCodeFontSize: 'm',
   readerCodeLineNumbers: false,
+  // R5 批3：连续阅读护眼提醒（设备本；默认 45 分钟，0 = 关）
+  readerBreakReminderMinutes: 45,
   // N052/N053：阅读模式与点按翻页区（设备本地交互偏好）
   readerReadingMode: 'scroll',
   readerTapZoneAxis: 'horizontal',
@@ -425,6 +429,8 @@ const READER_IMAGE_MAX_WIDTHS: readonly ReaderImageMaxWidth[] = ['100%', '75%', 
 const READER_CAPTION_MODES: readonly ReaderCaptionMode[] = ['show', 'hidden', 'hover']
 // R5 批2：代码块排版枚举（设备本）
 const READER_CODE_FONT_SIZES: readonly ReaderCodeFontSize[] = ['s', 'm', 'l']
+/** F063：护眼提醒间隔档位（0 = 关；设备本计时用）。 */
+const READER_BREAK_REMINDER_MINUTES: readonly number[] = [0, 20, 30, 45, 60, 90]
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -648,6 +654,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
       source.readerCodeLineNumbers,
       DEFAULT_APP_SETTINGS.readerCodeLineNumbers,
     ),
+    // F063：间隔档位外的值回退默认（45 分钟）
+    readerBreakReminderMinutes: ((): number => {
+      const raw = source.readerBreakReminderMinutes
+      return typeof raw === 'number' &&
+        READER_BREAK_REMINDER_MINUTES.includes(raw)
+        ? raw
+        : DEFAULT_APP_SETTINGS.readerBreakReminderMinutes
+    })(),
     readerPresetId:
       typeof source.readerPresetId === 'string' &&
       (source.readerPresetId === 'default' ||

@@ -1134,6 +1134,9 @@ export default function ReaderHeader({
   onAutoScrollToggle,
   focusMode,
   onFocusModeChange,
+  paraFocusMode,
+  onParaFocusModeChange,
+  sessionStartedAt,
 }: {
   detail: EntryDetail
   /** Gate：语言视图（由 Reader 持有；工具栏与内容区共享同一状态）。 */
@@ -1154,9 +1157,18 @@ export default function ReaderHeader({
   /** 专注阅读（Reader 会话级状态，透传给 Aa 面板）。 */
   focusMode?: boolean
   onFocusModeChange?: (value: boolean) => void
+  /** F062：逐段专注（Reader 会话级状态，透传给 Aa 面板）。 */
+  paraFocusMode?: boolean
+  onParaFocusModeChange?: (value: boolean) => void
+  /** F080：当前会话起始时间戳（本篇打开时刻；Aa 面板显示累计时长）。
+   * ReaderHeader 按 entryRef 重挂载（key），挂载时取值即打开时刻。 */
+  sessionStartedAt?: number
 }) {
   const mutation = useEntryStateMutation()
   const queryClient = useQueryClient()
+  // F080：会话起始（本篇打开时刻）——ReaderHeader 按 entryRef 重挂载
+  //（key），挂载时刻即打开时刻；prop 仅作测试/覆写入参。
+  const [sessionStart] = useState(() => sessionStartedAt ?? Date.now())
   // F20：读/未读切换的短时撤销（撤销前核对服务器状态，防跨设备覆盖）
   const pushUndo = useUndo((s) => s.push)
   const { isReadLater, toggleReadLater, pendingFor, errorFor } = useToggleReadLater()
@@ -1797,9 +1809,15 @@ export default function ReaderHeader({
         })}
 
         {/* 0012 Gate 7：Reader 内快速阅读样式面板（Aa）；与设置中心
-            同一 settings source，不遮挡正文关键操作。F15/F17/专注：
-            代码换行 / 按屏翻页 / 专注阅读开关挂同一面板。 */}
-        <ReaderAaPanel focusMode={focusMode} onFocusModeChange={onFocusModeChange} />
+            同一 settings source，不遮挡正文关键操作。F15/F17/专注/F062/
+            F080：代码换行 / 阅读模式 / 专注 / 逐段专注与会话时长挂同一面板。 */}
+        <ReaderAaPanel
+          focusMode={focusMode}
+          onFocusModeChange={onFocusModeChange}
+          paraFocusMode={paraFocusMode}
+          onParaFocusModeChange={onParaFocusModeChange}
+          sessionStartedAt={sessionStart}
+        />
 
         {/* F19 朗读错误（两断点共用：移动端入口在菜单里，错误仍在
             工具栏行内诚实透出） */}

@@ -79,6 +79,7 @@ import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
   ChineseTypographySettings,
   CodeHighlightSettings,
+  ReadingRhythmSettings,
   ReaderThemePackSettings,
 } from './reader/ReaderDeepControls'
 // 0017：连续排版 Slider + 恢复默认（设置 → 阅读）
@@ -295,6 +296,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         // 0012 Gate 8：代码高亮（Shiki lazy）
         { type: 'custom', node: <CodeHighlightSettings /> },
         { type: 'title', value: '阅读行为' },
+        // R5 批3：F063 连续阅读护眼提醒（设备本计时）
+        { type: 'custom', node: <ReadingRhythmSettings /> },
         {
           // P0-2（2026-09 移动端专项）：正文读到底自动已读
           type: 'toggle',

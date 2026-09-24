@@ -428,6 +428,20 @@ html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-focus='on'] .arti
   transition: none;
 }
 
+/* ---- F062：逐段专注模式（article[data-lumi-para-focus]） ----
+ * 用户步进指定的当前段全亮，其余块降透明；当前段标记由
+ * lib/reader-para-focus 管理（j/k/点击步进，Esc 退出）。 */
+.lumi-reader-article[data-lumi-para-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  opacity: 0.16;
+  transition: opacity var(--lumi-motion-slow, 200ms) var(--lumi-ease, ease);
+}
+.lumi-reader-article[data-lumi-para-focus='on'] .article-content [data-lumi-para-focus-active] {
+  opacity: 1;
+}
+html[data-motion-reduce='true'] .lumi-reader-article[data-lumi-para-focus='on'] .article-content :is(p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, table, figure) {
+  transition: none;
+}
+
 /* ---- P18 朗读段落跟踪（[data-speech-active]） ----
  * 当前朗读块左侧 accent 细条。inset box-shadow 贴在盒内：无布局位移；
  * 无动画/过渡——减少动效偏好（data-motion-reduce 与 prefers-reduced-

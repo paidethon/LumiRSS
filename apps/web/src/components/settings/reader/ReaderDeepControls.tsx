@@ -213,6 +213,47 @@ export function ChineseTypographySettings() {
   )
 }
 
+// ---- R5 批3：F063 连续阅读护眼提醒 ----
+
+export function ReadingRhythmSettings() {
+  const settings = useAppSettings((s) => s.settings)
+  const update = useAppSettings((s) => s.update)
+
+  return (
+    <div className="py-3">
+      <label className="text-sm font-medium leading-none text-[var(--lumi-text-primary)]">
+        阅读节奏
+      </label>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+        连续阅读达到设定时长后弹出非阻塞休息提示（仅本设备计时，不上传）。
+      </p>
+      <div className="mt-3 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">护眼提醒</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              连续阅读多久后提醒休息
+            </p>
+          </div>
+          <Select
+            aria-label="护眼提醒间隔"
+            value={String(settings.readerBreakReminderMinutes)}
+            onChange={(e) => update({ readerBreakReminderMinutes: Number(e.target.value) })}
+            options={[
+              { value: '0', label: '关闭' },
+              { value: '20', label: '20 分钟' },
+              { value: '30', label: '30 分钟' },
+              { value: '45', label: '45 分钟' },
+              { value: '60', label: '60 分钟' },
+              { value: '90', label: '90 分钟' },
+            ]}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---- Gate 8：代码高亮 ----
 
 export function CodeHighlightSettings() {

@@ -26,6 +26,14 @@ import {
   clearFocusActive,
 } from '../lib/reader-focus'
 import {
+  applyParaFocusIndex,
+  clearParaFocus,
+  getParaFocusBlocks,
+  moveParaFocusIndex,
+  paraFocusClickAllowed,
+  paraFocusKeyAllowed,
+} from '../lib/reader-para-focus'
+import {
   collectSpeechCollection,
   type SpeechCollection,
 } from '../lib/reader-speech'
@@ -66,6 +74,11 @@ const AnnotationsLayer = lazy(() =>
 const ReadingRuler = lazy(() =>
   import('./ReadingRuler').then((m) => ({ default: m.ReadingRuler })),
 )
+// Bundle guard：F063 护眼提醒非首读必需（默认 45 分钟才可能出现）——
+// lazy 分包，与行辅助线同一模式。
+const ReadingBreakReminder = lazy(() =>
+  import('./ReadingBreakReminder').then((m) => ({ default: m.ReadingBreakReminder })),
+)
 // Bundle guard：N052 分页阅读非首读默认路径（阅读模式默认滚动）——
 // 与行辅助线同一 lazy 分包模式。
 const ReaderPager = lazy(() =>
@@ -97,6 +110,25 @@ const ANCHOR_SELECTOR = [
   '.lumi-reader-article h5',
   '.lumi-reader-article h6',
 ].join(', ')
+
+/** F062：点击段聚焦的块选择器（与 PARA_FOCUS_BLOCK_SELECTOR 同族；
+ * closest 无法用 :is 以外的复合选择器数组，这里用显式列表）。 */
+const PARA_FOCUS_CLICK_SELECTOR = [
+  'p',
+  'li',
+  'pre',
+  'blockquote',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'table',
+  'figure',
+]
+  .map((tag) => `.article-content ${tag}`)
+  .join(', ')
 
 /** F18 自动滚屏速度标签（chip 展示）。 */
 const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
@@ -219,6 +251,8 @@ export default function Reader() {
   const selectedEntryRef = useReaderUi((s) => s.selectedEntryRef)
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const readerAutoMarkRead = useAppSettings((s) => s.settings.readerAutoMarkRead)
+  // F063：护眼提醒间隔（分钟；0 = 关）。
+  const breakReminderMinutes = useAppSettings((s) => s.settings.readerBreakReminderMinutes)
   // F11：进度条开关；F17：按屏翻页开关（均来自 settings store）。
   const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
@@ -353,6 +387,10 @@ const [findOpen, setFindOpen] = useState(false)
 const [focusMode, setFocusMode] = useState(false)
 const focusModeRef = useRef(focusMode)
 focusModeRef.current = focusMode
+// F062：逐段专注（会话级；j/k/点击步进当前段，Esc 退出；索引用 ref
+// 承载——键盘/点击处理器读最新值，不需要因步进而重绑监听）。
+const [paraFocusMode, setParaFocusMode] = useState(false)
+const paraFocusIndexRef = useRef(-1)
 // F18：自动滚屏状态 + 速度（速度经 ref 读，避免 rAF 循环重启闪烁）。
 const [autoScroll, setAutoScroll] = useState<AutoScrollState>('off')
 const [autoSpeed, setAutoSpeed] = useState<AutoScrollSpeed>('medium')
@@ -505,6 +543,75 @@ useEffect(() => {
     clearFocusActive(article)
   }
 }, [focusMode, detailEntryRef])
+
+// F062：逐段专注——激活时当前段步进（j/k/点击），其余段 CSS 降透明。
+// 键盘走 capture 相阶段 + stopImmediatePropagation：全局 j/k（下一篇/
+// 上一篇）挂在 window 冒泡相且不检查 defaultPrevented，必须在其之前
+// 截停（输入框/模态打开时不抢键，交还全局/浮层语义）。
+useEffect(() => {
+  if (!paraFocusMode) {
+    paraFocusIndexRef.current = -1
+    return
+  }
+  const container = scrollRef.current
+  const article = container?.querySelector('.lumi-reader-article')
+  if (!(container !== null && article instanceof HTMLElement)) {
+    setParaFocusMode(false)
+    return
+  }
+  article.setAttribute('data-lumi-para-focus', 'on')
+  const blocks = getParaFocusBlocks(article)
+  const applyAt = (index: number) => {
+    const clamped = Math.min(Math.max(index, 0), Math.max(0, blocks.length - 1))
+    paraFocusIndexRef.current = blocks.length > 0 ? clamped : -1
+    applyParaFocusIndex(blocks, paraFocusIndexRef.current)
+    const current = blocks[paraFocusIndexRef.current]
+    if (current !== undefined) {
+      current.scrollIntoView({
+        block: 'center',
+        behavior: document.documentElement.dataset.motionReduce === 'true' ? 'auto' : 'smooth',
+      })
+    }
+  }
+  // 首次激活：从第一个正文块开始（视口内初始无标记，定位到首段）
+  applyAt(0)
+
+  const onKey = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+    if (!paraFocusKeyAllowed(event.target)) return
+    if (event.key === 'j' || event.key === 'k') {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      applyAt(moveParaFocusIndex(blocks.length, paraFocusIndexRef.current, event.key === 'j' ? 1 : -1))
+    } else if (event.key === 'Escape') {
+      setParaFocusMode(false)
+    }
+  }
+  // capture 相（见上）：先于全局冒泡快捷键执行
+  window.addEventListener('keydown', onKey, true)
+
+  // 点击段即聚焦（事件不吞：批注/链接/按钮/选区让位，见
+  // paraFocusClickAllowed——批注点击共存的关键是不 stopPropagation）。
+  const onClick = (event: MouseEvent) => {
+    const target = event.target
+    if (!paraFocusClickAllowed(target)) return
+    if (!(target instanceof Element)) return
+    const block = target.closest<HTMLElement>(PARA_FOCUS_CLICK_SELECTOR)
+    if (block === null) return
+    const index = blocks.indexOf(block)
+    if (index < 0) return
+    paraFocusIndexRef.current = index
+    applyParaFocusIndex(blocks, index)
+  }
+  article.addEventListener('click', onClick)
+
+  return () => {
+    window.removeEventListener('keydown', onKey, true)
+    article.removeEventListener('click', onClick)
+    clearParaFocus(article)
+    paraFocusIndexRef.current = -1
+  }
+}, [paraFocusMode, detailEntryRef])
 
 // F17：按屏翻页（±clientHeight×0.9，平滑滚动；翻页产生的滚动事件不
 // 豁免——计入 finish-read 主动推进，这正是「翻页也是阅读」的语义）。
@@ -725,6 +832,8 @@ const handleScroll = useCallback(() => {
             }
             focusMode={focusMode}
             onFocusModeChange={setFocusMode}
+            paraFocusMode={paraFocusMode}
+            onParaFocusModeChange={setParaFocusMode}
           />
         </Suspense>
         {/* O127 内容优先重排：媒体附件（enclosure 属于内容）紧随标题，
@@ -827,6 +936,11 @@ const handleScroll = useCallback(() => {
         {/* R05：阅读行辅助线（默认关；正文右上角开关，pointer-events 不遮挡选择） */}
         <Suspense fallback={null}>
           <ReadingRuler containerRef={articleScrollRef} />
+        </Suspense>
+        {/* F063：连续阅读护眼提醒（设备本计时；跨文章不重置——连续语义；
+            不带 key：随 Reader 常驻，随文章切换只换正文不计重置）。 */}
+        <Suspense fallback={null}>
+          <ReadingBreakReminder minutes={breakReminderMinutes} />
         </Suspense>
         {/* 0016：文章限定 AI 对话面板（桌面右侧 / 移动全屏）——条件挂载：
             open-prop 门控的 lazy 仍会首帧拉 chunk；对话框类按 bundle

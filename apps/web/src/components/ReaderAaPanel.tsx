@@ -11,9 +11,10 @@
  *   且禁止改 store）；N052：阅读模式（滚动/分页，设备本地键）；
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
-import { Suspense, useState, type Ref } from 'react'
+import { Suspense, useEffect, useState, type Ref } from 'react'
 import { ALargeSmall, X } from 'lucide-react'
 import { useAppSettings } from '../store/app-settings'
+import { formatSessionDuration } from '../lib/reader-tools'
 import {
   READER_NUMERIC_RANGES,
   type ReaderBackground,
@@ -85,10 +86,18 @@ function AaControls({
   onOpenSettings,
   focusMode,
   onFocusModeChange,
+  paraFocusMode,
+  onParaFocusModeChange,
+  sessionStartedAt,
 }: {
   onOpenSettings: () => void
   focusMode?: boolean
   onFocusModeChange?: (value: boolean) => void
+  /** F062：逐段专注（Reader 会话级；undefined = 不渲染该开关）。 */
+  paraFocusMode?: boolean
+  onParaFocusModeChange?: (value: boolean) => void
+  /** F080：会话起始时间戳（undefined = 不显示时长行）。 */
+  sessionStartedAt?: number
 }) {
   const settings = useAppSettings((s) => s.settings)
   const update = useAppSettings((s) => s.update)
@@ -310,6 +319,17 @@ function AaControls({
             onChange={onFocusModeChange}
           />
         )}
+        {/* F062：逐段专注（会话级开关；j/k 步进、点击段聚焦、Esc 退出） */}
+        {onParaFocusModeChange !== undefined && (
+          <SwitchRow
+            id="aa-para-focus-mode"
+            title="逐段专注（J/K 步进）"
+            checked={paraFocusMode ?? false}
+            onChange={onParaFocusModeChange}
+          />
+        )}
+        {/* F080：当前会话阅读时长（本次打开文章起累计；设备本计时） */}
+        {sessionStartedAt !== undefined && <SessionDurationRow startedAt={sessionStartedAt} />}
         <div className="flex min-h-11 items-center">
           <button
             type="button"
@@ -324,15 +344,45 @@ function AaControls({
   )
 }
 
+/** F080：会话时长行——每秒刷新的「本次阅读 mm:ss」（Aa 面板打开期间
+ * 才计时渲染；离开面板不累计丢失，起点 = 打开文章时刻）。 */
+function SessionDurationRow({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return (
+    <div className={ROW} data-lumi-session-duration="">
+      <span className="text-sm text-[var(--lumi-text-primary)]">本次阅读</span>
+      <output
+        aria-live="off"
+        className="text-sm tabular-nums text-[var(--lumi-text-secondary)]"
+      >
+        {formatSessionDuration(now - startedAt)}
+      </output>
+    </div>
+  )
+}
+
 /** 入口：桌面 Popover / 移动底部 Sheet。 */
 export default function ReaderAaPanel({
   focusMode,
   onFocusModeChange,
+  paraFocusMode,
+  onParaFocusModeChange,
+  sessionStartedAt,
 }: {
   /** 专注阅读当前值（Reader 持有；undefined = 不渲染该开关）。 */
   focusMode?: boolean
   /** 专注阅读切换（由 Reader 提供；undefined = 不渲染该开关）。 */
   onFocusModeChange?: (value: boolean) => void
+  /** F062：逐段专注当前值（Reader 持有；undefined = 不渲染该开关）。 */
+  paraFocusMode?: boolean
+  /** F062：逐段专注切换（由 Reader 提供；undefined = 不渲染该开关）。 */
+  onParaFocusModeChange?: (value: boolean) => void
+  /** F080：会话起始时间戳（undefined = 不显示时长行）。 */
+  sessionStartedAt?: number
 } = {}) {
   const isMobile = useIsMobile()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -387,6 +437,9 @@ export default function ReaderAaPanel({
               onOpenSettings={openSettings}
               focusMode={focusMode}
               onFocusModeChange={onFocusModeChange}
+              paraFocusMode={paraFocusMode}
+              onParaFocusModeChange={onParaFocusModeChange}
+              sessionStartedAt={sessionStartedAt}
             />
           </AaSheet>
           </Suspense>
@@ -408,6 +461,9 @@ export default function ReaderAaPanel({
               onOpenSettings={openSettings}
               focusMode={focusMode}
               onFocusModeChange={onFocusModeChange}
+              paraFocusMode={paraFocusMode}
+              onParaFocusModeChange={onParaFocusModeChange}
+              sessionStartedAt={sessionStartedAt}
             />
           )}
         </Popover>
