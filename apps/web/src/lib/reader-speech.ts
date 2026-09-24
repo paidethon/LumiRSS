@@ -29,6 +29,81 @@ export const SPEECH_BLOCK_SELECTOR = [
  * 按块累计截断，末块截到近似长度——诚实标注为近似值）。 */
 export const SPEECH_MAX_CHARS = 20_000
 
+// ---- NF1 N095：发音词典（设备本地；只作用于出声文本，展示不动） ----
+
+export interface SpeechLexiconEntry {
+  /** 匹配串：普通子串，大小写不敏感。 */
+  match: string
+  /** 替换为（可为空串 = 静音删词）。 */
+  replace: string
+}
+
+/** 词典容量上限（超出拒绝新增——设置面板给出诚实提示）。 */
+export const SPEECH_LEXICON_CAP = 50
+
+/** 词典归一化：逐条校验（match 非空 trim、replace 为字符串）、按 match
+ * 去重（大小写不敏感）、截断到容量上限。非法条目丢弃而非崩掉设置。 */
+export function normalizeSpeechLexicon(raw: unknown): SpeechLexiconEntry[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: SpeechLexiconEntry[] = []
+  for (const item of raw.slice(0, SPEECH_LEXICON_CAP)) {
+    if (typeof item !== 'object' || item === null) continue
+    const e = item as Record<string, unknown>
+    const match = typeof e.match === 'string' ? e.match.trim() : ''
+    if (match === '') continue
+    const key = match.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      match,
+      replace: typeof e.replace === 'string' ? e.replace : '',
+    })
+  }
+  return out
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 把词典应用到一段出声文本（顺序应用；子串、大小写不敏感）。
+ * 只在朗读/试听路径调用——文章展示 DOM 永不经过这里。 */
+export function applySpeechLexicon(
+  text: string,
+  lexicon: readonly SpeechLexiconEntry[],
+): string {
+  let out = text
+  for (const entry of lexicon) {
+    if (entry.match === '') continue
+    out = out.replace(new RegExp(escapeRegExp(entry.match), 'gi'), entry.replace)
+  }
+  return out
+}
+
+// ---- NF1 N097：原文译文交替听读（原文 → 译文 → 下一块原文…） ----
+
+/** 交替听读的原文/译文间隔档位（无/短/长 → 0/500/1200ms；定时器实现，
+ * 不占 utterance）。 */
+export const SPEECH_BILINGUAL_GAPS = [
+  { key: 'none', ms: 0, label: '无' },
+  { key: 'short', ms: 500, label: '短' },
+  { key: 'long', ms: 1200, label: '长' },
+] as const
+
+export type SpeechBilingualGap = (typeof SPEECH_BILINGUAL_GAPS)[number]['key']
+
+export function bilingualGapMs(key: SpeechBilingualGap): number {
+  return SPEECH_BILINGUAL_GAPS.find((g) => g.key === key)?.ms ?? 0
+}
+
+/** 间隔档位归一化：非法值回退 'none'。 */
+export function normalizeSpeechBilingualGap(value: unknown): SpeechBilingualGap {
+  return SPEECH_BILINGUAL_GAPS.some((g) => g.key === value)
+    ? (value as SpeechBilingualGap)
+    : 'none'
+}
+
 /** 语速档位（segmented 可选值）。 */
 export const SPEECH_RATES = [0.75, 1, 1.25, 1.5] as const
 export type SpeechRate = (typeof SPEECH_RATES)[number]
@@ -150,20 +225,204 @@ export function joinBlockTexts(texts: string[]): string {
     .join('\n\n')
 }
 
+// ---- NF1 N094：听读内容排除（设备本地开关；展示不动，只影响收集） ----
+
+export interface SpeechExclusions {
+  skipCode: boolean
+  skipTables: boolean
+  skipFootnotes: boolean
+  skipCaptions: boolean
+  /** 纯链接段落：可见文本全部来自 <a>（至少含一个链接）——通常是
+   * 「阅读原文」式导航噪声。 */
+  skipLinkOnly: boolean
+}
+
+export const DEFAULT_SPEECH_EXCLUSIONS: SpeechExclusions = {
+  skipCode: false,
+  skipTables: false,
+  skipFootnotes: false,
+  skipCaptions: false,
+  skipLinkOnly: false,
+}
+
+/** 纯链接判定：克隆后移除全部 <a>，剩余可见文本为空且原块至少含一个
+ * 链接。 */
+function isLinkOnlyBlock(el: Element): boolean {
+  if (el.querySelector('a') === null) return false
+  const clone = el.cloneNode(true) as Element
+  clone.querySelectorAll('a').forEach((a) => a.remove())
+  return (clone.textContent ?? '').trim() === ''
+}
+
+/** 单块排除判定（纯函数；closest 启发式与 sanitize 产物解耦）。 */
+export function isExcludedSpeechBlock(
+  el: Element,
+  exclusions: SpeechExclusions,
+): boolean {
+  if (exclusions.skipCode && el.closest('pre, code') !== null) return true
+  if (exclusions.skipTables && el.closest('table') !== null) return true
+  if (
+    exclusions.skipFootnotes &&
+    el.closest(
+      '[role="doc-footnote"], [data-footnote], [class*="footnote" i], [id*="footnote" i]',
+    ) !== null
+  ) {
+    return true
+  }
+  if (
+    exclusions.skipCaptions &&
+    (el.closest('figcaption') !== null ||
+      el.closest('[class*="caption" i]') !== null)
+  ) {
+    return true
+  }
+  if (exclusions.skipLinkOnly && isLinkOnlyBlock(el)) return true
+  return false
+}
+
+/** 收集参与朗读的块元素：SPEECH_BLOCK_SELECTOR 文档序，过滤排除开关
+ * 命中的块。被排除内容在文章里原样保留（只影响朗读范围）。 */
+export function collectSpeechBlockElements(
+  article: Element,
+  exclusions: SpeechExclusions,
+): Element[] {
+  return Array.from(article.querySelectorAll(SPEECH_BLOCK_SELECTOR)).filter(
+    (el) => !isExcludedSpeechBlock(el, exclusions),
+  )
+}
+
+/** 读一个原文块挂着的译文（translation-blocks overlay：译文节点带
+ * data-lb-t="1"，bilingual 配对与 translated/嵌套插入都紧邻原文块的
+ * nextElementSibling）。无 overlay / 译文为空 → null（诚实：不做任何
+ * 翻译调用）。 */
+export function blockTranslationText(el: Element): string | null {
+  const sib = el.nextElementSibling
+  if (sib === null || !sib.matches('[data-lb-t="1"]')) return null
+  const text = (sib.textContent ?? '').trim()
+  return text === '' ? null : text
+}
+
 /** Reader 侧收集结果：全部块文本（DOM 序，数组下标即块索引）+ 起点
  * 块索引。总量上限由引擎在入队时施加（cap 逻辑单点在 speakFrom）。 */
 export interface SpeechCollection {
   texts: string[]
   startIndex: number
+  /** NF1：与 texts 平行的块定位——元素 + 其在 SPEECH_BLOCK_SELECTOR
+   * 文档序中的下标（= 高亮/书签/选区共享的块 id）。启用排除后 texts
+   * 下标与 selectorIndex 不再相同，UI 一律以 selectorIndex 为准；
+   * 缺省（旧调用方）时块 id = texts 下标。 */
+  blocks?: { element: Element; selectorIndex: number }[]
+  /** NF1：与 texts 平行的译文文本（无 overlay / 该块无译文 → null；
+   * 交替听读开启时才会被消费）。 */
+  translations?: (string | null)[]
+}
+
+/** 完整收集（Reader 接线 + 测试共用的单一实现）：容器注入几何，设置
+ * 快照注入排除/词典。返回的 startIndex 已是 selectorIndex 语义。 */
+export function collectSpeechCollection(
+  container: HTMLElement,
+  article: Element,
+  options: { exclusions: SpeechExclusions; lexicon: readonly SpeechLexiconEntry[] },
+): SpeechCollection | null {
+  const kept = collectSpeechBlockElements(article, options.exclusions)
+  if (kept.length === 0) return null
+  const containerTop = container.getBoundingClientRect().top
+  const tops = kept.map((block) => block.getBoundingClientRect().top)
+  const localStart = findStartBlockIndex(tops, containerTop)
+  const texts = kept.map((block) =>
+    applySpeechLexicon(block.textContent ?? '', options.lexicon),
+  )
+  if (texts.slice(localStart).every((text) => text.trim() === '')) return null
+  const positions = new Map<Element, number>()
+  Array.from(article.querySelectorAll(SPEECH_BLOCK_SELECTOR)).forEach(
+    (el, i) => {
+      positions.set(el, i)
+    },
+  )
+  const blocks = kept.map((element, i) => ({
+    element,
+    selectorIndex: positions.get(element) ?? i,
+  }))
+  const translations = kept.map((element) => blockTranslationText(element))
+  return {
+    texts,
+    startIndex: blocks[localStart]?.selectorIndex ?? 0,
+    blocks,
+    translations,
+  }
+}
+
+/** NF1：由收集结果构建引擎队列条目。bilingual 开启时每个有译文的块
+ * 产生 [原文, 译文] 相邻条目（同 blockIndex；缺译文诚实跳过——不补
+ * 空档、不发起任何翻译）。blockIndex 取 selectorIndex（无 blocks 时
+ * 回退 texts 下标——既有调用方语义不变）。 */
+export interface SpeechQueueItem {
+  text: string
+  /** 块 id（SPEECH_BLOCK_SELECTOR 文档序下标）：高亮/进度/书签共用。 */
+  blockIndex: number
+  /** true = 该条目是所在块的译文（原文 → 译文间隔由引擎按档位插入）。 */
+  isTranslation?: boolean
+}
+
+export function buildSpeechQueue(
+  collection: SpeechCollection,
+  options: { bilingual?: boolean } = {},
+): SpeechQueueItem[] {
+  const items: SpeechQueueItem[] = []
+  const translations = collection.translations
+  for (let i = 0; i < collection.texts.length; i += 1) {
+    const text = collection.texts[i] ?? ''
+    if (text.trim() === '') continue
+    const blockIndex = collection.blocks?.[i]?.selectorIndex ?? i
+    items.push({ text, blockIndex })
+    if (options.bilingual === true && translations !== undefined) {
+      const trans = translations[i]
+      if (typeof trans === 'string' && trans.trim() !== '') {
+        items.push({ text: trans, blockIndex, isTranslation: true })
+      }
+    }
+  }
+  return items
+}
+
+/** NF1 N091：把文档选区映射到朗读块 id（selectorIndex）。选区锚点必须
+ * 在容器内，且不在 pre/code/table 内——代码与表格从不作为「从此处朗读」
+ * 的起点（产品规则：代码读出来没有意义；表格本就不在
+ * SPEECH_BLOCK_SELECTOR 里）。命中收集结果里的块才返回；否则 null。 */
+export function speechBlockIndexForSelection(
+  selection: Selection,
+  container: Element,
+  blocks: readonly { element: Element; selectorIndex: number }[],
+): number | null {
+  if (
+    selection.rangeCount === 0 ||
+    selection.isCollapsed ||
+    typeof selection.getRangeAt !== 'function'
+  ) {
+    return null
+  }
+  const range = selection.getRangeAt(0)
+  const common = range.commonAncestorContainer
+  const el =
+    common.nodeType === Node.ELEMENT_NODE
+      ? (common as Element)
+      : common.parentElement
+  if (el === null || !container.contains(el)) return null
+  if (el.closest('pre, code, table') !== null) return null
+  let cur: Element | null = el
+  while (cur !== null && container.contains(cur)) {
+    const hit = blocks.find((b) => b.element === cur)
+    if (hit !== undefined) return hit.selectorIndex
+    cur = cur.parentElement
+  }
+  return null
 }
 
 // ---- 逐块朗读引擎 ----
 
-interface QueuedBlock {
-  /** 块在调用方 texts 数组中的原始下标（= DOM 块序，高亮用它）。 */
-  index: number
-  text: string
-}
+/** 队列条目（NF1：由 {index, text} 泛化为 SpeechQueueItem——blockIndex
+ * 是高亮/书签/选区共享的块 id，译文条目与原文条目共享同一 blockIndex）。 */
+type QueuedBlock = SpeechQueueItem
 
 /** 按总量上限截块：末块截断到剩余预算，其后整块丢弃。空块已在入队前
  * 过滤（调用方保证），此处只管预算。 */
@@ -176,7 +435,7 @@ function capQueue(blocks: QueuedBlock[], maxChars: number): QueuedBlock[] {
       out.push(block)
       budget -= block.text.length
     } else {
-      out.push({ index: block.index, text: block.text.slice(0, budget) })
+      out.push({ ...block, text: block.text.slice(0, budget) })
       budget = 0
     }
   }
@@ -189,7 +448,7 @@ export function capSpeechBlocks(
   maxChars: number = SPEECH_MAX_CHARS,
 ): string[] {
   const trimmed = texts
-    .map((text, index) => ({ index, text: text.trim() }))
+    .map((text, index) => ({ blockIndex: index, text: text.trim() }))
     .filter((block) => block.text !== '')
   return capQueue(trimmed, maxChars).map((block) => block.text)
 }
@@ -200,6 +459,8 @@ export interface SpeechEngineConfig {
   voiceURI: string | null
   /** 声音挑选的语言前缀（默认中文场景 'zh'）。 */
   langPrefix: string
+  /** NF1 N097：原文 → 译文间隔毫秒数（仅译文条目前插入；0 = 无间隔）。 */
+  interPairGapMs?: number
 }
 
 export interface SpeechBlockInfo {
@@ -233,6 +494,8 @@ export class ReaderSpeechEngine {
   private generation = 0
   private stopped = true
   private sleepDeadline: number | null = null
+  /** NF1 N097：原文 → 译文间隔定时器（stop/finish 清除；代次比对兜底）。 */
+  private gapTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     config: SpeechEngineConfig,
@@ -247,10 +510,10 @@ export class ReaderSpeechEngine {
     return !this.stopped
   }
 
-  /** 当前朗读块下标；无会话 → null。 */
+  /** 当前朗读块下标（块 id，见 SpeechQueueItem.blockIndex）；无会话 → null。 */
   get currentBlockIndex(): number | null {
     if (this.stopped) return null
-    return this.queue[this.queuePos]?.index ?? null
+    return this.queue[this.queuePos]?.blockIndex ?? null
   }
 
   /** 队列进度（1 起 position）；无会话 → null。 */
@@ -262,13 +525,24 @@ export class ReaderSpeechEngine {
   /** 从 startBlockIndex 块开始逐块朗读（空块跳过，原始下标保留给高亮；
    * 总量受 SPEECH_MAX_CHARS 截断）。先 cancel——单通道语义。 */
   speakFrom(texts: string[], startBlockIndex: number): void {
+    this.speakQueue(
+      texts.map((text, index) => ({ text, blockIndex: index })),
+      startBlockIndex,
+    )
+  }
+
+  /** NF1：显式队列条目版 speakFrom——交替听读（同块原文/译文相邻条目）、
+   * 排除/词典后的块 id 对齐都经这里入队。条目按 blockIndex ≥ start 过滤
+   * （与 speakFrom 的下标过滤同语义，只是块 id 与队列位置解耦）。 */
+  speakQueue(items: SpeechQueueItem[], startBlockIndex: number): void {
     this.generation += 1
+    this.clearGapTimer()
     const synthesis = window.speechSynthesis
     synthesis.cancel()
-    const start = Math.max(0, Math.min(startBlockIndex, texts.length))
-    const trimmed = texts
-      .map((text, index) => ({ index, text: text.trim() }))
-      .filter((block) => block.index >= start && block.text !== '')
+    const start = Math.max(0, startBlockIndex)
+    const trimmed = items
+      .map((item) => ({ ...item, text: item.text.trim() }))
+      .filter((item) => item.blockIndex >= start && item.text !== '')
     this.queue = capQueue(trimmed, SPEECH_MAX_CHARS)
     this.queuePos = 0
     this.stopped = this.queue.length === 0
@@ -302,11 +576,12 @@ export class ReaderSpeechEngine {
     this.queue = []
     this.queuePos = 0
     this.sleepDeadline = null
+    this.clearGapTimer()
     if (speechSynthesisAvailable()) window.speechSynthesis.cancel()
   }
 
-  /** 更新 rate / voice 配置；朗读中 → 取消当前块并按新配置重读当前块
-   * （P18：段落跟踪使重读停在当前段，不再整篇从头）。 */
+  /** 更新 rate / voice / 间隔配置；朗读中 → 取消当前块并按新配置重读
+   * 当前块（P18：段落跟踪使重读停在当前段，不再整篇从头）。 */
   setConfig(patch: Partial<SpeechEngineConfig>): void {
     this.config = { ...this.config, ...patch }
     if (!this.stopped) this.restartCurrentBlock()
@@ -314,8 +589,16 @@ export class ReaderSpeechEngine {
 
   private restartCurrentBlock(): void {
     this.generation += 1
+    this.clearGapTimer()
     window.speechSynthesis.cancel()
     this.speakNext()
+  }
+
+  private clearGapTimer(): void {
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer)
+      this.gapTimer = null
+    }
   }
 
   private speakNext(): void {
@@ -333,6 +616,25 @@ export class ReaderSpeechEngine {
       this.finish()
       return
     }
+    // NF1 N097：译文条目前按档位静默（定时器实现；代次比对使 stop/
+    // 重读/新会话作废在途定时——到点后不再出声）。
+    const gapMs =
+      entry.isTranslation === true
+        ? Math.max(0, this.config.interPairGapMs ?? 0)
+        : 0
+    if (gapMs > 0) {
+      const gen = this.generation
+      this.gapTimer = setTimeout(() => {
+        if (gen !== this.generation) return
+        this.gapTimer = null
+        this.speakEntry(entry)
+      }, gapMs)
+      return
+    }
+    this.speakEntry(entry)
+  }
+
+  private speakEntry(entry: QueuedBlock): void {
     const gen = this.generation
     const synthesis = window.speechSynthesis
     const utterance = new SpeechSynthesisUtterance(entry.text)
@@ -363,7 +665,7 @@ export class ReaderSpeechEngine {
     }
     synthesis.speak(utterance)
     this.callbacks.onBlockChange?.({
-      index: entry.index,
+      index: entry.blockIndex,
       position: this.queuePos + 1,
       total: this.queue.length,
     })
@@ -375,6 +677,7 @@ export class ReaderSpeechEngine {
     this.queue = []
     this.queuePos = 0
     this.sleepDeadline = null
+    this.clearGapTimer()
     this.callbacks.onEnd?.()
   }
 }

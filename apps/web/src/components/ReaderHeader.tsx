@@ -1,9 +1,9 @@
-import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
   Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
-  Search, Settings2, Share2, Square, Star, Volume2,
+  Search, Settings2, Share2, Square, Star, Volume2, X,
 } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
 import { useAiSettings, useCreateSnapshotMutation, useEntryStateMutation } from '../api/queries'
@@ -30,15 +30,28 @@ import {
 const ObsidianExportDialog = lazy(() => import('./ObsidianExportDialog'))
 import {
   ReaderSpeechEngine,
+  SPEECH_BILINGUAL_GAPS,
+  SPEECH_LEXICON_CAP,
   SPEECH_RATES,
   SPEECH_SLEEP_TIMER_MINUTES,
+  bilingualGapMs,
+  buildSpeechQueue,
   listVoices,
   markSpeechBlockElement,
   speechSynthesisAvailable,
   type SpeechBlockInfo,
+  type SpeechBilingualGap,
   type SpeechCollection,
   type SpeechRate,
 } from '../lib/reader-speech'
+import {
+  getSpeechBookmark,
+  saveSpeechBookmark,
+  type SpeechBookmark,
+} from '../lib/speech-bookmarks'
+import SpeechSelectionLayer from './SpeechSelectionLayer'
+import { Switch } from './ui/Switch'
+import type { AppSettings } from '../store/app-settings'
 import {
   exportEntryAsHtml,
   exportEntryAsMarkdown,
@@ -138,7 +151,14 @@ function SaveSnapshotButton({
  * 进度；睡眠定时在块边界检查。点击循环 空闲→朗读→暂停→继续；「停止
  * 朗读」cancel 并复位。collectBlocks 由 Reader 提供（取视口顶部最近段
  * 落往后的全部块文本 + 起点索引）；hook 在 ReaderHeader（key=entryRef）
- * 内 —— 卸载即 stop，切文章自动停止朗读。 */
+ * 内 —— 卸载即 stop，切文章自动停止朗读。
+ *
+ * NF1：启动路径统一为 startSpeaking（收集 → 配置 → buildSpeechQueue →
+ * 引擎 speakQueue）——交替听读（N097）、排除/词典后的块 id 对齐
+ * （N094/N095）都经此单点；speakFromBlock（N091 选区起点 / N092 书签
+ * 续听）复用同一路径，引擎 cancel-first，既有播放自动停止。块 id
+ * （selectorIndex）与队列位置解耦：预览表按块 id 取原文文本，与高亮
+ * 一致。 */
 function useSpeechControl(
   collectBlocks: (() => SpeechCollection | null) | undefined,
 ) {
@@ -154,7 +174,9 @@ function useSpeechControl(
   const speechSleepMinutes = useAppSettings((s) => s.settings.speechSleepTimerMinutes)
   const updateSettings = useAppSettings((s) => s.update)
   const engineRef = useRef<ReaderSpeechEngine | null>(null)
-  const textsRef = useRef<string[]>([])
+  /** 当前会话的块 id → 出声文本（面板预览用；译文条目与原块共享 id，
+   * 预览显示块原文，与高亮一致）。 */
+  const blockTextsRef = useRef<Map<number, string>>(new Map())
   const stateRef = useRef(state)
   stateRef.current = state
   const available = speechSynthesisAvailable()
@@ -176,10 +198,19 @@ function useSpeechControl(
   const getEngine = () => {
     if (engineRef.current === null) {
       engineRef.current = new ReaderSpeechEngine(
-        { rate: speechRate, voiceURI: speechVoiceURI === '' ? null : speechVoiceURI, langPrefix: 'zh' },
+        {
+          rate: speechRate,
+          voiceURI: speechVoiceURI === '' ? null : speechVoiceURI,
+          langPrefix: 'zh',
+          interPairGapMs: bilingualGapMs(
+            useAppSettings.getState().settings.speechBilingualGap,
+          ),
+        },
         {
           onBlockChange: (info) => {
-            const preview = (textsRef.current[info.index] ?? '').trim().slice(0, 40)
+            const preview = (blockTextsRef.current.get(info.index) ?? '')
+              .trim()
+              .slice(0, 40)
             setBlock({ ...info, preview })
           },
           onEnd: () => {
@@ -202,36 +233,53 @@ function useSpeechControl(
     return engineRef.current
   }
 
+  /** 统一启动：收集 → 读设置快照 → 建队列 → 从起点块入队。overrideStart
+   * 为 null 时用收集结果的视口起点。 */
+  const startSpeaking = (overrideStart: number | null) => {
+    if (collectBlocks === undefined) return
+    setError(null)
+    setSleepStopped(false)
+    const collection = collectBlocks()
+    if (collection === null) {
+      setError('没有可朗读的正文。')
+      return
+    }
+    const s = useAppSettings.getState().settings
+    const engine = getEngine()
+    // cancel-first：若已有会话，先整体停机（cancel + 作废在途回调）——
+    // 随后的 setConfig 只落配置，不再触发「重读旧队列当前段」的语义。
+    if (engine.speaking) engine.stop()
+    // 配置/定时以 settings store 当前值为准（不依赖渲染闭包）。
+    engine.setConfig({
+      rate: s.speechRate,
+      voiceURI: s.speechVoiceURI === '' ? null : s.speechVoiceURI,
+      interPairGapMs: bilingualGapMs(s.speechBilingualGap),
+    })
+    engine.armSleepTimer(s.speechSleepTimerMinutes > 0 ? s.speechSleepTimerMinutes : null)
+    const items = buildSpeechQueue(collection, {
+      bilingual: s.speechBilingualAlternate,
+    })
+    const blockTexts = new Map<number, string>()
+    for (const item of items) {
+      if (!blockTexts.has(item.blockIndex)) blockTexts.set(item.blockIndex, item.text)
+    }
+    blockTextsRef.current = blockTexts
+    engine.speakQueue(items, overrideStart ?? collection.startIndex)
+    if (!engine.speaking) {
+      // 收集结果全为空块 → 引擎未出声，诚实报错（不假装在读）。
+      setError('没有可朗读的正文。')
+      setBlock(null)
+      return
+    }
+    setState('speaking')
+  }
+
   const toggle = () => {
     if (collectBlocks === undefined) return
     setError(null)
     setSleepStopped(false)
     if (state === 'idle') {
-      const collection = collectBlocks()
-      if (collection === null) {
-        setError('没有可朗读的正文。')
-        return
-      }
-      textsRef.current = collection.texts
-      const engine = getEngine()
-      // 配置/定时以 settings store 当前值为准（不依赖渲染闭包）。
-      engine.setConfig({
-        rate: useAppSettings.getState().settings.speechRate,
-        voiceURI:
-          useAppSettings.getState().settings.speechVoiceURI === ''
-            ? null
-            : useAppSettings.getState().settings.speechVoiceURI,
-      })
-      const minutes = useAppSettings.getState().settings.speechSleepTimerMinutes
-      engine.armSleepTimer(minutes > 0 ? minutes : null)
-      engine.speakFrom(collection.texts, collection.startIndex)
-      if (!engine.speaking) {
-        // 收集结果全为空块 → 引擎未出声，诚实报错（不假装在读）。
-        setError('没有可朗读的正文。')
-        setBlock(null)
-        return
-      }
-      setState('speaking')
+      startSpeaking(null)
       return
     }
     if (state === 'speaking') {
@@ -241,6 +289,12 @@ function useSpeechControl(
     }
     engineRef.current?.resume()
     setState('speaking')
+  }
+
+  /** NF1 N091/N092：从指定块开始朗读（选区「从此处朗读」/ 书签续听）。
+   * 引擎 cancel-first——进行中的播放被替换为新会话。 */
+  const speakFromBlock = (startBlockIndex: number) => {
+    startSpeaking(startBlockIndex)
   }
 
   const stop = () => {
@@ -289,6 +343,7 @@ function useSpeechControl(
     changeRate,
     changeVoice,
     changeSleepMinutes,
+    speakFromBlock,
   }
 }
 
@@ -296,13 +351,59 @@ function useSpeechControl(
  * 睡眠定时。偏好全部落 settings store（设备本地）。声音清单来自
  * listVoices()（zh 组排最前——默认朗读语言；文章级语言元数据暂不可得，
  * 这是诚实的近似：全量声音仍可选）。系统声音清单为空（尚未加载/无
- * 声音）时只剩「自动」，不假装有候选项。 */
+ * 声音）时只剩「自动」，不假装有候选项。
+ *
+ * NF1 扩展（均设备本地，段落级语义诚实标注）：
+ * - N092 听读书签：保存当前朗读段；恢复走正文里的续听 chip（浏览器
+ *   语音无法在句中定位，恢复按段开头，不做假装精确的进度）；
+ * - N094 听读内容排除：五类块开关，只影响朗读收集（文章展示不动）；
+ * - N095 发音词典：子串替换（大小写不敏感），只作用于出声/试听文本；
+ * - N097 交替听读：原文 → 译文逐段交替（译文来自已有 overlay，缺译文
+ *   只读原文，绝不发起翻译）+ 原文/译文间隔档位；
+ * - 试听文本：按当前收集 + 交替设置给出真实将读内容的预览（首 300 字）。 */
 const PANEL_ROW = 'flex min-h-9 items-center justify-between gap-3'
+
+/** 面板分组（分隔线 + 弱化小标题 + 可选诚实说明）。 */
+function PanelSection({
+  title,
+  note,
+  children,
+}: {
+  title: string
+  note?: string
+  children: ReactNode
+}) {
+  return (
+    <section className="flex flex-col gap-1.5 border-t border-[var(--lumi-separator)] pt-2.5">
+      <h4 className="text-xs font-medium text-[var(--lumi-text-tertiary)]">{title}</h4>
+      {children}
+      {note !== undefined && (
+        <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">{note}</p>
+      )}
+    </section>
+  )
+}
+
+/** N094 排除开关行定义（键与 settings store 对应；值由面板订阅注入）。 */
+const SPEECH_EXCLUSION_ROWS = [
+  { key: 'speechSkipCode', label: '跳过代码块' },
+  { key: 'speechSkipTables', label: '跳过表格' },
+  { key: 'speechSkipFootnotes', label: '跳过脚注' },
+  { key: 'speechSkipCaptions', label: '跳过图片说明' },
+  { key: 'speechSkipLinkOnly', label: '跳过纯链接段落' },
+] as const
 
 function SpeechPanelControls({
   speech,
+  bookmark,
+  onSaveBookmark,
+  collectBlocks,
 }: {
   speech: ReturnType<typeof useSpeechControl>
+  bookmark: SpeechBookmark | null
+  onSaveBookmark: (blockIndex: number) => void
+  /** 试听文本与朗读同源的收集入口（排除/词典已在收集时生效）。 */
+  collectBlocks?: () => SpeechCollection | null
 }) {
   const voiceOptions = useMemo(() => {
     const groups = [...listVoices()].sort((a, b) => {
@@ -320,9 +421,78 @@ function SpeechPanelControls({
       ),
     ]
   }, [])
+  // 订阅听读偏好：试听文本随开关/词典/交替设置即时重算（收集回调在
+  // 调用时刻读 store 快照——这里订阅保证重渲染时机）。
+  const skipCode = useAppSettings((s) => s.settings.speechSkipCode)
+  const skipTables = useAppSettings((s) => s.settings.speechSkipTables)
+  const skipFootnotes = useAppSettings((s) => s.settings.speechSkipFootnotes)
+  const skipCaptions = useAppSettings((s) => s.settings.speechSkipCaptions)
+  const skipLinkOnly = useAppSettings((s) => s.settings.speechSkipLinkOnly)
+  const lexicon = useAppSettings((s) => s.settings.speechLexicon)
+  const bilingual = useAppSettings((s) => s.settings.speechBilingualAlternate)
+  const bilingualGap = useAppSettings((s) => s.settings.speechBilingualGap)
+  const updateSettings = useAppSettings((s) => s.update)
+  const exclusionValues: Record<(typeof SPEECH_EXCLUSION_ROWS)[number]['key'], boolean> = {
+    speechSkipCode: skipCode,
+    speechSkipTables: skipTables,
+    speechSkipFootnotes: skipFootnotes,
+    speechSkipCaptions: skipCaptions,
+    speechSkipLinkOnly: skipLinkOnly,
+  }
+
+  // ---- N095 发音词典（cap 50；空匹配拒绝） ----
+  const [matchInput, setMatchInput] = useState('')
+  const [replaceInput, setReplaceInput] = useState('')
+  const [lexiconError, setLexiconError] = useState<string | null>(null)
+  const addLexiconEntry = () => {
+    const match = matchInput.trim()
+    if (match === '') {
+      setLexiconError('匹配词不能为空。')
+      return
+    }
+    if (lexicon.length >= SPEECH_LEXICON_CAP) {
+      setLexiconError(`最多 ${SPEECH_LEXICON_CAP} 条，请先删除旧条目。`)
+      return
+    }
+    if (lexicon.some((e) => e.match.toLowerCase() === match.toLowerCase())) {
+      setLexiconError('该匹配词已存在。')
+      return
+    }
+    updateSettings({ speechLexicon: [...lexicon, { match, replace: replaceInput }] })
+    setMatchInput('')
+    setReplaceInput('')
+    setLexiconError(null)
+  }
+  const removeLexiconEntry = (index: number) => {
+    updateSettings({
+      speechLexicon: lexicon.filter((_, i) => i !== index),
+    })
+  }
+
+  // ---- N092 书签保存反馈 ----
+  const [bookmarkNote, setBookmarkNote] = useState<string | null>(null)
+
+  // ---- 试听文本（真实将读内容预览；交替听读含译文条目） ----
+  const preview = useMemo(() => {
+    if (collectBlocks === undefined) return null
+    const collection = collectBlocks()
+    if (collection === null) return null
+    const items = buildSpeechQueue(collection, { bilingual })
+    const joined = items
+      .map((item) => item.text.trim())
+      .filter((text) => text !== '')
+      .join('\n\n')
+    return { text: joined.slice(0, 300), truncated: joined.length > 300 }
+    // skip*/lexicon 参与 Reader 收集（调用时刻读取），一并作为重算信号。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectBlocks, bilingual, skipCode, skipTables, skipFootnotes, skipCaptions, skipLinkOnly, lexicon])
 
   return (
-    <div className="flex w-full flex-col gap-2" role="group" aria-label="朗读设置">
+    <div
+      className="flex max-h-[min(34rem,75vh)] w-full flex-col gap-2.5 overflow-y-auto"
+      role="group"
+      aria-label="朗读设置"
+    >
       {/* 状态行：当前段落进度 + 首行预览；睡眠定时停止 = 诚实提示 */}
       {speech.sleepStopped ? (
         <p aria-live="polite" className="text-sm text-[var(--lumi-text-secondary)]">
@@ -342,69 +512,245 @@ function SpeechPanelControls({
         <p className="text-sm text-[var(--lumi-text-secondary)]">未在朗读</p>
       )}
 
+      {/* N092 听读书签：保存当前朗读段（未朗读时诚实禁用） */}
       <div className={PANEL_ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">声音</span>
-        <Select
-          aria-label="朗读声音"
-          value={speech.voiceURI}
-          onChange={(e) => speech.changeVoice(e.target.value)}
-          options={voiceOptions}
-          className="max-w-[11.5rem]"
-        />
-      </div>
-
-      <div className={PANEL_ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">语速</span>
-        <div role="group" aria-label="朗读语速" className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5">
-          {SPEECH_RATES.map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={speech.rate === value}
-              onClick={() => speech.changeRate(value)}
-              className={cx(
-                'min-h-7 min-w-9 rounded-[var(--lumi-radius-sm)] px-1 text-xs tabular-nums transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-                speech.rate === value
-                  ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
-                  : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-              )}
-            >
-              {value}x
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={PANEL_ROW}>
-        <span className="text-sm text-[var(--lumi-text-primary)]">睡眠定时</span>
-        <div
-          role="group"
-          aria-label="朗读睡眠定时"
-          className="flex flex-wrap justify-end gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+        <span className="text-sm text-[var(--lumi-text-primary)]">听读书签</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="min-h-11"
+          disabled={speech.block === null}
+          title={
+            speech.block === null
+              ? '正在朗读时才可保存书签'
+              : '保存当前段；恢复时从该段开头朗读（浏览器语音无法在句中定位）'
+          }
+          onClick={() => {
+            const current = speech.block
+            if (current === null) return
+            onSaveBookmark(current.index)
+            setBookmarkNote(`已保存书签（第 ${current.index + 1} 段）`)
+            window.setTimeout(() => setBookmarkNote(null), 2000)
+          }}
         >
-          {SPEECH_SLEEP_TIMER_MINUTES.map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              aria-pressed={speech.sleepMinutes === minutes}
-              onClick={() => speech.changeSleepMinutes(minutes)}
-              className={cx(
-                'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
-                speech.sleepMinutes === minutes
-                  ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
-                  : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
-              )}
-            >
-              {minutes === 0 ? '关' : `${minutes} 分`}
-            </button>
-          ))}
-        </div>
+          书签
+        </Button>
       </div>
+      {bookmark !== null && (
+        <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
+          已存书签：第 {bookmark.blockIndex + 1} 段
+          {bookmarkNote !== null ? ` · ${bookmarkNote}` : ''}
+        </p>
+      )}
+      {bookmark === null && bookmarkNote !== null && (
+        <p aria-live="polite" className="text-xs text-[var(--lumi-accent-text)]">
+          {bookmarkNote}
+        </p>
+      )}
 
-      {/* 睡眠定时语义的诚实说明：块边界检查 + 暂停可能推迟实际停止 */}
-      <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
-        定时在段落边界检查；暂停期间不推进段落，实际停止可能晚于设定。
-      </p>
+      <PanelSection title="声音与节奏">
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">声音</span>
+          <Select
+            aria-label="朗读声音"
+            value={speech.voiceURI}
+            onChange={(e) => speech.changeVoice(e.target.value)}
+            options={voiceOptions}
+            className="max-w-[11.5rem]"
+          />
+        </div>
+
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">语速</span>
+          <div role="group" aria-label="朗读语速" className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5">
+            {SPEECH_RATES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={speech.rate === value}
+                onClick={() => speech.changeRate(value)}
+                className={cx(
+                  'min-h-7 min-w-9 rounded-[var(--lumi-radius-sm)] px-1 text-xs tabular-nums transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  speech.rate === value
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {value}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">睡眠定时</span>
+          <div
+            role="group"
+            aria-label="朗读睡眠定时"
+            className="flex flex-wrap justify-end gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+          >
+            {SPEECH_SLEEP_TIMER_MINUTES.map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                aria-pressed={speech.sleepMinutes === minutes}
+                onClick={() => speech.changeSleepMinutes(minutes)}
+                className={cx(
+                  'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  speech.sleepMinutes === minutes
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {minutes === 0 ? '关' : `${minutes} 分`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 睡眠定时语义的诚实说明：块边界检查 + 暂停可能推迟实际停止 */}
+        <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
+          定时在段落边界检查；暂停期间不推进段落，实际停止可能晚于设定。
+        </p>
+      </PanelSection>
+
+      {/* N094 听读内容排除：只影响朗读范围，文章内容原样保留 */}
+      <PanelSection title="听读内容排除" note="仅影响朗读范围；文章内容保持原样。">
+        {SPEECH_EXCLUSION_ROWS.map((row) => (
+          <div key={row.key} className={PANEL_ROW}>
+            <span className="text-sm text-[var(--lumi-text-primary)]">{row.label}</span>
+            <Switch
+              checked={exclusionValues[row.key]}
+              label={`朗读${row.label}`}
+              onCheckedChange={(checked) =>
+                updateSettings({ [row.key]: checked } as Partial<AppSettings>)
+              }
+            />
+          </div>
+        ))}
+      </PanelSection>
+
+      {/* N097 原文译文交替听读（需要已有译文；缺译文段诚实跳过） */}
+      <PanelSection
+        title="交替听读"
+        note="每段先读原文再读已有译文；缺译文的段只读原文。改动在下一次朗读生效。"
+      >
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">原文 → 译文交替</span>
+          <Switch
+            checked={bilingual}
+            label="原文译文交替听读"
+            onCheckedChange={(checked) => updateSettings({ speechBilingualAlternate: checked })}
+          />
+        </div>
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">原文译文间隔</span>
+          <div
+            role="group"
+            aria-label="原文译文间隔"
+            className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+          >
+            {SPEECH_BILINGUAL_GAPS.map((gap) => (
+              <button
+                key={gap.key}
+                type="button"
+                aria-pressed={bilingualGap === gap.key}
+                disabled={!bilingual}
+                onClick={() => updateSettings({ speechBilingualGap: gap.key as SpeechBilingualGap })}
+                className={cx(
+                  'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:opacity-50',
+                  bilingualGap === gap.key
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {gap.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </PanelSection>
+
+      {/* N095 发音词典：只作用于出声/试听文本（文章 DOM 永不改写） */}
+      <PanelSection
+        title="发音词典"
+        note={`朗读时按子串替换读音写法（大小写不敏感）；最多 ${SPEECH_LEXICON_CAP} 条，仅作用于朗读与试听。`}
+      >
+        {lexicon.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {lexicon.map((entry, index) => (
+              <li
+                key={`${entry.match}-${index}`}
+                className="flex min-h-9 items-center gap-1.5 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-primary)]">
+                  {entry.match}
+                </span>
+                <span aria-hidden className="shrink-0 text-[var(--lumi-text-tertiary)]">
+                  →
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-secondary)]">
+                  {entry.replace === '' ? '（静音删除）' : entry.replace}
+                </span>
+                <IconButton
+                  size="sm"
+                  icon={<X aria-hidden className="size-4" />}
+                  label={`删除词典条目 ${entry.match}`}
+                  touch
+                  onClick={() => removeLexiconEntry(index)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex items-center gap-1.5">
+          <input
+            aria-label="词典匹配词"
+            value={matchInput}
+            placeholder="匹配词"
+            onChange={(e) => {
+              setMatchInput(e.target.value)
+              setLexiconError(null)
+            }}
+            className="h-9 min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          />
+          <input
+            aria-label="替换为"
+            value={replaceInput}
+            placeholder="替换为"
+            onChange={(e) => setReplaceInput(e.target.value)}
+            className="h-9 min-w-0 flex-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+          />
+          <Button size="sm" variant="secondary" className="min-h-11" onClick={addLexiconEntry}>
+            添加
+          </Button>
+        </div>
+        {lexiconError !== null && (
+          <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+            {lexiconError}
+          </p>
+        )}
+      </PanelSection>
+
+      {/* 试听文本：当前设置下真实将读的内容（含排除/词典/交替），首 300 字 */}
+      <PanelSection
+        title="试听文本"
+        note="当前设置下将要朗读的内容预览（前 300 字）。"
+      >
+        {preview === null || preview.text === '' ? (
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">
+            没有可朗读的正文（或全部被排除）。
+          </p>
+        ) : (
+          <p
+            data-lumi-speech-preview=""
+            className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-2 text-xs leading-5 text-[var(--lumi-text-secondary)]"
+          >
+            {preview.text}
+            {preview.truncated ? '…' : ''}
+          </p>
+        )}
+      </PanelSection>
     </div>
   )
 }
@@ -415,8 +761,16 @@ function SpeechPanelControls({
  * 偏好天然满足）。 */
 function SpeechToolbarControls({
   speech,
+  bookmark,
+  onSaveBookmark,
+  collectBlocks,
 }: {
   speech: ReturnType<typeof useSpeechControl>
+  /** NF1 N092：听读书签（面板保存行 + 诚实反馈）。 */
+  bookmark: SpeechBookmark | null
+  onSaveBookmark: (blockIndex: number) => void
+  /** NF1：试听文本与朗读同源的收集入口。 */
+  collectBlocks?: () => SpeechCollection | null
 }) {
   if (!speech.available) {
     return (
@@ -517,7 +871,14 @@ function SpeechToolbarControls({
           </Tooltip>
         )}
       >
-        {() => <SpeechPanelControls speech={speech} />}
+        {() => (
+          <SpeechPanelControls
+            speech={speech}
+            bookmark={bookmark}
+            onSaveBookmark={onSaveBookmark}
+            collectBlocks={collectBlocks}
+          />
+        )}
       </Popover>
     </>
   )
@@ -859,6 +1220,22 @@ export default function ReaderHeader({
   const speech = useSpeechControl(collectSpeechBlocks)
   const share = useShareAction(detail.title, articleUrl)
   const quote = useQuoteCopyAction(detail.title, detail.feedTitle, articleUrl)
+
+  // NF1 N092：听读分段书签（设备本地 lumi-speech-bookmarks，LRU 20）。
+  // ReaderHeader 按 entryRef 重挂载——初始值即本篇书签；保存后同步刷新。
+  const [speechBookmark, setSpeechBookmark] = useState<SpeechBookmark | null>(() =>
+    getSpeechBookmark(detail.entryRef),
+  )
+  const [bookmarkChipDismissed, setBookmarkChipDismissed] = useState(false)
+  const saveSpeechBookmarkForEntry = useCallback(
+    (blockIndex: number) => {
+      saveSpeechBookmark(detail.entryRef, blockIndex)
+      setSpeechBookmark(getSpeechBookmark(detail.entryRef))
+      setBookmarkChipDismissed(false)
+    },
+    // setState 稳定；编译器 lint 要求显式列入依赖。
+    [detail.entryRef, setBookmarkChipDismissed],
+  )
 
   /** 「更多操作」菜单项：移动端把非 primary 的可见动作按移动端序并入
       本菜单（O127 语义不变；quote 展开为纯文本/Markdown 两个格式项，
@@ -1237,7 +1614,14 @@ export default function ReaderHeader({
         )
       case 'speech':
         if (collectSpeechBlocks === undefined) return null
-        return <SpeechToolbarControls speech={speech} />
+        return (
+          <SpeechToolbarControls
+            speech={speech}
+            bookmark={speechBookmark}
+            onSaveBookmark={saveSpeechBookmarkForEntry}
+            collectBlocks={collectSpeechBlocks}
+          />
+        )
       case 'share':
         return <ShareToolbarButton share={share} />
       case 'quote':
@@ -1481,6 +1865,49 @@ export default function ReaderHeader({
           />
         </Suspense>
       )}
+
+      {/* NF1 N091：「从此处朗读」选区浮动入口。speechSynthesis 可用且正文
+          收集可用才挂载；点击从选中所在块开始朗读（引擎 cancel-first，
+          既有播放自动停止）；代码/表格与被排除块内的选区不显示入口。 */}
+      {speech.available && collectSpeechBlocks !== undefined && (
+        <SpeechSelectionLayer
+          getBlocks={collectSpeechBlocks}
+          onSpeakFromBlock={speech.speakFromBlock}
+        />
+      )}
+
+      {/* NF1 N092：续听 chip——本篇有听读书签且未在朗读时出现。点击从
+          保存的段开头继续（浏览器语音无法句中定位——诚实按段续读，
+          title 有说明）。×只隐藏本会话提示，不清除书签。 */}
+      {speech.available &&
+        speechBookmark !== null &&
+        speech.state === 'idle' &&
+        !bookmarkChipDismissed && (
+          <div
+            data-lumi-speech-bookmark-chip=""
+            className="fixed bottom-6 left-4 z-10 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-full border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] py-1 pe-1.5 ps-3 shadow-[var(--lumi-shadow-popover)] print:hidden"
+          >
+            <span className="whitespace-nowrap text-xs text-[var(--lumi-text-secondary)]">
+              听读书签
+            </span>
+            <Button
+              size="sm"
+              variant="primary"
+              className="min-h-11 rounded-full"
+              title="按段续读：从该段开头朗读（浏览器语音无法在句中定位）"
+              onClick={() => speech.speakFromBlock(speechBookmark.blockIndex)}
+            >
+              从第 {speechBookmark.blockIndex + 1} 段继续朗读
+            </Button>
+            <IconButton
+              size="sm"
+              icon={<X aria-hidden className="size-4" />}
+              label="隐藏续读提示"
+              touch
+              onClick={() => setBookmarkChipDismissed(true)}
+            />
+          </div>
+        )}
     </>
   )
 }

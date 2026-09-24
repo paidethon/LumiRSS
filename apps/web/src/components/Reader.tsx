@@ -26,8 +26,7 @@ import {
   clearFocusActive,
 } from '../lib/reader-focus'
 import {
-  findStartBlockIndex,
-  SPEECH_BLOCK_SELECTOR,
+  collectSpeechCollection,
   type SpeechCollection,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
@@ -388,21 +387,28 @@ const getFindRoot = useCallback(
   [],
 )
 
-// P18 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序，
-// 下标即块索引——引擎入队时空块跳过但原始下标保留，高亮按块定位）。
-// 总量上限（20k）由引擎入队时单点施加。
+// P18/NF1 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序；
+// 块 id = SPEECH_BLOCK_SELECTOR 文档序下标，高亮/书签/选区共享——启用
+// 听读排除后 texts 下标与块 id 解耦，见 lib/reader-speech 的
+// collectSpeechCollection）。设备本地的排除开关/发音词典在调用时刻生效
+// （消费者订阅设置变化后重渲染并重新收集；本回调保持纯读取，不订阅
+// store）。交替听读所需的译文从 overlay DOM（data-lb-t 节点）诚实读取
+// ——没有译文就 null，绝不发起翻译。总量上限（20k）由引擎入队时单点施加。
 const collectSpeechBlocks = useCallback((): SpeechCollection | null => {
   const container = scrollRef.current
   const article = container?.querySelector('.lumi-reader-article')
   if (container === null || article === undefined || article === null) return null
-  const blocks = Array.from(article.querySelectorAll(SPEECH_BLOCK_SELECTOR))
-  if (blocks.length === 0) return null
-  const containerTop = container.getBoundingClientRect().top
-  const tops = blocks.map((block) => block.getBoundingClientRect().top)
-  const startIndex = findStartBlockIndex(tops, containerTop)
-  const texts = blocks.map((block) => block.textContent ?? '')
-  if (texts.slice(startIndex).every((text) => text.trim() === '')) return null
-  return { texts, startIndex }
+  const s = useAppSettings.getState().settings
+  return collectSpeechCollection(container, article, {
+    exclusions: {
+      skipCode: s.speechSkipCode,
+      skipTables: s.speechSkipTables,
+      skipFootnotes: s.speechSkipFootnotes,
+      skipCaptions: s.speechSkipCaptions,
+      skipLinkOnly: s.speechSkipLinkOnly,
+    },
+    lexicon: s.speechLexicon,
+  })
 }, [])
 
 // F18：切文章自动停止（自动滚屏/查找/回顶状态一并复位）。
