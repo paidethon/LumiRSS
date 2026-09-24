@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   deleteInviteScheme: vi.fn(),
   generateInvitesFromScheme: vi.fn(),
   getInviteFunnel: vi.fn(),
+  getRegistrationPolicy: vi.fn(),
+  updateRegistrationPolicy: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -71,6 +73,8 @@ vi.mock('../api/client', async (importOriginal) => {
     deleteInviteScheme: mocks.deleteInviteScheme,
     generateInvitesFromScheme: mocks.generateInvitesFromScheme,
     getInviteFunnel: mocks.getInviteFunnel,
+    getRegistrationPolicy: mocks.getRegistrationPolicy,
+    updateRegistrationPolicy: mocks.updateRegistrationPolicy,
   }
 })
 
@@ -221,6 +225,12 @@ beforeEach(() => {
   mocks.listAdminAudit.mockResolvedValue(AUDIT)
   mocks.listInviteSchemes.mockResolvedValue(SCHEMES)
   mocks.getInviteFunnel.mockResolvedValue(FUNNEL)
+  // P0-05：默认策略关闭（服务端默认 OFF 的同款形状）。
+  mocks.getRegistrationPolicy.mockResolvedValue({
+    allowPublicRegistration: false,
+    updatedAt: null,
+    updatedBy: null,
+  })
 })
 
 describe('权限门（后端 403 的前端转述）', () => {
@@ -628,5 +638,72 @@ describe('系统面板（P11）', () => {
       expect(mocks.getAdminSystem).toHaveBeenCalledTimes(2)
       expect(mocks.listAdminAudit).toHaveBeenCalledTimes(2)
     })
+  })
+})
+
+describe('账户与注册（P0-05 注册策略开关）', () => {
+  const POLICY_UPDATED = {
+    allowPublicRegistration: true,
+    updatedAt: ISO(-30_000),
+    updatedBy: 'u1',
+  }
+
+  it('关闭态渲染：开关 off + 描述文案 + 当前状态；无变更记录时不显示时间', async () => {
+    renderAdmin()
+    const section = await screen.findByTestId('registration-policy')
+    const switchControl = await within(section).findByRole('switch', { name: '公开注册' })
+    expect(switchControl).toHaveAttribute('aria-checked', 'false')
+    expect(section).toHaveTextContent('允许任何可以访问此 LumiRSS 实例的人创建普通成员账号')
+    expect(section).toHaveTextContent('邀请链接仍然可以使用')
+    expect(section).toHaveTextContent('当前状态：已关闭')
+    expect(section).not.toHaveTextContent('最近变更')
+  })
+
+  it('开启态渲染：开关 on（含 updatedAt/updatedBy 展示）', async () => {
+    mocks.getRegistrationPolicy.mockResolvedValue(POLICY_UPDATED)
+    renderAdmin()
+    const section = await screen.findByTestId('registration-policy')
+    const switchControl = await within(section).findByRole('switch', { name: '公开注册' })
+    expect(switchControl).toHaveAttribute('aria-checked', 'true')
+    expect(section).toHaveTextContent('当前状态：已开放')
+    expect(section).toHaveTextContent('最近变更')
+    expect(section).toHaveTextContent('由 u1')
+  })
+
+  it('切换开关 → PUT /admin/registration-policy 携带新值，成功后按服务端响应刷新', async () => {
+    mocks.updateRegistrationPolicy.mockResolvedValue(POLICY_UPDATED)
+    renderAdmin()
+    const section = await screen.findByTestId('registration-policy')
+    fireEvent.click(await within(section).findByRole('switch', { name: '公开注册' }))
+    await waitFor(() => {
+      expect(mocks.updateRegistrationPolicy).toHaveBeenCalledTimes(1)
+    })
+    expect(mocks.updateRegistrationPolicy).toHaveBeenCalledWith(true)
+    // 服务端权威响应回填：状态与开关翻到开启。
+    await waitFor(() => {
+      expect(section).toHaveTextContent('当前状态：已开放')
+    })
+    expect(within(section).getByRole('switch', { name: '公开注册' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
+  it('PUT 失败 → 开关回滚到服务端值并诚实提示', async () => {
+    mocks.updateRegistrationPolicy.mockRejectedValue(
+      new ApiError(403, 'forbidden', 'Administrator role required.'),
+    )
+    renderAdmin()
+    const section = await screen.findByTestId('registration-policy')
+    fireEvent.click(await within(section).findByRole('switch', { name: '公开注册' }))
+    // 乐观翻到 on 后失败 → 回滚 off + 错误文案。
+    await waitFor(() => {
+      expect(within(section).getByRole('alert')).toHaveTextContent('需要管理员权限')
+    })
+    expect(within(section).getByRole('switch', { name: '公开注册' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+    expect(section).toHaveTextContent('当前状态：已关闭')
   })
 })
