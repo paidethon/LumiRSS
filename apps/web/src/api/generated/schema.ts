@@ -4599,6 +4599,238 @@ export interface paths {
         patch: operations["update_qa_template_api_v1_qa_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/queue/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Queue Snapshots
+         * @description 快照列表（新→旧）。
+         */
+        get: operations["list_queue_snapshots_api_v1_queue_snapshots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Queue Snapshot
+         * @description 打开冻结视图：原始成员顺序原样返回（消失的 ref 由 Web 呈现
+         *     占位；服务端绝不复活）。
+         */
+        get: operations["get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Queue Snapshot
+         * @description 删除一个快照（housekeeping；快照本体在其生命周期内不可变）。
+         */
+        delete: operations["delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Queue
+         * @description 今日队列视图（pending + done；removed 行保留在库但不出库门）。
+         */
+        get: operations["get_today_queue_api_v1_queue_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Freeze Today Queue
+         * @description 把当前 pending 成员冻结为不可变快照（之后加入的项绝不进入）。
+         */
+        post: operations["freeze_today_queue_api_v1_queue_today_freeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Today Queue
+         * @description 生成（或幂等返回）今天的队列。
+         *
+         *     - 队列已存在且未 force → 200 + generated=false（**绝不重排**——
+         *       后台刷新不打扰已确认的队列）；
+         *     - force=1 → 重建：清掉 pending/removed 重新装填，done 状态保留；
+         *     - 新建 → 201 + generated=true。
+         */
+        post: operations["generate_today_queue_api_v1_queue_today_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Queue Item
+         * @description 手动加入（新 201；重复 pending 幂等 200；removed 复活 200；
+         *     今天已完成 → 409 queue_item_done）。
+         */
+        post: operations["add_queue_item_api_v1_queue_today_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Queue Item
+         * @description 移除（status=removed，行保留；再移除同一行 → 404）。
+         */
+        delete: operations["remove_queue_item_api_v1_queue_today_items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Queue Item Done
+         * @description 完成状态（set 语义：done=true/false，不是 toggle；完成按条目
+         *     身份记账，绝不隐式改写上游已读状态）。
+         */
+        post: operations["set_queue_item_done_api_v1_queue_today_items__item_id__done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}/segment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move Queue Item Segment
+         * @description 行菜单移动分段（segment=null = 移回未分组）。
+         */
+        patch: operations["move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch"];
+        trace?: never;
+    };
+    "/api/v1/queue/today/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Today Queue
+         * @description 持久化重排（跨设备可见；done 行位置同样可排）。
+         */
+        put: operations["reorder_today_queue_api_v1_queue_today_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Queue Segment Order
+         * @description 段顺序（呈现提示；服务端存储 → 跨设备一致）。
+         */
+        put: operations["set_queue_segment_order_api_v1_queue_today_segments_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quiz/{quiz_id}/grade": {
         parameters: {
             query?: never;
@@ -11865,6 +12097,204 @@ export interface components {
             name: string;
             /** Text */
             text?: string | null;
+        };
+        /**
+         * QueueAddRequest
+         * @description POST /api/v1/queue/today/items body。
+         */
+        QueueAddRequest: {
+            /** Itemref */
+            itemRef: string;
+            /** Segment */
+            segment?: string | null;
+        };
+        /**
+         * QueueFreezeRequest
+         * @description POST /api/v1/queue/today/freeze body。
+         */
+        QueueFreezeRequest: {
+            /** Label */
+            label: string;
+        };
+        /**
+         * QueueGenerateRequest
+         * @description POST /api/v1/queue/today/generate body。
+         */
+        QueueGenerateRequest: {
+            /** Levels */
+            levels?: string[];
+            /** Timebudgetminutes */
+            timeBudgetMinutes?: number | null;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
+         * QueueGenerateResponse
+         * @description generate 响应 = 今日视图 + 生成元数据（幂等/诚实标注）。
+         */
+        QueueGenerateResponse: {
+            /** Basis */
+            basis: string;
+            /** Budgetminutes */
+            budgetMinutes?: number | null;
+            /** Force */
+            force: boolean;
+            /** Generated */
+            generated: boolean;
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Notes */
+            notes?: string[];
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+            /** Segments */
+            segments: components["schemas"]["QueueSegmentView"][];
+            /** Totalestimateminutes */
+            totalEstimateMinutes: number;
+        };
+        /**
+         * QueueItemDoneRequest
+         * @description POST /api/v1/queue/today/items/{id}/done body（set 语义）。
+         */
+        QueueItemDoneRequest: {
+            /** Done */
+            done: boolean;
+        };
+        /**
+         * QueueItemView
+         * @description 队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。
+         */
+        QueueItemView: {
+            /** Addedat */
+            addedAt: string;
+            /** Estimateminutes */
+            estimateMinutes?: number | null;
+            /** Id */
+            id: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /** Queuedate */
+            queueDate: string;
+            /** Segment */
+            segment: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "budget" | "level";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "done" | "removed";
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * QueueReorderRequest
+         * @description PUT /api/v1/queue/today/order body：给定的 id 按序列排前，
+         *     未提及行保持相对顺序垫后（语义同工作区 reorder）。
+         */
+        QueueReorderRequest: {
+            /** Order */
+            order: string[];
+        };
+        /**
+         * QueueSegmentMoveRequest
+         * @description PATCH /api/v1/queue/today/items/{id}/segment body。
+         */
+        QueueSegmentMoveRequest: {
+            /** Segment */
+            segment?: string | null;
+        };
+        /**
+         * QueueSegmentOrderRequest
+         * @description PUT /api/v1/queue/today/segments body：段名有序数组（呈现提示）。
+         */
+        QueueSegmentOrderRequest: {
+            /** Order */
+            order?: string[];
+        };
+        /**
+         * QueueSegmentView
+         * @description 派生分段（name=null = 未分组，恒为隐式前置组）。
+         */
+        QueueSegmentView: {
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Name */
+            name: string | null;
+        };
+        /**
+         * QueueSnapshotDetail
+         * @description 打开冻结视图：原始成员顺序原样返回（不可变）。
+         */
+        QueueSnapshotDetail: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Items */
+            items: components["schemas"]["QueueSnapshotItem"][];
+            /** Label */
+            label: string;
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+        };
+        /**
+         * QueueSnapshotItem
+         * @description 冻结成员（ItemRef + 顺序元数据；内容解析在读取侧）。
+         */
+        QueueSnapshotItem: {
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /** Segment */
+            segment: string | null;
+        };
+        /** QueueSnapshotList */
+        QueueSnapshotList: {
+            /** Items */
+            items: components["schemas"]["QueueSnapshotView"][];
+        };
+        /**
+         * QueueSnapshotView
+         * @description 冻结快照元数据（payload 留在服务端）。
+         */
+        QueueSnapshotView: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Label */
+            label: string;
+            /** Queuedate */
+            queueDate: string;
+        };
+        /**
+         * QueueTodayResponse
+         * @description GET /api/v1/queue/today 与 generate/order/segments 的统一视图。
+         */
+        QueueTodayResponse: {
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+            /** Segments */
+            segments: components["schemas"]["QueueSegmentView"][];
+            /** Totalestimateminutes */
+            totalEstimateMinutes: number;
         };
         /**
          * QuizGenerateBody
@@ -22655,6 +23085,390 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QaTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_queue_snapshots_api_v1_queue_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotList"];
+                };
+            };
+        };
+    };
+    get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_queue_api_v1_queue_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
+                };
+            };
+        };
+    };
+    freeze_today_queue_api_v1_queue_today_freeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueFreezeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_today_queue_api_v1_queue_today_generate_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueGenerateResponse"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_queue_item_api_v1_queue_today_items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_queue_item_api_v1_queue_today_items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_queue_item_done_api_v1_queue_today_items__item_id__done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueItemDoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueSegmentMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_today_queue_api_v1_queue_today_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_queue_segment_order_api_v1_queue_today_segments_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueSegmentOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
                 };
             };
             /** @description Validation Error */

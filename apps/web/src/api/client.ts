@@ -73,6 +73,12 @@ import type {
   WorkspaceSnapshot,
   WorkspaceSnapshotList,
   WorkspaceSnapshotRestoreResult,
+  QueueGenerateResponse,
+  QueueItemView,
+  QueueSnapshotDetail,
+  QueueSnapshotList,
+  QueueSnapshotView,
+  QueueTodayResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -6225,4 +6231,134 @@ export async function rotateInboxSource(sourceUuid: string): Promise<InboxSource
     { method: 'POST' },
   )
   return (await response.json()) as InboxSourceCreated
+}
+
+// ---- N041/N042/N043/N044 今日必读队列（服务端持久化；跨设备一致） ----
+
+/** 今日队列视图（pending + done；removed 行不出库门）。 */
+export async function getTodayQueue(signal?: AbortSignal): Promise<QueueTodayResponse> {
+  return request<QueueTodayResponse>(`${API_BASE}/queue/today`, signal)
+}
+
+/** 生成（或幂等返回）今天的队列：已存在时返回 200 + generated=false
+ * （绝不重排已确认队列），?force=1 重建（done 保留）。 */
+export async function generateTodayQueue(input: {
+  timeBudgetMinutes?: number
+  levels?: string[]
+  workspaceId?: string
+  force?: boolean
+}): Promise<QueueGenerateResponse> {
+  const body = {
+    ...(input.timeBudgetMinutes !== undefined
+      ? { timeBudgetMinutes: input.timeBudgetMinutes }
+      : {}),
+    ...(input.levels !== undefined ? { levels: input.levels } : {}),
+    ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+  }
+  // force 走独立路径字面量（避免把查询串拼进路径模板）。
+  if (input.force === true) {
+    return postJson<QueueGenerateResponse>(`${API_BASE}/queue/today/generate?force=1`, body)
+  }
+  return postJson<QueueGenerateResponse>(`${API_BASE}/queue/today/generate`, body)
+}
+
+/** 手动加入（新 201 / 重复或复活 200 / 今天已完成 409 queue_item_done）。 */
+export async function addQueueItem(input: {
+  itemRef: string
+  segment?: string | null
+}): Promise<QueueItemView> {
+  return postJson<QueueItemView>(`${API_BASE}/queue/today/items`, {
+    itemRef: input.itemRef,
+    ...(input.segment !== undefined ? { segment: input.segment } : {}),
+  })
+}
+
+/** 移除（status=removed，行保留；再移除 → 404）。 */
+export async function removeQueueItem(itemId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 完成状态（set 语义，不是 toggle；绝不隐式改写上游已读）。 */
+export async function setQueueItemDone(itemId: string, done: boolean): Promise<QueueItemView> {
+  return postJson<QueueItemView>(
+    `${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}/done`,
+    { done },
+  )
+}
+
+/** 持久化重排（给定的 id 按序列排前；未提及行垫后）。 */
+export async function reorderTodayQueue(order: string[]): Promise<QueueTodayResponse> {
+  return putJson<QueueTodayResponse>(`${API_BASE}/queue/today/order`, { order })
+}
+
+/** 行菜单移动分段（segment=null = 移回未分组）。 */
+export async function moveQueueItemSegment(
+  itemId: string,
+  segment: string | null,
+): Promise<QueueItemView> {
+  return rawRequestJson<QueueItemView>(
+    `${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}/segment`,
+    { method: 'PATCH', body: JSON.stringify({ segment }), contentType: 'application/json' },
+  )
+}
+
+/** 段顺序（呈现提示；服务端存储 → 跨设备一致）。 */
+export async function setQueueSegmentOrder(order: string[]): Promise<QueueTodayResponse> {
+  return putJson<QueueTodayResponse>(`${API_BASE}/queue/today/segments`, { order })
+}
+
+/** 冻结当前 pending 成员为不可变快照。 */
+export async function freezeTodayQueue(label: string): Promise<QueueSnapshotView> {
+  return postJson<QueueSnapshotView>(`${API_BASE}/queue/today/freeze`, { label })
+}
+
+/** 快照列表（新→旧）。 */
+export async function getQueueSnapshots(signal?: AbortSignal): Promise<QueueSnapshotList> {
+  return request<QueueSnapshotList>(`${API_BASE}/queue/snapshots`, signal)
+}
+
+/** 打开冻结视图（原始成员顺序；消失 ref 由调用方呈现占位）。 */
+export async function getQueueSnapshot(
+  snapshotId: string,
+  signal?: AbortSignal,
+): Promise<QueueSnapshotDetail> {
+  return request<QueueSnapshotDetail>(
+    `${API_BASE}/queue/snapshots/${encodeURIComponent(snapshotId)}`,
+    signal,
+  )
+}
+
+/** 删除一个快照（housekeeping）。 */
+export async function deleteQueueSnapshot(snapshotId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/queue/snapshots/${encodeURIComponent(snapshotId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** POST JSON → 解析响应体的小工具（错误处理沿用 rawRequest 信封）。 */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  return rawRequestJson<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+}
+
+/** PUT JSON → 解析响应体。 */
+async function putJson<T>(path: string, body: unknown): Promise<T> {
+  return rawRequestJson<T>(path, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+}
+
+async function rawRequestJson<T>(
+  path: string,
+  init: { method: string; body: string; contentType: string },
+): Promise<T> {
+  const response = await rawRequest(path, init)
+  return (await response.json()) as T
 }

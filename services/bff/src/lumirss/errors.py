@@ -159,6 +159,13 @@ from lumirss.opml import (
 )
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
 from lumirss.rag import RagModelUnavailable, RagRebuildBusy
+from lumirss.reading_queue import (
+    QueueInvalid,
+    QueueItemDone,
+    QueueItemNotFound,
+    QueueSnapshotLimit,
+    QueueSnapshotNotFound,
+)
 from lumirss.research_pack_zip import ZipInvalid, ZipTooLarge
 from lumirss.restore import (
     RestoreConfirmationRequired,
@@ -319,6 +326,12 @@ _ERROR_RESPONSES = {
     WorkspaceItemPinned: (409, "workspace_item_pinned"),
     # N105：快照不存在（不跨工作区取快照）
     WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
+    # N041/N042/N043：今日必读队列（稳定错误信封）
+    QueueInvalid: (400, "invalid_queue"),
+    QueueItemNotFound: (404, "queue_item_not_found"),
+    QueueItemDone: (409, "queue_item_done"),
+    QueueSnapshotNotFound: (404, "queue_snapshot_not_found"),
+    QueueSnapshotLimit: (400, "queue_snapshot_limit"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -579,6 +592,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ZipTooLarge)
     @app.exception_handler(WorkspaceItemPinned)
     @app.exception_handler(WorkspaceSnapshotNotFound)
+    @app.exception_handler(QueueInvalid)
+    @app.exception_handler(QueueItemNotFound)
+    @app.exception_handler(QueueItemDone)
+    @app.exception_handler(QueueSnapshotNotFound)
+    @app.exception_handler(QueueSnapshotLimit)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(
