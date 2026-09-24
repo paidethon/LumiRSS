@@ -505,7 +505,9 @@ export interface paths {
          * @description Real-time SSE: storage replay after `after`, then live deltas from
          *     the running turn until it reaches a terminal state. Disconnects never
          *     abort the server-side run — clients reconnect with `after` and get the
-         *     persisted rows.
+         *     persisted rows. (``response_class``/``responses`` are for OpenAPI
+         *     documentation only; the hand-rolled generator below owns
+         *     replay/keep-alive.)
          */
         get: operations["stream_events_api_v1_agent_threads__thread_id__events_get"];
         put?: never;
@@ -7820,6 +7822,28 @@ export interface components {
             url: string;
         };
         /**
+         * AgentApprovalContent
+         * @description role=approval message body (server-minted by create_approval).
+         */
+        AgentApprovalContent: {
+            /** Approvalid */
+            approvalId: string;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+            /** Callid */
+            callId: string;
+            /** Expiresinminutes */
+            expiresInMinutes?: number | null;
+            /** Status */
+            status: string;
+            /** Threadid */
+            threadId: string;
+            /** Tool */
+            tool: string;
+        };
+        /**
          * AgentApprovalDecision
          * @description POST /api/v1/agent/threads/{id}/approvals.
          */
@@ -7830,6 +7854,77 @@ export interface components {
             decision: string;
         };
         /**
+         * AgentApprovalPreview
+         * @description F097 POST .../approvals/{id}/preview — 预演不执行业务写入。
+         */
+        AgentApprovalPreview: {
+            /** Approvalid */
+            approvalId: string;
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["AgentApprovalPreviewChange"][];
+            /** Note */
+            note: string;
+            /** Target */
+            target: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Uncertain
+             * @default []
+             */
+            uncertain: string[];
+        };
+        /**
+         * AgentApprovalPreviewChange
+         * @description F097 预演逐字段变化（from → to；敏感值已打码为 ***）。
+         */
+        AgentApprovalPreviewChange: {
+            /** Field */
+            field: string;
+            /** From */
+            from?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * AgentApprovalResult
+         * @description POST /api/v1/agent/threads/{id}/approvals — honest terminal
+         *     variants: rejected / tool_denied / completed.
+         */
+        AgentApprovalResult: {
+            message?: components["schemas"]["AgentMessage"] | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rejected" | "tool_denied" | "completed";
+        };
+        /**
+         * AgentAssistantContent
+         * @description role=assistant message body (streaming marker / cancel note /
+         *     branch-truncation notice / toolCalls while the loop is mid-turn).
+         */
+        AgentAssistantContent: {
+            /** Branchtruncated */
+            branchTruncated?: boolean | null;
+            /** Cancelled */
+            cancelled?: boolean | null;
+            /** Streaming */
+            streaming?: boolean | null;
+            /** Text */
+            text: string;
+            /**
+             * Toolcalls
+             * @default []
+             */
+            toolCalls: components["schemas"]["AgentToolCall"][];
+        };
+        /**
          * AgentBranchRequest
          * @description F099 从指定消息分支。
          */
@@ -7838,12 +7933,121 @@ export interface components {
             messageIndex: number;
         };
         /**
+         * AgentBranchResult
+         * @description F099 POST /api/v1/agent/threads/{id}/branch 响应。
+         */
+        AgentBranchResult: {
+            /** Branchof */
+            branchOf: string;
+            /** Copiedmessages */
+            copiedMessages: number;
+            thread: components["schemas"]["AgentThread"];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * AgentCancelResult
+         * @description POST /api/v1/agent/threads/{id}/cancel.
+         */
+        AgentCancelResult: {
+            /** Cancelled */
+            cancelled: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "cancelling" | "cancelled";
+        };
+        /**
+         * AgentCitationDetail
+         * @description One citation ref resolved through the shared Source Registry.
+         */
+        AgentCitationDetail: {
+            /** Datetime */
+            datetime?: string | null;
+            /** Domain */
+            domain: string;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Payload
+             * @default {}
+             */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Ref */
+            ref: string;
+            /** Source */
+            source: string;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Stalereason */
+            staleReason?: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url?: string | null;
+        };
+        /**
+         * AgentEntryRefsScope
+         * @description F094 范围锁定：锁定到显式条目列表。
+         */
+        AgentEntryRefsScope: {
+            /** Entryrefs */
+            entryRefs: string[];
+        };
+        /**
+         * AgentMessage
+         * @description One persisted conversation message (storage row, wire format).
+         */
+        AgentMessage: {
+            /**
+             * Citations
+             * @default []
+             */
+            citations: string[];
+            /** Content */
+            content: components["schemas"]["AgentUserContent"] | components["schemas"]["AgentAssistantContent"] | components["schemas"]["AgentToolContent"] | components["schemas"]["AgentApprovalContent"];
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "tool" | "approval";
+            /** Seq */
+            seq: number;
+            /** Threadid */
+            threadId: string;
+        };
+        /**
          * AgentMessageCreate
          * @description POST /api/v1/agent/threads/{id}/messages.
          */
         AgentMessageCreate: {
             /** Text */
             text: string;
+        };
+        /**
+         * AgentMessageListResponse
+         * @description Envelope for GET /api/v1/agent/threads/{id}/messages.
+         */
+        AgentMessageListResponse: {
+            /**
+             * Citationdetails
+             * @default []
+             */
+            citationDetails: components["schemas"]["AgentCitationDetail"][];
+            /** Items */
+            items: components["schemas"]["AgentMessage"][];
         };
         /**
          * AgentThread
@@ -7864,6 +8068,47 @@ export interface components {
         AgentThreadListResponse: {
             /** Items */
             items: components["schemas"]["AgentThread"][];
+        };
+        /**
+         * AgentThreadSearchHit
+         * @description F095 一条会话消息搜索命中（snippet 含前后文）。
+         */
+        AgentThreadSearchHit: {
+            /** Messageindex */
+            messageIndex: number;
+            /** Role */
+            role: string;
+            /** Snippet */
+            snippet: string;
+            /** Threadid */
+            threadId: string;
+            /** Threadtitle */
+            threadTitle: string;
+        };
+        /**
+         * AgentThreadSearchResponse
+         * @description Envelope for GET /api/v1/agent/threads/search.
+         */
+        AgentThreadSearchResponse: {
+            /** Items */
+            items: components["schemas"]["AgentThreadSearchHit"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * AgentThreadSettings
+         * @description PATCH /api/v1/agent/threads/{id} response（下轮生效）。
+         */
+        AgentThreadSettings: {
+            /** Branchof */
+            branchOf?: string | null;
+            /** Id */
+            id: string;
+            /** Scope */
+            scope?: components["schemas"]["AgentWorkspaceScope"] | components["schemas"]["AgentEntryRefsScope"] | null;
+            /** Title */
+            title: string;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
         };
         /**
          * AgentThreadUpdate
@@ -7892,6 +8137,91 @@ export interface components {
             toolPolicy?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * AgentToolCall
+         * @description One assistant tool invocation; arguments stay raw protocol text.
+         */
+        AgentToolCall: {
+            /** Argumentstext */
+            argumentsText: string;
+            /** Callid */
+            callId: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * AgentToolContent
+         * @description role=tool message body.
+         *
+         *     ``result`` is the untrusted envelope (or a bare string in branched
+         *     transcripts); ``callId`` is dropped when a branch copies the row as
+         *     a non-executable transcript record.
+         */
+        AgentToolContent: {
+            /** Approved */
+            approved?: boolean | null;
+            /** Branchtranscript */
+            branchTranscript?: boolean | null;
+            /** Callid */
+            callId?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Name */
+            name: string;
+            /** Result */
+            result?: components["schemas"]["AgentToolResult"] | string | null;
+        };
+        /**
+         * AgentToolPolicy
+         * @description F098 会话工具权限（键皆可缺省；validate_tool_policy 只落提供的键）。
+         */
+        AgentToolPolicy: {
+            /** Allowedtools */
+            allowedTools?: string[] | null;
+            /** Maxopsperturn */
+            maxOpsPerTurn?: number | null;
+            /** Mode */
+            mode?: ("all" | "readonly") | null;
+        };
+        /**
+         * AgentToolResult
+         * @description Tool output wrapped as untrusted data (injection boundary).
+         */
+        AgentToolResult: {
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Untrusted */
+            untrusted: boolean;
+        };
+        /**
+         * AgentTurnAccepted
+         * @description 202 body for POST /api/v1/agent/threads/{id}/messages.
+         */
+        AgentTurnAccepted: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "processing";
+        };
+        /**
+         * AgentUserContent
+         * @description role=user message body.
+         */
+        AgentUserContent: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * AgentWorkspaceScope
+         * @description F094 范围锁定：锁定到单个工作区。
+         */
+        AgentWorkspaceScope: {
+            /** Workspaceid */
+            workspaceId: string;
         };
         /**
          * AiProfile
@@ -12511,6 +12841,42 @@ export interface components {
             modelId: string;
         };
         /**
+         * RagJobSummary
+         * @description F093 最近一次重建作业的进度段（stage/done/remaining）。
+         */
+        RagJobSummary: {
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /** Jobid */
+            jobId: string;
+            /** Kind */
+            kind: string;
+            /** Remaining */
+            remaining?: number | null;
+            /** Stage */
+            stage?: string | null;
+            /** Status */
+            status: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * RagRebuildPauseResult
+         * @description F093 POST /api/v1/rag/rebuild/pause — paused=false 表示没有
+         *     可暂停的作业（jobId/status 同时缺省）。
+         */
+        RagRebuildPauseResult: {
+            /** Jobid */
+            jobId?: string | null;
+            /** Paused */
+            paused: boolean;
+            /** Status */
+            status?: string | null;
+        };
+        /**
          * RagRebuildResult
          * @description Bounded rebuild report（F093 起为作业感知：jobId/status）。
          */
@@ -12576,6 +12942,33 @@ export interface components {
             semanticError?: string | null;
             /** Semanticused */
             semanticUsed: boolean;
+        };
+        /**
+         * RagStatus
+         * @description GET /api/v1/rag/status — everything the enable/rebuild UI needs.
+         */
+        RagStatus: {
+            /** Chunks */
+            chunks: number;
+            /** Dim */
+            dim: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Fastembedavailable */
+            fastembedAvailable: boolean;
+            job?: components["schemas"]["RagJobSummary"] | null;
+            /** Lasterror */
+            lastError?: string | null;
+            /** Lastrebuildat */
+            lastRebuildAt?: string | null;
+            /** Model */
+            model: string;
+            /** Modelloaded */
+            modelLoaded: boolean;
+            /** Vecrows */
+            vecRows: number;
+            /** Vectable */
+            vecTable: boolean;
         };
         /**
          * ReadLaterItem
@@ -15824,7 +16217,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentThreadSearchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15888,7 +16281,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentThreadSettings"];
                 };
             };
             /** @description Validation Error */
@@ -15923,7 +16316,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentApprovalResult"];
                 };
             };
             /** @description Validation Error */
@@ -15955,7 +16348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentApprovalPreview"];
                 };
             };
             /** @description Validation Error */
@@ -15990,7 +16383,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentBranchResult"];
                 };
             };
             /** @description Validation Error */
@@ -16021,7 +16414,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentCancelResult"];
                 };
             };
             /** @description Validation Error */
@@ -16048,13 +16441,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description SSE stream: message/delta/done events; keep-alive comments */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/event-stream": string;
                 };
             };
             /** @description Validation Error */
@@ -16088,7 +16481,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/markdown; charset=utf-8": string;
                 };
             };
             /** @description Validation Error */
@@ -16121,7 +16514,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentMessageListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16156,7 +16549,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AgentTurnAccepted"];
                 };
             };
             /** @description Validation Error */
@@ -23931,7 +24324,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RagRebuildPauseResult"];
                 };
             };
         };
@@ -24037,9 +24430,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RagStatus"];
                 };
             };
         };
