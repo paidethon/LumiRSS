@@ -1965,6 +1965,33 @@ class GptDigestRef(BaseModel):
     publishedAt: str = ""
 
 
+class GptDigestColumn(BaseModel):
+    """N174：一个固定栏目（名称精确参与校验；count=条目上限）。"""
+
+    name: str
+    count: int = Field(default=5, ge=1, le=20)
+    emptyPolicy: Literal["hide", "placeholder"] = "hide"
+
+
+class GptDigestLeftoverItem(BaseModel):
+    """N175：素材篮条目——被裁剪的完整条目（绝不静默删除）。"""
+
+    sectionHeading: str = ""
+    summary: str
+    sourceIds: list[str] = []
+    refs: list[GptDigestRef] = []
+
+
+class GptDigestTrimPreview(BaseModel):
+    """GET …/trim-preview — N175 裁剪预览（零写入、零模型调用）。"""
+
+    targetReadingMinutes: int
+    beforeMinutes: float
+    afterMinutes: float
+    moved: list[GptDigestLeftoverItem] = []
+    note: str | None = None
+
+
 class GptDigestSentence(BaseModel):
     """N173：事实检查视图里的一句总结 + 其来源引用。"""
 
@@ -2155,6 +2182,12 @@ class GptDigestConfig(BaseModel):
     weekendHours: list[int] = []
     # N172：分阶段模型（键 select/summarize/polish；空 = 基础模型）。
     stageModels: dict[str, str] = {}
+    # N174：固定栏目结构（空 = 不启用；≤8 栏）。
+    columns: list[GptDigestColumn] = []
+    # N175：目标阅读时长（分钟；0 = 不启用）。
+    targetReadingMinutes: int = 0
+    # N176：同事件聚合（默认关）。
+    clusterEnabled: bool = False
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2180,6 +2213,9 @@ class GptDigestCreate(BaseModel):
     days: list[int] | None = None
     weekendHours: list[int] | None = None
     stageModels: dict[str, str] | None = None
+    columns: list[GptDigestColumn] | None = None
+    targetReadingMinutes: int | None = None
+    clusterEnabled: bool | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2199,6 +2235,9 @@ class GptDigestConfigUpdate(BaseModel):
     days: list[int] | None = None
     weekendHours: list[int] | None = None
     stageModels: dict[str, str] | None = None
+    columns: list[GptDigestColumn] | None = None
+    targetReadingMinutes: int | None = None
+    clusterEnabled: bool | None = None
 
 
 class StorageUsage(BaseModel):

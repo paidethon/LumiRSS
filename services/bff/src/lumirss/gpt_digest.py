@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,7 +36,12 @@ from lumirss.ai_provider import (
     AiNotConfigured,
     AiProviderError,
 )
-from lumirss.gpt_digest_configs import parse_allow_list, parse_slots, parse_stage_models
+from lumirss.gpt_digest_configs import (
+    parse_allow_list,
+    parse_columns,
+    parse_slots,
+    parse_stage_models,
+)
 from lumirss.gpt_digest_issues import (
     GptDigestIssuesStore,
     build_sentence_map,
@@ -511,38 +517,102 @@ _OUTPUT_SCHEMA_TEXT = (
 )
 
 
+def _cluster_prompt(columns: list[dict[str, Any]] | None) -> str:
+    """N176/N174：附加到 system 提示的聚合/栏目约束（无聚合或未配置
+    栏目时为空串——保证历史 prompt 逐字节不变）。"""
+    parts: list[str] = []
+    parts.append(
+        "标记为「同一事件的多来源报道」的行是同一事件的多个来源；总结时"
+        "可同时引用该行内的多个编号，并如实呈现来源间的差异，不互相拼凑"
+        "成没有出处的内容。"
+    )
+    if columns:
+        structure = "；".join(
+            f"{index}.「{column['name']}」最多 {column['count']} 条"
+            for index, column in enumerate(columns, start=1)
+        )
+        parts.append(
+            f"栏目结构固定为（按此顺序）：{structure}。sections 必须且只能"
+            "使用这些栏目名并保持该顺序；每栏条目数不超过其上限；某栏目"
+            "没有合适条目就省略该栏目，绝不为了填充栏目编造内容。"
+        )
+    return "".join(parts)
+
+
 def _material_lines(
-    material: list[dict[str, Any]], body_limit: int = _MAX_ITEM_CHARS
+    material: list[dict[str, Any]],
+    body_limit: int = _MAX_ITEM_CHARS,
+    groups: list[list[int]] | None = None,
 ) -> list[str]:
     """编号材料行（s1..sN）；``body_limit`` 控制每条正文长度（选材阶段
-    只需标题级信息，用更短的预览）。"""
+    只需标题级信息，用更短的预览）。N176：``groups`` 提供时，同事件的
+    多个来源合并为一行（保留各自编号与出处）。"""
+    if groups is None:
+        groups = [[index] for index in range(len(material))]
     lines: list[str] = []
     total = 0
-    for index, doc in enumerate(material, start=1):
-        source_id = f"s{index}"
-        body = _clip(doc.get("contentText") or "", body_limit)
-        total += len(body)
-        if total > _MAX_TOTAL_CHARS:
-            break
-        lines.append(
-            f"[{source_id}] {doc.get('title') or '(无标题)'}"
-            f" | 来源: {doc.get('feedTitle') or ''}"
-            f" | 发布: {doc.get('publishedAt') or '未知'}\n{body}"
-        )
+    for group in groups:
+        ids = ",".join(f"s{i + 1}" for i in group)
+        if len(group) == 1:
+            doc = material[group[0]]
+            body = _clip(doc.get("contentText") or "", body_limit)
+            total += len(body)
+            if total > _MAX_TOTAL_CHARS:
+                break
+            lines.append(
+                f"[{ids}] {doc.get('title') or '(无标题)'}"
+                f" | 来源: {doc.get('feedTitle') or ''}"
+                f" | 发布: {doc.get('publishedAt') or '未知'}\n{body}"
+            )
+        else:
+            parts: list[str] = []
+            for i in group:
+                doc = material[i]
+                body = _clip(doc.get("contentText") or "", body_limit)
+                total += len(body)
+                if total > _MAX_TOTAL_CHARS:
+                    break
+                parts.append(
+                    f"〔s{i + 1}〕{doc.get('title') or '(无标题)'}"
+                    f"（来源: {doc.get('feedTitle') or ''}，"
+                    f"发布: {doc.get('publishedAt') or '未知'}）\n{body}"
+                )
+            lines.append(f"[{ids}] 同一事件的多来源报道：\n" + "\n".join(parts))
+            if total > _MAX_TOTAL_CHARS:
+                break
     return lines
 
 
-def _selection_compact_lines(material: list[dict[str, Any]]) -> list[str]:
-    """N172 选材阶段的用户消息：编号 + 标题 + 来源 + 短正文预览。"""
+def _selection_compact_lines(
+    material: list[dict[str, Any]],
+    groups: list[list[int]] | None = None,
+) -> list[str]:
+    """N172 选材阶段的用户消息：编号 + 标题 + 来源 + 短正文预览。
+    N176：``groups`` 提供时同事件多来源合并为一行（与全文行同构）。"""
+    if groups is None:
+        groups = [[index] for index in range(len(material))]
     lines: list[str] = []
-    for index, doc in enumerate(material, start=1):
-        source_id = f"s{index}"
-        preview = _clip(doc.get("contentText") or "", 400)
-        lines.append(
-            f"[{source_id}] {doc.get('title') or '(无标题)'}"
-            f" | 来源: {doc.get('feedTitle') or ''}"
-            f" | 发布: {doc.get('publishedAt') or '未知'}\n{preview}"
-        )
+    for group in groups:
+        ids = ",".join(f"s{i + 1}" for i in group)
+        if len(group) == 1:
+            doc = material[group[0]]
+            preview = _clip(doc.get("contentText") or "", 400)
+            lines.append(
+                f"[{ids}] {doc.get('title') or '(无标题)'}"
+                f" | 来源: {doc.get('feedTitle') or ''}"
+                f" | 发布: {doc.get('publishedAt') or '未知'}\n{preview}"
+            )
+        else:
+            parts: list[str] = []
+            for i in group:
+                doc = material[i]
+                preview = _clip(doc.get("contentText") or "", 400)
+                parts.append(
+                    f"〔s{i + 1}〕{doc.get('title') or '(无标题)'}"
+                    f"（来源: {doc.get('feedTitle') or ''}，"
+                    f"发布: {doc.get('publishedAt') or '未知'}）\n{preview}"
+                )
+            lines.append(f"[{ids}] 同一事件的多来源报道：\n" + "\n".join(parts))
     return lines
 
 
@@ -552,6 +622,8 @@ def build_messages(
     stage: str | None = None,
     selection: list[dict[str, Any]] | None = None,
     current_output: dict[str, Any] | None = None,
+    groups: list[list[int]] | None = None,
+    columns: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
     """System + user 消息；source id 由服务端分配（s1..sN）。
 
@@ -559,19 +631,25 @@ def build_messages(
     - ``select``：只做选择与分组，输出 assignments；
     - ``summarize``：按 assignments 的分组写总结（完整正文）；
     - ``polish``：在既有 JSON 上润色文字（结构、引用与事实不变）。
-    stage=None 保持单次调用的历史行为（消息与旧版逐字节一致）。"""
+    N176：``groups`` 非空（存在真实聚簇）时材料行按簇合并并附加聚合
+    约束；N174：``columns`` 非空时附加固定栏目结构约束。
+    stage=None 且无聚合/栏目约束时保持单次调用的历史行为（消息与旧版
+    逐字节一致）。"""
+    has_cluster_hint = bool(groups) and any(len(group) > 1 for group in groups)
+    extra = _cluster_prompt(columns) if (has_cluster_hint or columns) else ""
     if stage == "select":
         system = (
             "你是个人 RSS 阅读器里的日报选材编辑。任务阶段：选材（select）。"
             "用户消息提供编号的资料条目（s1..sN）。"
             "任务：把值得进入日报的材料按主题分组到栏目——只做选择与分组，"
             "不写总结正文。" + _MATERIAL_INSTRUCTION
+            + (extra if extra else "")
             + '只输出一个 JSON 对象，结构为 {"title": string, '
             '"assignments": [{"heading": string, "sourceIds": string[]}]}。'
             "sourceIds 只能引用提供的编号，且每个编号在全部分组中最多出现"
             "一次；不要输出 JSON 以外的任何文本。使用简体中文。"
         )
-        user = "\n\n".join(_selection_compact_lines(material)) or (
+        user = "\n\n".join(_selection_compact_lines(material, groups)) or (
             "（本轮没有任何资料条目。）"
         )
         return [
@@ -588,6 +666,7 @@ def build_messages(
             "section，heading 原样使用 assignments 的 heading；被分到该栏的"
             "材料都可进入 items，sourceIds 只能引用提供的编号。"
             + _MATERIAL_INSTRUCTION
+            + (extra if extra else "")
             + "只输出一个 JSON 对象，结构为 "
             + _OUTPUT_SCHEMA_TEXT
             + "。不要输出 JSON 以外的任何文本。使用简体中文。"
@@ -597,7 +676,7 @@ def build_messages(
             "assignments：\n"
             + assignments_text
             + "\n\n资料条目：\n"
-            + ("\n\n".join(_material_lines(material)) or "（无。）")
+            + ("\n\n".join(_material_lines(material, groups=groups)) or "（无。）")
         )
         return [
             {"role": "system", "content": system},
@@ -623,12 +702,15 @@ def build_messages(
     system = (
         "你是个人 RSS 阅读器里的日报编辑。用户消息提供编号的资料条目"
         "（s1..sN）以及它们的元数据。" + _MATERIAL_INSTRUCTION
+        + (extra if extra else "")
         + "只输出一个 JSON 对象，结构为 "
         + _OUTPUT_SCHEMA_TEXT
         + "。sourceIds 只能引用"
         "提供的编号；不要输出 JSON 以外的任何文本。使用简体中文。"
     )
-    user = "\n\n".join(_material_lines(material)) or "（本轮没有任何资料条目。）"
+    user = "\n\n".join(_material_lines(material, groups=groups)) or (
+        "（本轮没有任何资料条目。）"
+    )
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -751,6 +833,318 @@ def parse_selection_output(raw: str, expected_ids: list[str]) -> dict[str, Any]:
     return {"title": title.strip(), "assignments": cleaned}
 
 
+_CLUSTER_JACCARD_THRESHOLD = 0.6
+_CLUSTER_WINDOW_HOURS = 48
+_PLACEHOLDER_TEXT = "本栏目今日无内容。"
+_CHARS_PER_MINUTE = 400
+_MAX_LEFTOVER_ITEMS = 60
+
+
+def _title_tokens(title: str) -> set[str]:
+    """N176：标题 token——拉丁/数字词 + CJK 字符二元组（中文无空格分词）。"""
+    lower = str(title or "").lower()
+    tokens: set[str] = set(re.findall(r"[a-z0-9]+", lower))
+    for run in re.findall(r"[\u4e00-\u9fff]+", lower):
+        if len(run) == 1:
+            tokens.add(run)
+        else:
+            tokens.update(run[index : index + 2] for index in range(len(run) - 1))
+    return tokens
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    intersection = len(a & b)
+    if intersection == 0:
+        return 0.0
+    return intersection / len(a | b)
+
+
+def cluster_material(
+    material: list[dict[str, Any]],
+    *,
+    threshold: float = _CLUSTER_JACCARD_THRESHOLD,
+    window_hours: int = _CLUSTER_WINDOW_HOURS,
+) -> list[list[int]]:
+    """N176：同事件聚类——标题 jaccard ≥ 0.6 且发布时间差 ≤ 48h。
+
+    返回索引簇列表（覆盖全部材料，单条自成一组）。发布时间缺失/非法
+    → 绝不合并（标题相似但跨日的同题报道不聚合——单独的日期条件即
+    独立事件）。贪心：与既有簇的代表比较，先到先得，输入顺序即选材
+    顺序（可复现）。"""
+    clusters: list[list[int]] = []
+    reps: list[dict[str, Any]] = []
+    for index, doc in enumerate(material):
+        tokens = _title_tokens(str(doc.get("title") or ""))
+        published_raw = _canonical_utc(doc.get("publishedAt"))
+        published = (
+            datetime.fromisoformat(published_raw.replace("Z", "+00:00"))
+            if published_raw
+            else None
+        )
+        matched: int | None = None
+        for ci, rep in enumerate(reps):
+            if _jaccard(rep["tokens"], tokens) < threshold:
+                continue
+            if rep["published"] is None or published is None:
+                continue  # 时间未知 → 不合并（诚实优先）
+            if abs((published - rep["published"]).total_seconds()) > window_hours * 3600:
+                continue  # 跨日：标题相似也不合并
+            matched = ci
+            break
+        if matched is None:
+            clusters.append([index])
+            reps.append({"tokens": tokens, "published": published})
+        else:
+            clusters[matched].append(index)
+    return clusters
+
+
+def _groups_for_prompt(
+    clusters: list[list[int]] | None,
+) -> list[list[int]] | None:
+    """存在真实聚簇（≥2 条）时返回提示用分组；否则 None（保持历史消息
+    逐字节不变）。"""
+    if not clusters or not any(len(group) > 1 for group in clusters):
+        return None
+    return clusters
+
+
+def annotate_digit_conflicts(
+    sections: list[dict[str, Any]],
+    clusters: list[list[int]],
+    material: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """N176：同事件条目的数字分歧标注（N082 式 token 集合对比）。
+
+    只对「同时引用了同一聚簇中 ≥2 个来源」的条目生效：逐来源提取数字
+    token（复用 N082 的千分位/小数/% 口径），集合不一致 → 条目
+    uncertainty 追加「分歧：…」（不裁决对错，如实并列）。返回进 meta
+    的聚簇信息（逐来源出处）。"""
+    from lumirss.ai_translation_verification import extract_number_tokens
+
+    clusters_meta: list[dict[str, Any]] = []
+    for cluster in clusters:
+        if len(cluster) < 2:
+            continue
+        member_sids = {f"s{i + 1}": material[i] for i in cluster}
+        clusters_meta.append(
+            {
+                "sourceIds": sorted(member_sids),
+                "titles": [
+                    _clip(member_sids[sid].get("title") or "(无标题)", 120)
+                    for sid in sorted(member_sids)
+                ],
+            }
+        )
+        digit_sets = {
+            sid: set(
+                extract_number_tokens(_clip(str(doc.get("contentText") or ""), _MAX_ITEM_CHARS))
+            )
+            for sid, doc in member_sids.items()
+        }
+        union: set[str] = set()
+        for tokens in digit_sets.values():
+            union |= tokens
+        conflict = sorted(
+            token
+            for token in union
+            if any(token not in tokens for tokens in digit_sets.values())
+        )[:6]
+        if not conflict:
+            continue
+        note = f"分歧：各来源数字不一致（{'、'.join(conflict)}）"
+        for section in sections:
+            for item in section.get("items", []):
+                cited = [
+                    sid for sid in item.get("sourceIds", []) if sid in member_sids
+                ]
+                if len(cited) < 2:
+                    continue
+                existing = item.get("uncertainty")
+                item["uncertainty"] = (
+                    f"{existing}；{note}" if existing else note
+                )
+    return clusters_meta
+
+
+def enforce_columns(
+    sections: list[dict[str, Any]], columns: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """N174：栏目结构强制——sections == 配置栏目（名称精确、按配置排序）。
+
+    - 超出栏目 count 的条目被诚实丢弃（meta note 记录 dropped 数）；
+    - 空栏目按 emptyPolicy：hide → 整栏省略；placeholder → 一条
+      「本栏目今日无内容。」占位（绝不编造内容）；
+    - 输出中出现配置之外的栏目 → 整栏丢弃并如实计数。
+    返回 (新 sections, notes)；notes 进 meta.columnNotes。"""
+    notes: list[dict[str, Any]] = []
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        name = str(section.get("heading") or "").strip()
+        by_name.setdefault(name, []).extend(section.get("items") or [])
+    known = {column["name"] for column in columns}
+    for name, items in by_name.items():
+        if name not in known and items:
+            notes.append({"column": name, "dropped": len(items), "reason": "unknown_column"})
+    ordered: list[dict[str, Any]] = []
+    for column in columns:
+        items = list(by_name.get(column["name"]) or [])
+        if len(items) > column["count"]:
+            notes.append(
+                {
+                    "column": column["name"],
+                    "dropped": len(items) - column["count"],
+                    "reason": "count_cap",
+                }
+            )
+            items = items[: column["count"]]
+        if not items:
+            if column["emptyPolicy"] == "placeholder":
+                items = [
+                    {
+                        "summary": _PLACEHOLDER_TEXT,
+                        "sourceIds": [],
+                        "uncertainty": None,
+                    }
+                ]
+            else:
+                continue  # hide
+        ordered.append({"heading": column["name"], "items": items})
+    return ordered, notes
+
+
+def estimate_minutes(sections: list[dict[str, Any]]) -> float:
+    """N175：阅读时长估算（chars/400 每分钟，按全部条目 summary 求和）。"""
+    chars = sum(
+        len(str(item.get("summary") or ""))
+        for section in sections
+        for item in section.get("items", [])
+    )
+    return chars / _CHARS_PER_MINUTE
+
+
+def trim_to_target(
+    sections: list[dict[str, Any]],
+    target_minutes: float,
+    columns: list[dict[str, Any]] | None = None,
+    refs: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """N175：超预算裁剪——被裁条目进素材篮（leftoverPool），绝不静默删除。
+
+    优先级：超出栏目 count 的条目先裁（N174 阈值先行），其次最长的
+    条目；被裁条目保留完整 summary、sourceIds 与逐来源引用（refs 已
+    解析 title/url/feedTitle）。空栏目交由 enforce_columns 的 emptyPolicy
+    处理（columns 为空时如实丢弃空栏目并计数）。
+    返回 (新 sections, leftoverPool, stats)。"""
+    original_sections = sections
+    before = estimate_minutes(original_sections)
+    target_chars = target_minutes * _CHARS_PER_MINUTE
+    total_chars = sum(
+        len(str(item.get("summary") or ""))
+        for section in original_sections
+        for item in section.get("items", [])
+    )
+    cap_by_column: dict[str, int] = {
+        column["name"]: int(column["count"]) for column in (columns or [])
+    }
+    entries: list[dict[str, Any]] = []
+    for s_idx, section in enumerate(original_sections):
+        cap = cap_by_column.get(str(section.get("heading") or "").strip())
+        for i_idx, item in enumerate(section.get("items", [])):
+            entries.append(
+                {
+                    "s": s_idx,
+                    "i": i_idx,
+                    "item": item,
+                    "chars": len(str(item.get("summary") or "")),
+                    "beyond": cap is not None and i_idx >= cap,
+                }
+            )
+    candidates = [e for e in entries if e["beyond"]]
+    candidates.sort(key=lambda e: -e["chars"])
+    rest = sorted(
+        (e for e in entries if not e["beyond"]),
+        key=lambda e: -e["chars"],
+    )
+
+    removed: set[tuple[int, int]] = set()
+    leftover: list[dict[str, Any]] = []
+
+    def _move(entry: dict[str, Any]) -> None:
+        nonlocal total_chars
+        item = entry["item"]
+        sids = [sid for sid in item.get("sourceIds", []) if isinstance(sid, str)]
+        resolved = []
+        for sid in sids:
+            ref = (refs or {}).get(sid)
+            if ref:
+                resolved.append(
+                    {
+                        "title": _clip(str(ref.get("title") or ""), 300),
+                        "url": str(ref.get("url") or ""),
+                        "feedTitle": _clip(str(ref.get("feedTitle") or ""), 200),
+                    }
+                )
+        leftover.append(
+            {
+                "sectionHeading": str(
+                    original_sections[entry["s"]].get("heading") or ""
+                ),
+                "summary": _clip(str(item.get("summary") or ""), 500),
+                "sourceIds": sids,
+                "refs": resolved,
+            }
+        )
+        removed.add((entry["s"], entry["i"]))
+        total_chars -= entry["chars"]
+
+    # 规划阶段只做记账（不重建列表——索引身份保持原样），最后一次性重建。
+    while total_chars > target_chars and candidates:
+        _move(candidates.pop(0))
+    while total_chars > target_chars and rest:
+        entry = rest.pop(0)
+        if (entry["s"], entry["i"]) in removed:
+            continue
+        _move(entry)
+    if len(leftover) > _MAX_LEFTOVER_ITEMS:
+        leftover = leftover[:_MAX_LEFTOVER_ITEMS]
+    sections = _drop_removed(original_sections, removed)
+    empty_dropped = 0
+    if not cap_by_column:
+        empty_dropped = sum(
+            1 for section in sections if not (section.get("items") or [])
+        )
+        if empty_dropped:
+            sections = [s for s in sections if s.get("items")]
+    stats = {
+        "beforeMinutes": round(before, 2),
+        "afterMinutes": round(total_chars / _CHARS_PER_MINUTE, 2),
+        "targetMinutes": target_minutes,
+        "movedCount": len(removed),
+        "emptySectionsDropped": empty_dropped,
+    }
+    return sections, leftover, stats
+
+
+def _drop_removed(
+    sections: list[dict[str, Any]], removed: set[tuple[int, int]]
+) -> list[dict[str, Any]]:
+    """按 (section, item) 索引集重建 sections（保持顺序）。"""
+    result: list[dict[str, Any]] = []
+    for s_idx, section in enumerate(sections):
+        kept = [
+            item
+            for i_idx, item in enumerate(section.get("items", []))
+            if (s_idx, i_idx) not in removed
+        ]
+        result.append({**section, "items": kept})
+    return result
+
+
 def _esc(text: str) -> str:
     return (
         str(text)
@@ -867,10 +1261,19 @@ async def generate_issue(
     refs = build_refs(material)
     expected_ids = [f"s{i}" for i in range(1, len(material) + 1)]
     stage_models = parse_stage_models(config.get("stageModels") or {})
+    # N174/N175/N176：固定栏目 / 阅读时长预算 / 同事件聚合。
+    columns = parse_columns(config.get("columns") or [])
+    target_minutes = float(max(int(config.get("targetReadingMinutes") or 0), 0))
+    clusters = (
+        cluster_material(material) if bool(config.get("clusterEnabled")) else None
+    )
+    groups = _groups_for_prompt(clusters)
     try:
         if not stage_models:
             provider = await provider_factory(base_url, model)
-            raw = await provider.complete(messages=build_messages(material))
+            raw = await provider.complete(
+                messages=build_messages(material, groups=groups, columns=columns or None)
+            )
             output = parse_and_validate_output(raw, expected_ids)
             meta: dict[str, Any] = {}
         else:
@@ -888,6 +1291,8 @@ async def generate_issue(
                 base_model=model,
                 stage_models=stage_models,
                 provider_factory=provider_factory,
+                groups=groups,
+                columns=columns,
             )
     except DigestPolishFailed:
         raise  # 错误已在阶段内如实落库（mark_error）；草稿保留
@@ -899,6 +1304,30 @@ async def generate_issue(
         )
         await configs.mark_error(config_id, message)
         raise
+    # N176：同事件条目的数字分歧标注（写进 sections，随渲染进正文）。
+    clusters_meta = (
+        annotate_digit_conflicts(output["sections"], clusters, material)
+        if clusters
+        else []
+    )
+    # N175：阅读时长裁剪（素材篮进 meta；保留条目的引用原样保留）。
+    leftover: list[dict[str, Any]] = []
+    if target_minutes > 0:
+        (
+            output["sections"],
+            leftover,
+            trim_stats,
+        ) = trim_to_target(output["sections"], target_minutes, columns, refs)
+        meta["trim"] = trim_stats
+        if leftover:
+            meta["leftoverPool"] = leftover
+    # N174：栏目结构强制（sections == 配置栏目；截断/丢弃如实计数）。
+    if columns:
+        output["sections"], column_notes = enforce_columns(output["sections"], columns)
+        if column_notes:
+            meta["columnNotes"] = column_notes
+    if clusters_meta:
+        meta["clusters"] = clusters_meta
     body_html = render_issue_html(output, refs)
     # F031：显式生成的新期号 = 草稿（人工审阅后发布）；调度自动发布
     # 保持 published（无人值守）。修订已有期号不改状态。
@@ -944,6 +1373,8 @@ async def _run_staged_generation(
     base_model: str,
     stage_models: dict[str, str],
     provider_factory: Any,
+    groups: list[list[int]] | None = None,
+    columns: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """N172 分阶段生成：选材（select）→ 总结（summarize）→ 润色（polish）。
 
@@ -969,7 +1400,9 @@ async def _run_staged_generation(
     # 阶段 1：选材（select）
     provider = await _provider_for("select")
     try:
-        raw = await provider.complete(messages=build_messages(material, stage="select"))
+        raw = await provider.complete(
+            messages=build_messages(material, stage="select", groups=groups)
+        )
         selection = parse_selection_output(raw, expected_ids)
     except AiProviderError as exc:
         raise type(exc)(f"选材阶段（select）调用失败：{exc}") from exc
@@ -980,7 +1413,13 @@ async def _run_staged_generation(
     provider = await _provider_for("summarize")
     try:
         raw = await provider.complete(
-            messages=build_messages(material, stage="summarize", selection=selection["assignments"])
+            messages=build_messages(
+                material,
+                stage="summarize",
+                selection=selection["assignments"],
+                groups=groups,
+                columns=columns or None,
+            )
         )
         draft_output = parse_and_validate_output(raw, expected_ids)
     except AiProviderError as exc:

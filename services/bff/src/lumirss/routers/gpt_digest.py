@@ -50,9 +50,11 @@ from lumirss.models import (
     GptDigestFeedInfo,
     GptDigestIssueList,
     GptDigestIssueRevise,
+    GptDigestLeftoverItem,
     GptDigestPreview,
     GptDigestSettings,
     GptDigestSettingsUpdate,
+    GptDigestTrimPreview,
 )
 from lumirss.token_hash import verify_token
 
@@ -689,6 +691,58 @@ async def explain_gpt_digest_issue(
         raise
     dto = _issues(request).issue_to_dto(row)
     return JSONResponse(status_code=200, content={"issue": dto})
+
+
+@router.get(
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/trim-preview",
+    response_model=GptDigestTrimPreview,
+)
+async def trim_preview_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> GptDigestTrimPreview:
+    """N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。
+
+    零写入、零模型调用（对已存期号按当前配置现算）；未配置
+    targetReadingMinutes 时诚实说明并返回原样。"""
+    from lumirss.gpt_digest import estimate_minutes, trim_to_target
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    row = await _issues(request).get_issue(config_id, issue_key)
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "期号不存在。"}},
+        )
+    sections = _stored_sections_list(row)
+    before = round(estimate_minutes(sections), 2)
+    target = int(config.get("targetReadingMinutes") or 0)
+    if target <= 0:
+        return GptDigestTrimPreview(
+            targetReadingMinutes=0,
+            beforeMinutes=before,
+            afterMinutes=before,
+            moved=[],
+            note="未启用阅读时长控制（targetReadingMinutes=0），不会裁剪。",
+        )
+    try:
+        refs = json.loads(str(row["refs_json"] or "{}"))
+    except ValueError:
+        refs = {}
+    _new_sections, moved, stats = trim_to_target(
+        sections, float(target), config.get("columns") or [], refs
+    )
+    return GptDigestTrimPreview(
+        targetReadingMinutes=target,
+        beforeMinutes=stats["beforeMinutes"],
+        afterMinutes=stats["afterMinutes"],
+        moved=[GptDigestLeftoverItem(**item) for item in moved],
+        note=f"将移出 {stats['movedCount']} 条进素材篮（估算约 {stats['beforeMinutes']} → {stats['afterMinutes']} 分钟）。",
+    )
 
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish")
