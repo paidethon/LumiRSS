@@ -14,7 +14,7 @@ import secrets
 
 from lumirss.storage import Database
 
-PASSWORD = "pw-f038-" + secrets.token_urlsafe(6)
+PASSWORD = secrets.token_urlsafe(16)
 
 
 def run(coroutine):

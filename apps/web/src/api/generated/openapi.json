@@ -4015,6 +4015,122 @@
     "title": "BookmarkUpdate",
     "type": "object"
    },
+   "BulkLinkResultItem": {
+    "description": "逐条结果：created | duplicate | failed（failed 必带 reason）。",
+    "properties": {
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     },
+     "status": {
+      "enum": [
+       "created",
+       "duplicate",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "status"
+    ],
+    "title": "BulkLinkResultItem",
+    "type": "object"
+   },
+   "BulkLinksRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。",
+    "properties": {
+     "target": {
+      "enum": [
+       "bookmark",
+       "clip"
+      ],
+      "title": "Target",
+      "type": "string"
+     },
+     "urls": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Urls",
+      "type": "array"
+     }
+    },
+    "required": [
+     "urls",
+     "target"
+    ],
+    "title": "BulkLinksRequest",
+    "type": "object"
+   },
+   "BulkLinksResponse": {
+    "description": "Envelope for POST /api/v1/library/bulk-links。",
+    "properties": {
+     "created": {
+      "title": "Created",
+      "type": "integer"
+     },
+     "duplicate": {
+      "title": "Duplicate",
+      "type": "integer"
+     },
+     "failed": {
+      "title": "Failed",
+      "type": "integer"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/BulkLinkResultItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "target": {
+      "enum": [
+       "bookmark",
+       "clip"
+      ],
+      "title": "Target",
+      "type": "string"
+     }
+    },
+    "required": [
+     "target",
+     "created",
+     "duplicate",
+     "failed",
+     "items"
+    ],
+    "title": "BulkLinksResponse",
+    "type": "object"
+   },
    "BundleDocument": {
     "description": "The portable bundle document itself.",
     "properties": {
@@ -5108,6 +5224,167 @@
      }
     },
     "title": "CompareResult",
+    "type": "object"
+   },
+   "CompileExcluded": {
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "reason"
+    ],
+    "title": "CompileExcluded",
+    "type": "object"
+   },
+   "CompileItem": {
+    "properties": {
+     "citation": {
+      "title": "Citation",
+      "type": "string"
+     },
+     "excerpt": {
+      "default": "",
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "title",
+     "citation"
+    ],
+    "title": "CompileItem",
+    "type": "object"
+   },
+   "CompileRequest": {
+    "additionalProperties": false,
+    "description": "N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。",
+    "properties": {
+     "sectionIds": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sectionids"
+     }
+    },
+    "title": "CompileRequest",
+    "type": "object"
+   },
+   "CompileResponse": {
+    "properties": {
+     "excluded": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CompileExcluded"
+      },
+      "title": "Excluded",
+      "type": "array"
+     },
+     "excludedMissing": {
+      "default": 0,
+      "title": "Excludedmissing",
+      "type": "integer"
+     },
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "includedCount": {
+      "default": 0,
+      "title": "Includedcount",
+      "type": "integer"
+     },
+     "sections": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CompileSection"
+      },
+      "title": "Sections",
+      "type": "array"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     },
+     "workspaceName": {
+      "title": "Workspacename",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId",
+     "workspaceName",
+     "generatedAt"
+    ],
+    "title": "CompileResponse",
+    "type": "object"
+   },
+   "CompileSection": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CompileItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "sectionId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sectionid"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "CompileSection",
     "type": "object"
    },
    "ComponentError": {
@@ -13806,6 +14083,89 @@
     "title": "RecoverPasswordRequest",
     "type": "object"
    },
+   "RegisterRequest": {
+    "description": "POST /auth/register (P0 public registration).",
+    "properties": {
+     "displayName": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Displayname"
+     },
+     "password": {
+      "maxLength": 72,
+      "title": "Password",
+      "type": "string"
+     },
+     "username": {
+      "maxLength": 32,
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "username",
+     "password"
+    ],
+    "title": "RegisterRequest",
+    "type": "object"
+   },
+   "RegistrationPolicyRequest": {
+    "description": "PUT /admin/registration-policy.",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicyRequest",
+    "type": "object"
+   },
+   "RegistrationPolicyResponse": {
+    "description": "GET / PUT /admin/registration-policy (instance-level switch).",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     },
+     "updatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedat"
+     },
+     "updatedBy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedby"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicyResponse",
+    "type": "object"
+   },
    "RelationCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/relations body.",
@@ -18903,6 +19263,159 @@
     "title": "WorkspaceBoardResponse",
     "type": "object"
    },
+   "WorkspaceCleanupApplyRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "categories": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Categories",
+      "type": "array"
+     }
+    },
+    "required": [
+     "categories"
+    ],
+    "title": "WorkspaceCleanupApplyRequest",
+    "type": "object"
+   },
+   "WorkspaceCleanupApplyResult": {
+    "properties": {
+     "logId": {
+      "title": "Logid",
+      "type": "string"
+     },
+     "removed": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Removed",
+      "type": "object"
+     }
+    },
+    "required": [
+     "logId"
+    ],
+    "title": "WorkspaceCleanupApplyResult",
+    "type": "object"
+   },
+   "WorkspaceCleanupCategory": {
+    "properties": {
+     "category": {
+      "title": "Category",
+      "type": "string"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "category"
+    ],
+    "title": "WorkspaceCleanupCategory",
+    "type": "object"
+   },
+   "WorkspaceCleanupLogList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "WorkspaceCleanupLogList",
+    "type": "object"
+   },
+   "WorkspaceCleanupPreviewResponse": {
+    "properties": {
+     "actionable": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Actionable",
+      "type": "array"
+     },
+     "categories": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceCleanupCategory"
+      },
+      "title": "Categories",
+      "type": "array"
+     },
+     "reportOnly": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Reportonly",
+      "type": "array"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId"
+    ],
+    "title": "WorkspaceCleanupPreviewResponse",
+    "type": "object"
+   },
+   "WorkspaceCleanupUndoRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "logId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Logid"
+     }
+    },
+    "title": "WorkspaceCleanupUndoRequest",
+    "type": "object"
+   },
+   "WorkspaceCleanupUndoResult": {
+    "properties": {
+     "logId": {
+      "title": "Logid",
+      "type": "string"
+     },
+     "restoredRefs": {
+      "default": 0,
+      "title": "Restoredrefs",
+      "type": "integer"
+     },
+     "restoredSectionRefs": {
+      "default": 0,
+      "title": "Restoredsectionrefs",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "logId"
+    ],
+    "title": "WorkspaceCleanupUndoResult",
+    "type": "object"
+   },
    "WorkspaceCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/workspaces.",
@@ -18959,7 +19472,23 @@
    },
    "WorkspaceGoalPut": {
     "additionalProperties": false,
+    "description": "F086 目标写入 + N111 扩展。\n\ngoalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不\n无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用\n``model_fields_set`` 区分「未携带」与「显式 null」。",
     "properties": {
+     "conditions": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Conditions"
+     },
      "deadline": {
       "anyOf": [
        {
@@ -18970,6 +19499,17 @@
        }
       ],
       "title": "Deadline"
+     },
+     "goalText": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Goaltext"
      },
      "targetCount": {
       "minimum": 1.0,
@@ -19361,6 +19901,174 @@
      "workspaceId"
     ],
     "title": "WorkspaceResumeResponse",
+    "type": "object"
+   },
+   "WorkspaceSectionCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "WorkspaceSectionCreate",
+    "type": "object"
+   },
+   "WorkspaceSectionItem": {
+    "description": "分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "unresolved": {
+      "default": false,
+      "title": "Unresolved",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "itemRef",
+     "position",
+     "addedAt"
+    ],
+    "title": "WorkspaceSectionItem",
+    "type": "object"
+   },
+   "WorkspaceSectionItemAddRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceSectionItemAddRequest",
+    "type": "object"
+   },
+   "WorkspaceSectionItemsOrderPut": {
+    "additionalProperties": false,
+    "properties": {
+     "itemRefs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Itemrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "itemRefs"
+    ],
+    "title": "WorkspaceSectionItemsOrderPut",
+    "type": "object"
+   },
+   "WorkspaceSectionList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSectionView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "WorkspaceSectionList",
+    "type": "object"
+   },
+   "WorkspaceSectionOrderPut": {
+    "additionalProperties": false,
+    "properties": {
+     "sectionIds": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Sectionids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "sectionIds"
+    ],
+    "title": "WorkspaceSectionOrderPut",
+    "type": "object"
+   },
+   "WorkspaceSectionPatch": {
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "WorkspaceSectionPatch",
+    "type": "object"
+   },
+   "WorkspaceSectionView": {
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSectionItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "sortIndex": {
+      "title": "Sortindex",
+      "type": "integer"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "workspaceId",
+     "title",
+     "sortIndex",
+     "createdAt"
+    ],
+    "title": "WorkspaceSectionView",
     "type": "object"
    },
    "WorkspaceSnapshot": {
@@ -19938,6 +20646,60 @@
      }
     },
     "summary": "Pool Add"
+   }
+  },
+  "/api/v1/admin/registration-policy": {
+   "get": {
+    "operationId": "get_registration_policy_api_v1_admin_registration_policy_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Registration Policy"
+   },
+   "put": {
+    "operationId": "set_registration_policy_api_v1_admin_registration_policy_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegistrationPolicyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Registration Policy"
    }
   },
   "/api/v1/admin/system": {
@@ -21913,6 +22675,45 @@
      }
     },
     "summary": "Recover Password"
+   }
+  },
+  "/api/v1/auth/register": {
+   "post": {
+    "description": "Open registration (P0): self-serve MEMBER account, gated by the\ninstance-level ``allow_public_registration`` policy (control DB,\ndefault OFF — upgraded instances and fresh installs alike stay\nclosed until the operator flips /admin/registration-policy).\n\nDeliberately mirrors /auth/activate without an invite: role is\nhardcoded ``member`` (the client can never request a role), the\nFreshRSS pool assigns atomically or the account starts with an\nhonest pending binding, and the server derives every identity.\nEnforcement here is the only gate — a hidden frontend button is\nnot trusted.",
+    "operationId": "register_api_v1_auth_register_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegisterRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Register"
    }
   },
   "/api/v1/auth/session": {
@@ -27321,6 +28122,45 @@
     "summary": "Export Bookmark Markdown"
    }
   },
+  "/api/v1/library/bulk-links": {
+   "post": {
+    "description": "批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）\n后创建书签或剪藏。\n\n单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed\n必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建\n同一信任边界）；抓取失败按 failed 如实上报。",
+    "operationId": "bulk_links_api_v1_library_bulk_links_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkLinksRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BulkLinksResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Bulk Links"
+   }
+  },
   "/api/v1/library/clips": {
    "get": {
     "operationId": "list_clips_api_v1_library_clips_get",
@@ -27453,6 +28293,23 @@
     "summary": "Fetch For Clip"
    }
   },
+  "/api/v1/library/clips/preview-cleanup": {
+   "post": {
+    "description": "N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。\n\n确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；\n预览本身绝不改动任何存储内容（原始版本在确认前不变）。",
+    "operationId": "preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Preview Clip Cleanup"
+   }
+  },
   "/api/v1/library/clips/{item_uuid}": {
    "delete": {
     "operationId": "delete_clip_api_v1_library_clips__item_uuid__delete",
@@ -27522,9 +28379,116 @@
     "summary": "Get Clip"
    }
   },
+  "/api/v1/library/clips/{item_uuid}/candidate": {
+   "delete": {
+    "description": "N122：丢弃候选版本（保留当前展示版本不动）。",
+    "operationId": "discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Discard Clip Candidate"
+   },
+   "get": {
+    "description": "N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。",
+    "operationId": "get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Clip Candidate"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/candidate/apply": {
+   "post": {
+    "description": "N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。",
+    "operationId": "apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Clip Candidate"
+   }
+  },
   "/api/v1/library/clips/{item_uuid}/full": {
    "get": {
-    "description": "F089 详情：content（当前展示）+ original（原始，不可变）+ revised。",
+    "description": "F089 详情 + N122：content（当前展示）+ original（原始，不可变）\n+ revised + locked + candidate。",
     "operationId": "get_clip_full_api_v1_library_clips__item_uuid__full_get",
     "parameters": [
      {
@@ -27558,6 +28522,82 @@
      }
     },
     "summary": "Get Clip Full"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/lock": {
+   "put": {
+    "description": "N122：显式锁定/解锁（locked 旗标唯一写路径）。",
+    "operationId": "set_clip_lock_api_v1_library_clips__item_uuid__lock_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Clip Lock"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/refresh": {
+   "post": {
+    "description": "N122：重新抓取当前剪藏 URL（服务端管线）。\n\n未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →\n只存候选，展示版本不动；内容未变 → unchanged。",
+    "operationId": "refresh_clip_api_v1_library_clips__item_uuid__refresh_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Refresh Clip"
    }
   },
   "/api/v1/library/clips/{item_uuid}/revision": {
@@ -27629,7 +28669,7 @@
     "summary": "Get Clip Blocks"
    },
    "patch": {
-    "description": "保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。",
+    "description": "保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。\n\nN122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。",
     "operationId": "save_clip_revision_api_v1_library_clips__item_uuid__revision_patch",
     "parameters": [
      {
@@ -28815,6 +29855,44 @@
     "summary": "Restore Trash Item"
    }
   },
+  "/api/v1/mail/attachments/{attachment_id}": {
+   "get": {
+    "description": "N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。\n\nContent-Disposition 恒为 attachment（绝不内联渲染）；响应体大小\n以存储 size 为准并再查上限（防越界写入）。文件名经净化并按\nRFC 5987 编码（非 ASCII 安全）。",
+    "operationId": "download_mail_attachment_api_v1_mail_attachments__attachment_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "attachment_id",
+      "required": true,
+      "schema": {
+       "title": "Attachment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Download Mail Attachment"
+   }
+  },
   "/api/v1/mail/bridge-lists": {
    "get": {
     "operationId": "list_bridge_lists_api_v1_mail_bridge_lists_get",
@@ -29008,6 +30086,91 @@
      }
     },
     "summary": "Test Mail Imap"
+   }
+  },
+  "/api/v1/mail/lists/{list_uuid}/messages": {
+   "get": {
+    "description": "N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。\n\n每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走\ndetail 端点。",
+    "operationId": "list_mail_messages_api_v1_mail_lists__list_uuid__messages_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Mail Messages"
+   }
+  },
+  "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail": {
+   "get": {
+    "description": "N125/N126/N127 邮件详情（只读）：\n\n- text / html 两个正文形态（mail_bridge ingest 时已双双落库；html\n  是净化产物，渲染前客户端仍过 DOMPurify）；\n- blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；\n- attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；\n- identityHints：服务端计算的中性身份提示（或 null）。",
+    "operationId": "mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "message_id",
+      "required": true,
+      "schema": {
+       "title": "Message Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mail Message Detail"
    }
   },
   "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/parse-debug": {
@@ -36511,6 +37674,284 @@
     "summary": "Put Board"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/cleanup": {
+   "post": {
+    "description": "N120：应用选中的清理类目（快照先行，可撤销）。\n\n只删 Lumi 自有元数据行（stale rss 成员行 / 空组名 / 悬空分节引用）；\n绝不触碰 FreshRSS 数据；library: 域引用受保护（即使解析不到）。",
+    "operationId": "workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCleanupApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCleanupApplyResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Cleanup Apply"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/cleanup-logs": {
+   "get": {
+    "description": "清理日志（新→旧，上限 5；供撤销入口选择）。",
+    "operationId": "workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCleanupLogList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Cleanup Logs"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/cleanup-preview": {
+   "get": {
+    "description": "N120：只读清理预演——每项带原因，绝不静默；只报告不删除。",
+    "operationId": "workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCleanupPreviewResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Cleanup Preview"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/cleanup/undo": {
+   "post": {
+    "description": "N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。",
+    "operationId": "workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCleanupUndoRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCleanupUndoResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Workspace Cleanup Undo"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/compile": {
+   "post": {
+    "description": "N114：按大纲汇编草稿（纯预览，绝不落库）。\n\n- 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；\n- 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；\n- 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），\n  绝不冒充内容。",
+    "operationId": "compile_workspace_api_v1_workspaces__workspace_id__compile_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CompileRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CompileResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compile Workspace"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/compile/markdown": {
+   "post": {
+    "description": "N114：汇编草稿的 Markdown 文本版（同样纯预览不落库）。",
+    "operationId": "compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CompileRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compile Workspace Markdown"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/contents": {
    "get": {
     "description": "Ordered membership with each ref resolved to a unified ViewModel.\n\nStale rss refs (entry gone from FreshRSS) resolve to ``stale=True``\nviews — rows are never auto-deleted.",
@@ -37333,6 +38774,409 @@
      }
     },
     "summary": "Save As Template"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections": {
+   "get": {
+    "description": "N113：分节大纲（sort_index 序）。成员引用以 item_ref 引用而非复制；\n同一条目可出现在多个分节；引用已不是工作区成员 → 行保留并诚实标记\n``unresolved``（绝不静默隐藏，N113 契约）。",
+    "operationId": "list_workspace_sections_api_v1_workspaces__workspace_id__sections_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Workspace Sections"
+   },
+   "post": {
+    "operationId": "create_workspace_section_api_v1_workspaces__workspace_id__sections_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSectionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Workspace Section"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections/order": {
+   "put": {
+    "description": "N113：分节顺序持久化（PUT 全量 1..N；真实变化 bump revision）。",
+    "operationId": "reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSectionOrderPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Workspace Sections"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections/{section_id}": {
+   "delete": {
+    "operationId": "delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "section_id",
+      "required": true,
+      "schema": {
+       "title": "Section Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Workspace Section"
+   },
+   "patch": {
+    "operationId": "rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "section_id",
+      "required": true,
+      "schema": {
+       "title": "Section Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSectionPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Workspace Section"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items": {
+   "post": {
+    "description": "把一个工作区成员引用进分节（幂等；同一 ref 可进入多个分节——\n引用而非复制，ADR 0004）。非成员 → 404。",
+    "operationId": "add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "section_id",
+      "required": true,
+      "schema": {
+       "title": "Section Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSectionItemAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Workspace Section Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/order": {
+   "put": {
+    "description": "N113：节内条目顺序持久化（PUT 全量 1..N）。",
+    "operationId": "reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "section_id",
+      "required": true,
+      "schema": {
+       "title": "Section Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSectionItemsOrderPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSectionList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Workspace Section Items"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/{item_ref}": {
+   "delete": {
+    "description": "从分节移除一个引用（只拆引用，绝不删除工作区成员本身）。",
+    "operationId": "remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "section_id",
+      "required": true,
+      "schema": {
+       "title": "Section Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Workspace Section Item"
    }
   },
   "/api/v1/workspaces/{workspace_id}/snapshots": {
