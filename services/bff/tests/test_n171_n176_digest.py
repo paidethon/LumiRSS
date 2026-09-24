@@ -671,7 +671,7 @@ def test_n173_split_sentences_roundtrip_and_edges():
     from lumirss.gpt_digest_issues import split_sentences
 
     text = "A。B！C？\nD…E"
-    assert split_sentences(text) == ["A。", "B！", "C？", "\n", "D…", "E"]
+    assert split_sentences(text) == ["A。", "B！", "C？", "\nD…", "E"]
     assert "".join(split_sentences(text)) == text
     assert split_sentences("") == []
     assert split_sentences("没有结束符的句子") == ["没有结束符的句子"]

@@ -12,14 +12,15 @@ from typing import Any
 
 from lumirss.storage import Database
 
-_SENTENCE_SPLIT_RE = re.compile(r"[^。！？!?…\n]*(?:[。！？!?…]+|\n+|$)")
+_SENTENCE_SPLIT_RE = re.compile(r"[^。！？!?…]*(?:[。！？!?…]+|$)")
 
 
 def split_sentences(text: str) -> list[str]:
-    """N173：把一段总结拆成句子（。！？!?… 与换行为界）。
+    """N173：把一段总结拆成句子（。！？!?… 为界；换行跟随所在句）。
 
     切分保真：``"".join(split_sentences(t)) == t``（逐句修订后按原样
-    重组，不丢标点也不引入空格）。空白片段不构成句子。"""
+    重组，不丢标点也不引入空格）。空白片段不构成句子。Web 端用同一
+    正则语义切分，保证 sentenceOps 的句子索引两端一致。"""
     source = str(text or "")
     return [part for part in _SENTENCE_SPLIT_RE.findall(source) if part]
 
