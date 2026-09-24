@@ -31,6 +31,7 @@ import {
   getAdminSystem,
   getFreshRssPool,
   getInviteFunnel,
+  getRegistrationPolicy,
   listAdminAudit,
   listAdminInvites,
   listAdminUsers,
@@ -41,6 +42,7 @@ import {
   resumeAdminUser,
   revokeAdminInvite,
   revokeAdminUserSessions,
+  updateRegistrationPolicy,
   type AdminInvite,
   type AdminInviteCreated,
   type AdminUser,
@@ -52,6 +54,7 @@ import { formatListTime, formatRelativeTime } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { Skeleton } from '../ui/Skeleton'
+import { Switch } from '../ui/Switch'
 
 const ROLE_LABELS: Record<AdminUser['role'], string> = {
   owner: '运营者',
@@ -764,6 +767,105 @@ function SchemesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
   )
 }
 
+// ===== 账户与注册（P0-05 注册策略）=========================================
+//
+// 实例级公开注册开关（control DB 持久化，migration 0089）。真正的闸门
+// 在服务端 POST /auth/register —— 这个开关只是改变它的策略输入；关掉
+// 不影响已有账户，邀请链接照常可用。变更走 PUT，本地开关乐观先行，
+// 失败回滚到服务端值并诚实提示；updatedAt/updatedBy 服务端没给就不显示。
+
+function RegistrationPolicySection() {
+  const queryClient = useQueryClient()
+  const policy = useQuery({
+    queryKey: ['admin', 'registration-policy'],
+    queryFn: ({ signal }) => getRegistrationPolicy(signal),
+    staleTime: 10_000,
+  })
+  // 乐观镜像：null = 无在途变更，显示服务端值；PUT 失败归 null 即回滚。
+  const [optimistic, setOptimistic] = useState<boolean | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const update = useMutation({
+    mutationFn: (allow: boolean) => updateRegistrationPolicy(allow),
+    onSuccess: (result) => {
+      setOptimistic(null)
+      queryClient.setQueryData(['admin', 'registration-policy'], result)
+    },
+    onError: (error) => {
+      setOptimistic(null)
+      setActionError(adminActionError(error))
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'registration-policy'] })
+    },
+  })
+
+  const serverAllow = policy.data?.allowPublicRegistration === true
+  const allow = optimistic ?? serverAllow
+
+  return (
+    <section aria-label="账户与注册" data-testid="registration-policy">
+      <SectionHeading
+        title="账户与注册"
+        hint="实例级注册策略；每次变更都会记入审计日志。"
+      />
+      {policy.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ) : policy.isError ? (
+        <p role="alert" className="text-sm leading-relaxed text-[var(--lumi-danger)]">
+          {adminActionError(policy.error)}
+        </p>
+      ) : (
+        <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <label
+                htmlFor="registration-policy-switch"
+                className="block text-sm font-medium text-[var(--lumi-text-primary)]"
+              >
+                公开注册
+              </label>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                允许任何可以访问此 LumiRSS 实例的人创建普通成员账号。关闭后不会影响已有账户，邀请链接仍然可以使用。
+              </p>
+            </div>
+            <Switch
+              id="registration-policy-switch"
+              label="公开注册"
+              checked={allow}
+              onCheckedChange={(next) => {
+                setActionError(null)
+                setOptimistic(next)
+                update.mutate(next)
+              }}
+              disabled={update.isPending}
+            />
+          </div>
+          <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]" data-testid="registration-policy-state">
+            当前状态：{allow ? '已开放' : '已关闭'}
+            {policy.data.updatedAt !== null && (
+              <>
+                {' · '}最近变更 {formatListTime(policy.data.updatedAt, 'absolute')}
+              </>
+            )}
+            {policy.data.updatedBy !== null && <> · 由 {policy.data.updatedBy}</>}
+          </p>
+          {update.isPending && (
+            <p role="status" className="mt-1 text-xs text-[var(--lumi-text-secondary)]">
+              正在保存…
+            </p>
+          )}
+          {actionError !== null && (
+            <p role="alert" className="mt-1 text-xs leading-relaxed text-[var(--lumi-danger)]">
+              {actionError}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ===== 邀请漏斗（N004）=======================================================
 //
 // 计数全部来自服务端真实行聚合（GET /admin/invite-funnel），响应绝无
@@ -1351,6 +1453,9 @@ export default function AdminScreen() {
               <div className="flex flex-col gap-4">
                 <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
                   <InvitesSection onConfirm={setConfirmState} />
+                </div>
+                <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+                  <RegistrationPolicySection />
                 </div>
                 <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
                   <PoolSection />
