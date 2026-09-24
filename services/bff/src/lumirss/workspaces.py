@@ -6,6 +6,16 @@ resolving refs to views happens through :mod:`lumirss.sources` at read
 time. ``read-later`` is a reserved workspace id seeded by migration 0008;
 the API refuses to delete or rename it. All SQL is single-line inline
 literals with bound params.
+
+N101 标签页分组：成员可携带可选 ``group_name``（NULL = 未分组，呈现为
+隐式前置组）。组成员关系完全由 ``workspace_items.group_name`` 派生；
+组的顺序存 ``workspaces.group_order_json``（组名有序数组，JSON 列方案
+——无需 workspace_groups 表，也不产生孤儿行）。跨工作区串扰在结构上
+不可能：每一行都带 workspace_id。
+
+N102 固定标签页：成员可 ``pinned``。固定条目在分组视图中排所有组之前
+（仍按 position 排序）；移除固定条目需显式 ``force``（否则 409
+workspace_item_pinned）。
 """
 
 import json
@@ -26,6 +36,9 @@ _MAX_ITEMS_PER_WORKSPACE = 5000
 _MAX_REORDER_BATCH = 500
 _DEFAULT_ITEM_LIMIT = 200
 _MAX_ITEM_LIMIT = 500
+# N101：分组标签上限（单组名 / 单工作区组数 / 顺序数组长度）。
+_MAX_GROUP_NAME_LENGTH = 64
+_MAX_GROUPS = 100
 
 
 class WorkspaceInvalid(ValueError):
@@ -38,6 +51,19 @@ class WorkspaceNotFound(Exception):
 
 class ReservedWorkspaceError(Exception):
     """The operation targets the immutable read-later workspace."""
+
+
+class WorkspaceItemPinned(Exception):
+    """N102：目标条目已固定——移除/替换需显式 force（映射 409）。
+
+    防误删：固定是用户显式表达的「别丢」意图，静默移除等于撕毁约定。"""
+
+    def __init__(self, workspace_id: str, item_ref: str) -> None:
+        self.workspace_id = workspace_id
+        self.item_ref = item_ref
+        super().__init__(
+            "Item is pinned; retry with force to remove it anyway."
+        )
 
 
 class WorkspaceRevisionConflict(Exception):
@@ -83,17 +109,24 @@ class WorkspaceSummary:
 
 @dataclass(frozen=True)
 class WorkspaceItem:
-    """One workspace member: the typed ref plus ordering metadata."""
+    """One workspace member: the typed ref plus ordering metadata.
+
+    N101/N102：``group_name``（None = 未分组）与 ``pinned`` 是同一行的
+    增量元数据；排序语义不变（position 升序）。"""
 
     item_ref: str
     position: int
     added_at: str
+    group_name: str | None = None
+    pinned: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "itemRef": self.item_ref,
             "position": self.position,
             "addedAt": self.added_at,
+            "groupName": self.group_name,
+            "pinned": self.pinned,
         }
 
 
@@ -228,23 +261,39 @@ class WorkspaceStore:
 
     # -- membership --------------------------------------------------------
 
-    async def add_item(self, workspace_id: str, item_ref: str) -> WorkspaceItem:
-        """Idempotent add: an existing (workspace, ref) pair returns as-is."""
+    @staticmethod
+    def _item_from_row(row: Any) -> WorkspaceItem:
+        """Row → WorkspaceItem（0083 起行携带 group_name / pinned）。"""
+        return WorkspaceItem(
+            item_ref=str(row["item_ref"]),
+            position=int(row["position"]),
+            added_at=str(row["added_at"]),
+            group_name=(
+                str(row["group_name"]) if row["group_name"] is not None else None
+            ),
+            pinned=bool(row["pinned"]),
+        )
+
+    async def add_item(
+        self, workspace_id: str, item_ref: str, group_name: str | None = None
+    ) -> WorkspaceItem:
+        """Idempotent add: an existing (workspace, ref) pair returns as-is.
+
+        N101：``group_name`` 可选（None = 未分组）；幂等重放返回既有行
+        原样（组归属以既有行为准——改组走 set_item_group）。
+        """
         await self._db.migrate()
+        clean_group = _validate_group_name(group_name)
         row = await self._db.fetch_one("SELECT id FROM workspaces WHERE id = ?", (workspace_id,))
         if row is None:
             raise WorkspaceNotFound(workspace_id)
         parsed = parse_item_ref(item_ref)
         existing = await self._db.fetch_one(
-            "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
             (workspace_id, parsed.format()),
         )
         if existing is not None:
-            return WorkspaceItem(
-                item_ref=str(existing["item_ref"]),
-                position=int(existing["position"]),
-                added_at=str(existing["added_at"]),
-            )
+            return self._item_from_row(existing)
         count_row = await self._db.fetch_one(
             "SELECT COUNT(*) AS n FROM workspace_items WHERE workspace_id = ?",
             (workspace_id,),
@@ -263,8 +312,8 @@ class WorkspaceStore:
 
         def _insert(conn: sqlite3.Connection) -> None:
             conn.execute(
-                "INSERT INTO workspace_items (workspace_id, item_ref, position, added_at) VALUES (?, ?, ?, ?)",
-                (workspace_id, parsed.format(), next_position, now),
+                "INSERT INTO workspace_items (workspace_id, item_ref, position, added_at, group_name, pinned) VALUES (?, ?, ?, ?, ?, 0)",
+                (workspace_id, parsed.format(), next_position, now, clean_group),
             )
             # P15：真实新增才 bump（幂等重放不制造并发噪声）。
             conn.execute(
@@ -277,22 +326,26 @@ class WorkspaceStore:
         except sqlite3.IntegrityError:
             # Concurrent add of the same ref: converge on the unique pair.
             existing = await self._db.fetch_one(
-                "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
                 (workspace_id, parsed.format()),
             )
             if existing is None:
                 raise
-            return WorkspaceItem(
-                item_ref=str(existing["item_ref"]),
-                position=int(existing["position"]),
-                added_at=str(existing["added_at"]),
-            )
+            return self._item_from_row(existing)
         return WorkspaceItem(
-            item_ref=parsed.format(), position=next_position, added_at=now
+            item_ref=parsed.format(),
+            position=next_position,
+            added_at=now,
+            group_name=clean_group,
         )
 
-    async def remove_item(self, workspace_id: str, item_ref: str) -> bool:
+    async def remove_item(
+        self, workspace_id: str, item_ref: str, *, force: bool = False
+    ) -> bool:
         """Remove one member; False when the pair does not exist.
+
+        N102：固定条目拒绝静默移除——``force=False`` 且行 pinned →
+        WorkspaceItemPinned（409），绝不半删。``force=True`` 才放行。
 
         P15：删除同时（同一事务）清掉指向该条目的续读指针并 bump
         revision——指针绝不悬空指向已移出的条目。"""
@@ -300,12 +353,18 @@ class WorkspaceStore:
         parsed = parse_item_ref(item_ref)
 
         def _tx(conn: sqlite3.Connection) -> bool:
-            cursor = conn.execute(
+            row = conn.execute(
+                "SELECT pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+                (workspace_id, parsed.format()),
+            ).fetchone()
+            if row is None:
+                return False
+            if bool(row["pinned"]) and not force:
+                raise WorkspaceItemPinned(workspace_id, parsed.format())
+            conn.execute(
                 "DELETE FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
                 (workspace_id, parsed.format()),
             )
-            if cursor.rowcount == 0:
-                return False
             conn.execute(
                 "DELETE FROM workspace_resume WHERE workspace_id = ? AND item_ref = ?",
                 (workspace_id, parsed.format()),
@@ -325,17 +384,10 @@ class WorkspaceStore:
             raise WorkspaceInvalid(f"limit must be between 1 and {_MAX_ITEM_LIMIT}.")
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? ORDER BY position ASC, item_ref ASC LIMIT ?",
+            "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? ORDER BY position ASC, item_ref ASC LIMIT ?",
             (workspace_id, limit),
         )
-        return [
-            WorkspaceItem(
-                item_ref=str(row["item_ref"]),
-                position=int(row["position"]),
-                added_at=str(row["added_at"]),
-            )
-            for row in rows
-        ]
+        return [self._item_from_row(row) for row in rows]
 
     async def list_items_desc(
         self,
@@ -374,23 +426,16 @@ class WorkspaceStore:
         key_ref = key[1] if key else None
         # F19：延后（snoozed_until > now）的行不进入时间线；到期自动回。
         if order == "oldest":
-            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at > ? OR (added_at = ? AND item_ref > ?)) ORDER BY added_at ASC, item_ref ASC LIMIT ?"
+            sql = "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at > ? OR (added_at = ? AND item_ref > ?)) ORDER BY added_at ASC, item_ref ASC LIMIT ?"
         else:
-            sql = "SELECT item_ref, position, added_at FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?"
+            sql = "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND (snoozed_until IS NULL OR snoozed_until <= ?) AND (? IS NULL OR added_at < ? OR (added_at = ? AND item_ref < ?)) ORDER BY added_at DESC, item_ref DESC LIMIT ?"
         rows = await self._db.fetch_all(
             sql,
             (workspace_id, now_iso, key_added, key_added, key_added, key_ref, limit + 1),
         )
         has_more = len(rows) > limit
         rows = rows[:limit]
-        items = [
-            WorkspaceItem(
-                item_ref=str(r["item_ref"]),
-                position=int(r["position"]),
-                added_at=str(r["added_at"]),
-            )
-            for r in rows
-        ]
+        items = [self._item_from_row(r) for r in rows]
         next_cursor = None
         if has_more and items:
             last = items[-1]
@@ -485,6 +530,190 @@ class WorkspaceStore:
             return moved
 
         return await transaction(self._db, _tx)
+
+    # -- groups + pinning (N101 / N102) --------------------------------------
+
+    async def list_items_full(self, workspace_id: str) -> list[WorkspaceItem]:
+        """全量成员（position 序，上限 = 工作区容量）。
+
+        供快照捕获/恢复使用：不走 API 页上限（500），快照绝不静默截断。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? ORDER BY position ASC, item_ref ASC LIMIT ?",
+            (workspace_id, _MAX_ITEMS_PER_WORKSPACE),
+        )
+        return [self._item_from_row(row) for row in rows]
+
+    async def set_item_group(
+        self, workspace_id: str, item_ref: str, group_name: str | None
+    ) -> WorkspaceItem | None:
+        """N101：移动条目到分组（``None`` = 移回未分组隐式前置组）。
+
+        条目不是成员 → None（路由层映射 404）；组归属真实变化才 bump
+        revision（幂等重放不制造跨设备 409 噪声）。"""
+        await self._db.migrate()
+        parsed = parse_item_ref(item_ref)
+        clean = _validate_group_name(group_name)
+        current = await self._db.fetch_one(
+            "SELECT group_name FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, parsed.format()),
+        )
+        if current is None:
+            return None
+        changed = (
+            str(current["group_name"]) if current["group_name"] is not None else None
+        ) != clean
+        if changed:
+            def _update(conn: sqlite3.Connection) -> None:
+                conn.execute(
+                    "UPDATE workspace_items SET group_name = ? WHERE workspace_id = ? AND item_ref = ?",
+                    (clean, workspace_id, parsed.format()),
+                )
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (workspace_id,),
+                )
+
+            await transaction(self._db, _update)
+        row = await self._db.fetch_one(
+            "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, parsed.format()),
+        )
+        assert row is not None
+        return self._item_from_row(row)
+
+    async def set_item_pinned(
+        self, workspace_id: str, item_ref: str, pinned: bool
+    ) -> WorkspaceItem | None:
+        """N102：设置固定标记（set 语义，非 toggle；幂等重放不 bump）。
+
+        条目不是成员 → None（路由层映射 404）。"""
+        await self._db.migrate()
+        parsed = parse_item_ref(item_ref)
+        current = await self._db.fetch_one(
+            "SELECT pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, parsed.format()),
+        )
+        if current is None:
+            return None
+        changed = bool(current["pinned"]) != pinned
+        if changed:
+            def _update(conn: sqlite3.Connection) -> None:
+                conn.execute(
+                    "UPDATE workspace_items SET pinned = ? WHERE workspace_id = ? AND item_ref = ?",
+                    (1 if pinned else 0, workspace_id, parsed.format()),
+                )
+                conn.execute(
+                    "UPDATE workspaces SET revision = revision + 1 WHERE id = ?",
+                    (workspace_id,),
+                )
+
+            await transaction(self._db, _update)
+        row = await self._db.fetch_one(
+            "SELECT item_ref, position, added_at, group_name, pinned FROM workspace_items WHERE workspace_id = ? AND item_ref = ?",
+            (workspace_id, parsed.format()),
+        )
+        assert row is not None
+        return self._item_from_row(row)
+
+    async def _stored_group_order(self, workspace_id: str) -> list[str]:
+        """group_order_json 的容错解析（损坏/非列表 → []，绝不 500）。"""
+        row = await self._db.fetch_one(
+            "SELECT group_order_json FROM workspaces WHERE id = ?", (workspace_id,)
+        )
+        if row is None:
+            raise WorkspaceNotFound(workspace_id)
+        try:
+            parsed = json.loads(str(row["group_order_json"] or "[]"))
+        except ValueError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(name) for name in parsed if isinstance(name, str)]
+
+    async def group_overview(
+        self, workspace_id: str, *, limit: int = _DEFAULT_ITEM_LIMIT
+    ) -> dict[str, Any]:
+        """N101：分组视图（呈现层派生，不落第二份成员关系）。
+
+        - 固定区（pinned，position 序）在最前——N102「固定排所有组之前」；
+        - 未分组 = 隐式前置组（name=None，非空才出现）；
+        - 命名组按 group_order_json 排序，未列入顺序的组按组名字典序追加；
+        - 组内条目按 position 序；分组作用于前 ``limit`` 个成员（与列表
+          页上限一致）。
+        """
+        if limit < 1 or limit > _MAX_ITEM_LIMIT:
+            raise WorkspaceInvalid(f"limit must be between 1 and {_MAX_ITEM_LIMIT}.")
+        await self._db.migrate()
+        summary = await self.get_workspace(workspace_id)
+        if summary is None:
+            raise WorkspaceNotFound(workspace_id)
+        items = await self.list_items(workspace_id, limit=limit)
+        order = await self._stored_group_order(workspace_id)
+
+        pinned = [item for item in items if item.pinned]
+        ungrouped = [item for item in items if item.group_name is None and not item.pinned]
+        named: dict[str, list[WorkspaceItem]] = {}
+        for item in items:
+            if item.group_name is not None and not item.pinned:
+                named.setdefault(item.group_name, []).append(item)
+        ordered_names = [name for name in order if name in named]
+        ordered_names += sorted(set(named) - set(ordered_names))
+
+        groups: list[dict[str, Any]] = []
+        if ungrouped:
+            groups.append({"name": None, "items": ungrouped})
+        groups.extend({"name": name, "items": named[name]} for name in ordered_names)
+        return {
+            "workspaceId": workspace_id,
+            "revision": summary.revision,
+            "groupOrder": order,
+            "pinned": pinned,
+            "groups": groups,
+        }
+
+    async def set_group_order(self, workspace_id: str, order: list[str]) -> list[str]:
+        """N101：设置命名组的呈现顺序（PUT 幂等；不创建、不重命名组）。
+
+        - 每个名字必须是当前真实存在的组（有成员的 group_name）——顺序
+          只重排既有组，诚实拒绝未知名字（400）；
+        - 顺序真实变化才 bump revision（幂等重放不制造并发噪声）。
+        """
+        if not isinstance(order, list):
+            raise WorkspaceInvalid("order must be a list of group names.")
+        if len(order) > _MAX_GROUPS:
+            raise WorkspaceInvalid(f"Too many groups (max {_MAX_GROUPS}).")
+        cleaned = [_validate_group_name(name) for name in order]
+        if len(set(cleaned)) != len(cleaned):
+            raise WorkspaceInvalid("order must not contain duplicate group names.")
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT group_order_json FROM workspaces WHERE id = ?", (workspace_id,)
+        )
+        if row is None:
+            raise WorkspaceNotFound(workspace_id)
+        rows = await self._db.fetch_all(
+            "SELECT DISTINCT group_name FROM workspace_items WHERE workspace_id = ? AND group_name IS NOT NULL",
+            (workspace_id,),
+        )
+        existing = {str(r["group_name"]) for r in rows}
+        unknown = [name for name in cleaned if name not in existing]
+        if unknown:
+            raise WorkspaceInvalid(
+                "order contains groups that do not exist in this workspace."
+            )
+        current = await self._stored_group_order(workspace_id)
+        if current == cleaned:
+            return cleaned
+
+        def _update(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "UPDATE workspaces SET group_order_json = ?, revision = revision + 1 WHERE id = ?",
+                (json.dumps(cleaned, ensure_ascii=False), workspace_id),
+            )
+
+        await transaction(self._db, _update)
+        return cleaned
 
     # -- resume pointer (P15) ----------------------------------------------
 
@@ -594,6 +823,23 @@ def _decode_timeline_cursor(cursor: str) -> tuple[str, str, str]:
     ):
         return parsed[0], parsed[1], "newest"
     raise WorkspaceInvalid("timeline cursor payload is not a key pair.")
+
+
+def _validate_group_name(name: str | None) -> str | None:
+    """N101：分组标签校验——None 保留（未分组）；空白串归一为 None；
+    其余去首尾空白、上限 64 字符。"""
+    if name is None:
+        return None
+    if not isinstance(name, str):
+        raise WorkspaceInvalid("Group name must be a string or null.")
+    clean = name.strip()
+    if not clean:
+        return None
+    if len(clean) > _MAX_GROUP_NAME_LENGTH:
+        raise WorkspaceInvalid(
+            f"Group name is too long (max {_MAX_GROUP_NAME_LENGTH} chars)."
+        )
+    return clean
 
 
 def _validate_name(name: str) -> str:
