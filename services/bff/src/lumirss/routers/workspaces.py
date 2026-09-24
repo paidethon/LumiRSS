@@ -13,6 +13,11 @@ from fastapi import APIRouter, Request, Response
 
 from lumirss.itemref import InvalidItemRef
 from lumirss.models import (
+    CompileExcluded,
+    CompileItem,
+    CompileRequest,
+    CompileResponse,
+    CompileSection,
     ReadLaterItem,
     ReadLaterSnoozedList,
     ReadLaterSnoozeRequest,
@@ -23,6 +28,13 @@ from lumirss.models import (
     ResolvedItem,
     ResolveRequest,
     Workspace,
+    WorkspaceCleanupApplyRequest,
+    WorkspaceCleanupApplyResult,
+    WorkspaceCleanupCategory,
+    WorkspaceCleanupLogList,
+    WorkspaceCleanupPreviewResponse,
+    WorkspaceCleanupUndoRequest,
+    WorkspaceCleanupUndoResult,
     WorkspaceCreate,
     WorkspaceGroupOrderPut,
     WorkspaceGroupsResponse,
@@ -38,6 +50,14 @@ from lumirss.models import (
     WorkspaceResumePointer,
     WorkspaceResumePutRequest,
     WorkspaceResumeResponse,
+    WorkspaceSectionCreate,
+    WorkspaceSectionItem,
+    WorkspaceSectionItemAddRequest,
+    WorkspaceSectionItemsOrderPut,
+    WorkspaceSectionList,
+    WorkspaceSectionOrderPut,
+    WorkspaceSectionPatch,
+    WorkspaceSectionView,
     WorkspaceSnapshot,
     WorkspaceSnapshotCreate,
     WorkspaceSnapshotList,
@@ -697,6 +717,553 @@ async def export_research_pack(
         headers={
             "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted}"
         },
+    )
+
+
+# -- N113 分节大纲 -------------------------------------------------------------
+
+
+def _sections_store(request: Request):
+    from lumirss.workspace_sections import WorkspaceSectionStore
+
+    return WorkspaceSectionStore(request.app.state.db, _get_workspace_store(request))
+
+
+def _section_view(section: dict) -> WorkspaceSectionView:
+    return WorkspaceSectionView(
+        id=section["id"],
+        workspaceId=section["workspaceId"],
+        title=section["title"],
+        sortIndex=section["sortIndex"],
+        createdAt=section["createdAt"],
+        items=[
+            WorkspaceSectionItem(
+                itemRef=i["itemRef"],
+                position=i["position"],
+                addedAt=i["addedAt"],
+                unresolved=i["unresolved"],
+            )
+            for i in section["items"]
+        ],
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/sections",
+    response_model=WorkspaceSectionList,
+)
+async def list_workspace_sections(
+    workspace_id: str, request: Request
+) -> WorkspaceSectionList:
+    """N113：分节大纲（sort_index 序）。成员引用以 item_ref 引用而非复制；
+    同一条目可出现在多个分节；引用已不是工作区成员 → 行保留并诚实标记
+    ``unresolved``（绝不静默隐藏，N113 契约）。"""
+    sections = await _sections_store(request).list_sections(workspace_id)
+    return WorkspaceSectionList(items=[_section_view(s) for s in sections])
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/sections",
+    response_model=WorkspaceSectionView,
+    status_code=201,
+)
+async def create_workspace_section(
+    workspace_id: str, payload: WorkspaceSectionCreate, request: Request
+) -> WorkspaceSectionView:
+    section = await _sections_store(request).create_section(
+        workspace_id, payload.title
+    )
+    return _section_view(section)
+
+
+@router.patch(
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}",
+    response_model=WorkspaceSectionView,
+)
+async def rename_workspace_section(
+    workspace_id: str, section_id: str, payload: WorkspaceSectionPatch, request: Request
+) -> WorkspaceSectionView:
+    section = await _sections_store(request).rename_section(
+        workspace_id, section_id, payload.title
+    )
+    return _section_view(section)
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}", status_code=204
+)
+async def delete_workspace_section(
+    workspace_id: str, section_id: str, request: Request
+) -> Response:
+    deleted = await _sections_store(request).delete_section(workspace_id, section_id)
+    if not deleted:
+        from lumirss.workspace_sections import SectionNotFound
+
+        raise SectionNotFound(section_id)
+    return Response(status_code=204)
+
+
+@router.put(
+    "/api/v1/workspaces/{workspace_id}/sections/order",
+    response_model=WorkspaceSectionList,
+)
+async def reorder_workspace_sections(
+    workspace_id: str, payload: WorkspaceSectionOrderPut, request: Request
+) -> WorkspaceSectionList:
+    """N113：分节顺序持久化（PUT 全量 1..N；真实变化 bump revision）。"""
+    store = _sections_store(request)
+    await store.reorder_sections(workspace_id, payload.sectionIds)
+    sections = await store.list_sections(workspace_id)
+    return WorkspaceSectionList(items=[_section_view(s) for s in sections])
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items",
+    response_model=WorkspaceSectionItem,
+    status_code=201,
+)
+async def add_workspace_section_item(
+    workspace_id: str,
+    section_id: str,
+    payload: WorkspaceSectionItemAddRequest,
+    request: Request,
+) -> WorkspaceSectionItem:
+    """把一个工作区成员引用进分节（幂等；同一 ref 可进入多个分节——
+    引用而非复制，ADR 0004）。非成员 → 404。"""
+    item = await _sections_store(request).add_item(
+        workspace_id, section_id, payload.itemRef
+    )
+    return WorkspaceSectionItem(
+        itemRef=item["itemRef"],
+        position=item["position"],
+        addedAt=item["addedAt"],
+        unresolved=False,
+    )
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/{item_ref}",
+    status_code=204,
+)
+async def remove_workspace_section_item(
+    workspace_id: str, section_id: str, item_ref: str, request: Request
+) -> Response:
+    """从分节移除一个引用（只拆引用，绝不删除工作区成员本身）。"""
+    removed = await _sections_store(request).remove_item(
+        workspace_id, section_id, item_ref
+    )
+    if not removed:
+        from lumirss.workspace_sections import SectionItemNotFound
+
+        raise SectionItemNotFound(item_ref)
+    return Response(status_code=204)
+
+
+@router.put(
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/order",
+    response_model=WorkspaceSectionList,
+)
+async def reorder_workspace_section_items(
+    workspace_id: str,
+    section_id: str,
+    payload: WorkspaceSectionItemsOrderPut,
+    request: Request,
+) -> WorkspaceSectionList:
+    """N113：节内条目顺序持久化（PUT 全量 1..N）。"""
+    store = _sections_store(request)
+    await store.reorder_items(workspace_id, section_id, payload.itemRefs)
+    sections = await store.list_sections(workspace_id)
+    return WorkspaceSectionList(items=[_section_view(s) for s in sections])
+
+
+# -- N114 汇编预览 -------------------------------------------------------------
+
+
+def _citation_for(view: ResolvedItem) -> str:
+    """引文链接：rss → /reader?entry=<entryRef>（应用内阅读路由）；
+    library → 有安全外链用外链，否则 /library?item=<uuid>（诚实占位）。"""
+    if view.ref.startswith("rss:"):
+        entry_ref = view.payload.get("entryRef") or view.ref.removeprefix("rss:")
+        return f"/reader?entry={entry_ref}"
+    url = view.url or ""
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return f"/library?item={view.ref.removeprefix('library:')}"
+
+
+async def _compile_notes(
+    request: Request,
+    workspace_id: str,
+    resolved: dict[str, ResolvedItem],
+) -> dict[str, str]:
+    """条目自有笔记（诚实、有界）：
+    - library: 引用 → 库条目自带的 note 字段（研究包同一口径）；
+    - 全部引用 → 本工作区 lumi_notes 标题精确匹配（lumi_notes 以
+      workspace_id 归属工作区，与条目的唯一自然链接是标题）。
+    绝不虚构：匹配不到就没有 note。"""
+    notes: dict[str, str] = {}
+    library = _get_library_store(request)
+    for ref in resolved:
+        if not ref.startswith("library:"):
+            continue
+        try:
+            item = await library.get_library_item(ref.removeprefix("library:"))
+        except Exception:  # noqa: BLE001 — 笔记增强失败不阻断汇编
+            item = None
+        if item is not None and getattr(item, "note", None):
+            notes[ref] = str(item.note)
+    rows = await request.app.state.db.fetch_all(
+        "SELECT title, content_md FROM lumi_notes WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100",
+        (workspace_id,),
+    )
+    by_title: dict[str, str] = {}
+    for row in rows:
+        title = str(row["title"]).strip()
+        first_line = str(row["content_md"] or "").strip().splitlines()
+        if title and title not in by_title:
+            by_title[title] = (first_line[0] if first_line else "")[:300]
+    for ref, view in resolved.items():
+        if ref in notes:
+            continue
+        match = by_title.get(view.title.strip())
+        if match:
+            notes[ref] = match
+    return notes
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/compile",
+    response_model=CompileResponse,
+)
+async def compile_workspace(
+    workspace_id: str, payload: CompileRequest, request: Request
+) -> CompileResponse:
+    """N114：按大纲汇编草稿（纯预览，绝不落库）。
+
+    - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
+    - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
+    - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
+      绝不冒充内容。"""
+    store = _get_workspace_store(request)
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    section_store = _sections_store(request)
+    sections = await section_store.sections_for_compile(
+        workspace_id, payload.sectionIds
+    )
+    flat = not any(s["items"] for s in sections)
+    if flat:
+        # 无大纲 → 平铺成员（compile 仍可用；单隐式节，标题 = 工作区名）。
+        members = await store.list_items(workspace_id, limit=500)
+        outline = [
+            {
+                "id": None,
+                "title": summary.name,
+                "items": [
+                    {
+                        "itemRef": m.item_ref,
+                        "position": m.position,
+                        "addedAt": m.added_at,
+                        "unresolved": False,
+                    }
+                    for m in members
+                ],
+            }
+        ]
+    else:
+        outline = sections
+
+    # 去重解析（同一 ref 多节引用只解析一次）。
+    all_refs: list[str] = []
+    seen: set[str] = set()
+    for section in outline:
+        for item in section["items"]:
+            if item["itemRef"] not in seen:
+                seen.add(item["itemRef"])
+                all_refs.append(item["itemRef"])
+    registry = _get_source_registry(request)
+    resolved_list = list(
+        await asyncio.gather(
+            *(_resolve_bounded(registry, ref) for ref in all_refs)
+        )
+    )
+    resolved = {v.ref: v for v in resolved_list}
+    notes = await _compile_notes(request, workspace_id, resolved)
+
+    draft_sections: list[CompileSection] = []
+    excluded: list[CompileExcluded] = []
+    included = 0
+    for section in outline:
+        items: list[CompileItem] = []
+        for item in section["items"]:
+            ref = item["itemRef"]
+            view = resolved.get(ref)
+            if view is None or view.stale:
+                reason = (
+                    view.staleReason if view is not None else "resolve_failed"
+                ) or "来源不可用"
+                excluded.append(CompileExcluded(itemRef=ref, reason=reason))
+                continue
+            included += 1
+            items.append(
+                CompileItem(
+                    itemRef=ref,
+                    title=view.title,
+                    excerpt=(view.excerpt or "")[:200],
+                    citation=_citation_for(view),
+                    note=notes.get(ref),
+                )
+            )
+        draft_sections.append(
+            CompileSection(
+                sectionId=section["id"], title=section["title"], items=items
+            )
+        )
+    return CompileResponse(
+        workspaceId=workspace_id,
+        workspaceName=summary.name,
+        generatedAt=utc_now(),
+        sections=draft_sections,
+        includedCount=included,
+        excludedMissing=len(excluded),
+        excluded=excluded,
+    )
+
+
+def _compile_markdown(draft: CompileResponse) -> str:
+    """CompileResponse → Markdown 文本（引文链接逐条保留）。"""
+    lines = [
+        f"# {draft.workspaceName}（汇编草稿）",
+        "",
+        f"- 生成时间：{draft.generatedAt}",
+        f"- 收录 {draft.includedCount} 条 / 排除 {draft.excludedMissing} 条（缺失或未授权）",
+        "",
+    ]
+    for section in draft.sections:
+        lines.append(f"## {section.title}")
+        lines.append("")
+        if not section.items:
+            lines.append("（本节暂无可汇编条目）")
+            lines.append("")
+            continue
+        for item in section.items:
+            lines.append(f"### {item.title}")
+            lines.append("")
+            lines.append(f"- 引文：{item.citation}")
+            if item.excerpt:
+                lines.append(f"- 摘录：{item.excerpt}")
+            if item.note:
+                lines.append(f"- 笔记：{item.note}")
+            lines.append("")
+    if draft.excluded:
+        lines.append("## 未收录（诚实排除）")
+        lines.append("")
+        for item in draft.excluded:
+            lines.append(f"- `{item.itemRef}`：{item.reason}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@router.post("/api/v1/workspaces/{workspace_id}/compile/markdown")
+async def compile_workspace_markdown(
+    workspace_id: str, payload: CompileRequest, request: Request
+) -> Response:
+    """N114：汇编草稿的 Markdown 文本版（同样纯预览不落库）。"""
+    draft = await compile_workspace(workspace_id, payload, request)
+    text = _compile_markdown(draft)
+    return Response(
+        content=text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="compile-{workspace_id}.md"'},
+    )
+
+
+# -- N120 清理预演 -------------------------------------------------------------
+
+
+def _cleanup_store(request: Request):
+    from lumirss.workspace_cleanup import WorkspaceCleanupStore
+
+    return WorkspaceCleanupStore(request.app.state.db, _get_workspace_store(request))
+
+
+async def _verify_rss_ref(request: Request, item_ref: str) -> str:
+    """核实一个 rss: 成员是否真的消失（「gone」才可清理）。
+
+    投影命中 → ok；投影未命中且上游适配器可用 → 问一次上游（404 = gone；
+    其他异常/超时 = unverifiable）；上游不可用 = unverifiable（FreshRSS
+    未配置绝不等于条目消失——清理绝不建议在故障时删数据）。"""
+    from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+    from lumirss.search_store import SearchStore
+
+    entry_ref = item_ref.removeprefix("rss:")
+    row = await SearchStore(request.app.state.db).entry_row_by_ref(item_ref)
+    if row is not None:
+        return "ok"
+    adapter = request.app.state.freshrss_adapter
+    if adapter is None:
+        return "unverifiable"
+    try:
+        item_id = decode_entry_ref(entry_ref)
+    except InvalidEntryReference:
+        return "gone"
+    from lumirss.adapters.freshrss import EntryNotFound
+
+    try:
+        await asyncio.wait_for(adapter.get_entry(item_id), timeout=15.0)
+    except (EntryNotFound, InvalidEntryReference):
+        return "gone"
+    except Exception:  # noqa: BLE001 — 上游故障 ≠ 内容消失
+        return "unverifiable"
+    return "ok"
+
+
+async def _cleanup_unresolved(request: Request, members: list):
+    """成员 ref 核实分类（N120 预演/应用的共同输入）。"""
+    registry = _get_source_registry(request)
+    rss_refs = [m.item_ref for m in members if m.item_ref.startswith("rss:")]
+    library_refs = [m.item_ref for m in members if m.item_ref.startswith("library:")]
+    gone: list[str] = []
+    unverifiable: list[str] = []
+    for ref, verdict in zip(
+        rss_refs,
+        await asyncio.gather(*(_verify_rss_ref(request, ref) for ref in rss_refs)),
+        strict=True,
+    ):
+        if verdict == "gone":
+            gone.append(ref)
+        elif verdict == "unverifiable":
+            unverifiable.append(ref)
+    protected: list[str] = []
+    for ref, view in zip(
+        library_refs,
+        await asyncio.gather(*(_resolve_bounded(registry, ref) for ref in library_refs)),
+        strict=True,
+    ):
+        if view.stale:
+            # 库对象受保护：解析不到也绝不进可执行类目。
+            protected.append(ref)
+    return gone, unverifiable, protected
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/cleanup-preview",
+    response_model=WorkspaceCleanupPreviewResponse,
+)
+async def workspace_cleanup_preview(
+    workspace_id: str, request: Request
+) -> WorkspaceCleanupPreviewResponse:
+    """N120：只读清理预演——每项带原因，绝不静默；只报告不删除。"""
+    store = _get_workspace_store(request)
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    members = await store.list_items_full(workspace_id)
+    gone, unverifiable, protected = await _cleanup_unresolved(request, members)
+    cleanup = _cleanup_store(request)
+    empty_groups = await cleanup.empty_groups(workspace_id)
+    orphans = await cleanup.orphan_section_refs(workspace_id)
+    conflicts = await cleanup.pinned_group_conflicts(workspace_id)
+    categories = [
+        WorkspaceCleanupCategory(
+            category="unresolved_refs",
+            items=[
+                {"itemRef": ref, "reason": "来源条目已不存在（feed/entry 已消失）。"}
+                for ref in gone
+            ],
+        ),
+        WorkspaceCleanupCategory(
+            category="protected_library_refs",
+            items=[
+                {
+                    "itemRef": ref,
+                    "reason": "库对象引用解析不到（已删除/回收站）——库对象受保护，不参与清理。",
+                }
+                for ref in protected
+            ],
+        ),
+        WorkspaceCleanupCategory(
+            category="unverifiable_refs",
+            items=[
+                {
+                    "itemRef": ref,
+                    "reason": "当前无法核实（FreshRSS 未配置或查询失败）——绝不建议删除。",
+                }
+                for ref in unverifiable
+            ],
+        ),
+        WorkspaceCleanupCategory(category="empty_groups", items=empty_groups),
+        WorkspaceCleanupCategory(category="orphan_section_refs", items=orphans),
+        WorkspaceCleanupCategory(category="pinned_group_conflicts", items=conflicts),
+    ]
+    from lumirss.workspace_cleanup import (
+        ACTIONABLE_CATEGORIES,
+        REPORT_ONLY_CATEGORIES,
+    )
+
+    return WorkspaceCleanupPreviewResponse(
+        workspaceId=workspace_id,
+        categories=categories,
+        actionable=list(ACTIONABLE_CATEGORIES),
+        reportOnly=list(REPORT_ONLY_CATEGORIES),
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/cleanup",
+    response_model=WorkspaceCleanupApplyResult,
+)
+async def workspace_cleanup_apply(
+    workspace_id: str, payload: WorkspaceCleanupApplyRequest, request: Request
+) -> WorkspaceCleanupApplyResult:
+    """N120：应用选中的清理类目（快照先行，可撤销）。
+
+    只删 Lumi 自有元数据行（stale rss 成员行 / 空组名 / 悬空分节引用）；
+    绝不触碰 FreshRSS 数据；library: 域引用受保护（即使解析不到）。"""
+    store = _get_workspace_store(request)
+    summary = await store.get_workspace(workspace_id)
+    if summary is None:
+        raise WorkspaceNotFound(workspace_id)
+    members = await store.list_items_full(workspace_id)
+    gone, _unverifiable, _protected = await _cleanup_unresolved(request, members)
+    result = await _cleanup_store(request).apply(
+        workspace_id, payload.categories, unresolved_refs=gone
+    )
+    return WorkspaceCleanupApplyResult(logId=result["logId"], removed=result["removed"])
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/cleanup-logs",
+    response_model=WorkspaceCleanupLogList,
+)
+async def workspace_cleanup_logs(
+    workspace_id: str, request: Request
+) -> WorkspaceCleanupLogList:
+    """清理日志（新→旧，上限 5；供撤销入口选择）。"""
+    store = _get_workspace_store(request)
+    if await store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    logs = await _cleanup_store(request).list_logs(workspace_id)
+    return WorkspaceCleanupLogList(items=logs)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/cleanup/undo",
+    response_model=WorkspaceCleanupUndoResult,
+)
+async def workspace_cleanup_undo(
+    workspace_id: str, payload: WorkspaceCleanupUndoRequest, request: Request
+) -> WorkspaceCleanupUndoResult:
+    """N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。"""
+    store = _get_workspace_store(request)
+    if await store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    result = await _cleanup_store(request).undo(workspace_id, payload.logId)
+    return WorkspaceCleanupUndoResult(
+        logId=result["logId"],
+        restoredRefs=result["restoredRefs"],
+        restoredSectionRefs=result["restoredSectionRefs"],
     )
 
 

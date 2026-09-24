@@ -211,7 +211,13 @@ from lumirss.workspace_archive import (
     ProtectedWorkspace,
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
+from lumirss.workspace_cleanup import CleanupInvalid, CleanupLogNotFound
 from lumirss.workspace_goals import GoalInvalid
+from lumirss.workspace_sections import (
+    SectionInvalid,
+    SectionItemNotFound,
+    SectionNotFound,
+)
 from lumirss.workspace_snapshots import WorkspaceSnapshotNotFound
 from lumirss.workspace_templates import (
     TemplateExists,
@@ -329,6 +335,13 @@ _ERROR_RESPONSES = {
     WorkspaceItemPinned: (409, "workspace_item_pinned"),
     # N105：快照不存在（不跨工作区取快照）
     WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
+    # N113 分节大纲
+    SectionInvalid: (422, "invalid_workspace_section"),
+    SectionNotFound: (404, "workspace_section_not_found"),
+    SectionItemNotFound: (404, "workspace_section_item_not_found"),
+    # N120 清理预演
+    CleanupInvalid: (422, "invalid_workspace_cleanup"),
+    CleanupLogNotFound: (404, "workspace_cleanup_log_not_found"),
     # N041/N042/N043：今日必读队列（稳定错误信封）
     QueueInvalid: (400, "invalid_queue"),
     QueueItemNotFound: (404, "queue_item_not_found"),
@@ -596,6 +609,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ZipTooLarge)
     @app.exception_handler(WorkspaceItemPinned)
     @app.exception_handler(WorkspaceSnapshotNotFound)
+    @app.exception_handler(SectionInvalid)
+    @app.exception_handler(SectionNotFound)
+    @app.exception_handler(SectionItemNotFound)
+    @app.exception_handler(CleanupInvalid)
+    @app.exception_handler(CleanupLogNotFound)
     @app.exception_handler(QueueInvalid)
     @app.exception_handler(QueueItemNotFound)
     @app.exception_handler(QueueItemDone)

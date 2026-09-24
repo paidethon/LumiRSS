@@ -234,8 +234,16 @@ async def put_goal(
     workspace_id: str, payload: WorkspaceGoalPut, request: Request
 ):
     await _require_active(request, workspace_id)
+    # N111：goalText / conditions 「键未出现」= 保留既有值（旧调用方
+    # 绝不无意清空）；显式 null/空串/空数组 = 清除（fields_set 区分）。
     goal = await _goal_store(request).put_goal(
-        workspace_id, payload.targetCount, payload.deadline
+        workspace_id,
+        payload.targetCount,
+        payload.deadline,
+        payload.goalText,
+        payload.conditions,
+        goal_text_set="goalText" in payload.model_fields_set,
+        conditions_set="conditions" in payload.model_fields_set,
     )
     done = await _board_store(request).done_count(workspace_id)
     return WorkspaceGoalView(**goal, doneCount=done).model_dump()
