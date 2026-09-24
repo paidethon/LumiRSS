@@ -3,7 +3,10 @@
  * 读取 dist/index.html 实际引用的首屏资源（entry script + modulepreload
  * + CSS），执行两条契约：
  * 1. 首屏 JS（原始/gzip）不超上限 —— 上限基于 2026-09 分割后的实测
- *    （~643 kB raw / ~197 kB gzip）+ ~15% 余量；
+ *    （~643 kB raw / ~197 kB gzip）+ ~15% 余量；2026-09 P0 公开注册
+ *    合并后实测 781.4 kB raw（登录页注册入口 + ?next= 重定向校验 +
+ *    register/policy client 函数，均为登录必经路径、无法懒加载），
+ *    raw 上限按实测重校为 784 kB（gzip 上限不变，实测 232.9 kB）；
  * 2. 懒加载契约：SettingsModal / MobileSettingsScreen / 一级移动页
  *    chunk 不得出现在 index.html 引用里（回归 = 有人把懒入口改回
  *    静态 import）。
@@ -29,7 +32,7 @@ for (const asset of jsAssets) {
   gzipTotal += gzipSync(buf).length
 }
 
-const RAW_LIMIT = 780 * 1024
+const RAW_LIMIT = 784 * 1024
 const GZIP_LIMIT = 235 * 1024
 const failures = []
 if (rawTotal > RAW_LIMIT) {

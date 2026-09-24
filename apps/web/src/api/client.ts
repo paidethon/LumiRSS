@@ -607,6 +607,73 @@ export async function activateWithInvite(body: {
   return (await response.json()) as AuthStatusView
 }
 
+// ---- P0 公开注册（/auth/register + /admin/registration-policy） ----------
+// 契约类型在本模块补齐（additive，与 0067 端点同一策略；generated/schema
+// 已由 pnpm api:generate 收录该批端点，此处保持稳定的具名 DTO）。BFF 是
+// 唯一真源。
+
+/** 公开注册并自动登录（P0-02/F020）：成功 = 会话 Cookie 由响应设置，
+ * 响应体只含 authenticated/expiresAt，身份仍由随后的 GET /auth/session
+ * 服务端核实（与 /auth/activate 同契约）。
+ * 错误族：403 registration_disabled / 409 username_taken /
+ * 400 weak_password / 400 invalid_username。 */
+export async function registerAccount(body: {
+  username: string
+  password: string
+  displayName?: string | null
+}): Promise<AuthStatusView> {
+  const response = await rawRequest(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify({
+      username: body.username,
+      password: body.password,
+      ...(body.displayName ? { displayName: body.displayName } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as AuthStatusView
+}
+
+/** 实例注册策略（P0-05，admin-only）。updatedAt/updatedBy 首次设置前
+ * 为 null（服务端没给就不显示，不编造）。 */
+export interface RegistrationPolicy {
+  allowPublicRegistration: boolean
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+/** 容错归一：{allowPublicRegistration, updatedAt?, updatedBy?} → DTO。 */
+function normalizeRegistrationPolicy(body: Record<string, unknown>): RegistrationPolicy {
+  return {
+    allowPublicRegistration: body.allowPublicRegistration === true,
+    updatedAt: toIso(body.updatedAt),
+    updatedBy: pickString(body.updatedBy),
+  }
+}
+
+/** 读实例注册策略（GET /admin/registration-policy）。 */
+export async function getRegistrationPolicy(signal?: AbortSignal): Promise<RegistrationPolicy> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/admin/registration-policy`,
+    signal,
+  )
+  return normalizeRegistrationPolicy(body)
+}
+
+/** 改实例注册策略（PUT /admin/registration-policy）。返回服务端权威
+ * 状态（含 updatedAt/updatedBy）；403 = 非管理员，UI 不自行放行。 */
+export async function updateRegistrationPolicy(
+  allowPublicRegistration: boolean,
+): Promise<RegistrationPolicy> {
+  const response = await rawRequest(`${API_BASE}/admin/registration-policy`, {
+    method: 'PUT',
+    body: JSON.stringify({ allowPublicRegistration }),
+    contentType: 'application/json',
+  })
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeRegistrationPolicy(body)
+}
+
 // ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
 
 /** 成员目录（不含密码哈希；owner→member 全量）。 */

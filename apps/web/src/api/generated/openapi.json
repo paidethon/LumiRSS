@@ -11480,6 +11480,89 @@
     "title": "RecoverPasswordRequest",
     "type": "object"
    },
+   "RegisterRequest": {
+    "description": "POST /auth/register (P0 public registration).",
+    "properties": {
+     "displayName": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Displayname"
+     },
+     "password": {
+      "maxLength": 72,
+      "title": "Password",
+      "type": "string"
+     },
+     "username": {
+      "maxLength": 32,
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "username",
+     "password"
+    ],
+    "title": "RegisterRequest",
+    "type": "object"
+   },
+   "RegistrationPolicyRequest": {
+    "description": "PUT /admin/registration-policy.",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicyRequest",
+    "type": "object"
+   },
+   "RegistrationPolicyResponse": {
+    "description": "GET / PUT /admin/registration-policy (instance-level switch).",
+    "properties": {
+     "allowPublicRegistration": {
+      "title": "Allowpublicregistration",
+      "type": "boolean"
+     },
+     "updatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedat"
+     },
+     "updatedBy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedby"
+     }
+    },
+    "required": [
+     "allowPublicRegistration"
+    ],
+    "title": "RegistrationPolicyResponse",
+    "type": "object"
+   },
    "RelationCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/relations body.",
@@ -17440,6 +17523,60 @@
     "summary": "Pool Add"
    }
   },
+  "/api/v1/admin/registration-policy": {
+   "get": {
+    "operationId": "get_registration_policy_api_v1_admin_registration_policy_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Registration Policy"
+   },
+   "put": {
+    "operationId": "set_registration_policy_api_v1_admin_registration_policy_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegistrationPolicyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegistrationPolicyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Registration Policy"
+   }
+  },
   "/api/v1/admin/system": {
    "get": {
     "description": "Admin-only deployment diagnostics (P11). See the block comment above\nfor the non-secret guarantee and the deliberate scoping: cross-user /\nsystem-wide facts live ONLY behind this gate; the per-user\n/api/v1/operations/* endpoints stay own-scope by design.",
@@ -19168,6 +19305,45 @@
      }
     },
     "summary": "Recover Password"
+   }
+  },
+  "/api/v1/auth/register": {
+   "post": {
+    "description": "Open registration (P0): self-serve MEMBER account, gated by the\ninstance-level ``allow_public_registration`` policy (control DB,\ndefault OFF — upgraded instances and fresh installs alike stay\nclosed until the operator flips /admin/registration-policy).\n\nDeliberately mirrors /auth/activate without an invite: role is\nhardcoded ``member`` (the client can never request a role), the\nFreshRSS pool assigns atomically or the account starts with an\nhonest pending binding, and the server derives every identity.\nEnforcement here is the only gate — a hidden frontend button is\nnot trusted.",
+    "operationId": "register_api_v1_auth_register_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegisterRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Register"
    }
   },
   "/api/v1/auth/session": {

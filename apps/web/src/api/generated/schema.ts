@@ -214,6 +214,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/registration-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Registration Policy */
+        get: operations["get_registration_policy_api_v1_admin_registration_policy_get"];
+        /** Set Registration Policy */
+        put: operations["set_registration_policy_api_v1_admin_registration_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/system": {
         parameters: {
             query?: never;
@@ -1026,6 +1044,36 @@ export interface paths {
          *     is pretended to be sent).
          */
         post: operations["recover_password_api_v1_auth_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register
+         * @description Open registration (P0): self-serve MEMBER account, gated by the
+         *     instance-level ``allow_public_registration`` policy (control DB,
+         *     default OFF — upgraded instances and fresh installs alike stay
+         *     closed until the operator flips /admin/registration-policy).
+         *
+         *     Deliberately mirrors /auth/activate without an invite: role is
+         *     hardcoded ``member`` (the client can never request a role), the
+         *     FreshRSS pool assigns atomically or the account starts with an
+         *     honest pending binding, and the server derives every identity.
+         *     Enforcement here is the only gate — a hidden frontend button is
+         *     not trusted.
+         */
+        post: operations["register_api_v1_auth_register_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12719,6 +12767,38 @@ export interface components {
             token: string;
         };
         /**
+         * RegisterRequest
+         * @description POST /auth/register (P0 public registration).
+         */
+        RegisterRequest: {
+            /** Displayname */
+            displayName?: string | null;
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /**
+         * RegistrationPolicyRequest
+         * @description PUT /admin/registration-policy.
+         */
+        RegistrationPolicyRequest: {
+            /** Allowpublicregistration */
+            allowPublicRegistration: boolean;
+        };
+        /**
+         * RegistrationPolicyResponse
+         * @description GET / PUT /admin/registration-policy (instance-level switch).
+         */
+        RegistrationPolicyResponse: {
+            /** Allowpublicregistration */
+            allowPublicRegistration: boolean;
+            /** Updatedat */
+            updatedAt?: string | null;
+            /** Updatedby */
+            updatedBy?: string | null;
+        };
+        /**
          * RelationCreate
          * @description POST /api/v1/relations body.
          */
@@ -15568,6 +15648,59 @@ export interface operations {
             };
         };
     };
+    get_registration_policy_api_v1_admin_registration_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicyResponse"];
+                };
+            };
+        };
+    };
+    set_registration_policy_api_v1_admin_registration_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_status_api_v1_admin_system_get: {
         parameters: {
             query?: never;
@@ -16956,6 +17089,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RecoverPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
             };
         };
         responses: {
