@@ -16,6 +16,18 @@ import {
   enableTotp,
   finishPasskeyRegistration,
   getTotpStatus,
+  getTodayQueue,
+  generateTodayQueue,
+  addQueueItem,
+  removeQueueItem,
+  setQueueItemDone,
+  reorderTodayQueue,
+  moveQueueItemSegment,
+  setQueueSegmentOrder,
+  freezeTodayQueue,
+  getQueueSnapshots,
+  getQueueSnapshot,
+  deleteQueueSnapshot,
   listPasskeys,
   setupTotp,
   addWorkspaceItem,
@@ -3373,4 +3385,143 @@ export function useRetentionPreviewMutation() {
 
 export function useRetentionApplyMutation() {
   return useMutation({ mutationFn: () => applyStorageRetention() })
+}
+
+// ---- N041/N042/N043/N044 今日必读队列 ----
+
+const QUEUE_TODAY_KEY = ['queue', 'today']
+const QUEUE_SNAPSHOTS_KEY = ['queue', 'snapshots']
+
+/** 今日队列（pending + done；removed 行不出库门）。 */
+export function useTodayQueue(enabled = true) {
+  return useQuery({
+    queryKey: QUEUE_TODAY_KEY,
+    queryFn: ({ signal }) => getTodayQueue(signal),
+    enabled,
+  })
+}
+
+/** 生成（或幂等返回）。已存在的队列绝不被重排（generated=false）。 */
+export function useGenerateQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      timeBudgetMinutes?: number
+      levels?: string[]
+      workspaceId?: string
+      force?: boolean
+    }) => generateTodayQueue(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 手动加入（itemRef；可选段名）。 */
+export function useAddQueueItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemRef: string; segment?: string | null }) =>
+      addQueueItem(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 移除（status=removed，行保留）。 */
+export function useRemoveQueueItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (itemId: string) => removeQueueItem(itemId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 完成状态（set 语义；完成按条目身份记账在服务端）。 */
+export function useQueueItemDoneMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemId: string; done: boolean }) =>
+      setQueueItemDone(input.itemId, input.done),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 持久化重排。 */
+export function useReorderQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (order: string[]) => reorderTodayQueue(order),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 行菜单移动分段。 */
+export function useMoveQueueItemSegmentMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemId: string; segment: string | null }) =>
+      moveQueueItemSegment(input.itemId, input.segment),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 段顺序（服务端存储 → 跨设备一致）。 */
+export function useQueueSegmentOrderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (order: string[]) => setQueueSegmentOrder(order),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 冻结当前 pending 成员为不可变快照。 */
+export function useFreezeQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (label: string) => freezeTodayQueue(label),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_SNAPSHOTS_KEY })
+    },
+  })
+}
+
+/** 快照列表（新→旧）。 */
+export function useQueueSnapshots(enabled = true) {
+  return useQuery({
+    queryKey: QUEUE_SNAPSHOTS_KEY,
+    queryFn: ({ signal }) => getQueueSnapshots(signal),
+    enabled,
+  })
+}
+
+/** 打开冻结视图（原始成员顺序；消失 ref 呈现占位）。 */
+export function useQueueSnapshot(snapshotId: string | null) {
+  return useQuery({
+    queryKey: ['queue', 'snapshot', snapshotId],
+    queryFn: ({ signal }) => getQueueSnapshot(snapshotId as string, signal),
+    enabled: snapshotId !== null,
+  })
+}
+
+/** 删除快照。 */
+export function useDeleteQueueSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (snapshotId: string) => deleteQueueSnapshot(snapshotId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_SNAPSHOTS_KEY })
+    },
+  })
 }

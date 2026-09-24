@@ -186,3 +186,19 @@ export type InboxItemRow = Schemas['InboxItemRow']
 /** 统一来源注册表（只读综合视图，统一 API ≠ 统一数据库）。 */
 export type SourceRegistryEntry = Schemas['SourceRegistryEntry']
 export type SourceRegistryResponse = Schemas['SourceRegistryResponse']
+
+// ---- N041/N042/N043/N044 今日必读队列 ----
+
+/** 队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。 */
+export type QueueItemView = Schemas['QueueItemView']
+/** 派生分段（name=null = 未分组，恒为隐式前置组）。 */
+export type QueueSegmentView = Schemas['QueueSegmentView']
+/** 今日队列视图（GET / generate / order / segments 统一）。 */
+export type QueueTodayResponse = Schemas['QueueTodayResponse']
+/** generate 响应（含幂等/诚实标注元数据）。 */
+export type QueueGenerateResponse = Schemas['QueueGenerateResponse']
+/** 冻结快照（元数据视图）。 */
+export type QueueSnapshotView = Schemas['QueueSnapshotView']
+export type QueueSnapshotList = Schemas['QueueSnapshotList']
+/** 打开冻结视图（原始成员顺序；消失 ref 由 Web 呈现占位）。 */
+export type QueueSnapshotDetail = Schemas['QueueSnapshotDetail']

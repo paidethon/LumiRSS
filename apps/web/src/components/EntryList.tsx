@@ -4,6 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 // Bundle guard：对话框/工具面板非列表首屏必需——懒加载分包。
 const AskBatchDialog = lazy(() => import('./AskBatchDialog').then((m) => ({ default: m.AskBatchDialog })))
 const ReadingBudgetPanel = lazy(() => import('./ReadingBudgetPanel').then((m) => ({ default: m.ReadingBudgetPanel })))
+const ReadingQueuePanel = lazy(() => import('./ReadingQueuePanel').then((m) => ({ default: m.ReadingQueuePanel })))
 const BacklogPanel = lazy(() => import('./BacklogPanel').then((m) => ({ default: m.BacklogPanel })))
 const CompareRead = lazy(() => import('./CompareRead'))
 import {
@@ -448,6 +449,8 @@ function EntriesList() {
   // F014：阅读预算（会话内临时清单）
   const selectEntry = useReaderUi((s) => s.selectEntry)
   const [budgetOpen, setBudgetOpen] = useState(false)
+  // N041：今日必读面板开关（服务端持久化队列）
+  const [queueOpen, setQueueOpen] = useState(false)
   // F024：积压整理面板开关
   const [backlogOpen, setBacklogOpen] = useState(false)
   const openEntry = (entryRef: string) => selectEntry(entryRef)
@@ -877,6 +880,18 @@ function EntriesList() {
           />
         </Suspense>
       )}
+      {/* N041：今日必读面板（服务端持久化队列 + 分段/冻结/间隔） */}
+      {queueOpen && (
+        <Suspense fallback={null}>
+          <ReadingQueuePanel
+            currentItemRef={selectedEntryRef}
+            onOpenEntry={(entryRef) => {
+              openEntry(entryRef)
+            }}
+            onClose={() => setQueueOpen(false)}
+          />
+        </Suspense>
+      )}
       {/* F024：积压整理面板（预览→确认→执行；保护项服务端强制） */}
       {backlogOpen && (
         <Suspense fallback={null}>
@@ -900,6 +915,21 @@ function EntriesList() {
           )}
         >
           阅读预算
+        </button>
+        {/* N041：今日必读入口 */}
+        <button
+          type="button"
+          aria-pressed={queueOpen}
+          onClick={() => setQueueOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            queueOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          今日必读
         </button>
         {/* F024：积压整理入口 */}
         <button

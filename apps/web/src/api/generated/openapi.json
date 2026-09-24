@@ -10207,6 +10207,520 @@
     "title": "QaTemplateUpdate",
     "type": "object"
    },
+   "QueueAddRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/items body。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "QueueAddRequest",
+    "type": "object"
+   },
+   "QueueFreezeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/freeze body。",
+    "properties": {
+     "label": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "QueueFreezeRequest",
+    "type": "object"
+   },
+   "QueueGenerateRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/generate body。",
+    "properties": {
+     "levels": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Levels",
+      "type": "array"
+     },
+     "timeBudgetMinutes": {
+      "anyOf": [
+       {
+        "maximum": 480.0,
+        "minimum": 5.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timebudgetminutes"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "title": "QueueGenerateRequest",
+    "type": "object"
+   },
+   "QueueGenerateResponse": {
+    "description": "generate 响应 = 今日视图 + 生成元数据（幂等/诚实标注）。",
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "budgetMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Budgetminutes"
+     },
+     "force": {
+      "title": "Force",
+      "type": "boolean"
+     },
+     "generated": {
+      "title": "Generated",
+      "type": "boolean"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSegmentView"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "totalEstimateMinutes": {
+      "title": "Totalestimateminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queueDate",
+     "items",
+     "segments",
+     "segmentOrder",
+     "totalEstimateMinutes",
+     "generated",
+     "force",
+     "basis"
+    ],
+    "title": "QueueGenerateResponse",
+    "type": "object"
+   },
+   "QueueItemDoneRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/items/{id}/done body（set 语义）。",
+    "properties": {
+     "done": {
+      "title": "Done",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "done"
+    ],
+    "title": "QueueItemDoneRequest",
+    "type": "object"
+   },
+   "QueueItemView": {
+    "description": "队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "estimateMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Estimateminutes"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     },
+     "source": {
+      "enum": [
+       "manual",
+       "budget",
+       "level"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "done",
+       "removed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "id",
+     "itemRef",
+     "addedAt",
+     "position",
+     "queueDate",
+     "source",
+     "status",
+     "segment"
+    ],
+    "title": "QueueItemView",
+    "type": "object"
+   },
+   "QueueReorderRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/queue/today/order body：给定的 id 按序列排前，\n未提及行保持相对顺序垫后（语义同工作区 reorder）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "required": [
+     "order"
+    ],
+    "title": "QueueReorderRequest",
+    "type": "object"
+   },
+   "QueueSegmentMoveRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/queue/today/items/{id}/segment body。",
+    "properties": {
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "title": "QueueSegmentMoveRequest",
+    "type": "object"
+   },
+   "QueueSegmentOrderRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/queue/today/segments body：段名有序数组（呈现提示）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "title": "QueueSegmentOrderRequest",
+    "type": "object"
+   },
+   "QueueSegmentView": {
+    "description": "派生分段（name=null = 未分组，恒为隐式前置组）。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "required": [
+     "name",
+     "items"
+    ],
+    "title": "QueueSegmentView",
+    "type": "object"
+   },
+   "QueueSnapshotDetail": {
+    "description": "打开冻结视图：原始成员顺序原样返回（不可变）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSnapshotItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "queueDate",
+     "createdAt",
+     "items",
+     "segmentOrder"
+    ],
+    "title": "QueueSnapshotDetail",
+    "type": "object"
+   },
+   "QueueSnapshotItem": {
+    "description": "冻结成员（ItemRef + 顺序元数据；内容解析在读取侧）。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "required": [
+     "itemRef",
+     "position",
+     "segment"
+    ],
+    "title": "QueueSnapshotItem",
+    "type": "object"
+   },
+   "QueueSnapshotList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSnapshotView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "QueueSnapshotList",
+    "type": "object"
+   },
+   "QueueSnapshotView": {
+    "description": "冻结快照元数据（payload 留在服务端）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "queueDate",
+     "createdAt",
+     "itemCount"
+    ],
+    "title": "QueueSnapshotView",
+    "type": "object"
+   },
+   "QueueTodayResponse": {
+    "description": "GET /api/v1/queue/today 与 generate/order/segments 的统一视图。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSegmentView"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "totalEstimateMinutes": {
+      "title": "Totalestimateminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queueDate",
+     "items",
+     "segments",
+     "segmentOrder",
+     "totalEstimateMinutes"
+    ],
+    "title": "QueueTodayResponse",
+    "type": "object"
+   },
    "QuizGenerateBody": {
     "description": "POST /api/v1/entries/{ref}/quiz body。",
     "properties": {
@@ -26337,6 +26851,475 @@
      }
     },
     "summary": "Update Qa Template"
+   }
+  },
+  "/api/v1/queue/snapshots": {
+   "get": {
+    "description": "快照列表（新→旧）。",
+    "operationId": "list_queue_snapshots_api_v1_queue_snapshots_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Queue Snapshots"
+   }
+  },
+  "/api/v1/queue/snapshots/{snapshot_id}": {
+   "delete": {
+    "description": "删除一个快照（housekeeping；快照本体在其生命周期内不可变）。",
+    "operationId": "delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Queue Snapshot"
+   },
+   "get": {
+    "description": "打开冻结视图：原始成员顺序原样返回（消失的 ref 由 Web 呈现\n占位；服务端绝不复活）。",
+    "operationId": "get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Queue Snapshot"
+   }
+  },
+  "/api/v1/queue/today": {
+   "get": {
+    "description": "今日队列视图（pending + done；removed 行保留在库但不出库门）。",
+    "operationId": "get_today_queue_api_v1_queue_today_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Today Queue"
+   }
+  },
+  "/api/v1/queue/today/freeze": {
+   "post": {
+    "description": "把当前 pending 成员冻结为不可变快照（之后加入的项绝不进入）。",
+    "operationId": "freeze_today_queue_api_v1_queue_today_freeze_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueFreezeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Freeze Today Queue"
+   }
+  },
+  "/api/v1/queue/today/generate": {
+   "post": {
+    "description": "生成（或幂等返回）今天的队列。\n\n- 队列已存在且未 force → 200 + generated=false（**绝不重排**——\n  后台刷新不打扰已确认的队列）；\n- force=1 → 重建：清掉 pending/removed 重新装填，done 状态保留；\n- 新建 → 201 + generated=true。",
+    "operationId": "generate_today_queue_api_v1_queue_today_generate_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "force",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Force",
+       "type": "boolean"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueGenerateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueGenerateResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueGenerateResponse"
+        }
+       }
+      },
+      "description": "Created"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Today Queue"
+   }
+  },
+  "/api/v1/queue/today/items": {
+   "post": {
+    "description": "手动加入（新 201；重复 pending 幂等 200；removed 复活 200；\n今天已完成 → 409 queue_item_done）。",
+    "operationId": "add_queue_item_api_v1_queue_today_items_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Created"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Queue Item"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}": {
+   "delete": {
+    "description": "移除（status=removed，行保留；再移除同一行 → 404）。",
+    "operationId": "remove_queue_item_api_v1_queue_today_items__item_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Queue Item"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}/done": {
+   "post": {
+    "description": "完成状态（set 语义：done=true/false，不是 toggle；完成按条目\n身份记账，绝不隐式改写上游已读状态）。",
+    "operationId": "set_queue_item_done_api_v1_queue_today_items__item_id__done_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueItemDoneRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Queue Item Done"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}/segment": {
+   "patch": {
+    "description": "行菜单移动分段（segment=null = 移回未分组）。",
+    "operationId": "move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueSegmentMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Move Queue Item Segment"
+   }
+  },
+  "/api/v1/queue/today/order": {
+   "put": {
+    "description": "持久化重排（跨设备可见；done 行位置同样可排）。",
+    "operationId": "reorder_today_queue_api_v1_queue_today_order_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueReorderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Today Queue"
+   }
+  },
+  "/api/v1/queue/today/segments": {
+   "put": {
+    "description": "段顺序（呈现提示；服务端存储 → 跨设备一致）。",
+    "operationId": "set_queue_segment_order_api_v1_queue_today_segments_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueSegmentOrderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Queue Segment Order"
    }
   },
   "/api/v1/quiz/{quiz_id}/grade": {
