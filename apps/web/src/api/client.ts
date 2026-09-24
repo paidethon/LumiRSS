@@ -6354,6 +6354,97 @@ export async function repairRagRefs(
   return (await response.json()) as { repaired: string[]; failed: { ref: string; error: string }[] }
 }
 
+// ---- N151-N155：RAG 质量（范围回显 / 覆盖率 / 分块预览 / 同步问答） ----
+
+/** N151 授权范围回显（kind × refCount；all 未锁定时 refCount=null）。 */
+export interface RagEffectiveScope {
+  kind: 'all' | 'workspace' | 'entryRefs'
+  refCount: number | null
+}
+
+/** N152 覆盖率分桶（全部来自真实行/作业）。 */
+export interface RagCoverage {
+  modelId: string
+  indexable: number
+  indexed: number
+  stale: number
+  failed: number
+  unsupported: { count: number; kinds: { kind: string; reason: string }[] }
+}
+
+export async function getRagCoverage(signal?: AbortSignal): Promise<RagCoverage> {
+  return request<RagCoverage>(`${API_BASE}/rag/coverage`, signal)
+}
+
+/** N153 分块预览（索引「将会」产生的分块 + 只读方案元数据）。 */
+export interface RagChunkPreview {
+  ref: string
+  kind: string
+  title: string | null
+  chunks: { ord: number; text: string; charStart: number; charEnd: number }[]
+  scheme: { maxLen: number; overlap: number }
+}
+
+export async function ragChunkPreview(ref: string): Promise<RagChunkPreview> {
+  const response = await rawRequest(`${API_BASE}/rag/chunk-preview`, {
+    method: 'POST',
+    body: JSON.stringify({ ref }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagChunkPreview
+}
+
+/** N155 同步问答（mode=excerpt 时零 provider 调用，只回原文片段）。 */
+export interface RagAskResponse {
+  question: string
+  mode: 'answer' | 'excerpt'
+  answer: string | null
+  citations: { index: number; ref: string }[]
+  evidenceStrength: 'direct' | 'partial' | 'none' | null
+  unverifiable: boolean
+  reason: string | null
+  effectiveScope: RagEffectiveScope
+  excerpts: { ref: string; title: string | null; ord: number; text: string }[]
+  semanticUsed: boolean
+}
+
+export async function ragAsk(payload: {
+  question: string
+  threadId?: string
+  refs?: string[]
+  k?: number
+  mode?: 'answer' | 'excerpt'
+}): Promise<RagAskResponse> {
+  const response = await rawRequest(`${API_BASE}/rag/ask`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as RagAskResponse
+}
+
+/** N151 授权范围摘要（kind × refCount × toolCount；服务端解析）。 */
+export interface AgentScopeSummary {
+  kind: 'all' | 'workspace' | 'entryRefs'
+  refCount: number | null
+  toolCount: number
+}
+
+export async function previewAgentScope(payload: {
+  scope?: { workspaceId?: string; entryRefs?: string[] } | null
+  toolPolicy?: { mode: 'all' | 'readonly'; allowedTools?: string[]; maxOpsPerTurn?: number } | null
+}): Promise<AgentScopeSummary> {
+  const response = await rawRequest(`${API_BASE}/agent/scope-preview`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AgentScopeSummary
+}
+
 // ---- F094/F095/F096/F097/F098/F099 Agent 会话 --------------------------------
 
 /** F094/F098 会话设置（下轮生效；scope=null + clearScope 显式清除）。 */

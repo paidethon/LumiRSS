@@ -24,7 +24,9 @@ import {
   useRebuildRagMutation,
 } from '../../api/queries'
 import {
+  RagChunkPreviewPanel,
   RagConsistencyPanel,
+  RagCoveragePanel,
   RagExclusionsPanel,
   RagTrySearchPanel,
 } from '../RagW5Panels'
@@ -193,6 +195,14 @@ export function RagSettingsSection() {
         <section aria-label="试检索" className="flex flex-col gap-1.5">
           <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">试检索</h4>
           <RagTrySearchPanel enabled={data.enabled} />
+        </section>
+        <section aria-label="索引覆盖率" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">索引覆盖率</h4>
+          <RagCoveragePanel />
+        </section>
+        <section aria-label="分块预览" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">分块预览</h4>
+          <RagChunkPreviewPanel />
         </section>
         <section aria-label="版本一致性" className="flex flex-col gap-1.5">
           <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">版本一致性</h4>

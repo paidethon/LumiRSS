@@ -374,6 +374,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/scope-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Scope
+         * @description N151：授权范围摘要（kind × refCount × toolCount）——工作台范围
+         *     选择器保存前的服务端预览；refCount 查询时解析（有界），toolCount
+         *     与回合执行前的权限评估同口径（白名单 ∩ policy，readonly 剔除写）。
+         */
+        post: operations["preview_scope_api_v1_agent_scope_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/threads": {
         parameters: {
             query?: never;
@@ -5428,6 +5450,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Ask
+         * @description 同步 RAG 问答（N151/N154/N155）。
+         *
+         *     - 范围：threadId 提供时继承该会话 F094 范围（服务端解析；
+         *       effectiveScope 回显）；refs 越界 → 403 out_of_scope；
+         *     - refs 不存在于任何投影 → 422 citation_invalid（捏造引用拦截）；
+         *     - mode=excerpt：零 provider 调用，只回原文片段（摘录 ≠ 回答）；
+         *     - mode=answer：一次有界 provider 调用；回答主张 vs 引用文本重叠
+         *       分级（direct/partial/none）；有文档事实主张但零有效引用 →
+         *       unverifiable:true reason no_valid_citations（诚实呈现，绝不假通过）。
+         */
+        post: operations["rag_ask_api_v1_rag_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/chunk-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Chunk Preview
+         * @description N153：ref 的分块可视预览——索引「将会」产生的分块（ord/文本/
+         *     源文本坐标）+ 只读方案元数据。ref 不在投影中 → 404 ref_not_found。
+         */
+        post: operations["rag_chunk_preview_api_v1_rag_chunk_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Coverage
+         * @description N152：语料 ↔ rag_chunks 覆盖分桶（indexable/indexed/stale 来自
+         *     真实行与 content_hash；failed 来自最近 rag_jobs skipped 记录；
+         *     unsupported 按 kind 分组给原因）。纯只读盘点。
+         */
+        get: operations["rag_coverage_api_v1_rag_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/disable": {
         parameters: {
             query?: never;
@@ -5599,7 +5692,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Rag Search */
+        /**
+         * Rag Search
+         * @description Hybrid search. N151：传 threadId 时服务端解析该会话的 F094
+         *     范围——结果服务端过滤 + effectiveScope 回显（kind × refCount，
+         *     查询时解析、有界）；不传 = 未锁定（kind=all, refCount=null）。
+         */
         get: operations["rag_search_api_v1_rag_search_get"];
         put?: never;
         post?: never;
@@ -8912,12 +9010,18 @@ export interface components {
          * AgentAssistantContent
          * @description role=assistant message body (streaming marker / cancel note /
          *     branch-truncation notice / toolCalls while the loop is mid-turn).
+         *
+         *     N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
+         *     重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
+         *     标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。
          */
         AgentAssistantContent: {
             /** Branchtruncated */
             branchTruncated?: boolean | null;
             /** Cancelled */
             cancelled?: boolean | null;
+            /** Evidencestrength */
+            evidenceStrength?: ("direct" | "partial" | "none") | null;
             /** Streaming */
             streaming?: boolean | null;
             /** Text */
@@ -8927,6 +9031,10 @@ export interface components {
              * @default []
              */
             toolCalls: components["schemas"]["AgentToolCall"][];
+            /** Unverifiable */
+            unverifiable?: boolean | null;
+            /** Unverifiablereason */
+            unverifiableReason?: string | null;
         };
         /**
          * AgentBranchRequest
@@ -9052,6 +9160,34 @@ export interface components {
             citationDetails: components["schemas"]["AgentCitationDetail"][];
             /** Items */
             items: components["schemas"]["AgentMessage"][];
+        };
+        /**
+         * AgentScopePreviewRequest
+         * @description N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的
+         *     授权范围摘要卡：kind × refCount × toolCount）。
+         */
+        AgentScopePreviewRequest: {
+            /** Scope */
+            scope?: components["schemas"]["AgentWorkspaceScope"] | components["schemas"]["AgentEntryRefsScope"] | null;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
+        };
+        /**
+         * AgentScopeSummary
+         * @description N151 授权范围摘要（服务端解析，绝不在前端伪造计数）。
+         */
+        AgentScopeSummary: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "all" | "workspace" | "entryRefs";
+            /** Refcount */
+            refCount?: number | null;
+            /**
+             * Toolcount
+             * @default 0
+             */
+            toolCount: number;
         };
         /**
          * AgentThread
@@ -14637,6 +14773,228 @@ export interface components {
             quizId: string;
         };
         /**
+         * RagAskCitation
+         * @description N155 一条有效引用：编号（1 起）+ ref。
+         */
+        RagAskCitation: {
+            /** Index */
+            index: number;
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * RagAskExcerpt
+         * @description N155 摘录模式的一条原文片段（labeled：摘录 ≠ 回答）。
+         */
+        RagAskExcerpt: {
+            /**
+             * Ord
+             * @default 0
+             */
+            ord: number;
+            /** Ref */
+            ref: string;
+            /** Text */
+            text: string;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * RagAskRequest
+         * @description POST /api/v1/rag/ask body（N151/N154/N155）。
+         *
+         *     - threadId：提供则继承该会话的 F094 范围（服务端解析、越界 403）；
+         *     - refs：显式指定依据条目（≤8）；不提供则走检索；
+         *     - mode=excerpt：只取原文片段（零 provider 调用）。
+         */
+        RagAskRequest: {
+            /**
+             * K
+             * @default 6
+             */
+            k: number;
+            /**
+             * Mode
+             * @default answer
+             * @enum {string}
+             */
+            mode: "answer" | "excerpt";
+            /** Question */
+            question: string;
+            /**
+             * Refs
+             * @default []
+             */
+            refs: string[];
+            /** Threadid */
+            threadId?: string | null;
+        };
+        /**
+         * RagAskResponse
+         * @description POST /api/v1/rag/ask 响应（N151 effectiveScope / N154 强弱 /
+         *     N155 unverifiable + 摘录）。
+         */
+        RagAskResponse: {
+            /** Answer */
+            answer?: string | null;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["RagAskCitation"][];
+            effectiveScope?: components["schemas"]["RagEffectiveScope"];
+            /** Evidencestrength */
+            evidenceStrength?: ("direct" | "partial" | "none") | null;
+            /**
+             * Excerpts
+             * @default []
+             */
+            excerpts: components["schemas"]["RagAskExcerpt"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "answer" | "excerpt";
+            /** Question */
+            question: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Semanticused
+             * @default false
+             */
+            semanticUsed: boolean;
+            /**
+             * Unverifiable
+             * @default false
+             */
+            unverifiable: boolean;
+        };
+        /**
+         * RagChunkPreview
+         * @description POST /api/v1/rag/chunk-preview —— 索引「将会」产生的分块。
+         */
+        RagChunkPreview: {
+            /**
+             * Chunks
+             * @default []
+             */
+            chunks: components["schemas"]["RagChunkPreviewChunk"][];
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+            scheme: components["schemas"]["RagChunkScheme"];
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * RagChunkPreviewChunk
+         * @description N153 一条预览分块：text 截断到预览上限（≤400 字符）。
+         */
+        RagChunkPreviewChunk: {
+            /** Charend */
+            charEnd: number;
+            /** Charstart */
+            charStart: number;
+            /** Ord */
+            ord: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * RagChunkPreviewRequest
+         * @description POST /api/v1/rag/chunk-preview body（N153）。
+         */
+        RagChunkPreviewRequest: {
+            /** Ref */
+            ref: string;
+        };
+        /**
+         * RagChunkScheme
+         * @description N153 只读分块方案元数据（当前 chunker 无重叠，诚实为 0）。
+         */
+        RagChunkScheme: {
+            /** Maxlen */
+            maxLen: number;
+            /** Overlap */
+            overlap: number;
+        };
+        /**
+         * RagCoverage
+         * @description GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
+         *
+         *     indexable/indexed/stale 来自行与 content_hash，failed 来自最近
+         *     rag_jobs 作业的 skipped 记录。
+         */
+        RagCoverage: {
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Indexable
+             * @default 0
+             */
+            indexable: number;
+            /**
+             * Indexed
+             * @default 0
+             */
+            indexed: number;
+            /** Modelid */
+            modelId: string;
+            /**
+             * Stale
+             * @default 0
+             */
+            stale: number;
+            unsupported?: components["schemas"]["RagCoverageUnsupported"];
+        };
+        /**
+         * RagCoverageUnsupported
+         * @description N152 不可索引语料分组计数。
+         */
+        RagCoverageUnsupported: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Kinds
+             * @default []
+             */
+            kinds: components["schemas"]["RagCoverageUnsupportedKind"][];
+        };
+        /**
+         * RagCoverageUnsupportedKind
+         * @description N152 一种不可索引 kind 及原因（empty_text = 正文为空）。
+         */
+        RagCoverageUnsupportedKind: {
+            /** Kind */
+            kind: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * RagEffectiveScope
+         * @description N151 查询时服务端解析的授权范围回显。
+         *
+         *     kind: all（未锁定，refCount=None）| workspace | entryRefs；
+         *     refCount = scope 实际解析到的 ref 数（有界）。
+         */
+        RagEffectiveScope: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "all" | "workspace" | "entryRefs";
+            /** Refcount */
+            refCount?: number | null;
+        };
+        /**
          * RagEnableResult
          * @description Explicit model-enable acknowledgement.
          */
@@ -14796,6 +15154,7 @@ export interface components {
          * @description Envelope for GET /api/v1/rag/search (honest degradation flags).
          */
         RagSearchResponse: {
+            effectiveScope?: components["schemas"]["RagEffectiveScope"];
             /** Items */
             items: components["schemas"]["RagSearchItem"][];
             /** Semanticerror */
@@ -18333,6 +18692,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_scope_api_v1_agent_scope_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentScopePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentScopeSummary"];
                 };
             };
             /** @description Validation Error */
@@ -27175,6 +27567,92 @@ export interface operations {
             };
         };
     };
+    rag_ask_api_v1_rag_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagAskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagAskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_chunk_preview_api_v1_rag_chunk_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagChunkPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagChunkPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rag_coverage_api_v1_rag_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagCoverage"];
+                };
+            };
+        };
+    };
     rag_disable_api_v1_rag_disable_post: {
         parameters: {
             query?: never;
@@ -27387,6 +27865,7 @@ export interface operations {
                 q: string;
                 k?: number;
                 kind?: string | null;
+                threadId?: string | null;
             };
             header?: never;
             path?: never;

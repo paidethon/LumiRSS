@@ -268,7 +268,7 @@
    },
    "AgentAssistantContent": {
     "additionalProperties": false,
-    "description": "role=assistant message body (streaming marker / cancel note /\nbranch-truncation notice / toolCalls while the loop is mid-turn).",
+    "description": "role=assistant message body (streaming marker / cancel note /\nbranch-truncation notice / toolCalls while the loop is mid-turn).\n\nN154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张\n重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason\n标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。",
     "properties": {
      "branchTruncated": {
       "anyOf": [
@@ -292,6 +292,22 @@
       ],
       "title": "Cancelled"
      },
+     "evidenceStrength": {
+      "anyOf": [
+       {
+        "enum": [
+         "direct",
+         "partial",
+         "none"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Evidencestrength"
+     },
      "streaming": {
       "anyOf": [
        {
@@ -314,6 +330,28 @@
       },
       "title": "Toolcalls",
       "type": "array"
+     },
+     "unverifiable": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unverifiable"
+     },
+     "unverifiableReason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unverifiablereason"
      }
     },
     "required": [
@@ -600,6 +638,73 @@
      "items"
     ],
     "title": "AgentMessageListResponse",
+    "type": "object"
+   },
+   "AgentScopePreviewRequest": {
+    "additionalProperties": false,
+    "description": "N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的\n授权范围摘要卡：kind × refCount × toolCount）。",
+    "properties": {
+     "scope": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentWorkspaceScope"
+       },
+       {
+        "$ref": "#/components/schemas/AgentEntryRefsScope"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scope"
+     },
+     "toolPolicy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentToolPolicy"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "AgentScopePreviewRequest",
+    "type": "object"
+   },
+   "AgentScopeSummary": {
+    "description": "N151 授权范围摘要（服务端解析，绝不在前端伪造计数）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "all",
+       "workspace",
+       "entryRefs"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "refCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refcount"
+     },
+     "toolCount": {
+      "default": 0,
+      "title": "Toolcount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "kind"
+    ],
+    "title": "AgentScopeSummary",
     "type": "object"
    },
    "AgentThread": {
@@ -13307,6 +13412,416 @@
     "title": "QuizSessionView",
     "type": "object"
    },
+   "RagAskCitation": {
+    "description": "N155 一条有效引用：编号（1 起）+ ref。",
+    "properties": {
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "ref"
+    ],
+    "title": "RagAskCitation",
+    "type": "object"
+   },
+   "RagAskExcerpt": {
+    "description": "N155 摘录模式的一条原文片段（labeled：摘录 ≠ 回答）。",
+    "properties": {
+     "ord": {
+      "default": 0,
+      "title": "Ord",
+      "type": "integer"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "ref",
+     "text"
+    ],
+    "title": "RagAskExcerpt",
+    "type": "object"
+   },
+   "RagAskRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/rag/ask body（N151/N154/N155）。\n\n- threadId：提供则继承该会话的 F094 范围（服务端解析、越界 403）；\n- refs：显式指定依据条目（≤8）；不提供则走检索；\n- mode=excerpt：只取原文片段（零 provider 调用）。",
+    "properties": {
+     "k": {
+      "default": 6,
+      "maximum": 12.0,
+      "minimum": 1.0,
+      "title": "K",
+      "type": "integer"
+     },
+     "mode": {
+      "default": "answer",
+      "enum": [
+       "answer",
+       "excerpt"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "question": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+     },
+     "refs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Refs",
+      "type": "array"
+     },
+     "threadId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Threadid"
+     }
+    },
+    "required": [
+     "question"
+    ],
+    "title": "RagAskRequest",
+    "type": "object"
+   },
+   "RagAskResponse": {
+    "description": "POST /api/v1/rag/ask 响应（N151 effectiveScope / N154 强弱 /\nN155 unverifiable + 摘录）。",
+    "properties": {
+     "answer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Answer"
+     },
+     "citations": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagAskCitation"
+      },
+      "title": "Citations",
+      "type": "array"
+     },
+     "effectiveScope": {
+      "$ref": "#/components/schemas/RagEffectiveScope"
+     },
+     "evidenceStrength": {
+      "anyOf": [
+       {
+        "enum": [
+         "direct",
+         "partial",
+         "none"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Evidencestrength"
+     },
+     "excerpts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagAskExcerpt"
+      },
+      "title": "Excerpts",
+      "type": "array"
+     },
+     "mode": {
+      "enum": [
+       "answer",
+       "excerpt"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "question": {
+      "title": "Question",
+      "type": "string"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "semanticUsed": {
+      "default": false,
+      "title": "Semanticused",
+      "type": "boolean"
+     },
+     "unverifiable": {
+      "default": false,
+      "title": "Unverifiable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "question",
+     "mode"
+    ],
+    "title": "RagAskResponse",
+    "type": "object"
+   },
+   "RagChunkPreview": {
+    "description": "POST /api/v1/rag/chunk-preview —— 索引「将会」产生的分块。",
+    "properties": {
+     "chunks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagChunkPreviewChunk"
+      },
+      "title": "Chunks",
+      "type": "array"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "scheme": {
+      "$ref": "#/components/schemas/RagChunkScheme"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "ref",
+     "kind",
+     "scheme"
+    ],
+    "title": "RagChunkPreview",
+    "type": "object"
+   },
+   "RagChunkPreviewChunk": {
+    "description": "N153 一条预览分块：text 截断到预览上限（≤400 字符）。",
+    "properties": {
+     "charEnd": {
+      "title": "Charend",
+      "type": "integer"
+     },
+     "charStart": {
+      "title": "Charstart",
+      "type": "integer"
+     },
+     "ord": {
+      "title": "Ord",
+      "type": "integer"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ord",
+     "text",
+     "charStart",
+     "charEnd"
+    ],
+    "title": "RagChunkPreviewChunk",
+    "type": "object"
+   },
+   "RagChunkPreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/rag/chunk-preview body（N153）。",
+    "properties": {
+     "ref": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "RagChunkPreviewRequest",
+    "type": "object"
+   },
+   "RagChunkScheme": {
+    "description": "N153 只读分块方案元数据（当前 chunker 无重叠，诚实为 0）。",
+    "properties": {
+     "maxLen": {
+      "title": "Maxlen",
+      "type": "integer"
+     },
+     "overlap": {
+      "title": "Overlap",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "maxLen",
+     "overlap"
+    ],
+    "title": "RagChunkScheme",
+    "type": "object"
+   },
+   "RagCoverage": {
+    "description": "GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。\n\nindexable/indexed/stale 来自行与 content_hash，failed 来自最近\nrag_jobs 作业的 skipped 记录。",
+    "properties": {
+     "failed": {
+      "default": 0,
+      "title": "Failed",
+      "type": "integer"
+     },
+     "indexable": {
+      "default": 0,
+      "title": "Indexable",
+      "type": "integer"
+     },
+     "indexed": {
+      "default": 0,
+      "title": "Indexed",
+      "type": "integer"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "stale": {
+      "default": 0,
+      "title": "Stale",
+      "type": "integer"
+     },
+     "unsupported": {
+      "$ref": "#/components/schemas/RagCoverageUnsupported"
+     }
+    },
+    "required": [
+     "modelId"
+    ],
+    "title": "RagCoverage",
+    "type": "object"
+   },
+   "RagCoverageUnsupported": {
+    "description": "N152 不可索引语料分组计数。",
+    "properties": {
+     "count": {
+      "default": 0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "kinds": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagCoverageUnsupportedKind"
+      },
+      "title": "Kinds",
+      "type": "array"
+     }
+    },
+    "title": "RagCoverageUnsupported",
+    "type": "object"
+   },
+   "RagCoverageUnsupportedKind": {
+    "description": "N152 一种不可索引 kind 及原因（empty_text = 正文为空）。",
+    "properties": {
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "reason"
+    ],
+    "title": "RagCoverageUnsupportedKind",
+    "type": "object"
+   },
+   "RagEffectiveScope": {
+    "description": "N151 查询时服务端解析的授权范围回显。\n\nkind: all（未锁定，refCount=None）| workspace | entryRefs；\nrefCount = scope 实际解析到的 ref 数（有界）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "all",
+       "workspace",
+       "entryRefs"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "refCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Refcount"
+     }
+    },
+    "required": [
+     "kind"
+    ],
+    "title": "RagEffectiveScope",
+    "type": "object"
+   },
    "RagEnableResult": {
     "description": "Explicit model-enable acknowledgement.",
     "properties": {
@@ -13674,6 +14189,9 @@
    "RagSearchResponse": {
     "description": "Envelope for GET /api/v1/rag/search (honest degradation flags).",
     "properties": {
+     "effectiveScope": {
+      "$ref": "#/components/schemas/RagEffectiveScope"
+     },
      "items": {
       "items": {
        "$ref": "#/components/schemas/RagSearchItem"
@@ -20930,6 +21448,45 @@
      }
     },
     "summary": "Set User Role"
+   }
+  },
+  "/api/v1/agent/scope-preview": {
+   "post": {
+    "description": "N151：授权范围摘要（kind × refCount × toolCount）——工作台范围\n选择器保存前的服务端预览；refCount 查询时解析（有界），toolCount\n与回合执行前的权限评估同口径（白名单 ∩ policy，readonly 剔除写）。",
+    "operationId": "preview_scope_api_v1_agent_scope_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentScopePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentScopeSummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Scope"
    }
   },
   "/api/v1/agent/threads": {
@@ -32083,6 +32640,103 @@
     "summary": "Grade Quiz"
    }
   },
+  "/api/v1/rag/ask": {
+   "post": {
+    "description": "同步 RAG 问答（N151/N154/N155）。\n\n- 范围：threadId 提供时继承该会话 F094 范围（服务端解析；\n  effectiveScope 回显）；refs 越界 → 403 out_of_scope；\n- refs 不存在于任何投影 → 422 citation_invalid（捏造引用拦截）；\n- mode=excerpt：零 provider 调用，只回原文片段（摘录 ≠ 回答）；\n- mode=answer：一次有界 provider 调用；回答主张 vs 引用文本重叠\n  分级（direct/partial/none）；有文档事实主张但零有效引用 →\n  unverifiable:true reason no_valid_citations（诚实呈现，绝不假通过）。",
+    "operationId": "rag_ask_api_v1_rag_ask_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagAskRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagAskResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Ask"
+   }
+  },
+  "/api/v1/rag/chunk-preview": {
+   "post": {
+    "description": "N153：ref 的分块可视预览——索引「将会」产生的分块（ord/文本/\n源文本坐标）+ 只读方案元数据。ref 不在投影中 → 404 ref_not_found。",
+    "operationId": "rag_chunk_preview_api_v1_rag_chunk_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagChunkPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagChunkPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Chunk Preview"
+   }
+  },
+  "/api/v1/rag/coverage": {
+   "get": {
+    "description": "N152：语料 ↔ rag_chunks 覆盖分桶（indexable/indexed/stale 来自\n真实行与 content_hash；failed 来自最近 rag_jobs skipped 记录；\nunsupported 按 kind 分组给原因）。纯只读盘点。",
+    "operationId": "rag_coverage_api_v1_rag_coverage_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagCoverage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Coverage"
+   }
+  },
   "/api/v1/rag/disable": {
    "post": {
     "description": "Disable the semantic leg and release the model resources.",
@@ -32293,6 +32947,7 @@
   },
   "/api/v1/rag/search": {
    "get": {
+    "description": "Hybrid search. N151：传 threadId 时服务端解析该会话的 F094\n范围——结果服务端过滤 + effectiveScope 回显（kind × refCount，\n查询时解析、有界）；不传 = 未锁定（kind=all, refCount=null）。",
     "operationId": "rag_search_api_v1_rag_search_get",
     "parameters": [
      {
@@ -32328,6 +32983,22 @@
         }
        ],
        "title": "Kind"
+      }
+     },
+     {
+      "in": "query",
+      "name": "threadId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Threadid"
       }
      }
     ],
