@@ -634,6 +634,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/annotations/export-delta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Annotations Export Delta
+         * @description N137：增量导出预览 —— 水位之后的新增/修改批注计数（可按文章
+         *     收窄）。从未导出 → lastExportedAt=null 且全部计为新增（诚实）。
+         */
+        get: operations["annotations_export_delta_api_v1_annotations_export_delta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/export-mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Annotations Exported
+         * @description N137：成功导出后回标水位（幂等：重复调用只追加日志行，水位只
+         *     前进，增量查询不会重复计数）。ids 为空 → 422。
+         */
+        post: operations["mark_annotations_exported_api_v1_annotations_export_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/annotations/{annotation_id}": {
         parameters: {
             query?: never;
@@ -4317,6 +4359,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/obsidian/block-refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Block Refs */
+        get: operations["list_block_refs_api_v1_obsidian_block_refs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/obsidian/devices": {
         parameters: {
             query?: never;
@@ -4370,8 +4429,34 @@ export interface paths {
          *     built (the USER's Obsidian does any writing after confirmation);
          *     ``mode='file'`` with reason='tooLong' means the content exceeded the
          *     URI budget and the client falls back to download + clipboard.
+         *
+         *     N137：交接组装成功后回标导出水位（mark 幂等，重复导出无害）；
+         *     N135：命名策略体现在 filename（timestamp_suffix 追加 -YYYYMMDD-HHmm）；
+         *     N140：自动落一条 pending 交接记录（confirmed 只能由用户显式确认）。
          */
         post: operations["export_obsidian_handoff_api_v1_obsidian_export_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/export-handoff/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Obsidian Export
+         * @description N139 导出侧链接校验（只读报告）：对组装好的 Markdown 检查
+         *     断链 wikilink / 缺失附件 / 重复块 id。绝不改写用户 Vault 文件，
+         *     不交接、不落交接日志、不推进导出水位。
+         */
+        post: operations["validate_obsidian_export_api_v1_obsidian_export_handoff_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4414,6 +4499,51 @@ export interface paths {
          *     honestly instead of passing through silently.
          */
         post: operations["preview_obsidian_export_template_api_v1_obsidian_export_template_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/handoff-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Obsidian Handoff Log */
+        get: operations["list_obsidian_handoff_log_api_v1_obsidian_handoff_log_get"];
+        put?: never;
+        /**
+         * Create Obsidian Handoff Log
+         * @description 显式记录 open / import_confirm 交接（export 自动落库，不接受手工
+         *     伪造方向）。pending 记录同样只能通过 confirm 端点显式确认。
+         */
+        post: operations["create_obsidian_handoff_log_api_v1_obsidian_handoff_log_post"];
+        /** Clear Obsidian Handoff Log */
+        delete: operations["clear_obsidian_handoff_log_api_v1_obsidian_handoff_log_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/obsidian/handoff/{handoff_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Obsidian Handoff
+         * @description 显式确认（用户在 Obsidian 中保存后亲自触发）——confirmed 的唯一
+         *     路径。页面可见性 / 重新加载等被动事件绝不调用这里。幂等：对已确认
+         *     行重复确认返回原行；不存在 → 404。
+         */
+        post: operations["confirm_obsidian_handoff_api_v1_obsidian_handoff__handoff_id__confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8437,6 +8567,57 @@ export interface components {
             note?: string | null;
         };
         /**
+         * AnnotationExportDelta
+         * @description GET /api/v1/annotations/export-delta 响应（增量预览：新增/修改）。
+         */
+        AnnotationExportDelta: {
+            /**
+             * Addedcount
+             * @default 0
+             */
+            addedCount: number;
+            /** Lastexportedat */
+            lastExportedAt?: string | null;
+            /**
+             * Modifiedcount
+             * @default 0
+             */
+            modifiedCount: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
+         * AnnotationExportMarkRequest
+         * @description POST /api/v1/annotations/export-mark body（N137 导出水位回标）。
+         */
+        AnnotationExportMarkRequest: {
+            /** Ids */
+            ids: string[];
+        };
+        /**
+         * AnnotationExportMarkResult
+         * @description N137：mark 结果（诚实计数：只含实际存在的批注）。
+         */
+        AnnotationExportMarkResult: {
+            /** Count */
+            count: number;
+            /**
+             * Entryrefs
+             * @default []
+             */
+            entryRefs: string[];
+            /** Exportedat */
+            exportedAt: string;
+            /**
+             * Ids
+             * @default []
+             */
+            ids: string[];
+        };
+        /**
          * AnnotationExportRequest
          * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。
          */
@@ -12177,6 +12358,42 @@ export interface components {
             wikilinks?: string[] | null;
         };
         /**
+         * ObsidianBlockRef
+         * @description N134：一条块引用（哪篇投影笔记内嵌了 ^lumi-<paraId>）。
+         */
+        ObsidianBlockRef: {
+            /**
+             * Indexedat
+             * @default
+             */
+            indexedAt: string;
+            /** Noteuuid */
+            noteUuid: string;
+            /** Paraid */
+            paraId: string;
+            /**
+             * Relpath
+             * @default
+             */
+            relPath: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /**
+         * ObsidianBlockRefsResponse
+         * @description GET /api/v1/obsidian/block-refs?paraId= 响应。
+         */
+        ObsidianBlockRefsResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ObsidianBlockRef"][];
+        };
+        /**
          * ObsidianDeviceProfile
          * @description One device where the user runs Obsidian (URI generation ONLY).
          *
@@ -12237,12 +12454,20 @@ export interface components {
         /**
          * ObsidianExportHandoffRequest
          * @description POST /api/v1/obsidian/export-handoff body.
+         *
+         *     ``onlySinceLastExport``（N137 增量导出）：只携带上次导出水位之后
+         *     有新增/修改的批注（水位来自 annotation_export_log）。
          */
         ObsidianExportHandoffRequest: {
             /** Deviceid */
             deviceId: string;
             /** Entryref */
             entryRef: string;
+            /**
+             * Onlysincelastexport
+             * @default false
+             */
+            onlySinceLastExport: boolean;
         };
         /**
          * ObsidianExportHandoffResult
@@ -12253,6 +12478,11 @@ export interface components {
          *     ``filename`` + clipboard fallback instead.
          */
         ObsidianExportHandoffResult: {
+            /**
+             * Annotationcount
+             * @default 0
+             */
+            annotationCount: number;
             /** Content */
             content: string;
             /**
@@ -12278,12 +12508,30 @@ export interface components {
             uri?: string | null;
         };
         /**
+         * ObsidianExportIssue
+         * @description N139：一条校验问题（只读报告；绝不改写用户 Vault 文件）。
+         */
+        ObsidianExportIssue: {
+            /** Detail */
+            detail: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "broken_wikilink" | "missing_attachment" | "duplicate_block_id";
+            /** Suggestion */
+            suggestion: string;
+        };
+        /**
          * ObsidianExportTemplateUpdate
-         * @description PUT /api/v1/obsidian/export-template body.
+         * @description PUT /api/v1/obsidian/export-template body — template 与命名策略
+         *     均可单独更新（None = 保持现状；二者皆缺是无操作，返回现状）。
          */
         ObsidianExportTemplateUpdate: {
+            /** Exportnamepolicy */
+            exportNamePolicy?: ("timestamp_suffix" | "exact") | null;
             /** Template */
-            template: string;
+            template?: string | null;
         };
         /**
          * ObsidianExportTemplateView
@@ -12294,8 +12542,131 @@ export interface components {
             allowedVars: string[];
             /** Defaulttemplate */
             defaultTemplate: string;
+            /**
+             * Exportnamepolicy
+             * @default timestamp_suffix
+             * @enum {string}
+             */
+            exportNamePolicy: "timestamp_suffix" | "exact";
             /** Template */
             template: string;
+        };
+        /**
+         * ObsidianExportValidateRequest
+         * @description POST /api/v1/obsidian/export-handoff/validate body（N139 只读校验，
+         *     与 export-handoff 相同的组装路径，但不交接、不落日志、不 mark）。
+         */
+        ObsidianExportValidateRequest: {
+            /** Deviceid */
+            deviceId: string;
+            /** Entryref */
+            entryRef: string;
+            /**
+             * Onlysincelastexport
+             * @default false
+             */
+            onlySinceLastExport: boolean;
+        };
+        /**
+         * ObsidianExportValidateResult
+         * @description N139：校验结果（issues 为空 = 通过；vaultChecked=false 表示 Vault
+         *     不可达、附件存在性未核对——诚实局限，不冒充查过）。
+         */
+        ObsidianExportValidateResult: {
+            /**
+             * Issues
+             * @default []
+             */
+            issues: components["schemas"]["ObsidianExportIssue"][];
+            /**
+             * Vaultchecked
+             * @default false
+             */
+            vaultChecked: boolean;
+        };
+        /**
+         * ObsidianHandoffLogClearResult
+         * @description DELETE /api/v1/obsidian/handoff-log 响应（如实报告删除条数）。
+         */
+        ObsidianHandoffLogClearResult: {
+            /** Cleared */
+            cleared: number;
+        };
+        /**
+         * ObsidianHandoffLogCreate
+         * @description POST /api/v1/obsidian/handoff-log body — 显式记录 open /
+         *     import_confirm 交接（export 由 export-handoff 路由自动落库）。
+         */
+        ObsidianHandoffLogCreate: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "open" | "import_confirm";
+            /**
+             * Entryref
+             * @default
+             */
+            entryRef: string;
+            /**
+             * Notename
+             * @default
+             */
+            noteName: string;
+            /**
+             * Policy
+             * @default
+             */
+            policy: string;
+        };
+        /**
+         * ObsidianHandoffLogEntry
+         * @description N140：一条双向交接记录（pending → confirmed 仅靠显式确认）。
+         */
+        ObsidianHandoffLogEntry: {
+            /** Confirmedat */
+            confirmedAt?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "export" | "open" | "import_confirm";
+            /**
+             * Entryref
+             * @default
+             */
+            entryRef: string;
+            /** Id */
+            id: string;
+            /**
+             * Notename
+             * @default
+             */
+            noteName: string;
+            /**
+             * Policy
+             * @default
+             */
+            policy: string;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "confirmed";
+        };
+        /**
+         * ObsidianHandoffLogList
+         * @description GET /api/v1/obsidian/handoff-log 响应（新→旧）。
+         */
+        ObsidianHandoffLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ObsidianHandoffLogEntry"][];
         };
         /**
          * ObsidianNoteSetting
@@ -12316,6 +12687,7 @@ export interface components {
             changed: number;
             /** Elapsedms */
             elapsedMs: number;
+            files?: components["schemas"]["ObsidianScanFiles"] | null;
             /** Removed */
             removed: number;
             /** Renames */
@@ -12334,6 +12706,56 @@ export interface components {
              * @default
              */
             vaultPath: string;
+        };
+        /**
+         * ObsidianScanFileList
+         * @description N138：一类文件级诊断列表（≤50 条 + 诚实截断标志）。
+         */
+        ObsidianScanFileList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: string[];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * ObsidianScanFiles
+         * @description N138：最近一次扫描的文件级诊断（新增/更改/删除/跳过）。
+         */
+        ObsidianScanFiles: {
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            added: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            changed: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            removed: components["schemas"]["ObsidianScanFileList"];
+            /**
+             * @default {
+             *       "items": [],
+             *       "truncated": false
+             *     }
+             */
+            skipped: components["schemas"]["ObsidianScanFileList"];
         };
         /**
          * ObsidianSettings
@@ -12359,6 +12781,7 @@ export interface components {
             lastError?: string | null;
             /** Lastscanat */
             lastScanAt?: string | null;
+            lastScanFiles?: components["schemas"]["ObsidianScanFiles"] | null;
             /**
              * Notecount
              * @default 0
@@ -16972,6 +17395,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotations_export_delta_api_v1_annotations_export_delta_get: {
+        parameters: {
+            query?: {
+                entryRef?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationExportDelta"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_annotations_exported_api_v1_annotations_export_mark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationExportMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationExportMarkResult"];
                 };
             };
             /** @description Validation Error */
@@ -23480,6 +23967,37 @@ export interface operations {
             };
         };
     };
+    list_block_refs_api_v1_obsidian_block_refs_get: {
+        parameters: {
+            query?: {
+                paraId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianBlockRefsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_obsidian_devices_api_v1_obsidian_devices_get: {
         parameters: {
             query?: never;
@@ -23630,6 +24148,39 @@ export interface operations {
             };
         };
     };
+    validate_obsidian_export_api_v1_obsidian_export_handoff_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExportValidateResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_obsidian_export_template_api_v1_obsidian_export_template_get: {
         parameters: {
             query?: never;
@@ -23703,6 +24254,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ObsidianTemplatePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_obsidian_handoff_log_api_v1_obsidian_handoff_log_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_obsidian_handoff_log_api_v1_obsidian_handoff_log_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianHandoffLogCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_obsidian_handoff_log_api_v1_obsidian_handoff_log_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogClearResult"];
+                };
+            };
+        };
+    };
+    confirm_obsidian_handoff_api_v1_obsidian_handoff__handoff_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handoff_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianHandoffLogEntry"];
                 };
             };
             /** @description Validation Error */

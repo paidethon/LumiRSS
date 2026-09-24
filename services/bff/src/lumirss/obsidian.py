@@ -47,6 +47,8 @@ _MAX_TAG_LENGTH = 50
 _MAX_TITLE_LENGTH = 500
 _MAX_WIKILINKS = 100
 _MAX_BODY_LENGTH = 20000
+# N138：文件级诊断列表每类最多列出的路径数（超出 → truncated 标志）。
+_MAX_LISTED_PATHS = 50
 
 _logger = logging.getLogger("lumirss.obsidian")
 
@@ -92,6 +94,37 @@ class ScanReport:
         }
 
 
+def _bounded_paths(paths: list[str]) -> dict[str, Any]:
+    """N138：路径列表有界化（≤_MAX_LISTED_PATHS 条 + truncated 标志）。"""
+    unique: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        unique.append(path)
+    return {
+        "items": unique[:_MAX_LISTED_PATHS],
+        "truncated": len(unique) > _MAX_LISTED_PATHS,
+    }
+
+
+def build_scan_files_report(
+    *,
+    added: list[str],
+    changed: list[str],
+    removed: list[str],
+    skipped: list[str],
+) -> dict[str, Any]:
+    """N138：文件级诊断报告（新增/更改/删除/跳过，各类有界 + 截断标志）。"""
+    return {
+        "added": _bounded_paths(added),
+        "changed": _bounded_paths(changed),
+        "removed": _bounded_paths(removed),
+        "skipped": _bounded_paths(skipped),
+    }
+
+
 def canonical_vault_root(vault_path: str) -> Path:
     """Canonical realpath of the configured vault; honest errors."""
     if not vault_path or not vault_path.strip():
@@ -118,9 +151,15 @@ def _contained(root: Path, candidate: Path) -> Path | None:
     return None
 
 
-def _iter_markdown_files(root: Path) -> tuple[list[Path], int]:
-    """Bounded walk; symlink escapes excluded; returns (files, skipped)."""
+def _iter_markdown_files(root: Path) -> tuple[list[Path], list[str], int]:
+    """Bounded walk; symlink escapes excluded.
+
+    Returns (files, skipped_paths, skipped_total) — skipped_paths is the
+    bounded, displayable list (N138 diagnostics; ≤_MAX_LISTED_PATHS entries,
+    the caller reports the honest total via skipped_total).
+    """
     files: list[Path] = []
+    skipped_paths: list[str] = []
     skipped = 0
     stack: list[tuple[Path, int]] = [(root, 0)]
     while stack and len(files) <= _MAX_FILES:
@@ -139,23 +178,38 @@ def _iter_markdown_files(root: Path) -> tuple[list[Path], int]:
             resolved = _contained(root, entry)
             if resolved is None:
                 skipped += 1
+                if len(skipped_paths) < _MAX_LISTED_PATHS:
+                    skipped_paths.append(_rel_for_display(root, entry))
                 continue
             if resolved.is_dir():
                 stack.append((resolved, depth + 1))
             elif resolved.suffix.lower() == ".md":
                 if len(files) >= _MAX_FILES:
                     skipped += 1
+                    if len(skipped_paths) < _MAX_LISTED_PATHS:
+                        skipped_paths.append(_rel_for_display(root, resolved))
                     continue
                 try:
                     if resolved.stat().st_size > _MAX_FILE_BYTES:
                         skipped += 1
+                        if len(skipped_paths) < _MAX_LISTED_PATHS:
+                            skipped_paths.append(_rel_for_display(root, resolved))
                         continue
                 except OSError:
                     skipped += 1
                     continue
                 files.append(resolved)
     files.sort()
-    return files, skipped
+    return files, skipped_paths, skipped
+
+
+def _rel_for_display(root: Path, path: Path) -> str:
+    """Vault-relative path for diagnostics; falls back to the name when the
+    path is not syntactically under root (symlink escape targets)."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
 
 
 def parse_note(resolved_path: Path, root: Path) -> dict[str, Any] | None:
@@ -261,7 +315,7 @@ class ObsidianService:
     async def get_status(self) -> dict[str, Any]:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT vault_path, last_scan_at, last_error FROM obsidian_settings WHERE id = 1"
+            "SELECT vault_path, last_scan_at, last_error, last_scan_files_json FROM obsidian_settings WHERE id = 1"
         )
         count_row = await self._db.fetch_one(
             "SELECT COUNT(*) AS n FROM obsidian_notes"
@@ -272,6 +326,11 @@ class ObsidianService:
             "lastError": row["last_error"] if row is not None else None,
             "noteCount": int(count_row["n"]) if count_row is not None else 0,
             "envRootConfigured": bool(self._env_root),
+            # N138：最近一次扫描的文件级诊断（从未扫描 / 字段缺失 → None，
+            # UI 保持既有的诚实空态，绝不冒充「已自动同步」）。
+            "lastScanFiles": _load_scan_files_json(
+                row["last_scan_files_json"] if row is not None else ""
+            ),
         }
 
     async def note_count(self) -> int:
@@ -313,7 +372,9 @@ class ObsidianService:
                 (str(exc)[:500],),
             )
             raise
-        loop_files, skipped = await _to_thread(_iter_markdown_files, root)
+        loop_files, skipped_paths, skipped = await _to_thread(
+            _iter_markdown_files, root
+        )
         known = {
             str(row["rel_path"]): {
                 "fingerprint": str(row["fingerprint"]),
@@ -332,6 +393,8 @@ class ObsidianService:
             note = parse_note(resolved, root)
             if note is None:
                 skipped += 1
+                if len(skipped_paths) < _MAX_LISTED_PATHS:
+                    skipped_paths.append(_rel_for_display(root, resolved))
                 continue
             seen_paths.add(note["rel_path"])
             parsed[note["rel_path"]] = note
@@ -359,6 +422,9 @@ class ObsidianService:
         truncated_notes = 0
         new_uuids: list[tuple[str, dict[str, Any]]] = []
         updates: list[tuple[str, dict[str, Any], str]] = []  # (uuid, note, kind)
+        # N138：文件级诊断（新增/更改的 rel_path；删除与跳过在下方汇总）。
+        added_paths: list[str] = []
+        changed_paths: list[str] = []
         for rel, note in parsed.items():
             existing = known.get(rel)
             if existing is None:
@@ -370,6 +436,7 @@ class ObsidianService:
                 else:
                     new_uuids.append((new_library_uuid(), note))
                     added += 1
+                    added_paths.append(rel)
                 truncated_notes += int(note["truncated"])
                 continue
             if existing["fingerprint"] == note["fingerprint"]:
@@ -378,9 +445,11 @@ class ObsidianService:
                 continue
             updates.append((existing["item_uuid"], note, "change"))
             changed += 1
+            changed_paths.append(rel)
             truncated_notes += int(note["truncated"])
         removed_uuids = [known[rel]["item_uuid"] for rel in removed_paths]
         removed += len(removed_uuids)
+        removed_paths_list = sorted(removed_paths)
 
         def apply(connection) -> None:  # noqa: ANN001 — raw sqlite3 connection
             now = utc_now()
@@ -444,9 +513,16 @@ class ObsidianService:
                     "DELETE FROM search_library WHERE ref = ?", (f"library:{item_uuid}",)
                 )
             connection.execute(
-                "UPDATE obsidian_settings SET last_scan_at = ?, last_error = NULL WHERE id = 1",
-                (utc_now(),),
+                "UPDATE obsidian_settings SET last_scan_at = ?, last_error = NULL, last_scan_files_json = ? WHERE id = 1",
+                (utc_now(), json.dumps(scan_files_payload, ensure_ascii=False)),
             )
+
+        scan_files_payload = build_scan_files_report(
+            added=added_paths,
+            changed=changed_paths,
+            removed=removed_paths_list,
+            skipped=skipped_paths,
+        )
 
         await transaction(self._db, apply)
         elapsed_ms = _elapsed_ms(started)
@@ -462,13 +538,18 @@ class ObsidianService:
         )
         result = report.to_dict()
         result["vaultPath"] = str(root)
+        # N138：文件级诊断（本批列表随报告返回 + 已持久化为「最近一次」）。
+        result["files"] = scan_files_payload
         # F080：重建反向链接索引（尽力而为；失败不影响 rescan 结果）
         import contextlib as _contextlib
 
-        from lumirss.obsidian_backlinks import rebuild_backlinks
+        from lumirss.obsidian_backlinks import rebuild_backlinks, rebuild_block_refs
 
         with _contextlib.suppress(Exception):
             result["backlinksRebuilt"] = await rebuild_backlinks(self._db) >= 0
+        # N134：块 id 索引同样尽力而为（失败不影响扫描结果）。
+        with _contextlib.suppress(Exception):
+            await rebuild_block_refs(self._db)
         return result
 
     async def list_notes(
@@ -557,6 +638,37 @@ async def _to_thread(func, *args):
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _load_scan_files_json(raw: Any) -> dict[str, Any] | None:
+    """N138：持久化的最近一次扫描文件级诊断；缺失/损坏 → None（诚实）。"""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def check_vault_path(vault_path: str, rel: str) -> bool | None:
+    """N139 附件存在性核对（只读）：True 存在 / False 缺失 / None 无法核对。
+
+    Vault 不可达或路径越出根（containment 拒绝）都返回 None —— 校验报告
+    只在确有把握时才报 missing_attachment，绝不凭空报假阳性。"""
+    try:
+        root = canonical_vault_root(vault_path)
+    except (VaultUnreachable, VaultPermissionDenied):
+        return None
+    candidate = root / str(rel or "").strip()
+    resolved = _contained(root, candidate)
+    if resolved is None:
+        return None
+    try:
+        return resolved.is_file()
+    except OSError:
+        return None
 
 
 def _elapsed_ms(started_iso: str) -> int:

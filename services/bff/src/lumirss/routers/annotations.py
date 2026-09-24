@@ -16,6 +16,10 @@ from lumirss.annotation_store import (
     AnnotationInvalid,
     AnnotationStore,
 )
+from lumirss.models import (
+    AnnotationExportDelta,
+    AnnotationExportMarkResult,
+)
 
 router = APIRouter()
 
@@ -49,6 +53,14 @@ class AnnotationExportRequest(BaseModel):
 
     entryRefs: list[str] | None = None
     q: str | None = None
+
+
+class AnnotationExportMarkRequest(BaseModel):
+    """POST /api/v1/annotations/export-mark body（N137 导出水位回标）。"""
+
+    model_config = {"extra": "forbid"}
+
+    ids: list[str] = Field(min_length=1)
 
 
 def _invalid_response(message: str) -> JSONResponse:
@@ -135,6 +147,31 @@ def _md_escape(text: str) -> str:
             line = "\\" + line
         lines.append(line)
     return "\n".join(lines)
+
+
+@router.post("/api/v1/annotations/export-mark", response_model=AnnotationExportMarkResult)
+async def mark_annotations_exported(
+    payload: AnnotationExportMarkRequest, request: Request
+) -> Response:
+    """N137：成功导出后回标水位（幂等：重复调用只追加日志行，水位只
+    前进，增量查询不会重复计数）。ids 为空 → 422。"""
+    store = AnnotationStore(request.app.state.db)
+    result = await store.mark_exported(payload.ids)
+    return JSONResponse(AnnotationExportMarkResult(**result).model_dump())
+
+
+@router.get(
+    "/api/v1/annotations/export-delta", response_model=AnnotationExportDelta
+)
+async def annotations_export_delta(
+    request: Request,
+    entryRef: str | None = None,
+) -> Response:
+    """N137：增量导出预览 —— 水位之后的新增/修改批注计数（可按文章
+    收窄）。从未导出 → lastExportedAt=null 且全部计为新增（诚实）。"""
+    store = AnnotationStore(request.app.state.db)
+    delta = await store.export_delta(entry_ref=entryRef)
+    return JSONResponse(AnnotationExportDelta(**delta).model_dump())
 
 
 @router.post("/api/v1/annotations/export")

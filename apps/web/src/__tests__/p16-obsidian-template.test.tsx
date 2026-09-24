@@ -50,6 +50,7 @@ describe('ObsidianDevicesSection 模板编辑器（P16）', () => {
       template: '',
       defaultTemplate: DEFAULT_TEMPLATE,
       allowedVars: ['title', 'url', 'source', 'date', 'content', 'annotations', 'published'],
+      exportNamePolicy: 'timestamp_suffix',
     })
     mocks.previewObsidianExportTemplate.mockResolvedValue({
       text: '渲染结果',
@@ -95,6 +96,7 @@ describe('ObsidianDevicesSection 模板编辑器（P16）', () => {
       template: '{{title}}-自定义',
       defaultTemplate: DEFAULT_TEMPLATE,
       allowedVars: ['title'],
+      exportNamePolicy: 'timestamp_suffix',
     })
     renderEditor()
     const editor = await screen.findByLabelText('导出模板')
@@ -113,11 +115,13 @@ describe('ObsidianDevicesSection 模板编辑器（P16）', () => {
       template: '{{title}}-自定义',
       defaultTemplate: DEFAULT_TEMPLATE,
       allowedVars: ['title'],
+      exportNamePolicy: 'timestamp_suffix',
     })
     mocks.updateObsidianExportTemplate.mockResolvedValue({
       template: '',
       defaultTemplate: DEFAULT_TEMPLATE,
       allowedVars: ['title'],
+      exportNamePolicy: 'timestamp_suffix',
     })
     renderEditor()
     const reset = await screen.findByRole('button', { name: /恢复默认/ })

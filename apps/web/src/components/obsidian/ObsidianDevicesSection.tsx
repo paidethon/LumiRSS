@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Loader2, Pencil, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
-import type { ObsidianDeviceProfile } from '../../api/client'
+import type { ObsidianDeviceProfile, ObsidianExportTemplateView } from '../../api/client'
 import {
   useCreateObsidianDeviceMutation,
   useDeleteObsidianDeviceMutation,
@@ -253,19 +253,25 @@ function TemplateEditor() {
   const followingDefault = template.data !== undefined && template.data.template === ''
 
   const saveDraft = () => {
-    save.mutate(current, {
-      onSuccess: () => {
-        setDraft(null)
-        setSavedFlash(true)
-        window.setTimeout(() => setSavedFlash(false), 2000)
+    save.mutate(
+      { template: current },
+      {
+        onSuccess: () => {
+          setDraft(null)
+          setSavedFlash(true)
+          window.setTimeout(() => setSavedFlash(false), 2000)
+        },
       },
-    })
+    )
   }
 
   const resetToDefault = () => {
-    save.mutate('', {
-      onSuccess: () => setDraft(null),
-    })
+    save.mutate(
+      { template: '' },
+      {
+        onSuccess: () => setDraft(null),
+      },
+    )
   }
 
   return (
@@ -352,6 +358,63 @@ function TemplateEditor() {
             )}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+/** N135 导出重名策略：obsidian:// URI 无法检测同名笔记（官方限制）→
+ * 显式策略而非伪装查重；timestamp_suffix 默认（文件名追加 -YYYYMMDD-HHmm），
+ * exact 按标题原样。文件下载路径自带唯一后缀、从不覆盖。 */
+function ExportNamePolicySection() {
+  const template = useObsidianExportTemplate()
+  const save = useUpdateObsidianExportTemplateMutation()
+  const policy = template.data?.exportNamePolicy ?? 'timestamp_suffix'
+
+  if (template.isPending) {
+    return (
+      <div className="flex flex-col gap-2" aria-label="导出重名策略加载中">
+        <Skeleton className="h-14 w-full" />
+      </div>
+    )
+  }
+  if (template.isError) {
+    return (
+      <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+        导出重名策略加载失败：{template.error.message}
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2" data-lumi-export-name-policy="">
+      <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+        导出重名处理
+        <Select
+          aria-label="导出重名处理"
+          value={policy}
+          disabled={save.isPending}
+          onChange={(e) => save.mutate({ template: null, exportNamePolicy: e.target.value as ObsidianExportTemplateView['exportNamePolicy'] })}
+          options={[
+            { value: 'timestamp_suffix', label: '时间戳后缀（默认，追加 -YYYYMMDD-HHmm）' },
+            { value: 'exact', label: '精确名（按标题原样命名）' },
+          ]}
+        />
+      </label>
+      <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+        obsidian:// 链接无法检测 Vault 内是否已存在同名笔记（Obsidian 官方 URI
+        限制）——时间戳后缀在重复导出时生成新文件名，避免覆盖你知道已存在的笔记；
+        精确名按标题原样交给你自己判断。文件下载路径自带唯一后缀、从不覆盖。
+      </p>
+      {save.isPending && (
+        <span role="status" className="text-xs text-[var(--lumi-text-tertiary)]">
+          保存中…
+        </span>
+      )}
+      {save.isError && (
+        <span role="alert" className="text-xs text-[var(--lumi-danger)]">
+          {save.error.message}
+        </span>
       )}
     </div>
   )
@@ -464,6 +527,11 @@ export default function ObsidianDevicesSection({ envRootConfigured }: { envRootC
                 onCancel={() => setAdding(false)}
               />
             )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium text-[var(--lumi-text-secondary)]">导出重名处理</h3>
+            <ExportNamePolicySection />
           </div>
 
           <div className="flex flex-col gap-2">

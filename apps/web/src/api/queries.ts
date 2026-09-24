@@ -1868,13 +1868,17 @@ import {
   getObsidianNote,
   getObsidianStatus,
   getObsidianExportTemplate,
+  clearObsidianHandoffLog,
+  confirmObsidianHandoff,
   createObsidianDevice,
   updateObsidianDevice,
   deleteObsidianDevice,
+  getAnnotationsExportDelta,
   listApiSources,
   getCleanupSuggestions,
   listMailBridgeLists,
   listObsidianDevices,
+  listObsidianHandoffLog,
   listObsidianNotes,
   listStagedSources,
   previewApiSource,
@@ -1893,6 +1897,7 @@ import {
   updateObsidianExportTemplate,
   updateObsidianSettings,
   applyCleanupSuggestions,
+  validateObsidianExport,
 } from './client'
 import type {
   ApiSourceCreateInput,
@@ -1902,6 +1907,7 @@ import type {
   DigestEntryRefInput,
   DigestSettingsUpdate,
   ObsidianDeviceProfilePayload,
+  ObsidianExportTemplateView,
 } from './client'
 
 // ---- API 来源 ----
@@ -2498,7 +2504,14 @@ export function useObsidianExportTemplate() {
 export function useUpdateObsidianExportTemplateMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (template: string) => updateObsidianExportTemplate(template),
+    mutationFn: (vars: {
+      template: string | null
+      exportNamePolicy?: ObsidianExportTemplateView['exportNamePolicy']
+    }) =>
+      // 位置参数契约保持：未带策略时不传第二参（既有调用方断言兼容）。
+      vars.exportNamePolicy !== undefined
+        ? updateObsidianExportTemplate(vars.template, vars.exportNamePolicy)
+        : updateObsidianExportTemplate(vars.template),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['obsidian', 'export-template'] })
     },
@@ -2515,9 +2528,65 @@ export function useObsidianTemplatePreviewMutation() {
 
 /** 导出到 Obsidian 交接（uri / file 裁决在服务端）。 */
 export function useObsidianExportHandoffMutation() {
+  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { entryRef: string; deviceId: string }) =>
-      requestObsidianExportHandoff(vars.entryRef, vars.deviceId),
+    mutationFn: (vars: { entryRef: string; deviceId: string; onlySinceLastExport?: boolean }) =>
+      requestObsidianExportHandoff(vars.entryRef, vars.deviceId, {
+        onlySinceLastExport: vars.onlySinceLastExport,
+      }),
+    onSuccess: async () => {
+      // N137：交接成功即回标导出水位 → 失效增量预览。
+      await queryClient.invalidateQueries({ queryKey: ['annotations', 'export-delta'] })
+    },
+  })
+}
+
+/** N139 导出侧链接校验（只读；交接前由导出对话框调用）。 */
+export function useObsidianExportValidateMutation() {
+  return useMutation({
+    mutationFn: (vars: { entryRef: string; deviceId: string; onlySinceLastExport?: boolean }) =>
+      validateObsidianExport(vars.entryRef, vars.deviceId, {
+        onlySinceLastExport: vars.onlySinceLastExport,
+      }),
+  })
+}
+
+/** N140 交接记录列表（新→旧；confirmed 只能由显式确认产生）。 */
+export function useObsidianHandoffLog() {
+  return useQuery({
+    queryKey: ['obsidian', 'handoff-log'],
+    queryFn: ({ signal }) => listObsidianHandoffLog(signal),
+  })
+}
+
+/** N140 显式确认（幂等；不存在 → 错误由 UI 透出）。 */
+export function useConfirmObsidianHandoffMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (handoffId: string) => confirmObsidianHandoff(handoffId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'handoff-log'] })
+    },
+  })
+}
+
+/** N140 清空交接历史。 */
+export function useClearObsidianHandoffLogMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => clearObsidianHandoffLog(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['obsidian', 'handoff-log'] })
+    },
+  })
+}
+
+/** N137 增量预览（可选按文章收窄；供导出对话框展示新增/修改）。 */
+export function useAnnotationsExportDelta(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['annotations', 'export-delta', { entryRef }],
+    queryFn: ({ signal }) => getAnnotationsExportDelta(entryRef, signal),
+    enabled: entryRef !== null,
   })
 }
 

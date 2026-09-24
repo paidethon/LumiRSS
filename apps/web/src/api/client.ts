@@ -2404,6 +2404,17 @@ export type ObsidianDeviceProfilePayload = G6Schemas['ObsidianDeviceProfilePaylo
 export type ObsidianExportTemplateView = G6Schemas['ObsidianExportTemplateView']
 export type ObsidianTemplatePreviewResult = G6Schemas['ObsidianTemplatePreviewResult']
 export type ObsidianExportHandoffResult = G6Schemas['ObsidianExportHandoffResult']
+export type ObsidianScanFileList = G6Schemas['ObsidianScanFileList']
+export type ObsidianScanFiles = G6Schemas['ObsidianScanFiles']
+export type ObsidianBlockRef = G6Schemas['ObsidianBlockRef']
+export type ObsidianBlockRefsResponse = G6Schemas['ObsidianBlockRefsResponse']
+export type ObsidianExportIssue = G6Schemas['ObsidianExportIssue']
+export type ObsidianExportValidateResult = G6Schemas['ObsidianExportValidateResult']
+export type ObsidianHandoffLogEntry = G6Schemas['ObsidianHandoffLogEntry']
+export type ObsidianHandoffLogList = G6Schemas['ObsidianHandoffLogList']
+export type ObsidianHandoffLogClearResult = G6Schemas['ObsidianHandoffLogClearResult']
+export type AnnotationExportMarkResult = G6Schemas['AnnotationExportMarkResult']
+export type AnnotationExportDelta = G6Schemas['AnnotationExportDelta']
 export type FavoritesResponse = G6Schemas['FavoritesResponse']
 export type LibrarySearchItem = G6Schemas['LibrarySearchItem']
 
@@ -3495,13 +3506,19 @@ export async function getObsidianExportTemplate(
   return request<ObsidianExportTemplateView>(`${API_BASE}/obsidian/export-template`, signal)
 }
 
-/** 保存导出模板（template='' = 回到默认模板）。 */
+/** 保存导出模板（template='' = 回到默认模板；exportNamePolicy 为 N135
+ * 命名策略，null = 不改模板只改策略）。 */
 export async function updateObsidianExportTemplate(
-  template: string,
+  template: string | null,
+  exportNamePolicy?: ObsidianExportTemplateView['exportNamePolicy'],
 ): Promise<ObsidianExportTemplateView> {
+  const body: Record<string, unknown> = { template }
+  if (exportNamePolicy !== undefined) {
+    body.exportNamePolicy = exportNamePolicy
+  }
   const response = await rawRequest(`${API_BASE}/obsidian/export-template`, {
     method: 'PUT',
-    body: JSON.stringify({ template }),
+    body: JSON.stringify(body),
     contentType: 'application/json',
   })
   return (await response.json()) as ObsidianExportTemplateView
@@ -3521,17 +3538,97 @@ export async function previewObsidianExportTemplate(
 }
 
 /** 导出到 Obsidian 交接：mode='uri' → 打开 uri（用户在 Obsidian 确认
- * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。 */
+ * 保存）；mode='file'（tooLong）→ 前端下载 .md + 剪贴板回退。
+ * onlySinceLastExport（N137）：只携带上次导出水位之后的批注。 */
 export async function requestObsidianExportHandoff(
   entryRef: string,
   deviceId: string,
+  options: { onlySinceLastExport?: boolean } = {},
 ): Promise<ObsidianExportHandoffResult> {
   const response = await rawRequest(`${API_BASE}/obsidian/export-handoff`, {
     method: 'POST',
-    body: JSON.stringify({ entryRef, deviceId }),
+    body: JSON.stringify({
+      entryRef,
+      deviceId,
+      onlySinceLastExport: options.onlySinceLastExport === true,
+    }),
     contentType: 'application/json',
   })
   return (await response.json()) as ObsidianExportHandoffResult
+}
+
+// ---- N134/N135/N137/N139/N140：交接闭环扩展 ----
+
+/** N134 块级回跳反查：哪些投影笔记内嵌了 ^lumi-<paraId> 块 id。 */
+export async function listObsidianBlockRefs(
+  paraId: string,
+  signal?: AbortSignal,
+): Promise<ObsidianBlockRefsResponse> {
+  const query = new URLSearchParams({ paraId })
+  return request<ObsidianBlockRefsResponse>(
+    `${API_BASE}/obsidian/block-refs?${query.toString()}`,
+    signal,
+  )
+}
+
+/** N139 导出侧链接校验（只读报告；不交接、不落日志、不推水位）。 */
+export async function validateObsidianExport(
+  entryRef: string,
+  deviceId: string,
+  options: { onlySinceLastExport?: boolean } = {},
+): Promise<ObsidianExportValidateResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/export-handoff/validate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      entryRef,
+      deviceId,
+      onlySinceLastExport: options.onlySinceLastExport === true,
+    }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ObsidianExportValidateResult
+}
+
+/** N140 交接记录列表（新→旧）。 */
+export async function listObsidianHandoffLog(
+  signal?: AbortSignal,
+): Promise<ObsidianHandoffLogList> {
+  return request<ObsidianHandoffLogList>(`${API_BASE}/obsidian/handoff-log`, signal)
+}
+
+/** N140 显式确认（唯一 confirmed 路径；页面可见性等被动事件绝不调用）。 */
+export async function confirmObsidianHandoff(
+  handoffId: string,
+): Promise<ObsidianHandoffLogEntry> {
+  const response = await rawRequest(
+    `${API_BASE}/obsidian/handoff/${encodeURIComponent(handoffId)}/confirm`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as ObsidianHandoffLogEntry
+}
+
+/** N140 清空交接历史（返回如实删除条数）。 */
+export async function clearObsidianHandoffLog(): Promise<ObsidianHandoffLogClearResult> {
+  const response = await rawRequest(`${API_BASE}/obsidian/handoff-log`, {
+    method: 'DELETE',
+  })
+  return (await response.json()) as ObsidianHandoffLogClearResult
+}
+
+/** N137 增量预览：上次导出水位之后的新增/修改计数（可按文章收窄）。 */
+export async function getAnnotationsExportDelta(
+  entryRef?: string | null,
+  signal?: AbortSignal,
+): Promise<AnnotationExportDelta> {
+  const query = new URLSearchParams()
+  if (entryRef) {
+    query.set('entryRef', entryRef)
+  }
+  const qs = query.toString()
+  return request<AnnotationExportDelta>(
+    `${API_BASE}/annotations/export-delta${qs ? `?${qs}` : ''}`,
+    signal,
+  )
 }
 
 // ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----
