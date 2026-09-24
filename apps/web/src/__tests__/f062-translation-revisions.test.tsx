@@ -16,7 +16,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 const SEGMENTS: TranslationSegmentState[] = [
-  { index: 0, status: 'success', translatedText: '机器译文零。', cached: true, revisionStale: false },
+  { index: 0, status: 'success', translatedText: '机器译文零。', cached: true, revisionStale: false, noTranslate: false, protectedTerms: [] },
   {
     index: 1,
     status: 'success',
@@ -25,6 +25,8 @@ const SEGMENTS: TranslationSegmentState[] = [
     userRevision: '我的修订壹<script>alert(1)</script>',
     revisedAt: '2026-09-01T00:00:00Z',
     revisionStale: true,
+  noTranslate: false,
+  protectedTerms: [],
   },
 ]
 

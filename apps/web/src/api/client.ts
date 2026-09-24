@@ -21,6 +21,7 @@ import type {
   ClipFetchArticleResult,
   ClipListResponse,
   TranslationSegmentsView,
+  TranslationVerificationView,
   Category,
   EntryConversation,
   EntryDetail,
@@ -1715,6 +1716,44 @@ export async function deleteTranslationSegmentRevision(
   if (!response.ok) throw await toApiError(response)
 }
 
+/** N086：把一块标记为「不翻译」（持久；该块不再参与生成）。 */
+export async function markNoTranslateBlock(
+  entryRef: string,
+  blockIndex: number,
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/no-translate`,
+    { method: 'PUT' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** N086：撤销一块的「不翻译」标记（块恢复可翻译）。 */
+export async function unmarkNoTranslateBlock(
+  entryRef: string,
+  blockIndex: number,
+): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/no-translate`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
+}
+
+/** N082：当前译文的逐块数字校验（纯只读，零 provider 调用）。
+ * 基于可见数字差异，非语义判断。 */
+export async function getTranslationVerification(
+  entryRef: string,
+  language?: string,
+): Promise<TranslationVerificationView> {
+  const path = `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation-verification`
+  const url =
+    language === undefined ? path : `${path}?language=${encodeURIComponent(language)}`
+  const response = await rawRequest(url, { method: 'GET' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as TranslationVerificationView
+}
+
 export async function saveLibreTranslateKey(value: string): Promise<void> {
   await rawRequest(`${API_BASE}/settings/translation/libretranslate-key`, {
     method: 'PUT',
@@ -3024,10 +3063,11 @@ export async function listGlossary(
   return request<GlossaryTermList>(`${API_BASE}/glossary?limit=100${suffix}`, signal)
 }
 
-/** F21：新建术语。 */
+/** F21：新建术语（N083：protect = 专有名词保留）。 */
 export async function createGlossaryTerm(payload: {
   term: string
   definition: string
+  protect?: boolean
 }): Promise<GlossaryTerm> {
   const response = await rawRequest(`${API_BASE}/glossary`, {
     method: 'POST',
@@ -3037,10 +3077,10 @@ export async function createGlossaryTerm(payload: {
   return (await response.json()) as GlossaryTerm
 }
 
-/** F21：修改术语。 */
+/** F21：修改术语（PATCH 全量替换；N083：protect 可翻转）。 */
 export async function updateGlossaryTerm(
   id: string,
-  payload: { term: string; definition: string },
+  payload: { term: string; definition: string; protect?: boolean },
 ): Promise<GlossaryTerm> {
   const response = await rawRequest(`${API_BASE}/glossary/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -4262,16 +4302,29 @@ export interface GlossaryHitItem {
   term: string
   translation: string
   count: number
+  /** N083：blocks 输入提供时附带的命中位置（客户端块索引）。 */
+  blockIndexes?: number[]
 }
 
-/** F029：现役 glossary 在本文正文的命中（服务端预览；与生成 prompt 同源）。 */
+/** F029：现役 glossary 在本文正文的命中（服务端预览；与生成 prompt 同源）。
+ * N083：提供 blocks 时逐块定位，命中附带 blockIndexes。 */
 export async function getGlossaryHits(
   entryRef: string,
-  signal?: AbortSignal,
+  opts?: { blocks?: TranslationSegmentBlockInput[]; signal?: AbortSignal },
 ): Promise<{ hits: GlossaryHitItem[]; promptBlock: string }> {
+  const body = opts?.blocks && opts.blocks.length > 0 ? { blocks: opts.blocks } : undefined
   const response = await fetch(
     `${API_BASE}/entries/${encodeURIComponent(entryRef)}/glossary-hits`,
-    { method: 'POST', signal },
+    {
+      method: 'POST',
+      ...(body !== undefined
+        ? {
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }
+        : {}),
+      signal: opts?.signal,
+    },
   )
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as { hits: GlossaryHitItem[]; promptBlock: string }

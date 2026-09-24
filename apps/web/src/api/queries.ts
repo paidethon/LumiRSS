@@ -46,6 +46,8 @@ import {
   getAuthorItems,
   getAuthors,
   getGlossaryHits,
+  markNoTranslateBlock,
+  unmarkNoTranslateBlock,
   getMissingDigestDates,
   generateDigestForDate,
   generateEntrySummaryScoped,
@@ -1243,6 +1245,28 @@ export function useTranslationSegmentRevisionMutation(entryRef: string) {
       text === null
         ? deleteTranslationSegmentRevision(entryRef, blockIndex).then(() => null)
         : putTranslationSegmentRevision(entryRef, blockIndex, text),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['translation-segments', entryRef],
+      })
+    },
+  })
+}
+
+/** N086：标记/撤销一块「不翻译」；成功后失效该篇的段查询。 */
+export function useNoTranslateBlockMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      blockIndex,
+      marked,
+    }: {
+      blockIndex: number
+      marked: boolean
+    }) =>
+      marked
+        ? markNoTranslateBlock(entryRef, blockIndex)
+        : unmarkNoTranslateBlock(entryRef, blockIndex),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['translation-segments', entryRef],
@@ -3006,10 +3030,21 @@ export function useQaTemplateMutations() {
 
 // ---- F029 术语命中预览 ----
 
-export function useGlossaryHits(entryRef: string, enabled: boolean) {
+export function useGlossaryHits(
+  entryRef: string,
+  enabled: boolean,
+  blocks?: TranslationSegmentBlockInput[] | null,
+) {
+  // N083：提供 blocks 时逐块定位（命中附带 blockIndexes）；blocks 参与
+  // 缓存键（同一篇的不同块集合各自定位）。
+  const blocksKey = blocks && blocks.length > 0 ? JSON.stringify(blocks) : ''
   return useQuery({
-    queryKey: ['glossary-hits', entryRef],
-    queryFn: ({ signal }) => getGlossaryHits(entryRef, signal),
+    queryKey: ['glossary-hits', entryRef, blocksKey],
+    queryFn: ({ signal }) =>
+      getGlossaryHits(entryRef, {
+        blocks: blocksKey ? (blocks as TranslationSegmentBlockInput[]) : undefined,
+        signal,
+      }),
     enabled,
   })
 }
