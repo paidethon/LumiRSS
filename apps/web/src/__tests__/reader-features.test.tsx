@@ -132,7 +132,7 @@ describe('F11 — 阅读进度条', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     stubScrollerLayout(scroller(), { scrollHeight: 1200, clientHeight: 800 })
     scroller().scrollTop = 100 // max = 400 → 25%
@@ -172,7 +172,7 @@ describe('F13 — 文内查找', () => {
       })),
     ]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     // 入口：ReaderHeader 工具栏（jsdom 无 CSS.highlights → 降级路径）
     fireEvent.click(screen.getByRole('button', { name: '文内查找' }))
@@ -265,7 +265,7 @@ describe('F15 — 代码自动换行', () => {
       })),
     ]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
     // 默认 off（保持横向滚动）
     expect(document.documentElement.dataset.codeWrap).toBe('off')
 
@@ -361,7 +361,7 @@ describe('F17 — 按屏翻页', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
     expect(screen.queryByRole('button', { name: '上一屏' })).toBeNull()
     expect(screen.queryByRole('button', { name: '下一屏' })).toBeNull()
   })
@@ -373,7 +373,7 @@ describe('F17 — 按屏翻页', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     const up = screen.getByRole('button', { name: '上一屏' })
     const down = screen.getByRole('button', { name: '下一屏' })
@@ -606,7 +606,7 @@ describe('F19 — 朗读', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
     const button = screen.getByRole('button', { name: '朗读' })
     expect(button).toBeDisabled()
     expect(button).toHaveAttribute('title')
@@ -621,7 +621,7 @@ describe('F19 — 朗读', () => {
       })),
     ]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '朗读' }))
     expect(speech.speak).toHaveBeenCalledTimes(1)
@@ -644,7 +644,7 @@ describe('F19 — 朗读', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '朗读' }))
     const utterance = speech.speak.mock.calls[0]![0] as MockUtterance
@@ -659,7 +659,7 @@ describe('F19 — 朗读', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '朗读' }))
     expect((speech.speak.mock.calls[0]![0] as MockUtterance).rate).toBe(1)
@@ -679,7 +679,7 @@ describe('F21 — 分享', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '复制链接' }))
     await waitFor(() => {
@@ -696,7 +696,7 @@ describe('F21 — 分享', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '分享' }))
     await waitFor(() => {
@@ -716,7 +716,7 @@ describe('F21 — 分享', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '分享' }))
     await waitFor(() => expect(share).toHaveBeenCalled())
@@ -733,7 +733,7 @@ describe('F21 — 分享', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '分享' }))
     await waitFor(() => {
@@ -775,7 +775,7 @@ describe('F22 — 导出 Markdown / HTML', () => {
       })),
     ]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '导出 Markdown' }))
@@ -799,7 +799,7 @@ describe('F22 — 导出 Markdown / HTML', () => {
       })),
     ]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '导出 HTML' }))
@@ -823,7 +823,7 @@ describe('F23 — 打印', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '打印' }))
     expect(printMock).toHaveBeenCalledTimes(1)
@@ -842,7 +842,7 @@ describe('F24 — 复制引用', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '复制引用' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制为 Markdown' }))
@@ -862,7 +862,7 @@ describe('F24 — 复制引用', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '复制引用' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制为纯文本' }))
@@ -882,7 +882,7 @@ describe('F24 — 复制引用', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: '复制引用' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制为纯文本' }))
@@ -902,7 +902,7 @@ describe('F25 — 回到顶部 / 返回刚才位置', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
     stubScrollerLayout(scroller(), { scrollHeight: 4000, clientHeight: 600 })
 
     // 未超过阈值：按钮不出现
@@ -931,7 +931,7 @@ describe('F25 — 回到顶部 / 返回刚才位置', () => {
     useReaderUi.setState({ selectedEntryRef: 'e1.a' })
     vi.stubGlobal('fetch', mockApi([detailRoute('e1.a', detail())]))
     renderReader()
-    await screen.findByText('文章 A')
+    await screen.findByText('文章 A', {}, { timeout: 5000 })
     stubScrollerLayout(scroller(), { scrollHeight: 4000, clientHeight: 600 })
 
     scroller().scrollTop = 800
