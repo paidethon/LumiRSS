@@ -773,6 +773,93 @@
     "title": "AnnotationCreate",
     "type": "object"
    },
+   "AnnotationExportDelta": {
+    "description": "GET /api/v1/annotations/export-delta 响应（增量预览：新增/修改）。",
+    "properties": {
+     "addedCount": {
+      "default": 0,
+      "title": "Addedcount",
+      "type": "integer"
+     },
+     "lastExportedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastexportedat"
+     },
+     "modifiedCount": {
+      "default": 0,
+      "title": "Modifiedcount",
+      "type": "integer"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "title": "AnnotationExportDelta",
+    "type": "object"
+   },
+   "AnnotationExportMarkRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/annotations/export-mark body（N137 导出水位回标）。",
+    "properties": {
+     "ids": {
+      "items": {
+       "type": "string"
+      },
+      "minItems": 1,
+      "title": "Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "ids"
+    ],
+    "title": "AnnotationExportMarkRequest",
+    "type": "object"
+   },
+   "AnnotationExportMarkResult": {
+    "description": "N137：mark 结果（诚实计数：只含实际存在的批注）。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "entryRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Entryrefs",
+      "type": "array"
+     },
+     "exportedAt": {
+      "title": "Exportedat",
+      "type": "string"
+     },
+     "ids": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "exportedAt",
+     "count"
+    ],
+    "title": "AnnotationExportMarkResult",
+    "type": "object"
+   },
    "AnnotationExportRequest": {
     "additionalProperties": false,
     "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。",
@@ -8915,6 +9002,55 @@
     "title": "NoteView",
     "type": "object"
    },
+   "ObsidianBlockRef": {
+    "description": "N134：一条块引用（哪篇投影笔记内嵌了 ^lumi-<paraId>）。",
+    "properties": {
+     "indexedAt": {
+      "default": "",
+      "title": "Indexedat",
+      "type": "string"
+     },
+     "noteUuid": {
+      "title": "Noteuuid",
+      "type": "string"
+     },
+     "paraId": {
+      "title": "Paraid",
+      "type": "string"
+     },
+     "relPath": {
+      "default": "",
+      "title": "Relpath",
+      "type": "string"
+     },
+     "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paraId",
+     "noteUuid"
+    ],
+    "title": "ObsidianBlockRef",
+    "type": "object"
+   },
+   "ObsidianBlockRefsResponse": {
+    "description": "GET /api/v1/obsidian/block-refs?paraId= 响应。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ObsidianBlockRef"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "ObsidianBlockRefsResponse",
+    "type": "object"
+   },
    "ObsidianDeviceProfile": {
     "description": "One device where the user runs Obsidian (URI generation ONLY).\n\nDevice profiles never describe server-side vault paths — the vault\nthe BFF reads is mounted server-side (env or manual), while these\nnames describe the user's OWN Obsidian app for obsidian:// links.",
     "properties": {
@@ -9020,7 +9156,7 @@
    },
    "ObsidianExportHandoffRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/obsidian/export-handoff body.",
+    "description": "POST /api/v1/obsidian/export-handoff body.\n\n``onlySinceLastExport``（N137 增量导出）：只携带上次导出水位之后\n有新增/修改的批注（水位来自 annotation_export_log）。",
     "properties": {
      "deviceId": {
       "title": "Deviceid",
@@ -9029,6 +9165,11 @@
      "entryRef": {
       "title": "Entryref",
       "type": "string"
+     },
+     "onlySinceLastExport": {
+      "default": false,
+      "title": "Onlysincelastexport",
+      "type": "boolean"
      }
     },
     "required": [
@@ -9041,6 +9182,11 @@
    "ObsidianExportHandoffResult": {
     "description": "Honest handoff verdict — the UI must never claim a vault write.\n\n``mode='uri'``  → open ``uri``; the user confirms the save IN Obsidian.\n``mode='file'`` → URI budget exceeded (reason='tooLong') → download\n``filename`` + clipboard fallback instead.",
     "properties": {
+     "annotationCount": {
+      "default": 0,
+      "title": "Annotationcount",
+      "type": "integer"
+     },
      "content": {
       "title": "Content",
       "type": "string"
@@ -9101,19 +9247,67 @@
     "title": "ObsidianExportHandoffResult",
     "type": "object"
    },
-   "ObsidianExportTemplateUpdate": {
-    "additionalProperties": false,
-    "description": "PUT /api/v1/obsidian/export-template body.",
+   "ObsidianExportIssue": {
+    "description": "N139：一条校验问题（只读报告；绝不改写用户 Vault 文件）。",
     "properties": {
-     "template": {
-      "maxLength": 20000,
-      "title": "Template",
+     "detail": {
+      "title": "Detail",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "broken_wikilink",
+       "missing_attachment",
+       "duplicate_block_id"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "suggestion": {
+      "title": "Suggestion",
       "type": "string"
      }
     },
     "required": [
-     "template"
+     "kind",
+     "detail",
+     "suggestion"
     ],
+    "title": "ObsidianExportIssue",
+    "type": "object"
+   },
+   "ObsidianExportTemplateUpdate": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/obsidian/export-template body — template 与命名策略\n均可单独更新（None = 保持现状；二者皆缺是无操作，返回现状）。",
+    "properties": {
+     "exportNamePolicy": {
+      "anyOf": [
+       {
+        "enum": [
+         "timestamp_suffix",
+         "exact"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exportnamepolicy"
+     },
+     "template": {
+      "anyOf": [
+       {
+        "maxLength": 20000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template"
+     }
+    },
     "title": "ObsidianExportTemplateUpdate",
     "type": "object"
    },
@@ -9131,6 +9325,15 @@
       "title": "Defaulttemplate",
       "type": "string"
      },
+     "exportNamePolicy": {
+      "default": "timestamp_suffix",
+      "enum": [
+       "timestamp_suffix",
+       "exact"
+      ],
+      "title": "Exportnamepolicy",
+      "type": "string"
+     },
      "template": {
       "title": "Template",
       "type": "string"
@@ -9142,6 +9345,181 @@
      "allowedVars"
     ],
     "title": "ObsidianExportTemplateView",
+    "type": "object"
+   },
+   "ObsidianExportValidateRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/obsidian/export-handoff/validate body（N139 只读校验，\n与 export-handoff 相同的组装路径，但不交接、不落日志、不 mark）。",
+    "properties": {
+     "deviceId": {
+      "title": "Deviceid",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "onlySinceLastExport": {
+      "default": false,
+      "title": "Onlysincelastexport",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "entryRef",
+     "deviceId"
+    ],
+    "title": "ObsidianExportValidateRequest",
+    "type": "object"
+   },
+   "ObsidianExportValidateResult": {
+    "description": "N139：校验结果（issues 为空 = 通过；vaultChecked=false 表示 Vault\n不可达、附件存在性未核对——诚实局限，不冒充查过）。",
+    "properties": {
+     "issues": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ObsidianExportIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+     },
+     "vaultChecked": {
+      "default": false,
+      "title": "Vaultchecked",
+      "type": "boolean"
+     }
+    },
+    "title": "ObsidianExportValidateResult",
+    "type": "object"
+   },
+   "ObsidianHandoffLogClearResult": {
+    "description": "DELETE /api/v1/obsidian/handoff-log 响应（如实报告删除条数）。",
+    "properties": {
+     "cleared": {
+      "title": "Cleared",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "cleared"
+    ],
+    "title": "ObsidianHandoffLogClearResult",
+    "type": "object"
+   },
+   "ObsidianHandoffLogCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/obsidian/handoff-log body — 显式记录 open /\nimport_confirm 交接（export 由 export-handoff 路由自动落库）。",
+    "properties": {
+     "direction": {
+      "enum": [
+       "open",
+       "import_confirm"
+      ],
+      "title": "Direction",
+      "type": "string"
+     },
+     "entryRef": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Entryref",
+      "type": "string"
+     },
+     "noteName": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Notename",
+      "type": "string"
+     },
+     "policy": {
+      "default": "",
+      "maxLength": 50,
+      "title": "Policy",
+      "type": "string"
+     }
+    },
+    "required": [
+     "direction"
+    ],
+    "title": "ObsidianHandoffLogCreate",
+    "type": "object"
+   },
+   "ObsidianHandoffLogEntry": {
+    "description": "N140：一条双向交接记录（pending → confirmed 仅靠显式确认）。",
+    "properties": {
+     "confirmedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Confirmedat"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "direction": {
+      "enum": [
+       "export",
+       "open",
+       "import_confirm"
+      ],
+      "title": "Direction",
+      "type": "string"
+     },
+     "entryRef": {
+      "default": "",
+      "title": "Entryref",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "noteName": {
+      "default": "",
+      "title": "Notename",
+      "type": "string"
+     },
+     "policy": {
+      "default": "",
+      "title": "Policy",
+      "type": "string"
+     },
+     "status": {
+      "default": "pending",
+      "enum": [
+       "pending",
+       "confirmed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "direction",
+     "createdAt"
+    ],
+    "title": "ObsidianHandoffLogEntry",
+    "type": "object"
+   },
+   "ObsidianHandoffLogList": {
+    "description": "GET /api/v1/obsidian/handoff-log 响应（新→旧）。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ObsidianHandoffLogEntry"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "ObsidianHandoffLogList",
     "type": "object"
    },
    "ObsidianNoteSetting": {
@@ -9173,6 +9551,16 @@
      "elapsedMs": {
       "title": "Elapsedms",
       "type": "integer"
+     },
+     "files": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ObsidianScanFiles"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "removed": {
       "title": "Removed",
@@ -9211,6 +9599,61 @@
      "elapsedMs"
     ],
     "title": "ObsidianRescanResult",
+    "type": "object"
+   },
+   "ObsidianScanFileList": {
+    "description": "N138：一类文件级诊断列表（≤50 条 + 诚实截断标志）。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+     }
+    },
+    "title": "ObsidianScanFileList",
+    "type": "object"
+   },
+   "ObsidianScanFiles": {
+    "description": "N138：最近一次扫描的文件级诊断（新增/更改/删除/跳过）。",
+    "properties": {
+     "added": {
+      "$ref": "#/components/schemas/ObsidianScanFileList",
+      "default": {
+       "items": [],
+       "truncated": false
+      }
+     },
+     "changed": {
+      "$ref": "#/components/schemas/ObsidianScanFileList",
+      "default": {
+       "items": [],
+       "truncated": false
+      }
+     },
+     "removed": {
+      "$ref": "#/components/schemas/ObsidianScanFileList",
+      "default": {
+       "items": [],
+       "truncated": false
+      }
+     },
+     "skipped": {
+      "$ref": "#/components/schemas/ObsidianScanFileList",
+      "default": {
+       "items": [],
+       "truncated": false
+      }
+     }
+    },
+    "title": "ObsidianScanFiles",
     "type": "object"
    },
    "ObsidianSettings": {
@@ -9261,6 +9704,16 @@
        }
       ],
       "title": "Lastscanat"
+     },
+     "lastScanFiles": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ObsidianScanFiles"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "noteCount": {
       "default": 0,
@@ -18428,6 +18881,92 @@
     "summary": "Export Annotations"
    }
   },
+  "/api/v1/annotations/export-delta": {
+   "get": {
+    "description": "N137：增量导出预览 —— 水位之后的新增/修改批注计数（可按文章\n收窄）。从未导出 → lastExportedAt=null 且全部计为新增（诚实）。",
+    "operationId": "annotations_export_delta_api_v1_annotations_export_delta_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "entryRef",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Entryref"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationExportDelta"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Annotations Export Delta"
+   }
+  },
+  "/api/v1/annotations/export-mark": {
+   "post": {
+    "description": "N137：成功导出后回标水位（幂等：重复调用只追加日志行，水位只\n前进，增量查询不会重复计数）。ids 为空 → 422。",
+    "operationId": "mark_annotations_exported_api_v1_annotations_export_mark_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationExportMarkRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationExportMarkResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mark Annotations Exported"
+   }
+  },
   "/api/v1/annotations/{annotation_id}": {
    "delete": {
     "operationId": "delete_annotation_api_v1_annotations__annotation_id__delete",
@@ -26387,6 +26926,46 @@
     "summary": "Move Mail Rule"
    }
   },
+  "/api/v1/obsidian/block-refs": {
+   "get": {
+    "operationId": "list_block_refs_api_v1_obsidian_block_refs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "paraId",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Paraid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianBlockRefsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Block Refs"
+   }
+  },
   "/api/v1/obsidian/devices": {
    "get": {
     "operationId": "list_obsidian_devices_api_v1_obsidian_devices_get",
@@ -26522,7 +27101,7 @@
   },
   "/api/v1/obsidian/export-handoff": {
    "post": {
-    "description": "Compose + render + decide URI vs file fallback for one article.\n\nHonest handoff: ``mode='uri'`` means the obsidian://new link was\nbuilt (the USER's Obsidian does any writing after confirmation);\n``mode='file'`` with reason='tooLong' means the content exceeded the\nURI budget and the client falls back to download + clipboard.",
+    "description": "Compose + render + decide URI vs file fallback for one article.\n\nHonest handoff: ``mode='uri'`` means the obsidian://new link was\nbuilt (the USER's Obsidian does any writing after confirmation);\n``mode='file'`` with reason='tooLong' means the content exceeded the\nURI budget and the client falls back to download + clipboard.\n\nN137：交接组装成功后回标导出水位（mark 幂等，重复导出无害）；\nN135：命名策略体现在 filename（timestamp_suffix 追加 -YYYYMMDD-HHmm）；\nN140：自动落一条 pending 交接记录（confirmed 只能由用户显式确认）。",
     "operationId": "export_obsidian_handoff_api_v1_obsidian_export_handoff_post",
     "requestBody": {
      "content": {
@@ -26557,6 +27136,45 @@
      }
     },
     "summary": "Export Obsidian Handoff"
+   }
+  },
+  "/api/v1/obsidian/export-handoff/validate": {
+   "post": {
+    "description": "N139 导出侧链接校验（只读报告）：对组装好的 Markdown 检查\n断链 wikilink / 缺失附件 / 重复块 id。绝不改写用户 Vault 文件，\n不交接、不落交接日志、不推进导出水位。",
+    "operationId": "validate_obsidian_export_api_v1_obsidian_export_handoff_validate_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianExportValidateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianExportValidateResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Validate Obsidian Export"
    }
   },
   "/api/v1/obsidian/export-template": {
@@ -26650,6 +27268,139 @@
      }
     },
     "summary": "Preview Obsidian Export Template"
+   }
+  },
+  "/api/v1/obsidian/handoff-log": {
+   "delete": {
+    "operationId": "clear_obsidian_handoff_log_api_v1_obsidian_handoff_log_delete",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianHandoffLogClearResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Clear Obsidian Handoff Log"
+   },
+   "get": {
+    "operationId": "list_obsidian_handoff_log_api_v1_obsidian_handoff_log_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianHandoffLogList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Obsidian Handoff Log"
+   },
+   "post": {
+    "description": "显式记录 open / import_confirm 交接（export 自动落库，不接受手工\n伪造方向）。pending 记录同样只能通过 confirm 端点显式确认。",
+    "operationId": "create_obsidian_handoff_log_api_v1_obsidian_handoff_log_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ObsidianHandoffLogCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianHandoffLogEntry"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Obsidian Handoff Log"
+   }
+  },
+  "/api/v1/obsidian/handoff/{handoff_id}/confirm": {
+   "post": {
+    "description": "显式确认（用户在 Obsidian 中保存后亲自触发）——confirmed 的唯一\n路径。页面可见性 / 重新加载等被动事件绝不调用这里。幂等：对已确认\n行重复确认返回原行；不存在 → 404。",
+    "operationId": "confirm_obsidian_handoff_api_v1_obsidian_handoff__handoff_id__confirm_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "handoff_id",
+      "required": true,
+      "schema": {
+       "title": "Handoff Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ObsidianHandoffLogEntry"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Confirm Obsidian Handoff"
    }
   },
   "/api/v1/obsidian/notes": {

@@ -35,11 +35,12 @@ import {
   useObsidianRescanMutation,
   useObsidianStatus,
 } from '../../api/queries'
-import type { NoteView, ObsidianStatus } from '../../api/client'
+import type { NoteView, ObsidianScanFiles, ObsidianStatus } from '../../api/client'
 import { dateTimeFormatter } from '../../lib/date-format'
 import { sanitizeArticleHtml } from '../../lib/sanitize-article-html'
 import { NoteLinksPanel } from '../NoteLinksPanel'
 import ObsidianDevicesSection from '../obsidian/ObsidianDevicesSection'
+import ObsidianHandoffLogSection from '../obsidian/ObsidianHandoffLogSection'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -242,6 +243,49 @@ function NoteDetailDialog({
   )
 }
 
+/** N138：文件级诊断 —— 列出最近一次扫描受影响的文件（每类服务端
+ * 有界 50 条 + truncated 诚实截断标志；展示最多 5 条避免淹没页面）。 */
+function ScanFilesDiagnostics({ files }: { files: ObsidianScanFiles }) {
+  const groups = [
+    { key: 'added', label: '新增' },
+    { key: 'changed', label: '更改' },
+    { key: 'removed', label: '删除' },
+    { key: 'skipped', label: '跳过' },
+  ] as const
+  const hasAny = groups.some(
+    (g) => files[g.key].items.length > 0 || files[g.key].truncated,
+  )
+  if (!hasAny) {
+    return null
+  }
+  return (
+    <div
+      className="mt-2 flex flex-col gap-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
+      data-lumi-scan-files=""
+      aria-label="上次扫描受影响的文件"
+    >
+      {groups.map((group) => {
+        const list = files[group.key]
+        if (list.items.length === 0 && !list.truncated) {
+          return null
+        }
+        const shown = list.items.slice(0, 5)
+        const hidden = Math.max(list.items.length - shown.length, 0)
+        return (
+          <p key={group.key} className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+            <span className="font-medium text-[var(--lumi-text-primary)]">{group.label}</span>
+            {list.truncated && list.items.length === 0
+              ? '：超过 50 项（已截断）'
+              : `：${shown.join('、')}`}
+            {list.truncated && '（超过 50 项，已截断）'}
+            {!list.truncated && hidden > 0 && ` 等 ${hidden + shown.length} 项`}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
 /** 已配置：状态 + 重扫 + 搜索 + 笔记列表。envRootConfigured=true 时
  * 路径由部署环境固定（只读挂载）——显示挂载说明而非路径输入；深链
  * 需要宿主路径，env 模式下不提供（容器路径对宿主无意义）。 */
@@ -252,6 +296,8 @@ function ConfiguredView({ status }: { status: ObsidianStatus }) {
   const q = useDebouncedValue(input)
   const notes = useObsidianNotes(q)
   const envRoot = status.envRootConfigured === true
+  // N138：重扫报告优先（最新），否则展示持久化的「最近一次」诊断。
+  const scanFiles = rescan.data?.files ?? status.lastScanFiles ?? null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -301,6 +347,7 @@ function ConfiguredView({ status }: { status: ObsidianStatus }) {
             {rescan.data.renames} · 跳过 {rescan.data.skipped}
           </p>
         )}
+        {scanFiles !== null && <ScanFilesDiagnostics files={scanFiles} />}
 
         {/* 搜索（防抖；Enter 立即） */}
         <div className="relative mt-3">
@@ -433,6 +480,7 @@ export default function ObsidianPage() {
   // 可用 = DB 配置了路径，或部署环境固定了根（env 挂载模式——此时
   // 不问路径，直接进入状态视图）。P16：页面尾部追加「设备与导出」
   // （用户级：设备档案 + 导出模板；与上方 Vault 模式解耦，附诚实说明）。
+  // N140：再追加「交接记录」（双向历史 + 显式确认 + 清理）。
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {data.vaultPath !== '' || data.envRootConfigured === true ? (
@@ -441,6 +489,7 @@ export default function ObsidianPage() {
         <ConnectView />
       )}
       <ObsidianDevicesSection envRootConfigured={data.envRootConfigured === true} />
+      <ObsidianHandoffLogSection />
     </div>
   )
 }
