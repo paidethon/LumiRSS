@@ -3385,6 +3385,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/bulk-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Links
+         * @description 批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）
+         *     后创建书签或剪藏。
+         *
+         *     单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed
+         *     必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建
+         *     同一信任边界）；抓取失败按 failed 如实上报。
+         */
+        post: operations["bulk_links_api_v1_library_bulk_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips": {
         parameters: {
             query?: never;
@@ -3433,6 +3458,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/clips/preview-cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Clip Cleanup
+         * @description N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。
+         *
+         *     确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；
+         *     预览本身绝不改动任何存储内容（原始版本在确认前不变）。
+         */
+        post: operations["preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips/{item_uuid}": {
         parameters: {
             query?: never;
@@ -3451,6 +3499,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/clips/{item_uuid}/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clip Candidate
+         * @description N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。
+         */
+        get: operations["get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Discard Clip Candidate
+         * @description N122：丢弃候选版本（保留当前展示版本不动）。
+         */
+        delete: operations["discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/candidate/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Clip Candidate
+         * @description N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。
+         */
+        post: operations["apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/clips/{item_uuid}/full": {
         parameters: {
             query?: never;
@@ -3460,11 +3552,55 @@ export interface paths {
         };
         /**
          * Get Clip Full
-         * @description F089 详情：content（当前展示）+ original（原始，不可变）+ revised。
+         * @description F089 详情 + N122：content（当前展示）+ original（原始，不可变）
+         *     + revised + locked + candidate。
          */
         get: operations["get_clip_full_api_v1_library_clips__item_uuid__full_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Clip Lock
+         * @description N122：显式锁定/解锁（locked 旗标唯一写路径）。
+         */
+        put: operations["set_clip_lock_api_v1_library_clips__item_uuid__lock_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/clips/{item_uuid}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Clip
+         * @description N122：重新抓取当前剪藏 URL（服务端管线）。
+         *
+         *     未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →
+         *     只存候选，展示版本不动；内容未变 → unchanged。
+         */
+        post: operations["refresh_clip_api_v1_library_clips__item_uuid__refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3495,6 +3631,8 @@ export interface paths {
         /**
          * Save Clip Revision
          * @description 保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。
+         *
+         *     N122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。
          */
         patch: operations["save_clip_revision_api_v1_library_clips__item_uuid__revision_patch"];
         trace?: never;
@@ -3948,6 +4086,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mail/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Mail Attachment
+         * @description N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。
+         *
+         *     Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
+         *     以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
+         *     RFC 5987 编码（非 ASCII 安全）。
+         */
+        get: operations["download_mail_attachment_api_v1_mail_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mail/bridge-lists": {
         parameters: {
             query?: never;
@@ -4057,6 +4219,55 @@ export interface paths {
          *     report — error text carries the failure kind, never credentials.
          */
         post: operations["test_mail_imap_api_v1_mail_imap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mail Messages
+         * @description N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。
+         *
+         *     每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走
+         *     detail 端点。
+         */
+        get: operations["list_mail_messages_api_v1_mail_lists__list_uuid__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mail Message Detail
+         * @description N125/N126/N127 邮件详情（只读）：
+         *
+         *     - text / html 两个正文形态（mail_bridge ingest 时已双双落库；html
+         *       是净化产物，渲染前客户端仍过 DOMPurify）；
+         *     - blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；
+         *     - attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；
+         *     - identityHints：服务端计算的中性身份提示（或 null）。
+         */
+        get: operations["mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9099,6 +9310,55 @@ export interface components {
             note?: string | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * BulkLinkResultItem
+         * @description 逐条结果：created | duplicate | failed（failed 必带 reason）。
+         */
+        BulkLinkResultItem: {
+            /** Reason */
+            reason?: string | null;
+            /** Ref */
+            ref?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "duplicate" | "failed";
+            /** Url */
+            url: string;
+        };
+        /**
+         * BulkLinksRequest
+         * @description POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。
+         */
+        BulkLinksRequest: {
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "bookmark" | "clip";
+            /** Urls */
+            urls: string[];
+        };
+        /**
+         * BulkLinksResponse
+         * @description Envelope for POST /api/v1/library/bulk-links。
+         */
+        BulkLinksResponse: {
+            /** Created */
+            created: number;
+            /** Duplicate */
+            duplicate: number;
+            /** Failed */
+            failed: number;
+            /** Items */
+            items: components["schemas"]["BulkLinkResultItem"][];
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "bookmark" | "clip";
         };
         /** CardCandidate */
         CardCandidate: {
@@ -21021,6 +21281,39 @@ export interface operations {
             };
         };
     };
+    bulk_links_api_v1_library_bulk_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkLinksRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkLinksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_clips_api_v1_library_clips_get: {
         parameters: {
             query?: {
@@ -21119,6 +21412,26 @@ export interface operations {
             };
         };
     };
+    preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_clip_api_v1_library_clips__item_uuid__get: {
         parameters: {
             query?: never;
@@ -21179,7 +21492,160 @@ export interface operations {
             };
         };
     };
+    get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_clip_full_api_v1_library_clips__item_uuid__full_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_clip_lock_api_v1_library_clips__item_uuid__lock_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_clip_api_v1_library_clips__item_uuid__refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -22210,6 +22676,37 @@ export interface operations {
             };
         };
     };
+    download_mail_attachment_api_v1_mail_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_bridge_lists_api_v1_mail_bridge_lists_get: {
         parameters: {
             query?: never;
@@ -22401,6 +22898,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MailImapTestResult"];
+                };
+            };
+        };
+    };
+    list_mail_messages_api_v1_mail_lists__list_uuid__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_uuid: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

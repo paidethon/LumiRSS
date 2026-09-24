@@ -6362,3 +6362,186 @@ async function rawRequestJson<T>(
   const response = await rawRequest(path, init)
   return (await response.json()) as T
 }
+
+// ---- N121 粘贴多链接收件箱 / N122 剪藏锁定与候选 / N123 清理预览 -------------
+// N121：逐条 created | duplicate | failed（单条失败绝不回滚整批）。
+
+export interface BulkLinkResultItem {
+  url: string
+  status: 'created' | 'duplicate' | 'failed'
+  ref?: string | null
+  reason?: string | null
+}
+
+export interface BulkLinksResponse {
+  target: 'bookmark' | 'clip'
+  created: number
+  duplicate: number
+  failed: number
+  items: BulkLinkResultItem[]
+}
+
+export function bulkLinks(urls: string[], target: 'bookmark' | 'clip'): Promise<BulkLinksResponse> {
+  return postJson<BulkLinksResponse>(`${API_BASE}/library/bulk-links`, { urls, target })
+}
+
+/** N122：显式锁定/解锁（覆盖式写入的唯一开关）。 */
+export function setClipLock(uuid: string, locked: boolean): Promise<{ ref: string; locked: boolean }> {
+  return putJson(`${API_BASE}/library/clips/${encodeURIComponent(uuid)}/lock`, { locked })
+}
+
+export interface ClipRefreshResult {
+  ref: string
+  status: 'applied' | 'candidate' | 'unchanged'
+  locked: boolean
+  title?: string
+  fetchedAt?: string
+  revised?: boolean
+  revisedAt?: string
+  note?: string
+}
+
+/** N122：重新抓取（未锁定 → 应用进修订槽；锁定 → 只存候选）。 */
+export function refreshClip(uuid: string): Promise<ClipRefreshResult> {
+  return postJson<ClipRefreshResult>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/refresh`,
+    {},
+  )
+}
+
+export interface ClipCandidate {
+  ref: string
+  title: string
+  fetchedAt: string
+  contentHtml: string
+  contentText: string
+}
+
+/** N122：查看候选版本（渲染前仍须过 DOMPurify）。 */
+export function getClipCandidate(uuid: string, signal?: AbortSignal): Promise<ClipCandidate> {
+  return request<ClipCandidate>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate`,
+    signal,
+  )
+}
+
+/** N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。 */
+export function applyClipCandidate(uuid: string, keepIds?: string[]): Promise<ClipRefreshResult> {
+  return postJson<ClipRefreshResult>(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate/apply`,
+    keepIds ? { keepIds } : {},
+  )
+}
+
+/** N122：丢弃候选版本（204；无候选 → 404）。 */
+export async function discardClipCandidate(uuid: string): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/library/clips/${encodeURIComponent(uuid)}/candidate`,
+    { method: 'DELETE' },
+  )
+}
+
+/** N123：清理预览（零写入）：每块 {keep, reason} 建议供用户逐块改。 */
+export interface ClipCleanupBlock {
+  id: string
+  text: string
+  keep: boolean
+  reason: 'paragraph' | 'heading' | 'image' | 'ad' | 'nav' | 'link_list'
+}
+
+export interface ClipCleanupPreview {
+  blocks: ClipCleanupBlock[]
+  keepCount: number
+  totalCount: number
+}
+
+export function previewClipCleanup(html: string): Promise<ClipCleanupPreview> {
+  return postJson<ClipCleanupPreview>(`${API_BASE}/library/clips/preview-cleanup`, { html })
+}
+
+// ---- N125/N126/N127 邮件详情（附件 / 正文显示模式 / 身份提示） -----------------
+
+export interface MailMessageSummary {
+  messageId: string
+  subject: string
+  sender: string
+  receivedAt: string
+  attachmentCount: number
+  skippedAttachments: number
+  blockedMediaCount: number
+  hasIdentityHints: boolean
+}
+
+export function listMailMessages(listUuid: string, signal?: AbortSignal): Promise<{ items: MailMessageSummary[] }> {
+  return request<{ items: MailMessageSummary[] }>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages`,
+    signal,
+  )
+}
+
+export interface MailMessageDetail {
+  messageId: string
+  listUuid: string
+  subject: string
+  sender: string
+  receivedAt: string
+  text: string
+  html: string
+  blockedMedia: string[]
+  attachments: { id: string; filename: string; mime: string; size: number }[]
+  skippedAttachments: {
+    filename: string
+    bytes: number
+    mime: string
+    status: string
+    reason: string
+  }[]
+  identityHints: {
+    fromAddress?: string
+    fromDisplay?: string
+    replyToMismatch?: boolean
+    replyToAddress?: string
+    displayNameDomainMismatch?: boolean
+    displayNameDomains?: string[]
+  } | null
+}
+
+export function getMailMessageDetail(
+  listUuid: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<MailMessageDetail> {
+  return request<MailMessageDetail>(
+    `${API_BASE}/mail/lists/${encodeURIComponent(listUuid)}/messages/${encodeURIComponent(messageId)}/detail`,
+    signal,
+  )
+}
+
+/** N125：附件下载地址（content-disposition: attachment 由服务端保证；
+ * <a download> 直下，浏览器不渲染内容）。 */
+export function mailAttachmentUrl(attachmentId: string): string {
+  return `${API_BASE}/mail/attachments/${encodeURIComponent(attachmentId)}`
+}
+
+/** 剪藏完整详情（F089/N122）：content + original + revised + locked +
+ * candidate。 */
+export interface ClipFull {
+  ref: string
+  url: string
+  title: string
+  byline: string | null
+  fetchedAt: string
+  createdAt: string
+  locked: boolean
+  content: { html: string; text: string }
+  original: { html: string; text: string }
+  revised: { revisedAt: string; note: string | null; baseContentHash: string | null } | null
+  candidate: { title: string; fetchedAt: string; text: string } | null
+}
+
+export function getClipFull(uuid: string, signal?: AbortSignal): Promise<ClipFull> {
+  return request<ClipFull>(
+    `${API_BASE}/library/clips/${encodeURIComponent(toClipId(uuid))}/full`,
+    signal,
+  )
+}

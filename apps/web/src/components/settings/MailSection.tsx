@@ -34,6 +34,7 @@ import {
   MailRulesPanel,
   MessageIdGateDialog,
 } from './MailToolsPanels'
+import { MailDetailDialog } from '../MailDetailDialog'
 import type { DigestSettings, MailBridgeListCreated, MailImapSettings } from '../../api/client'
 import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
@@ -108,6 +109,8 @@ function BridgeListsBlock() {
   // W6：F104/F105/F110 工具面板状态
   const [rulesList, setRulesList] = useState<string | null>(null)
   const [toolTarget, setToolTarget] = useState<{ kind: 'parse' | 'thread'; listUuid: string } | null>(null)
+  // N125/126/127：邮件详情（消息清单 → 正文显示模式 / 附件 / 身份提示）。
+  const [detailList, setDetailList] = useState<string | null>(null)
 
   const closeDialog = () => {
     setDialogOpen(false)
@@ -181,7 +184,7 @@ function BridgeListsBlock() {
                   {item.createdAt !== '' && ` · 创建于 ${formatTimestamp(item.createdAt)}`}
                 </p>
               </div>
-              {/* W6：接收规则 / 解析对照 / 查看会话 */}
+              {/* W6：接收规则 / 解析对照 / 查看会话；N125/126/127：邮件详情 */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -189,6 +192,14 @@ function BridgeListsBlock() {
                 onClick={() => setRulesList(item.uuid)}
               >
                 接收规则
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-mail-detail-open={item.uuid}
+                onClick={() => setDetailList(item.uuid)}
+              >
+                邮件详情
               </Button>
               <Button
                 variant="ghost"
@@ -219,6 +230,9 @@ function BridgeListsBlock() {
       )}
 
       {rulesList !== null && <MailRulesPanel listUuid={rulesList} onClose={() => setRulesList(null)} />}
+      {detailList !== null && (
+        <MailDetailDialog listUuid={detailList} onClose={() => setDetailList(null)} />
+      )}
       {toolTarget !== null && (
         <MessageIdGateDialog
           kind={toolTarget.kind}
