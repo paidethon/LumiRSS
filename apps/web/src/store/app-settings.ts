@@ -45,6 +45,10 @@ import {
 import {
   normalizeSpeechRate,
   normalizeSpeechSleepMinutes,
+  normalizeSpeechBilingualGap,
+  normalizeSpeechLexicon,
+  type SpeechBilingualGap,
+  type SpeechLexiconEntry,
   type SpeechRate,
 } from '../lib/reader-speech'
 import {
@@ -288,6 +292,20 @@ export interface AppSettings {
   speechVoiceURI: string
   speechRate: SpeechRate
   speechSleepTimerMinutes: number
+  /** NF1 N094：听读内容排除（设备本地；只影响朗读收集，文章展示不动）：
+   * 代码块 / 表格 / 脚注 / 图片说明 / 纯链接段落。 */
+  speechSkipCode: boolean
+  speechSkipTables: boolean
+  speechSkipFootnotes: boolean
+  speechSkipCaptions: boolean
+  speechSkipLinkOnly: boolean
+  /** NF1 N095：发音词典（设备本地；{match, replace} 子串替换，大小写
+   * 不敏感；只作用于出声/试听文本，永不改展示 DOM；cap 50）。 */
+  speechLexicon: SpeechLexiconEntry[]
+  /** NF1 N097：原文译文交替听读（设备本地；译文来自既有 overlay DOM，
+   * 缺译文块诚实跳过）+ 原文/译文间隔档位（无/短/长 → 0/500/1200ms）。 */
+  speechBilingualAlternate: boolean
+  speechBilingualGap: SpeechBilingualGap
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -333,6 +351,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   speechVoiceURI: '',
   speechRate: 1,
   speechSleepTimerMinutes: 0,
+  // NF1 听读增强（设备本地；默认全部关闭/为空——既有朗读行为不变）
+  speechSkipCode: false,
+  speechSkipTables: false,
+  speechSkipFootnotes: false,
+  speechSkipCaptions: false,
+  speechSkipLinkOnly: false,
+  speechLexicon: [],
+  speechBilingualAlternate: false,
+  speechBilingualGap: 'none',
 }
 
 // ---- 解析 / 迁移（纯函数，可测试） ----
@@ -727,6 +754,28 @@ export function normalizeSettings(raw: unknown): AppSettings {
         : DEFAULT_APP_SETTINGS.speechVoiceURI,
     speechRate: normalizeSpeechRate(source.speechRate),
     speechSleepTimerMinutes: normalizeSpeechSleepMinutes(source.speechSleepTimerMinutes),
+    // NF1 听读增强：排除开关逐键布尔归一化；词典逐条校验+去重+cap；
+    // 交替听读开关/间隔档位非法回退默认。
+    speechSkipCode: pickBoolean(source.speechSkipCode, DEFAULT_APP_SETTINGS.speechSkipCode),
+    speechSkipTables: pickBoolean(source.speechSkipTables, DEFAULT_APP_SETTINGS.speechSkipTables),
+    speechSkipFootnotes: pickBoolean(
+      source.speechSkipFootnotes,
+      DEFAULT_APP_SETTINGS.speechSkipFootnotes,
+    ),
+    speechSkipCaptions: pickBoolean(
+      source.speechSkipCaptions,
+      DEFAULT_APP_SETTINGS.speechSkipCaptions,
+    ),
+    speechSkipLinkOnly: pickBoolean(
+      source.speechSkipLinkOnly,
+      DEFAULT_APP_SETTINGS.speechSkipLinkOnly,
+    ),
+    speechLexicon: normalizeSpeechLexicon(source.speechLexicon),
+    speechBilingualAlternate: pickBoolean(
+      source.speechBilingualAlternate,
+      DEFAULT_APP_SETTINGS.speechBilingualAlternate,
+    ),
+    speechBilingualGap: normalizeSpeechBilingualGap(source.speechBilingualGap),
   }
 }
 
