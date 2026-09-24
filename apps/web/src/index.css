@@ -354,6 +354,35 @@ html[data-code-wrap='on'] .article-content pre code {
   word-break: break-word;
 }
 
+/* ---- F072：代码块等宽字号档位（S/M/L，相对正文 em） ---- */
+html[data-reader-code-font-size='s'] .article-content pre code {
+  font-size: 0.78em;
+}
+html[data-reader-code-font-size='m'] .article-content pre code {
+  font-size: 0.875em;
+}
+html[data-reader-code-font-size='l'] .article-content pre code {
+  font-size: 1em;
+}
+
+/* ---- F073：代码块行号（管线按行包 .lumi-code-line + CSS counter）----
+ * DOM 内不写数字（textContent 与原代码逐字一致 → 复制无行号污染）；
+ * 与换行共存：换行续行不重复编号（编号只出现在每行行首）。 */
+.article-content pre code[data-lumi-line-numbers='true'] {
+  counter-reset: lumi-code-line;
+}
+.article-content pre code[data-lumi-line-numbers='true'] .lumi-code-line::before {
+  counter-increment: lumi-code-line;
+  content: counter(lumi-code-line);
+  display: inline-block;
+  min-width: 2em;
+  margin-right: 0.75em;
+  text-align: right;
+  color: var(--lumi-text-tertiary);
+  opacity: 0.65;
+  user-select: none;
+}
+
 /* ---- F16：表格展开 ----
  * 过宽表格包一层定位容器，「展开查看」悬浮按钮挂在右上角（浮在
  * 表格上，不挤压正文流）。 */

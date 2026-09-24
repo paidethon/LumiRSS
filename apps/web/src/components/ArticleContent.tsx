@@ -129,6 +129,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const blockRemote = useAppSettings((s) => s.settings.readerBlockRemoteImages)
   // F070：首图破格（管线给首图打 data 标记，CSS 消费满宽）
   const firstImageFullBleed = useAppSettings((s) => s.settings.readerFirstImageFullBleed)
+  // F073：代码块行号（管线按行包 span + CSS counter；与高亮/换行共存）
+  const codeLineNumbers = useAppSettings((s) => s.settings.readerCodeLineNumbers)
   const [imagesAllowed, setImagesAllowed] = useState(false)
   useEffect(() => {
     setImagesAllowed(false)
@@ -219,6 +221,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       footnotes: true,
       math: true,
       firstImageFullBleed,
+      codeLineNumbers,
     }).then((out) => {
       if (!cancelled) setHtml(out)
     })
@@ -233,6 +236,7 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     bionic,
     resolvedCodeTheme,
     firstImageFullBleed,
+    codeLineNumbers,
   ])
 
   // 目录提取（pool #03）：在 DOMPurify 输出之上给 h2–h4 注入确定性 id

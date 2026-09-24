@@ -110,6 +110,8 @@ export type ReaderFontWeight = 300 | 400 | 500 | 600 | 700
 export type ReaderImageMaxWidth = '100%' | '75%' | '60%'
 /** F071：figure caption（figcaption）显示模式：显示 / 悬停显示 / 隐藏。 */
 export type ReaderCaptionMode = 'show' | 'hidden' | 'hover'
+/** F072：代码块等宽字号档位（S/M/L，相对正文 em；设备本）。 */
+export type ReaderCodeFontSize = 's' | 'm' | 'l'
 /** UI 字体四档（同源 OrigRead 栈） */
 export type UiFontStack = 'default' | 'sans' | 'serif' | 'mono'
 export type UiFontSize = 15 | 16 | 18 | 20
@@ -236,6 +238,10 @@ export interface AppSettings {
   readerCaptionMode: ReaderCaptionMode
   /** F064：纸张质感纹理（设备本；纯 CSS 噪点叠在 paper 背景档上）。 */
   readerPaperTexture: boolean
+  /** F072：代码块等宽字号档位（设备本；s/m/l）。 */
+  readerCodeFontSize: ReaderCodeFontSize
+  /** F073：代码块行号（设备本；管线按行包 span + CSS counter）。 */
+  readerCodeLineNumbers: boolean
   /** 阅读样式 P1（0010a F7） */
   readerPresetId: string // 'default' 或用户预设 id
   readerPresets: ReaderPreset[] // 用户派生预设（内置不存）
@@ -360,6 +366,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerFirstImageFullBleed: false,
   readerCaptionMode: 'show',
   readerPaperTexture: false,
+  // R5 批2：代码块排版（设备本；默认与既有观感一致：中档字号、无行号）
+  readerCodeFontSize: 'm',
+  readerCodeLineNumbers: false,
   // N052/N053：阅读模式与点按翻页区（设备本地交互偏好）
   readerReadingMode: 'scroll',
   readerTapZoneAxis: 'horizontal',
@@ -414,6 +423,8 @@ const READER_TAP_ZONE_SIZES: readonly ReaderTapZoneSize[] = ['off', 'small', 'la
 const READER_FONT_WEIGHTS: readonly ReaderFontWeight[] = [300, 400, 500, 600, 700]
 const READER_IMAGE_MAX_WIDTHS: readonly ReaderImageMaxWidth[] = ['100%', '75%', '60%']
 const READER_CAPTION_MODES: readonly ReaderCaptionMode[] = ['show', 'hidden', 'hover']
+// R5 批2：代码块排版枚举（设备本）
+const READER_CODE_FONT_SIZES: readonly ReaderCodeFontSize[] = ['s', 'm', 'l']
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -628,6 +639,15 @@ export function normalizeSettings(raw: unknown): AppSettings {
       DEFAULT_APP_SETTINGS.readerCaptionMode,
     ),
     readerPaperTexture: pickBoolean(source.readerPaperTexture, DEFAULT_APP_SETTINGS.readerPaperTexture),
+    readerCodeFontSize: pickString(
+      source.readerCodeFontSize,
+      READER_CODE_FONT_SIZES,
+      DEFAULT_APP_SETTINGS.readerCodeFontSize,
+    ),
+    readerCodeLineNumbers: pickBoolean(
+      source.readerCodeLineNumbers,
+      DEFAULT_APP_SETTINGS.readerCodeLineNumbers,
+    ),
     readerPresetId:
       typeof source.readerPresetId === 'string' &&
       (source.readerPresetId === 'default' ||
@@ -959,6 +979,10 @@ export function applyReaderTypography(settings: AppSettings): void {
   root.dataset.readerPaperTexture = settings.readerPaperTexture ? 'true' : 'false'
   // F064：纹理只叠在 paper 背景档上（其余背景档时纹理规则自然失效）
   root.dataset.readerBgPreset = settings.readerBackground
+
+  // R5 批2：代码块排版（字号档位 CSS 消费；行号标记供 e2e/测试探针）
+  root.dataset.readerCodeFontSize = settings.readerCodeFontSize
+  root.dataset.readerCodeLineNumbers = settings.readerCodeLineNumbers ? 'true' : 'false'
 
   // 0012 Gate 4：标点悬挂 progressive enhancement —— CSS 侧用
   // @supports 包裹；简繁转换标记（展示层 transform，ArticleContent 消费）

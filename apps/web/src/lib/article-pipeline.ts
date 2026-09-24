@@ -221,6 +221,49 @@ function markFirstImage(doc: Document): void {
   if (img !== null) img.setAttribute('data-lumi-first-image', 'true')
 }
 
+// ---- F073：代码块行号 ----
+
+/** 把 code 的子节点按「顶层文本 \n」折叠成行（元素节点原样归属所在行；
+ * 文本节点内的 \n 逐段切分）。返回的节点从原 DOM 摘出，由调用方回填。 */
+function splitCodeLines(code: Element): Node[][] {
+  const doc = code.ownerDocument
+  const lines: Node[][] = [[]]
+  for (const node of Array.from(code.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parts = (node.nodeValue ?? '').split('\n')
+      parts.forEach((part, index) => {
+        if (index > 0) lines.push([])
+        if (part !== '') lines[lines.length - 1]!.push(doc.createTextNode(part))
+      })
+    } else {
+      lines[lines.length - 1]!.push(node)
+    }
+  }
+  return lines
+}
+
+/** 给每个 pre>code 按行包 .lumi-code-line span（行间保留 '\n' 文本节点，
+ * textContent 与原代码逐字一致 → 复制按钮无行号污染）。行号视觉由
+ * CSS counter（index.css [data-lumi-line-numbers]）渲染，DOM 内不写
+ * 任何数字。幂等：已标记的 code 跳过。 */
+function applyCodeLineNumbers(body: HTMLElement): void {
+  const doc = body.ownerDocument
+  for (const code of body.querySelectorAll('pre > code')) {
+    if (code.hasAttribute('data-lumi-line-numbers')) continue
+    const lines = splitCodeLines(code)
+    if (lines.length === 0) continue
+    code.textContent = ''
+    lines.forEach((nodes, index) => {
+      if (index > 0) code.append('\n')
+      const line = doc.createElement('span')
+      line.className = 'lumi-code-line'
+      for (const node of nodes) line.append(node)
+      code.append(line)
+    })
+    code.setAttribute('data-lumi-line-numbers', 'true')
+  }
+}
+
 // ---- 管线入口 ----
 
 export interface ArticlePipelineOptions {
@@ -235,6 +278,9 @@ export interface ArticlePipelineOptions {
   /** F070：首图破格（给正文第一张 img 打 data-lumi-first-image 标记，
    * 满宽由 CSS 消费）。默认关。 */
   firstImageFullBleed?: boolean
+  /** F073：代码块行号（管线按行包 .lumi-code-line span + CSS counter）。
+   * 与代码高亮/换行共存：textContent 不变（复制无行号污染）。默认关。 */
+  codeLineNumbers?: boolean
 }
 
 /** raw RSS HTML → inert DOM → transforms → DOMPurify 终点。
@@ -252,13 +298,15 @@ export async function renderArticleHtml(
   const needsFootnotes = options.footnotes !== false
   const needsMath = options.math !== false && containsMathMarkerSafe(rawHtml)
   const needsFirstImageMark = options.firstImageFullBleed === true
+  const needsCodeLines = options.codeLineNumbers === true && containsCodeBlock(rawHtml)
   if (
     !needsConversion &&
     !needsBionic &&
     !needsHighlight &&
     !needsFootnotes &&
     !needsMath &&
-    !needsFirstImageMark
+    !needsFirstImageMark &&
+    !needsCodeLines
   ) {
     return sanitizeArticleHtml(rawHtml)
   }
@@ -277,6 +325,9 @@ export async function renderArticleHtml(
   if (needsHighlight) {
     await highlightCodeBlocks(doc.body, options.codeTheme as string)
   }
+  // 行号在高亮之后：splitCodeLines 按顶层 '\n' 折行，shiki 输出（每行
+  // 末尾 '\n' 文本节点）同样适用——高亮 token 行也拿到行号。
+  if (needsCodeLines) applyCodeLineNumbers(doc.body)
 
   // 最终安全边界：transform 后的整个 DOM serialize → DOMPurify。
   // transforms 可能引入的任何意外标记在这里被统一清洗。

@@ -39,11 +39,18 @@ function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
   return root?.closest('.lumi-reader-scroll') ?? null
 }
 
+/** F074：目录「当前章节」滚动跟随高亮的跟随线偏移（视口顶往下 96px，
+ * 与 Reader 位置保存锚线（80px）同一量级；标题越过该线即成为当前章）。 */
+const TOC_FOLLOW_LINE_PX = 96
+
 export function ArticleToc({ toc }: { toc: TocEntry[] }) {
   const rootRef = useRef<HTMLDetailsElement | null>(null)
   const [chapterMode, setChapterMode] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const savedScrollRef = useRef<number | null>(null)
+  // F074：滚动跟随的当前章节（非章节模式下高亮目录项；章节模式的
+  // activeId 优先——两者语义不同，不互相覆盖）。
+  const [followId, setFollowId] = useState<string | null>(null)
 
   const activeIndex = activeId === null ? -1 : toc.findIndex((entry) => entry.id === activeId)
 
@@ -114,9 +121,54 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [activeId, exitChapter])
 
+  // F074：滚动跟随高亮（非章节模式）。rAF 节流的 scroll 监听：当前章 =
+  // 越过跟随线的最后一个标题；滚到底强制最后一章（短尾章不悬空）。
+  // 章节模式 / 目录项点击（activeId）激活期间暂停跟随，退出自动恢复。
+  useEffect(() => {
+    if (chapterMode || activeId !== null) {
+      setFollowId(null)
+      return
+    }
+    const scroller = findScrollContainer(rootRef.current)
+    if (scroller === null) return
+    const headings = toc
+      .map((entry) => document.getElementById(entry.id))
+      .filter((el): el is HTMLElement => el !== null)
+    if (headings.length === 0) return
+    let raf = 0
+    const update = () => {
+      raf = 0
+      const line = scroller.getBoundingClientRect().top + TOC_FOLLOW_LINE_PX
+      let current: string | null = null
+      for (let i = 0; i < headings.length; i += 1) {
+        if (headings[i]!.getBoundingClientRect().top <= line) current = toc[i]!.id
+        else break
+      }
+      const atBottom =
+        scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2
+      if (atBottom) current = toc[toc.length - 1]!.id
+      setFollowId((prev) => (prev === current ? prev : current))
+    }
+    const onScroll = () => {
+      if (raf !== 0) return
+      raf = requestAnimationFrame(update)
+    }
+    update()
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      scroller.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      if (raf !== 0) cancelAnimationFrame(raf)
+    }
+  }, [chapterMode, activeId, toc])
+
   if (toc.length < 2) return null
 
   const activeEntry = activeIndex >= 0 ? toc[activeIndex] : null
+  // F074：目录高亮 id——章节模式用 activeId（用户进入的章节），否则用
+  // 滚动跟随 followId；aria-current 与视觉样式共用同一判定。
+  const highlightId = activeId ?? (chapterMode ? null : followId)
 
   return (
     <>
@@ -154,7 +206,8 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
             >
               <button
                 type="button"
-                aria-current={entry.id === activeId ? 'true' : undefined}
+                aria-current={entry.id === highlightId ? 'true' : undefined}
+                data-lumi-toc-follow={entry.id === followId && activeId === null ? 'true' : undefined}
                 onClick={() => {
                   if (chapterMode) {
                     enterChapter(entry.id)
@@ -166,7 +219,7 @@ export function ArticleToc({ toc }: { toc: TocEntry[] }) {
                 }}
                 className={
                   'w-full truncate rounded-[var(--lumi-radius-sm)] py-1 text-left text-[13px] transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] ' +
-                  (entry.id === activeId
+                  (entry.id === highlightId
                     ? 'font-medium text-[var(--lumi-accent-text)]'
                     : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-accent-text)]')
                 }

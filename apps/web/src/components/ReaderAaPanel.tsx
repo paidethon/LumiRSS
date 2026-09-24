@@ -19,6 +19,7 @@ import {
   type ReaderBackground,
   type ReaderCaptionMode,
   type ReaderChineseConversion,
+  type ReaderCodeFontSize,
   type ReaderFontFamily,
   type ReaderFontWeight,
   type ReaderImageMaxWidth,
@@ -256,12 +257,32 @@ function AaControls({
           checked={settings.readerPaperTexture}
           onChange={(v) => update({ readerPaperTexture: v })}
         />
-        {/* F15：代码自动换行（settings：readerCodeWrap） */}
+        {/* F15：代码自动换行 + R5 批2：F072 等宽字号档位 / F073 代码行号
+            （全部设备本 settings；行号由管线按行包 span + CSS counter） */}
         <SwitchRow
           id="aa-code-wrap"
           title="代码自动换行"
           checked={settings.readerCodeWrap}
           onChange={(v) => update({ readerCodeWrap: v })}
+        />
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">代码字号</span>
+          <Select
+            aria-label="代码字号"
+            value={settings.readerCodeFontSize}
+            onChange={(e) => update({ readerCodeFontSize: e.target.value as ReaderCodeFontSize })}
+            options={[
+              { value: 's', label: '小' },
+              { value: 'm', label: '中' },
+              { value: 'l', label: '大' },
+            ]}
+          />
+        </div>
+        <SwitchRow
+          id="aa-code-line-numbers"
+          title="代码行号"
+          checked={settings.readerCodeLineNumbers}
+          onChange={(v) => update({ readerCodeLineNumbers: v })}
         />
         {/* N052：阅读模式（设备本地 readerReadingMode；'paged' = 分页阅读
             ——CSS 多栏横向翻页 + 点按翻页区，取代旧「按屏翻页」入口；
