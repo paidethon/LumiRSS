@@ -2,6 +2,10 @@
 
 GET /api/v1/search — one page of hits over the derived projection.
 POST /api/v1/search/rebuild — explicit bounded rebuild (admin op).
+POST /api/v1/search/parse-query — N142 rule-based natural-language →
+  structured filters preprocessor (no model calls).
+POST /api/v1/search/why-missed — N143 miss diagnosis for one owned entry.
+GET /api/v1/search/distribution — N145 per-source/per-day aggregates.
 
 Every parameter is validated here; the projection query itself is a
 single static statement (see search_store.py). Snippets are plain text
@@ -12,7 +16,7 @@ them as text, never as HTML.
 import time
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from lumirss.models import (
@@ -22,8 +26,16 @@ from lumirss.models import (
     SavedSearchPinOrder,
     SavedSearchRename,
     SavedSearchView,
+    SearchDistributionResult,
+    SearchParseQueryBody,
+    SearchParseRecognized,
+    SearchParseResult,
     SearchRebuildResult,
     SearchResponse,
+    SearchWhyMissedBody,
+    SearchWhyMissedEntry,
+    SearchWhyMissedReason,
+    SearchWhyMissedResult,
     ViewFeedTokenResult,
 )
 from lumirss.saved_search_store import (
@@ -711,3 +723,308 @@ async def count_saved_search_view(view_id: str, request: Request) -> SavedSearch
     except Exception as exc:  # noqa: BLE001 — 失效视图诚实错误态
         return SavedSearchCount(count=0, capped=False, error=str(exc)[:200])
     return SavedSearchCount(**result)
+
+
+
+
+# ---------------------------------------------------------------------------
+# N142：自然语言转过滤条件（纯规则预处理器，无任何模型调用）。
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/api/v1/search/parse-query",
+    response_model=SearchParseResult,
+    response_model_exclude_none=False,
+)
+async def parse_search_query(payload: SearchParseQueryBody, request: Request):
+    """N142 帮我转条件：把原始查询里的日期短语 / 来源前缀 / 否定词 /
+    引号短语转成与保存视图 filters_json 同构的过滤对象。
+
+    未识别文本保留为 remainingText 并逐词列入 unrecognized（诚实不
+    静默丢弃）；来源名解析失败绝不凭空造条件（片段留在自由词中）。
+    纯规则，无模型调用。"""
+    from datetime import date
+
+    from lumirss.search_parse import parse_query
+
+    service = _get_search_service(request)
+
+    async def _resolve(token: str) -> str | None:
+        # 有界 SQL 查询（search_feeds 投影）；投影尚未同步（空表）时
+        # 解析失败 → 该片段留在自由词，UI 可见。与搜索同一投影库。
+        return await service.store.resolve_source_token(token)
+
+    parsed = await parse_query(
+        payload.query,
+        today=date.today(),
+        resolve_source=_resolve,
+    )
+    return SearchParseResult(
+        filters=parsed.filters,
+        remainingText=parsed.remaining_text,
+        unrecognized=parsed.unrecognized,
+        recognized=[
+            SearchParseRecognized(kind=item["kind"], text=item["text"])
+            for item in parsed.recognized
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# N143：为什么没命中 —— 对单条（own-scope）条目复跑过滤链并如实归因。
+# ---------------------------------------------------------------------------
+
+
+def _why_missed_scope(params: dict[str, Any]) -> dict[str, Any]:
+    """与 GET /search 的 cursor scope 同构（keyset 绑定，翻页不漂移）。"""
+    return {
+        "q": params["query"],
+        "feedUrl": params["feed_url"],
+        "categoryId": params["category_id"],
+        "unread": params["unread_only"],
+        "favorite": params["starred_only"],
+        "from": params["published_from"],
+        "to": params["published_to"],
+        "intitle": params["intitle"],
+        "phrase": params["phrase"],
+        "exclude": params["exclude"],
+        "hasSummary": params["has_summary"],
+    }
+
+
+async def _why_missed_rank(
+    request: Request, *, params: dict[str, Any], entry_ref: str
+) -> tuple[int | None, bool]:
+    """matched 时的诚实排序位置：keyset 全量迭代复用生产查询路径
+    （service.search，2000 上界）——「复跑过滤链」的字面实现。
+
+    返回 (rank, rankCapped)；rank=第几条（最新=1），超出上界 →
+    (None, True)。"""
+    from lumirss.search_index import decode_search_cursor, encode_search_cursor
+
+    service = _get_search_service(request)
+    keyset = None
+    rank = 0
+    scope = _why_missed_scope(params)
+    for _ in range(9):  # 8 页 × 250 = 2000 上界 + 1 次收尾探测
+        result = await service.search(
+            query=params["query"],
+            limit=250,
+            keyset=keyset,
+            feed_url=params["feed_url"],
+            category_id=params["category_id"],
+            unread_only=params["unread_only"],
+            starred_only=params["starred_only"],
+            published_from=params["published_from"],
+            published_to=params["published_to"],
+            intitle=params["intitle"],
+            phrase=params["phrase"],
+            exclude=params["exclude"],
+            has_summary=params["has_summary"],
+            # 聚合/归因口径 = 基础词条过滤链（同 N145，诚实简化）。
+            expand_synonyms=False,
+        )
+        for row in result["rows"]:
+            rank += 1
+            if str(row["entryRef"]) == entry_ref:
+                return rank, False
+        if not result["hasMore"] or result["nextKeyset"] is None:
+            return None, False
+        keyset = decode_search_cursor(
+            encode_search_cursor(*result["nextKeyset"], scope=scope),
+            scope=scope,
+        )
+    return None, True
+
+
+@router.post(
+    "/api/v1/search/why-missed",
+    response_model=SearchWhyMissedResult,
+    response_model_exclude_none=False,
+)
+async def why_missed(payload: SearchWhyMissedBody, request: Request):
+    """N143 排障：对当前用户自己的单条投影行复跑过滤链，如实归因。
+
+    - 每个未通过条件 → 一条 reason（词条/仅标题/短语/排除/来源/分类/
+      未读/收藏/日期/摘要），UI 直接展示；
+    - 全部通过 → matched=true：条目本应出现在结果中（给按时间排序的
+      rank；超出 2000 上界 → rankCapped=true，属排序/分页位置问题）；
+    - entryRef 不在本用户作用域（含他人条目）→ 统一 404
+      search_entry_not_found，不泄露存在性。"""
+    from lumirss.search_debug import SearchEntryNotFound, diagnose_row
+    from lumirss.search_index import split_terms
+
+    query = payload.query.strip()
+    if not query:
+        raise SearchQueryError("Search query is empty.")
+    if payload.feedUrl is not None and payload.categoryId is not None:
+        raise SearchQueryError(
+            "feedUrl and categoryId are mutually exclusive."
+        )
+    if payload.state is not None and payload.state != "unread":
+        raise SearchQueryError('state only supports "unread".')
+
+    # own-scope：RoutingDatabase 已按请求身份路由到本用户库——他人条目
+    # 的 ref 在这里「不存在」，与真正缺失走同一个 404。
+    store = _get_search_service(request).store
+    await store.ensure_migrated()
+    row = await store.entry_row_by_ref(payload.entryRef)
+    if row is None:
+        raise SearchEntryNotFound(
+            "条目不在当前账户的搜索索引中，无法诊断。"
+        )
+
+    unread_only = payload.state == "unread"
+    in_category = True
+    if payload.categoryId is not None:
+        in_category = await store.feed_in_category(
+            category_id=payload.categoryId, feed_url=str(row["feed_url"])
+        )
+    reasons = diagnose_row(
+        row,
+        terms=split_terms(query),
+        intitle_terms=split_terms(payload.intitle or "")[:2],
+        phrase=(payload.phrase or "").strip() or None,
+        exclude_terms=split_terms(payload.exclude or "")[:2],
+        feed_url=payload.feedUrl,
+        in_category=in_category,
+        unread_only=unread_only,
+        starred_only=bool(payload.favorite),
+        published_from=payload.from_,
+        published_to=payload.to,
+        has_summary=payload.hasSummary,
+    )
+    entry_meta = SearchWhyMissedEntry(
+        entryRef=payload.entryRef,
+        title=str(row["title"]),
+        feedTitle=str(row["feed_title"]),
+        publishedAt=str(row["published_at"]),
+    )
+    if reasons:
+        return SearchWhyMissedResult(
+            matched=False,
+            reasons=[
+                SearchWhyMissedReason(kind=r["kind"], detail=r["detail"])
+                for r in reasons
+            ],
+            entry=entry_meta,
+        )
+    # 全部条件通过 → 本应命中；给诚实位置（复用生产查询路径迭代）。
+    params = {
+        "query": query,
+        "feed_url": payload.feedUrl,
+        "category_id": payload.categoryId,
+        "unread_only": unread_only,
+        "starred_only": bool(payload.favorite),
+        "published_from": payload.from_,
+        "published_to": payload.to,
+        "intitle": payload.intitle,
+        "phrase": payload.phrase,
+        "exclude": payload.exclude,
+        "has_summary": payload.hasSummary,
+    }
+    rank, capped = await _why_missed_rank(
+        request, params=params, entry_ref=payload.entryRef
+    )
+    return SearchWhyMissedResult(
+        matched=True,
+        reasons=[],
+        entry=entry_meta,
+        rank=rank,
+        rankCapped=capped,
+    )
+
+
+# ---------------------------------------------------------------------------
+# N145：来源内搜索分布 —— 同参聚合（GROUP BY 在 SQL 完成，正文不出站）。
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/search/distribution",
+    response_model=SearchDistributionResult,
+    response_model_exclude_none=False,
+)
+async def search_distribution(
+    request: Request,
+    q: str,
+    feedUrl: str | None = None,
+    categoryId: str | None = None,
+    state: str | None = None,
+    favorite: bool | None = None,
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = None,
+    intitle: str | None = None,
+    phrase: str | None = None,
+    exclude: str | None = None,
+    hasSummary: bool | None = None,
+):
+    """N145 来源分布 + 近 30 天柱状数据：与 GET /search 相同的权限与
+    过滤作用域（per-user DB 路由 + 同一过滤链），聚合在 SQL 完成——
+    只回每来源/每日计数，绝不搬运正文。
+
+    sources 最多 20 条（超界 → sourcesComplete=false 诚实标注）；
+    days 为最近 30 天窗口（补零逐日出，便于直接渲染柱状分布）。
+    同义词扩展不参与聚合（与主查询的 OR 扩展腿语义不同：聚合口径 =
+    基础词条过滤链，诚实简化）。"""
+    from datetime import date, timedelta
+
+    from lumirss.search_index import split_terms
+
+    query = q.strip()
+    if not query:
+        raise SearchQueryError("Search query is empty.")
+    if len(query) > 200:
+        raise SearchQueryError("Search query is too long.")
+    if feedUrl is not None and categoryId is not None:
+        raise SearchQueryError(
+            "feedUrl and categoryId are mutually exclusive."
+        )
+    if state is not None and state != "unread":
+        raise SearchQueryError('state only supports "unread".')
+
+    store = _get_search_service(request).store
+    await store.ensure_migrated()
+    common: dict[str, Any] = dict(
+        terms=split_terms(query),
+        intitle_terms=split_terms(intitle or "")[:2] or None,
+        phrase=(phrase or "").strip() or None,
+        exclude_terms=split_terms(exclude or "")[:2] or None,
+        feed_url=feedUrl,
+        category_id=categoryId,
+        unread_only=state == "unread",
+        starred_only=bool(favorite),
+        published_from=from_,
+        published_to=to,
+        has_summary=hasSummary,
+    )
+    total = await store.distribution_total(**common)
+    source_rows = await store.distribution_sources(**common, limit=21)
+    sources_complete = len(source_rows) <= 20
+    today = date.today()
+    day_from = today - timedelta(days=29)
+    day_to = today + timedelta(days=1)
+    day_rows = await store.distribution_days(
+        **common, day_from=day_from.isoformat(), day_to=day_to.isoformat()
+    )
+    by_day = {str(row["day"]): int(row["n"]) for row in day_rows}
+    days = []
+    for offset in range(30):
+        day = (day_from + timedelta(days=offset)).isoformat()
+        days.append({"day": day, "count": by_day.get(day, 0)})
+    return SearchDistributionResult(
+        total=total,
+        sources=[
+            {
+                "feedUrl": str(row["feed_url"]),
+                "feedTitle": str(row["feed_title"]),
+                "count": int(row["n"]),
+            }
+            for row in source_rows[:20]
+        ],
+        sourcesComplete=sources_complete,
+        days=days,
+        dayFrom=day_from.isoformat(),
+        dayTo=day_to.isoformat(),
+    )

@@ -13170,6 +13170,94 @@
     "title": "SavedSearchView",
     "type": "object"
    },
+   "SearchDistributionDay": {
+    "description": "N145：单日命中计数（窗口内补零后逐日出）。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "day": {
+      "title": "Day",
+      "type": "string"
+     }
+    },
+    "required": [
+     "day",
+     "count"
+    ],
+    "title": "SearchDistributionDay",
+    "type": "object"
+   },
+   "SearchDistributionResult": {
+    "description": "N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。\n\nsources 最多 20 条（超界 sourcesComplete=false 诚实标注）；\ndays 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。",
+    "properties": {
+     "dayFrom": {
+      "title": "Dayfrom",
+      "type": "string"
+     },
+     "dayTo": {
+      "title": "Dayto",
+      "type": "string"
+     },
+     "days": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchDistributionDay"
+      },
+      "title": "Days",
+      "type": "array"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchDistributionSource"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "sourcesComplete": {
+      "default": true,
+      "title": "Sourcescomplete",
+      "type": "boolean"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "total",
+     "dayFrom",
+     "dayTo"
+    ],
+    "title": "SearchDistributionResult",
+    "type": "object"
+   },
+   "SearchDistributionSource": {
+    "description": "N145：单来源命中计数。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "feedTitle",
+     "count"
+    ],
+    "title": "SearchDistributionSource",
+    "type": "object"
+   },
    "SearchExportBody": {
     "description": "POST /api/v1/search/export body：与 GET /search 同参 + 导出选项。",
     "properties": {
@@ -13473,6 +13561,84 @@
     "title": "SearchItem",
     "type": "object"
    },
+   "SearchParseQueryBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/search/parse-query body（N142）。",
+    "properties": {
+     "query": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "SearchParseQueryBody",
+    "type": "object"
+   },
+   "SearchParseRecognized": {
+    "description": "一个被转成条件的片段（kind + 原文）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "date",
+       "source",
+       "phrase",
+       "exclude"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "text"
+    ],
+    "title": "SearchParseRecognized",
+    "type": "object"
+   },
+   "SearchParseResult": {
+    "description": "N142：filters 与保存视图 filters_json 同构（白名单子集）；\nremainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默\n丢弃。",
+    "properties": {
+     "filters": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "default": {},
+      "title": "Filters",
+      "type": "object"
+     },
+     "recognized": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchParseRecognized"
+      },
+      "title": "Recognized",
+      "type": "array"
+     },
+     "remainingText": {
+      "default": "",
+      "title": "Remainingtext",
+      "type": "string"
+     },
+     "unrecognized": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Unrecognized",
+      "type": "array"
+     }
+    },
+    "title": "SearchParseResult",
+    "type": "object"
+   },
    "SearchRebuildResult": {
     "description": "Envelope for POST /api/v1/search/rebuild.",
     "properties": {
@@ -13584,6 +13750,236 @@
      "index"
     ],
     "title": "SearchResponse",
+    "type": "object"
+   },
+   "SearchWhyMissedBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/search/why-missed body（N143）——与 GET /search 同参\n（除分页/同义词）；entryRef 必须属于当前用户，否则 404。",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "entryRef": {
+      "maxLength": 600,
+      "minLength": 1,
+      "title": "Entryref",
+      "type": "string"
+     },
+     "exclude": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exclude"
+     },
+     "favorite": {
+      "default": false,
+      "title": "Favorite",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "hasSummary": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hassummary"
+     },
+     "intitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Intitle"
+     },
+     "phrase": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Phrase"
+     },
+     "query": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "required": [
+     "query",
+     "entryRef"
+    ],
+    "title": "SearchWhyMissedBody",
+    "type": "object"
+   },
+   "SearchWhyMissedEntry": {
+    "description": "被诊断条目的最小元数据（不携带正文全文）。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "publishedAt"
+    ],
+    "title": "SearchWhyMissedEntry",
+    "type": "object"
+   },
+   "SearchWhyMissedReason": {
+    "description": "一个排除原因（kind + 中文 detail，UI 可直接展示）。",
+    "properties": {
+     "detail": {
+      "title": "Detail",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "term",
+       "intitle",
+       "phrase",
+       "exclude",
+       "source",
+       "category",
+       "unread",
+       "starred",
+       "date",
+       "hasSummary"
+      ],
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "detail"
+    ],
+    "title": "SearchWhyMissedReason",
+    "type": "object"
+   },
+   "SearchWhyMissedResult": {
+    "description": "N143：matched=false → reasons 列出每个未通过的条件；\nmatched=true → 应出现在结果中，rank 为按时间排序的位置（超出\n2000 上界时 rankCapped=true 诚实标注）。",
+    "properties": {
+     "entry": {
+      "$ref": "#/components/schemas/SearchWhyMissedEntry"
+     },
+     "matched": {
+      "title": "Matched",
+      "type": "boolean"
+     },
+     "rank": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rank"
+     },
+     "rankCapped": {
+      "default": false,
+      "title": "Rankcapped",
+      "type": "boolean"
+     },
+     "reasons": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchWhyMissedReason"
+      },
+      "title": "Reasons",
+      "type": "array"
+     }
+    },
+    "required": [
+     "matched",
+     "entry"
+    ],
+    "title": "SearchWhyMissedResult",
     "type": "object"
    },
    "SecretValuePut": {
@@ -29012,6 +29408,206 @@
     "summary": "Search"
    }
   },
+  "/api/v1/search/distribution": {
+   "get": {
+    "description": "N145 来源分布 + 近 30 天柱状数据：与 GET /search 相同的权限与\n过滤作用域（per-user DB 路由 + 同一过滤链），聚合在 SQL 完成——\n只回每来源/每日计数，绝不搬运正文。\n\nsources 最多 20 条（超界 → sourcesComplete=false 诚实标注）；\ndays 为最近 30 天窗口（补零逐日出，便于直接渲染柱状分布）。\n同义词扩展不参与聚合（与主查询的 OR 扩展腿语义不同：聚合口径 =\n基础词条过滤链，诚实简化）。",
+    "operationId": "search_distribution_api_v1_search_distribution_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Categoryid"
+      }
+     },
+     {
+      "in": "query",
+      "name": "state",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "State"
+      }
+     },
+     {
+      "in": "query",
+      "name": "favorite",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Favorite"
+      }
+     },
+     {
+      "in": "query",
+      "name": "from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "intitle",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Intitle"
+      }
+     },
+     {
+      "in": "query",
+      "name": "phrase",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Phrase"
+      }
+     },
+     {
+      "in": "query",
+      "name": "exclude",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Exclude"
+      }
+     },
+     {
+      "in": "query",
+      "name": "hasSummary",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Hassummary"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchDistributionResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Distribution"
+   }
+  },
   "/api/v1/search/export": {
    "post": {
     "description": "引用清单导出（F073）：keyset 全量迭代（cap 上限 2000，诚实截断）。\n\ndryRun=true → 只返回 {total, capped}（UI 范围预览）。文件导出时\n截断标注在 X-Lumi-Truncated / X-Lumi-Total 响应头。导出仅含选中\n字段（excerpt ≤200 字），绝不含正文全文。",
@@ -29047,6 +29643,45 @@
      }
     },
     "summary": "Export Search Results"
+   }
+  },
+  "/api/v1/search/parse-query": {
+   "post": {
+    "description": "N142 帮我转条件：把原始查询里的日期短语 / 来源前缀 / 否定词 /\n引号短语转成与保存视图 filters_json 同构的过滤对象。\n\n未识别文本保留为 remainingText 并逐词列入 unrecognized（诚实不\n静默丢弃）；来源名解析失败绝不凭空造条件（片段留在自由词中）。\n纯规则，无模型调用。",
+    "operationId": "parse_search_query_api_v1_search_parse_query_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SearchParseQueryBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchParseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Parse Search Query"
    }
   },
   "/api/v1/search/rebuild": {
@@ -29680,6 +30315,45 @@
      }
     },
     "summary": "Unpin Saved Search View"
+   }
+  },
+  "/api/v1/search/why-missed": {
+   "post": {
+    "description": "N143 排障：对当前用户自己的单条投影行复跑过滤链，如实归因。\n\n- 每个未通过条件 → 一条 reason（词条/仅标题/短语/排除/来源/分类/\n  未读/收藏/日期/摘要），UI 直接展示；\n- 全部通过 → matched=true：条目本应出现在结果中（给按时间排序的\n  rank；超出 2000 上界 → rankCapped=true，属排序/分页位置问题）；\n- entryRef 不在本用户作用域（含他人条目）→ 统一 404\n  search_entry_not_found，不泄露存在性。",
+    "operationId": "why_missed_api_v1_search_why_missed_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SearchWhyMissedBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchWhyMissedResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Why Missed"
    }
   },
   "/api/v1/settings": {

@@ -5632,6 +5632,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Distribution
+         * @description N145 来源分布 + 近 30 天柱状数据：与 GET /search 相同的权限与
+         *     过滤作用域（per-user DB 路由 + 同一过滤链），聚合在 SQL 完成——
+         *     只回每来源/每日计数，绝不搬运正文。
+         *
+         *     sources 最多 20 条（超界 → sourcesComplete=false 诚实标注）；
+         *     days 为最近 30 天窗口（补零逐日出，便于直接渲染柱状分布）。
+         *     同义词扩展不参与聚合（与主查询的 OR 扩展腿语义不同：聚合口径 =
+         *     基础词条过滤链，诚实简化）。
+         */
+        get: operations["search_distribution_api_v1_search_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/export": {
         parameters: {
             query?: never;
@@ -5650,6 +5677,31 @@ export interface paths {
          *     字段（excerpt ≤200 字），绝不含正文全文。
          */
         post: operations["export_search_results_api_v1_search_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/parse-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Search Query
+         * @description N142 帮我转条件：把原始查询里的日期短语 / 来源前缀 / 否定词 /
+         *     引号短语转成与保存视图 filters_json 同构的过滤对象。
+         *
+         *     未识别文本保留为 remainingText 并逐词列入 unrecognized（诚实不
+         *     静默丢弃）；来源名解析失败绝不凭空造条件（片段留在自由词中）。
+         *     纯规则，无模型调用。
+         */
+        post: operations["parse_search_query_api_v1_search_parse_query_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5917,6 +5969,33 @@ export interface paths {
         put?: never;
         /** Unpin Saved Search View */
         post: operations["unpin_saved_search_view_api_v1_search_views__view_id__unpin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/why-missed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Why Missed
+         * @description N143 排障：对当前用户自己的单条投影行复跑过滤链，如实归因。
+         *
+         *     - 每个未通过条件 → 一条 reason（词条/仅标题/短语/排除/来源/分类/
+         *       未读/收藏/日期/摘要），UI 直接展示；
+         *     - 全部通过 → matched=true：条目本应出现在结果中（给按时间排序的
+         *       rank；超出 2000 上界 → rankCapped=true，属排序/分页位置问题）；
+         *     - entryRef 不在本用户作用域（含他人条目）→ 统一 404
+         *       search_entry_not_found，不泄露存在性。
+         */
+        post: operations["why_missed_api_v1_search_why_missed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13376,6 +13455,58 @@ export interface components {
             view: string;
         };
         /**
+         * SearchDistributionDay
+         * @description N145：单日命中计数（窗口内补零后逐日出）。
+         */
+        SearchDistributionDay: {
+            /** Count */
+            count: number;
+            /** Day */
+            day: string;
+        };
+        /**
+         * SearchDistributionResult
+         * @description N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。
+         *
+         *     sources 最多 20 条（超界 sourcesComplete=false 诚实标注）；
+         *     days 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。
+         */
+        SearchDistributionResult: {
+            /** Dayfrom */
+            dayFrom: string;
+            /** Dayto */
+            dayTo: string;
+            /**
+             * Days
+             * @default []
+             */
+            days: components["schemas"]["SearchDistributionDay"][];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["SearchDistributionSource"][];
+            /**
+             * Sourcescomplete
+             * @default true
+             */
+            sourcesComplete: boolean;
+            /** Total */
+            total: number;
+        };
+        /**
+         * SearchDistributionSource
+         * @description N145：单来源命中计数。
+         */
+        SearchDistributionSource: {
+            /** Count */
+            count: number;
+            /** Feedtitle */
+            feedTitle: string;
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
          * SearchExportBody
          * @description POST /api/v1/search/export body：与 GET /search 同参 + 导出选项。
          */
@@ -13488,6 +13619,57 @@ export interface components {
             url?: string | null;
         };
         /**
+         * SearchParseQueryBody
+         * @description POST /api/v1/search/parse-query body（N142）。
+         */
+        SearchParseQueryBody: {
+            /** Query */
+            query: string;
+        };
+        /**
+         * SearchParseRecognized
+         * @description 一个被转成条件的片段（kind + 原文）。
+         */
+        SearchParseRecognized: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "date" | "source" | "phrase" | "exclude";
+            /** Text */
+            text: string;
+        };
+        /**
+         * SearchParseResult
+         * @description N142：filters 与保存视图 filters_json 同构（白名单子集）；
+         *     remainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默
+         *     丢弃。
+         */
+        SearchParseResult: {
+            /**
+             * Filters
+             * @default {}
+             */
+            filters: {
+                [key: string]: string;
+            };
+            /**
+             * Recognized
+             * @default []
+             */
+            recognized: components["schemas"]["SearchParseRecognized"][];
+            /**
+             * Remainingtext
+             * @default
+             */
+            remainingText: string;
+            /**
+             * Unrecognized
+             * @default []
+             */
+            unrecognized: string[];
+        };
+        /**
          * SearchRebuildResult
          * @description Envelope for POST /api/v1/search/rebuild.
          */
@@ -13527,6 +13709,90 @@ export interface components {
             libraryNextCursor?: string | null;
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * SearchWhyMissedBody
+         * @description POST /api/v1/search/why-missed body（N143）——与 GET /search 同参
+         *     （除分页/同义词）；entryRef 必须属于当前用户，否则 404。
+         */
+        SearchWhyMissedBody: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Entryref */
+            entryRef: string;
+            /** Exclude */
+            exclude?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** From */
+            from?: string | null;
+            /** Hassummary */
+            hasSummary?: boolean | null;
+            /** Intitle */
+            intitle?: string | null;
+            /** Phrase */
+            phrase?: string | null;
+            /** Query */
+            query: string;
+            /** State */
+            state?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * SearchWhyMissedEntry
+         * @description 被诊断条目的最小元数据（不携带正文全文）。
+         */
+        SearchWhyMissedEntry: {
+            /** Entryref */
+            entryRef: string;
+            /** Feedtitle */
+            feedTitle: string;
+            /** Publishedat */
+            publishedAt: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * SearchWhyMissedReason
+         * @description 一个排除原因（kind + 中文 detail，UI 可直接展示）。
+         */
+        SearchWhyMissedReason: {
+            /** Detail */
+            detail: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "term" | "intitle" | "phrase" | "exclude" | "source" | "category" | "unread" | "starred" | "date" | "hasSummary";
+        };
+        /**
+         * SearchWhyMissedResult
+         * @description N143：matched=false → reasons 列出每个未通过的条件；
+         *     matched=true → 应出现在结果中，rank 为按时间排序的位置（超出
+         *     2000 上界时 rankCapped=true 诚实标注）。
+         */
+        SearchWhyMissedResult: {
+            entry: components["schemas"]["SearchWhyMissedEntry"];
+            /** Matched */
+            matched: boolean;
+            /** Rank */
+            rank?: number | null;
+            /**
+             * Rankcapped
+             * @default false
+             */
+            rankCapped: boolean;
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: components["schemas"]["SearchWhyMissedReason"][];
         };
         /**
          * SecretValuePut
@@ -24778,6 +25044,47 @@ export interface operations {
             };
         };
     };
+    search_distribution_api_v1_search_distribution_get: {
+        parameters: {
+            query: {
+                q: string;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+                state?: string | null;
+                favorite?: boolean | null;
+                from?: string | null;
+                to?: string | null;
+                intitle?: string | null;
+                phrase?: string | null;
+                exclude?: string | null;
+                hasSummary?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchDistributionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_search_results_api_v1_search_export_post: {
         parameters: {
             query?: never;
@@ -24798,6 +25105,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_search_query_api_v1_search_parse_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchParseQueryBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchParseResult"];
                 };
             };
             /** @description Validation Error */
@@ -25332,6 +25672,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    why_missed_api_v1_search_why_missed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchWhyMissedBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchWhyMissedResult"];
                 };
             };
             /** @description Validation Error */
