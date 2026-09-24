@@ -32,6 +32,7 @@ from lumirss.accounts_store import (
     AccountsStore,
     InviteInvalid,
     InviteNotActive,
+    UsernameTaken,
     hash_password,
     hash_token,
     verify_password_hash,
@@ -379,6 +380,85 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
     status = await _mint_session(request, response, user_id)
     status.initialSources = initial_sources
     return status
+
+
+class RegisterRequest(BaseModel):
+    """POST /auth/register (P0 public registration)."""
+
+    username: str = Field(max_length=32)
+    password: str = Field(max_length=MAX_PASSWORD_BYTES)
+    displayName: str | None = Field(default=None, max_length=64)
+
+
+@router.post(
+    "/api/v1/auth/register",
+    response_model=AuthStatus,
+    response_model_exclude_none=True,
+)
+async def register(body: RegisterRequest, request: Request, response: Response) -> AuthStatus | JSONResponse:
+    """Open registration (P0): self-serve MEMBER account, gated by the
+    instance-level ``allow_public_registration`` policy (control DB,
+    default OFF — upgraded instances and fresh installs alike stay
+    closed until the operator flips /admin/registration-policy).
+
+    Deliberately mirrors /auth/activate without an invite: role is
+    hardcoded ``member`` (the client can never request a role), the
+    FreshRSS pool assigns atomically or the account starts with an
+    honest pending binding, and the server derives every identity.
+    Enforcement here is the only gate — a hidden frontend button is
+    not trusted.
+    """
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return _reject(400, "invalid_request", "Registration is not available in single-user mode.")
+    accounts = _control(request)
+    from lumirss.instance_settings import InstanceSettingsStore
+
+    allowed = await InstanceSettingsStore(request.app.state.control_db).get_bool(
+        "allow_public_registration"
+    )
+    if not allowed:
+        # Uniform rejection regardless of username validity/existence —
+        # a closed instance must not become a username oracle.
+        await accounts.audit(
+            actor="anonymous",
+            action="register_rejected",
+            object_type="user",
+            object_id="policy_closed",
+        )
+        return _reject(403, "registration_disabled", "Registration is disabled on this instance.")
+    username = body.username.strip().lower()
+    if not USERNAME_RE.match(username):
+        return _reject(400, "invalid_username", "Username must be 3-32 chars: lowercase letters, digits, '-', '_', starting with a letter or digit.")
+    if len(body.password) < MIN_PASSWORD_LENGTH:
+        return _reject(400, "weak_password", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+    if await accounts.get_user_by_username(username) is not None:
+        return _reject(409, "username_taken", "That username is already in use.")
+    try:
+        user = await accounts.create_user(
+            username=username,
+            password_hash=hash_password(body.password),
+            role="member",
+            display_name=body.displayName,
+        )
+    except UsernameTaken as exc:
+        return _reject(409, "username_taken", str(exc))
+    except AccountError as exc:
+        return _reject(400, "invalid_username", str(exc))
+    user_id = str(user["id"])
+    # FreshRSS binding from the pool — atomic assignment, honest pending.
+    assigned = await accounts.pool_assign(user_id)
+    if assigned is not None:
+        from lumirss.control_resources import bind_freshrss_account
+
+        await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+    await accounts.audit(
+        actor=user_id,
+        action="account_register",
+        object_type="user",
+        object_id=user_id,
+        detail="pool_assigned" if assigned else "binding_pending",
+    )
+    return await _mint_session(request, response, user_id)
 
 
 @router.post(

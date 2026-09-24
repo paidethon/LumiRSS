@@ -184,6 +184,7 @@ class RequestSizeLimitMiddleware:
 
 _RATE_RULES: tuple[tuple[str, str, str, int, int], ...] = (
     # (method, path prefix, bucket, max requests, window seconds)
+    ("POST", "/api/v1/auth/register", "register", 10, 60),
     ("POST", "/api/v1/restore", "restore", 10, 60),
     ("POST", "/api/v1/backups/webdav", "backup_webdav", 10, 60),
     ("POST", "/api/v1/backups", "backup", 12, 60),
@@ -332,6 +333,7 @@ PLAIN_SESSION_COOKIE_NAME = "lumirss_session"
 SESSION_PUBLIC_PATHS = frozenset(
     {
         "/api/v1/auth/login",
+        "/api/v1/auth/register",
         "/api/v1/auth/session",
         "/api/v1/auth/activate",
         "/api/v1/auth/activation-preview",

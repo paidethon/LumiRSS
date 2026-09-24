@@ -887,3 +887,70 @@ async def system_status(request: Request) -> dict[str, object]:
         "services": services,
         "tasks": tasks,
     }
+
+
+# ---------------------------------------------------------------------------
+# P0 public-registration policy: instance-level switch owned by the
+# control DB (migration 0089, InstanceSettingsStore). Defaults CLOSED on
+# upgrade AND on fresh install; only this endpoint changes it, and every
+# change lands in the audit log. Enforcement lives in routers/auth.py —
+# this endpoint never gates anything by itself.
+
+
+class RegistrationPolicyRequest(BaseModel):
+    """PUT /admin/registration-policy."""
+
+    allowPublicRegistration: bool
+
+
+class RegistrationPolicyResponse(BaseModel):
+    """GET / PUT /admin/registration-policy (instance-level switch)."""
+
+    allowPublicRegistration: bool
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+def _registration_policy_response(describe: dict[str, object]) -> RegistrationPolicyResponse:
+    updated_at = describe.get("updatedAt")
+    return RegistrationPolicyResponse(
+        allowPublicRegistration=describe["value"] == "1",
+        updatedAt=_iso(int(updated_at)) if isinstance(updated_at, int) else None,
+        updatedBy=str(describe["updatedBy"]) if describe.get("updatedBy") else None,
+    )
+
+
+@router.get("/registration-policy", response_model=RegistrationPolicyResponse)
+async def get_registration_policy(request: Request) -> RegistrationPolicyResponse:
+    from lumirss.instance_settings import InstanceSettingsStore
+
+    await _require_admin(request)
+    describe = await InstanceSettingsStore(request.app.state.control_db).describe(
+        "allow_public_registration"
+    )
+    return _registration_policy_response(describe)
+
+
+@router.put("/registration-policy", response_model=RegistrationPolicyResponse)
+async def set_registration_policy(
+    body: RegistrationPolicyRequest, request: Request
+) -> RegistrationPolicyResponse:
+    from lumirss.instance_settings import InstanceSettingsStore
+
+    principal = await _require_admin(request)
+    store = InstanceSettingsStore(request.app.state.control_db)
+    before = await store.get_bool("allow_public_registration")
+    await store.set(
+        "allow_public_registration",
+        "1" if body.allowPublicRegistration else "0",
+        updated_by=principal["user_id"],
+    )
+    await _accounts(request).audit(
+        actor=principal["user_id"],
+        action="registration_policy_change",
+        object_type="instance_setting",
+        object_id="allow_public_registration",
+        detail=f"{before}->{body.allowPublicRegistration}",
+    )
+    describe = await store.describe("allow_public_registration")
+    return _registration_policy_response(describe)
