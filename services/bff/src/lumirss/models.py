@@ -2101,7 +2101,9 @@ class GptDigestConfig(BaseModel):
     """F01/F02：一份主题日报配置（token 不在此响应中）。
 
     ``slots`` 为发布小时列表（升序、最多 4 个）；空列表 = 单时点
-    （用 hour），期号退化为日期。"""
+    （用 hour），期号退化为日期。
+    N171：``days`` 为发布日集合（0=周一…6=周日；空 = 每天）；
+    ``weekendHours`` 为周六/周日的独立时点（空 = 沿用平日计划）。"""
 
     id: int
     name: str
@@ -2117,6 +2119,8 @@ class GptDigestConfig(BaseModel):
     # F04：材料源（window=订阅窗口 / read_later=稍后读 / starred=收藏）
     sourceKind: str = "window"
     slots: list[int] = []
+    days: list[int] = []
+    weekendHours: list[int] = []
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2139,6 +2143,8 @@ class GptDigestCreate(BaseModel):
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
+    days: list[int] | None = None
+    weekendHours: list[int] | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2155,6 +2161,8 @@ class GptDigestConfigUpdate(BaseModel):
     feedUrlAllow: str | None = None
     sourceKind: str | None = None
     slots: list[int] | None = None
+    days: list[int] | None = None
+    weekendHours: list[int] | None = None
 
 
 class StorageUsage(BaseModel):

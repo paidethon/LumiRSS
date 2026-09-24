@@ -9,6 +9,7 @@
 独立语义（与用户笔记不同）。
 """
 
+import json
 from typing import Any
 
 from lumirss.gpt_digest_store import normalize_timezone
@@ -17,6 +18,31 @@ from lumirss.util import utc_now
 
 _MAX_NAME = 80
 _MAX_SLOTS = 4
+_MAX_DAYS = 7
+
+
+def parse_days(value: Any) -> list[int]:
+    """N171：发布日解析（list[int] / JSON 数组串 / 逗号串）→ 升序去重的
+    0–6 星期集合（0=周一 … 6=周日）；空 = 每天发布（历史行为）。"""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            value = json.loads(text)
+        except ValueError:
+            value = text.replace("[", "").replace("]", "").split(",")
+    if not isinstance(value, list):
+        return []
+    days: set[int] = set()
+    for part in value:
+        try:
+            day = int(part)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= day <= 6:
+            days.add(day)
+    return sorted(days)[:_MAX_DAYS]
 
 
 def parse_slots(value: Any) -> list[int]:
@@ -65,6 +91,17 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         slots = ",".join(str(h) for h in parse_slots(slots))
     else:
         slots = ",".join(str(h) for h in parse_slots(slots))
+    # N171：发布日（空 = 每天）与周末独立时点（空 = 沿用平日计划）。
+    days = values.get("days", fallback.get("days", []))
+    if not isinstance(days, str):
+        days = json.dumps(parse_days(days))
+    else:
+        days = json.dumps(parse_days(days))
+    weekend_hours = values.get("weekendHours", fallback.get("weekendHours", ""))
+    if not isinstance(weekend_hours, str):
+        weekend_hours = ",".join(str(h) for h in parse_slots(weekend_hours))
+    else:
+        weekend_hours = ",".join(str(h) for h in parse_slots(weekend_hours))
     source_kind = values.get("sourceKind", fallback.get("sourceKind", "window"))
     if source_kind not in ("window", "read_later", "starred"):
         source_kind = fallback.get("sourceKind", "window")
@@ -75,6 +112,8 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         "perSourceCap": min(max(per_source, 0), 5),
         "lookbackDays": min(max(lookback, 0), 90),
         "slots": slots,
+        "days": days,
+        "weekendHours": weekend_hours,
         "sourceKind": source_kind,
     }
 
@@ -97,6 +136,9 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
         "sourceKind": row["source_kind"] if row["source_kind"] in ("window", "read_later", "starred") else "window",
         "slots": parse_slots(slots_raw),
         "slotsRaw": slots_raw,
+        # N171：发布日（空 = 每天）与周末独立时点（空 = 沿用平日计划）。
+        "days": parse_days(row["days_json"]) if "days_json" in keys else [],
+        "weekendHours": parse_slots(str(row["weekend_hours"] or "")) if "weekend_hours" in keys else [],
         "lastIssueKey": row["last_issue_key"],
         "lastError": row["last_error"],
         "createdAt": str(row["created_at"] or ""),
@@ -106,20 +148,26 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
 class GptDigestConfigStore:
     """CRUD + per-config schedule markers."""
 
+    _COLUMNS = (
+        "id, name, enabled, hour, timezone, window_hours, limit_count, "
+        "per_source_cap, lookback_days, feed_url_allow, source_kind, slots, "
+        "days_json, weekend_hours, last_issue_key, last_error, created_at"
+    )
+
     def __init__(self, db: Database) -> None:
         self._db = db
 
     async def list_configs(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs ORDER BY id"
+            f"SELECT {self._COLUMNS} FROM gpt_digest_configs ORDER BY id"
         )
         return [config_row_to_dict(row) for row in rows]
 
     async def get_config(self, config_id: int) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, last_issue_key, last_error, created_at FROM gpt_digest_configs WHERE id = ?",
+            f"SELECT {self._COLUMNS} FROM gpt_digest_configs WHERE id = ?",
             (config_id,),
         )
         return config_row_to_dict(row) if row else None
@@ -129,7 +177,7 @@ class GptDigestConfigStore:
         name = str(values.get("name") or "").strip()[:_MAX_NAME] or "未命名日报"
         clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2, "lookbackDays": 7})
         await self._db.execute(
-            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, days_json, weekend_hours, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 clamped["hour"],
@@ -141,6 +189,8 @@ class GptDigestConfigStore:
                 str(values.get("feedUrlAllow") or ""),
                 clamped["sourceKind"],
                 clamped["slots"],
+                clamped["days"],
+                clamped["weekendHours"],
                 utc_now(),
             ),
         )
@@ -159,7 +209,7 @@ class GptDigestConfigStore:
         name = str(values.get("name", current["name"])).strip()[:_MAX_NAME] or current["name"]
         clamped = _clamp_config(values, current)
         await self._db.execute(
-            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ? WHERE id = ?",
+            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ?, days_json = ?, weekend_hours = ? WHERE id = ?",
             (
                 name,
                 1 if values.get("enabled", current["enabled"]) else 0,
@@ -172,6 +222,8 @@ class GptDigestConfigStore:
                 str(values.get("feedUrlAllow", current["feedUrlAllow"])),
                 clamped["sourceKind"],
                 clamped["slots"],
+                clamped["days"],
+                clamped["weekendHours"],
                 config_id,
             ),
         )

@@ -839,6 +839,12 @@ def plan_run(
 ) -> RunPlan | None:
     """F02：计算该配置此刻应运行的期号与窗口；不应运行返回 None。
 
+    - N171 发布日：``days``（0=周一…6=周日）非空且今天不在集合内 →
+      None（周末/平日完全跳过；issue_key 幂等语义不变）。
+    - N171 周末时点：``weekendHours`` 非空且今天是周六/周日 → 用它整体
+      替换 hour/slots 作为当日时点（边界/补刊/去重逻辑与 slots 相同）。
+      时区换算走 zoneinfo——DST 切换日的边界仍按墙钟解释，同一墙钟
+      时点在同一期号内只会生成一次。
     - 单时点配置（slots 为空）：保持历史语义——仅当本地小时等于配置
       hour 且期号不存在时生成；期号 = 当天日期；窗口 = [now-windowHours,
       now)；错过时点靠 hour 相等 + 标记补跑（与旧版完全一致）。
@@ -847,12 +853,21 @@ def plan_run(
       ``catchup_minutes`` 的时点诚实跳过（不追溯生成过期内容）；
       期号 = ``YYYY-MM-DD-HH``。``catchup_minutes=None`` 表示不限
       （显式生成路径用它取最近已过期时点做修订目标）。"""
+    from lumirss.gpt_digest_configs import parse_days
+
     slots = parse_slots(config.get("slots") or [])
     tz = config.get("timezone") or ""
     try:
         local = now.astimezone(ZoneInfo(tz)) if tz else now.astimezone()
     except Exception:  # noqa: BLE001 — 非法时区在保存时已拦；运行时兜底本地
         local = now.astimezone()
+
+    days = parse_days(config.get("days") or [])
+    if days and local.weekday() not in days:
+        return None  # N171：今天不是发布日
+    weekend_hours = parse_slots(config.get("weekendHours") or [])
+    if local.weekday() >= 5 and weekend_hours:
+        slots = list(weekend_hours)  # N171：周末改用独立时点集合
 
     if not slots:
         if local.hour != int(config["hour"]):
