@@ -64,6 +64,7 @@ from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
 from lumirss.api_sources import (
+    ApiSourceBudgetExhausted,
     ApiSourceExpressionError,
     ApiSourceFetchFailed,
     ApiSourceInvalid,
@@ -92,6 +93,7 @@ from lumirss.backup import (
 from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
 from lumirss.clip_revision import MustKeepOne, RevisionConflict
+from lumirss.credential_rotation import CredentialTestFailed
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
 from lumirss.favorites import FavoriteInvalid
@@ -196,11 +198,17 @@ from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
 from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
+from lumirss.source_bundle import BundleInvalid
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
 )
 from lumirss.sources import ItemRefUnresolvable
+from lumirss.staged_source_store import (
+    StagedSourceConflict,
+    StagedSourceInvalid,
+    StagedSourceNotFound,
+)
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
@@ -351,6 +359,14 @@ _ERROR_RESPONSES = {
     ApiSourceExpressionError: (400, "invalid_expression"),
     ApiSourcePreviewError: (422, "preview_expression_failed"),
     ApiSourceFetchFailed: (502, "fetch_failed"),
+    # N130 credential rotation: dry probe failed, current credential untouched
+    CredentialTestFailed: (422, "credential_test_failed"),
+    # N011 source bundle
+    BundleInvalid: (400, "invalid_bundle"),
+    # N016 staging pool
+    StagedSourceInvalid: (400, "invalid_staged_source"),
+    StagedSourceNotFound: (404, "staged_source_not_found"),
+    StagedSourceConflict: (409, "staged_source_conflict"),
     # phase2 G5 mail
     MailBridgeInvalid: (400, "invalid_mail_payload"),
     MailBridgeNotFound: (404, "mail_list_not_found"),
@@ -527,6 +543,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApiSourceNotFound)
     @app.exception_handler(ApiSourceExpressionError)
     @app.exception_handler(ApiSourceFetchFailed)
+    @app.exception_handler(CredentialTestFailed)
+    @app.exception_handler(BundleInvalid)
+    @app.exception_handler(StagedSourceInvalid)
+    @app.exception_handler(StagedSourceNotFound)
+    @app.exception_handler(StagedSourceConflict)
     @app.exception_handler(MailBridgeInvalid)
     @app.exception_handler(MailBridgeNotFound)
     @app.exception_handler(SmtpNotConfigured)
@@ -662,6 +683,38 @@ def register_error_handlers(app) -> None:
             },
         )
 
+
+    @app.exception_handler(ApiSourceBudgetExhausted)
+    async def api_source_budget_exhausted_handler(
+        request: Request, exc: ApiSourceBudgetExhausted
+    ) -> JSONResponse:
+        """N129：每来源抓取预算用尽 → 429 budget_exhausted + Retry-After。
+
+        FreshRSS 轮询遇到 429 会按 Retry-After 退避——这正是「限额友好」
+        的服务端执行点。响应体同时带 nextAllowedRun（诚实、可显示）。"""
+        from datetime import UTC, datetime
+
+        retry_after = 60
+        try:
+            target = datetime.fromisoformat(
+                exc.next_allowed_run.replace("Z", "+00:00")
+            )
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=UTC)
+            retry_after = max(1, int((target - datetime.now(UTC)).total_seconds()))
+        except ValueError:
+            pass
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={
+                "error": {
+                    "type": "budget_exhausted",
+                    "message": str(exc),
+                    "nextAllowedRun": exc.next_allowed_run,
+                }
+            },
+        )
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(

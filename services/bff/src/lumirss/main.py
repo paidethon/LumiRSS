@@ -72,6 +72,7 @@ from lumirss.routers import (
     search,
     settings,
     snapshots,
+    source_lifecycle,
     sources,
     storage,
     subscriptions,
@@ -182,6 +183,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.api_source_store = None
     app.state.mail_bridge_store = None
     app.state.inbox_store = None
+    # N011/N016/N017: source lifecycle tools (staging pool + bundle).
+    app.state.staged_source_store = None
+    app.state.source_bundle_service = None
     app.state.favorites_service = None
     app.state.library_search_writer = None
     app.state.rag_service = None
@@ -392,6 +396,8 @@ app.include_router(mail.router)
 app.include_router(obsidian.router)
 app.include_router(inbox.router)
 app.include_router(sources.router)
+# N011/N016/N017: bundle / staging pool / cleanup suggestions
+app.include_router(source_lifecycle.router)
 app.include_router(rag.router)
 app.include_router(agent.router)
 app.include_router(tags.router)
