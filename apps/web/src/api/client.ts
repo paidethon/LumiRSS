@@ -1742,11 +1742,10 @@ export async function getTranslationVerification(
   entryRef: string,
   language?: string,
 ): Promise<TranslationVerificationView> {
-  const suffix = language ? `?language=${encodeURIComponent(language)}` : ''
-  const response = await rawRequest(
-    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation-verification${suffix}`,
-    { method: 'GET' },
-  )
+  const path = `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation-verification`
+  const url =
+    language === undefined ? path : `${path}?language=${encodeURIComponent(language)}`
+  const response = await rawRequest(url, { method: 'GET' })
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as TranslationVerificationView
 }
