@@ -95,6 +95,20 @@ async def load_glossary_terms(db: Database, limit: int = 500) -> list[dict[str, 
     ]
 
 
+async def load_protected_terms(db: Database, limit: int = 500) -> list[dict[str, Any]]:
+    """N083：protect=1 的术语（term + translation(=definition)）。"""
+    await db.migrate()
+    rows = await db.fetch_all(
+        "SELECT term, definition FROM glossary_terms WHERE protect = 1 "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (limit,),
+    )
+    return [
+        {"term": str(row["term"]), "translation": str(row["definition"])}
+        for row in rows
+    ]
+
+
 def format_glossary_prompt_block(hits: list[dict[str, Any]]) -> str:
     """受控格式（预览端点与生成端点共用；空表 → 空串 = 行为不变）。"""
     if not hits:
@@ -109,3 +123,73 @@ async def attach_glossary_block(db: Database, content_text: str) -> str:
     """生成端点的便捷入口：读术语表 → 命中 → 格式化（空表 = ''）。"""
     terms = await load_glossary_terms(db)
     return format_glossary_prompt_block(compute_hits(content_text, terms))
+
+
+# -- N083 专有名词保留清单 ----------------------------------------------------
+#
+# protect=1 的术语在分段翻译里的处理契约（诚实、纯后验）：
+#
+# - 命中：术语在源段文本中的匹配沿用 compute_hits（拉丁词按词边界、
+#   CJK 按子串、重叠最长优先）——保护只作用于确实出现在源段的术语；
+# - prompt：受保护术语在 AI 引擎的批次指令里逐条列出（原文照写，
+#   不翻译不改大小写）——LibreTranslate 无 prompt 通道，只做后处理；
+# - 还原（生成完成后）：译文里已含原始词形 → 恒等；存在大小写漂移
+#   （如 "GraphQL"→"graphql"）→ 命中位置一律替换回词表原始词形
+#   （case-sensitive 原文）；术语被整体改写/翻译掉 → 不臆造，计为
+#   未保护命中并如实上报。
+# - 还原是「译文中受保护术语的位置还原」，不是全文回译；完全缺失
+#   的术语得到 {"term", "protected": false, "reason": ...}。
+
+def protected_hit_terms(content_text: str, protected_terms: list[dict[str, Any]]) -> list[str]:
+    """受保护术语在一段源文本中的命中（去重保序；与预览同一匹配实现）。"""
+    if not content_text or not protected_terms:
+        return []
+    hits = compute_hits(
+        content_text,
+        [{"term": item["term"], "translation": ""} for item in protected_terms],
+    )
+    return [str(hit["term"]) for hit in hits if hit["term"]]
+
+
+def apply_term_protection(translated_text: str, terms: list[str]) -> str:
+    """译文还原后处理：大小写漂移的受保护术语恢复为词表原始词形。
+
+    只在术语未以原始词形出现时做忽略大小写的定位替换（替换值是
+    case-sensitive 原始词形）；已含原始词形时为恒等操作。"""
+    text = translated_text
+    for term in terms:
+        if not term or term in text:
+            continue
+        replacement = term
+
+        def _restore(match: re.Match[str], _value: str = replacement) -> str:
+            return _value
+
+        text = re.compile(re.escape(term), re.IGNORECASE).sub(_restore, text)
+    return text
+
+
+def term_protection_report(translated_text: str, terms: list[str]) -> list[dict[str, Any]]:
+    """纯只读的保护结果报告（缓存命中行同样用本函数重算，不改文本）。"""
+    report: list[dict[str, Any]] = []
+    for term in terms:
+        if not term:
+            continue
+        exact = translated_text.count(term)
+        if exact > 0:
+            report.append({"term": term, "protected": True, "count": exact})
+            continue
+        drifted = len(re.findall(re.escape(term), translated_text, re.IGNORECASE))
+        if drifted > 0:
+            report.append(
+                {"term": term, "protected": True, "count": drifted, "restored": True}
+            )
+        else:
+            report.append(
+                {
+                    "term": term,
+                    "protected": False,
+                    "reason": "term not found in translation",
+                }
+            )
+    return report

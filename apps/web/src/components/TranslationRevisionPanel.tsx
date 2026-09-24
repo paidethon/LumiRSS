@@ -3,23 +3,42 @@
  * - 每段可编辑译文：textarea 保存修订 / 撤销修订 / 查看机器原文；
  * - 修订失配标记：保存修订后源段已变化 → 「原文已更新」徽标；
  * - 重新生成：默认保留已修订段；显式「全部覆盖」才撤销并重译；
- * - 修订与机器原文一律按纯文本渲染（React 文本节点，绝不 HTML 注入）。 */
+ * - N086：每段「不翻译」开关（服务端持久；标记块不再参与生成，
+ *   已有缓存译文照常展示，没有则诚实显示原文）；
+ * - N083：受保护术语保留报告（✓ 已保留 / 未保护原因）；
+ * - N082：数字校验（基于可见数字差异，非语义判断），逐块列出差异，
+ *   点击定位到正文对应块；
+ * - 修订/机器原文/差异上下文一律按纯文本渲染（React 文本节点，
+ *   绝不 HTML 注入）。 */
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, PencilLine } from 'lucide-react'
+import { AlertCircle, Calculator, PencilLine } from 'lucide-react'
+import { scrollToBlock } from '../lib/linked-scroll'
 import {
   useGenerateTranslationSegmentsMutation,
+  useNoTranslateBlockMutation,
   useTranslationSegmentRevisionMutation,
 } from '../api/queries'
-import type { TranslationSegmentState } from '../api/types'
+import { getTranslationVerification } from '../api/client'
+import type {
+  TranslationSegmentState,
+  TranslationVerificationView,
+} from '../api/types'
 import type { TranslationSegmentBlockInput } from '../api/client'
 import type { ArticleBlock } from '../lib/translation-blocks'
 import { Button } from './ui/Button'
+import { Switch } from './ui/Switch'
 import { cx } from './ui/cx'
 
 function preview(text: string | null | undefined, max = 24): string {
   const clean = (text ?? '').replace(/\s+/g, ' ').trim()
   return clean.length > max ? `${clean.slice(0, max)}…` : clean
+}
+
+const FINDING_KIND_LABELS: Record<string, string> = {
+  missing: '缺失',
+  changed: '变动',
+  added: '新增',
 }
 
 export default function TranslationRevisionPanel({
@@ -37,6 +56,7 @@ export default function TranslationRevisionPanel({
   const [actionError, setActionError] = useState<string | null>(null)
   const revision = useTranslationSegmentRevisionMutation(entryRef)
   const generate = useGenerateTranslationSegmentsMutation(entryRef)
+  const noTranslate = useNoTranslateBlockMutation(entryRef)
 
   const candidates = useMemo(
     () => segments.filter((s) => s.status !== 'failed' || s.translatedText !== null),
@@ -77,6 +97,14 @@ export default function TranslationRevisionPanel({
       { onError: (e) => setActionError(e instanceof Error ? e.message : '重新生成失败，请稍后重试。') },
     )
   }
+  const toggleNoTranslate = (marked: boolean) => {
+    if (selected === null) return
+    setActionError(null)
+    noTranslate.mutate(
+      { blockIndex: selected.index, marked },
+      { onError: (e) => setActionError(e instanceof Error ? e.message : '操作失败，请稍后重试。') },
+    )
+  }
 
   return (
     <section
@@ -93,6 +121,7 @@ export default function TranslationRevisionPanel({
           <PencilLine aria-hidden className="size-3.5" />
           译文修订{revisedCount > 0 ? `（${revisedCount} 段已修订）` : ''}
         </button>
+        <NumberVerificationSection entryRef={entryRef} />
         {open && (
           <>
             <Button
@@ -131,6 +160,7 @@ export default function TranslationRevisionPanel({
               {candidates.map((s) => (
                 <option key={s.index} value={s.index}>
                   第 {s.index + 1} 段 · {preview(s.userRevision ?? s.translatedText)}
+                  {s.noTranslate ? '（不翻译）' : ''}
                 </option>
               ))}
             </select>
@@ -142,6 +172,41 @@ export default function TranslationRevisionPanel({
                   <AlertCircle aria-hidden className="size-3" />
                   原文已更新：该段修订对应的源文已变化。
                 </p>
+              )}
+              {/* N086：不翻译开关（持久到服务端；标记块不参与生成）。 */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={selected.noTranslate}
+                  label="不翻译此段"
+                  onCheckedChange={toggleNoTranslate}
+                />
+                <span>不翻译此段</span>
+                {selected.noTranslate && selected.translatedText && (
+                  <span className="text-[var(--lumi-text-tertiary)]">
+                    已有译文将继续显示
+                  </span>
+                )}
+              </div>
+              {/* N083：受保护术语保留报告（诚实：未保护给原因）。 */}
+              {selected.protectedTerms.length > 0 && (
+                <ul className="flex flex-col gap-0.5" data-lumi-protect-report="">
+                  {selected.protectedTerms.map((p) => (
+                    <li key={p.term} className="text-[var(--lumi-text-tertiary)]">
+                      {p.protected ? (
+                        <>
+                          <span className="text-[var(--lumi-accent-text)]">✓</span>{' '}
+                          「{p.term}」已保留
+                          {p.count > 1 ? `（${p.count} 处）` : ''}
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[var(--lumi-warning, var(--lumi-text-secondary))]">⚠</span>{' '}
+                          「{p.term}」未保留：{p.reason === 'term not found in translation' ? '译文中未找到该词' : p.reason}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
               {sourceBlock !== null && (
                 <p className="max-h-16 overflow-y-auto text-[var(--lumi-text-tertiary)]">
@@ -192,5 +257,83 @@ export default function TranslationRevisionPanel({
         </div>
       )}
     </section>
+  )
+}
+
+/** N082 数字校验：按需请求 + 逐块差异列表 + 点击定位到块。
+ * 诚实文案：基于可见数字差异，非语义判断（CJK 数字不在范围）。 */
+function NumberVerificationSection({ entryRef }: { entryRef: string }) {
+  const [view, setView] = useState<TranslationVerificationView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = () => {
+    setBusy(true)
+    setError(null)
+    getTranslationVerification(entryRef)
+      .then((result) => setView(result))
+      .catch(() => setError('数字校验失败，请稍后重试。'))
+      .finally(() => setBusy(false))
+  }
+
+  const findings = (view?.blocks ?? []).flatMap((block) =>
+    block.findings.map((finding) => ({ blockIndex: block.blockIndex, finding })),
+  )
+
+  return (
+    <span data-lumi-number-verification="" className="inline-flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        aria-expanded={view !== null}
+        className="inline-flex items-center gap-1 font-medium text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)] disabled:opacity-60"
+      >
+        <Calculator aria-hidden className="size-3.5" />
+        {view === null ? '数字校验' : `数字校验（${view.totalFindings} 处差异）`}
+      </button>
+      {busy && <span className="text-[var(--lumi-text-tertiary)]">校验中…</span>}
+      {error !== null && (
+        <span role="alert" className="text-[var(--lumi-danger)]">{error}</span>
+      )}
+      {view !== null && (
+        <span className="flex w-full flex-col gap-1">
+          <span className="text-[var(--lumi-text-tertiary)]">
+            基于可见数字差异，非语义判断（中文数字不在范围内）。
+          </span>
+          {findings.length === 0 ? (
+            <span className="text-[var(--lumi-text-tertiary)]">
+              {view.blocks.length > 0 ? '未发现可见数字差异。' : '当前没有可校验的译文。'}
+            </span>
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {findings.map(({ blockIndex, finding }) => (
+                <li key={`${blockIndex}-${finding.kind}-${finding.token}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const container =
+                        document.querySelector<HTMLElement>('[data-reader-body]')
+                      if (container !== null) scrollToBlock(container, blockIndex)
+                    }}
+                    className="text-left text-[var(--lumi-text-secondary)] underline-offset-2 hover:text-[var(--lumi-accent-text)] hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    第 {blockIndex + 1} 段 ·{' '}
+                    <span className="font-medium">{FINDING_KIND_LABELS[finding.kind] ?? finding.kind}</span>{' '}
+                    {finding.token}
+                    {finding.kind !== 'added' && finding.sourceContext
+                      ? ` · 原文：…${finding.sourceContext}…`
+                      : ''}
+                    {finding.kind !== 'missing' && finding.translatedContext
+                      ? ` · 译文：…${finding.translatedContext}…`
+                      : ''}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </span>
+      )}
+    </span>
   )
 }

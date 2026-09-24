@@ -31,6 +31,7 @@ from lumirss.accounts_store import (
     AccountError,
     AccountsStore,
     InviteInvalid,
+    InviteNotActive,
     hash_password,
     hash_token,
     verify_password_hash,
@@ -46,7 +47,14 @@ from lumirss.middleware import (
     register_login_failure,
     reset_login_failures,
 )
-from lumirss.models import AuthStatus, LoginRequest, PasswordChangeRequest
+from lumirss.models import (
+    ActivationSourceResult,
+    AuthStatus,
+    LoginChallenge,
+    LoginRequest,
+    PasswordChangeRequest,
+)
+from lumirss.totp import TotpStore, check_second_factor
 
 router = APIRouter()
 
@@ -118,14 +126,21 @@ async def _current_user_id(request: Request) -> str | None:
 
 @router.post(
     "/api/v1/auth/login",
-    response_model=AuthStatus,
+    response_model=AuthStatus | LoginChallenge,
     response_model_exclude_none=True,
 )
-async def login(body: LoginRequest, request: Request, response: Response) -> AuthStatus:
+async def login(
+    body: LoginRequest, request: Request, response: Response
+) -> AuthStatus | LoginChallenge | JSONResponse:
     """Verify credentials, mint a per-user session.
 
     Wrong-password and unknown-username share the generic failure shape
     and the same brute-force budget (no account oracle).
+
+    N007: when the account has TOTP enabled, a correct password does NOT
+    mint a session — the response is ``{totpRequired, pendingToken}`` and
+    the real session is issued by ``POST /auth/totp/verify`` (same
+    brute-force budget, one attempt per pending token).
     """
     if LumiSettings().LUMIRSS_AUTH_MODE != "session":
         # Legacy single-user mode: the reverse proxy owns credentials.
@@ -144,9 +159,22 @@ async def login(body: LoginRequest, request: Request, response: Response) -> Aut
     if user is None:
         register_login_failure(request.scope)
         return _reject(401, "invalid_credentials", "Incorrect username or password.")
+    user_id = str(user["id"])
+    # N007: TOTP-enabled accounts take the two-step path. The pending
+    # token is short-lived, single-use, hash-stored — not a session.
+    # NOTE: the brute-force budget is only reset when a session is
+    # actually minted — a correct password with pending second step does
+    # NOT clear accumulated failures (each verify attempt counts).
+    totp_store = TotpStore(request.app.state.control_db)
+    if await totp_store.is_enabled(user_id):
+        pending_token = await totp_store.create_pending_login(user_id)
+        await _control(request).audit(
+            actor=user_id, action="login_totp_pending", object_type="user", object_id=user_id
+        )
+        return LoginChallenge(totpRequired=True, pendingToken=pending_token)
     reset_login_failures(request.scope)
-    await _control(request).audit(actor=str(user["id"]), action="login", object_type="user", object_id=str(user["id"]))
-    return await _mint_session(request, response, str(user["id"]))
+    await _control(request).audit(actor=user_id, action="login", object_type="user", object_id=user_id)
+    return await _mint_session(request, response, user_id)
 
 
 @router.get(
@@ -208,9 +236,12 @@ async def logout_all(request: Request, response: Response) -> AuthStatus:
 )
 async def change_password(
     body: PasswordChangeRequest, request: Request, response: Response
-) -> AuthStatus:
+) -> AuthStatus | JSONResponse:
     """Change own password: verify current, replace hash, revoke ALL of
-    this user's sessions, then mint a fresh session for THIS device."""
+    this user's sessions, then mint a fresh session for THIS device.
+
+    N007: when the account has TOTP enabled, a valid second factor
+    (``totpCode``) is REQUIRED — server-enforced, not front-end."""
     user_id = await _current_user_id(request)
     if user_id is None:
         return _reject(401, "session_required", "Login required.")
@@ -219,6 +250,13 @@ async def change_password(
         return _reject(401, "session_required", "Login required.")
     if not verify_password_hash(body.currentPassword, str(user["password_hash"])):
         return _reject(401, "invalid_credentials", "Incorrect current password.")
+    second = await check_second_factor(
+        request.app.state.control_db, request.app.state.secrets_store, user_id, body.totpCode
+    )
+    if second == "missing":
+        return _reject(400, "totp_code_required", "两步验证已开启，需要验证码。")
+    if second == "invalid":
+        return _reject(401, "totp_code_invalid", "验证码无效。")
     if len(body.newPassword) < MIN_PASSWORD_LENGTH:
         return _reject(400, "weak_password", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
     if len(body.newPassword.encode("utf-8")) > MAX_PASSWORD_BYTES:
@@ -234,18 +272,26 @@ async def change_password(
 @router.get("/api/v1/auth/activation-preview", response_model_exclude_none=True)
 async def activation_preview(request: Request, token: str) -> dict[str, object]:
     """Honest activation screen state: is the invite usable, is a
-    FreshRSS account ready? Reveals nothing beyond yes/no — no labels,
+    FreshRSS account ready? Reveals nothing beyond yes/no for a broken
+    link — for a scheduled invite (N002) it additionally echoes the
+    server clock (the ONLY clock the boundary consults) as serverTime
+    and the notBefore instant, so the UI can render 等待生效. No labels,
     no emails, no pool usernames."""
     accounts = _control(request)
     token_hash = hash_token(token)
     row = await accounts.get_invite_state_by_token(token_hash)
-    now = datetime.now(UTC).timestamp()
-    valid = bool(row) and row["used_at"] is None and row["revoked_at"] is None and int(row["expires_at"]) > now
+    now_epoch = int(datetime.now(UTC).timestamp())
+    base_valid = bool(row) and row["used_at"] is None and row["revoked_at"] is None and int(row["expires_at"]) > now_epoch
+    not_before = int(row["not_before"]) if (row is not None and row["not_before"] is not None) else None
+    waiting = bool(base_valid and not_before is not None and not_before > now_epoch)
+    valid = bool(base_valid and not waiting)
     pool = await accounts.pool_status()
     return {
         "valid": valid,
         "kind": str(row["kind"]) if (valid and row) else None,
         "freshrssReady": bool(valid and pool.get("ready", 0) > 0),
+        "notBefore": _iso(not_before) if (waiting and not_before is not None) else None,
+        "serverTime": _iso(now_epoch),
     }
 
 
@@ -254,13 +300,20 @@ async def activation_preview(request: Request, token: str) -> dict[str, object]:
     response_model=AuthStatus,
     response_model_exclude_none=True,
 )
-async def activate_account(body: ActivateAccountRequest, request: Request, response: Response) -> AuthStatus:
+async def activate_account(body: ActivateAccountRequest, request: Request, response: Response) -> AuthStatus | JSONResponse:
     """Redeem a signup invite: create the independent account, bind an
     own FreshRSS account from the pool, mint a session.
 
     Pool-empty is an explicit pending-binding state — the account is
     usable and the UI shows "RSS source binding pending"; the server
     never falls back to shared credentials.
+
+    N001: a scheme-stamped invite records the scheme on the account and
+    subscribes the scheme's initial sources best-effort — failures are
+    listed per URL in ``initialSources`` and never block activation.
+    N002: a scheduled invite (not_before in the future by the SERVER
+    clock) is rejected with the stable 403 invite_not_active carrying
+    serverTime + notBefore; the token is not burned.
     """
     if LumiSettings().LUMIRSS_AUTH_MODE != "session":
         return _reject(400, "invalid_request", "Activation is not available in single-user mode.")
@@ -273,9 +326,18 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
     token_hash = hash_token(body.token)
     try:
         invite = await accounts.redeem_invite(body.token)
-    except InviteInvalid:
+    except InviteNotActive as exc:
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, detail="not_active")
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"type": "invite_not_active", "message": "This invitation is not active yet.", "serverTime": _iso(exc.now), "notBefore": _iso(exc.not_before)}},
+            headers=_NO_STORE,
+        )
+    except InviteInvalid as exc:
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=exc.invite_id, detail="invite_invalid")
         return _reject(400, "invite_invalid", "Invitation is invalid, expired or already used.")
     if str(invite.get("kind") or "signup") != "signup":
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), detail="kind_not_signup")
         return _reject(400, "invite_invalid", "This invitation is not a signup invite.")
     try:
         user = await accounts.create_user(
@@ -288,17 +350,35 @@ async def activate_account(body: ActivateAccountRequest, request: Request, respo
         # Restore the invite: a failed signup (name taken, weak password)
         # must not burn the one-time token.
         await accounts.restore_unused_invite(token_hash)
+        await accounts.audit(actor="anonymous", action="invite_activation_failed", object_type="invite", object_id=str(invite.get("id")), detail="account_create_rejected")
         return _reject(400, "invalid_username", str(exc))
     user_id = str(user["id"])
     await accounts.mark_invite_used_by(token_hash, user_id)
     # FreshRSS binding from the pool — atomic assignment, honest pending.
-    assigned = await accounts.pool_assign(user_id)
+    # A held pool account (N003) is converted assigned for THIS user.
+    assigned = await accounts.pool_assign(user_id, held_freshrss_username=(str(invite["held_pool_account"]) if invite.get("held_pool_account") else None))
     if assigned is not None:
         from lumirss.control_resources import bind_freshrss_account
 
         await bind_freshrss_account(request.app.state, user_id, str(assigned["freshrss_username"]), str(assigned["base_url"]))
+    # Scheme bookkeeping (N001): record scheme on the account row, then
+    # best-effort subscribe of the scheme's initial sources.
+    initial_sources: list[ActivationSourceResult] | None = None
+    scheme_id = str(invite["scheme_id"]) if invite.get("scheme_id") else None
+    if scheme_id:
+        scheme = await accounts.get_scheme(scheme_id)
+        if scheme is not None:
+            await accounts.set_user_scheme(user_id, scheme_id)
+            urls = [str(u) for u in scheme.get("initial_source_urls") or []]
+            if urls:
+                from lumirss.control_resources import apply_scheme_initial_sources
+
+                results = await apply_scheme_initial_sources(request.app.state, user_id, urls)
+                initial_sources = [ActivationSourceResult(**result) for result in results]
     await accounts.audit(actor=user_id, action="account_activate", object_type="user", object_id=user_id, detail="pool_assigned" if assigned else "binding_pending")
-    return await _mint_session(request, response, user_id)
+    status = await _mint_session(request, response, user_id)
+    status.initialSources = initial_sources
+    return status
 
 
 @router.post(

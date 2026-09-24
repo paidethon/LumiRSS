@@ -8,6 +8,7 @@ Lumi 自有状态：只影响「全部」时间线的显示过滤，不触碰 Fr
 字符串 = 设置（归一化为 UTC Z）。
 """
 
+from datetime import datetime
 from typing import Any
 
 from lumirss.storage import Database
@@ -62,6 +63,9 @@ def _reader_style_from_row(row: Any) -> dict[str, Any] | None:
 
 EXTRACT_POLICIES = ("rss", "web")
 
+# N033：显式编码覆盖（用户经 reparse 诊断选择；None = 跟随自动检测）。
+ENCODING_OVERRIDES = ("utf-8", "declared", "detected")
+
 # F055：阅读样式覆盖允许的键与边界（超集拒绝、越界钳制）。
 READER_STYLE_KEYS = {
     "fontSize": (12, 28),
@@ -102,7 +106,30 @@ def _ai_disabled_from_row(row: Any) -> bool:
     return bool(value)
 
 
+def _mute_windows_from_row(row: Any) -> list[dict[str, Any]] | None:
+    """N015：mute_windows_json → 已验证窗口列表（损坏 JSON 诚实降级 None）。"""
+    from lumirss.mute_windows import load_windows
+
+    try:
+        raw = row["mute_windows_json"]
+    except (IndexError, KeyError):
+        return None
+    if not raw:
+        return None
+    try:
+        return load_windows(raw)
+    except ValueError:
+        return None
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
+    encoding_override = None
+    try:
+        raw_encoding = row["encoding_override"]
+    except (IndexError, KeyError):
+        raw_encoding = None
+    if raw_encoding in ENCODING_OVERRIDES:
+        encoding_override = raw_encoding
     return {
         "feedUrl": str(row["feed_url"]),
         "hiddenUntil": row["hidden_until"],
@@ -111,6 +138,8 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "extractPolicy": row["extract_policy"] or "rss",
         "readerStyle": _reader_style_from_row(row),
         "aiDisabled": _ai_disabled_from_row(row),
+        "muteWindows": _mute_windows_from_row(row),
+        "encodingOverride": encoding_override,
         "updatedAt": str(row["updated_at"] or ""),
     }
 
@@ -129,21 +158,21 @@ class SourceOverrideStore:
     async def list_overrides(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL ORDER BY updated_at DESC"
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL ORDER BY updated_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
     async def get_override(self, feed_url: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, updated_at FROM source_overrides WHERE feed_url = ?",
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, updated_at FROM source_overrides WHERE feed_url = ?",
             (feed_url,),
         )
         if row is None:
             return None
         result = _row_to_dict(row)
-        # F048/F055：提取策略（≠rss）与阅读样式覆盖也算有效覆盖，
-        # 否则仅设置策略的来源会被当成「无覆盖」丢弃。
+        # F048/F055：提取策略（≠rss）、阅读样式与 N033 编码覆盖也算有效
+        # 覆盖，否则仅设置策略的来源会被当成「无覆盖」丢弃。
         if (
             result["hiddenUntil"] is None
             and result["showFrom"] is None
@@ -151,6 +180,8 @@ class SourceOverrideStore:
             and result["extractPolicy"] == "rss"
             and result["readerStyle"] is None
             and not result["aiDisabled"]
+            and result["muteWindows"] is None
+            and result["encodingOverride"] is None
         ):
             return None
         return result
@@ -198,9 +229,10 @@ class SourceOverrideStore:
         )
         if hidden_value is None and show_value is None and stale_value is None:
             # 所有时间维度都空 → 清理行，保持表紧凑（F066：ai_disabled/
-            # extract_policy/reader_style 等其它维度仍有时保留）。
+            # extract_policy/reader_style/mute_windows/encoding_override
+            # 等其它维度仍有值时保留）。
             row = await self._db.fetch_one(
-                "SELECT ai_disabled, extract_policy, reader_style_json FROM source_overrides WHERE feed_url = ?",
+                "SELECT ai_disabled, extract_policy, reader_style_json, mute_windows_json, encoding_override FROM source_overrides WHERE feed_url = ?",
                 (feed_url,),
             )
             keep = (
@@ -209,6 +241,8 @@ class SourceOverrideStore:
                     bool(row["ai_disabled"])
                     or (row["extract_policy"] or "rss") != "rss"
                     or bool(row["reader_style_json"])
+                    or bool(row["mute_windows_json"])
+                    or row["encoding_override"] in ENCODING_OVERRIDES
                 )
             )
             if not keep:
@@ -304,6 +338,45 @@ class SourceOverrideStore:
             return None
         return style if isinstance(style, dict) and style else None
 
+    async def set_encoding_override(self, feed_url: str, override: str | None) -> None:
+        """N033：保存/清除 per-source 编码覆盖（None = 清除）。
+
+        只影响未来的抓取/解码（feed 预览、reparse）；已投影的历史数据
+        绝不回写（FreshRSS 摄取路径的解码在上游完成）。
+        """
+        if override is not None and override not in ENCODING_OVERRIDES:
+            raise ValueError("encoding override must be 'utf-8', 'declared' or 'detected'.")
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT encoding_override FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None:
+            if override is None:
+                return
+            await self._db.execute(
+                "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, encoding_override, updated_at) VALUES (?, NULL, NULL, NULL, 'rss', ?, ?)",
+                (feed_url, override, utc_now()),
+            )
+            return
+        if row["encoding_override"] == override:
+            return
+        await self._db.execute(
+            "UPDATE source_overrides SET encoding_override = ?, updated_at = ? WHERE feed_url = ?",
+            (override, utc_now(), feed_url),
+        )
+
+    async def get_encoding_override(self, feed_url: str) -> str | None:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT encoding_override FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None:
+            return None
+        value = row["encoding_override"]
+        return value if value in ENCODING_OVERRIDES else None
+
     async def stale_alert_configs(self) -> dict[str, int]:
         """F001：已启用新鲜度预警的 feed_url → 阈值小时数。"""
         await self._db.migrate()
@@ -323,22 +396,32 @@ class SourceOverrideStore:
         return [str(row["feed_url"]) for row in rows]
 
 
-async def filter_timeline_items(db: Database, items: list[Any]) -> list[Any]:
-    """F11/F13：对「全部/未读」通用时间线应用来源覆盖过滤。
+async def filter_timeline_items(
+    db: Database, items: list[Any], *, now_local: datetime | None = None
+) -> list[Any]:
+    """F11/F13/N015：对「全部/未读」通用时间线应用来源覆盖过滤。
 
     - F11：hidden_until 未到期的来源条目被过滤（到期自动恢复）；
     - F13：show_from 之后发布才显示（更早历史在全部时间线隐藏，
-      来源自身视图不受影响——显式选择该来源 = 用户明确要看）。
+      来源自身视图不受影响——显式选择该来源 = 用户明确要看）；
+    - N015：mute_windows 命中当前本地墙钟时该来源条目被过滤（周期
+      性，无到期概念；窗口未命中自动恢复）。
     feed 归属经派生投影（search_entries）解析；投影未覆盖的条目按
     「未知 ≠ 隐藏」保留（投影落后是暂态，不造成静默丢失）。页面小、
-    IN 查询有界；无任何覆盖行时零额外查询直接返回。"""
+    IN 查询有界；无任何覆盖行时零额外查询直接返回。
+
+    N015 时区口径：服务器本地墙钟（与 mail_digest 回退语义一致）；
+    ``now_local`` 可注入（测试用），缺省取真实当前时间。"""
+    from lumirss.mute_windows import any_window_hit, load_windows
+
     await db.migrate()
     rows = await db.fetch_all(
-        "SELECT feed_url, hidden_until, show_from FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL"
+        "SELECT feed_url, hidden_until, show_from, mute_windows_json FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR mute_windows_json IS NOT NULL"
     )
     if not rows:
         return items
     now_iso = utc_now()
+    local_now = now_local or datetime.now().astimezone()
     hidden = {
         str(row["feed_url"])
         for row in rows
@@ -347,7 +430,17 @@ async def filter_timeline_items(db: Database, items: list[Any]) -> list[Any]:
     show_from_map = {
         str(row["feed_url"]): str(row["show_from"]) for row in rows if row["show_from"]
     }
-    if not hidden and not show_from_map:
+    muted_windows: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        raw = row["mute_windows_json"]
+        if not raw:
+            continue
+        try:
+            windows = load_windows(raw)
+        except ValueError:
+            continue  # 损坏窗口定义诚实降级为「不静音」
+        muted_windows[str(row["feed_url"])] = windows
+    if not hidden and not show_from_map and not muted_windows:
         return items
     refs = [item.entryRef for item in items]
     placeholders = ",".join("?" for _ in refs)
@@ -363,6 +456,8 @@ async def filter_timeline_items(db: Database, items: list[Any]) -> list[Any]:
         if feed_url is not None:
             if feed_url in hidden:
                 continue  # F11：隐藏期内不出现在通用时间线
+            if any_window_hit(muted_windows.get(feed_url), local_now):
+                continue  # N015：分时静音窗口命中，不在通用时间线出现
             show_from = show_from_map.get(feed_url)
             published = ref_published.get(item.entryRef)
             if show_from and published and published < show_from:

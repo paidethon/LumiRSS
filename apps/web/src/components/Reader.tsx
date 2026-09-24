@@ -26,8 +26,7 @@ import {
   clearFocusActive,
 } from '../lib/reader-focus'
 import {
-  findStartBlockIndex,
-  SPEECH_BLOCK_SELECTOR,
+  collectSpeechCollection,
   type SpeechCollection,
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
@@ -49,6 +48,8 @@ const ReaderTranslation = lazy(() => import('./ReaderTranslation'))
 const ArticleConversation = lazy(() => import('./ArticleConversation'))
 const ReaderSummary = lazy(() => import('./ReaderSummary'))
 const ProvenanceCard = lazy(() => import('./ProvenanceCard'))
+// N031：文章修订差异面板（元数据量级，按需查询；无修订零渲染）。
+const EntryRevisionsPanel = lazy(() => import('./EntryRevisionsPanel'))
 const EntryNotesBacklinks = lazy(() => import('./EntryNotesBacklinks'))
 const EnclosurePlayer = lazy(() => import('./EnclosurePlayer').then((m) => ({ default: m.EnclosurePlayer })))
 import ReaderPlaceholder from './ReaderPlaceholder'
@@ -64,6 +65,11 @@ const AnnotationsLayer = lazy(() =>
 )
 const ReadingRuler = lazy(() =>
   import('./ReadingRuler').then((m) => ({ default: m.ReadingRuler })),
+)
+// Bundle guard：N052 分页阅读非首读默认路径（阅读模式默认滚动）——
+// 与行辅助线同一 lazy 分包模式。
+const ReaderPager = lazy(() =>
+  import('./ReaderPager').then((m) => ({ default: m.ReaderPager })),
 )
 const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
 const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
@@ -216,6 +222,9 @@ export default function Reader() {
   // F11：进度条开关；F17：按屏翻页开关（均来自 settings store）。
   const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
+  // N052：阅读模式（设备本地）——'paged' = 分页阅读，优先于 F17 按屏翻页。
+  const readerReadingMode = useAppSettings((s) => s.settings.readerReadingMode)
+  const pagedReading = readerReadingMode === 'paged'
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
   // F055 消费端：按 entry 的 feed 匹配 source_overrides.readerStyle
   // （fontSize/lineHeight/width 三键，全局仍是基础、覆盖仅这三键；
@@ -268,6 +277,8 @@ export default function Reader() {
   /** F20/R05：正文容器 ref（AnnotationsLayer 选区监听 / ReadingRuler
    * 指针跟随用；与 scrollRef 同一 DOM 节点，通过双写保持同步）。 */
   const articleScrollRef = useRef<HTMLDivElement | null>(null)
+  // N052：正文 article 元素（分页多栏 track，ReaderPager 施加样式用）。
+  const articleElementRef = useRef<HTMLElement | null>(null)
   // F054：正文容器（收集文中链接）；F048：提取失败徽标状态。
   const contentRef = useRef<HTMLElement | null>(null)
 
@@ -376,21 +387,28 @@ const getFindRoot = useCallback(
   [],
 )
 
-// P18 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序，
-// 下标即块索引——引擎入队时空块跳过但原始下标保留，高亮按块定位）。
-// 总量上限（20k）由引擎入队时单点施加。
+// P18/NF1 朗读块收集：视口顶部线所在段落往后（含）的全部块文本（DOM 序；
+// 块 id = SPEECH_BLOCK_SELECTOR 文档序下标，高亮/书签/选区共享——启用
+// 听读排除后 texts 下标与块 id 解耦，见 lib/reader-speech 的
+// collectSpeechCollection）。设备本地的排除开关/发音词典在调用时刻生效
+// （消费者订阅设置变化后重渲染并重新收集；本回调保持纯读取，不订阅
+// store）。交替听读所需的译文从 overlay DOM（data-lb-t 节点）诚实读取
+// ——没有译文就 null，绝不发起翻译。总量上限（20k）由引擎入队时单点施加。
 const collectSpeechBlocks = useCallback((): SpeechCollection | null => {
   const container = scrollRef.current
   const article = container?.querySelector('.lumi-reader-article')
   if (container === null || article === undefined || article === null) return null
-  const blocks = Array.from(article.querySelectorAll(SPEECH_BLOCK_SELECTOR))
-  if (blocks.length === 0) return null
-  const containerTop = container.getBoundingClientRect().top
-  const tops = blocks.map((block) => block.getBoundingClientRect().top)
-  const startIndex = findStartBlockIndex(tops, containerTop)
-  const texts = blocks.map((block) => block.textContent ?? '')
-  if (texts.slice(startIndex).every((text) => text.trim() === '')) return null
-  return { texts, startIndex }
+  const s = useAppSettings.getState().settings
+  return collectSpeechCollection(container, article, {
+    exclusions: {
+      skipCode: s.speechSkipCode,
+      skipTables: s.speechSkipTables,
+      skipFootnotes: s.speechSkipFootnotes,
+      skipCaptions: s.speechSkipCaptions,
+      skipLinkOnly: s.speechSkipLinkOnly,
+    },
+    lexicon: s.speechLexicon,
+  })
 }, [])
 
 // F18：切文章自动停止（自动滚屏/查找/回顶状态一并复位）。
@@ -676,6 +694,7 @@ const handleScroll = useCallback(() => {
         className="lumi-reader-scroll lumi-reader-bg-image h-full overflow-y-auto bg-[var(--lumi-reader-bg)]"
       >
       <article
+        ref={articleElementRef}
         className="lumi-reader lumi-reader-article mx-auto py-6"
         style={
           {
@@ -779,6 +798,10 @@ const handleScroll = useCallback(() => {
         <Suspense fallback={null}>
         <ProvenanceCard key={`provenance-${detail.entryRef}`} detail={detail} />
         </Suspense>
+        {/* N031：修订记录（内容哈希变化的摄取历史；无修订不渲染入口） */}
+        <Suspense fallback={null}>
+          <EntryRevisionsPanel key={`revisions-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
         {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
         <Suspense fallback={null}>
         <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
@@ -821,8 +844,9 @@ const handleScroll = useCallback(() => {
         )}
       </article>
       </div>
-      {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响） */}
-      {readerPagedMode && (
+      {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响）。
+          N052：阅读模式 = 分页时由 ReaderPager 接管翻页，F17 不重复出现。 */}
+      {!pagedReading && readerPagedMode && (
         <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-1.5" data-lumi-paged-nav="">
           <IconButton
             size="lg"
@@ -842,6 +866,16 @@ const handleScroll = useCallback(() => {
           />
         </div>
       )}
+      {/* N052/N053：分页阅读（多栏横向翻页 + 点按翻页区 + 页码指示）。
+          局部 Suspense：lazy 首帧挂起只影响翻页 UI 本身。 */}
+      <Suspense fallback={null}>
+        <ReaderPager
+          enabled={pagedReading}
+          containerRef={scrollRef}
+          articleRef={articleElementRef}
+          entryRef={detailEntryRef}
+        />
+      </Suspense>
       {/* F25：回到顶部 / 返回刚才位置（>600px 且未到底出现；用户滚动重置） */}
       {backMode !== null && (
         <div className="absolute bottom-6 right-4 z-10" data-lumi-back-nav="">

@@ -139,6 +139,7 @@ from lumirss.mail_digest import (
 )
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
+from lumirss.mute_windows import MuteWindowsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
     VaultPermissionDenied,
@@ -158,6 +159,13 @@ from lumirss.opml import (
 )
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
 from lumirss.rag import RagModelUnavailable, RagRebuildBusy
+from lumirss.reading_queue import (
+    QueueInvalid,
+    QueueItemDone,
+    QueueItemNotFound,
+    QueueSnapshotLimit,
+    QueueSnapshotNotFound,
+)
 from lumirss.research_pack_zip import ZipInvalid, ZipTooLarge
 from lumirss.restore import (
     RestoreConfirmationRequired,
@@ -165,9 +173,11 @@ from lumirss.restore import (
     RestorePreviewRequired,
 )
 from lumirss.rsshub import (
+    RssHubFavoriteNotFound,
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
+    RssHubRefreshRateLimited,
     RssHubRouteNotFound,
 )
 from lumirss.rsshub_control import (
@@ -181,9 +191,11 @@ from lumirss.saved_search_store import (
     SavedSearchLimit,
     SavedSearchNotFound,
 )
+from lumirss.search_debug import SearchEntryNotFound
 from lumirss.search_index import SearchQueryError
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
+from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
@@ -200,6 +212,7 @@ from lumirss.workspace_archive import (
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
 from lumirss.workspace_goals import GoalInvalid
+from lumirss.workspace_snapshots import WorkspaceSnapshotNotFound
 from lumirss.workspace_templates import (
     TemplateExists,
     TemplateInvalid,
@@ -208,6 +221,7 @@ from lumirss.workspace_templates import (
 from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
+    WorkspaceItemPinned,
     WorkspaceNotFound,
     WorkspaceRevisionConflict,
 )
@@ -251,6 +265,8 @@ _ERROR_RESPONSES = {
     RssHubRouteNotFound: (404, "rsshub_route_not_found"),
     RssHubInvalidParameters: (400, "rsshub_invalid_parameters"),
     RssHubFetchError: (502, "rsshub_fetch_error"),
+    # N021 route favorites
+    RssHubFavoriteNotFound: (404, "rsshub_favorite_not_found"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
@@ -291,6 +307,8 @@ _ERROR_RESPONSES = {
     RequestBodyTooLarge: (413, "request_too_large"),
     # 0022 global search
     SearchQueryError: (400, "invalid_search_query"),
+    # N143 why-missed：ref 不在本用户作用域（含他人条目 → 不泄露存在性）
+    SearchEntryNotFound: (404, "search_entry_not_found"),
     # session authentication (LUMIRSS_AUTH_MODE=session)
     InvalidCredentials: (401, "invalid_credentials"),
     PasswordNotInitialized: (503, "auth_not_initialized"),
@@ -307,6 +325,16 @@ _ERROR_RESPONSES = {
     ReservedWorkspaceError: (409, "reserved_workspace"),
     # P15（响应体额外带 currentRevision —— 见专用 handler）
     WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
+    # N102：固定条目拒绝静默移除（force=1 才放行）
+    WorkspaceItemPinned: (409, "workspace_item_pinned"),
+    # N105：快照不存在（不跨工作区取快照）
+    WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
+    # N041/N042/N043：今日必读队列（稳定错误信封）
+    QueueInvalid: (400, "invalid_queue"),
+    QueueItemNotFound: (404, "queue_item_not_found"),
+    QueueItemDone: (409, "queue_item_done"),
+    QueueSnapshotNotFound: (404, "queue_snapshot_not_found"),
+    QueueSnapshotLimit: (400, "queue_snapshot_limit"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -377,6 +405,11 @@ _ERROR_RESPONSES = {
     # F030 问答模板
     QaTemplateNotFound: (404, "qa_template_not_found"),
     QaTemplateInvalid: (422, "invalid_qa_template"),
+    # N013 来源别名 + 改名历史
+    SourceAliasInvalid: (422, "invalid_source_alias"),
+    SourceAliasNotFound: (404, "source_alias_not_found"),
+    # N015 来源分时静音窗口
+    MuteWindowsInvalid: (422, "invalid_mute_windows"),
     # W5: F081–F100
     BatchEditInvalid: (422, "invalid_batch_edit"),
     MergeInvalid: (422, "invalid_merge"),
@@ -437,7 +470,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubNotConfigured)
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
-    @app.exception_handler(RssHubFetchError)
+    @app.exception_handler(RssHubFavoriteNotFound)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
@@ -468,6 +501,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SecretsStoreError)
     @app.exception_handler(RequestBodyTooLarge)
     @app.exception_handler(SearchQueryError)
+    @app.exception_handler(SearchEntryNotFound)
     @app.exception_handler(InvalidCredentials)
     @app.exception_handler(PasswordNotInitialized)
     @app.exception_handler(WeakPassword)
@@ -533,6 +567,9 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(SummaryVersionNotFound)
     @app.exception_handler(QaTemplateNotFound)
     @app.exception_handler(QaTemplateInvalid)
+    @app.exception_handler(SourceAliasInvalid)
+    @app.exception_handler(SourceAliasNotFound)
+    @app.exception_handler(MuteWindowsInvalid)
     # W5: F081–F100
     @app.exception_handler(BatchEditInvalid)
     @app.exception_handler(MergeInvalid)
@@ -557,6 +594,13 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(DryRunUnsupported)
     @app.exception_handler(ZipInvalid)
     @app.exception_handler(ZipTooLarge)
+    @app.exception_handler(WorkspaceItemPinned)
+    @app.exception_handler(WorkspaceSnapshotNotFound)
+    @app.exception_handler(QueueInvalid)
+    @app.exception_handler(QueueItemNotFound)
+    @app.exception_handler(QueueItemDone)
+    @app.exception_handler(QueueSnapshotNotFound)
+    @app.exception_handler(QueueSnapshotLimit)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(
@@ -577,6 +621,43 @@ def register_error_handlers(app) -> None:
                     "type": "workspace_revision_conflict",
                     "message": str(exc),
                     "currentRevision": exc.current_revision,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubFetchError)
+    async def rsshub_fetch_error_handler(
+        request: Request, exc: RssHubFetchError
+    ) -> JSONResponse:
+        """N026：502 rsshub_fetch_error 稳定类型不变，额外携带
+        failureClass（rsshub_unreachable / upstream_reject / auth_failure
+        / not_found / rate_limited / network_error）——路由健康时间线与
+        Web 文案据此分辨故障，不再全部坍缩成网络错误。"""
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "rsshub_fetch_error",
+                    "message": str(exc),
+                    "failureClass": exc.failure_class,
+                }
+            },
+        )
+
+    @app.exception_handler(RssHubRefreshRateLimited)
+    async def rsshub_refresh_rate_limited_handler(
+        request: Request, exc: RssHubRefreshRateLimited
+    ) -> JSONResponse:
+        """N027：刷新限速 → 429 + Retry-After 秒（稳定错误类型
+        rsshub_refresh_rate_limited；响应体同时带 retryAfterSeconds）。"""
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after_s)},
+            content={
+                "error": {
+                    "type": "rsshub_refresh_rate_limited",
+                    "message": str(exc),
+                    "retryAfterSeconds": exc.retry_after_s,
                 }
             },
         )

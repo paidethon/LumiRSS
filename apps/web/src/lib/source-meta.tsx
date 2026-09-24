@@ -9,7 +9,9 @@
  */
 
 import { memo } from 'react'
+import { useSourceAliasesQuery } from '../api/queries'
 import { useReaderUi } from '../store/reader-ui'
+import { resolveDisplayTitle } from './source-aliases'
 import { cx } from '../components/ui/cx'
 
 /** 来源显示名：空白/undefined → 「来源未知」。 */
@@ -51,7 +53,9 @@ export function useGoToFeed() {
 }
 
 /** 来源按钮/文本：feedUrl 存在 → button（进入该来源）；否则纯文本。
- *  不可点击绝不伪装按钮（无 href/role/cursor）。 */
+ *  不可点击绝不伪装按钮（无 href/role/cursor）。
+ *  N013：展示名按「服务端别名（feedUrl 键）> 本地别名（feedTitle 键）
+ *  > 上游标题」解析；别名加载失败/未到达时诚实回退上游标题。 */
 export function SourceLabel({
   feedTitle,
   feedUrl,
@@ -63,7 +67,13 @@ export function SourceLabel({
   className?: string
   interactiveClassName?: string
 }) {
-  const name = resolveSourceName(feedTitle)
+  const aliasesQuery = useSourceAliasesQuery(feedUrl != null && feedUrl !== '')
+  const serverAliases = aliasesQuery.data?.items
+    ? new Map(aliasesQuery.data.items.map((alias) => [alias.feedUrl, alias.customName]))
+    : undefined
+  const name = resolveSourceName(
+    resolveDisplayTitle(feedUrl, feedTitle ?? '', serverAliases),
+  )
   const goToFeed = useGoToFeed()
   const clickable = feedUrl !== null && feedUrl !== undefined && feedUrl !== ''
   if (!clickable) {

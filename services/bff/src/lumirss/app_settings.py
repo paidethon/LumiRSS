@@ -130,7 +130,8 @@ class PortableSettings(BaseModel):
     listTimeFormat: Literal["relative", "absolute"] = "relative"
     listGroupByFeed: bool = False
     # F06 RSS 时间线排序（服务端 keyset；切换 = 换游标重建分页）。
-    timelineOrder: Literal["newest", "oldest"] = "newest"
+    # N034：新增 "received" = 按投影接收时间（服务端 ?sort=received）。
+    timelineOrder: Literal["newest", "oldest", "received"] = "newest"
     # F08 卡片滑动动作（屏幕边缘以外区域的横向滑动）。
     cardSwipeAction: Literal["none", "read", "readLater", "star"] = "read"
     # F11 阅读进度 / F15 代码换行 / F17 按屏翻页 / F28 搜索高亮。
@@ -214,7 +215,7 @@ class PortableSettingsPatch(BaseModel):
     listShowCover: bool | None = None
     listTimeFormat: Literal["relative", "absolute"] | None = None
     listGroupByFeed: bool | None = None
-    timelineOrder: Literal["newest", "oldest"] | None = None
+    timelineOrder: Literal["newest", "oldest", "received"] | None = None
     cardSwipeAction: Literal["none", "read", "readLater", "star"] | None = None
     readerShowReadingProgress: bool | None = None
     readerCodeWrap: bool | None = None

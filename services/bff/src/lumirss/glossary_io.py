@@ -85,6 +85,12 @@ async def import_terms(
             overwritten += 1
         else:
             skipped += 1
+    # N083：导入改变现役术语表 → 推进一次 glossary_version（整批一次，
+    # 不是逐条），分段翻译缓存自下一次读取起自然重算。
+    if imported or overwritten:
+        from lumirss.glossary import bump_glossary_version
+
+        await bump_glossary_version(db)
     return {
         "imported": imported,
         "skipped": skipped,

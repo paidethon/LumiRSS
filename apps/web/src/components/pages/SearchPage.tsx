@@ -8,6 +8,10 @@
  * - 结果行：标题 / 来源 / 时间 / 摘要片段（plain text，绝不
  *   dangerouslySetInnerHTML）+ matchedFields 徽标；
  * - 无限滚动翻页（cursor opaque 透传）；
+ * - N142「帮我转条件」：规则解析 → 可编辑 chips → 确认后应用；
+ * - N143「为什么没命中」：单条（own-scope）复跑过滤链归因；
+ * - N145「来源分布」：同参 SQL 聚合 + 近 30 日柱状（点来源即过滤）；
+ * - N147「暂存篮」：设备本地引用篮 + 批量加入工作区 / 导出 / 清空；
  * - 诚实状态：加载 / 空结果 / 错误重试 / 索引未就绪（index.entryCount
  *   === 0 时明确说明，不冒充「无结果」）；
  * - 搜索历史保留（本地 UI 数据，上限 10）。
@@ -18,7 +22,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import { Calendar, GitCompare, Loader2, Rss, Search, SlidersHorizontal, X } from 'lucide-react'
+import { BarChart3, Calendar, GitCompare, Loader2, Rss, Search, SearchX, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import {
   SEARCH_RESULTS_KEY,
   useCreateSavedSearchViewMutation,
@@ -43,12 +47,14 @@ import {
   type BuilderFilters,
   type QuickDateRangeKind,
 } from '../../lib/search-advanced'
+import { parseSearchQuery } from '../../lib/search-insight'
 import { HighlightText, splitTerms } from '../../lib/highlight-text'
 import type { LibrarySearchItem } from '../../api/client'
 import type { SavedSearchView, SearchItem } from '../../api/types'
 import { useReaderUi } from '../../store/reader-ui'
 import { useAppSettings } from '../../store/app-settings'
 import { useSearchState } from '../../store/search-state'
+import { useSearchBasket, type SearchBasketItem } from '../../store/search-basket'
 import { resolveAndOpen } from '../../lib/open-item'
 import { stashSearchHits } from '../../lib/search-hit-locate'
 import { MatchExplainBadges } from '../MatchExplain'
@@ -59,6 +65,10 @@ import { isHistoryPaused } from '../../lib/search-history'
 import { ViewCompareDialog } from '../ViewCompareDialog'
 import { dateTimeFormatter, formatListTime } from '../../lib/date-format'
 import { SourceGlyph, SourceLabel } from '../../lib/source-meta'
+import { SearchParsePreview, type ParseDraft } from '../SearchParsePreview'
+import { SearchWhyMissedPanel } from '../SearchWhyMissedPanel'
+import { SearchDistributionPanel } from '../SearchDistributionPanel'
+import { SearchBasketPanel } from '../SearchBasketPanel'
 import {
   clearSearchHistory,
   pushSearchHistory,
@@ -223,6 +233,35 @@ function LibraryGroup({
   )
 }
 
+/** N147：搜索结果 → 暂存篮的行内勾选（去重与上限由篮 store 负责）。 */
+function BasketToggle({ item }: { item: SearchItem }) {
+  const items = useSearchBasket((s) => s.items)
+  const addMany = useSearchBasket((s) => s.addMany)
+  const checked = items.some((i) => i.entryRef === item.entryRef)
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => {
+        if (e.target.checked) {
+          const incoming: Omit<SearchBasketItem, 'addedAt'> = {
+            entryRef: item.entryRef,
+            title: item.title,
+            feedTitle: item.feedTitle,
+            publishedAt: item.publishedAt,
+            url: item.url ?? null,
+          }
+          addMany([incoming])
+        } else {
+          useSearchBasket.getState().remove(item.entryRef)
+        }
+      }}
+      aria-label={`加入暂存篮：${item.title}`}
+      className="size-3.5 shrink-0 accent-[var(--lumi-accent)]"
+    />
+  )
+}
+
 /** F28：RSS 结果行（标题与摘要接入安全高亮；terms 来自搜索词分词）。 */
 function ResultRow({
   item,
@@ -256,6 +295,8 @@ function ResultRow({
         )}
       >
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--lumi-text-tertiary)]">
+          {/* N147：加入暂存篮勾选（去重/上限由篮 store 负责） */}
+          <BasketToggle item={item} />
           <SourceGlyph name={item.feedTitle} />
           <SourceLabel
             feedTitle={item.feedTitle}
@@ -383,6 +424,107 @@ export default function SearchPage() {
   const [draftBuilder, setDraftBuilder] = useState<BuilderFilters>({ ...EMPTY_BUILDER_FILTERS })
   const advancedMode = isAdvancedSearchActive(dateRange, advanced)
   const builderActive = hasBuilderFilters(builder)
+
+  // ---- N142/N143/N145/N147：搜索理解与排障面板（互斥展开；会话内
+  //      本地状态，与日期/高级面板同一生命周期口径） ----
+  const [openPanel, setOpenPanel] = useState<'parse' | 'why' | 'distribution' | 'basket' | null>(
+    null,
+  )
+  const togglePanel = (panel: 'parse' | 'why' | 'distribution' | 'basket') => {
+    setOpenPanel((prev) => (prev === panel ? null : panel))
+  }
+  // N142：parse-query 结果（含 pending / error；应用前仅预览）。
+  const [parsePending, setParsePending] = useState(false)
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [parseResult, setParseResult] = useState<Awaited<ReturnType<typeof parseSearchQuery>> | null>(null)
+  const runParseQuery = () => {
+    const raw = input.trim()
+    if (raw === '') return
+    setOpenPanel('parse')
+    setParsePending(true)
+    setParseError(null)
+    setParseResult(null)
+    parseSearchQuery(raw)
+      .then((result) => {
+        setParseResult(result)
+        setParsePending(false)
+      })
+      .catch((error: unknown) => {
+        setParseError(error instanceof Error ? error.message : '解析失败，请稍后重试。')
+        setParsePending(false)
+      })
+  }
+  // N147：暂存篮（localStorage 持久化；挂载时装载一次）。
+  const basketItems = useSearchBasket((s) => s.items)
+  const loadBasket = useSearchBasket((s) => s.load)
+  useEffect(() => {
+    loadBasket()
+  }, [loadBasket])
+  // N145：来源分布与结果区完全同参（同 query + 同过滤链）。
+  const distributionParams = {
+    q: trimmed,
+    feedUrl: builder.sourceFeedUrl,
+    categoryId: categoryKey || null,
+    state: builder.unread === true || view === 'unread' ? ('unread' as const) : null,
+    favorite: builder.favorite === true || view === 'starred' ? true : null,
+    from: dateRange?.from ?? null,
+    to: dateRange?.to ?? null,
+    intitle: advanced?.intitle ?? null,
+    phrase: advanced?.phrase ?? null,
+    exclude: advanced?.exclude ?? null,
+    hasSummary: builder.hasSummary ?? null,
+  }
+  const sourceLabelOf = (feedUrl: string) =>
+    (subscriptions.data ?? []).find((sub) => sub.feedUrl === feedUrl)?.title ?? null
+
+  /** N142 应用：解析出的条件写入对应面板状态（可再编辑），剩余文本
+   * 成为查询；被移除的条件绝不应用。 */
+  const applyParsed = (draft: ParseDraft) => {
+    const f = draft.filters
+    const remaining = draft.remainingText.trim()
+    // 日期范围。
+    if (f.from || f.to) {
+      const from = f.from ?? null
+      const to = f.to ?? null
+      setDateRange({
+        from,
+        to,
+        label:
+          from !== null && to !== null
+            ? `${from} ~ ${to}`
+            : `${from !== null ? `自 ${from}` : '…'} ~ ${to !== null ? `至 ${to}` : '…'}`,
+      })
+      setDraftFrom(from ?? '')
+      setDraftTo(to ?? '')
+    } else {
+      setDateRange(null)
+    }
+    // 高级文本条件。
+    const nextAdvanced: AdvancedTextFilter = {
+      intitle: f.intitle ?? '',
+      phrase: f.phrase ?? '',
+      exclude: f.exclude ?? '',
+    }
+    setDraftAdvanced(nextAdvanced)
+    setAdvanced(hasAdvancedText(nextAdvanced) ? nextAdvanced : null)
+    // 来源（feedRef = feedUrl，与保存视图 filters_json 同构）。
+    const sourceFeedUrl = f.feedRef ?? null
+    setBuilder((prev) => ({ ...prev, sourceFeedUrl }))
+    setDraftBuilder((prev) => ({ ...prev, sourceFeedUrl }))
+    // 剩余关键词成为查询（为空 → 既有「需要至少一个搜索词」诚实态）。
+    if (remaining !== '') {
+      setInput(remaining)
+      setSubmitted(remaining)
+      if (!historyPaused) {
+        setHistory((prev) => pushSearchHistory(prev, remaining))
+      }
+    } else {
+      setInput('')
+      setSubmitted('')
+    }
+    setOpenPanel(null)
+    setParseResult(null)
+  }
 
   // F27/F29：清除条件后让基础搜索重新拉取——「清除恢复全部结果」是真实
   // 请求而非沿用旧缓存（条件存在期间基础查询未卸载，单靠 remount 不会
@@ -739,6 +881,88 @@ export default function SearchPage() {
             <SlidersHorizontal aria-hidden className="size-3.5" />
             高级
           </button>
+
+          {/* N142：帮我转条件（规则解析 → 可编辑 chips → 确认应用） */}
+          <button
+            type="button"
+            data-testid="parse-query-toggle"
+            aria-expanded={openPanel === 'parse'}
+            disabled={input.trim() === ''}
+            onClick={runParseQuery}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              'disabled:cursor-not-allowed disabled:opacity-60',
+              openPanel === 'parse'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+              input.trim() === '' &&
+                'cursor-not-allowed border-dashed text-[var(--lumi-text-tertiary)] opacity-60',
+            )}
+          >
+            <Sparkles aria-hidden className="size-3.5" />
+            帮我转条件
+          </button>
+
+          {/* N143：为什么没命中（单条复跑过滤链） */}
+          <button
+            type="button"
+            data-testid="why-missed-toggle"
+            aria-expanded={openPanel === 'why'}
+            aria-pressed={openPanel === 'why'}
+            onClick={() => togglePanel('why')}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              openPanel === 'why'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <SearchX aria-hidden className="size-3.5" />
+            为什么没命中
+          </button>
+
+          {/* N145：来源分布（SQL 聚合，点击来源 = 应用来源过滤） */}
+          <button
+            type="button"
+            data-testid="distribution-toggle"
+            aria-expanded={openPanel === 'distribution'}
+            aria-pressed={openPanel === 'distribution'}
+            onClick={() => togglePanel('distribution')}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              openPanel === 'distribution'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            <BarChart3 aria-hidden className="size-3.5" />
+            来源分布
+          </button>
+
+          {/* N147：暂存篮 */}
+          <button
+            type="button"
+            data-testid="basket-toggle"
+            aria-expanded={openPanel === 'basket'}
+            aria-pressed={openPanel === 'basket'}
+            onClick={() => togglePanel('basket')}
+            className={cx(
+              'flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs',
+              'transition-colors duration-[var(--lumi-motion-fast)]',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+              openPanel === 'basket'
+                ? 'bg-[var(--lumi-accent-soft)] font-medium text-[var(--lumi-accent-text)]'
+                : 'border border-[var(--lumi-border)] text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)]',
+            )}
+          >
+            暂存篮{basketItems.length > 0 ? `（${basketItems.length}）` : ''}
+          </button>
         </div>
 
         {/* F27：日期范围行内面板（非 modal；快捷范围即时应用，自定义走应用） */}
@@ -922,9 +1146,27 @@ export default function SearchPage() {
           </div>
         )}
 
-        {/* F27/F29：已应用条件 chips（可逐个清除） */}
-        {(dateRange !== null || advanced !== null) && (
+        {/* F27/F29 + N142/N145：已应用条件 chips（可逐个清除） */}
+        {(dateRange !== null || advanced !== null || builder.sourceFeedUrl !== null) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="已应用筛选">
+            {builder.sourceFeedUrl !== null && (
+              <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
+                <span data-testid="applied-source-label">
+                  来源: {sourceLabelOf(builder.sourceFeedUrl) ?? builder.sourceFeedUrl}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBuilder((prev) => ({ ...prev, sourceFeedUrl: null }))
+                    setDraftBuilder((prev) => ({ ...prev, sourceFeedUrl: null }))
+                  }}
+                  aria-label={`清除来源条件「${sourceLabelOf(builder.sourceFeedUrl) ?? builder.sourceFeedUrl}」`}
+                  className="relative flex size-6 items-center justify-center rounded-full transition-colors after:absolute after:-inset-y-2.5 after:-inset-x-1 after:content-[''] hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </span>
+            )}
             {dateRange !== null && (
               <span className="flex items-center gap-1 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] pl-2.5 pr-1 text-xs font-medium text-[var(--lumi-accent-text)]">
                 <span data-testid="applied-date-label">{dateRange.label}</span>
@@ -979,6 +1221,58 @@ export default function SearchPage() {
             )}
           </div>
         )}
+
+        {/* N142：帮我转条件预览（应用前不执行搜索；chips 可移除） */}
+        {openPanel === 'parse' && (
+          <SearchParsePreview
+            result={parseResult}
+            pending={parsePending}
+            error={parseError}
+            onApply={applyParsed}
+            onClose={() => setOpenPanel(null)}
+            sourceLabelOf={sourceLabelOf}
+          />
+        )}
+
+        {/* N143：为什么没命中（own-scope 单条归因） */}
+        {openPanel === 'why' && (
+          <SearchWhyMissedPanel
+            query={trimmed}
+            results={results}
+            filters={{
+              feedUrl: builder.sourceFeedUrl,
+              categoryId: categoryKey || null,
+              state: builder.unread === true || view === 'unread' ? 'unread' : null,
+              favorite: builder.favorite === true || view === 'starred' ? true : null,
+              from: dateRange?.from ?? null,
+              to: dateRange?.to ?? null,
+              intitle: advanced?.intitle ?? null,
+              phrase: advanced?.phrase ?? null,
+              exclude: advanced?.exclude ?? null,
+              hasSummary: builder.hasSummary ?? null,
+            }}
+          />
+        )}
+
+        {/* N145：来源分布 + 近 30 日柱状（同参聚合） */}
+        {openPanel === 'distribution' && hasQuery && (
+          <SearchDistributionPanel
+            params={distributionParams}
+            activeFeedUrl={builder.sourceFeedUrl}
+            onSelectSource={(feedUrl) => {
+              setBuilder((prev) => ({ ...prev, sourceFeedUrl: feedUrl }))
+              setDraftBuilder((prev) => ({ ...prev, sourceFeedUrl: feedUrl }))
+            }}
+          />
+        )}
+        {openPanel === 'distribution' && !hasQuery && (
+          <p role="status" className="mt-2 px-1 text-xs text-[var(--lumi-text-tertiary)]">
+            输入搜索词后查看来源分布。
+          </p>
+        )}
+
+        {/* N147：暂存篮（设备本地；批量加入工作区 / 导出 / 清空） */}
+        {openPanel === 'basket' && <SearchBasketPanel />}
 
         {/* pool #09：保存当前搜索（意图而非结果集）+ 已存视图 chips */}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">

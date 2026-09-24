@@ -16,11 +16,17 @@ maintain.
 
 from datetime import UTC
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
+    CollectionTiming,
+    SourceAliasHistoryItem,
+    SourceAliasHistoryList,
+    SourceAliasList,
+    SourceAliasUpdate,
+    SourceAliasView,
     SourceOverrideList,
     SourceOverrideResult,
     SourceOverrideUpdate,
@@ -140,6 +146,69 @@ async def list_source_overrides(request: Request) -> SourceOverrideList:
     )
 
 
+# ---- N013 来源改名（别名）+ 历史 ---------------------------------------------
+
+
+@router.get("/api/v1/sources/aliases", response_model=SourceAliasList)
+async def list_source_aliases(request: Request) -> SourceAliasList:
+    """全部来源别名（时间线/订阅展示的「服务端赢」数据源）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    items = await SourceAliasStore(request.app.state.db).list_aliases()
+    return SourceAliasList(items=[SourceAliasView(**item) for item in items])
+
+
+@router.put("/api/v1/sources/alias", response_model=SourceAliasView)
+async def set_source_alias(payload: SourceAliasUpdate, request: Request) -> SourceAliasView:
+    """设置/更名来源别名（upsert；custom_name 变化时写一条历史）。
+
+    upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
+    NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。"""
+    from lumirss.deps import _get_adapter
+    from lumirss.source_aliases import SourceAliasStore
+
+    upstream_name: str | None = None
+    try:
+        subscription = next(
+            (
+                sub
+                for sub in await _get_adapter(request).list_subscriptions()
+                if sub.feed_url == payload.feedUrl
+            ),
+            None,
+        )
+        if subscription is not None:
+            upstream_name = subscription.title
+    except Exception:  # noqa: BLE001 — 快照尽力而为，不阻塞别名保存
+        upstream_name = None
+    stored = await SourceAliasStore(request.app.state.db).put_alias(
+        payload.feedUrl, payload.customName, upstream_name
+    )
+    return SourceAliasView(**stored)
+
+
+@router.get("/api/v1/sources/alias/history", response_model=SourceAliasHistoryList)
+async def source_alias_history(
+    request: Request, feedUrl: str = Query(min_length=1), limit: int = Query(default=20, ge=1, le=20)
+) -> SourceAliasHistoryList:
+    """某来源的改名历史（新→旧，≤20；删除别名不删历史）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    items = await SourceAliasStore(request.app.state.db).history(feedUrl, limit)
+    return SourceAliasHistoryList(
+        items=[SourceAliasHistoryItem(**item) for item in items]
+    )
+
+
+@router.delete("/api/v1/sources/alias", status_code=204)
+async def delete_source_alias(request: Request, feedUrl: str = Query(min_length=1)) -> Response:
+    """清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。"""
+    from lumirss.source_aliases import SourceAliasStore
+
+    await SourceAliasStore(request.app.state.db).delete_alias(feedUrl)
+    return Response(status_code=204)
+
+
 async def _drop_feed_from_rag(request: Request, feed_url: str) -> None:
     """F066：禁用时把该来源条目从 RAG 索引移除（chunk+向量；
     重新启用后由重建/增量自然恢复纳入）。尽力而为，不阻塞设置写入。"""
@@ -158,11 +227,15 @@ async def _drop_feed_from_rag(request: Request, feed_url: str) -> None:
 
 @router.put("/api/v1/sources/overrides", response_model=SourceOverrideResult)
 async def set_source_override(payload: SourceOverrideUpdate, request: Request) -> SourceOverrideResult:
-    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
+    """设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001
+    staleAlertHours / N015 muteWindows）。
 
     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
-    staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。"""
+    staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；
+    muteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，
+    end<start 跨午夜，≤7 窗口/来源；非法 → 422）。"""
+    from lumirss.mute_windows import set_mute_windows
     from lumirss.source_overrides import (
         SourceOverrideStore,
         canonical_utc,
@@ -204,6 +277,9 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
     if "readerStyle" in fields:
         style = validate_reader_style(payload.readerStyle)
         await store.set_reader_style(payload.feedUrl, style)
+    # N015：分时静音窗口（子集校验，非法 → 422 稳定错误）。
+    if "muteWindows" in fields:
+        await set_mute_windows(request.app.state.db, payload.feedUrl, payload.muteWindows)
     # F066：per-source AI 禁用（服务端执行点统一判定，非仅 UI 隐藏）。
     if "aiDisabled" in fields:
         from lumirss.source_ai_gate import set_ai_disabled
@@ -221,6 +297,7 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
             "extractPolicy": "rss",
             "readerStyle": None,
             "aiDisabled": False,
+            "muteWindows": None,
             "updatedAt": utc_now(),
         }
     return SourceOverrideResult(**result)
@@ -365,6 +442,10 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
       （投影落后 ≠ 没有新内容）；
     - lastPublishedAt：该订阅在投影中最新的发布时间；
     - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+
+    N040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS
+    收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取
+    时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。
     """
     from datetime import datetime, timedelta
 
@@ -384,7 +465,7 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
             (since,),
         )
         sync_rows = await db.fetch_all(
-            "SELECT feed_url, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
+            "SELECT feed_url, MAX(published_at) AS overall_published, MAX(crawled_at) AS overall_crawled, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
         )
     except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
         window_rows = []
@@ -393,21 +474,41 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
     }
-    synced = {
-        str(row["feed_url"]): _epoch_to_iso(int(row["latest_fetched"]))
-        for row in sync_rows
-        if row["latest_fetched"] is not None
-    }
+    timings: dict[str, dict[str, object]] = {}
+    for row in sync_rows:
+        crawled = row["overall_crawled"]
+        projected_epoch = int(row["latest_fetched"]) if row["latest_fetched"] is not None else None
+        published = row["overall_published"]
+        timing: dict[str, object] = {
+            "upstreamPublishedLatest": str(published) if published else None,
+            "freshrssFetchedLatest": str(crawled) if crawled else None,
+            "freshrssFetchedBasis": (
+                "crawlTimestampMsec（FreshRSS 首次收录，非周期抓取时间）"
+                if crawled
+                else "未提供 by upstream"
+            ),
+            "lumiProjectedLatest": (
+                _epoch_to_iso(projected_epoch) if projected_epoch is not None else None
+            ),
+            "latencyHint": _latency_hint(published, crawled, projected_epoch),
+        }
+        timings[str(row["feed_url"])] = timing
     items: list[SubscriptionVolumeItem] = []
     for subscription in subscriptions:
         hit = counts.get(subscription.feed_url)
+        timing = timings.get(subscription.feed_url)
         items.append(
             SubscriptionVolumeItem(
                 feedUrl=subscription.feed_url,
                 title=subscription.title,
                 publishedCount=hit[0] if hit else None,
                 lastPublishedAt=hit[1] if hit else None,
-                lastSyncedAt=synced.get(subscription.feed_url),
+                lastSyncedAt=(
+                    timing["lumiProjectedLatest"] if timing else None
+                ),
+                collectionTiming=(
+                    CollectionTiming(**timing) if timing else None
+                ),
             )
         )
     return SubscriptionVolumeResponse(
@@ -417,3 +518,42 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         items=items,
         generatedAt=utc_now(),
     )
+
+
+def _latency_hint(published, crawled, projected_epoch) -> str | None:
+    """N040 最大延迟环节提示（数据不足或全为 0 → None，不臆造）。"""
+    from datetime import datetime
+
+    def _parse(value: object) -> datetime | None:
+        if not value:
+            return None
+        try:
+            text = str(value).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    published_dt = _parse(published)
+    crawled_dt = _parse(crawled)
+    gaps: list[tuple[float, str]] = []
+    if published_dt is not None and crawled_dt is not None:
+        gaps.append(
+            (max(0.0, (crawled_dt - published_dt).total_seconds()), "上游发布→FreshRSS 收录")
+        )
+    if crawled_dt is not None and projected_epoch is not None:
+        gaps.append(
+            (
+                max(0.0, projected_epoch - crawled_dt.timestamp()),
+                "FreshRSS 收录→Lumi 投影",
+            )
+        )
+    if not gaps:
+        return None
+    seconds, label = max(gaps, key=lambda item: item[0])
+    if seconds < 60:
+        return None
+    if seconds < 3600:
+        return f"{label} ≈{int(seconds // 60)} 分钟"
+    return f"{label} ≈{seconds / 3600:.1f} 小时"

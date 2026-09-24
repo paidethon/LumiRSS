@@ -60,6 +60,7 @@ from lumirss.restore import (
     RestoreService,
 )
 from lumirss.rsshub import (
+    RssHubPreviewCache,
     RssHubService,
 )
 from lumirss.rsshub_control import (
@@ -211,6 +212,9 @@ def _preview_json(preview) -> dict[str, object]:
         "description": preview.description,
         "format": preview.format,
         "alreadySubscribed": preview.already_subscribed,
+        # N033：直连预览附带编码检查（dict 形态的 EncodingInspection）；
+        # rsshub 预览（配置化基础设施，无用户 URL 诊断需求）→ None。
+        "encodingInspection": getattr(preview, "encoding_info", None),
     }
 
 
@@ -240,6 +244,20 @@ def _get_rsshub_service(request: Request) -> RssHubService:
         lambda: RssHubService(
             request.app.state.http_client, _get_control_adapter(request)
         ),
+    )
+
+
+def _get_rsshub_preview_cache(request: Request):
+    """N027 per-user preview cache (in-memory, TTL+LRU, bounded).
+
+    The cache object is process-global on app.state but every key
+    carries the verified user id, so accounts never share entries.
+    Tests inject a fresh/short-TTL instance via app.state directly.
+    """
+    return _cached_on_app_state(
+        request,
+        "rsshub_preview_cache",
+        lambda: RssHubPreviewCache(),
     )
 
 

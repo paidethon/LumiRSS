@@ -50,6 +50,9 @@ class EntryListItem(BaseModel):
     # F045：includeHidden=true 时附带的服务端屏蔽标记（其余情况为 None）。
     hiddenByRule: EntryHiddenByRule | None = None
     coverUrl: str | None = None
+    # N034：发布时间可信度（异常代码逗号连接，如 "future" /
+    # "missing,no_timezone"；无异常或投影未覆盖 → None，不冒充正常）。
+    timeCredibility: str | None = None
 
 
 class EntryPage(BaseModel):
@@ -123,6 +126,61 @@ class EntryEnclosure(BaseModel):
     type: str | None = None
 
 
+class ContentVariantOption(BaseModel):
+    """N032：一个可选的正文版本（经同一净化边界渲染）。
+
+    kind: "current"（上游当前）| "last_known_full"（保留的上一个更长
+    版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。
+    contentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界
+    渲染，BFF 不做净化（与正文同一安全模型）。
+    """
+
+    kind: str
+    label: str
+    capturedAt: str | None = None
+    contentHtml: str | None = None
+    lengthChars: int = 0
+
+
+class ContentVariantsBlock(BaseModel):
+    """N032：正文明显变短时的版本选择块（未触发 → None）。
+
+    triggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的
+    历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测
+    内容是否「完整」。
+    """
+
+    triggered: bool
+    currentLength: int
+    maxLength: int
+    variants: list[ContentVariantOption] = Field(default_factory=list)
+
+
+class EntryRevision(BaseModel):
+    """N031：一条有界的文章修订记录（元数据，绝不含全文副本）。
+
+    summary 为服务端计算的结构差异摘要：basis 说明比较基准
+    （retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，
+    无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。
+    """
+
+    id: int
+    capturedAt: str
+    titleChanged: bool
+    prevTitle: str | None = None
+    newTitle: str | None = None
+    summary: dict = Field(default_factory=dict)
+    prevHash: str
+    newHash: str
+
+
+class EntryRevisionsResponse(BaseModel):
+    """GET /api/v1/entries/{entry_ref}/revisions。"""
+
+    entryRef: str
+    revisions: list[EntryRevision]
+
+
 class EntryDetail(BaseModel):
     """One article with its body.
 
@@ -153,6 +211,9 @@ class EntryDetail(BaseModel):
     # F011：原样透传的 enclosure[]（audio/video 等媒体附件；greader
     # items 响应中的 enclosure 数组，形状异常的元素保守丢弃）。
     enclosure: list[EntryEnclosure] = Field(default_factory=list)
+    # N032：正文明显变短时的版本选择块（未触发为 None；字段存在于
+    # 契约，response_model_exclude_none=False 下始终出现）。
+    contentVariants: ContentVariantsBlock | None = None
 
 
 
@@ -315,6 +376,28 @@ class Subscription(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class EncodingInspection(BaseModel):
+    """N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。
+
+    - declared/declaredMethod：文档声称的编码与判定来源
+      （bom | xml_declaration | meta_charset | content_type_header | none）；
+    - detected/detectedMethod：轻启发式结果（无 chardet 依赖）：
+      bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；
+    - mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；
+    - sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以
+      U+FFFD 掩码）；无无效字节 → None。
+    """
+
+    declared: str | None = None
+    declaredMethod: str | None = None
+    detected: str | None = None
+    detectedMethod: str | None = None
+    utf8Valid: bool = True
+    mojibakeRisk: bool = False
+    sample: str | None = None
+    bodyBytes: int = 0
+
+
 class FeedPreviewResult(BaseModel):
     """POST /api/v1/feed-preview and POST /api/v1/rsshub/preview.
 
@@ -327,6 +410,38 @@ class FeedPreviewResult(BaseModel):
     description: str | None = None
     format: Literal["rss", "atom"]
     alreadySubscribed: bool
+    # N033：编码检查（直连预览路径附带；rsshub/preview 无抓取 → None）。
+    encodingInspection: EncodingInspection | None = None
+
+
+class FeedPreviewReparseRequest(BaseModel):
+    """POST /api/v1/feed-preview/reparse body (N033)."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str = Field(min_length=1)
+    encoding: Literal["utf-8", "declared", "detected"] | None = None
+    save: bool = False
+
+
+class FeedPreviewEncodingChoice(BaseModel):
+    """reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。"""
+
+    encoding: str
+    resolvedCodec: str | None = None
+    title: str | None = None
+    sample: str | None = None
+    mojibakeRisk: bool = False
+
+
+class FeedPreviewReparseResponse(BaseModel):
+    """reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。"""
+
+    feedUrl: str
+    inspection: EncodingInspection
+    choices: list[FeedPreviewEncodingChoice]
+    applied: str | None = None
+    savedOverride: str | None = None
 
 
 class DiscoveryCandidate(BaseModel):
@@ -370,6 +485,74 @@ class RssHubCatalog(BaseModel):
 
     configured: bool
     routes: list[RssHubRoute]
+
+
+class RssHubFavoriteItem(BaseModel):
+    """One N021 route favorite (params carry masked sensitive values only)."""
+
+    routeKey: str
+    templateId: str
+    label: str
+    params: dict[str, str]
+    createdAt: str
+
+
+class RssHubRecentItem(BaseModel):
+    """One N021 recently used route (params carry masked sensitive values)."""
+
+    routeKey: str
+    templateId: str
+    params: dict[str, str]
+    lastUsedAt: str
+    lastSuccessAt: str | None = None
+
+
+class RssHubCacheInfo(BaseModel):
+    """N027: preview freshness (fresh=True when computed for this request)."""
+
+    ageS: float
+    fresh: bool
+
+
+class RssHubPreviewResult(FeedPreviewResult):
+    """POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+
+    N021/N025: the key (template id + masked params signature) is built
+    server-side; clients use it for favorites/recents/history/refresh
+    and never assemble it themselves. N027 adds cache freshness."""
+
+    routeKey: str
+    cache: RssHubCacheInfo
+
+
+class RssHubRefreshResult(BaseModel):
+    """POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route."""
+
+    routeKey: str
+    title: str
+    entryCount: int | None = None
+    ranAt: str
+    durationMs: int
+    cache: RssHubCacheInfo
+
+
+class RssHubRouteRun(BaseModel):
+    """One N025 route health timeline row (no secrets — route keys are
+    masked server-side before storage)."""
+
+    id: int
+    routeKey: str
+    ranAt: str
+    status: Literal["ok", "failed"]
+    durationMs: int
+    entryCount: int | None = None
+    failureClass: str | None = None
+
+
+class RssHubRouteRuns(BaseModel):
+    """GET /api/v1/rsshub/routes/history — bounded run list, newest first."""
+
+    items: list[RssHubRouteRun]
 
 
 # ---------------------------------------------------------------------------
@@ -612,10 +795,36 @@ class LoginRequest(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    """POST /api/v1/auth/password — current + new password."""
+    """POST /api/v1/auth/password — current + new password.
+
+    ``totpCode`` is REQUIRED when the account has TOTP enabled (N007
+    server-enforced second factor for sensitive operations); ignored
+    otherwise."""
 
     currentPassword: str = Field(min_length=1, max_length=256)
     newPassword: str = Field(min_length=1, max_length=256)
+    totpCode: str | None = Field(default=None, max_length=64)
+
+
+class LoginChallenge(BaseModel):
+    """POST /api/v1/auth/login response when the account has TOTP enabled
+    (N007): the password was verified, but the session is minted only
+    after ``POST /auth/totp/verify`` with this short-lived pending token
+    (which is NOT a session and grants nothing on its own)."""
+
+    totpRequired: Literal[True]
+    pendingToken: str
+
+
+class ActivationSourceResult(BaseModel):
+    """One scheme initial-source subscription attempt (N001).
+
+    ``ok=False`` is an honest per-URL failure record — activation itself
+    is never blocked or rolled back by a source failure."""
+
+    url: str
+    ok: bool
+    error: str | None = None
 
 
 class AuthStatus(BaseModel):
@@ -625,7 +834,8 @@ class AuthStatus(BaseModel):
     Basic Auth (the app must not render its own login gate), "session" =
     BFF sessions (gate on ``authenticated``). userId/username/role carry
     the server-verified identity for the account menu — the client never
-    declares who it is."""
+    declares who it is. initialSources is only present on the invite
+    activation response (N001); every other surface omits it entirely."""
 
     authenticated: bool
     mode: Literal["basic", "session"] = "session"
@@ -633,6 +843,7 @@ class AuthStatus(BaseModel):
     userId: str | None = None
     username: str | None = None
     role: Literal["owner", "admin", "member"] | None = None
+    initialSources: list[ActivationSourceResult] | None = None
 
 
 class ApiVersionInfo(BaseModel):
@@ -808,6 +1019,15 @@ class BackupCapabilities(BaseModel):
     freshrssData: FreshrssDataBackupCapability
 
 
+class SegmentProtectedTerm(BaseModel):
+    """N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。"""
+
+    term: str
+    protected: bool
+    count: int = 0
+    reason: str | None = None
+
+
 class TranslationSegmentState(BaseModel):
     """Per-block translation state (lookup = cache only; generate explicit)."""
 
@@ -820,6 +1040,10 @@ class TranslationSegmentState(BaseModel):
     userRevision: str | None = None
     revisedAt: str | None = None
     revisionStale: bool = False
+    # N086：用户标记「不翻译」的块（不参与生成；缓存译文照常展示）。
+    noTranslate: bool = False
+    # N083：受保护术语在本段的保留结果报告。
+    protectedTerms: list[SegmentProtectedTerm] = []
 
 
 class TranslationSegmentsView(BaseModel):
@@ -996,6 +1220,11 @@ class EntryDocument(BaseModel):
     read: bool
     starred: bool
     contentText: str
+    # N031/N032/N040：投影摄取需要原始 HTML（差异摘要 / 内容变体边界
+    # 判定）与 FreshRSS 首次收录时刻。contentHtml 只在投影写入路径内部
+    # 使用，绝不入库为全文（投影不保存正文副本），也不出现在 API 响应。
+    contentHtml: str = ""
+    crawledAt: str = ""
 
 
 class EntryDocumentPage(BaseModel):
@@ -1221,25 +1450,81 @@ class WorkspaceListResponse(BaseModel):
 
 
 class WorkspaceItemAddRequest(BaseModel):
-    """POST /api/v1/workspaces/{id}/items — one typed ItemRef."""
+    """POST /api/v1/workspaces/{id}/items — one typed ItemRef.
+
+    N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。"""
 
     model_config = {"extra": "forbid"}
 
     itemRef: str
+    groupName: str | None = None
 
 
 class WorkspaceItem(BaseModel):
-    """One workspace member (ref + ordering; content resolves separately)."""
+    """One workspace member (ref + ordering; content resolves separately).
+
+    N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
+    排序语义不变（position 升序）。"""
 
     itemRef: str
     position: int
     addedAt: str
+    groupName: str | None = None
+    pinned: bool = False
 
 
 class WorkspaceItemsResponse(BaseModel):
     """Envelope for GET /api/v1/workspaces/{id}/items."""
 
     items: list[WorkspaceItem]
+
+
+class WorkspaceGroup(BaseModel):
+    """N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。"""
+
+    name: str | None
+    items: list[WorkspaceItem]
+
+
+class WorkspaceGroupsResponse(BaseModel):
+    """Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.
+
+    ``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是
+    命名组的呈现顺序（未列入的组按名字典序追加在后）。"""
+
+    workspaceId: str
+    revision: int
+    groupOrder: list[str]
+    pinned: list[WorkspaceItem]
+    groups: list[WorkspaceGroup]
+
+
+class WorkspaceGroupOrderPut(BaseModel):
+    """PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。
+
+    只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。"""
+
+    model_config = {"extra": "forbid"}
+
+    order: list[str]
+
+
+class WorkspaceItemGroupMoveRequest(BaseModel):
+    """PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。
+
+    ``groupName=null`` = 移回未分组隐式前置组。"""
+
+    model_config = {"extra": "forbid"}
+
+    groupName: str | None = None
+
+
+class WorkspaceItemPinRequest(BaseModel):
+    """PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。"""
+
+    model_config = {"extra": "forbid"}
+
+    pinned: bool
 
 
 class WorkspaceReorderRequest(BaseModel):
@@ -1300,6 +1585,58 @@ class WorkspaceResumeResponse(BaseModel):
 
     workspaceId: str
     pointer: WorkspaceResumePointer | None = None
+
+
+class WorkspaceSnapshotCreate(BaseModel):
+    """POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。"""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class WorkspaceSnapshot(BaseModel):
+    """N105：一个命名会话快照（元数据视图；payload 留在服务端）。
+
+    ``itemCount`` 是捕获时刻的成员数（从 payload 派生）。"""
+
+    id: str
+    workspaceId: str
+    name: str
+    createdAt: str
+    itemCount: int
+
+
+class WorkspaceSnapshotList(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。"""
+
+    items: list[WorkspaceSnapshot]
+
+
+class WorkspaceSnapshotRestoreRequest(BaseModel):
+    """POST /workspaces/{id}/snapshots/{sid}/restore（N105）.
+
+    - ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；
+    - ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝
+      丢固定条目除非 ``force=true``）；
+    - 快照里已消失的 ref 诚实上报，绝不复活。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    mode: str
+    force: bool = False
+
+
+class WorkspaceSnapshotRestoreResult(BaseModel):
+    """恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；
+    kept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。"""
+
+    restored: int
+    missing: list[str]
+    kept: int
+    removed: list[str]
+    revision: int
 
 
 class ResolveRequest(BaseModel):
@@ -1712,6 +2049,9 @@ class GlossaryTerm(BaseModel):
     term: str
     definition: str
     sourceRef: str | None = None
+    # N083：受保护术语 —— 分段翻译后处理会把译文里大小写漂移的该词
+    # 还原为原始词形（完全缺失则如实上报未保护）。
+    protect: bool = False
     createdAt: str = ""
     updatedAt: str = ""
 
@@ -1721,11 +2061,40 @@ class GlossaryTermList(BaseModel):
 
 
 class GlossaryTermCreate(BaseModel):
-    """POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。"""
+    """POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。"""
 
     term: str
     definition: str
     sourceRef: str | None = None
+    protect: bool = False
+
+
+class TranslationVerificationFinding(BaseModel):
+    """N082：一条可见数字差异（基于可见 token，非语义判断）。"""
+
+    kind: Literal["missing", "changed", "added"]
+    token: str
+    sourceContext: str = ""
+    translatedContext: str = ""
+
+
+class TranslationVerificationBlock(BaseModel):
+    """N082：一个块的校验结果（不可校验时诚实给 reason）。"""
+
+    blockIndex: int
+    verifiable: bool
+    revised: bool = False
+    reason: str | None = None
+    findings: list[TranslationVerificationFinding] = []
+
+
+class TranslationVerificationView(BaseModel):
+    """GET /api/v1/entries/{ref}/translation-verification 响应。"""
+
+    entryRef: str
+    language: str
+    totalFindings: int = 0
+    blocks: list[TranslationVerificationBlock] = []
 
 
 class GptDigestConfig(BaseModel):
@@ -1816,7 +2185,7 @@ class TaskRecordList(BaseModel):
 
 
 class SourceOverrideResult(BaseModel):
-    """F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
+    """F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。"""
 
     feedUrl: str
     hiddenUntil: str | None = None
@@ -1827,6 +2196,8 @@ class SourceOverrideResult(BaseModel):
     readerStyle: dict[str, object] | None = None
     # F066：per-source AI 禁用（派生数据保留，仅不再更新/不被 AI 消费）。
     aiDisabled: bool = False
+    # N015：分时静音窗口（每周循环；[]/None = 未启用）。
+    muteWindows: list[dict[str, object]] | None = None
     updatedAt: str = ""
 
 
@@ -1844,6 +2215,41 @@ class SourceOverrideUpdate(BaseModel):
     extractPolicy: str | None = None  # F048：'rss' | 'web'
     readerStyle: dict[str, object] | None = None  # F055：fontSize/lineHeight/width 子集
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
+    # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
+    muteWindows: list[dict[str, object]] | None = None
+
+
+class SourceAliasView(BaseModel):
+    """N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。"""
+
+    feedUrl: str
+    customName: str
+    updatedAt: str = ""
+
+
+class SourceAliasList(BaseModel):
+    items: list[SourceAliasView] = []
+
+
+class SourceAliasUpdate(BaseModel):
+    """PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。"""
+
+    feedUrl: str = Field(min_length=1)
+    customName: str = Field(min_length=1, max_length=200)
+
+
+class SourceAliasHistoryItem(BaseModel):
+    """N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。"""
+
+    id: int
+    feedUrl: str
+    oldCustomName: str | None = None
+    upstreamNameAtSave: str | None = None
+    changedAt: str = ""
+
+
+class SourceAliasHistoryList(BaseModel):
+    items: list[SourceAliasHistoryItem] = []
 
 
 class StaleSourceItem(BaseModel):
@@ -1885,6 +2291,24 @@ class SettingsRevertResult(BaseModel):
     skipped: dict[str, object] = {}
 
 
+class CollectionTiming(BaseModel):
+    """N040：三时点采集延迟块（未知保持 null，绝不臆造）。
+
+    - upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；
+    - freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，
+      非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注
+      口径；源从未提供 → None + basis="未提供 by upstream"）；
+    - lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；
+    - latencyHint：最大缺口环节提示（数据不足 → None）。
+    """
+
+    upstreamPublishedLatest: str | None = None
+    freshrssFetchedLatest: str | None = None
+    freshrssFetchedBasis: str = "未提供 by upstream"
+    lumiProjectedLatest: str | None = None
+    latencyHint: str | None = None
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
@@ -1893,6 +2317,8 @@ class SubscriptionVolumeItem(BaseModel):
     publishedCount: int | None = None
     lastPublishedAt: str | None = None
     lastSyncedAt: str | None = None
+    # N040：三时点采集延迟块（投影未覆盖 → None）。
+    collectionTiming: CollectionTiming | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):
@@ -2625,6 +3051,125 @@ class SavedSearchCount(BaseModel):
     count: int
     capped: bool = False
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# N142 / N143 / N145 — 搜索理解与排障
+# ---------------------------------------------------------------------------
+
+
+class SearchParseQueryBody(BaseModel):
+    """POST /api/v1/search/parse-query body（N142）。"""
+
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=200)
+
+
+class SearchParseRecognized(BaseModel):
+    """一个被转成条件的片段（kind + 原文）。"""
+
+    kind: Literal["date", "source", "phrase", "exclude"]
+    text: str
+
+
+class SearchParseResult(BaseModel):
+    """N142：filters 与保存视图 filters_json 同构（白名单子集）；
+    remainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默
+    丢弃。"""
+
+    filters: dict[str, str] = {}
+    remainingText: str = ""
+    unrecognized: list[str] = []
+    recognized: list[SearchParseRecognized] = []
+
+
+class SearchWhyMissedBody(BaseModel):
+    """POST /api/v1/search/why-missed body（N143）——与 GET /search 同参
+    （除分页/同义词）；entryRef 必须属于当前用户，否则 404。"""
+
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=200)
+    entryRef: str = Field(min_length=1, max_length=600)
+    feedUrl: str | None = None
+    categoryId: str | None = None
+    state: str | None = None
+    favorite: bool = False
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    intitle: str | None = None
+    phrase: str | None = None
+    exclude: str | None = None
+    hasSummary: bool | None = None
+
+
+class SearchWhyMissedReason(BaseModel):
+    """一个排除原因（kind + 中文 detail，UI 可直接展示）。"""
+
+    kind: Literal[
+        "term",
+        "intitle",
+        "phrase",
+        "exclude",
+        "source",
+        "category",
+        "unread",
+        "starred",
+        "date",
+        "hasSummary",
+    ]
+    detail: str
+
+
+class SearchWhyMissedEntry(BaseModel):
+    """被诊断条目的最小元数据（不携带正文全文）。"""
+
+    entryRef: str
+    title: str
+    feedTitle: str
+    publishedAt: str
+
+
+class SearchWhyMissedResult(BaseModel):
+    """N143：matched=false → reasons 列出每个未通过的条件；
+    matched=true → 应出现在结果中，rank 为按时间排序的位置（超出
+    2000 上界时 rankCapped=true 诚实标注）。"""
+
+    matched: bool
+    reasons: list[SearchWhyMissedReason] = []
+    entry: SearchWhyMissedEntry
+    rank: int | None = None
+    rankCapped: bool = False
+
+
+class SearchDistributionSource(BaseModel):
+    """N145：单来源命中计数。"""
+
+    feedUrl: str
+    feedTitle: str
+    count: int
+
+
+class SearchDistributionDay(BaseModel):
+    """N145：单日命中计数（窗口内补零后逐日出）。"""
+
+    day: str
+    count: int
+
+
+class SearchDistributionResult(BaseModel):
+    """N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。
+
+    sources 最多 20 条（超界 sourcesComplete=false 诚实标注）；
+    days 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。"""
+
+    total: int
+    sources: list[SearchDistributionSource] = []
+    sourcesComplete: bool = True
+    days: list[SearchDistributionDay] = []
+    dayFrom: str
+    dayTo: str
 
 
 # ---------------------------------------------------------------------------

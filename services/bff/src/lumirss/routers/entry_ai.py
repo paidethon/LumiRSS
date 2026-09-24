@@ -33,6 +33,7 @@ from lumirss.models import (
     EntryTranslation,
     TitleTranslationView,
     TranslationSegmentsView,
+    TranslationVerificationView,
 )
 
 router = APIRouter()
@@ -73,6 +74,18 @@ def _segments_view(states, settings_values) -> dict[str, object]:
                 "userRevision": s.user_revision,
                 "revisedAt": s.revised_at,
                 "revisionStale": s.revision_stale,
+                # N086：用户标记「不翻译」的块。
+                "noTranslate": s.no_translate,
+                # N083：受保护术语在本段的保留结果报告。
+                "protectedTerms": [
+                    {
+                        "term": p["term"],
+                        "protected": bool(p.get("protected")),
+                        "count": int(p.get("count") or 0),
+                        "reason": p.get("reason"),
+                    }
+                    for p in s.protected_terms
+                ],
             }
             for s in states
         ],
@@ -230,7 +243,7 @@ async def put_translation_segment_revision(
 async def delete_translation_segment_revision(
     entry_ref: str, block_index: int, request: Request
 ) -> Response:
-    """F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。"""
+    """F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。"""
     from lumirss.ai_translation_revisions import (
         SegmentRevisionNotFound,
         clear_revision,
@@ -245,6 +258,157 @@ async def delete_translation_segment_revision(
             content={"error": {"type": "segment_not_found", "message": str(exc)}},
         )
     return Response(status_code=204)
+
+
+# -- N086：不翻译片段标记 ------------------------------------------------------
+
+
+def _invalid_block_index_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "type": "invalid_segment_index",
+                "message": "block_index 必须在 0..63 之间。",
+            }
+        },
+    )
+
+
+@router.put(
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate",
+    status_code=204,
+)
+async def mark_translation_segment_no_translate(
+    entry_ref: str, block_index: int, request: Request
+) -> Response:
+    """N086：把一块标记为「不翻译」（持久；每条目上限 200 块）。
+
+    标记后的块不再参与生成：已有缓存译文照常展示，没有则诚实显示
+    原文。幂等：重复标记同一块是 no-op。"""
+    from lumirss.entry_no_translate import (
+        NoTranslateCapExceeded,
+        mark_block,
+    )
+
+    decode_entry_ref(entry_ref)
+    if not 0 <= block_index <= 63:
+        return _invalid_block_index_response()
+    try:
+        await mark_block(request.app.state.db, entry_ref, block_index)
+    except NoTranslateCapExceeded as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "no_translate_cap_exceeded", "message": str(exc)}
+            },
+        )
+    return Response(status_code=204)
+
+
+@router.delete(
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate",
+    status_code=204,
+)
+async def unmark_translation_segment_no_translate(
+    entry_ref: str, block_index: int, request: Request
+) -> Response:
+    """N086：撤销一块的「不翻译」标记（幂等；块恢复可翻译）。"""
+    from lumirss.entry_no_translate import unmark_block
+
+    decode_entry_ref(entry_ref)
+    if not 0 <= block_index <= 63:
+        return _invalid_block_index_response()
+    await unmark_block(request.app.state.db, entry_ref, block_index)
+    return Response(status_code=204)
+
+
+# -- N082：翻译数字校验 --------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/entries/{entry_ref}/translation-verification",
+    response_model=TranslationVerificationView,
+)
+async def get_translation_verification(
+    entry_ref: str, request: Request, language: str | None = None
+) -> TranslationVerificationView:
+    """N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。
+
+    只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），
+    基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、
+    不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。"""
+    from lumirss.ai_settings import AiSettingsStore
+    from lumirss.ai_translation_segments import (
+        SEGMENTS_PROMPT_VERSION,
+        engine_identity,
+    )
+    from lumirss.ai_translation_verification import verify_numbers
+    from lumirss.glossary import get_glossary_version
+    from lumirss.models import TranslationVerificationBlock
+
+    decode_entry_ref(entry_ref)
+    db = request.app.state.db
+    settings_values = await AiSettingsStore(db).load()
+    provider, model = engine_identity(
+        settings_values[KEY_TRANSLATION_ENGINE], settings_values
+    )
+    target = language or settings_values[KEY_TRANSLATION_LANGUAGE]
+    cache_version = await get_glossary_version(db)
+    rows = await db.fetch_all(
+        """SELECT block_index, source_text, translated_text, user_revision,
+        status, updated_at, id FROM ai_translation_segments
+        WHERE entry_ref = ? AND target_language = ? AND provider = ?
+        AND model = ? AND prompt_version = ? AND glossary_version = ?
+        ORDER BY block_index ASC, updated_at ASC, id ASC""",
+        (entry_ref, target, provider, model, SEGMENTS_PROMPT_VERSION, cache_version),
+    )
+    latest: dict[int, dict] = {}
+    for row in rows:
+        latest[int(row["block_index"])] = dict(row)
+
+    blocks: list[TranslationVerificationBlock] = []
+    total = 0
+    for index in sorted(latest):
+        row = latest[index]
+        if row["status"] != "success" or not row["translated_text"]:
+            blocks.append(
+                TranslationVerificationBlock(
+                    blockIndex=index, verifiable=False, reason="not_generated"
+                )
+            )
+        elif row["user_revision"]:
+            # 修订是人类定稿（human truth）：原样列出，绝不挑异数字。
+            blocks.append(
+                TranslationVerificationBlock(
+                    blockIndex=index,
+                    verifiable=False,
+                    revised=True,
+                    reason="user_revised",
+                )
+            )
+        elif not row["source_text"]:
+            blocks.append(
+                TranslationVerificationBlock(
+                    blockIndex=index,
+                    verifiable=False,
+                    reason="source_text_unavailable",
+                )
+            )
+        else:
+            findings = verify_numbers(row["source_text"], row["translated_text"])
+            total += len(findings)
+            blocks.append(
+                TranslationVerificationBlock(
+                    blockIndex=index, verifiable=True, findings=findings
+                )
+            )
+    return TranslationVerificationView(
+        entryRef=entry_ref,
+        language=target,
+        totalFindings=total,
+        blocks=blocks,
+    )
 
 
 def _summary_json(state, versions=None) -> dict[str, object]:

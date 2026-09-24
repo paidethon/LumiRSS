@@ -604,6 +604,10 @@ class FreshRSSAdapter(FreshRSSSession):
                     read=base["read"],
                     starred=base["starred"],
                     contentText=html_to_text(base["content_html"]),
+                    # N031/N032/N040：原始 HTML（差异摘要/变体边界）与
+                    # FreshRSS 首次收录时刻——仅投影写入路径内部使用。
+                    contentHtml=base["content_html"],
+                    crawledAt=base["crawled_at"] or "",
                 )
             )
         return EntryDocumentPage(

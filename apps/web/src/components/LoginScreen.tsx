@@ -4,9 +4,19 @@
  * Secure/HttpOnly Cookie，本组件不保存任何凭据；身份（username/role）
  * 由登录后的 GET /auth/session 服务端核实，绝不取自响应体之外。
  *
+ * N006 通行密钥：输入用户名后（防抖查询 login-options），仅当服务端
+ * 回报该用户名下有已注册通行密钥时显示「使用通行密钥」；走真实
+ * navigator.credentials.get（测试中 mock），成功后与密码登录同一
+ * 会话流程。
+ *
+ * N007 两步验证：账号开启 TOTP 时，密码正确返回 {totpRequired,
+ * pendingToken}（短时效非会话）→ 显示验证码输入（可切换恢复码）→
+ * /auth/totp/verify 换发真会话。
+ *
  * 错误语义（Phase O + 0067 契约）：
  * - invalid_credentials → 统一「用户名或密码不正确」——不区分
- *   「用户不存在/密码错误」（O171 无账号枚举预言机）；
+ *   「用户不存在/密码错误」（O171 无账号枚举预言机）；通行密钥
+ *   登录失败同样使用统一文案（断言验证失败不泄露细节）；
  * - rate_limited → 显示 Retry-After 的剩余等待秒数；
  * - 网络不可用 → 「网络不可用」，绝不显示「密码错误 / 会话过期」。
  *
@@ -17,11 +27,24 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, LogIn } from 'lucide-react'
-import { ApiError, getAuthSession, loginAccount } from '../api/client'
+import { Eye, EyeOff, Fingerprint, LogIn } from 'lucide-react'
+import {
+  ApiError,
+  beginPasskeyLogin,
+  finishPasskeyLogin,
+  getAuthSession,
+  isTotpChallenge,
+  loginAccount,
+  verifyTotpLogin,
+} from '../api/client'
 import { identityFromSession, useAuthStore } from '../store/auth'
 import { resetAccountState } from '../lib/auth-reset'
 import { navigateAppRoute, readAppRoute } from '../lib/app-route'
+import {
+  decodeRequestOptions,
+  encodeAssertionResponse,
+  webauthnSupported,
+} from '../lib/webauthn'
 import { Button } from './ui/Button'
 
 type LoginFeedback =
@@ -31,6 +54,9 @@ type LoginFeedback =
 
 /** invalid_credentials 的统一文案——错误身份不透露哪个字段错了。 */
 const INVALID_CREDENTIALS_TEXT = '用户名或密码不正确。'
+/** 通行密钥断言失败与密码错误同形（不泄露是挑战/签名/凭据哪一环）。 */
+const PASSKEY_FAILED_TEXT = '通行密钥验证失败。'
+const TOTP_INVALID_TEXT = '验证码无效。'
 
 function rateLimitedText(retryAfterSeconds: number | null): string {
   if (retryAfterSeconds !== null && retryAfterSeconds > 0) {
@@ -47,7 +73,14 @@ export default function LoginScreen() {
   const [reveal, setReveal] = useState(false)
   const [pending, setPending] = useState(false)
   const [feedback, setFeedback] = useState<LoginFeedback>({ kind: 'none' })
+  // N006：服务端确认「该用户名可用通行密钥」后才显示入口。
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false)
+  // N007：两步验证阶段（pendingToken 来自密码步）。
+  const [totpPendingToken, setTotpPendingToken] = useState<string | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [totpUseRecovery, setTotpUseRecovery] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const passkeyProbeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -60,31 +93,133 @@ export default function LoginScreen() {
     return () => window.removeEventListener('online', goOnline)
   }, [])
 
+  // N006：用户名变化后防抖探测（服务端对未知用户名返回诚实通用响应，
+  // 该探测本身不构成账号枚举；passkeyAvailable=false 时不显示入口）。
+  useEffect(() => {
+    const trimmed = username.trim()
+    if (!trimmed || !webauthnSupported() || totpPendingToken !== null) {
+      setPasskeyAvailable(false)
+      return
+    }
+    if (passkeyProbeTimer.current) clearTimeout(passkeyProbeTimer.current)
+    passkeyProbeTimer.current = setTimeout(async () => {
+      try {
+        const options = await beginPasskeyLogin(trimmed)
+        setPasskeyAvailable(options.passkeyAvailable)
+      } catch {
+        setPasskeyAvailable(false)
+      }
+    }, 350)
+    return () => {
+      if (passkeyProbeTimer.current) clearTimeout(passkeyProbeTimer.current)
+    }
+  }, [username, totpPendingToken])
+
+  /** 登录成功共同路径：服务端核实身份 → 清上一账号足迹 → 翻门。 */
+  async function finishLogin() {
+    let identity = null
+    try {
+      identity = identityFromSession(await getAuthSession())
+    } catch {
+      identity = null
+    }
+    resetAccountState(queryClient)
+    useAuthStore.getState().setIdentity(identity)
+    if (readAppRoute() !== 'app') navigateAppRoute('app', true)
+    setPassword('')
+    setTotpCode('')
+    setTotpPendingToken(null)
+    setStatus('authenticated')
+  }
+
+  async function handlePasskeyLogin() {
+    if (pending) return
+    const trimmed = username.trim()
+    if (!trimmed) return
+    setPending(true)
+    setFeedback({ kind: 'none' })
+    try {
+      const options = await beginPasskeyLogin(trimmed)
+      const credential = (await navigator.credentials.get({
+        publicKey: decodeRequestOptions(options.publicKey),
+      })) as PublicKeyCredential | null
+      if (!credential) {
+        setFeedback({ kind: 'error', message: PASSKEY_FAILED_TEXT })
+        return
+      }
+      const status = await finishPasskeyLogin({
+        username: trimmed,
+        challenge: options.challenge,
+        credential: encodeAssertionResponse(credential),
+      })
+      if (status.authenticated) await finishLogin()
+    } catch (error) {
+      if (error instanceof ApiError && error.type === 'network_error') {
+        setFeedback({ kind: 'offline', message: '网络不可用 —— 请检查网络连接后重试。' })
+      } else if (error instanceof ApiError && error.type === 'rate_limited') {
+        setFeedback({ kind: 'error', message: rateLimitedText(error.retryAfterSeconds) })
+      } else if (error instanceof ApiError) {
+        setFeedback({ kind: 'error', message: error.message })
+      } else {
+        // NotAllowedError 等：用户取消或设备拒绝。
+        setFeedback({ kind: 'error', message: PASSKEY_FAILED_TEXT })
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function handleTotpSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (pending || totpPendingToken === null || totpCode.trim().length === 0) return
+    setPending(true)
+    setFeedback({ kind: 'none' })
+    try {
+      const status = await verifyTotpLogin(totpPendingToken, totpCode.trim())
+      if (status.authenticated) {
+        await finishLogin()
+        return
+      }
+      setFeedback({ kind: 'error', message: TOTP_INVALID_TEXT })
+    } catch (error) {
+      if (error instanceof ApiError && error.type === 'network_error') {
+        setFeedback({ kind: 'offline', message: '网络不可用 —— 请检查网络连接后重试。' })
+      } else if (error instanceof ApiError && error.type === 'rate_limited') {
+        setFeedback({ kind: 'error', message: rateLimitedText(error.retryAfterSeconds) })
+      } else if (error instanceof ApiError && error.type === 'pending_token_invalid') {
+        // pending token 过期/已用：回到密码步重新开始。
+        setTotpPendingToken(null)
+        setTotpCode('')
+        setFeedback({ kind: 'error', message: '登录请求已过期，请重新登录。' })
+      } else if (error instanceof ApiError && error.type === 'totp_code_invalid') {
+        setFeedback({ kind: 'error', message: TOTP_INVALID_TEXT })
+      } else if (error instanceof ApiError) {
+        setFeedback({ kind: 'error', message: error.message })
+      } else {
+        setFeedback({ kind: 'error', message: TOTP_INVALID_TEXT })
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (pending || password.length === 0 || username.trim().length === 0) return
     setPending(true)
     setFeedback({ kind: 'none' })
     try {
-      const status = await loginAccount(username.trim(), password)
-      if (status.authenticated) {
-        // 身份由服务端核实（login 响应只含 authenticated）；探测失败
-        // 不阻断进入——identity 为 null 时账号菜单隐藏，session 过期
-        // 仍会正常翻门。
-        let identity = null
-        try {
-          identity = identityFromSession(await getAuthSession())
-        } catch {
-          identity = null
-        }
-        // O157：先清上一账号状态（缓存/草稿/最近阅读…），再进门。
-        resetAccountState(queryClient)
-        useAuthStore.getState().setIdentity(identity)
-        // 会话过期可能把用户留在 /admin、/activate 等路径：登录成功
-        // 回到应用主路由（replace，不留登录前残迹在历史里）。
-        if (readAppRoute() !== 'app') navigateAppRoute('app', true)
+      const response = await loginAccount(username.trim(), password)
+      if (isTotpChallenge(response)) {
+        // N007：密码正确 + 两步验证开启 → 第二步收集验证码。
+        setTotpPendingToken(response.pendingToken)
         setPassword('')
-        setStatus('authenticated')
+        setTotpCode('')
+        setTotpUseRecovery(false)
+        return
+      }
+      if (response.authenticated) {
+        await finishLogin()
       }
     } catch (error) {
       if (error instanceof ApiError && error.type === 'network_error') {
@@ -120,106 +255,207 @@ export default function LoginScreen() {
               LumiRSS
             </h1>
             <p className="mt-1 text-sm text-[var(--lumi-text-secondary)]">
-              流光阅源 · 登录继续
+              {totpPendingToken !== null ? '输入两步验证码' : '流光阅源 · 登录继续'}
             </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
-          <div>
-            <label
-              htmlFor="login-username"
-              className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
-            >
-              用户名
-            </label>
-            <input
-              id="login-username"
-              ref={inputRef}
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="next"
-              inputMode="text"
-              disabled={pending}
-              aria-invalid={feedback.kind !== 'none' || undefined}
-              aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
-              className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
-              placeholder="用户名"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="login-password"
-              className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
-            >
-              密码
-            </label>
-            <div className="relative">
+        {totpPendingToken === null ? (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
+            <div>
+              <label
+                htmlFor="login-username"
+                className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
+              >
+                用户名
+              </label>
               <input
-                id="login-password"
-                type={reveal ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                enterKeyHint="go"
+                id="login-username"
+                ref={inputRef}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="next"
                 inputMode="text"
                 disabled={pending}
                 aria-invalid={feedback.kind !== 'none' || undefined}
                 aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
-                className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 pr-11 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
-                placeholder="••••••••"
+                className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
+                placeholder="用户名"
               />
-              <button
-                type="button"
-                onClick={() => setReveal((v) => !v)}
-                aria-label={reveal ? '隐藏密码' : '显示密码'}
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
-              >
-                {reveal ? (
-                  <EyeOff aria-hidden className="size-4" />
-                ) : (
-                  <Eye aria-hidden className="size-4" />
-                )}
-              </button>
             </div>
-          </div>
 
-          {feedback.kind !== 'none' && (
-            <p
-              id="login-feedback"
-              role="alert"
-              aria-live="polite"
-              className={
-                feedback.kind === 'offline'
-                  ? 'text-xs leading-relaxed text-[var(--lumi-text-secondary)]'
-                  : 'text-xs leading-relaxed text-[var(--lumi-danger)]'
-              }
+            <div>
+              <label
+                htmlFor="login-password"
+                className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
+              >
+                密码
+              </label>
+              <div className="relative">
+                <input
+                  id="login-password"
+                  type={reveal ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  enterKeyHint="go"
+                  inputMode="text"
+                  disabled={pending}
+                  aria-invalid={feedback.kind !== 'none' || undefined}
+                  aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
+                  className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 pr-11 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-2 outline-[var(--lumi-focus-ring)] disabled:opacity-50"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setReveal((v) => !v)}
+                  aria-label={reveal ? '隐藏密码' : '显示密码'}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-[var(--lumi-radius-md)] text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                >
+                  {reveal ? (
+                    <EyeOff aria-hidden className="size-4" />
+                  ) : (
+                    <Eye aria-hidden className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {feedback.kind !== 'none' && (
+              <p
+                id="login-feedback"
+                role="alert"
+                aria-live="polite"
+                className={
+                  feedback.kind === 'offline'
+                    ? 'text-xs leading-relaxed text-[var(--lumi-text-secondary)]'
+                    : 'text-xs leading-relaxed text-[var(--lumi-danger)]'
+                }
+              >
+                {feedback.message}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              disabled={pending || password.length === 0 || username.trim().length === 0}
+              className="min-h-11 w-full"
             >
-              {feedback.message}
+              <LogIn aria-hidden className="size-4" />
+              {pending ? '登录中…' : '登录'}
+            </Button>
+
+            {passkeyAvailable && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={handlePasskeyLogin}
+                disabled={pending || username.trim().length === 0}
+                className="min-h-11 w-full"
+                data-lumi-passkey-login=""
+              >
+                <Fingerprint aria-hidden className="size-4" />
+                {pending ? '验证中…' : '使用通行密钥'}
+              </Button>
+            )}
+
+            <p className="mt-1 text-center text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+              登录后在此设备保持登录，无需反复输入密码。
             </p>
-          )}
+          </form>
+        ) : (
+          <form onSubmit={handleTotpSubmit} className="flex flex-col gap-3" noValidate data-lumi-totp-step="">
+            <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+              {totpUseRecovery
+                ? '输入一个未使用过的恢复码。'
+                : '输入认证器 App 当前生成的 6 位验证码。'}
+            </p>
+            <div>
+              <label
+                htmlFor="login-totp-code"
+                className="mb-1.5 block text-sm font-medium text-[var(--lumi-text-primary)]"
+              >
+                {totpUseRecovery ? '恢复码' : '验证码'}
+              </label>
+              <input
+                id="login-totp-code"
+                type="text"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
+                autoComplete="one-time-code"
+                enterKeyHint="go"
+                maxLength={totpUseRecovery ? 64 : 6}
+                inputMode={totpUseRecovery ? 'text' : 'numeric'}
+                disabled={pending}
+                autoFocus
+                aria-invalid={feedback.kind !== 'none' || undefined}
+                aria-describedby={feedback.kind !== 'none' ? 'login-feedback' : undefined}
+                className={
+                  'min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-base text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] transition-colors duration-[var(--lumi-motion-fast)] hover:border-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)] disabled:opacity-50 ' +
+                  (totpUseRecovery ? '' : 'font-mono tracking-widest')
+                }
+              />
+            </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            size="md"
-            disabled={pending || password.length === 0 || username.trim().length === 0}
-            className="min-h-11 w-full"
-          >
-            <LogIn aria-hidden className="size-4" />
-            {pending ? '登录中…' : '登录'}
-          </Button>
+            {feedback.kind !== 'none' && (
+              <p
+                id="login-feedback"
+                role="alert"
+                aria-live="polite"
+                className={
+                  feedback.kind === 'offline'
+                    ? 'text-xs leading-relaxed text-[var(--lumi-text-secondary)]'
+                    : 'text-xs leading-relaxed text-[var(--lumi-danger)]'
+                }
+              >
+                {feedback.message}
+              </p>
+            )}
 
-          <p className="mt-1 text-center text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
-            登录后在此设备保持登录，无需反复输入密码。
-          </p>
-        </form>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              disabled={pending || totpCode.trim().length === 0}
+              className="min-h-11 w-full"
+              data-lumi-totp-submit=""
+            >
+              <LogIn aria-hidden className="size-4" />
+              {pending ? '验证中…' : '验证并登录'}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTotpUseRecovery((v) => !v)
+                setTotpCode('')
+              }}
+              className="text-center text-xs text-[var(--lumi-text-secondary)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            >
+              {totpUseRecovery ? '改用验证器验证码' : '无法获取验证码？使用恢复码'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTotpPendingToken(null)
+                setTotpCode('')
+                setFeedback({ kind: 'none' })
+              }}
+              className="text-center text-xs text-[var(--lumi-text-tertiary)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+            >
+              返回重新登录
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )

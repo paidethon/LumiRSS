@@ -1,7 +1,8 @@
 /** GlossarySection — F21：个人术语本（设置 → 通用）。
  *
  * 用户手工维护的术语与解释：新建/修改/删除/搜索；同词不同含义可并存。
- * 定义是纯文本（客户端转义渲染）。与 AI 无关——不默认调用任何模型。 */
+ * 定义是纯文本（客户端转义渲染）。N083：术语可设「保留」—— 翻译时
+ * 该词在译文里保持原文（大小写漂移会被还原；完全缺失则如实上报）。 */
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -13,6 +14,7 @@ import {
   importGlossaryTerms,
   listGlossary,
   parseGlossaryImportText,
+  updateGlossaryTerm,
 } from '../../api/client'
 import type { GlossaryImportOutcome } from '../../api/client'
 import { Button } from '../ui/Button'
@@ -91,6 +93,7 @@ export function GlossarySection() {
   const [filter, setFilter] = useState('')
   const [term, setTerm] = useState('')
   const [definition, setDefinition] = useState('')
+  const [protectNew, setProtectNew] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -106,12 +109,25 @@ export function GlossarySection() {
 
   function submit() {
     setError(null)
-    createGlossaryTerm({ term, definition })
+    createGlossaryTerm({ term, definition, protect: protectNew })
       .then(() => {
         setTerm('')
         setDefinition('')
+        setProtectNew(false)
         invalidate()
       })
+      .catch((exc: Error) => setError(exc.message))
+  }
+
+  /** N083：翻转术语的「保留」标记（PATCH 全量替换 term+definition+protect）。 */
+  function toggleProtect(id: string, currentTerm: string, currentDefinition: string, protect: boolean) {
+    setError(null)
+    updateGlossaryTerm(id, {
+      term: currentTerm,
+      definition: currentDefinition,
+      protect: !protect,
+    })
+      .then(invalidate)
       .catch((exc: Error) => setError(exc.message))
   }
 
@@ -142,6 +158,16 @@ export function GlossarySection() {
           value={definition}
           onChange={(e) => setDefinition(e.target.value)}
         />
+        <label className="flex items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]">
+          <input
+            aria-label="保留（翻译时保持原文）"
+            type="checkbox"
+            checked={protectNew}
+            onChange={(e) => setProtectNew(e.target.checked)}
+            className="size-4 accent-[var(--lumi-accent)]"
+          />
+          保留（翻译时保持原文，不翻译该词）
+        </label>
         <div>
           <Button variant="secondary" size="sm" disabled={!term.trim() || !definition.trim()} onClick={submit}>
             添加术语
@@ -194,18 +220,38 @@ export function GlossarySection() {
           {items.map((item) => (
             <li key={item.id} className="flex items-start justify-between gap-2 py-2">
               <div className="min-w-0">
-                <div className="text-sm text-[var(--lumi-text-primary)]">{item.term}</div>
+                <div className="text-sm text-[var(--lumi-text-primary)]">
+                  {item.term}
+                  {item.protect ? (
+                    <span
+                      data-glossary-protect-badge=""
+                      className="ml-1.5 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-1.5 py-0.5 text-[11px] text-[var(--lumi-accent-text)]"
+                    >
+                      保留
+                    </span>
+                  ) : null}
+                </div>
                 <div className="text-xs text-[var(--lumi-text-secondary)]">{item.definition}</div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  void deleteGlossaryTerm(item.id).then(invalidate)
-                }}
-              >
-                删除
-              </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={item.protect}
+                  onClick={() => toggleProtect(item.id, item.term, item.definition, item.protect)}
+                >
+                  {item.protect ? '取消保留' : '保留'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    void deleteGlossaryTerm(item.id).then(invalidate)
+                  }}
+                >
+                  删除
+                </Button>
+              </div>
             </li>
           ))}
           {items.length === 0 ? (

@@ -11,6 +11,25 @@ import {
 } from '@tanstack/react-query'
 import {
   addLibraryFavorite,
+  deletePasskey,
+  disableTotp,
+  enableTotp,
+  finishPasskeyRegistration,
+  getTotpStatus,
+  getTodayQueue,
+  generateTodayQueue,
+  addQueueItem,
+  removeQueueItem,
+  setQueueItemDone,
+  reorderTodayQueue,
+  moveQueueItemSegment,
+  setQueueSegmentOrder,
+  freezeTodayQueue,
+  getQueueSnapshots,
+  getQueueSnapshot,
+  deleteQueueSnapshot,
+  listPasskeys,
+  setupTotp,
   addWorkspaceItem,
   applyRssHubConfig,
   clearAiProfileSecret,
@@ -39,6 +58,8 @@ import {
   getAuthorItems,
   getAuthors,
   getGlossaryHits,
+  markNoTranslateBlock,
+  unmarkNoTranslateBlock,
   getMissingDigestDates,
   generateDigestForDate,
   generateEntrySummaryScoped,
@@ -98,10 +119,15 @@ import {
   getReadLaterTimeline,
   getRagStatus,
   getRssHubConfig,
+  getRssHubFavorites,
+  getRssHubRecent,
+  getRssHubRouteHistory,
   getRssHubRoutes,
+  refreshRssHubRoute,
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
+  getWorkspaceGroups,
   getWorkspaceResume,
   putWorkspaceResume,
   createInboxSource,
@@ -125,13 +151,20 @@ import {
   listTagsForItem,
   listWorkspaceItems,
   listWorkspaces,
+  listWorkspaceSnapshots,
   lookupTranslationSegments,
   moveSubscription,
+  moveWorkspaceItemGroup,
+  captureWorkspaceSnapshot,
+  deleteWorkspaceSnapshot,
+  restoreWorkspaceSnapshot,
+  setWorkspaceItemPinned,
   patchRssHubConfig,
   previewFeed,
   previewOpmlImport,
   previewRestore,
   previewRssHub,
+  putRssHubFavorite,
   rebuildRag,
   removeLibraryFavorite,
   removeWorkspaceItem,
@@ -143,6 +176,7 @@ import {
   saveLibreTranslateKey,
   searchEntries,
   createSavedSearchView,
+  deleteRssHubFavorite,
   deleteSavedSearchView,
   getSavedSearchViews,
   renameSavedSearchView,
@@ -186,6 +220,11 @@ import {
   reorderDigestPool,
   rotateGptDigestFeedDryRun,
   rotateInboxSource,
+  deleteSourceAlias,
+  fetchUnsubscribePreview,
+  listSourceAliasHistory,
+  listSourceAliases,
+  setSourceAlias,
 } from './client'
 import type {
   AiProfileInput,
@@ -204,6 +243,7 @@ import type { BacklogCondition } from './client'
 import type { MailImapSettingsUpdate } from './client'
 import type { UiView } from '../lib/read-later'
 import type { EntryDetail, EntryListItem } from './types'
+import type { TimelineOrder } from '../store/app-settings'
 import { buildEntryQuery, scopeKey, type ContentScope } from '../lib/navigation'
 import { READ_LATER_WORKSPACE_ID } from '../lib/read-later'
 
@@ -270,10 +310,12 @@ export function useSubscriptions() {
  * 1000 条只是病态增长的内存保险丝。DOM 成本由列表行的
  * content-visibility 处理（见 EntryList）。staleTime 30s：scope/view
  * 来回切换不重复请求（数据仍由写路径的精确补丁保持精确）。 */
-export function useEntries(scope: ContentScope, view: UiView) {
+export function useEntries(scope: ContentScope, view: UiView, order: TimelineOrder = 'newest') {
   const entryQuery = buildEntryQuery(scope, view)
   return useInfiniteQuery({
-    queryKey: ['entries', { view, scope: scopeKey(scope) }],
+    // N034：order 进入 queryKey —— received 走服务端 ?sort=received，
+    // 切换排序 = 换 key（与 read-later 时间线同一模式）。
+    queryKey: ['entries', { view, scope: scopeKey(scope), order }],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       getEntries(
@@ -283,6 +325,7 @@ export function useEntries(scope: ContentScope, view: UiView) {
           sourceType: entryQuery.sourceType,
           categoryId: entryQuery.categoryId,
           cursor: pageParam,
+          sort: order === 'received' ? 'received' : null,
         },
         signal,
       ),
@@ -620,13 +663,71 @@ export function useMoveSubscriptionMutation() {
   })
 }
 
-/** 0013 Gate 3：取消订阅（破坏性；调用方必须先完成二次确认）。 */
+/** 0013 Gate 3 / N012：取消订阅（破坏性；调用方必须先完成二次确认）。
+ *  keepArtifacts：true=保留批注/工作区引用；false=显式清理；缺省=legacy。 */
 export function useUnsubscribeMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { subscriptionRef: string }) =>
-      unsubscribeFeed(vars.subscriptionRef),
+    mutationFn: (vars: { subscriptionRef: string; keepArtifacts?: boolean }) =>
+      unsubscribeFeed(vars.subscriptionRef, vars.keepArtifacts),
     onSuccess: () => invalidateSubscriptionState(queryClient),
+  })
+}
+
+/** N012：退订影响预览（只读；对话框打开时拉取，确认前必须可见）。 */
+export function useUnsubscribePreviewQuery(subscriptionRef: string | null) {
+  return useQuery({
+    queryKey: ['unsubscribe-preview', subscriptionRef],
+    queryFn: ({ signal }) => {
+      void signal
+      return fetchUnsubscribePreview(subscriptionRef as string)
+    },
+    enabled: subscriptionRef !== null,
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+/** N013：全部来源别名（展示「服务端赢」；本地 localStorage 只是离线回退）。 */
+export function useSourceAliasesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['source-aliases'],
+    queryFn: listSourceAliases,
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+/** N013：设置/更名来源别名（服务端真源；成功后失效别名缓存）。 */
+export function useSetSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { feedUrl: string; customName: string }) =>
+      setSourceAlias(vars.feedUrl, vars.customName),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：清除来源别名（历史保留；成功后失效别名缓存）。 */
+export function useDeleteSourceAliasMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedUrl: string) => deleteSourceAlias(feedUrl),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['source-aliases'] })
+    },
+  })
+}
+
+/** N013：某来源的改名历史（对话框打开时才拉取）。 */
+export function useSourceAliasHistoryQuery(feedUrl: string | null) {
+  return useQuery({
+    queryKey: ['source-alias-history', feedUrl],
+    queryFn: () => listSourceAliasHistory(feedUrl as string),
+    enabled: feedUrl !== null,
   })
 }
 
@@ -704,6 +805,69 @@ export function useRssHubPreviewMutation() {
   return useMutation({
     mutationFn: (vars: { routeId: string; params: Record<string, string> }) =>
       previewRssHub(vars.routeId, vars.params),
+  })
+}
+
+/** N021：路由收藏（服务端持久化，跨设备）。 */
+export function useRssHubFavorites(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-favorites'],
+    queryFn: ({ signal }) => getRssHubFavorites(signal),
+    enabled,
+  })
+}
+
+/** N021：最近使用（仅成功 preview/subscribe 过的路由）。 */
+export function useRssHubRecent(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-recent'],
+    queryFn: ({ signal }) => getRssHubRecent(signal),
+    enabled,
+  })
+}
+
+/** N021：收藏 / 改标签（成功后失效收藏缓存）。 */
+export function usePutRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params?: Record<string, string>; label?: string }) =>
+      putRssHubFavorite(vars),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
+  })
+}
+
+/** N021：取消收藏（成功后失效收藏缓存）。 */
+export function useDeleteRssHubFavoriteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => deleteRssHubFavorite(routeKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-favorites'] })
+    },
+  })
+}
+
+/** N025：路由健康时间线（routeKey 为 null 时不发请求——预览前无 key）。 */
+export function useRssHubRouteHistory(routeKey: string | null) {
+  return useQuery({
+    queryKey: ['rsshub-route-history', routeKey],
+    queryFn: ({ signal }) => getRssHubRouteHistory(routeKey as string, signal),
+    enabled: routeKey !== null,
+  })
+}
+
+/** N027：强制重取单路由（成功后失效该路由时间线缓存）。 */
+export function useRssHubRefreshMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (routeKey: string) => refreshRssHubRoute(routeKey),
+    onSuccess: async (_data, routeKey) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['rsshub-route-history', routeKey],
+      })
+    },
   })
 }
 
@@ -1101,6 +1265,28 @@ export function useTranslationSegmentRevisionMutation(entryRef: string) {
   })
 }
 
+/** N086：标记/撤销一块「不翻译」；成功后失效该篇的段查询。 */
+export function useNoTranslateBlockMutation(entryRef: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      blockIndex,
+      marked,
+    }: {
+      blockIndex: number
+      marked: boolean
+    }) =>
+      marked
+        ? markNoTranslateBlock(entryRef, blockIndex)
+        : unmarkNoTranslateBlock(entryRef, blockIndex),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['translation-segments', entryRef],
+      })
+    },
+  })
+}
+
 export function useDetectRssHub() {
   return useQuery({
     queryKey: ['rsshub-detect'],
@@ -1332,8 +1518,8 @@ export function useAddWorkspaceItemMutation() {
 export function useRemoveWorkspaceItemMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
-      removeWorkspaceItem(vars.workspaceId, vars.itemRef),
+    mutationFn: (vars: { workspaceId: string; itemRef: string; force?: boolean }) =>
+      removeWorkspaceItem(vars.workspaceId, vars.itemRef, { force: vars.force }),
     onSuccess: () => invalidateWorkspaceState(queryClient),
   })
 }
@@ -1414,6 +1600,87 @@ export function useReorderWorkspaceItemsMutation() {
   return useMutation({
     mutationFn: (vars: { workspaceId: string; itemRefs: string[]; expectedRevision?: number }) =>
       reorderWorkspaceItems(vars.workspaceId, vars.itemRefs, vars.expectedRevision),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。 */
+export function useWorkspaceGroups(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace', workspaceId, 'groups'],
+    queryFn: ({ signal }) => getWorkspaceGroups(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+/** N101：移动条目到分组（groupName=null = 移回未分组）。 */
+export function useSetItemGroupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string; groupName: string | null }) =>
+      moveWorkspaceItemGroup(vars.workspaceId, vars.itemRef, vars.groupName),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+/** N102：设置固定标记（set 语义非 toggle）。 */
+export function useSetItemPinnedMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; itemRef: string; pinned: boolean }) =>
+      setWorkspaceItemPinned(vars.workspaceId, vars.itemRef, vars.pinned),
+    onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+// ---- N105：工作区会话快照 ----
+
+export function useWorkspaceSessionSnapshots(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-snapshots', workspaceId],
+    queryFn: ({ signal }) => listWorkspaceSnapshots(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+export function useCaptureWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; name: string }) =>
+      captureWorkspaceSnapshot(vars.workspaceId, vars.name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-snapshots'] })
+    },
+  })
+}
+
+export function useDeleteWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; snapshotId: string }) =>
+      deleteWorkspaceSnapshot(vars.workspaceId, vars.snapshotId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workspace-snapshots'] })
+    },
+  })
+}
+
+/** 恢复快照；成功后失效工作区全部状态（顺序/分组/固定/成员都可能变）。 */
+export function useRestoreWorkspaceSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      workspaceId: string
+      snapshotId: string
+      mode: 'reorder' | 'replace'
+      force?: boolean
+    }) =>
+      restoreWorkspaceSnapshot(
+        vars.workspaceId,
+        vars.snapshotId,
+        vars.mode,
+        vars.force ?? false,
+      ),
     onSuccess: () => invalidateWorkspaceState(queryClient),
   })
 }
@@ -2775,10 +3042,21 @@ export function useQaTemplateMutations() {
 
 // ---- F029 术语命中预览 ----
 
-export function useGlossaryHits(entryRef: string, enabled: boolean) {
+export function useGlossaryHits(
+  entryRef: string,
+  enabled: boolean,
+  blocks?: TranslationSegmentBlockInput[] | null,
+) {
+  // N083：提供 blocks 时逐块定位（命中附带 blockIndexes）；blocks 参与
+  // 缓存键（同一篇的不同块集合各自定位）。
+  const blocksKey = blocks && blocks.length > 0 ? JSON.stringify(blocks) : ''
   return useQuery({
-    queryKey: ['glossary-hits', entryRef],
-    queryFn: ({ signal }) => getGlossaryHits(entryRef, signal),
+    queryKey: ['glossary-hits', entryRef, blocksKey],
+    queryFn: ({ signal }) =>
+      getGlossaryHits(entryRef, {
+        blocks: blocksKey ? (blocks as TranslationSegmentBlockInput[]) : undefined,
+        signal,
+      }),
     enabled,
   })
 }
@@ -2825,6 +3103,58 @@ export function useRevokeSessionMutation() {
   return useMutation({
     mutationFn: revokeAuthSession,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-sessions'] }),
+  })
+}
+
+// ---- N006 通行密钥 / N007 两步验证（账户安全面） ----
+
+export function usePasskeys() {
+  return useQuery({ queryKey: ['auth-passkeys'], queryFn: ({ signal }) => listPasskeys(signal) })
+}
+
+export function useRegisterPasskeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { label: string; challenge: string; credential: Record<string, unknown> }) =>
+      finishPasskeyRegistration(input),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-passkeys'] }),
+  })
+}
+
+export function useDeletePasskeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { credentialId: string; currentPassword: string; totpCode?: string }) =>
+      deletePasskey(input.credentialId, input.currentPassword, input.totpCode),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-passkeys'] }),
+  })
+}
+
+export function useTotpStatus() {
+  return useQuery({ queryKey: ['auth-totp'], queryFn: ({ signal }) => getTotpStatus(signal) })
+}
+
+export function useTotpSetupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: setupTotp,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
+  })
+}
+
+export function useTotpEnableMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => enableTotp(code),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
+  })
+}
+
+export function useTotpDisableMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { code: string; currentPassword: string }) => disableTotp(input.code, input.currentPassword),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-totp'] }),
   })
 }
 
@@ -3055,4 +3385,143 @@ export function useRetentionPreviewMutation() {
 
 export function useRetentionApplyMutation() {
   return useMutation({ mutationFn: () => applyStorageRetention() })
+}
+
+// ---- N041/N042/N043/N044 今日必读队列 ----
+
+const QUEUE_TODAY_KEY = ['queue', 'today']
+const QUEUE_SNAPSHOTS_KEY = ['queue', 'snapshots']
+
+/** 今日队列（pending + done；removed 行不出库门）。 */
+export function useTodayQueue(enabled = true) {
+  return useQuery({
+    queryKey: QUEUE_TODAY_KEY,
+    queryFn: ({ signal }) => getTodayQueue(signal),
+    enabled,
+  })
+}
+
+/** 生成（或幂等返回）。已存在的队列绝不被重排（generated=false）。 */
+export function useGenerateQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      timeBudgetMinutes?: number
+      levels?: string[]
+      workspaceId?: string
+      force?: boolean
+    }) => generateTodayQueue(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 手动加入（itemRef；可选段名）。 */
+export function useAddQueueItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemRef: string; segment?: string | null }) =>
+      addQueueItem(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 移除（status=removed，行保留）。 */
+export function useRemoveQueueItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (itemId: string) => removeQueueItem(itemId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 完成状态（set 语义；完成按条目身份记账在服务端）。 */
+export function useQueueItemDoneMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemId: string; done: boolean }) =>
+      setQueueItemDone(input.itemId, input.done),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 持久化重排。 */
+export function useReorderQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (order: string[]) => reorderTodayQueue(order),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 行菜单移动分段。 */
+export function useMoveQueueItemSegmentMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { itemId: string; segment: string | null }) =>
+      moveQueueItemSegment(input.itemId, input.segment),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 段顺序（服务端存储 → 跨设备一致）。 */
+export function useQueueSegmentOrderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (order: string[]) => setQueueSegmentOrder(order),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_TODAY_KEY })
+    },
+  })
+}
+
+/** 冻结当前 pending 成员为不可变快照。 */
+export function useFreezeQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (label: string) => freezeTodayQueue(label),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_SNAPSHOTS_KEY })
+    },
+  })
+}
+
+/** 快照列表（新→旧）。 */
+export function useQueueSnapshots(enabled = true) {
+  return useQuery({
+    queryKey: QUEUE_SNAPSHOTS_KEY,
+    queryFn: ({ signal }) => getQueueSnapshots(signal),
+    enabled,
+  })
+}
+
+/** 打开冻结视图（原始成员顺序；消失 ref 呈现占位）。 */
+export function useQueueSnapshot(snapshotId: string | null) {
+  return useQuery({
+    queryKey: ['queue', 'snapshot', snapshotId],
+    queryFn: ({ signal }) => getQueueSnapshot(snapshotId as string, signal),
+    enabled: snapshotId !== null,
+  })
+}
+
+/** 删除快照。 */
+export function useDeleteQueueSnapshotMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (snapshotId: string) => deleteQueueSnapshot(snapshotId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUEUE_SNAPSHOTS_KEY })
+    },
+  })
 }

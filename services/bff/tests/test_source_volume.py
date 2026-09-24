@@ -6,6 +6,7 @@
 - days 越界收敛到 [1,30]。
 """
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from lumirss.main import app
@@ -28,6 +29,12 @@ def test_volume_counts_and_unknown_semantics(client, monkeypatch):
     db = app.state.db
     import asyncio
 
+    # 窗口内/窗口外发布时间都相对 now 计算：硬编码日期会随真实时间
+    # 滚出 days=7 窗口（时间炸弹），这里保证测试语义永远成立。
+    now = datetime.now(UTC)
+    in_window = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out_window = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     async def _seed():
         await db.migrate()
         await db.execute(
@@ -41,7 +48,7 @@ def test_volume_counts_and_unknown_semantics(client, monkeypatch):
                 "",
                 "",
                 "",
-                "2026-09-17T10:00:00Z",
+                in_window,
                 0,
                 0,
                 1789660000,
@@ -58,7 +65,7 @@ def test_volume_counts_and_unknown_semantics(client, monkeypatch):
                 "",
                 "",
                 "",
-                "2026-01-01T00:00:00Z",
+                out_window,
                 0,
                 0,
                 1789660001,
@@ -74,7 +81,7 @@ def test_volume_counts_and_unknown_semantics(client, monkeypatch):
     items = {item["feedUrl"]: item for item in body["items"]}
     covered = items["https://covered.example.com/rss"]
     assert covered["publishedCount"] == 1, "窗口外发布不计入"
-    assert covered["lastPublishedAt"] == "2026-09-17T10:00:00Z"
+    assert covered["lastPublishedAt"] == in_window
     assert covered["lastSyncedAt"] is not None
     uncovered = items["https://uncovered.example.com/rss"]
     assert uncovered["publishedCount"] is None, "投影未覆盖 → 未知，不是 0"

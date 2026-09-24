@@ -1,0 +1,674 @@
+"""N041 今日必读队列 —— 服务端持久化的每用户每日阅读队列。
+
++ N042 队列分段（行级 segment 标签 + meta 段顺序，N101 group 模式的镜像）；
++ N043 队列冻结快照（payload 只带 ItemRef + 顺序元数据，不可变）。
+
+安全与诚实边界：
+
+- ``reading_queue`` 是 Lumi 自有状态（每用户库，无 user_id 列）；行只存
+  统一 ItemRef，绝不复制内容（ADR 0004）。条目删除/退订后行仍存在，
+  解析失败由读取侧诚实呈现占位（绝不复活）；
+- 生成算法的诚实基础：N020 关注级别（source_overrides 级别列）在本仓库
+  尚未实现——``levels`` 参数没有可依据的数据，当前候选只按
+  **未读 + 近期（published_at recency）** 挑选；预算上限用粗估读时
+  ``minutes = max(1, ceil(len(content_text) / 400))``（服务端只有投影
+  纯文本；400 字符/分钟是有意的粗常量，与 Web 侧 CJK 感知估算不同源，
+  响应以 ``basis``/``notes`` 字段诚实标注）。若一个候选都装不下且确有
+  未读，收进最近一篇（宁可超预算也不交空队列，诚实于「budget 是估算」）；
+- 幂等（N041 CRITICAL）：当天队列一旦存在（含手动加入的行、done 行），
+  再次 generate 原样返回现有队列（``generated=false``）——后台刷新绝不
+  重排已确认的队列；``force=1`` 才重建：清掉 pending/removed 行后重新
+  装填，done 行与其完成状态原样保留（完成按条目身份记账，绝不因重建
+  复活或丢失）；被手动移除的条目绝不因重新生成而复活；
+- done/removed 是 set 语义；「只看未完成」这类过滤只存在于读取侧
+  （N044），本 store 的任何路径都不因过滤删除记录。
+"""
+
+import json
+import math
+import sqlite3
+import uuid
+from typing import Any
+
+from lumirss.db_tx import transaction
+from lumirss.itemref import InvalidItemRef, parse_item_ref
+from lumirss.storage import Database
+from lumirss.util import utc_now
+
+# 预算（分钟）边界；默认值与 F014 面板常用档位对齐。
+_MIN_BUDGET_MINUTES = 5
+_MAX_BUDGET_MINUTES = 480
+_DEFAULT_BUDGET_MINUTES = 30
+
+# 服务器侧估读速度：字符/分钟（有意粗估，见模块 docstring）。
+_CHARS_PER_MINUTE = 400
+
+# 单日队列硬上限（预算失控时的兜底，不是常规路径）。
+_MAX_QUEUE_ITEMS = 100
+
+_MAX_SNAPSHOTS = 50
+_PAYLOAD_VERSION = 1
+
+_MAX_SEGMENT_LENGTH = 60
+_MAX_LABEL_LENGTH = 100
+
+_QUEUE_SOURCES = ("manual", "budget", "level")
+_QUEUE_STATUSES = ("pending", "done", "removed")
+
+
+class QueueInvalid(Exception):
+    """载荷非法（段名/快照名等）——400 invalid_queue。"""
+
+
+class QueueItemNotFound(Exception):
+    """队列项不存在（或不属于今天）——404 queue_item_not_found。"""
+
+
+class QueueItemDone(Exception):
+    """条目今天已完成，需先显式取消完成才能重新加入——409 queue_item_done。"""
+
+
+class QueueSnapshotNotFound(Exception):
+    """冻结快照不存在——404 queue_snapshot_not_found。"""
+
+
+class QueueSnapshotLimit(Exception):
+    """快照数达到上限——400 queue_snapshot_limit。"""
+
+
+def today_queue_date() -> str:
+    """服务端 UTC 日期（YYYY-MM-DD）——跨设备共享同一个「今天」。"""
+    return utc_now()[:10]
+
+
+def estimate_minutes(content_text: str | None) -> int:
+    """服务器侧粗估读时：``max(1, ceil(len/400))``；无文本按 1 分钟。
+
+    有意与 Web 侧 CJK 感知估算（lib/reading-time.ts）不同源：服务端只
+    有投影纯文本，这里的目标是「一致、可解释」，不是精确。
+    """
+    length = len(content_text) if content_text else 0
+    if length == 0:
+        return 1
+    return max(1, math.ceil(length / _CHARS_PER_MINUTE))
+
+
+def _clean_segment(segment: str | None) -> str | None:
+    """段名规范化：空白/越界拒绝；None = 未分组。"""
+    if segment is None:
+        return None
+    if not isinstance(segment, str):
+        raise QueueInvalid("segment 必须是字符串或 null。")
+    clean = segment.strip()
+    if not clean:
+        raise QueueInvalid("segment 不能是空字符串（未分组请传 null）。")
+    if len(clean) > _MAX_SEGMENT_LENGTH:
+        raise QueueInvalid(f"segment 最长 {_MAX_SEGMENT_LENGTH} 字符。")
+    return clean
+
+
+class ReadingQueueStore:
+    """Persistence for reading_queue / reading_queue_meta / queue_snapshots."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    # -- reads ---------------------------------------------------------------
+
+    async def today_rows(self, queue_date: str | None = None) -> list[dict[str, Any]]:
+        """今天的队列行（pending + done，按 position；removed 不出库门，
+        但行本身保留在库里——过滤绝不删除记录）。"""
+        await self._db.migrate()
+        day = queue_date or today_queue_date()
+        rows = await self._db.fetch_all(
+            "SELECT q.id, q.entry_ref, q.added_at, q.position, q.queue_date,"
+            " q.source, q.status, q.segment, se.title AS projection_title,"
+            " se.content_text AS projection_text"
+            " FROM reading_queue q"
+            " LEFT JOIN search_entries se ON se.entry_ref = substr(q.entry_ref, 5)"
+            " WHERE q.queue_date = ? AND q.status != 'removed'"
+            " ORDER BY q.position ASC, q.rowid ASC",
+            (day,),
+        )
+        return [self._row_view(row) for row in rows]
+
+    async def today_view(self) -> dict[str, Any]:
+        """GET 视图：平铺 items + 派生 segments + 段顺序 + 估读合计。"""
+        items = await self.today_rows()
+        segment_order = await self._stored_segment_order()
+        return {
+            "queueDate": today_queue_date(),
+            "items": items,
+            "segments": self._derive_segments(items, segment_order),
+            "segmentOrder": segment_order,
+            "totalEstimateMinutes": self._total_estimate(items),
+        }
+
+    @staticmethod
+    def _total_estimate(items: list[dict[str, Any]]) -> int:
+        return sum(
+            item["estimateMinutes"] or 0
+            for item in items
+            if item["status"] == "pending"
+        )
+
+    @staticmethod
+    def _row_view(row: Any) -> dict[str, Any]:
+        text = row["projection_text"]
+        return {
+            "id": str(row["id"]),
+            "itemRef": str(row["entry_ref"]),
+            "addedAt": str(row["added_at"]),
+            "position": int(row["position"]),
+            "queueDate": str(row["queue_date"]),
+            "source": str(row["source"]),
+            "status": str(row["status"]),
+            "segment": row["segment"],
+            # 呈现数据来自投影 best-effort：无投影行（条目已删除/退订、
+            # 或 library ref）为 None → Web 呈现诚实占位。
+            "title": row["projection_title"],
+            "estimateMinutes": estimate_minutes(text) if text is not None else None,
+        }
+
+    @staticmethod
+    def _derive_segments(
+        items: list[dict[str, Any]], segment_order: list[str]
+    ) -> list[dict[str, Any]]:
+        """派生分段：未分组（None）恒为隐式前置组；其余按 meta 顺序，
+        meta 没有的段名按成员首现顺序垫后；空段不出现在响应里。"""
+        grouped: dict[str | None, list[dict[str, Any]]] = {}
+        for item in items:
+            grouped.setdefault(item["segment"], []).append(item)
+        ordered_names: list[str | None] = [None]
+        seen = {None}
+        for name in segment_order:
+            if name not in seen:
+                ordered_names.append(name)
+                seen.add(name)
+        for item in items:
+            name = item["segment"]
+            if name not in seen:
+                ordered_names.append(name)
+                seen.add(name)
+        return [
+            {"name": name, "items": grouped[name]}
+            for name in ordered_names
+            if name in grouped
+        ]
+
+    async def _stored_segment_order(self, queue_date: str | None = None) -> list[str]:
+        day = queue_date or today_queue_date()
+        row = await self._db.fetch_one(
+            "SELECT segment_order_json FROM reading_queue_meta WHERE queue_date = ?",
+            (day,),
+        )
+        if row is None:
+            return []
+        try:
+            parsed = json.loads(str(row["segment_order_json"]))
+        except ValueError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(name) for name in parsed if isinstance(name, str)]
+
+    # -- N041 generate ---------------------------------------------------------
+
+    async def generate(
+        self,
+        *,
+        budget_minutes: int | None = None,
+        workspace_id: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """生成（或幂等返回）今天的队列；返回 today_view + generated 等元数据。
+
+        ``levels``（N020 关注级别）在本仓库尚未实现，由路由层决定是否
+        附带「已忽略」的诚实标注；store 层从不依据它挑选候选。"""
+        await self._db.migrate()
+        day = today_queue_date()
+        effective_budget = _DEFAULT_BUDGET_MINUTES if budget_minutes is None else budget_minutes
+        existing = await self._db.fetch_all(
+            "SELECT id FROM reading_queue WHERE queue_date = ? AND status != 'removed'",
+            (day,),
+        )
+        if existing and not force:
+            view = await self.today_view()
+            view.update({"generated": False, "force": False, "basis": "existing"})
+            return view
+
+        kept_done: list[str] = []
+        if force:
+            # force 重建：pending 清掉重装；done 原样保留（完成按条目身份
+            # 记账）；removed 墓碑保留——被手动移除的条目绝不因重建复活。
+            # 候选排除 done ∪ removed。
+            kept_rows = await self._db.fetch_all(
+                "SELECT entry_ref, status FROM reading_queue WHERE queue_date = ?"
+                " AND status != 'pending'",
+                (day,),
+            )
+            kept_done = [
+                str(row["entry_ref"])
+                for row in kept_rows
+                if row["status"] in ("done", "removed")
+            ]
+
+            def _tx(conn: sqlite3.Connection) -> None:
+                conn.execute(
+                    "DELETE FROM reading_queue WHERE queue_date = ? AND status = 'pending'",
+                    (day,),
+                )
+
+            await transaction(self._db, _tx)
+
+        candidates = await self._candidate_rows(
+            budget_minutes=effective_budget,
+            workspace_id=workspace_id,
+            excluded_refs=kept_done,
+        )
+        if candidates:
+            await self._insert_generated(day, candidates)
+        view = await self.today_view()
+        view.update(
+            {
+                "generated": True,
+                "force": force,
+                "basis": "unread+recency",
+                "budgetMinutes": effective_budget,
+            }
+        )
+        return view
+
+    async def _candidate_rows(
+        self,
+        *,
+        budget_minutes: int,
+        workspace_id: str | None,
+        excluded_refs: list[str],
+    ) -> list[dict[str, Any]]:
+        """候选：未读 + 近期（published_at DESC）；按预算贪心装填。
+
+        - 装不下的候选跳过（更近但很长的文不挡后面短文，语义同 F014）；
+        - 全都装不下且确有候选 → 收最近一篇（宁可超预算，不交空队列）；
+        - workspace_id 提供时，候选限定为该工作区成员（ItemRef 同构）。
+        """
+        params: list[Any] = []
+        where_extra = ""
+        if workspace_id is not None:
+            where_extra = (
+                " AND EXISTS (SELECT 1 FROM workspace_items w"
+                " WHERE w.workspace_id = ? AND w.item_ref = 'rss:' || s.entry_ref)"
+            )
+            params.append(workspace_id)
+        rows = await self._db.fetch_all(
+            "SELECT s.entry_ref, s.title, s.content_text FROM search_entries s"
+            " WHERE s.read = 0" + where_extra +
+            " ORDER BY s.published_at DESC, s.id DESC"
+            " LIMIT 500",
+            tuple(params),
+        )
+        excluded = set(excluded_refs)
+        picked: list[dict[str, Any]] = []
+        used = 0
+        for row in rows:
+            ref = f"rss:{row['entry_ref']}"
+            if ref in excluded:
+                continue
+            minutes = estimate_minutes(row["content_text"])
+            if len(picked) >= _MAX_QUEUE_ITEMS:
+                break
+            if used + minutes > budget_minutes:
+                continue
+            picked.append(
+                {"ref": ref, "minutes": minutes, "title": row["title"]}
+            )
+            used += minutes
+        if not picked and rows:
+            # 预算装不下任何候选：收最近一篇（诚实标注为估算超支）。
+            first = rows[0]
+            picked.append(
+                {
+                    "ref": f"rss:{first['entry_ref']}",
+                    "minutes": estimate_minutes(first["content_text"]),
+                    "title": first["title"],
+                }
+            )
+        return picked
+
+    async def _insert_generated(self, day: str, candidates: list[dict[str, Any]]) -> None:
+        now = utc_now()
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            next_position = conn.execute(
+                "SELECT COALESCE(MAX(position), 0) FROM reading_queue WHERE queue_date = ?",
+                (day,),
+            ).fetchone()[0]
+            for candidate in candidates:
+                next_position += 1
+                conn.execute(
+                    "INSERT INTO reading_queue (id, entry_ref, added_at, position,"
+                    " queue_date, source, status, segment) VALUES (?, ?, ?, ?, ?, 'budget', 'pending', NULL)",
+                    (f"rq-{uuid.uuid4().hex}", candidate["ref"], now, next_position, day),
+                )
+
+        await transaction(self._db, _tx)
+
+    # -- N041 manual add / remove / done / reorder -----------------------------
+
+    async def add_item(
+        self, item_ref: str, segment: str | None = None
+    ) -> tuple[dict[str, Any], str]:
+        """手动加入（source=manual）。返回 (视图, 结果)。
+
+        - 新加入 → ``created``（201）；
+        - 今天已存在 pending 行 → ``duplicate``（幂等返回，绝不重排）；
+        - 今天已被移除（removed）→ ``resurrected``（显式重新加入，
+          垫到队尾）；
+        - 今天已完成（done）→ 抛 QueueItemDone（409；先取消完成再加）。
+        """
+        await self._db.migrate()
+        clean_segment = _clean_segment(segment)
+        try:
+            parse_item_ref(item_ref)
+        except InvalidItemRef as exc:
+            raise QueueInvalid(f"itemRef 不合法：{exc}") from exc
+        day = today_queue_date()
+        existing = await self._db.fetch_one(
+            "SELECT id, status FROM reading_queue WHERE queue_date = ? AND entry_ref = ?",
+            (day, item_ref),
+        )
+        if existing is not None:
+            if existing["status"] == "pending":
+                row = await self._get_row(str(existing["id"]))
+                return row, "duplicate"
+            if existing["status"] == "done":
+                raise QueueItemDone(
+                    "该条目今日已完成：请先取消完成状态，再重新加入队列。"
+                )
+            # removed → 显式复活（垫到队尾，回到 pending）。
+            await self._db.execute(
+                "UPDATE reading_queue SET status = 'pending', segment = ?,"
+                " added_at = ?, position = (SELECT COALESCE(MAX(position), 0) + 1"
+                "  FROM reading_queue WHERE queue_date = ?)"
+                " WHERE id = ?",
+                (clean_segment, utc_now(), day, str(existing["id"])),
+            )
+            row = await self._get_row(str(existing["id"]))
+            return row, "resurrected"
+
+        count_row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM reading_queue WHERE queue_date = ?", (day,)
+        )
+        if count_row is not None and int(count_row["n"]) >= _MAX_QUEUE_ITEMS:
+            raise QueueInvalid(f"今天的队列已满（上限 {_MAX_QUEUE_ITEMS} 条）。")
+        item_id = f"rq-{uuid.uuid4().hex}"
+        await self._db.execute(
+            "INSERT INTO reading_queue (id, entry_ref, added_at, position, queue_date,"
+            " source, status, segment) VALUES (?, ?, ?,"
+            " (SELECT COALESCE(MAX(position), 0) + 1 FROM reading_queue WHERE queue_date = ?),"
+            " ?, 'manual', 'pending', ?)",
+            (item_id, item_ref, utc_now(), day, day, clean_segment),
+        )
+        row = await self._get_row(item_id)
+        return row, "created"
+
+    async def _get_row(self, item_id: str) -> dict[str, Any]:
+        row = await self._db.fetch_one(
+            "SELECT q.id, q.entry_ref, q.added_at, q.position, q.queue_date,"
+            " q.source, q.status, q.segment, se.title AS projection_title,"
+            " se.content_text AS projection_text"
+            " FROM reading_queue q"
+            " LEFT JOIN search_entries se ON se.entry_ref = substr(q.entry_ref, 5)"
+            " WHERE q.id = ?",
+            (item_id,),
+        )
+        if row is None or row["status"] == "removed":
+            raise QueueItemNotFound(item_id)
+        return self._row_view(row)
+
+    async def remove_item(self, item_id: str) -> dict[str, Any]:
+        """移除（status=removed，行保留——生成绝不复活被移除的条目）。"""
+        await self._db.migrate()
+        view = await self._get_row(item_id)
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "UPDATE reading_queue SET status = 'removed' WHERE id = ?", (item_id,)
+            )
+            # 剩余行位置压实（保持相对顺序），position 恒为 1..n。
+            rows = conn.execute(
+                "SELECT id FROM reading_queue WHERE queue_date = ? AND status != 'removed'"
+                " ORDER BY position ASC, rowid ASC",
+                (view["queueDate"],),
+            ).fetchall()
+            for index, row in enumerate(rows, start=1):
+                conn.execute(
+                    "UPDATE reading_queue SET position = ? WHERE id = ?",
+                    (index, row[0]),
+                )
+
+        await transaction(self._db, _tx)
+        return view
+
+    async def set_item_done(self, item_id: str, done: bool) -> dict[str, Any]:
+        """完成状态（set 语义，按条目身份记账；绝不隐式改写上游已读）。"""
+        await self._db.migrate()
+        await self._get_row(item_id)
+        status = "done" if done else "pending"
+        await self._db.execute(
+            "UPDATE reading_queue SET status = ? WHERE id = ?", (status, item_id)
+        )
+        return await self._get_row(item_id)
+
+    async def reorder(self, item_ids: list[str]) -> None:
+        """持久化重排：给定 id 按 1..k 排列，未提及的非 removed 行保持
+        当前相对顺序垫在后面（语义同工作区 reorder）。"""
+        await self._db.migrate()
+        day = today_queue_date()
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            rows = conn.execute(
+                "SELECT id FROM reading_queue WHERE queue_date = ? AND status != 'removed'"
+                " ORDER BY position ASC, rowid ASC",
+                (day,),
+            ).fetchall()
+            known = [str(row[0]) for row in rows]
+            known_set = set(known)
+            requested = [item_id for item_id in item_ids if item_id in known_set]
+            tail = [item_id for item_id in known if item_id not in set(requested)]
+            for index, row_id in enumerate(requested + tail, start=1):
+                conn.execute(
+                    "UPDATE reading_queue SET position = ? WHERE id = ? AND queue_date = ?",
+                    (index, row_id, day),
+                )
+
+        await transaction(self._db, _tx)
+
+    # -- N042 segments ---------------------------------------------------------
+
+    async def set_item_segment(self, item_id: str, segment: str | None) -> dict[str, Any]:
+        """行菜单移动分段（N042）；新段名随行诞生（派生语义，无段表）。"""
+        await self._db.migrate()
+        clean = _clean_segment(segment)
+        await self._get_row(item_id)
+        await self._db.execute(
+            "UPDATE reading_queue SET segment = ? WHERE id = ?", (clean, item_id)
+        )
+        if clean is not None:
+            await self._append_segment_names([clean])
+        return await self._get_row(item_id)
+
+    async def set_segment_order(self, names: list[str]) -> list[str]:
+        """段顺序（呈现提示；meta 行懒创建——N101 group_order_json 同构）。"""
+        await self._db.migrate()
+        cleaned: list[str] = []
+        for name in names:
+            clean = _clean_segment(name)
+            if clean is not None and clean not in cleaned:
+                cleaned.append(clean)
+        await self._db.execute(
+            "INSERT INTO reading_queue_meta (queue_date, segment_order_json) VALUES (?, ?)"
+            " ON CONFLICT(queue_date) DO UPDATE SET segment_order_json = excluded.segment_order_json",
+            (today_queue_date(), json.dumps(cleaned, ensure_ascii=False)),
+        )
+        return cleaned
+
+    async def _append_segment_names(self, names: list[str]) -> None:
+        stored = await self._stored_segment_order()
+        merged = list(stored)
+        for name in names:
+            if name not in merged:
+                merged.append(name)
+        if merged != stored:
+            await self.set_segment_order(merged)
+
+    # -- N043 freeze -----------------------------------------------------------
+
+    async def freeze(self, label: str) -> dict[str, Any]:
+        """把当前 pending 成员冻结为不可变快照（201）。
+
+        - 只冻结 pending（done 是历史，不是待读批次）；
+        - payload 只带 ItemRef + position + segment，绝不复制内容；
+        - 冻结后新加入的项绝不进入旧快照（快照不可变，无任何写路径）。
+        """
+        await self._db.migrate()
+        clean_label = _validate_label(label)
+        day = today_queue_date()
+        count_row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM queue_snapshots WHERE queue_date = ?", (day,)
+        )
+        if count_row is not None and int(count_row["n"]) >= _MAX_SNAPSHOTS:
+            raise QueueSnapshotLimit(f"快照数已达上限（{_MAX_SNAPSHOTS}）。")
+        items = [
+            item
+            for item in await self.today_rows()
+            if item["status"] == "pending"
+        ]
+        segment_order = await self._stored_segment_order(day)
+        payload = {
+            "version": _PAYLOAD_VERSION,
+            "items": [
+                {
+                    "item_ref": item["itemRef"],
+                    "position": item["position"],
+                    "segment": item["segment"],
+                }
+                for item in items
+            ],
+            "segment_order": segment_order,
+        }
+        snapshot_id = f"qsnap-{uuid.uuid4().hex}"
+        created_at = utc_now()
+        await self._db.execute(
+            "INSERT INTO queue_snapshots (id, label, queue_date, created_at, payload_json)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                clean_label,
+                day,
+                created_at,
+                json.dumps(payload, ensure_ascii=False),
+            ),
+        )
+        return {
+            "id": snapshot_id,
+            "label": clean_label,
+            "queueDate": day,
+            "createdAt": created_at,
+            "itemCount": len(items),
+        }
+
+    async def list_snapshots(self) -> list[dict[str, Any]]:
+        """快照列表（新→旧；rowid = 诚实捕获顺序，同 N105）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id, label, queue_date, created_at, payload_json"
+            " FROM queue_snapshots ORDER BY rowid DESC"
+        )
+        return [self._snapshot_meta(row) for row in rows]
+
+    async def get_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        """打开冻结视图：原始成员顺序原样返回；ref 消失由 Web 以解析
+        状态诚实呈现占位（服务端绝不复活、绝不补内容）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT id, label, queue_date, created_at, payload_json"
+            " FROM queue_snapshots WHERE id = ?",
+            (snapshot_id,),
+        )
+        if row is None:
+            raise QueueSnapshotNotFound(snapshot_id)
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except ValueError as exc:
+            raise QueueInvalid("快照 payload 不是合法 JSON。") from exc
+        raw_items = payload.get("items") if isinstance(payload, dict) else None
+        items = []
+        for entry in raw_items if isinstance(raw_items, list) else []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("item_ref"), str):
+                continue
+            items.append(
+                {
+                    "itemRef": str(entry["item_ref"]),
+                    "position": int(entry.get("position", 0)),
+                    "segment": (
+                        entry["segment"]
+                        if isinstance(entry.get("segment"), str)
+                        else None
+                    ),
+                }
+            )
+        items.sort(key=lambda item: item["position"])
+        raw_order = payload.get("segment_order") if isinstance(payload, dict) else None
+        segment_order = (
+            [str(name) for name in raw_order if isinstance(name, str)]
+            if isinstance(raw_order, list)
+            else []
+        )
+        return {
+            "id": str(row["id"]),
+            "label": str(row["label"]),
+            "queueDate": str(row["queue_date"]),
+            "createdAt": str(row["created_at"]),
+            "items": items,
+            "segmentOrder": segment_order,
+        }
+
+    async def delete_snapshot(self, snapshot_id: str) -> bool:
+        """删除快照（false = 不存在）。"""
+        await self._db.migrate()
+
+        def _tx(conn: sqlite3.Connection) -> bool:
+            cursor = conn.execute(
+                "DELETE FROM queue_snapshots WHERE id = ?", (snapshot_id,)
+            )
+            return cursor.rowcount > 0
+
+        return await transaction(self._db, _tx)
+
+    @staticmethod
+    def _snapshot_meta(row: Any) -> dict[str, Any]:
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except ValueError:
+            payload = {}
+        items = payload.get("items") if isinstance(payload, dict) else None
+        return {
+            "id": str(row["id"]),
+            "label": str(row["label"]),
+            "queueDate": str(row["queue_date"]),
+            "createdAt": str(row["created_at"]),
+            "itemCount": len(items) if isinstance(items, list) else 0,
+        }
+
+
+def _validate_label(label: str) -> str:
+    """快照名与工作区名同界（非空、去首尾空白、≤100 字符）。"""
+    if not isinstance(label, str):
+        raise QueueInvalid("label 必须是字符串。")
+    clean = label.strip()
+    if not clean:
+        raise QueueInvalid("label 不能为空。")
+    if len(clean) > _MAX_LABEL_LENGTH:
+        raise QueueInvalid(f"label 最长 {_MAX_LABEL_LENGTH} 字符。")
+    return clean

@@ -5,6 +5,7 @@ import 'katex/dist/katex.min.css'
 import { readFootnoteDefinition } from '../lib/footnotes'
 import { getEntryExtractPreview } from '../api/client'
 import { Button } from './ui/Button'
+import { cx as cxRaw } from './ui/cx'
 import { useMutation } from '@tanstack/react-query'
 import { deferImages } from '../lib/article-images'
 import {
@@ -131,6 +132,19 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     setImagesAllowed(false)
   }, [detail.entryRef])
 
+  // N032：内容丢失恢复选择（当前 / 上次完整版本）。切换只改渲染源，
+  // 两种版本都走同一条 sanitize 管线（DOMPurify 唯一清洗点不变）。
+  // 状态把 entryRef 一并存入：换文章时渲染期直接归位「当前」，
+  // 无需 effect（换 entryRef 即自动失效）。
+  const [variantState, setVariantState] = useState<{
+    ref: string
+    kind: 'current' | 'last_known_full'
+  }>({ ref: detail.entryRef, kind: 'current' })
+  const variant: 'current' | 'last_known_full' =
+    variantState.ref === detail.entryRef ? variantState.kind : 'current'
+  const setVariant = (kind: 'current' | 'last_known_full') =>
+    setVariantState({ ref: detail.entryRef, kind })
+
   // F14：图片灯箱状态；F16：表格展开面板状态。打开前保存滚动容器
   // scrollTop，关闭后还原（面板不改变正文阅读位置）。
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null)
@@ -158,8 +172,13 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     mutationFn: () => getEntryExtractPreview(detail.entryRef),
   })
   const showExtractBadge = detail.extractionFailed === true
+  // N032：last_known_full 只在该版本真实保留时出现（BFF 诚实缺席）。
+  const lastFullVariant =
+    detail.contentVariants?.variants?.find((v) => v.kind === 'last_known_full') ?? null
+  const lastFullVariantHtml =
+    variant === 'last_known_full' ? (lastFullVariant?.contentHtml ?? null) : null
   const rawHtml =
-    extractOnceMutation.data?.contentHtml ?? detail.contentHtml ?? null
+    extractOnceMutation.data?.contentHtml ?? lastFullVariantHtml ?? detail.contentHtml ?? null
   const hasHtml = rawHtml !== null && rawHtml.trim() !== ''
   // 同步初值：管线关闭时直接 sanitize（零额外开销）；开启时先渲染
   // sanitize 基线、transform 完成后替换——加载期间正文可见不空白。
@@ -295,6 +314,11 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     if (target !== null) {
       const el = container.querySelector(`#${CSS.escape(target)}`)
       if (el !== null) {
+        // N051：章节模式（ArticleToc）先切到包含该段的章节，随后定位
+        // 才可见可滚（隐藏块 scrollIntoView 无效）。
+        document.dispatchEvent(
+          new CustomEvent('lumi:para-navigate', { detail: { element: el } }),
+        )
         el.scrollIntoView({ block: 'center' })
         el.classList.add('lumi-para-highlight')
         window.setTimeout(() => el.classList.remove('lumi-para-highlight'), 2500)
@@ -476,6 +500,51 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
             {extractOnceMutation.data?.extractionFailed === true && (
               <span role="alert" className="text-[var(--lumi-danger)]">试读提取失败，仍显示 RSS 正文。</span>
             )}
+          </div>
+        )}
+        {/* N032：当前正文明显变短 → 版本选择条（诚实标注两个选项）。
+            web 提取策略下正文来自文章页提取，与上游 RSS 交付无关，不显示。 */}
+        {detail.contentVariants?.triggered && detail.extractPolicy !== 'web' && (
+          <div
+            role="note"
+            data-testid="content-variants-bar"
+            className="mb-2 flex flex-wrap items-center gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] px-2.5 py-1.5 text-xs text-[var(--lumi-text-secondary)]"
+          >
+            <span>当前正文明显变短</span>
+            <div role="group" aria-label="选择正文版本" className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-pressed={variant === 'current'}
+                onClick={() => setVariant('current')}
+                className={cxRaw(
+                  'min-h-7 rounded-[var(--lumi-radius-full)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)]',
+                  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  variant === 'current'
+                    ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                    : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+                )}
+              >
+                当前
+              </button>
+              {lastFullVariant !== null && (
+                <button
+                  type="button"
+                  data-testid="variant-last-full"
+                  aria-pressed={variant === 'last_known_full'}
+                  onClick={() => setVariant('last_known_full')}
+                  className={cxRaw(
+                    'min-h-7 rounded-[var(--lumi-radius-full)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)]',
+                    'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                    variant === 'last_known_full'
+                      ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                      : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+                  )}
+                >
+                  上次完整版本
+                  {lastFullVariant.capturedAt ? `（${lastFullVariant.capturedAt.slice(0, 10)}）` : ''}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {deferredImageCount > 0 ? (

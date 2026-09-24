@@ -27,6 +27,11 @@ export type EntryListResponse = Schemas['EntryListResponse']
 /** contentHtml 是不可信的上游 RSS HTML：BFF 只搬运，sanitize 在渲染前
  * 由 DOMPurify 完成（见 lib/sanitize-article-html.ts）。 */
 export type EntryDetail = Schemas['EntryDetail']
+/** N032：正文明显变短时的版本选择块（上游当前 / 上次完整版本）。 */
+export type ContentVariantsBlock = Schemas['ContentVariantsBlock']
+/** N031：文章修订（有界元数据 + 结构差异摘要）。 */
+export type EntryRevision = Schemas['EntryRevision']
+export type EntryRevisionsResponse = Schemas['EntryRevisionsResponse']
 
 export interface ApiErrorResponse {
   error: { type: string; message: string }
@@ -39,6 +44,8 @@ export type AuthStatusView = Schemas['AuthStatus']
 // ---- 0013 订阅管理 / 预览 / OPML ----
 
 export type FeedPreviewMetadata = Schemas['FeedPreviewResult']
+// RSSHub 预览在共享预览形状上附加服务端派生的 routeKey（N021/N025）
+export type RssHubPreviewMetadata = Schemas['RssHubPreviewResult']
 export type OpmlImportPreview = Schemas['OpmlImportPreview']
 export type OpmlImportAdded = Schemas['OpmlImportAdded']
 export type OpmlImportResult = Schemas['OpmlImportResult']
@@ -53,6 +60,14 @@ export type SourceDiscoveryResponse = Schemas['SourceDiscoveryResponse']
 export type RssHubParameter = Schemas['RssHubParameter']
 export type RssHubRoute = Schemas['RssHubRoute']
 export type RssHubRoutesResponse = Schemas['RssHubCatalog']
+// N021 路由收藏 / 最近使用（params 内敏感值只以 '***' 哨兵出现）
+export type RssHubFavoriteItem = Schemas['RssHubFavoriteItem']
+export type RssHubRecentItem = Schemas['RssHubRecentItem']
+// N025 路由健康时间线
+export type RssHubRouteRun = Schemas['RssHubRouteRun']
+export type RssHubRouteRuns = Schemas['RssHubRouteRuns']
+// N027 预览缓存控制（refresh 单路由强制重取）
+export type RssHubRefreshResult = Schemas['RssHubRefreshResult']
 
 // ---- 0015/0016 AI ----
 
@@ -100,6 +115,10 @@ export type BackupJobType = Schemas['BackupJob']['type']
 export type BackupJob = Schemas['BackupJob']
 export type BackupCapabilities = Schemas['BackupCapabilities']
 export type TranslationSegmentsView = Schemas['TranslationSegmentsView']
+export type SegmentProtectedTerm = Schemas['SegmentProtectedTerm']
+export type TranslationVerificationView = Schemas['TranslationVerificationView']
+export type TranslationVerificationBlock = Schemas['TranslationVerificationBlock']
+export type TranslationVerificationFinding = Schemas['TranslationVerificationFinding']
 export type TranslationSegmentState = Schemas['TranslationSegmentState']
 export type ReaderViewMode = 'original' | 'bilingual' | 'translated'
 export type RemoteBackup = Schemas['RemoteBackup']
@@ -115,6 +134,16 @@ export type SearchResponse = Schemas['SearchResponse']
 export type SearchRebuildResult = Schemas['SearchRebuildResult']
 export type SavedSearchView = Schemas['SavedSearchView']
 export type SavedSearchViewList = Schemas['SavedSearchList']
+// N142/N143/N145 — 搜索理解与排障
+export type SearchParseResult = Schemas['SearchParseResult']
+export type SearchParseRecognized = Schemas['SearchParseRecognized']
+export type SearchWhyMissedBody = Schemas['SearchWhyMissedBody']
+export type SearchWhyMissedResult = Schemas['SearchWhyMissedResult']
+export type SearchWhyMissedReason = Schemas['SearchWhyMissedReason']
+export type SearchWhyMissedEntry = Schemas['SearchWhyMissedEntry']
+export type SearchDistributionResult = Schemas['SearchDistributionResult']
+export type SearchDistributionSource = Schemas['SearchDistributionSource']
+export type SearchDistributionDay = Schemas['SearchDistributionDay']
 export type TagMergePreview = Schemas['TagMergePreview']
 export type TagMergeResult = Schemas['TagMergeResult']
 
@@ -127,6 +156,13 @@ export type Workspace = Schemas['Workspace']
 export type WorkspaceListResponse = Schemas['WorkspaceListResponse']
 export type WorkspaceItem = Schemas['WorkspaceItem']
 export type WorkspaceItemsResponse = Schemas['WorkspaceItemsResponse']
+/** N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。 */
+export type WorkspaceGroupsResponse = Schemas['WorkspaceGroupsResponse']
+export type WorkspaceGroup = Schemas['WorkspaceGroup']
+/** N105：工作区会话快照（元数据视图）。 */
+export type WorkspaceSnapshot = Schemas['WorkspaceSnapshot']
+export type WorkspaceSnapshotList = Schemas['WorkspaceSnapshotList']
+export type WorkspaceSnapshotRestoreResult = Schemas['WorkspaceSnapshotRestoreResult']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
 /** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */
@@ -160,3 +196,19 @@ export type InboxItemRow = Schemas['InboxItemRow']
 /** 统一来源注册表（只读综合视图，统一 API ≠ 统一数据库）。 */
 export type SourceRegistryEntry = Schemas['SourceRegistryEntry']
 export type SourceRegistryResponse = Schemas['SourceRegistryResponse']
+
+// ---- N041/N042/N043/N044 今日必读队列 ----
+
+/** 队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。 */
+export type QueueItemView = Schemas['QueueItemView']
+/** 派生分段（name=null = 未分组，恒为隐式前置组）。 */
+export type QueueSegmentView = Schemas['QueueSegmentView']
+/** 今日队列视图（GET / generate / order / segments 统一）。 */
+export type QueueTodayResponse = Schemas['QueueTodayResponse']
+/** generate 响应（含幂等/诚实标注元数据）。 */
+export type QueueGenerateResponse = Schemas['QueueGenerateResponse']
+/** 冻结快照（元数据视图）。 */
+export type QueueSnapshotView = Schemas['QueueSnapshotView']
+export type QueueSnapshotList = Schemas['QueueSnapshotList']
+/** 打开冻结视图（原始成员顺序；消失 ref 由 Web 呈现占位）。 */
+export type QueueSnapshotDetail = Schemas['QueueSnapshotDetail']

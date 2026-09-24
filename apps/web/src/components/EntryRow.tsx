@@ -14,7 +14,9 @@ import {
   swipeStartAllowed,
 } from '../lib/card-swipe'
 import { formatListTime } from '../lib/date-format'
+// N034：异常代码 → 可读解释（共享映射见 lib/time-credibility.ts）。
 import { SourceGlyph, SourceLabel } from '../lib/source-meta'
+import { timeCredibilityExplanation } from '../lib/time-credibility'
 import { EntryActionButtons } from './EntryActionButtons'
 import { cx } from './ui/cx'
 
@@ -204,6 +206,16 @@ function EntryRow({
             />
             {item.author !== null && (
               <span className="hidden truncate lg:inline">· {item.author}</span>
+            )}
+            {item.timeCredibility != null && item.timeCredibility !== '' && (
+              <span
+                data-testid="time-credibility-badge"
+                title={`时间存疑：${timeCredibilityExplanation(item.timeCredibility)}`}
+                aria-label={`时间存疑：${timeCredibilityExplanation(item.timeCredibility)}`}
+                className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-px text-[10px] leading-4 text-[var(--lumi-text-secondary)]"
+              >
+                时间存疑
+              </span>
             )}
             <span className="ml-auto shrink-0">{formatListTime(item.publishedAt, timeFormat)}</span>
             <EntryActionButtons entryRef={item.entryRef} starred={item.starred} compact />

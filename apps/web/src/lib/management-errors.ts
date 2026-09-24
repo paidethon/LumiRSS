@@ -106,6 +106,12 @@ export function managementErrorText(error: unknown): ManagementErrorText {
         title: 'RSSHub 无法生成该订阅源',
         detail: '实例可能不可用或该路由暂时失效，请稍后重试。',
       }
+    // N027：刷新限速（Retry-After 秒数在 ApiError.retryAfterSeconds）
+    case 'rsshub_refresh_rate_limited':
+      return { title: '刷新过于频繁，请稍后再试。', detail: null }
+    // N021：收藏已被删除（其它设备同步）
+    case 'rsshub_favorite_not_found':
+      return { title: '该收藏已不存在，请刷新后重试。', detail: null }
     default:
       return { title: '操作失败，请稍后重试。', detail: null }
   }

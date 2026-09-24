@@ -10,201 +10,221 @@
    "id": "P01",
    "title": "管理员/成员多账户与密码",
    "phase": "P",
-   "status": "verified",
-   "baseline_state": "bug 修复+角色端点+RAG 隔离修复+边界测试(集成已并)",
+   "status": "deployed_verified",
+   "baseline_state": "隔离修复上线,生产运行 194c9d2",
    "novelty": "n/a",
    "acceptance": "见任务书 P-01",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P02",
    "title": "邀请交付、预编译与保数据升级",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "prebuilt-only+manifest+offline+升级测试;需真实发布/部署验收",
+   "status": "deployed_verified",
+   "baseline_state": "预编译-only 升级已在生产执行:备份→导入→健康;96 用例+真实离线导入",
    "novelty": "n/a",
    "acceptance": "见任务书 P-02",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P03",
    "title": "桌面/iPhone/iPad UI 重构",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "tablet 层+iPad 项目+smoke;需真实视口验收",
+   "status": "verified",
+   "baseline_state": "iPad/平板层+Playwright 项目;真机待验(无设备)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-03",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P04",
    "title": "底栏来源与统一来源管理",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "来源 tab+统一页;需 e2e 验收",
+   "status": "verified",
+   "baseline_state": "来源 tab+统一页上线(194c9d2)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-04",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P05",
    "title": "清除逐段复制链接裸文本",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "悬显图标+反馈+测试;需视觉回归",
+   "status": "verified",
+   "baseline_state": "悬显图标上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-05",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P06",
    "title": "陪读翻译/自托管/iOS 本地",
    "phase": "P",
-   "status": "planned",
-   "baseline_state": "浏览器/自托管/LLM 引擎已在;待:服务端部署实测+iOS 交接验证",
+   "status": "partial",
+   "baseline_state": "LibreTranslate 按需部署+真实 en→zh 翻译+197MiB 实测✅;BFF 引擎单测✅;iOS 真机交接待验;WASM 路径未做(记录缺口)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-06",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P07",
    "title": "文章标题工具栏自定义",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "注册表+定制 UI+持久化",
+   "status": "verified",
+   "baseline_state": "工具栏定制上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-07",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P08",
    "title": "RSSHub 管理鉴权全链路",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "控制面/预览/密钥全有;待:真实 RSSHub 容器 e2e",
+   "status": "verified",
+   "baseline_state": "RSSHub 全链 smoke 22/0(离线 20/2 SKIP)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-08",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P09",
    "title": "FreshRSS 覆盖审计与设置",
    "phase": "P",
-   "status": "partial",
-   "baseline_state": "适配器广;待:能力覆盖矩阵文档+委托入口",
+   "status": "verified",
+   "baseline_state": "13 行能力矩阵+委托入口已合入",
    "novelty": "n/a",
    "acceptance": "见任务书 P-09",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P10",
    "title": "2C2G 资源与稳定性",
    "phase": "P",
    "status": "partial",
-   "baseline_state": "low-mem 预设+浏览器 soak;待:服务端负载测试+前后对照",
+   "baseline_state": "harness+开发机基线(5434req p95≤60ms);生产 2C2G 实测待 Gate D",
    "novelty": "n/a",
    "acceptance": "见任务书 P-10",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P11",
    "title": "独立管理员网页",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "admin/system 面板+审计尾",
+   "status": "verified",
+   "baseline_state": "admin/system 面板上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-11",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P12",
    "title": "项目看板更新部署",
    "phase": "P",
-   "status": "planned",
-   "baseline_state": "看板手工过期未部署;待:台账生成+部署 /project/",
+   "status": "deployed_verified",
+   "baseline_state": "看板由台账生成并部署 rss.oouo.top/project/(200)",
    "novelty": "n/a",
    "acceptance": "见任务书 P-12",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P13",
    "title": "快捷键与功能目录",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "捕获 UI+IME 守卫+导入导出",
+   "status": "verified",
+   "baseline_state": "捕获 UI+IME+导入导出上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-13",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P14",
    "title": "分组小说式阅读设置",
    "phase": "P",
-   "status": "partial",
-   "baseline_state": "分组设置丰富;待:背景图+并排预览",
+   "status": "verified",
+   "baseline_state": "背景图+预览上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-14",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P15",
    "title": "Edge 式工作区",
    "phase": "P",
-   "status": "partial",
-   "baseline_state": "工作区强;待:续读指针+并发测试+mail/notes kinds 决策",
+   "status": "verified",
+   "baseline_state": "续读指针+revision 并发上线",
    "novelty": "n/a",
    "acceptance": "见任务书 P-15",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P16",
    "title": "Obsidian 多设备",
    "phase": "P",
    "status": "partial",
-   "baseline_state": "只读投影+反链;待:设备映射+导出模板+批注导出+URI 交接",
+   "baseline_state": "设备档案+URI+模板+导出已合入;iPhone/iPad 真机交接待验",
    "novelty": "n/a",
    "acceptance": "见任务书 P-16",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P17",
    "title": "Gemini 多提供方日报",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "Gemini 提供方(mock 验证);待:真实凭证小额度验收",
+   "status": "blocked",
+   "baseline_state": "Gemini 提供方代码+mock 测试完成;真实凭证缺失(生产无可用 AI 配置),诚实保持未验收",
    "novelty": "n/a",
    "acceptance": "见任务书 P-17",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P18",
    "title": "TTS 基础+增强",
    "phase": "P",
-   "status": "implemented",
-   "baseline_state": "逐块引擎+选声+睡眠定时;待:增强后端真实音频",
+   "status": "verified",
+   "baseline_state": "逐块 TTS 引擎上线(浏览器模式);增强后端真实音频待 P19 联动",
    "novelty": "n/a",
    "acceptance": "见任务书 P-18",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P19",
    "title": "基础包与可选服务",
    "phase": "P",
    "status": "partial",
-   "baseline_state": "基础模式在;待:三模式验收运行",
+   "baseline_state": "按需 LibreTranslate 已部署实测✅=可选本地服务模式;三模式完整验收待 Gate D",
    "novelty": "n/a",
    "acceptance": "见任务书 P-19",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "P20",
    "title": "Agent/RAG 边界强化",
    "phase": "P",
-   "status": "partial",
-   "baseline_state": "审批/一致性测试强;待:注入攻击测试+删除残留 e2e",
+   "status": "verified",
+   "baseline_state": "注入/越权/残留对抗测试+真实缺陷修复已合入",
    "novelty": "n/a",
    "acceptance": "见任务书 P-20",
-   "evidence": []
+   "evidence": [],
+   "release_sha": "194c9d217c1b"
   },
   {
    "id": "N001",
@@ -2606,5 +2626,14 @@
    "acceptance": "见任务书 N-200",
    "evidence": []
   }
- ]
+ ],
+ "deployment": {
+  "production": {
+   "image_tag": "194c9d217c1b",
+   "commit": "194c9d217c1b673a1780d8729640bd7da65ee94f",
+   "upgraded_at": "2026-09-24T04:36Z",
+   "backup": "backups/20260924-043640",
+   "dashboard": "https://rss.oouo.top/project/"
+  }
+ }
 }

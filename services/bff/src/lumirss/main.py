@@ -61,10 +61,12 @@ from lumirss.routers import (
     obsidian,
     operations,
     opml,
+    passkeys,
     qa_templates,
     quiz,
     rag,
     reading_extras,
+    reading_queue,
     relations,
     rsshub,
     search,
@@ -75,6 +77,7 @@ from lumirss.routers import (
     subscriptions,
     tags,
     task_records,
+    totp,
     view_feed,
     workspace_w5,
     workspaces,
@@ -355,12 +358,15 @@ app.add_middleware(RequestCorrelationMiddleware)
 # historical main.py; URL spaces are disjoint but ordering stays explicit).
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(passkeys.router)
+app.include_router(totp.router)
 app.include_router(admin.router)
 app.include_router(feeds.router)
 app.include_router(entries.router)
 app.include_router(feed_filters.router)
 app.include_router(annotations.router)
 app.include_router(reading_extras.router)
+app.include_router(reading_queue.router)
 app.include_router(import_batches.router)
 app.include_router(subscriptions.router)
 app.include_router(discovery.router)

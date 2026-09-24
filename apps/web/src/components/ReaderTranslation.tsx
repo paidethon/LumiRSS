@@ -65,7 +65,14 @@ import {
 } from '../lib/local-translator'
 import ArticleContent from './ArticleContent'
 import { Button } from './ui/Button'
+import { TranslationScopeBar } from './TranslationScopeBar'
 import { cx } from './ui/cx'
+import {
+  collectChapterRanges,
+  selectScopeBlocks,
+  type ScopeSelection,
+  type TranslationScope,
+} from '../lib/translation-scope'
 
 const ENGINE_LABELS: Record<string, string> = {
   ai: 'AI 翻译（AI 提供者执行）',
@@ -141,6 +148,8 @@ export default function ReaderTranslation({
   // 正在/已经按此输入（块集合 + 目标语言）启动过的 run 键：第二等级
   // effect 据此不重复启动（也不 abort 手势路径的在途下载）。
   const runKeyRef = useRef<string>('')
+  // N087：翻译范围（全文默认；章节/到结尾只派发所选块子集）。
+  const [scope, setScope] = useState<TranslationScope>('all')
 
   const settings = useAiSettings()
   const engine = settings.data?.translationEngine ?? 'ai'
@@ -208,23 +217,25 @@ export default function ReaderTranslation({
 
   // 切到 双语/仅译文 的那一次点击 = 显式请求：未生成的块自动生成一次
   // （精确命中缓存的部分不会重复生成）。失败块的重试只送失败块。
+  // N087：自动生成只送当前翻译范围内的块；标记「不翻译」的块不发。
   const serverSegments = lookup.data?.segments
   useEffect(() => {
     if (!active || !serverEngine || blocks === null || blocks.length === 0) return
     if (lookup.isPending || lookup.isError || generate.isPending) return
+    const selection = computeScopeSelection()
+    if (selection === null || selection.blocks.length === 0) return
+    const scopedIndexes = new Set(selection.blocks.map((b) => b.index))
     const pending = (serverSegments ?? []).filter(
-      (s) => s.status === 'not_generated',
+      (s) => s.status === 'not_generated' && !s.noTranslate && scopedIndexes.has(s.index),
     )
-    const failed = (serverSegments ?? []).filter((s) => s.status === 'failed')
     if (pending.length === 0) return
-    const signature = `${detail.entryRef}:${blocks.length}:${pending.length}`
+    const signature = `${detail.entryRef}:${scope}:${selection.blocks.map((b) => b.index).join(',')}`
     if (attemptedRef.current === signature) return
     attemptedRef.current = signature
-    generate.mutate({ blocks: blocksToInputs(blocks) })
+    generate.mutate({ blocks: blocksToInputs(selection.blocks) })
     // failed 块只在用户点重试时重新生成（money rule：不自动重试）
-    void failed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, serverEngine, blocks, lookup.isPending, lookup.isError, serverSegments])
+  }, [active, serverEngine, blocks, lookup.isPending, lookup.isError, serverSegments, scope])
 
   // 本地引擎：整个链路只在此浏览器执行。
   // P0-11 编排契约：
@@ -419,6 +430,17 @@ export default function ReaderTranslation({
     generate.mutate({ blocks: blocksToInputs(failedBlocks) })
   }
 
+  // N087：当前翻译范围对应的块子集（章节区间/当前可见块在选取时刻从
+  // DOM 推导；不进 render，避免布局读取污染渲染）。
+  const computeScopeSelection = useCallback((): ScopeSelection | null => {
+    if (blocks === null || blocks.length === 0) return null
+    const root = containerRef.current
+    const ranges = root !== null ? collectChapterRanges(root) : []
+    const visible = getVisibleIndexes()
+    const currentBlockIndex = visible.length > 0 ? Math.min(...visible) : null
+    return selectScopeBlocks(blocks, scope, { ranges, currentBlockIndex })
+  }, [blocks, scope, getVisibleIndexes])
+
   const segmentList = serverSegments ?? []
   const failedCount = segmentList.filter((s) => s.status === 'failed').length
   const busy = generate.isPending || localBusy
@@ -452,6 +474,18 @@ export default function ReaderTranslation({
       <div ref={containerRef}>
         <ArticleContent detail={detail} />
       </div>
+
+      {/* N087：翻译范围（全文/当前章节/从当前块到结尾）+ 预计字符量 +
+          范围派发队列（取消真停止后续批次请求）。 */}
+      {active && serverEngine && blocks !== null && blocks.length > 0 && (
+        <TranslationScopeBar
+          entryRef={detail.entryRef}
+          scope={scope}
+          onScopeChange={setScope}
+          computeSelection={computeScopeSelection}
+          disabled={generate.isPending}
+        />
+      )}
 
       {active && (
         <TranslationStatusBar
@@ -496,8 +530,9 @@ export default function ReaderTranslation({
           getVisibleIndexes={getVisibleIndexes}
         />
       )}
-      {/* F029：术语命中（折叠列表：术语/译法/次数；按需加载） */}
-      <GlossaryHitsPanel entryRef={detail.entryRef} />
+      {/* F029：术语命中（折叠列表：术语/译法/次数；按需加载）。
+          N083：blocks 在手时逐块定位（命中附带块位置）。 */}
+      <GlossaryHitsPanel entryRef={detail.entryRef} blocks={active ? blocks : null} />
     </div>
   )
 }

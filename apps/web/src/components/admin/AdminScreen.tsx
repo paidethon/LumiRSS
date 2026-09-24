@@ -21,15 +21,20 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, Copy, Plus, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Layers, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import {
   ApiError,
   createAdminInvite,
+  createInviteScheme,
+  deleteInviteScheme,
+  generateInvitesFromScheme,
   getAdminSystem,
   getFreshRssPool,
+  getInviteFunnel,
   listAdminAudit,
   listAdminInvites,
   listAdminUsers,
+  listInviteSchemes,
   pauseAdminUser,
   registerFreshRssPool,
   resetAdminUserPassword,
@@ -37,7 +42,9 @@ import {
   revokeAdminInvite,
   revokeAdminUserSessions,
   type AdminInvite,
+  type AdminInviteCreated,
   type AdminUser,
+  type InviteScheme,
 } from '../../api/client'
 import { useAuthStore } from '../../store/auth'
 import { navigateAppRoute } from '../../lib/app-route'
@@ -52,10 +59,14 @@ const ROLE_LABELS: Record<AdminUser['role'], string> = {
   member: '成员',
 }
 
-/** 邀请的台账状态（服务端四态互斥，按「已用 > 已撤销 > 已过期 > 有效」判）。 */
+/** 邀请的台账状态（服务端四态互斥，按「已用 > 已撤销 > 等待生效 > 已过期 > 有效」判）。
+ * 等待生效的邀请仍可撤销（操作者必须能收回未开闸的邀请）。 */
 function inviteState(invite: AdminInvite): { label: string; actionable: boolean } {
   if (invite.usedAt !== null) return { label: '已使用', actionable: false }
   if (invite.revokedAt !== null) return { label: '已撤销', actionable: false }
+  if (invite.notBefore !== null && Date.parse(invite.notBefore) > Date.now()) {
+    return { label: '等待生效', actionable: true }
+  }
   if (invite.expiresAt !== null && Date.parse(invite.expiresAt) <= Date.now()) {
     return { label: '已过期', actionable: false }
   }
@@ -203,6 +214,11 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
                 ) : (
                   <span className={`${badgeBase} bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]`}>正常</span>
                 )}
+                {user.schemeName !== null && (
+                  <span className={`${badgeBase} bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-tertiary)]`}>
+                    方案 · {user.schemeName}
+                  </span>
+                )}
               </p>
               <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
                 {user.displayName ?? '未设置显示名'}
@@ -313,12 +329,16 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
       setCreated({ url: activationLink(result.token), at: Date.now() })
       setLabel('')
       void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
     },
     onError: (error) => setFormError(adminActionError(error)),
   })
   const revoke = useMutation({
     mutationFn: (inviteId: string) => revokeAdminInvite(inviteId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+    },
     onError: (error) => setFormError(adminActionError(error)),
   })
 
@@ -404,6 +424,9 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
                       <span className={`${badgeBase} bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-tertiary)]`}>
                         {invite.kind === 'recovery' ? '恢复' : '注册'}
                       </span>
+                      {invite.schemeId !== null && (
+                        <span className={`${badgeBase} bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]`}>方案</span>
+                      )}
                       <span
                         className={`${badgeBase} ${
                           state.label === '有效'
@@ -416,6 +439,7 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--lumi-text-tertiary)]">
                       {invite.createdAt !== null ? `创建于 ${formatListTime(invite.createdAt, 'absolute')}` : ''}
+                      {invite.notBefore !== null ? ` · ${formatListTime(invite.notBefore, 'absolute')} 起生效` : ''}
                       {invite.expiresAt !== null ? ` · 过期于 ${formatListTime(invite.expiresAt, 'absolute')}` : ''}
                     </p>
                   </div>
@@ -442,6 +466,402 @@ function InvitesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
           </ul>
         )}
       </div>
+    </section>
+  )
+}
+
+// ===== 邀请方案（N001）=======================================================
+
+/** 批量生成对话框状态：方案 + 数量 + 一次性结果（token 只出现一次）。 */
+interface BatchState {
+  scheme: InviteScheme
+}
+
+function SchemesSection({ onConfirm }: { onConfirm: (state: ConfirmState) => void }) {
+  const queryClient = useQueryClient()
+  const schemes = useQuery({
+    queryKey: ['admin', 'invite-schemes'],
+    queryFn: ({ signal }) => listInviteSchemes(signal),
+    staleTime: 10_000,
+  })
+  const [name, setName] = useState('')
+  const [ttlHours, setTtlHours] = useState('72')
+  const [sourceUrls, setSourceUrls] = useState('')
+  const [poolHold, setPoolHold] = useState(false)
+  const [quotaNote, setQuotaNote] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [batch, setBatch] = useState<BatchState | null>(null)
+  const [batchCount, setBatchCount] = useState('1')
+  const [batchError, setBatchError] = useState<string | null>(null)
+  const [batchResult, setBatchResult] = useState<AdminInviteCreated[] | null>(null)
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'invite-schemes'] })
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+  }
+
+  const create = useMutation({
+    mutationFn: () =>
+      createInviteScheme({
+        name,
+        ttlHours: ttlHours !== '' ? Number.parseInt(ttlHours, 10) : undefined,
+        initialSourceUrls: sourceUrls
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== ''),
+        freshrssPoolHold: poolHold,
+        quotaNote: quotaNote !== '' ? quotaNote : null,
+      }),
+    onSuccess: () => {
+      setName('')
+      setTtlHours('72')
+      setSourceUrls('')
+      setPoolHold(false)
+      setQuotaNote('')
+      invalidate()
+    },
+    onError: (error) => setFormError(adminActionError(error)),
+  })
+  const generate = useMutation({
+    mutationFn: (input: { schemeId: string; count: number }) =>
+      generateInvitesFromScheme(input.schemeId, { count: input.count }),
+    onSuccess: (result) => {
+      setBatchResult(result.invites)
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'funnel'] })
+    },
+    onError: (error) => setBatchError(adminActionError(error)),
+  })
+  const remove = useMutation({
+    mutationFn: (schemeId: string) => deleteInviteScheme(schemeId),
+    onSuccess: () => invalidate(),
+    onError: (error) => setFormError(adminActionError(error)),
+  })
+
+  const parsedBatchCount = Number.parseInt(batchCount, 10)
+
+  return (
+    <section aria-label="邀请方案">
+      <SectionHeading
+        title="邀请方案"
+        hint="保存命名模板（有效期 / 初始订阅源 / 池名额预约 / 配额备注），批量生成互相独立的一次性邀请；激活时自动订阅初始源（失败不影响激活）。"
+      />
+
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setFormError(null)
+          create.mutate()
+        }}
+        data-testid="scheme-create-form"
+      >
+        <div className="flex flex-wrap gap-2">
+          <div className="min-w-36 flex-1">
+            <label htmlFor="scheme-name" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+              方案名称
+            </label>
+            <input
+              id="scheme-name"
+              type="text"
+              value={name}
+              maxLength={64}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="如：新人基础套餐"
+              className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+            />
+          </div>
+          <div className="w-24">
+            <label htmlFor="scheme-ttl" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+              有效期（小时）
+            </label>
+            <input
+              id="scheme-ttl"
+              type="number"
+              min={1}
+              max={720}
+              value={ttlHours}
+              onChange={(e) => setTtlHours(e.target.value)}
+              className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="scheme-urls" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+            初始订阅源（每行一个 URL，可选）
+          </label>
+          <textarea
+            id="scheme-urls"
+            value={sourceUrls}
+            rows={2}
+            onChange={(e) => setSourceUrls(e.target.value)}
+            placeholder={'https://example.com/feed.xml\nhttps://rss.example/rss.xml'}
+            className="w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <label htmlFor="scheme-hold" className="flex min-h-11 items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+            <input
+              id="scheme-hold"
+              type="checkbox"
+              checked={poolHold}
+              onChange={(e) => setPoolHold(e.target.checked)}
+              className="size-4"
+            />
+            生成时预约 FreshRSS 池名额
+          </label>
+          <div className="min-w-32 flex-1">
+            <label htmlFor="scheme-quota" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+              配额备注（可选）
+            </label>
+            <input
+              id="scheme-quota"
+              type="text"
+              value={quotaNote}
+              maxLength={200}
+              onChange={(e) => setQuotaNote(e.target.value)}
+              placeholder="如：每人 3 源"
+              className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+            />
+          </div>
+          <Button type="submit" variant="secondary" disabled={create.isPending} className="min-h-11 self-end">
+            <Plus aria-hidden className="size-4" />
+            {create.isPending ? '保存中…' : '保存方案'}
+          </Button>
+        </div>
+        {formError !== null && (
+          <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+            {formError}
+          </p>
+        )}
+      </form>
+
+      <div className="mt-3">
+        {schemes.isPending ? (
+          <div aria-busy="true">
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : schemes.isError ? (
+          <p role="alert" className="text-sm text-[var(--lumi-danger)]">
+            {adminActionError(schemes.error)}
+          </p>
+        ) : schemes.data.length === 0 ? (
+          <p className="text-sm text-[var(--lumi-text-tertiary)]">还没有方案模板。</p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-[var(--lumi-separator)]" data-testid="scheme-list">
+            {schemes.data.map((scheme) => (
+              <li key={scheme.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-1.5 text-sm text-[var(--lumi-text-primary)]">
+                    <span className="truncate">{scheme.name}</span>
+                    <span className={`${badgeBase} bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-tertiary)]`}>
+                      {scheme.ttlHours} 小时
+                    </span>
+                    {scheme.freshrssPoolHold && (
+                      <span className={`${badgeBase} bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]`}>预约池名额</span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
+                    {scheme.initialSourceUrls.length > 0
+                      ? `${scheme.initialSourceUrls.length} 个初始源`
+                      : '无初始源'}
+                    {scheme.quotaNote !== null ? ` · ${scheme.quotaNote}` : ''}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setBatch({ scheme })
+                      setBatchCount('1')
+                      setBatchResult(null)
+                      setBatchError(null)
+                    }}
+                    data-testid={`scheme-generate-${scheme.id}`}
+                  >
+                    <Layers aria-hidden className="size-4" />
+                    批量生成
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={remove.isPending}
+                    onClick={() =>
+                      onConfirm({
+                        title: `删除方案「${scheme.name}」？`,
+                        body: '只删除模板；已生成的邀请和已激活的账号保留其方案记录（列表中诚实显示「已删方案」）。',
+                        confirmLabel: '删除方案',
+                        action: () => remove.mutateAsync(scheme.id),
+                      })
+                    }
+                  >
+                    <Trash2 aria-hidden className="size-4" />
+                    删除
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Dialog
+        open={batch !== null}
+        onClose={() => setBatch(null)}
+        title={batch !== null ? `从「${batch.scheme.name}」批量生成邀请` : ''}
+        footer={
+          <Button variant="ghost" onClick={() => setBatch(null)}>
+            关闭
+          </Button>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setBatchError(null)
+              if (batch === null || !Number.isInteger(parsedBatchCount) || parsedBatchCount < 1) return
+              generate.mutate({ schemeId: batch.scheme.id, count: parsedBatchCount })
+            }}
+            data-testid="scheme-batch-form"
+          >
+            <div className="w-28">
+              <label htmlFor="batch-count" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+                生成数量
+              </label>
+              <input
+                id="batch-count"
+                type="number"
+                min={1}
+                max={100}
+                value={batchCount}
+                onChange={(e) => setBatchCount(e.target.value)}
+                className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+              />
+            </div>
+            <Button type="submit" variant="primary" disabled={generate.isPending} className="min-h-11">
+              {generate.isPending ? '生成中…' : '生成'}
+            </Button>
+          </form>
+          {batchError !== null && (
+            <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+              {batchError}
+            </p>
+          )}
+          {batchResult !== null && (
+            <div className="flex flex-col gap-2">
+              {batchResult.map((item) => (
+                <OneTimeLink key={item.invite.id} url={activationLink(item.token)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </Dialog>
+    </section>
+  )
+}
+
+// ===== 邀请漏斗（N004）=======================================================
+//
+// 计数全部来自服务端真实行聚合（GET /admin/invite-funnel），响应绝无
+// 邀请码；创建/激活/撤销后由对应 mutation 失效 ['admin','funnel'] 缓存，
+// 卡片随之刷新——没有本地快照。
+
+const FUNNEL_CARDS: { key: 'generated' | 'pending' | 'activated' | 'expired' | 'revoked'; label: string }[] = [
+  { key: 'generated', label: '已生成' },
+  { key: 'pending', label: '待使用' },
+  { key: 'activated', label: '已激活' },
+  { key: 'expired', label: '已过期' },
+  { key: 'revoked', label: '已撤销' },
+]
+
+function FunnelSection() {
+  const schemes = useQuery({
+    queryKey: ['admin', 'invite-schemes'],
+    queryFn: ({ signal }) => listInviteSchemes(signal),
+    staleTime: 10_000,
+  })
+  const [schemeFilter, setSchemeFilter] = useState('')
+  const funnel = useQuery({
+    queryKey: ['admin', 'funnel', schemeFilter],
+    queryFn: ({ signal }) => getInviteFunnel(signal, schemeFilter !== '' ? schemeFilter : null),
+    staleTime: 10_000,
+  })
+
+  return (
+    <section aria-label="邀请漏斗" data-testid="invite-funnel">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <SectionHeading title="邀请漏斗" hint="按方案聚合的真实计数（不含邀请码）；创建 / 激活 / 撤销后自动刷新。" />
+        <div className="w-44">
+          <label htmlFor="funnel-scheme-filter" className="mb-1 block text-xs font-medium text-[var(--lumi-text-secondary)]">
+            按方案筛选
+          </label>
+          <select
+            id="funnel-scheme-filter"
+            value={schemeFilter}
+            onChange={(e) => setSchemeFilter(e.target.value)}
+            data-testid="funnel-scheme-filter"
+            className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 text-sm text-[var(--lumi-text-primary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+          >
+            <option value="">全部方案</option>
+            {(schemes.data ?? []).map((scheme) => (
+              <option key={scheme.id} value={scheme.id}>
+                {scheme.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {funnel.isPending ? (
+        <div aria-busy="true" className="flex flex-col gap-2">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : funnel.isError ? (
+        <p role="alert" className="text-sm text-[var(--lumi-danger)]">
+          {adminActionError(funnel.error)}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="funnel-cards">
+            {FUNNEL_CARDS.map((card) => (
+              <div
+                key={card.key}
+                className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-center"
+                data-testid={`funnel-${card.key}`}
+              >
+                <p className="text-lg font-semibold text-[var(--lumi-text-primary)]">{funnel.data.totals[card.key]}</p>
+                <p className="text-xs text-[var(--lumi-text-tertiary)]">{card.label}</p>
+              </div>
+            ))}
+          </div>
+          {funnel.data.totals.failedActivation > 0 && (
+            <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]" data-testid="funnel-failed-activation">
+              激活失败尝试：{funnel.data.totals.failedActivation} 次（来自审计记录）
+            </p>
+          )}
+          {funnel.data.byScheme.length > 0 && (
+            <ul className="mt-3 flex flex-col divide-y divide-[var(--lumi-separator)]" data-testid="funnel-by-scheme">
+              {funnel.data.byScheme.map((bucket) => (
+                <li key={bucket.schemeId ?? 'adhoc'} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-primary)]">
+                    {bucket.schemeName ?? '未分组（普通邀请）'}
+                  </span>
+                  <span className="text-[var(--lumi-text-tertiary)]">
+                    生成 {bucket.generated} · 待用 {bucket.pending} · 激活 {bucket.activated}
+                    {bucket.expired > 0 ? ` · 过期 ${bucket.expired}` : ''}
+                    {bucket.revoked > 0 ? ` · 撤销 ${bucket.revoked}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </section>
   )
 }
@@ -501,6 +921,7 @@ function PoolSection() {
         <>
           <p className="text-sm text-[var(--lumi-text-secondary)]" data-testid="pool-counts">
             可绑定 <span className="font-semibold text-[var(--lumi-text-primary)]">{pool.data.ready}</span> ·
+            已预约 <span className="font-semibold text-[var(--lumi-text-primary)]">{pool.data.held}</span> ·
             已分配 <span className="font-semibold text-[var(--lumi-text-primary)]">{pool.data.assigned}</span>
           </p>
 
@@ -665,6 +1086,9 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   invite_create_signup: '创建注册邀请',
   invite_create_recovery: '创建恢复邀请',
   invite_revoke: '撤销邀请',
+  invite_scheme_create: '保存邀请方案',
+  invite_scheme_delete: '删除邀请方案',
+  invite_batch_generate: '批量生成邀请',
   user_paused: '暂停成员',
   user_resumed: '恢复成员',
   user_role_change: '变更角色',
@@ -932,6 +1356,12 @@ export default function AdminScreen() {
                   <PoolSection />
                 </div>
               </div>
+            </div>
+            <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+              <FunnelSection />
+            </div>
+            <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+              <SchemesSection onConfirm={setConfirmState} />
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SystemSection />

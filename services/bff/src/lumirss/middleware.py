@@ -322,7 +322,9 @@ PLAIN_SESSION_COOKIE_NAME = "lumirss_session"
 # Paths the session layer deliberately leaves open. /health/* keeps
 # container healthchecks token-free, /api/v1/version is provenance for
 # skew diagnosis, and the auth endpoints themselves must be reachable
-# pre-login (login / invite activation / recovery / setup probes).
+# pre-login (login / invite activation / recovery / setup probes, plus
+# the N006 passkey-login and N007 TOTP two-step completion — all of
+# which mint sessions only after cryptographic/second-factor checks).
 # Everything else under /api/ requires a session. Unsafe methods on
 # these paths STILL pass the Origin check below (CSRF, O170).
 SESSION_PUBLIC_PATHS = frozenset(
@@ -333,6 +335,9 @@ SESSION_PUBLIC_PATHS = frozenset(
         "/api/v1/auth/activation-preview",
         "/api/v1/auth/recover",
         "/api/v1/auth/first-run",
+        "/api/v1/auth/passkeys/login/options",
+        "/api/v1/auth/passkeys/login",
+        "/api/v1/auth/totp/verify",
         "/api/v1/version",
     }
 )

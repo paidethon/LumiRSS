@@ -33,7 +33,7 @@ async def list_glossary(request: Request, q: str | None = None, limit: int = 100
 async def create_glossary_term(payload: GlossaryTermCreate, request: Request) -> GlossaryTerm:
     return _model(
         await _store(request).create(
-            payload.term, payload.definition, payload.sourceRef
+            payload.term, payload.definition, payload.sourceRef, payload.protect
         )
     )
 
@@ -42,7 +42,9 @@ async def create_glossary_term(payload: GlossaryTermCreate, request: Request) ->
 async def update_glossary_term(
     term_id: str, payload: GlossaryTermCreate, request: Request
 ) -> GlossaryTerm:
-    result = await _store(request).update(term_id, payload.term, payload.definition)
+    result = await _store(request).update(
+        term_id, payload.term, payload.definition, payload.protect
+    )
     if result is None:
         raise GlossaryNotFound(term_id)
     return _model(result)
@@ -126,9 +128,32 @@ async def export_glossary(request: Request) -> Response:
 # -- F029 术语命中预览 --------------------------------------------------------
 
 
+class GlossaryHitsBlockIn(BaseModel):
+    """N083：可选的逐块命中定位输入（客户端已编号的内容块）。"""
+
+    index: int = Field(ge=0, le=63)
+    text: str = Field(min_length=1, max_length=20000)
+
+
+class GlossaryHitsBody(BaseModel):
+    """POST /api/v1/entries/{ref}/glossary-hits 可选体。
+
+    blocks 缺省 → 沿用整篇 contentText 的命中（行为不变）；
+    blocks 提供时 → 逐块计算，命中附带 blockIndexes（命中位置）。"""
+
+    model_config = {"extra": "forbid"}
+
+    blocks: list[GlossaryHitsBlockIn] = Field(default=[], max_length=64)
+
+
 @router.post("/api/v1/entries/{entry_ref}/glossary-hits")
-async def glossary_hits_for_entry(entry_ref: str, request: Request) -> dict:
-    """现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。"""
+async def glossary_hits_for_entry(
+    entry_ref: str, request: Request, body: GlossaryHitsBody | None = None
+) -> dict:
+    """现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。
+
+    N083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes
+    （客户端块索引，UI 可点击跳转）。"""
     from lumirss.deps import _get_adapter
     from lumirss.entryref import decode_entry_ref
     from lumirss.glossary_hits import (
@@ -141,7 +166,31 @@ async def glossary_hits_for_entry(entry_ref: str, request: Request) -> dict:
     adapter = _get_adapter(request)
     detail = await adapter.get_entry(decode_entry_ref(entry_ref))
     terms = await load_glossary_terms(request.app.state.db)
-    hits = compute_hits(detail.contentText, terms)
+    blocks = body.blocks if body is not None else []
+    if blocks:
+        # 逐块命中：term → {count 累计, blockIndexes 保序去重}。
+        aggregated: dict[str, dict[str, object]] = {}
+        prompt_hits: list[dict[str, object]] = []
+        for block in blocks:
+            for hit in compute_hits(block.text, terms):
+                term = str(hit["term"])
+                entry = aggregated.get(term)
+                if entry is None:
+                    translation = str(
+                        next(
+                            (t["translation"] for t in terms if t["term"] == term),
+                            "",
+                        )
+                    )
+                    entry = {"term": term, "translation": translation, "count": 0, "blockIndexes": []}
+                    aggregated[term] = entry
+                    prompt_hits.append(entry)
+                entry["count"] = int(entry["count"]) + int(hit["count"])
+                if block.index not in entry["blockIndexes"]:
+                    entry["blockIndexes"].append(block.index)
+        hits = prompt_hits
+    else:
+        hits = compute_hits(detail.contentText, terms)
     return {
         "hits": hits,
         "promptBlock": format_glossary_prompt_block(hits),

@@ -2,6 +2,8 @@
 
 
 
+import time
+
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, model_validator
 
@@ -119,12 +121,121 @@ async def create_subscription(
     (no retry on timeout — clients re-read and reconcile).
     """
     control = _get_control_adapter(request)
-    created = await control.subscribe(
-        subscription.feedUrl,
-        category_id=subscription.categoryId,
-        title=subscription.title,
-    )
+    matched = _matched_catalog_route(subscription.feedUrl)
+    started = time.monotonic()
+    try:
+        created = await control.subscribe(
+            subscription.feedUrl,
+            category_id=subscription.categoryId,
+            title=subscription.title,
+        )
+    except Exception as exc:
+        # N025：失败的订阅尝试也进路由时间线（FreshRSS 侧会抓取 feed，
+        # 失败即一次真实的上游尝试）。分类复用 F050 词汇表。
+        if matched is not None:
+            await _record_route_run(
+                request,
+                matched,
+                status="failed",
+                duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+                failure_class=_subscribe_failure_class(exc),
+            )
+        raise
+    if matched is not None:
+        await _record_route_run(
+            request,
+            matched,
+            status="ok",
+            duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+            failure_class=None,
+        )
+        await _record_route_use(request, matched)
     return _subscription_json(created)
+
+
+class _RouteUse:
+    """One catalog route derived server-side from a feed URL path."""
+
+    __slots__ = ("template_id", "route_key", "params")
+
+    def __init__(
+        self, template_id: str, route_key: str, params: dict[str, str]
+    ) -> None:
+        self.template_id = template_id
+        self.route_key = route_key
+        self.params = params
+
+
+def _matched_catalog_route(feed_url: str) -> _RouteUse | None:
+    """从 feedUrl 路径反推 Lumi 目录路由（不信任客户端上报）。"""
+    import urllib.parse
+
+    from lumirss.rsshub import match_route_path
+    from lumirss.rsshub_route_store import compute_route_key
+
+    path = urllib.parse.urlsplit(feed_url).path
+    matched = match_route_path(path)
+    if matched is None:
+        return None
+    route, params = matched
+    return _RouteUse(route.id, compute_route_key(route.id, params), params)
+
+
+def _subscribe_failure_class(exc: Exception) -> str | None:
+    """订阅失败 → F050 词汇表的稳定分类（其余异常不强行归类）。"""
+    from lumirss.adapters.freshrss import AuthenticationError, UpstreamConnectionError
+
+    if isinstance(exc, AuthenticationError):
+        return "auth_error"
+    if isinstance(exc, UpstreamConnectionError):
+        return "network_error"
+    return None
+
+
+async def _record_route_use(request: Request, matched: _RouteUse) -> None:
+    """N021：成功订阅命中的目录路由 → 最近使用（参数在 store 内统一
+    脱敏；元数据写入失败不影响订阅结果——只记日志）。"""
+    from lumirss.rsshub_route_store import RssHubRouteStore
+
+    try:
+        await RssHubRouteStore(request.app.state.db).record_recent(
+            template_id=matched.template_id,
+            params=matched.params,
+            success=True,
+        )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "rsshub route recent-recording failed on subscribe"
+        )
+
+
+async def _record_route_run(
+    request: Request,
+    matched: _RouteUse,
+    *,
+    status: str,
+    duration_ms: int,
+    failure_class: str | None,
+) -> None:
+    """N025：订阅尝试的时间线写入（best-effort，失败只记日志）。"""
+    from lumirss.rsshub_route_store import RssHubRouteStore
+
+    try:
+        await RssHubRouteStore(request.app.state.db).record_run(
+            route_key=matched.route_key,
+            status=status,
+            duration_ms=duration_ms,
+            entry_count=None,
+            failure_class=failure_class,
+        )
+    except Exception:  # noqa: BLE001 — metadata only, never fail the use
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "rsshub route run-recording failed on subscribe"
+        )
 
 
 @router.patch("/api/v1/subscriptions/{subscription_ref}", status_code=204)
@@ -294,21 +405,99 @@ async def update_source_notes(
     )
 
 
+@router.get("/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview")
+async def unsubscribe_preview(subscription_ref: str, request: Request) -> Response:
+    """N012 退订影响预览（只读，200 先于任何 mutation）。
+
+    汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /
+    RSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数
+    如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变
+    （测试固定该负向契约）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.unsubscribe_preview import build_preview
+
+    try:
+        stream_id = decode_subscription_ref(subscription_ref)
+    except InvalidSubscriptionReference:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_subscription_ref", "message": "订阅引用无效。"}},
+        )
+    control = _get_control_adapter(request)
+    subscription = next(
+        (sub for sub in await control.list_subscriptions() if sub.stream_id == stream_id),
+        None,
+    )
+    if subscription is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "subscription_not_found", "message": "订阅不存在。"}},
+        )
+    preview = await build_preview(
+        request.app.state.db, subscription.feed_url, subscription.title or ""
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "subscriptionRef": subscription_ref,
+            **preview,
+            "note": "预览为只读快照；取消订阅需在界面确认后另行发起。",
+        },
+    )
+
+
 @router.delete("/api/v1/subscriptions/{subscription_ref}", status_code=204)
 async def delete_subscription(
-    subscription_ref: str, request: Request
+    subscription_ref: str,
+    request: Request,
+    keep_artifacts: bool | None = Query(default=None),
 ) -> Response:
     """Unsubscribe (destructive; confirmation belongs to the Web UI).
 
     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
-    FreshRSS RSS 域数据不在此路径触碰。"""
+    FreshRSS RSS 域数据不在此路径触碰。
+
+    N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
+    - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
+      解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
+    - false：显式清理——批注与该来源条目的工作区引用/看板状态一并
+      删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。
+    确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。"""
     stream_id = decode_subscription_ref(subscription_ref)  # raises → 400
     control = _get_control_adapter(request)
     await control.unsubscribe(stream_id)
     from lumirss.source_notes import SourceNotesStore
 
     await SourceNotesStore(request.app.state.db).delete_notes(subscription_ref)
-    return Response(status_code=204)
+    if keep_artifacts is not False:
+        # 缺席（legacy，逐字节既有行为）与显式 true：保留工作区引用 /
+        # 看板状态 / 批注——它们引用冻结 ref，解析层已把缺失条目降级为
+        # stale 卡片（workspaces.resolve_refs）。零额外清理。
+        return Response(status_code=204)
+    # 显式 false：在该来源条目上做显式清理（批注 + 工作区引用/看板状态）。
+    from fastapi.responses import JSONResponse
+
+    from lumirss.unsubscribe_preview import purge_feed_artifacts
+
+    feed_url: str | None = None
+    try:
+        subscription = next(
+            (sub for sub in await control.list_subscriptions() if sub.stream_id == stream_id),
+            None,
+        )
+    except Exception:  # noqa: BLE001 — 退订已成功；清理尽力而为
+        subscription = None
+    feed_url = subscription.feed_url if subscription is not None else None
+    purged = await purge_feed_artifacts(request.app.state.db, feed_url or "")
+    return JSONResponse(
+        status_code=200,
+        content={
+            "subscriptionRef": subscription_ref,
+            "purged": purged,
+            "note": "批注与该来源的工作区引用/看板状态已清理；library 书签保留。",
+        },
+    )
 
 
 class HealthCheckRequest(BaseModel):

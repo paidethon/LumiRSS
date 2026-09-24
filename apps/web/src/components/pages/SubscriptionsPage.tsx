@@ -36,11 +36,13 @@ import {
 import {
   useCategories,
   useSetSourceOverrideMutation,
+  useSourceAliasesQuery,
   useSourceNotesListQuery,
   useSubscriptions,
 } from '../../api/queries'
 import type { SourceNotesView } from '../../api/client'
 import { listSourceOverrides } from '../../api/client'
+import { resolveDisplayTitle } from '../../lib/source-aliases'
 import {
   FilterRulesDialog,
   HealthCheckDialog,
@@ -73,6 +75,7 @@ import AddSourceDialog from '../AddSourceDialog'
 import OpmlImportDialog from '../OpmlImportDialog'
 import MoveSubscriptionDialog from '../MoveSubscriptionDialog'
 import RenameCategoryDialog from '../RenameCategoryDialog'
+import SourceAliasDialog from '../SourceAliasDialog'
 import UnsubscribeDialog from '../UnsubscribeDialog'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
@@ -207,6 +210,8 @@ export default function SubscriptionsPage() {
   const [moveTarget, setMoveTarget] = useState<Subscription | null>(null)
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<Subscription | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ id: string; label: string } | null>(null)
+  // N013：来源改名（服务端别名 + 历史）对话框目标
+  const [aliasTarget, setAliasTarget] = useState<Subscription | null>(null)
   // F26：置顶订阅（localStorage 持久；顺序即置顶区展示顺序）
   const [pinned, setPinned] = useState<string[]>(() => readPinnedFeeds())
   // F001：异常来源筛选开关 + 新鲜度预警设置目标
@@ -269,6 +274,16 @@ export default function SubscriptionsPage() {
     for (const item of notesList.data?.items ?? []) map.set(item.subscriptionRef, item)
     return map
   }, [notesList.data])
+
+  // N013：服务端别名（feedUrl → 显示名；时间线/订阅展示「服务端赢」）
+  const aliasesQuery = useSourceAliasesQuery()
+  const serverAliases = useMemo(
+    () =>
+      aliasesQuery.data?.items
+        ? new Map(aliasesQuery.data.items.map((alias) => [alias.feedUrl, alias.customName]))
+        : undefined,
+    [aliasesQuery.data],
+  )
 
   const filtered = useMemo(() => {
     const all = subscriptions.data ?? []
@@ -390,6 +405,14 @@ export default function SubscriptionsPage() {
         onClose={() => setRenameTarget(null)}
         category={renameTarget}
       />
+      {aliasTarget !== null && (
+        <SourceAliasDialog
+          open
+          onClose={() => setAliasTarget(null)}
+          feedUrl={aliasTarget.feedUrl}
+          title={aliasTarget.title}
+        />
+      )}
       <SourceStaleAlertDialog
         open={staleTarget !== null}
         onClose={() => setStaleTarget(null)}
@@ -655,7 +678,7 @@ export default function SubscriptionsPage() {
                         className="block truncate text-sm font-medium text-[var(--lumi-text-primary)]"
                         title={subscription.title}
                       >
-                        {subscription.title}
+                        {resolveDisplayTitle(subscription.feedUrl, subscription.title, serverAliases)}
                       </span>
                       <span
                         className="block truncate text-xs text-[var(--lumi-text-tertiary)]"
@@ -816,7 +839,7 @@ export default function SubscriptionsPage() {
                                 className="block truncate text-sm font-medium text-[var(--lumi-text-primary)]"
                                 title={subscription.title}
                               >
-                                {subscription.title}
+                                {resolveDisplayTitle(subscription.feedUrl, subscription.title, serverAliases)}
                               </span>
                               <span
                                 className="block truncate text-xs text-[var(--lumi-text-tertiary)]"
@@ -864,6 +887,7 @@ export default function SubscriptionsPage() {
                             )}
                             items={[
                               { key: 'move', content: '移动到分类' },
+                              { key: 'alias', content: '来源改名（别名）' },
                               { key: 'staleAlert', content: '新鲜度预警' },
                               { key: 'notes', content: '备注/维护记录' },
                               { key: 'migrate', content: '更换订阅地址' },
@@ -879,6 +903,7 @@ export default function SubscriptionsPage() {
                             ]}
                             onSelect={(key) => {
                               if (key === 'move') setMoveTarget(subscription)
+                              else if (key === 'alias') setAliasTarget(subscription)
                               else if (key === 'staleAlert')
                                 setStaleTarget({
                                   feedUrl: subscription.feedUrl,

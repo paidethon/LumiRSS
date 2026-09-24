@@ -92,10 +92,11 @@ beforeEach(async () => {
     selectedEntryRef: null,
     mobileSidebarOpen: false,
   })
-  // Sheet 是 lazy 分包（bundle guard）：预解析 chunk，让各用例
-  // fireEvent.click(menu) 后的同步结构断言确定性成立（异步时序适配，
-  // 结构语义不变）。
+  // Sheet / MobileNavigationDrawer 是 lazy 分包（bundle guard）：预解析
+  // chunk，让各用例 fireEvent.click(menu) 后的同步结构断言确定性成立
+  // （异步时序适配，结构语义不变）。
   await import('../components/ui/Sheet')
+  await import('../components/MobileNavigationDrawer')
 })
 
 afterEach(() => {

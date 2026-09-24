@@ -433,3 +433,49 @@ def test_batch_semaphore_is_service_level(tmp_path):
     run(two_articles())
     assert peak["max"] <= MAX_CONCURRENT_BATCHES
     assert peak["max"] >= 2
+
+
+# ---------------------------------------------------------------------------
+# N087：按章节/范围翻译 —— generate 接受任意块子集（Web 范围选择的
+# 服务端契约：只发所选块 → 只生成所选块，其余块零请求、零缓存行）。
+# ---------------------------------------------------------------------------
+
+
+def test_generate_accepts_arbitrary_subset_only_requested_blocks(tmp_path):
+    """Web 只送当前章节/范围的子集：provider 只见子集，其余块不产生
+    任何缓存行（not_generated），也不会被偷偷补译。"""
+    seen_indexes: list[list[int]] = []
+
+    async def factory(base_url, model):
+        class FakeProvider:
+            async def complete(self, messages):
+                import re
+
+                user_prompt = messages[1]["content"]
+                indexes = [
+                    int(m) for m in re.findall(r"<<<BLOCK (\d+)>>>", user_prompt)
+                ]
+                seen_indexes.append(indexes)
+                return "\n\n".join(
+                    f"<<<BLOCK {i}>>>\n第{i}段译文。" for i in indexes
+                )
+
+        return FakeProvider()
+
+    service, settings, _secrets = _make_service(tmp_path, provider_factory=factory)
+    run(settings.save(AiSettingsUpdate(baseUrl="http://ai.local/v1", model="m1")))
+
+    subset = [BLOCKS[0], BLOCKS[2]]  # 只选第 0、2 块（例如“当前章节”）
+    states = run(service.generate("e1.n087", subset))
+
+    assert [s.status for s in states] == ["success", "success"]
+    assert seen_indexes == [[0, 2]]
+
+    # 全文 lookup：未选中的块保持 not_generated（从未被翻译）。
+    all_states = run(service.lookup("e1.n087", BLOCKS))
+    assert [s.status for s in all_states] == ["success", "not_generated", "success"]
+
+    # 子集缓存精确命中：重复同一子集零 provider 调用。
+    again = run(service.generate("e1.n087", subset))
+    assert [s.cached for s in again] == [True, True]
+    assert len(seen_indexes) == 1

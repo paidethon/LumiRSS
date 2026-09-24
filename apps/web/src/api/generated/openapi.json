@@ -43,6 +43,36 @@
     "title": "ActivateAccountRequest",
     "type": "object"
    },
+   "ActivationSourceResult": {
+    "description": "One scheme initial-source subscription attempt (N001).\n\n``ok=False`` is an honest per-URL failure record — activation itself\nis never blocked or rolled back by a source failure.",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "ok"
+    ],
+    "title": "ActivationSourceResult",
+    "type": "object"
+   },
    "AgentApprovalDecision": {
     "additionalProperties": false,
     "description": "POST /api/v1/agent/threads/{id}/approvals.",
@@ -1526,7 +1556,8 @@
       "default": "newest",
       "enum": [
        "newest",
-       "oldest"
+       "oldest",
+       "received"
       ],
       "title": "Timelineorder",
       "type": "string"
@@ -1663,7 +1694,7 @@
     "type": "object"
    },
    "AuthStatus": {
-    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is.",
+    "description": "Login / session-status payload; expiresAt is an ISO-8601 instant.\n\nmode tells the web app WHICH auth layer is active: \"basic\" = proxy\nBasic Auth (the app must not render its own login gate), \"session\" =\nBFF sessions (gate on ``authenticated``). userId/username/role carry\nthe server-verified identity for the account menu — the client never\ndeclares who it is. initialSources is only present on the invite\nactivation response (N001); every other surface omits it entirely.",
     "properties": {
      "authenticated": {
       "title": "Authenticated",
@@ -1679,6 +1710,20 @@
        }
       ],
       "title": "Expiresat"
+     },
+     "initialSources": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/ActivationSourceResult"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Initialsources"
      },
      "mode": {
       "default": "session",
@@ -3476,6 +3521,62 @@
     "title": "ClipRevisionRequest",
     "type": "object"
    },
+   "CollectionTiming": {
+    "description": "N040：三时点采集延迟块（未知保持 null，绝不臆造）。\n\n- upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；\n- freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，\n  非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注\n  口径；源从未提供 → None + basis=\"未提供 by upstream\"）；\n- lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；\n- latencyHint：最大缺口环节提示（数据不足 → None）。",
+    "properties": {
+     "freshrssFetchedBasis": {
+      "default": "未提供 by upstream",
+      "title": "Freshrssfetchedbasis",
+      "type": "string"
+     },
+     "freshrssFetchedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Freshrssfetchedlatest"
+     },
+     "latencyHint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latencyhint"
+     },
+     "lumiProjectedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lumiprojectedlatest"
+     },
+     "upstreamPublishedLatest": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Upstreampublishedlatest"
+     }
+    },
+    "title": "CollectionTiming",
+    "type": "object"
+   },
    "CompareBody": {
     "description": "POST /api/v1/entries/compare body（F067）。",
     "properties": {
@@ -3647,6 +3748,83 @@
      "type"
     ],
     "title": "ComponentError",
+    "type": "object"
+   },
+   "ContentVariantOption": {
+    "description": "N032：一个可选的正文版本（经同一净化边界渲染）。\n\nkind: \"current\"（上游当前）| \"last_known_full\"（保留的上一个更长\n版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。\ncontentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界\n渲染，BFF 不做净化（与正文同一安全模型）。",
+    "properties": {
+     "capturedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Capturedat"
+     },
+     "contentHtml": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contenthtml"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "lengthChars": {
+      "default": 0,
+      "title": "Lengthchars",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "kind",
+     "label"
+    ],
+    "title": "ContentVariantOption",
+    "type": "object"
+   },
+   "ContentVariantsBlock": {
+    "description": "N032：正文明显变短时的版本选择块（未触发 → None）。\n\ntriggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的\n历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测\n内容是否「完整」。",
+    "properties": {
+     "currentLength": {
+      "title": "Currentlength",
+      "type": "integer"
+     },
+     "maxLength": {
+      "title": "Maxlength",
+      "type": "integer"
+     },
+     "triggered": {
+      "title": "Triggered",
+      "type": "boolean"
+     },
+     "variants": {
+      "items": {
+       "$ref": "#/components/schemas/ContentVariantOption"
+      },
+      "title": "Variants",
+      "type": "array"
+     }
+    },
+    "required": [
+     "triggered",
+     "currentLength",
+     "maxLength"
+    ],
+    "title": "ContentVariantsBlock",
     "type": "object"
    },
    "ConversationMessage": {
@@ -4193,6 +4371,83 @@
     "title": "DuplicateSuspectsResponse",
     "type": "object"
    },
+   "EncodingInspection": {
+    "description": "N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。\n\n- declared/declaredMethod：文档声称的编码与判定来源\n  （bom | xml_declaration | meta_charset | content_type_header | none）；\n- detected/detectedMethod：轻启发式结果（无 chardet 依赖）：\n  bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；\n- mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；\n- sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以\n  U+FFFD 掩码）；无无效字节 → None。",
+    "properties": {
+     "bodyBytes": {
+      "default": 0,
+      "title": "Bodybytes",
+      "type": "integer"
+     },
+     "declared": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Declared"
+     },
+     "declaredMethod": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Declaredmethod"
+     },
+     "detected": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detected"
+     },
+     "detectedMethod": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detectedmethod"
+     },
+     "mojibakeRisk": {
+      "default": false,
+      "title": "Mojibakerisk",
+      "type": "boolean"
+     },
+     "sample": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sample"
+     },
+     "utf8Valid": {
+      "default": true,
+      "title": "Utf8Valid",
+      "type": "boolean"
+     }
+    },
+    "title": "EncodingInspection",
+    "type": "object"
+   },
    "EntryConversation": {
     "description": "GET/POST /api/v1/entries/{entryRef}/conversation(+ /messages).",
     "properties": {
@@ -4247,6 +4502,16 @@
      "contentText": {
       "title": "Contenttext",
       "type": "string"
+     },
+     "contentVariants": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ContentVariantsBlock"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "crawledAt": {
       "anyOf": [
@@ -4481,6 +4746,17 @@
       "title": "Starred",
       "type": "boolean"
      },
+     "timeCredibility": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timecredibility"
+     },
      "title": {
       "title": "Title",
       "type": "string"
@@ -4545,6 +4821,89 @@
      "nextCursor"
     ],
     "title": "EntryListResponse",
+    "type": "object"
+   },
+   "EntryRevision": {
+    "description": "N031：一条有界的文章修订记录（元数据，绝不含全文副本）。\n\nsummary 为服务端计算的结构差异摘要：basis 说明比较基准\n（retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，\n无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。",
+    "properties": {
+     "capturedAt": {
+      "title": "Capturedat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "newHash": {
+      "title": "Newhash",
+      "type": "string"
+     },
+     "newTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Newtitle"
+     },
+     "prevHash": {
+      "title": "Prevhash",
+      "type": "string"
+     },
+     "prevTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Prevtitle"
+     },
+     "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+     },
+     "titleChanged": {
+      "title": "Titlechanged",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "capturedAt",
+     "titleChanged",
+     "prevHash",
+     "newHash"
+    ],
+    "title": "EntryRevision",
+    "type": "object"
+   },
+   "EntryRevisionsResponse": {
+    "description": "GET /api/v1/entries/{entry_ref}/revisions。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "revisions": {
+      "items": {
+       "$ref": "#/components/schemas/EntryRevision"
+      },
+      "title": "Revisions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRef",
+     "revisions"
+    ],
+    "title": "EntryRevisionsResponse",
     "type": "object"
    },
    "EntryStateUpdate": {
@@ -5083,6 +5442,143 @@
     "title": "FeedFilterRuleTrialResult",
     "type": "object"
    },
+   "FeedPreviewEncodingChoice": {
+    "description": "reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。",
+    "properties": {
+     "encoding": {
+      "title": "Encoding",
+      "type": "string"
+     },
+     "mojibakeRisk": {
+      "default": false,
+      "title": "Mojibakerisk",
+      "type": "boolean"
+     },
+     "resolvedCodec": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolvedcodec"
+     },
+     "sample": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sample"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "encoding"
+    ],
+    "title": "FeedPreviewEncodingChoice",
+    "type": "object"
+   },
+   "FeedPreviewReparseBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/feed-preview/reparse body (N033).\n\nencoding=None → 只返回三种选择（utf-8 | declared | detected）的渲染\n对比；encoding+save=true → 把该选择存为来源覆盖（影响后续预览的\n解码方式，绝不回写历史投影）。",
+    "properties": {
+     "encoding": {
+      "anyOf": [
+       {
+        "enum": [
+         "utf-8",
+         "declared",
+         "detected"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Encoding"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "save": {
+      "default": false,
+      "title": "Save",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "FeedPreviewReparseBody",
+    "type": "object"
+   },
+   "FeedPreviewReparseResponse": {
+    "description": "reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。",
+    "properties": {
+     "applied": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied"
+     },
+     "choices": {
+      "items": {
+       "$ref": "#/components/schemas/FeedPreviewEncodingChoice"
+      },
+      "title": "Choices",
+      "type": "array"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "inspection": {
+      "$ref": "#/components/schemas/EncodingInspection"
+     },
+     "savedOverride": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Savedoverride"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "inspection",
+     "choices"
+    ],
+    "title": "FeedPreviewReparseResponse",
+    "type": "object"
+   },
    "FeedPreviewRequest": {
     "description": "POST /api/v1/feed-preview body (0013 Gate 2).",
     "properties": {
@@ -5115,6 +5611,16 @@
        }
       ],
       "title": "Description"
+     },
+     "encodingInspection": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/EncodingInspection"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "feedUrl": {
       "title": "Feedurl",
@@ -5291,6 +5797,46 @@
     "title": "FromTemplateRequest",
     "type": "object"
    },
+   "GlossaryHitsBlockIn": {
+    "description": "N083：可选的逐块命中定位输入（客户端已编号的内容块）。",
+    "properties": {
+     "index": {
+      "maximum": 63.0,
+      "minimum": 0.0,
+      "title": "Index",
+      "type": "integer"
+     },
+     "text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "text"
+    ],
+    "title": "GlossaryHitsBlockIn",
+    "type": "object"
+   },
+   "GlossaryHitsBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/{ref}/glossary-hits 可选体。\n\nblocks 缺省 → 沿用整篇 contentText 的命中（行为不变）；\nblocks 提供时 → 逐块计算，命中附带 blockIndexes（命中位置）。",
+    "properties": {
+     "blocks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GlossaryHitsBlockIn"
+      },
+      "maxItems": 64,
+      "title": "Blocks",
+      "type": "array"
+     }
+    },
+    "title": "GlossaryHitsBody",
+    "type": "object"
+   },
    "GlossaryImportBody": {
     "additionalProperties": false,
     "description": "POST /api/v1/glossary/import body。",
@@ -5382,6 +5928,11 @@
       "title": "Id",
       "type": "string"
      },
+     "protect": {
+      "default": false,
+      "title": "Protect",
+      "type": "boolean"
+     },
      "sourceRef": {
       "anyOf": [
        {
@@ -5412,11 +5963,16 @@
     "type": "object"
    },
    "GlossaryTermCreate": {
-    "description": "POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。",
+    "description": "POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。",
     "properties": {
      "definition": {
       "title": "Definition",
       "type": "string"
+     },
+     "protect": {
+      "default": false,
+      "title": "Protect",
+      "type": "boolean"
      },
      "sourceRef": {
       "anyOf": [
@@ -7102,6 +7658,16 @@
    "InviteCreateRequest": {
     "description": "POST /admin/invites.",
     "properties": {
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "holdPool": {
+      "default": false,
+      "title": "Holdpool",
+      "type": "boolean"
+     },
      "kind": {
       "default": "signup",
       "pattern": "^(signup|recovery)$",
@@ -7119,6 +7685,30 @@
        }
       ],
       "title": "Label"
+     },
+     "notBefore": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notbefore"
+     },
+     "schemeId": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Schemeid"
      },
      "targetUsername": {
       "anyOf": [
@@ -7141,6 +7731,87 @@
      }
     },
     "title": "InviteCreateRequest",
+    "type": "object"
+   },
+   "InviteSchemeBatchRequest": {
+    "description": "POST /admin/invite-schemes/{id}/generate-invites (N001).",
+    "properties": {
+     "count": {
+      "maximum": 100.0,
+      "minimum": 1.0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "notBefore": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notbefore"
+     }
+    },
+    "required": [
+     "count"
+    ],
+    "title": "InviteSchemeBatchRequest",
+    "type": "object"
+   },
+   "InviteSchemeCreateRequest": {
+    "description": "POST /admin/invite-schemes (N001).",
+    "properties": {
+     "freshrssPoolHold": {
+      "default": false,
+      "title": "Freshrsspoolhold",
+      "type": "boolean"
+     },
+     "initialSourceUrls": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Initialsourceurls",
+      "type": "array"
+     },
+     "name": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "quotaNote": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Quotanote"
+     },
+     "ttlHours": {
+      "default": 72,
+      "maximum": 720.0,
+      "minimum": 1.0,
+      "title": "Ttlhours",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "InviteSchemeCreateRequest",
     "type": "object"
    },
    "KnowledgeCardList": {
@@ -7309,6 +7980,26 @@
      "status"
     ],
     "title": "LibreTranslateTestResult",
+    "type": "object"
+   },
+   "LoginChallenge": {
+    "description": "POST /api/v1/auth/login response when the account has TOTP enabled\n(N007): the password was verified, but the session is minted only\nafter ``POST /auth/totp/verify`` with this short-lived pending token\n(which is NOT a session and grants nothing on its own).",
+    "properties": {
+     "pendingToken": {
+      "title": "Pendingtoken",
+      "type": "string"
+     },
+     "totpRequired": {
+      "const": true,
+      "title": "Totprequired",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "totpRequired",
+     "pendingToken"
+    ],
+    "title": "LoginChallenge",
     "type": "object"
    },
    "LoginRequest": {
@@ -9152,8 +9843,162 @@
     "title": "OpmlImportSkipped",
     "type": "object"
    },
+   "PasskeyDeleteRequest": {
+    "description": "DELETE /auth/passkeys/{id} — password re-entry (server-enforced).",
+    "properties": {
+     "currentPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Currentpassword",
+      "type": "string"
+     },
+     "totpCode": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Totpcode"
+     }
+    },
+    "required": [
+     "currentPassword"
+    ],
+    "title": "PasskeyDeleteRequest",
+    "type": "object"
+   },
+   "PasskeyLoginOptionsRequest": {
+    "description": "POST /auth/passkeys/login/options — username lookup (no enumeration).",
+    "properties": {
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     }
+    },
+    "title": "PasskeyLoginOptionsRequest",
+    "type": "object"
+   },
+   "PasskeyLoginRequest": {
+    "description": "POST /auth/passkeys/login — AuthenticationResponse + echoed challenge.",
+    "properties": {
+     "challenge": {
+      "maxLength": 512,
+      "minLength": 16,
+      "title": "Challenge",
+      "type": "string"
+     },
+     "id": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Id",
+      "type": "string"
+     },
+     "rawId": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Rawid",
+      "type": "string"
+     },
+     "response": {
+      "additionalProperties": true,
+      "minProperties": 1,
+      "title": "Response",
+      "type": "object"
+     },
+     "type": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Type",
+      "type": "string"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     }
+    },
+    "required": [
+     "challenge",
+     "id",
+     "rawId",
+     "type",
+     "response"
+    ],
+    "title": "PasskeyLoginRequest",
+    "type": "object"
+   },
+   "PasskeyRegisterRequest": {
+    "description": "POST /auth/passkeys — label + echoed challenge + RegistrationResponse.",
+    "properties": {
+     "challenge": {
+      "maxLength": 512,
+      "minLength": 16,
+      "title": "Challenge",
+      "type": "string"
+     },
+     "id": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     },
+     "rawId": {
+      "maxLength": 1024,
+      "minLength": 8,
+      "title": "Rawid",
+      "type": "string"
+     },
+     "response": {
+      "additionalProperties": true,
+      "minProperties": 1,
+      "title": "Response",
+      "type": "object"
+     },
+     "type": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "challenge",
+     "id",
+     "rawId",
+     "type",
+     "response"
+    ],
+    "title": "PasskeyRegisterRequest",
+    "type": "object"
+   },
    "PasswordChangeRequest": {
-    "description": "POST /api/v1/auth/password — current + new password.",
+    "description": "POST /api/v1/auth/password — current + new password.\n\n``totpCode`` is REQUIRED when the account has TOTP enabled (N007\nserver-enforced second factor for sensitive operations); ignored\notherwise.",
     "properties": {
      "currentPassword": {
       "maxLength": 256,
@@ -9166,6 +10011,18 @@
       "minLength": 1,
       "title": "Newpassword",
       "type": "string"
+     },
+     "totpCode": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Totpcode"
      }
     },
     "required": [
@@ -9348,6 +10205,520 @@
      "name"
     ],
     "title": "QaTemplateUpdate",
+    "type": "object"
+   },
+   "QueueAddRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/items body。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "QueueAddRequest",
+    "type": "object"
+   },
+   "QueueFreezeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/freeze body。",
+    "properties": {
+     "label": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "QueueFreezeRequest",
+    "type": "object"
+   },
+   "QueueGenerateRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/generate body。",
+    "properties": {
+     "levels": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Levels",
+      "type": "array"
+     },
+     "timeBudgetMinutes": {
+      "anyOf": [
+       {
+        "maximum": 480.0,
+        "minimum": 5.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Timebudgetminutes"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "title": "QueueGenerateRequest",
+    "type": "object"
+   },
+   "QueueGenerateResponse": {
+    "description": "generate 响应 = 今日视图 + 生成元数据（幂等/诚实标注）。",
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "budgetMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Budgetminutes"
+     },
+     "force": {
+      "title": "Force",
+      "type": "boolean"
+     },
+     "generated": {
+      "title": "Generated",
+      "type": "boolean"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSegmentView"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "totalEstimateMinutes": {
+      "title": "Totalestimateminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queueDate",
+     "items",
+     "segments",
+     "segmentOrder",
+     "totalEstimateMinutes",
+     "generated",
+     "force",
+     "basis"
+    ],
+    "title": "QueueGenerateResponse",
+    "type": "object"
+   },
+   "QueueItemDoneRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/items/{id}/done body（set 语义）。",
+    "properties": {
+     "done": {
+      "title": "Done",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "done"
+    ],
+    "title": "QueueItemDoneRequest",
+    "type": "object"
+   },
+   "QueueItemView": {
+    "description": "队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "estimateMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Estimateminutes"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     },
+     "source": {
+      "enum": [
+       "manual",
+       "budget",
+       "level"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "done",
+       "removed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "id",
+     "itemRef",
+     "addedAt",
+     "position",
+     "queueDate",
+     "source",
+     "status",
+     "segment"
+    ],
+    "title": "QueueItemView",
+    "type": "object"
+   },
+   "QueueReorderRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/queue/today/order body：给定的 id 按序列排前，\n未提及行保持相对顺序垫后（语义同工作区 reorder）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "required": [
+     "order"
+    ],
+    "title": "QueueReorderRequest",
+    "type": "object"
+   },
+   "QueueSegmentMoveRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/queue/today/items/{id}/segment body。",
+    "properties": {
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "title": "QueueSegmentMoveRequest",
+    "type": "object"
+   },
+   "QueueSegmentOrderRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/queue/today/segments body：段名有序数组（呈现提示）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "title": "QueueSegmentOrderRequest",
+    "type": "object"
+   },
+   "QueueSegmentView": {
+    "description": "派生分段（name=null = 未分组，恒为隐式前置组）。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "required": [
+     "name",
+     "items"
+    ],
+    "title": "QueueSegmentView",
+    "type": "object"
+   },
+   "QueueSnapshotDetail": {
+    "description": "打开冻结视图：原始成员顺序原样返回（不可变）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSnapshotItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "queueDate",
+     "createdAt",
+     "items",
+     "segmentOrder"
+    ],
+    "title": "QueueSnapshotDetail",
+    "type": "object"
+   },
+   "QueueSnapshotItem": {
+    "description": "冻结成员（ItemRef + 顺序元数据；内容解析在读取侧）。",
+    "properties": {
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "required": [
+     "itemRef",
+     "position",
+     "segment"
+    ],
+    "title": "QueueSnapshotItem",
+    "type": "object"
+   },
+   "QueueSnapshotList": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSnapshotView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "QueueSnapshotList",
+    "type": "object"
+   },
+   "QueueSnapshotView": {
+    "description": "冻结快照元数据（payload 留在服务端）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "queueDate",
+     "createdAt",
+     "itemCount"
+    ],
+    "title": "QueueSnapshotView",
+    "type": "object"
+   },
+   "QueueTodayResponse": {
+    "description": "GET /api/v1/queue/today 与 generate/order/segments 的统一视图。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSegmentView"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "totalEstimateMinutes": {
+      "title": "Totalestimateminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queueDate",
+     "items",
+     "segments",
+     "segmentOrder",
+     "totalEstimateMinutes"
+    ],
+    "title": "QueueTodayResponse",
     "type": "object"
    },
    "QuizGenerateBody": {
@@ -10745,6 +12116,25 @@
     "title": "ReviewQueuePostpone",
     "type": "object"
    },
+   "RssHubCacheInfo": {
+    "description": "N027: preview freshness (fresh=True when computed for this request).",
+    "properties": {
+     "ageS": {
+      "title": "Ages",
+      "type": "number"
+     },
+     "fresh": {
+      "title": "Fresh",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ageS",
+     "fresh"
+    ],
+    "title": "RssHubCacheInfo",
+    "type": "object"
+   },
    "RssHubCatalog": {
     "description": "GET /api/v1/rsshub/routes (static catalog; configured = instance set).",
     "properties": {
@@ -11112,6 +12502,71 @@
     "title": "RssHubDetectResult",
     "type": "object"
    },
+   "RssHubFavoriteItem": {
+    "description": "One N021 route favorite (params carry masked sensitive values only).",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId",
+     "label",
+     "params",
+     "createdAt"
+    ],
+    "title": "RssHubFavoriteItem",
+    "type": "object"
+   },
+   "RssHubFavoritePut": {
+    "description": "PUT /api/v1/rsshub/routes/favorites body (route id + params + label).",
+    "properties": {
+     "label": {
+      "default": "",
+      "maxLength": 120,
+      "title": "Label",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeId": {
+      "minLength": 1,
+      "title": "Routeid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeId"
+    ],
+    "title": "RssHubFavoritePut",
+    "type": "object"
+   },
    "RssHubParameter": {
     "description": "One RSSHub route parameter descriptor (form-renderable).",
     "properties": {
@@ -11186,6 +12641,183 @@
     "title": "RssHubPreviewRequest",
     "type": "object"
    },
+   "RssHubPreviewResult": {
+    "description": "POST /api/v1/rsshub/preview — adds the server-derived routeKey.\n\nN021/N025: the key (template id + masked params signature) is built\nserver-side; clients use it for favorites/recents/history/refresh\nand never assemble it themselves. N027 adds cache freshness.",
+    "properties": {
+     "alreadySubscribed": {
+      "title": "Alreadysubscribed",
+      "type": "boolean"
+     },
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "encodingInspection": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/EncodingInspection"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "format": {
+      "enum": [
+       "rss",
+       "atom"
+      ],
+      "title": "Format",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "siteUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Siteurl"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "feedUrl",
+     "format",
+     "alreadySubscribed",
+     "routeKey",
+     "cache"
+    ],
+    "title": "RssHubPreviewResult",
+    "type": "object"
+   },
+   "RssHubRecentItem": {
+    "description": "One N021 recently used route (params carry masked sensitive values).",
+    "properties": {
+     "lastSuccessAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastsuccessat"
+     },
+     "lastUsedAt": {
+      "title": "Lastusedat",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId",
+     "params",
+     "lastUsedAt"
+    ],
+    "title": "RssHubRecentItem",
+    "type": "object"
+   },
+   "RssHubRefreshRequest": {
+    "description": "POST /api/v1/rsshub/refresh body (server-derived route key).",
+    "properties": {
+     "routeKey": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Routekey",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey"
+    ],
+    "title": "RssHubRefreshRequest",
+    "type": "object"
+   },
+   "RssHubRefreshResult": {
+    "description": "POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.",
+    "properties": {
+     "cache": {
+      "$ref": "#/components/schemas/RssHubCacheInfo"
+     },
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "title",
+     "ranAt",
+     "durationMs",
+     "cache"
+    ],
+    "title": "RssHubRefreshResult",
+    "type": "object"
+   },
    "RssHubRoute": {
     "description": "One Lumi-owned RSSHub route descriptor (path built server-side).",
     "properties": {
@@ -11221,6 +12853,83 @@
      "parameters"
     ],
     "title": "RssHubRoute",
+    "type": "object"
+   },
+   "RssHubRouteRun": {
+    "description": "One N025 route health timeline row (no secrets — route keys are\nmasked server-side before storage).",
+    "properties": {
+     "durationMs": {
+      "title": "Durationms",
+      "type": "integer"
+     },
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "failureClass": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failureclass"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "routeKey",
+     "ranAt",
+     "status",
+     "durationMs"
+    ],
+    "title": "RssHubRouteRun",
+    "type": "object"
+   },
+   "RssHubRouteRuns": {
+    "description": "GET /api/v1/rsshub/routes/history — bounded run list, newest first.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RssHubRouteRun"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "RssHubRouteRuns",
     "type": "object"
    },
    "SaveAsTemplateRequest": {
@@ -11459,6 +13168,94 @@
      "updatedAt"
     ],
     "title": "SavedSearchView",
+    "type": "object"
+   },
+   "SearchDistributionDay": {
+    "description": "N145：单日命中计数（窗口内补零后逐日出）。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "day": {
+      "title": "Day",
+      "type": "string"
+     }
+    },
+    "required": [
+     "day",
+     "count"
+    ],
+    "title": "SearchDistributionDay",
+    "type": "object"
+   },
+   "SearchDistributionResult": {
+    "description": "N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。\n\nsources 最多 20 条（超界 sourcesComplete=false 诚实标注）；\ndays 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。",
+    "properties": {
+     "dayFrom": {
+      "title": "Dayfrom",
+      "type": "string"
+     },
+     "dayTo": {
+      "title": "Dayto",
+      "type": "string"
+     },
+     "days": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchDistributionDay"
+      },
+      "title": "Days",
+      "type": "array"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchDistributionSource"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "sourcesComplete": {
+      "default": true,
+      "title": "Sourcescomplete",
+      "type": "boolean"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "total",
+     "dayFrom",
+     "dayTo"
+    ],
+    "title": "SearchDistributionResult",
+    "type": "object"
+   },
+   "SearchDistributionSource": {
+    "description": "N145：单来源命中计数。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "feedTitle",
+     "count"
+    ],
+    "title": "SearchDistributionSource",
     "type": "object"
    },
    "SearchExportBody": {
@@ -11764,6 +13561,84 @@
     "title": "SearchItem",
     "type": "object"
    },
+   "SearchParseQueryBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/search/parse-query body（N142）。",
+    "properties": {
+     "query": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "SearchParseQueryBody",
+    "type": "object"
+   },
+   "SearchParseRecognized": {
+    "description": "一个被转成条件的片段（kind + 原文）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "date",
+       "source",
+       "phrase",
+       "exclude"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "text"
+    ],
+    "title": "SearchParseRecognized",
+    "type": "object"
+   },
+   "SearchParseResult": {
+    "description": "N142：filters 与保存视图 filters_json 同构（白名单子集）；\nremainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默\n丢弃。",
+    "properties": {
+     "filters": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "default": {},
+      "title": "Filters",
+      "type": "object"
+     },
+     "recognized": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchParseRecognized"
+      },
+      "title": "Recognized",
+      "type": "array"
+     },
+     "remainingText": {
+      "default": "",
+      "title": "Remainingtext",
+      "type": "string"
+     },
+     "unrecognized": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Unrecognized",
+      "type": "array"
+     }
+    },
+    "title": "SearchParseResult",
+    "type": "object"
+   },
    "SearchRebuildResult": {
     "description": "Envelope for POST /api/v1/search/rebuild.",
     "properties": {
@@ -11877,6 +13752,236 @@
     "title": "SearchResponse",
     "type": "object"
    },
+   "SearchWhyMissedBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/search/why-missed body（N143）——与 GET /search 同参\n（除分页/同义词）；entryRef 必须属于当前用户，否则 404。",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "entryRef": {
+      "maxLength": 600,
+      "minLength": 1,
+      "title": "Entryref",
+      "type": "string"
+     },
+     "exclude": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exclude"
+     },
+     "favorite": {
+      "default": false,
+      "title": "Favorite",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "hasSummary": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Hassummary"
+     },
+     "intitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Intitle"
+     },
+     "phrase": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Phrase"
+     },
+     "query": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "required": [
+     "query",
+     "entryRef"
+    ],
+    "title": "SearchWhyMissedBody",
+    "type": "object"
+   },
+   "SearchWhyMissedEntry": {
+    "description": "被诊断条目的最小元数据（不携带正文全文）。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "feedTitle": {
+      "title": "Feedtitle",
+      "type": "string"
+     },
+     "publishedAt": {
+      "title": "Publishedat",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "title",
+     "feedTitle",
+     "publishedAt"
+    ],
+    "title": "SearchWhyMissedEntry",
+    "type": "object"
+   },
+   "SearchWhyMissedReason": {
+    "description": "一个排除原因（kind + 中文 detail，UI 可直接展示）。",
+    "properties": {
+     "detail": {
+      "title": "Detail",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "term",
+       "intitle",
+       "phrase",
+       "exclude",
+       "source",
+       "category",
+       "unread",
+       "starred",
+       "date",
+       "hasSummary"
+      ],
+      "title": "Kind",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "detail"
+    ],
+    "title": "SearchWhyMissedReason",
+    "type": "object"
+   },
+   "SearchWhyMissedResult": {
+    "description": "N143：matched=false → reasons 列出每个未通过的条件；\nmatched=true → 应出现在结果中，rank 为按时间排序的位置（超出\n2000 上界时 rankCapped=true 诚实标注）。",
+    "properties": {
+     "entry": {
+      "$ref": "#/components/schemas/SearchWhyMissedEntry"
+     },
+     "matched": {
+      "title": "Matched",
+      "type": "boolean"
+     },
+     "rank": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rank"
+     },
+     "rankCapped": {
+      "default": false,
+      "title": "Rankcapped",
+      "type": "boolean"
+     },
+     "reasons": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchWhyMissedReason"
+      },
+      "title": "Reasons",
+      "type": "array"
+     }
+    },
+    "required": [
+     "matched",
+     "entry"
+    ],
+    "title": "SearchWhyMissedResult",
+    "type": "object"
+   },
    "SecretValuePut": {
     "description": "Write-only secret body (shared by AI keys and RSSHub secrets).\n\n0021 hardening: bounded length (same bound as the RSSHub secret\nschema) and control-character rejection at INPUT time — a control\ncharacter in an API key is never legitimate, and storing one would\npoison env-file rendering / upstream calls until the value is\nreplaced.",
     "properties": {
@@ -11891,6 +13996,41 @@
      "value"
     ],
     "title": "SecretValuePut",
+    "type": "object"
+   },
+   "SegmentProtectedTerm": {
+    "description": "N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。",
+    "properties": {
+     "count": {
+      "default": 0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "protected": {
+      "title": "Protected",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "term": {
+      "title": "Term",
+      "type": "string"
+     }
+    },
+    "required": [
+     "term",
+     "protected"
+    ],
+    "title": "SegmentProtectedTerm",
     "type": "object"
    },
    "SegmentRevisionBody": {
@@ -12120,6 +14260,126 @@
     "title": "SnapshotView",
     "type": "object"
    },
+   "SourceAliasHistoryItem": {
+    "description": "N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。",
+    "properties": {
+     "changedAt": {
+      "default": "",
+      "title": "Changedat",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "oldCustomName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Oldcustomname"
+     },
+     "upstreamNameAtSave": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Upstreamnameatsave"
+     }
+    },
+    "required": [
+     "id",
+     "feedUrl"
+    ],
+    "title": "SourceAliasHistoryItem",
+    "type": "object"
+   },
+   "SourceAliasHistoryList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SourceAliasHistoryItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SourceAliasHistoryList",
+    "type": "object"
+   },
+   "SourceAliasList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SourceAliasView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "SourceAliasList",
+    "type": "object"
+   },
+   "SourceAliasUpdate": {
+    "description": "PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。",
+    "properties": {
+     "customName": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Customname",
+      "type": "string"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "customName"
+    ],
+    "title": "SourceAliasUpdate",
+    "type": "object"
+   },
+   "SourceAliasView": {
+    "description": "N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。",
+    "properties": {
+     "customName": {
+      "title": "Customname",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "updatedAt": {
+      "default": "",
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "customName"
+    ],
+    "title": "SourceAliasView",
+    "type": "object"
+   },
    "SourceDiscoveryRequest": {
     "description": "POST /api/v1/source-discovery body (0014): a public website URL.",
     "properties": {
@@ -12279,7 +14539,7 @@
     "type": "object"
    },
    "SourceOverrideResult": {
-    "description": "F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。",
+    "description": "F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。",
     "properties": {
      "aiDisabled": {
       "default": false,
@@ -12305,6 +14565,21 @@
        }
       ],
       "title": "Hiddenuntil"
+     },
+     "muteWindows": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mutewindows"
      },
      "readerStyle": {
       "anyOf": [
@@ -12391,6 +14666,21 @@
        }
       ],
       "title": "Hiddenuntil"
+     },
+     "muteWindows": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mutewindows"
      },
      "readerStyle": {
       "anyOf": [
@@ -12797,6 +15087,16 @@
    "SubscriptionVolumeItem": {
     "description": "F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。",
     "properties": {
+     "collectionTiming": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CollectionTiming"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "feedUrl": {
       "title": "Feedurl",
       "type": "string"
@@ -13363,6 +15663,66 @@
     "title": "TitleTranslationView",
     "type": "object"
    },
+   "TotpDisableRequest": {
+    "properties": {
+     "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+     },
+     "currentPassword": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Currentpassword",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code",
+     "currentPassword"
+    ],
+    "title": "TotpDisableRequest",
+    "type": "object"
+   },
+   "TotpEnableRequest": {
+    "properties": {
+     "code": {
+      "maxLength": 16,
+      "minLength": 6,
+      "title": "Code",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code"
+    ],
+    "title": "TotpEnableRequest",
+    "type": "object"
+   },
+   "TotpVerifyRequest": {
+    "description": "POST /auth/totp/verify — pending token + TOTP/recovery code.",
+    "properties": {
+     "code": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+     },
+     "pendingToken": {
+      "maxLength": 256,
+      "minLength": 16,
+      "title": "Pendingtoken",
+      "type": "string"
+     }
+    },
+    "required": [
+     "pendingToken",
+     "code"
+    ],
+    "title": "TotpVerifyRequest",
+    "type": "object"
+   },
    "TranslationSegmentBlockIn": {
     "description": "One client-segmented content block.",
     "properties": {
@@ -13408,6 +15768,19 @@
      "index": {
       "title": "Index",
       "type": "integer"
+     },
+     "noTranslate": {
+      "default": false,
+      "title": "Notranslate",
+      "type": "boolean"
+     },
+     "protectedTerms": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SegmentProtectedTerm"
+      },
+      "title": "Protectedterms",
+      "type": "array"
      },
      "revisedAt": {
       "anyOf": [
@@ -13513,6 +15886,115 @@
      "targetLanguage"
     ],
     "title": "TranslationSegmentsView",
+    "type": "object"
+   },
+   "TranslationVerificationBlock": {
+    "description": "N082：一个块的校验结果（不可校验时诚实给 reason）。",
+    "properties": {
+     "blockIndex": {
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "findings": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationVerificationFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "revised": {
+      "default": false,
+      "title": "Revised",
+      "type": "boolean"
+     },
+     "verifiable": {
+      "title": "Verifiable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "blockIndex",
+     "verifiable"
+    ],
+    "title": "TranslationVerificationBlock",
+    "type": "object"
+   },
+   "TranslationVerificationFinding": {
+    "description": "N082：一条可见数字差异（基于可见 token，非语义判断）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "missing",
+       "changed",
+       "added"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "sourceContext": {
+      "default": "",
+      "title": "Sourcecontext",
+      "type": "string"
+     },
+     "token": {
+      "title": "Token",
+      "type": "string"
+     },
+     "translatedContext": {
+      "default": "",
+      "title": "Translatedcontext",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "token"
+    ],
+    "title": "TranslationVerificationFinding",
+    "type": "object"
+   },
+   "TranslationVerificationView": {
+    "description": "GET /api/v1/entries/{ref}/translation-verification 响应。",
+    "properties": {
+     "blocks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationVerificationBlock"
+      },
+      "title": "Blocks",
+      "type": "array"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "language": {
+      "title": "Language",
+      "type": "string"
+     },
+     "totalFindings": {
+      "default": 0,
+      "title": "Totalfindings",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "entryRef",
+     "language"
+    ],
+    "title": "TranslationVerificationView",
     "type": "object"
    },
    "TrashItem": {
@@ -14001,16 +16483,122 @@
     "title": "WorkspaceGoalPut",
     "type": "object"
    },
+   "WorkspaceGroup": {
+    "description": "N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "required": [
+     "name",
+     "items"
+    ],
+    "title": "WorkspaceGroup",
+    "type": "object"
+   },
+   "WorkspaceGroupOrderPut": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。\n\n只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "required": [
+     "order"
+    ],
+    "title": "WorkspaceGroupOrderPut",
+    "type": "object"
+   },
+   "WorkspaceGroupsResponse": {
+    "description": "Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.\n\n``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是\n命名组的呈现顺序（未列入的组按名字典序追加在后）。",
+    "properties": {
+     "groupOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Grouporder",
+      "type": "array"
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceGroup"
+      },
+      "title": "Groups",
+      "type": "array"
+     },
+     "pinned": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Pinned",
+      "type": "array"
+     },
+     "revision": {
+      "title": "Revision",
+      "type": "integer"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId",
+     "revision",
+     "groupOrder",
+     "pinned",
+     "groups"
+    ],
+    "title": "WorkspaceGroupsResponse",
+    "type": "object"
+   },
    "WorkspaceItem": {
-    "description": "One workspace member (ref + ordering; content resolves separately).",
+    "description": "One workspace member (ref + ordering; content resolves separately).\n\nN101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，\n排序语义不变（position 升序）。",
     "properties": {
      "addedAt": {
       "title": "Addedat",
       "type": "string"
      },
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     },
      "itemRef": {
       "title": "Itemref",
       "type": "string"
+     },
+     "pinned": {
+      "default": false,
+      "title": "Pinned",
+      "type": "boolean"
      },
      "position": {
       "title": "Position",
@@ -14027,8 +16615,19 @@
    },
    "WorkspaceItemAddRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.",
+    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.\n\nN101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。",
     "properties": {
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     },
      "itemRef": {
       "title": "Itemref",
       "type": "string"
@@ -14038,6 +16637,40 @@
      "itemRef"
     ],
     "title": "WorkspaceItemAddRequest",
+    "type": "object"
+   },
+   "WorkspaceItemGroupMoveRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。\n\n``groupName=null`` = 移回未分组隐式前置组。",
+    "properties": {
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     }
+    },
+    "title": "WorkspaceItemGroupMoveRequest",
+    "type": "object"
+   },
+   "WorkspaceItemPinRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。",
+    "properties": {
+     "pinned": {
+      "title": "Pinned",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "pinned"
+    ],
+    "title": "WorkspaceItemPinRequest",
     "type": "object"
    },
    "WorkspaceItemsResolvedResponse": {
@@ -14230,6 +16863,132 @@
     "title": "WorkspaceResumeResponse",
     "type": "object"
    },
+   "WorkspaceSnapshot": {
+    "description": "N105：一个命名会话快照（元数据视图；payload 留在服务端）。\n\n``itemCount`` 是捕获时刻的成员数（从 payload 派生）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "workspaceId",
+     "name",
+     "createdAt",
+     "itemCount"
+    ],
+    "title": "WorkspaceSnapshot",
+    "type": "object"
+   },
+   "WorkspaceSnapshotCreate": {
+    "additionalProperties": false,
+    "description": "POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceSnapshotCreate",
+    "type": "object"
+   },
+   "WorkspaceSnapshotList": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshot"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceSnapshotList",
+    "type": "object"
+   },
+   "WorkspaceSnapshotRestoreRequest": {
+    "additionalProperties": false,
+    "description": "POST /workspaces/{id}/snapshots/{sid}/restore（N105）.\n\n- ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；\n- ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝\n  丢固定条目除非 ``force=true``）；\n- 快照里已消失的 ref 诚实上报，绝不复活。",
+    "properties": {
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "mode": {
+      "title": "Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "title": "WorkspaceSnapshotRestoreRequest",
+    "type": "object"
+   },
+   "WorkspaceSnapshotRestoreResult": {
+    "description": "恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；\nkept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。",
+    "properties": {
+     "kept": {
+      "title": "Kept",
+      "type": "integer"
+     },
+     "missing": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "removed": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Removed",
+      "type": "array"
+     },
+     "restored": {
+      "title": "Restored",
+      "type": "integer"
+     },
+     "revision": {
+      "title": "Revision",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "restored",
+     "missing",
+     "kept",
+     "removed",
+     "revision"
+    ],
+    "title": "WorkspaceSnapshotRestoreResult",
+    "type": "object"
+   },
    "WorkspaceTemplate": {
     "description": "F083 工作区模板（config 不含条目内容/凭据）。",
     "properties": {
@@ -14360,6 +17119,188 @@
     "summary": "Audit Tail"
    }
   },
+  "/api/v1/admin/invite-funnel": {
+   "get": {
+    "description": "Per-scheme invite funnel counts (N004), aggregated from real rows.\n\nResponses carry counts ONLY — never invite codes, hashes or links.\nfailedActivation comes from the invite_activation_failed audit\nevents written by the activation boundary.",
+    "operationId": "invite_funnel_api_v1_admin_invite_funnel_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "scheme_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Scheme Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Invite Funnel"
+   }
+  },
+  "/api/v1/admin/invite-schemes": {
+   "get": {
+    "operationId": "list_invite_schemes_api_v1_admin_invite_schemes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Invite Schemes"
+   },
+   "post": {
+    "description": "Save a named invite scheme (N001): TTL + optional initial source\nURLs + optional FreshRSS pool hold + quota note. Templates only —\nnothing is generated until /generate-invites is called.",
+    "operationId": "create_invite_scheme_api_v1_admin_invite_schemes_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteSchemeCreateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Invite Scheme"
+   }
+  },
+  "/api/v1/admin/invite-schemes/{scheme_id}": {
+   "delete": {
+    "description": "Delete a scheme template. Already-generated invites and activated\naccounts keep their scheme_id — labels degrade honestly (LEFT JOIN)\ninstead of history being rewritten.",
+    "operationId": "delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scheme_id",
+      "required": true,
+      "schema": {
+       "title": "Scheme Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Invite Scheme"
+   }
+  },
+  "/api/v1/admin/invite-schemes/{scheme_id}/generate-invites": {
+   "post": {
+    "description": "Batch-generate N independent one-time invites from a scheme (N001).\n\nEvery invite records the scheme and uses the scheme's TTL; a pool\nhold per invite is taken when the scheme asks for one — an\ninsufficient pool fails the WHOLE batch 409 pool_empty (already\ncreated invites are rolled back, releasing their holds) unless\nforce=true generates the batch without holds. Tokens appear exactly\nonce, one per generated invite.",
+    "operationId": "generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "scheme_id",
+      "required": true,
+      "schema": {
+       "title": "Scheme Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteSchemeBatchRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Invites From Scheme"
+   }
+  },
   "/api/v1/admin/invites": {
    "get": {
     "operationId": "list_invites_api_v1_admin_invites_get",
@@ -14376,7 +17317,7 @@
     "summary": "List Invites"
    },
    "post": {
-    "description": "Create an invitation. The raw token is returned exactly once —\nthe operator hands it to the invitee out of band.",
+    "description": "Create an invitation. The raw token is returned exactly once —\nthe operator hands it to the invitee out of band.\n\nN001/N002/N003 extensions (all optional, old bodies unchanged):\nschemeId stamps a saved scheme; notBefore schedules activation\n(server clock); holdPool reserves one FreshRSS pool slot at creation\n— with an empty pool this fails 409 pool_empty unless force=true\ncreates the invite honestly without a hold.",
     "operationId": "create_invite_api_v1_admin_invites_post",
     "requestBody": {
      "content": {
@@ -15779,7 +18720,7 @@
   },
   "/api/v1/auth/activate": {
    "post": {
-    "description": "Redeem a signup invite: create the independent account, bind an\nown FreshRSS account from the pool, mint a session.\n\nPool-empty is an explicit pending-binding state — the account is\nusable and the UI shows \"RSS source binding pending\"; the server\nnever falls back to shared credentials.",
+    "description": "Redeem a signup invite: create the independent account, bind an\nown FreshRSS account from the pool, mint a session.\n\nPool-empty is an explicit pending-binding state — the account is\nusable and the UI shows \"RSS source binding pending\"; the server\nnever falls back to shared credentials.\n\nN001: a scheme-stamped invite records the scheme on the account and\nsubscribes the scheme's initial sources best-effort — failures are\nlisted per URL in ``initialSources`` and never block activation.\nN002: a scheduled invite (not_before in the future by the SERVER\nclock) is rejected with the stable 403 invite_not_active carrying\nserverTime + notBefore; the token is not burned.",
     "operationId": "activate_account_api_v1_auth_activate_post",
     "requestBody": {
      "content": {
@@ -15818,7 +18759,7 @@
   },
   "/api/v1/auth/activation-preview": {
    "get": {
-    "description": "Honest activation screen state: is the invite usable, is a\nFreshRSS account ready? Reveals nothing beyond yes/no — no labels,\nno emails, no pool usernames.",
+    "description": "Honest activation screen state: is the invite usable, is a\nFreshRSS account ready? Reveals nothing beyond yes/no for a broken\nlink — for a scheduled invite (N002) it additionally echoes the\nserver clock (the ONLY clock the boundary consults) as serverTime\nand the notBefore instant, so the UI can render 等待生效. No labels,\nno emails, no pool usernames.",
     "operationId": "activation_preview_api_v1_auth_activation_preview_get",
     "parameters": [
      {
@@ -15881,7 +18822,7 @@
   },
   "/api/v1/auth/login": {
    "post": {
-    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).",
+    "description": "Verify credentials, mint a per-user session.\n\nWrong-password and unknown-username share the generic failure shape\nand the same brute-force budget (no account oracle).\n\nN007: when the account has TOTP enabled, a correct password does NOT\nmint a session — the response is ``{totpRequired, pendingToken}`` and\nthe real session is issued by ``POST /auth/totp/verify`` (same\nbrute-force budget, one attempt per pending token).",
     "operationId": "login_api_v1_auth_login_post",
     "requestBody": {
      "content": {
@@ -15898,7 +18839,15 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/AuthStatus"
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/AuthStatus"
+          },
+          {
+           "$ref": "#/components/schemas/LoginChallenge"
+          }
+         ],
+         "title": "Response Login Api V1 Auth Login Post"
         }
        }
       },
@@ -15956,9 +18905,196 @@
     "summary": "Logout All"
    }
   },
+  "/api/v1/auth/passkeys": {
+   "get": {
+    "operationId": "list_passkeys_api_v1_auth_passkeys_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Passkeys"
+   },
+   "post": {
+    "operationId": "passkey_register_finish_api_v1_auth_passkeys_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyRegisterRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Register Finish"
+   }
+  },
+  "/api/v1/auth/passkeys/login": {
+   "post": {
+    "operationId": "passkey_login_api_v1_auth_passkeys_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyLoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Login"
+   }
+  },
+  "/api/v1/auth/passkeys/login/options": {
+   "post": {
+    "description": "Username → allowCredentials. Unknown usernames and users without\npasskeys get the SAME generic shape (empty allow-list,\n``passkeyAvailable: false``) — the endpoint reveals nothing.",
+    "operationId": "passkey_login_options_api_v1_auth_passkeys_login_options_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyLoginOptionsRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Passkey Login Options Api V1 Auth Passkeys Login Options Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Passkey Login Options"
+   }
+  },
+  "/api/v1/auth/passkeys/options": {
+   "post": {
+    "operationId": "passkey_register_options_api_v1_auth_passkeys_options_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Passkey Register Options"
+   }
+  },
+  "/api/v1/auth/passkeys/{credential_id}": {
+   "delete": {
+    "operationId": "delete_passkey_api_v1_auth_passkeys__credential_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "credential_id",
+      "required": true,
+      "schema": {
+       "title": "Credential Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasskeyDeleteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Passkey"
+   }
+  },
   "/api/v1/auth/password": {
    "post": {
-    "description": "Change own password: verify current, replace hash, revoke ALL of\nthis user's sessions, then mint a fresh session for THIS device.",
+    "description": "Change own password: verify current, replace hash, revoke ALL of\nthis user's sessions, then mint a fresh session for THIS device.\n\nN007: when the account has TOTP enabled, a valid second factor\n(``totpCode``) is REQUIRED — server-enforced, not front-end.",
     "operationId": "change_password_api_v1_auth_password_post",
     "requestBody": {
      "content": {
@@ -16101,6 +19237,148 @@
      }
     },
     "summary": "Revoke Auth Session"
+   }
+  },
+  "/api/v1/auth/totp": {
+   "get": {
+    "operationId": "totp_status_api_v1_auth_totp_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Totp Status"
+   }
+  },
+  "/api/v1/auth/totp/disable": {
+   "post": {
+    "operationId": "totp_disable_api_v1_auth_totp_disable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpDisableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Disable"
+   }
+  },
+  "/api/v1/auth/totp/enable": {
+   "post": {
+    "operationId": "totp_enable_api_v1_auth_totp_enable_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpEnableRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Enable"
+   }
+  },
+  "/api/v1/auth/totp/setup": {
+   "post": {
+    "operationId": "totp_setup_api_v1_auth_totp_setup_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Totp Setup"
+   }
+  },
+  "/api/v1/auth/totp/verify": {
+   "post": {
+    "operationId": "totp_verify_api_v1_auth_totp_verify_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TotpVerifyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Totp Verify"
    }
   },
   "/api/v1/authors": {
@@ -16729,7 +20007,7 @@
   },
   "/api/v1/entries": {
    "get": {
-    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。",
+    "description": "One filtered page of entries — list fields only, never bodies.\n\nFiltering happens upstream (FreshRSS). Cursor rules: without a cursor,\na missing view means \"all\"; with a cursor, a missing view/feedUrl/\nsourceType/categoryId adopts the cursor's scope, while an explicit\nview/feedUrl/sourceType/categoryId must match the cursor's scope\nexactly (else 400, before touching FreshRSS).\n\n0011 scope 扩展（§6/§13，全部服务端过滤，不用已加载页假筛选）：\n- sourceType：当前唯一合法值 \"rss\"（全部条目都是 RSS；契约上独立\n  于“全部”，未来新增来源后有真实过滤行为）；\n- categoryId：FreshRSS 分类（greader label stream，适配器含默认\n  分类本地化名 fallback）；\n- feedUrl 与 categoryId 互斥（两者同时出现 → 400）。\n\nN034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）\n降序重排（服务端执行，query param 真实生效）；上游 continuation\n分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内\n条目附带 timeCredibility（投影摄取时分类的发布时间异常）。",
     "operationId": "entries_api_v1_entries_get",
     "parameters": [
      {
@@ -16825,6 +20103,23 @@
        "default": false,
        "title": "Includehidden",
        "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "const": "received",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sort"
       }
      }
     ],
@@ -17151,7 +20446,7 @@
   },
   "/api/v1/entries/{entry_ref}/glossary-hits": {
    "post": {
-    "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。",
+    "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。\n\nN083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes\n（客户端块索引，UI 可点击跳转）。",
     "operationId": "glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post",
     "parameters": [
      {
@@ -17164,6 +20459,23 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/GlossaryHitsBody"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "content": {
@@ -17339,6 +20651,46 @@
      }
     },
     "summary": "Generate Entry Quiz"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/revisions": {
+   "get": {
+    "description": "N031：单篇文章的有界修订历史（只读，纯投影查询，不触上游）。\n\n修订 = FreshRSS 以同一 id 重新交付但内容哈希变化的摄取记录；行内\n只有元数据（结构差异摘要 + 哈希），绝无全文副本。无记录 → 空表\n200（条目可能存在于 FreshRSS 但从未修订过）。",
+    "operationId": "entry_revisions_api_v1_entries__entry_ref__revisions_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntryRevisionsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Revisions"
    }
   },
   "/api/v1/entries/{entry_ref}/state": {
@@ -17656,6 +21008,62 @@
     "summary": "Generate Entry Translation"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation-verification": {
+   "get": {
+    "description": "N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。\n\n只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），\n基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、\n不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。",
+    "operationId": "get_translation_verification_api_v1_entries__entry_ref__translation_verification_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "language",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Language"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationVerificationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Translation Verification"
+   }
+  },
   "/api/v1/entries/{entry_ref}/translation/segments/generate": {
    "post": {
     "description": "Explicit generation for the bilingual/translated views (money rule:\nonly this endpoint may call a provider; exact cache hits never do).",
@@ -17756,9 +21164,91 @@
     "summary": "Lookup Translation Segments"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate": {
+   "delete": {
+    "description": "N086：撤销一块的「不翻译」标记（幂等；块恢复可翻译）。",
+    "operationId": "unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unmark Translation Segment No Translate"
+   },
+   "put": {
+    "description": "N086：把一块标记为「不翻译」（持久；每条目上限 200 块）。\n\n标记后的块不再参与生成：已有缓存译文照常展示，没有则诚实显示\n原文。幂等：重复标记同一块是 no-op。",
+    "operationId": "mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mark Translation Segment No Translate"
+   }
+  },
   "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision": {
    "delete": {
-    "description": "F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。",
+    "description": "F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。",
     "operationId": "delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete",
     "parameters": [
      {
@@ -18160,7 +21650,7 @@
   },
   "/api/v1/feed-preview": {
    "post": {
-    "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.",
+    "description": "Preview a direct RSS/Atom URL — strictly NON-MUTATING.\n\nsafe fetch → bounded bytes → offline parse. Reads the FreshRSS\nsubscription list (alreadySubscribed) but never writes anything:\nsubscribing is POST /api/v1/subscriptions. Only reliable metadata is\nreturned — no entries, no scraping, no feed discovery.\n\nN033：响应附带 encodingInspection（声明/检测/乱码风险 + 掩码样本）；\n若用户保存过 encoding_override，预览解析按该选择解码（只影响 Lumi\n自己的 feed 字节→文本解码点，历史投影数据不回写）。",
     "operationId": "preview_feed_api_v1_feed_preview_post",
     "requestBody": {
      "content": {
@@ -18195,6 +21685,45 @@
      }
     },
     "summary": "Preview Feed"
+   }
+  },
+  "/api/v1/feed-preview/reparse": {
+   "post": {
+    "description": "N033 重新解析诊断：同一次有界抓取，三种编码选择各渲染一份\n（title + 掩码样本 + 乱码风险），供用户显式选择。选中的选择可保存\n为 source_overrides.encoding_override（仅影响未来的解码）。",
+    "operationId": "reparse_feed_api_v1_feed_preview_reparse_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FeedPreviewReparseBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FeedPreviewReparseResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reparse Feed"
    }
   },
   "/api/v1/feeds": {
@@ -23720,6 +27249,475 @@
     "summary": "Update Qa Template"
    }
   },
+  "/api/v1/queue/snapshots": {
+   "get": {
+    "description": "快照列表（新→旧）。",
+    "operationId": "list_queue_snapshots_api_v1_queue_snapshots_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Queue Snapshots"
+   }
+  },
+  "/api/v1/queue/snapshots/{snapshot_id}": {
+   "delete": {
+    "description": "删除一个快照（housekeeping；快照本体在其生命周期内不可变）。",
+    "operationId": "delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Queue Snapshot"
+   },
+   "get": {
+    "description": "打开冻结视图：原始成员顺序原样返回（消失的 ref 由 Web 呈现\n占位；服务端绝不复活）。",
+    "operationId": "get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Queue Snapshot"
+   }
+  },
+  "/api/v1/queue/today": {
+   "get": {
+    "description": "今日队列视图（pending + done；removed 行保留在库但不出库门）。",
+    "operationId": "get_today_queue_api_v1_queue_today_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Today Queue"
+   }
+  },
+  "/api/v1/queue/today/freeze": {
+   "post": {
+    "description": "把当前 pending 成员冻结为不可变快照（之后加入的项绝不进入）。",
+    "operationId": "freeze_today_queue_api_v1_queue_today_freeze_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueFreezeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueSnapshotView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Freeze Today Queue"
+   }
+  },
+  "/api/v1/queue/today/generate": {
+   "post": {
+    "description": "生成（或幂等返回）今天的队列。\n\n- 队列已存在且未 force → 200 + generated=false（**绝不重排**——\n  后台刷新不打扰已确认的队列）；\n- force=1 → 重建：清掉 pending/removed 重新装填，done 状态保留；\n- 新建 → 201 + generated=true。",
+    "operationId": "generate_today_queue_api_v1_queue_today_generate_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "force",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Force",
+       "type": "boolean"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueGenerateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueGenerateResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueGenerateResponse"
+        }
+       }
+      },
+      "description": "Created"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Generate Today Queue"
+   }
+  },
+  "/api/v1/queue/today/items": {
+   "post": {
+    "description": "手动加入（新 201；重复 pending 幂等 200；removed 复活 200；\n今天已完成 → 409 queue_item_done）。",
+    "operationId": "add_queue_item_api_v1_queue_today_items_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueAddRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Created"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Queue Item"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}": {
+   "delete": {
+    "description": "移除（status=removed，行保留；再移除同一行 → 404）。",
+    "operationId": "remove_queue_item_api_v1_queue_today_items__item_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Queue Item"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}/done": {
+   "post": {
+    "description": "完成状态（set 语义：done=true/false，不是 toggle；完成按条目\n身份记账，绝不隐式改写上游已读状态）。",
+    "operationId": "set_queue_item_done_api_v1_queue_today_items__item_id__done_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueItemDoneRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Queue Item Done"
+   }
+  },
+  "/api/v1/queue/today/items/{item_id}/segment": {
+   "patch": {
+    "description": "行菜单移动分段（segment=null = 移回未分组）。",
+    "operationId": "move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueSegmentMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Move Queue Item Segment"
+   }
+  },
+  "/api/v1/queue/today/order": {
+   "put": {
+    "description": "持久化重排（跨设备可见；done 行位置同样可排）。",
+    "operationId": "reorder_today_queue_api_v1_queue_today_order_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueReorderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reorder Today Queue"
+   }
+  },
+  "/api/v1/queue/today/segments": {
+   "put": {
+    "description": "段顺序（呈现提示；服务端存储 → 跨设备一致）。",
+    "operationId": "set_queue_segment_order_api_v1_queue_today_segments_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueSegmentOrderRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueTodayResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Queue Segment Order"
+   }
+  },
   "/api/v1/quiz/{quiz_id}/grade": {
    "post": {
     "operationId": "grade_quiz_api_v1_quiz__quiz_id__grade_post",
@@ -24893,7 +28891,7 @@
   },
   "/api/v1/rsshub/preview": {
    "post": {
-    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).",
+    "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.\n\nN027: successful previews are cached per (user, route_key) with a\nshort TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``\nand does NOT re-fetch, re-record a timeline row, or touch 最近使用 —\nit was not an upstream attempt. The E2E base override always\nbypasses the cache.",
     "operationId": "rsshub_preview_api_v1_rsshub_preview_post",
     "requestBody": {
      "content": {
@@ -24910,7 +28908,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/FeedPreviewResult"
+         "$ref": "#/components/schemas/RssHubPreviewResult"
         }
        }
       },
@@ -24930,6 +28928,45 @@
     "summary": "Rsshub Preview"
    }
   },
+  "/api/v1/rsshub/refresh": {
+   "post": {
+    "description": "N027: force a re-fetch of exactly ONE route (per-user rate limited).\n\nThe route key is parsed server-side back into template id + params.\nSensitive parameter values were never stored ('***' sentinel only),\nso refreshing such a route is refused — the user re-enters them in a\nnormal preview. Rate limit: 6 refreshes/minute/user, then a stable\n429 with Retry-After. Only THIS route's cache entry is dropped;\nother routes and any global caches are untouched.",
+    "operationId": "rsshub_refresh_api_v1_rsshub_refresh_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubRefreshRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRefreshResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Refresh"
+   }
+  },
   "/api/v1/rsshub/routes": {
    "get": {
     "description": "Lumi-owned RSSHub route catalog (static, always available).\n\n``configured`` reports whether the server has an RSSHUB_BASE_URL —\nthe catalog itself is independent of the instance. Route descriptors\ncarry enough metadata for the Web to render parameter forms; path\nconstruction happens server-side on preview.",
@@ -24947,6 +28984,176 @@
      }
     },
     "summary": "Rsshub Routes"
+   }
+  },
+  "/api/v1/rsshub/routes/favorites": {
+   "get": {
+    "description": "N021 favorites (per-user, cross-device). Sensitive parameter\nvalues are stored as '***' sentinels and are the only thing that can\ncome back here.",
+    "operationId": "list_rsshub_favorites_api_v1_rsshub_routes_favorites_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/RssHubFavoriteItem"
+         },
+         "title": "Response List Rsshub Favorites Api V1 Rsshub Routes Favorites Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Favorites"
+   },
+   "put": {
+    "description": "Star (or re-label) one route — upsert on route_key.\n\nrouteId must exist in the Lumi catalog; params are stored MASKED\n(F047 敏感键 → '***'), so a favorite never carries a secret.",
+    "operationId": "put_rsshub_favorite_api_v1_rsshub_routes_favorites_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubFavoritePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubFavoriteItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Rsshub Favorite"
+   }
+  },
+  "/api/v1/rsshub/routes/favorites/{route_key}": {
+   "delete": {
+    "description": "Unstar one favorite; 404 when the user has no such favorite.",
+    "operationId": "delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_key",
+      "required": true,
+      "schema": {
+       "title": "Route Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Favorite"
+   }
+  },
+  "/api/v1/rsshub/routes/history": {
+   "get": {
+    "description": "N025 最近运行 — bounded health timeline for ONE route key\n(newest first; the table itself prunes to the last 20 per route).",
+    "operationId": "rsshub_route_history_api_v1_rsshub_routes_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "routeKey",
+      "required": true,
+      "schema": {
+       "maxLength": 500,
+       "minLength": 1,
+       "title": "Routekey",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRouteRuns"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Route History"
+   }
+  },
+  "/api/v1/rsshub/routes/recent": {
+   "get": {
+    "description": "N021 最近使用 — rows appear here only after a SUCCESSFUL preview\nor subscribe (failed attempts never record).",
+    "operationId": "list_rsshub_recent_api_v1_rsshub_routes_recent_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/RssHubRecentItem"
+         },
+         "title": "Response List Rsshub Recent Api V1 Rsshub Routes Recent Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Recent"
    }
   },
   "/api/v1/search": {
@@ -25201,6 +29408,206 @@
     "summary": "Search"
    }
   },
+  "/api/v1/search/distribution": {
+   "get": {
+    "description": "N145 来源分布 + 近 30 天柱状数据：与 GET /search 相同的权限与\n过滤作用域（per-user DB 路由 + 同一过滤链），聚合在 SQL 完成——\n只回每来源/每日计数，绝不搬运正文。\n\nsources 最多 20 条（超界 → sourcesComplete=false 诚实标注）；\ndays 为最近 30 天窗口（补零逐日出，便于直接渲染柱状分布）。\n同义词扩展不参与聚合（与主查询的 OR 扩展腿语义不同：聚合口径 =\n基础词条过滤链，诚实简化）。",
+    "operationId": "search_distribution_api_v1_search_distribution_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Categoryid"
+      }
+     },
+     {
+      "in": "query",
+      "name": "state",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "State"
+      }
+     },
+     {
+      "in": "query",
+      "name": "favorite",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Favorite"
+      }
+     },
+     {
+      "in": "query",
+      "name": "from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "intitle",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Intitle"
+      }
+     },
+     {
+      "in": "query",
+      "name": "phrase",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Phrase"
+      }
+     },
+     {
+      "in": "query",
+      "name": "exclude",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Exclude"
+      }
+     },
+     {
+      "in": "query",
+      "name": "hasSummary",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Hassummary"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchDistributionResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Distribution"
+   }
+  },
   "/api/v1/search/export": {
    "post": {
     "description": "引用清单导出（F073）：keyset 全量迭代（cap 上限 2000，诚实截断）。\n\ndryRun=true → 只返回 {total, capped}（UI 范围预览）。文件导出时\n截断标注在 X-Lumi-Truncated / X-Lumi-Total 响应头。导出仅含选中\n字段（excerpt ≤200 字），绝不含正文全文。",
@@ -25236,6 +29643,45 @@
      }
     },
     "summary": "Export Search Results"
+   }
+  },
+  "/api/v1/search/parse-query": {
+   "post": {
+    "description": "N142 帮我转条件：把原始查询里的日期短语 / 来源前缀 / 否定词 /\n引号短语转成与保存视图 filters_json 同构的过滤对象。\n\n未识别文本保留为 remainingText 并逐词列入 unrecognized（诚实不\n静默丢弃）；来源名解析失败绝不凭空造条件（片段留在自由词中）。\n纯规则，无模型调用。",
+    "operationId": "parse_search_query_api_v1_search_parse_query_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SearchParseQueryBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchParseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Parse Search Query"
    }
   },
   "/api/v1/search/rebuild": {
@@ -25869,6 +30315,45 @@
      }
     },
     "summary": "Unpin Saved Search View"
+   }
+  },
+  "/api/v1/search/why-missed": {
+   "post": {
+    "description": "N143 排障：对当前用户自己的单条投影行复跑过滤链，如实归因。\n\n- 每个未通过条件 → 一条 reason（词条/仅标题/短语/排除/来源/分类/\n  未读/收藏/日期/摘要），UI 直接展示；\n- 全部通过 → matched=true：条目本应出现在结果中（给按时间排序的\n  rank；超出 2000 上界 → rankCapped=true，属排序/分页位置问题）；\n- entryRef 不在本用户作用域（含他人条目）→ 统一 404\n  search_entry_not_found，不泄露存在性。",
+    "operationId": "why_missed_api_v1_search_why_missed_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SearchWhyMissedBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchWhyMissedResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Why Missed"
    }
   },
   "/api/v1/settings": {
@@ -26514,6 +30999,149 @@
     "summary": "List Sources"
    }
   },
+  "/api/v1/sources/alias": {
+   "delete": {
+    "description": "清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。",
+    "operationId": "delete_source_alias_api_v1_sources_alias_delete",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Source Alias"
+   },
+   "put": {
+    "description": "设置/更名来源别名（upsert；custom_name 变化时写一条历史）。\n\nupstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →\nNULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。",
+    "operationId": "set_source_alias_api_v1_sources_alias_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceAliasUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Source Alias"
+   }
+  },
+  "/api/v1/sources/alias/history": {
+   "get": {
+    "description": "某来源的改名历史（新→旧，≤20；删除别名不删历史）。",
+    "operationId": "source_alias_history_api_v1_sources_alias_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasHistoryList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Source Alias History"
+   }
+  },
+  "/api/v1/sources/aliases": {
+   "get": {
+    "description": "全部来源别名（时间线/订阅展示的「服务端赢」数据源）。",
+    "operationId": "list_source_aliases_api_v1_sources_aliases_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceAliasList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Source Aliases"
+   }
+  },
   "/api/v1/sources/overrides": {
    "get": {
     "description": "F11/F13：当前全部来源级显示覆盖（隐藏期 + 阅读起点）。",
@@ -26533,7 +31161,7 @@
     "summary": "List Source Overrides"
    },
    "put": {
-    "description": "设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。\n\nsentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =\n设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；\nstaleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。",
+    "description": "设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001\nstaleAlertHours / N015 muteWindows）。\n\nsentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =\n设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；\nstaleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；\nmuteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，\nend<start 跨午夜，≤7 窗口/来源；非法 → 422）。",
     "operationId": "set_source_override_api_v1_sources_overrides_put",
     "requestBody": {
      "content": {
@@ -26663,7 +31291,7 @@
   },
   "/api/v1/sources/volume": {
    "get": {
-    "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。",
+    "description": "F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。\n\n口径（显式区分，未知为 null 不冒充零）：\n- publishedCount：最近 N 天内「发布时间」落在窗口内的条目数，来自\n  search_entries 派生投影（可重建）——投影未覆盖的订阅该值为 null\n  （投影落后 ≠ 没有新内容）；\n- lastPublishedAt：该订阅在投影中最新的发布时间；\n- lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。\n\nN040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS\n收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取\n时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。",
     "operationId": "subscription_volume_api_v1_sources_volume_get",
     "parameters": [
      {
@@ -27005,7 +31633,7 @@
   },
   "/api/v1/subscriptions/{subscription_ref}": {
    "delete": {
-    "description": "Unsubscribe (destructive; confirmation belongs to the Web UI).\n\nF005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——\nFreshRSS RSS 域数据不在此路径触碰。",
+    "description": "Unsubscribe (destructive; confirmation belongs to the Web UI).\n\nF005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——\nFreshRSS RSS 域数据不在此路径触碰。\n\nN012 keep_artifacts（可选；缺席 = 既有行为原样保留）：\n- true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，\n  解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；\n- false：显式清理——批注与该来源条目的工作区引用/看板状态一并\n  删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。\n确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。",
     "operationId": "delete_subscription_api_v1_subscriptions__subscription_ref__delete",
     "parameters": [
      {
@@ -27015,6 +31643,22 @@
       "schema": {
        "title": "Subscription Ref",
        "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "keep_artifacts",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Keep Artifacts"
       }
      }
     ],
@@ -27211,6 +31855,44 @@
      }
     },
     "summary": "Update Source Notes"
+   }
+  },
+  "/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview": {
+   "get": {
+    "description": "N012 退订影响预览（只读，200 先于任何 mutation）。\n\n汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /\nRSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数\n如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变\n（测试固定该负向契约）。",
+    "operationId": "unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subscription_ref",
+      "required": true,
+      "schema": {
+       "title": "Subscription Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unsubscribe Preview"
    }
   },
   "/api/v1/tags": {
@@ -28524,6 +33206,104 @@
     "summary": "Put Goal"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/groups": {
+   "get": {
+    "description": "N101：分组视图——固定区（N102）在最前，未分组 = 隐式前置组，\n命名组按 group_order_json 排序（未列入的按名字典序追加）。",
+    "operationId": "get_workspace_groups_api_v1_workspaces__workspace_id__groups_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceGroupsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Workspace Groups"
+   },
+   "put": {
+    "description": "N101：设置命名组呈现顺序（PUT 幂等；不创建、不重命名组）。\n\n名字必须是当前真实存在的组（400 拒绝未知名字）；顺序真实变化才\nbump revision。",
+    "operationId": "put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceGroupOrderPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceGroupsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Workspace Group Order"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/items": {
    "get": {
     "operationId": "list_workspace_items_api_v1_workspaces__workspace_id__items_get",
@@ -28621,7 +33401,7 @@
     "summary": "Reorder Workspace Items"
    },
    "post": {
-    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).\n\nThe ref must resolve (ADR 0004): writes never create dangling\nmembership. A known-but-stale domain (FreshRSS unconfigured) passes.",
+    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).\n\nThe ref must resolve (ADR 0004): writes never create dangling\nmembership. A known-but-stale domain (FreshRSS unconfigured) passes.\nN101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）；幂等重放\n返回既有行原样——改组归属走 PATCH .../group。",
     "operationId": "add_workspace_item_api_v1_workspaces__workspace_id__items_post",
     "parameters": [
      {
@@ -28671,7 +33451,60 @@
   },
   "/api/v1/workspaces/{workspace_id}/items/{item_ref}": {
    "delete": {
+    "description": "移除一个成员（幂等契约：非成员也 404 诚实报错）。\n\nN102：固定条目拒绝静默移除——不带 ``?force=1`` → 409\nworkspace_item_pinned；``?force=1`` 显式确认后才放行。",
     "operationId": "remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "force",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Force",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Workspace Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/group": {
+   "patch": {
+    "description": "N101：移动条目到分组（``groupName=null`` 移回未分组隐式前置组）。\n\n条目非成员 → 404；组归属真实变化才 bump revision（幂等重放不\n制造跨设备 409 噪声）。",
+    "operationId": "move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch",
     "parameters": [
      {
       "in": "path",
@@ -28692,8 +33525,25 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemGroupMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
     "responses": {
-     "204": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
       "description": "Successful Response"
      },
      "422": {
@@ -28707,7 +33557,66 @@
       "description": "Validation Error"
      }
     },
-    "summary": "Remove Workspace Item"
+    "summary": "Move Workspace Item Group"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
+   "put": {
+    "description": "N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。\n\n固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。",
+    "operationId": "pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemPinRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pin Workspace Item"
    }
   },
   "/api/v1/workspaces/{workspace_id}/research-pack": {
@@ -28957,6 +33866,195 @@
      }
     },
     "summary": "Save As Template"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots": {
+   "get": {
+    "description": "快照列表（新→旧）。未知工作区 → 404（诚实报错）。",
+    "operationId": "list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Workspace Snapshots"
+   },
+   "post": {
+    "description": "捕获当前标签页/分组状态为命名快照（只存 ref + 排序元数据，\n绝不复制内容；上限 50 个/工作区）。",
+    "operationId": "capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSnapshotCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshot"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capture Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {
+   "delete": {
+    "description": "删除一个快照（Web 侧删除前二次确认）。",
+    "operationId": "delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}/restore": {
+   "post": {
+    "description": "恢复快照（reorder | replace），返回 diff 摘要。\n\n- 快照中已消失的 ref 上报 ``missing``，绝不复活（内容从未复制）；\n- ``replace`` 移除快照外成员（列表见 ``removed``）；固定条目受\n  N102 保护——拒绝丢固定条目除非 ``force=true``（409\n  workspace_item_pinned）；\n- 真实写库时 bump revision（P15 并发）。",
+    "operationId": "restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSnapshotRestoreRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotRestoreResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Workspace Snapshot"
    }
   },
   "/feeds/gpt-digest/{spec}.atom": {

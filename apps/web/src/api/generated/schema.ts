@@ -47,6 +47,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/invite-funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invite Funnel
+         * @description Per-scheme invite funnel counts (N004), aggregated from real rows.
+         *
+         *     Responses carry counts ONLY — never invite codes, hashes or links.
+         *     failedActivation comes from the invite_activation_failed audit
+         *     events written by the activation boundary.
+         */
+        get: operations["invite_funnel_api_v1_admin_invite_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invite Schemes */
+        get: operations["list_invite_schemes_api_v1_admin_invite_schemes_get"];
+        put?: never;
+        /**
+         * Create Invite Scheme
+         * @description Save a named invite scheme (N001): TTL + optional initial source
+         *     URLs + optional FreshRSS pool hold + quota note. Templates only —
+         *     nothing is generated until /generate-invites is called.
+         */
+        post: operations["create_invite_scheme_api_v1_admin_invite_schemes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes/{scheme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Invite Scheme
+         * @description Delete a scheme template. Already-generated invites and activated
+         *     accounts keep their scheme_id — labels degrade honestly (LEFT JOIN)
+         *     instead of history being rewritten.
+         */
+        delete: operations["delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-schemes/{scheme_id}/generate-invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Invites From Scheme
+         * @description Batch-generate N independent one-time invites from a scheme (N001).
+         *
+         *     Every invite records the scheme and uses the scheme's TTL; a pool
+         *     hold per invite is taken when the scheme asks for one — an
+         *     insufficient pool fails the WHOLE batch 409 pool_empty (already
+         *     created invites are rolled back, releasing their holds) unless
+         *     force=true generates the batch without holds. Tokens appear exactly
+         *     once, one per generated invite.
+         */
+        post: operations["generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invites": {
         parameters: {
             query?: never;
@@ -61,6 +157,12 @@ export interface paths {
          * Create Invite
          * @description Create an invitation. The raw token is returned exactly once —
          *     the operator hands it to the invitee out of band.
+         *
+         *     N001/N002/N003 extensions (all optional, old bodies unchanged):
+         *     schemeId stamps a saved scheme; notBefore schedules activation
+         *     (server clock); holdPool reserves one FreshRSS pool slot at creation
+         *     — with an empty pool this fails 409 pool_empty unless force=true
+         *     creates the invite honestly without a hold.
          */
         post: operations["create_invite_api_v1_admin_invites_post"];
         delete?: never;
@@ -664,6 +766,13 @@ export interface paths {
          *     Pool-empty is an explicit pending-binding state — the account is
          *     usable and the UI shows "RSS source binding pending"; the server
          *     never falls back to shared credentials.
+         *
+         *     N001: a scheme-stamped invite records the scheme on the account and
+         *     subscribes the scheme's initial sources best-effort — failures are
+         *     listed per URL in ``initialSources`` and never block activation.
+         *     N002: a scheduled invite (not_before in the future by the SERVER
+         *     clock) is rejected with the stable 403 invite_not_active carrying
+         *     serverTime + notBefore; the token is not burned.
          */
         post: operations["activate_account_api_v1_auth_activate_post"];
         delete?: never;
@@ -682,7 +791,10 @@ export interface paths {
         /**
          * Activation Preview
          * @description Honest activation screen state: is the invite usable, is a
-         *     FreshRSS account ready? Reveals nothing beyond yes/no — no labels,
+         *     FreshRSS account ready? Reveals nothing beyond yes/no for a broken
+         *     link — for a scheduled invite (N002) it additionally echoes the
+         *     server clock (the ONLY clock the boundary consults) as serverTime
+         *     and the notBefore instant, so the UI can render 等待生效. No labels,
          *     no emails, no pool usernames.
          */
         get: operations["activation_preview_api_v1_auth_activation_preview_get"];
@@ -730,6 +842,11 @@ export interface paths {
          *
          *     Wrong-password and unknown-username share the generic failure shape
          *     and the same brute-force budget (no account oracle).
+         *
+         *     N007: when the account has TOTP enabled, a correct password does NOT
+         *     mint a session — the response is ``{totpRequired, pendingToken}`` and
+         *     the real session is issued by ``POST /auth/totp/verify`` (same
+         *     brute-force budget, one attempt per pending token).
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -778,6 +895,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Passkeys */
+        get: operations["list_passkeys_api_v1_auth_passkeys_get"];
+        put?: never;
+        /** Passkey Register Finish */
+        post: operations["passkey_register_finish_api_v1_auth_passkeys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Passkey Login */
+        post: operations["passkey_login_api_v1_auth_passkeys_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/login/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Passkey Login Options
+         * @description Username → allowCredentials. Unknown usernames and users without
+         *     passkeys get the SAME generic shape (empty allow-list,
+         *     ``passkeyAvailable: false``) — the endpoint reveals nothing.
+         */
+        post: operations["passkey_login_options_api_v1_auth_passkeys_login_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Passkey Register Options */
+        post: operations["passkey_register_options_api_v1_auth_passkeys_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/passkeys/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Passkey */
+        delete: operations["delete_passkey_api_v1_auth_passkeys__credential_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password": {
         parameters: {
             query?: never;
@@ -791,6 +999,9 @@ export interface paths {
          * Change Password
          * @description Change own password: verify current, replace hash, revoke ALL of
          *     this user's sessions, then mint a fresh session for THIS device.
+         *
+         *     N007: when the account has TOTP enabled, a valid second factor
+         *     (``totpCode``) is REQUIRED — server-enforced, not front-end.
          */
         post: operations["change_password_api_v1_auth_password_post"];
         delete?: never;
@@ -878,6 +1089,91 @@ export interface paths {
          * @description 撤销自己的一个会话；撤销当前会话 = 登出语义（清 cookie）。404 = 不存在。
          */
         delete: operations["revoke_auth_session_api_v1_auth_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Totp Status */
+        get: operations["totp_status_api_v1_auth_totp_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Disable */
+        post: operations["totp_disable_api_v1_auth_totp_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Enable */
+        post: operations["totp_enable_api_v1_auth_totp_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Setup */
+        post: operations["totp_setup_api_v1_auth_totp_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Totp Verify */
+        post: operations["totp_verify_api_v1_auth_totp_verify_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1241,6 +1537,11 @@ export interface paths {
          *     - categoryId：FreshRSS 分类（greader label stream，适配器含默认
          *       分类本地化名 fallback）；
          *     - feedUrl 与 categoryId 互斥（两者同时出现 → 400）。
+         *
+         *     N034：``sort=received`` —— 页内按投影接收/投影时间（fetched_at）
+         *     降序重排（服务端执行，query param 真实生效）；上游 continuation
+         *     分页语义不变（页边界仍由 FreshRSS 决定，诚实边界）。同时为页内
+         *     条目附带 timeCredibility（投影摄取时分类的发布时间异常）。
          */
         get: operations["entries_api_v1_entries_get"];
         put?: never;
@@ -1418,6 +1719,9 @@ export interface paths {
         /**
          * Glossary Hits For Entry
          * @description 现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。
+         *
+         *     N083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes
+         *     （客户端块索引，UI 可点击跳转）。
          */
         post: operations["glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post"];
         delete?: never;
@@ -1483,6 +1787,30 @@ export interface paths {
          *     全部被丢 → 422。响应只含题目（无答案——负向契约）。
          */
         post: operations["generate_entry_quiz_api_v1_entries__entry_ref__quiz_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entry Revisions
+         * @description N031：单篇文章的有界修订历史（只读，纯投影查询，不触上游）。
+         *
+         *     修订 = FreshRSS 以同一 id 重新交付但内容哈希变化的摄取记录；行内
+         *     只有元数据（结构差异摘要 + 哈希），绝无全文副本。无记录 → 空表
+         *     200（条目可能存在于 FreshRSS 但从未修订过）。
+         */
+        get: operations["entry_revisions_api_v1_entries__entry_ref__revisions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1612,6 +1940,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Translation Verification
+         * @description N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。
+         *
+         *     只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），
+         *     基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、
+         *     不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。
+         */
+        get: operations["get_translation_verification_api_v1_entries__entry_ref__translation_verification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation/segments/generate": {
         parameters: {
             query?: never;
@@ -1653,6 +2005,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Translation Segment No Translate
+         * @description N086：把一块标记为「不翻译」（持久；每条目上限 200 块）。
+         *
+         *     标记后的块不再参与生成：已有缓存译文照常展示，没有则诚实显示
+         *     原文。幂等：重复标记同一块是 no-op。
+         */
+        put: operations["mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put"];
+        post?: never;
+        /**
+         * Unmark Translation Segment No Translate
+         * @description N086：撤销一块的「不翻译」标记（幂等；块恢复可翻译）。
+         */
+        delete: operations["unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision": {
         parameters: {
             query?: never;
@@ -1670,7 +2049,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Translation Segment Revision
-         * @description F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。
+         * @description F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。
          */
         delete: operations["delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete"];
         options?: never;
@@ -1816,8 +2195,34 @@ export interface paths {
          *     subscription list (alreadySubscribed) but never writes anything:
          *     subscribing is POST /api/v1/subscriptions. Only reliable metadata is
          *     returned — no entries, no scraping, no feed discovery.
+         *
+         *     N033：响应附带 encodingInspection（声明/检测/乱码风险 + 掩码样本）；
+         *     若用户保存过 encoding_override，预览解析按该选择解码（只影响 Lumi
+         *     自己的 feed 字节→文本解码点，历史投影数据不回写）。
          */
         post: operations["preview_feed_api_v1_feed_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed-preview/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reparse Feed
+         * @description N033 重新解析诊断：同一次有界抓取，三种编码选择各渲染一份
+         *     （title + 掩码样本 + 乱码风险），供用户显式选择。选中的选择可保存
+         *     为 source_overrides.encoding_override（仅影响未来的解码）。
+         */
+        post: operations["reparse_feed_api_v1_feed_preview_reparse_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4194,6 +4599,238 @@ export interface paths {
         patch: operations["update_qa_template_api_v1_qa_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/queue/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Queue Snapshots
+         * @description 快照列表（新→旧）。
+         */
+        get: operations["list_queue_snapshots_api_v1_queue_snapshots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Queue Snapshot
+         * @description 打开冻结视图：原始成员顺序原样返回（消失的 ref 由 Web 呈现
+         *     占位；服务端绝不复活）。
+         */
+        get: operations["get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Queue Snapshot
+         * @description 删除一个快照（housekeeping；快照本体在其生命周期内不可变）。
+         */
+        delete: operations["delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Today Queue
+         * @description 今日队列视图（pending + done；removed 行保留在库但不出库门）。
+         */
+        get: operations["get_today_queue_api_v1_queue_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Freeze Today Queue
+         * @description 把当前 pending 成员冻结为不可变快照（之后加入的项绝不进入）。
+         */
+        post: operations["freeze_today_queue_api_v1_queue_today_freeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Today Queue
+         * @description 生成（或幂等返回）今天的队列。
+         *
+         *     - 队列已存在且未 force → 200 + generated=false（**绝不重排**——
+         *       后台刷新不打扰已确认的队列）；
+         *     - force=1 → 重建：清掉 pending/removed 重新装填，done 状态保留；
+         *     - 新建 → 201 + generated=true。
+         */
+        post: operations["generate_today_queue_api_v1_queue_today_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Queue Item
+         * @description 手动加入（新 201；重复 pending 幂等 200；removed 复活 200；
+         *     今天已完成 → 409 queue_item_done）。
+         */
+        post: operations["add_queue_item_api_v1_queue_today_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Queue Item
+         * @description 移除（status=removed，行保留；再移除同一行 → 404）。
+         */
+        delete: operations["remove_queue_item_api_v1_queue_today_items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Queue Item Done
+         * @description 完成状态（set 语义：done=true/false，不是 toggle；完成按条目
+         *     身份记账，绝不隐式改写上游已读状态）。
+         */
+        post: operations["set_queue_item_done_api_v1_queue_today_items__item_id__done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/items/{item_id}/segment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move Queue Item Segment
+         * @description 行菜单移动分段（segment=null = 移回未分组）。
+         */
+        patch: operations["move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch"];
+        trace?: never;
+    };
+    "/api/v1/queue/today/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Today Queue
+         * @description 持久化重排（跨设备可见；done 行位置同样可排）。
+         */
+        put: operations["reorder_today_queue_api_v1_queue_today_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/queue/today/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Queue Segment Order
+         * @description 段顺序（呈现提示；服务端存储 → 跨设备一致）。
+         */
+        put: operations["set_queue_segment_order_api_v1_queue_today_segments_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quiz/{quiz_id}/grade": {
         parameters: {
             query?: never;
@@ -4798,8 +5435,47 @@ export interface paths {
          *     instance, parses offline and reads the subscription list for
          *     alreadySubscribed. The returned feedUrl is the FreshRSS-facing
          *     subscription URL; subscribing is POST /api/v1/subscriptions (0013).
+         *
+         *     N021: a SUCCESSFUL preview upserts the route into the per-user
+         *     最近使用 list. N025: every attempt that reaches the fetch stage is
+         *     written to the route health timeline (last 20 kept per route).
+         *     Sensitive parameter values are masked to '***' before anything is
+         *     stored. Failed previews never record a 最近使用 entry.
+         *
+         *     N027: successful previews are cached per (user, route_key) with a
+         *     short TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``
+         *     and does NOT re-fetch, re-record a timeline row, or touch 最近使用 —
+         *     it was not an upstream attempt. The E2E base override always
+         *     bypasses the cache.
          */
         post: operations["rsshub_preview_api_v1_rsshub_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rsshub Refresh
+         * @description N027: force a re-fetch of exactly ONE route (per-user rate limited).
+         *
+         *     The route key is parsed server-side back into template id + params.
+         *     Sensitive parameter values were never stored ('***' sentinel only),
+         *     so refreshing such a route is refused — the user re-enters them in a
+         *     normal preview. Rate limit: 6 refreshes/minute/user, then a stable
+         *     429 with Retry-After. Only THIS route's cache entry is dropped;
+         *     other routes and any global caches are untouched.
+         */
+        post: operations["rsshub_refresh_api_v1_rsshub_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4823,6 +5499,97 @@ export interface paths {
          *     construction happens server-side on preview.
          */
         get: operations["rsshub_routes_api_v1_rsshub_routes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Favorites
+         * @description N021 favorites (per-user, cross-device). Sensitive parameter
+         *     values are stored as '***' sentinels and are the only thing that can
+         *     come back here.
+         */
+        get: operations["list_rsshub_favorites_api_v1_rsshub_routes_favorites_get"];
+        /**
+         * Put Rsshub Favorite
+         * @description Star (or re-label) one route — upsert on route_key.
+         *
+         *     routeId must exist in the Lumi catalog; params are stored MASKED
+         *     (F047 敏感键 → '***'), so a favorite never carries a secret.
+         */
+        put: operations["put_rsshub_favorite_api_v1_rsshub_routes_favorites_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/favorites/{route_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Rsshub Favorite
+         * @description Unstar one favorite; 404 when the user has no such favorite.
+         */
+        delete: operations["delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route History
+         * @description N025 最近运行 — bounded health timeline for ONE route key
+         *     (newest first; the table itself prunes to the last 20 per route).
+         */
+        get: operations["rsshub_route_history_api_v1_rsshub_routes_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Recent
+         * @description N021 最近使用 — rows appear here only after a SUCCESSFUL preview
+         *     or subscribe (failed attempts never record).
+         */
+        get: operations["list_rsshub_recent_api_v1_rsshub_routes_recent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4865,6 +5632,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Distribution
+         * @description N145 来源分布 + 近 30 天柱状数据：与 GET /search 相同的权限与
+         *     过滤作用域（per-user DB 路由 + 同一过滤链），聚合在 SQL 完成——
+         *     只回每来源/每日计数，绝不搬运正文。
+         *
+         *     sources 最多 20 条（超界 → sourcesComplete=false 诚实标注）；
+         *     days 为最近 30 天窗口（补零逐日出，便于直接渲染柱状分布）。
+         *     同义词扩展不参与聚合（与主查询的 OR 扩展腿语义不同：聚合口径 =
+         *     基础词条过滤链，诚实简化）。
+         */
+        get: operations["search_distribution_api_v1_search_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/export": {
         parameters: {
             query?: never;
@@ -4883,6 +5677,31 @@ export interface paths {
          *     字段（excerpt ≤200 字），绝不含正文全文。
          */
         post: operations["export_search_results_api_v1_search_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/parse-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Search Query
+         * @description N142 帮我转条件：把原始查询里的日期短语 / 来源前缀 / 否定词 /
+         *     引号短语转成与保存视图 filters_json 同构的过滤对象。
+         *
+         *     未识别文本保留为 remainingText 并逐词列入 unrecognized（诚实不
+         *     静默丢弃）；来源名解析失败绝不凭空造条件（片段留在自由词中）。
+         *     纯规则，无模型调用。
+         */
+        post: operations["parse_search_query_api_v1_search_parse_query_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5150,6 +5969,33 @@ export interface paths {
         put?: never;
         /** Unpin Saved Search View */
         post: operations["unpin_saved_search_view_api_v1_search_views__view_id__unpin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/why-missed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Why Missed
+         * @description N143 排障：对当前用户自己的单条投影行复跑过滤链，如实归因。
+         *
+         *     - 每个未通过条件 → 一条 reason（词条/仅标题/短语/排除/来源/分类/
+         *       未读/收藏/日期/摘要），UI 直接展示；
+         *     - 全部通过 → matched=true：条目本应出现在结果中（给按时间排序的
+         *       rank；超出 2000 上界 → rankCapped=true，属排序/分页位置问题）；
+         *     - entryRef 不在本用户作用域（含他人条目）→ 统一 404
+         *       search_entry_not_found，不泄露存在性。
+         */
+        post: operations["why_missed_api_v1_search_why_missed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5510,6 +6356,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/alias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Source Alias
+         * @description 设置/更名来源别名（upsert；custom_name 变化时写一条历史）。
+         *
+         *     upstream_name_at_save = 保存时刻的上游标题快照（适配器不可用 →
+         *     NULL，诚实缺省，绝不阻塞保存）。上游标题变更永不覆盖别名。
+         */
+        put: operations["set_source_alias_api_v1_sources_alias_put"];
+        post?: never;
+        /**
+         * Delete Source Alias
+         * @description 清除来源别名（历史保留；「恢复旧名」= 用历史名字重新 PUT）。
+         */
+        delete: operations["delete_source_alias_api_v1_sources_alias_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/alias/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Alias History
+         * @description 某来源的改名历史（新→旧，≤20；删除别名不删历史）。
+         */
+        get: operations["source_alias_history_api_v1_sources_alias_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Source Aliases
+         * @description 全部来源别名（时间线/订阅展示的「服务端赢」数据源）。
+         */
+        get: operations["list_source_aliases_api_v1_sources_aliases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -5524,11 +6437,14 @@ export interface paths {
         get: operations["list_source_overrides_api_v1_sources_overrides_get"];
         /**
          * Set Source Override
-         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001 staleAlertHours）。
+         * @description 设置/清除来源覆盖（F11 hiddenUntil / F13 showFrom / F001
+         *     staleAlertHours / N015 muteWindows）。
          *
          *     sentinel 语义：字段缺席 = 不修改；null = 清除该维度；字符串 =
          *     设置（接受任意 RFC3339，归一化为 UTC Z；解析失败 → 400）；
-         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）。
+         *     staleAlertHours 为整数小时（1..8760，模型约束外值 → 422）；
+         *     muteWindows 为每周循环静音窗口（days 0-6 子集 + HH:MM 起止，
+         *     end<start 跨午夜，≤7 窗口/来源；非法 → 422）。
          */
         put: operations["set_source_override_api_v1_sources_overrides_put"];
         post?: never;
@@ -5606,6 +6522,10 @@ export interface paths {
          *       （投影落后 ≠ 没有新内容）；
          *     - lastPublishedAt：该订阅在投影中最新的发布时间；
          *     - lastSyncedAt：投影最近一次入库时间（fetched_at，秒级时间戳）。
+         *
+         *     N040：每项附带 collectionTiming 三时点块——上游发布 / FreshRSS
+         *     收录（crawlTimestampMsec 首次收录，上游不提供 per-entry 周期抓取
+         *     时间，诚实标注口径） / Lumi 投影；latencyHint 指出最大延迟环节。
          */
         get: operations["subscription_volume_api_v1_sources_volume_get"];
         put?: never;
@@ -5835,6 +6755,13 @@ export interface paths {
          *
          *     F005：Lumi 侧备注/维护记录同步级联删除（见 0037 迁移注释）——
          *     FreshRSS RSS 域数据不在此路径触碰。
+         *
+         *     N012 keep_artifacts（可选；缺席 = 既有行为原样保留）：
+         *     - true：退订后保留工作区引用 / 看板状态 / 批注（引用冻结 ref，
+         *       解析层已把缺失条目降级为 stale 卡片，不丢用户整理结构）；
+         *     - false：显式清理——批注与该来源条目的工作区引用/看板状态一并
+         *       删除（library 书签保留；清理计数诚实返回 200 语义由响应体承载）。
+         *     确认责任在客户端（预览 + 二次确认），服务端只执行声明过的语义。
          */
         delete: operations["delete_subscription_api_v1_subscriptions__subscription_ref__delete"];
         options?: never;
@@ -5902,6 +6829,31 @@ export interface paths {
          *     「Article HTML: transforms → DOMPurify」管线无关（本字段不进文章管线）。
          */
         patch: operations["update_source_notes_api_v1_subscriptions__subscription_ref__notes_patch"];
+        trace?: never;
+    };
+    "/api/v1/subscriptions/{subscription_ref}/unsubscribe-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unsubscribe Preview
+         * @description N012 退订影响预览（只读，200 先于任何 mutation）。
+         *
+         *     汇总该来源条目牵连的 Lumi 自有数据：工作区引用行 / 看板状态行 /
+         *     RSS 书签 / 批注 / 投影未读数 / 会命中的收件箱 source 规则。计数
+         *     如实、样本有界（≤50）。本端点零写入——预览后数据库逐字节不变
+         *     （测试固定该负向契约）。
+         */
+        get: operations["unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/tags": {
@@ -6408,6 +7360,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Groups
+         * @description N101：分组视图——固定区（N102）在最前，未分组 = 隐式前置组，
+         *     命名组按 group_order_json 排序（未列入的按名字典序追加）。
+         */
+        get: operations["get_workspace_groups_api_v1_workspaces__workspace_id__groups_get"];
+        /**
+         * Put Workspace Group Order
+         * @description N101：设置命名组呈现顺序（PUT 幂等；不创建、不重命名组）。
+         *
+         *     名字必须是当前真实存在的组（400 拒绝未知名字）；顺序真实变化才
+         *     bump revision。
+         */
+        put: operations["put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/items": {
         parameters: {
             query?: never;
@@ -6424,6 +7404,8 @@ export interface paths {
          *
          *     The ref must resolve (ADR 0004): writes never create dangling
          *     membership. A known-but-stale domain (FreshRSS unconfigured) passes.
+         *     N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）；幂等重放
+         *     返回既有行原样——改组归属走 PATCH .../group。
          */
         post: operations["add_workspace_item_api_v1_workspaces__workspace_id__items_post"];
         delete?: never;
@@ -6448,8 +7430,59 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove Workspace Item */
+        /**
+         * Remove Workspace Item
+         * @description 移除一个成员（幂等契约：非成员也 404 诚实报错）。
+         *
+         *     N102：固定条目拒绝静默移除——不带 ``?force=1`` → 409
+         *     workspace_item_pinned；``?force=1`` 显式确认后才放行。
+         */
         delete: operations["remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move Workspace Item Group
+         * @description N101：移动条目到分组（``groupName=null`` 移回未分组隐式前置组）。
+         *
+         *     条目非成员 → 404；组归属真实变化才 bump revision（幂等重放不
+         *     制造跨设备 409 噪声）。
+         */
+        patch: operations["move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pin Workspace Item
+         * @description N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。
+         *
+         *     固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。
+         */
+        put: operations["pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6537,6 +7570,77 @@ export interface paths {
         put?: never;
         /** Save As Template */
         post: operations["save_as_template_api_v1_workspaces__workspace_id__save_as_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Snapshots
+         * @description 快照列表（新→旧）。未知工作区 → 404（诚实报错）。
+         */
+        get: operations["list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get"];
+        put?: never;
+        /**
+         * Capture Workspace Snapshot
+         * @description 捕获当前标签页/分组状态为命名快照（只存 ref + 排序元数据，
+         *     绝不复制内容；上限 50 个/工作区）。
+         */
+        post: operations["capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Workspace Snapshot
+         * @description 删除一个快照（Web 侧删除前二次确认）。
+         */
+        delete: operations["delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Workspace Snapshot
+         * @description 恢复快照（reorder | replace），返回 diff 摘要。
+         *
+         *     - 快照中已消失的 ref 上报 ``missing``，绝不复活（内容从未复制）；
+         *     - ``replace`` 移除快照外成员（列表见 ``removed``）；固定条目受
+         *       N102 保护——拒绝丢固定条目除非 ``force=true``（409
+         *       workspace_item_pinned）；
+         *     - 真实写库时 bump revision（P15 并发）。
+         */
+        post: operations["restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6699,6 +7803,21 @@ export interface components {
             token: string;
             /** Username */
             username: string;
+        };
+        /**
+         * ActivationSourceResult
+         * @description One scheme initial-source subscription attempt (N001).
+         *
+         *     ``ok=False`` is an honest per-URL failure record — activation itself
+         *     is never blocked or rolled back by a source failure.
+         */
+        ActivationSourceResult: {
+            /** Error */
+            error?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Url */
+            url: string;
         };
         /**
          * AgentApprovalDecision
@@ -7413,7 +8532,7 @@ export interface components {
              * @default newest
              * @enum {string}
              */
-            timelineOrder: "newest" | "oldest";
+            timelineOrder: "newest" | "oldest" | "received";
             /**
              * Uifontsize
              * @default 16
@@ -7482,13 +8601,16 @@ export interface components {
          *     Basic Auth (the app must not render its own login gate), "session" =
          *     BFF sessions (gate on ``authenticated``). userId/username/role carry
          *     the server-verified identity for the account menu — the client never
-         *     declares who it is.
+         *     declares who it is. initialSources is only present on the invite
+         *     activation response (N001); every other surface omits it entirely.
          */
         AuthStatus: {
             /** Authenticated */
             authenticated: boolean;
             /** Expiresat */
             expiresAt?: string | null;
+            /** Initialsources */
+            initialSources?: components["schemas"]["ActivationSourceResult"][] | null;
             /**
              * Mode
              * @default session
@@ -8186,6 +9308,32 @@ export interface components {
             note?: string | null;
         };
         /**
+         * CollectionTiming
+         * @description N040：三时点采集延迟块（未知保持 null，绝不臆造）。
+         *
+         *     - upstreamPublishedLatest：投影中该源最新条目的发布时间（上游声明）；
+         *     - freshrssFetchedLatest：FreshRSS crawlTimestampMsec（首次收录时刻，
+         *       非「每次抓取时间」——上游不提供 per-entry 周期抓取时间，诚实标注
+         *       口径；源从未提供 → None + basis="未提供 by upstream"）；
+         *     - lumiProjectedLatest：投影最近一次写入（fetched_at MAX）；
+         *     - latencyHint：最大缺口环节提示（数据不足 → None）。
+         */
+        CollectionTiming: {
+            /**
+             * Freshrssfetchedbasis
+             * @default 未提供 by upstream
+             */
+            freshrssFetchedBasis: string;
+            /** Freshrssfetchedlatest */
+            freshrssFetchedLatest?: string | null;
+            /** Latencyhint */
+            latencyHint?: string | null;
+            /** Lumiprojectedlatest */
+            lumiProjectedLatest?: string | null;
+            /** Upstreampublishedlatest */
+            upstreamPublishedLatest?: string | null;
+        };
+        /**
          * CompareBody
          * @description POST /api/v1/entries/compare body（F067）。
          */
@@ -8274,6 +9422,48 @@ export interface components {
         ComponentError: {
             /** Type */
             type: string;
+        };
+        /**
+         * ContentVariantOption
+         * @description N032：一个可选的正文版本（经同一净化边界渲染）。
+         *
+         *     kind: "current"（上游当前）| "last_known_full"（保留的上一个更长
+         *     版本；仅在该版本仍被保留时出现——有界 side table，keep_latest=1）。
+         *     contentHtml 仍是不可信上游 HTML：Web 端必须经同一 DOMPurify 边界
+         *     渲染，BFF 不做净化（与正文同一安全模型）。
+         */
+        ContentVariantOption: {
+            /** Capturedat */
+            capturedAt?: string | null;
+            /** Contenthtml */
+            contentHtml?: string | null;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /**
+             * Lengthchars
+             * @default 0
+             */
+            lengthChars: number;
+        };
+        /**
+         * ContentVariantsBlock
+         * @description N032：正文明显变短时的版本选择块（未触发 → None）。
+         *
+         *     triggered 条件（服务端判定）：当前 contentHtml 长度 < 投影行记录的
+         *     历史最大内容长度（content_max_len）的 40%。真实阈值事实，不猜测
+         *     内容是否「完整」。
+         */
+        ContentVariantsBlock: {
+            /** Currentlength */
+            currentLength: number;
+            /** Maxlength */
+            maxLength: number;
+            /** Triggered */
+            triggered: boolean;
+            /** Variants */
+            variants?: components["schemas"]["ContentVariantOption"][];
         };
         /**
          * ConversationMessage
@@ -8483,6 +9673,45 @@ export interface components {
             groups: components["schemas"]["DuplicateSuspectGroup"][];
         };
         /**
+         * EncodingInspection
+         * @description N033：有界响应体的编码检查（声明 / 检测 / 乱码风险 + 掩码样本）。
+         *
+         *     - declared/declaredMethod：文档声称的编码与判定来源
+         *       （bom | xml_declaration | meta_charset | content_type_header | none）；
+         *     - detected/detectedMethod：轻启发式结果（无 chardet 依赖）：
+         *       bom → xml/meta 声明经解码验证 → utf-8 严格校验 → unknown；
+         *     - mojibakeRisk：声明与检测不一致，或字节流不是合法 UTF-8；
+         *     - sample：首个无效字节附近 ≤200 字符的解码样本（无效字节以
+         *       U+FFFD 掩码）；无无效字节 → None。
+         */
+        EncodingInspection: {
+            /**
+             * Bodybytes
+             * @default 0
+             */
+            bodyBytes: number;
+            /** Declared */
+            declared?: string | null;
+            /** Declaredmethod */
+            declaredMethod?: string | null;
+            /** Detected */
+            detected?: string | null;
+            /** Detectedmethod */
+            detectedMethod?: string | null;
+            /**
+             * Mojibakerisk
+             * @default false
+             */
+            mojibakeRisk: boolean;
+            /** Sample */
+            sample?: string | null;
+            /**
+             * Utf8Valid
+             * @default true
+             */
+            utf8Valid: boolean;
+        };
+        /**
          * EntryConversation
          * @description GET/POST /api/v1/entries/{entryRef}/conversation(+ /messages).
          */
@@ -8512,6 +9741,7 @@ export interface components {
             contentHtml?: string | null;
             /** Contenttext */
             contentText: string;
+            contentVariants?: components["schemas"]["ContentVariantsBlock"] | null;
             /** Crawledat */
             crawledAt?: string | null;
             /** Enclosure */
@@ -8588,6 +9818,8 @@ export interface components {
             snippet?: string | null;
             /** Starred */
             starred: boolean;
+            /** Timecredibility */
+            timeCredibility?: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -8604,6 +9836,44 @@ export interface components {
             items: components["schemas"]["EntryListItem"][];
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * EntryRevision
+         * @description N031：一条有界的文章修订记录（元数据，绝不含全文副本）。
+         *
+         *     summary 为服务端计算的结构差异摘要：basis 说明比较基准
+         *     （retained_variant = 与保留的长版本比较；hash_only = 仅知哈希变化，
+         *     无保留版本可比，不臆造差异）；excerpts ≤200 字符每侧。
+         */
+        EntryRevision: {
+            /** Capturedat */
+            capturedAt: string;
+            /** Id */
+            id: number;
+            /** Newhash */
+            newHash: string;
+            /** Newtitle */
+            newTitle?: string | null;
+            /** Prevhash */
+            prevHash: string;
+            /** Prevtitle */
+            prevTitle?: string | null;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Titlechanged */
+            titleChanged: boolean;
+        };
+        /**
+         * EntryRevisionsResponse
+         * @description GET /api/v1/entries/{entry_ref}/revisions。
+         */
+        EntryRevisionsResponse: {
+            /** Entryref */
+            entryRef: string;
+            /** Revisions */
+            revisions: components["schemas"]["EntryRevision"][];
         };
         /**
          * EntryStateUpdate
@@ -8789,6 +10059,59 @@ export interface components {
             ruleId?: string | null;
         };
         /**
+         * FeedPreviewEncodingChoice
+         * @description reparse：一种编码选择下文档的真实渲染（title + 掩码样本）。
+         */
+        FeedPreviewEncodingChoice: {
+            /** Encoding */
+            encoding: string;
+            /**
+             * Mojibakerisk
+             * @default false
+             */
+            mojibakeRisk: boolean;
+            /** Resolvedcodec */
+            resolvedCodec?: string | null;
+            /** Sample */
+            sample?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * FeedPreviewReparseBody
+         * @description POST /api/v1/feed-preview/reparse body (N033).
+         *
+         *     encoding=None → 只返回三种选择（utf-8 | declared | detected）的渲染
+         *     对比；encoding+save=true → 把该选择存为来源覆盖（影响后续预览的
+         *     解码方式，绝不回写历史投影）。
+         */
+        FeedPreviewReparseBody: {
+            /** Encoding */
+            encoding?: ("utf-8" | "declared" | "detected") | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Save
+             * @default false
+             */
+            save: boolean;
+        };
+        /**
+         * FeedPreviewReparseResponse
+         * @description reparse 响应：三种选择的渲染对比 + （可选）保存的覆盖。
+         */
+        FeedPreviewReparseResponse: {
+            /** Applied */
+            applied?: string | null;
+            /** Choices */
+            choices: components["schemas"]["FeedPreviewEncodingChoice"][];
+            /** Feedurl */
+            feedUrl: string;
+            inspection: components["schemas"]["EncodingInspection"];
+            /** Savedoverride */
+            savedOverride?: string | null;
+        };
+        /**
          * FeedPreviewRequest
          * @description POST /api/v1/feed-preview body (0013 Gate 2).
          */
@@ -8807,6 +10130,7 @@ export interface components {
             alreadySubscribed: boolean;
             /** Description */
             description?: string | null;
+            encodingInspection?: components["schemas"]["EncodingInspection"] | null;
             /** Feedurl */
             feedUrl: string;
             /**
@@ -8876,6 +10200,30 @@ export interface components {
             templateId: string;
         };
         /**
+         * GlossaryHitsBlockIn
+         * @description N083：可选的逐块命中定位输入（客户端已编号的内容块）。
+         */
+        GlossaryHitsBlockIn: {
+            /** Index */
+            index: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * GlossaryHitsBody
+         * @description POST /api/v1/entries/{ref}/glossary-hits 可选体。
+         *
+         *     blocks 缺省 → 沿用整篇 contentText 的命中（行为不变）；
+         *     blocks 提供时 → 逐块计算，命中附带 blockIndexes（命中位置）。
+         */
+        GlossaryHitsBody: {
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["GlossaryHitsBlockIn"][];
+        };
+        /**
          * GlossaryImportBody
          * @description POST /api/v1/glossary/import body。
          */
@@ -8921,6 +10269,11 @@ export interface components {
             definition: string;
             /** Id */
             id: string;
+            /**
+             * Protect
+             * @default false
+             */
+            protect: boolean;
             /** Sourceref */
             sourceRef?: string | null;
             /** Term */
@@ -8933,11 +10286,16 @@ export interface components {
         };
         /**
          * GlossaryTermCreate
-         * @description POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。
+         * @description POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。
          */
         GlossaryTermCreate: {
             /** Definition */
             definition: string;
+            /**
+             * Protect
+             * @default false
+             */
+            protect: boolean;
             /** Sourceref */
             sourceRef?: string | null;
             /** Term */
@@ -9676,14 +11034,65 @@ export interface components {
          */
         InviteCreateRequest: {
             /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /**
+             * Holdpool
+             * @default false
+             */
+            holdPool: boolean;
+            /**
              * Kind
              * @default signup
              */
             kind: string;
             /** Label */
             label?: string | null;
+            /** Notbefore */
+            notBefore?: string | null;
+            /** Schemeid */
+            schemeId?: string | null;
             /** Targetusername */
             targetUsername?: string | null;
+            /**
+             * Ttlhours
+             * @default 72
+             */
+            ttlHours: number;
+        };
+        /**
+         * InviteSchemeBatchRequest
+         * @description POST /admin/invite-schemes/{id}/generate-invites (N001).
+         */
+        InviteSchemeBatchRequest: {
+            /** Count */
+            count: number;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Notbefore */
+            notBefore?: string | null;
+        };
+        /**
+         * InviteSchemeCreateRequest
+         * @description POST /admin/invite-schemes (N001).
+         */
+        InviteSchemeCreateRequest: {
+            /**
+             * Freshrsspoolhold
+             * @default false
+             */
+            freshrssPoolHold: boolean;
+            /** Initialsourceurls */
+            initialSourceUrls?: string[];
+            /** Name */
+            name: string;
+            /** Quotanote */
+            quotaNote?: string | null;
             /**
              * Ttlhours
              * @default 72
@@ -9768,6 +11177,22 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "failed";
+        };
+        /**
+         * LoginChallenge
+         * @description POST /api/v1/auth/login response when the account has TOTP enabled
+         *     (N007): the password was verified, but the session is minted only
+         *     after ``POST /auth/totp/verify`` with this short-lived pending token
+         *     (which is NOT a session and grants nothing on its own).
+         */
+        LoginChallenge: {
+            /** Pendingtoken */
+            pendingToken: string;
+            /**
+             * Totprequired
+             * @constant
+             */
+            totpRequired: true;
         };
         /**
          * LoginRequest
@@ -10604,14 +12029,78 @@ export interface components {
             title: string;
         };
         /**
+         * PasskeyDeleteRequest
+         * @description DELETE /auth/passkeys/{id} — password re-entry (server-enforced).
+         */
+        PasskeyDeleteRequest: {
+            /** Currentpassword */
+            currentPassword: string;
+            /** Totpcode */
+            totpCode?: string | null;
+        };
+        /**
+         * PasskeyLoginOptionsRequest
+         * @description POST /auth/passkeys/login/options — username lookup (no enumeration).
+         */
+        PasskeyLoginOptionsRequest: {
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * PasskeyLoginRequest
+         * @description POST /auth/passkeys/login — AuthenticationResponse + echoed challenge.
+         */
+        PasskeyLoginRequest: {
+            /** Challenge */
+            challenge: string;
+            /** Id */
+            id: string;
+            /** Rawid */
+            rawId: string;
+            /** Response */
+            response: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * PasskeyRegisterRequest
+         * @description POST /auth/passkeys — label + echoed challenge + RegistrationResponse.
+         */
+        PasskeyRegisterRequest: {
+            /** Challenge */
+            challenge: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Rawid */
+            rawId: string;
+            /** Response */
+            response: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+        };
+        /**
          * PasswordChangeRequest
          * @description POST /api/v1/auth/password — current + new password.
+         *
+         *     ``totpCode`` is REQUIRED when the account has TOTP enabled (N007
+         *     server-enforced second factor for sensitive operations); ignored
+         *     otherwise.
          */
         PasswordChangeRequest: {
             /** Currentpassword */
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+            /** Totpcode */
+            totpCode?: string | null;
         };
         /**
          * PoolAddBody
@@ -10687,6 +12176,204 @@ export interface components {
             name: string;
             /** Text */
             text?: string | null;
+        };
+        /**
+         * QueueAddRequest
+         * @description POST /api/v1/queue/today/items body。
+         */
+        QueueAddRequest: {
+            /** Itemref */
+            itemRef: string;
+            /** Segment */
+            segment?: string | null;
+        };
+        /**
+         * QueueFreezeRequest
+         * @description POST /api/v1/queue/today/freeze body。
+         */
+        QueueFreezeRequest: {
+            /** Label */
+            label: string;
+        };
+        /**
+         * QueueGenerateRequest
+         * @description POST /api/v1/queue/today/generate body。
+         */
+        QueueGenerateRequest: {
+            /** Levels */
+            levels?: string[];
+            /** Timebudgetminutes */
+            timeBudgetMinutes?: number | null;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
+         * QueueGenerateResponse
+         * @description generate 响应 = 今日视图 + 生成元数据（幂等/诚实标注）。
+         */
+        QueueGenerateResponse: {
+            /** Basis */
+            basis: string;
+            /** Budgetminutes */
+            budgetMinutes?: number | null;
+            /** Force */
+            force: boolean;
+            /** Generated */
+            generated: boolean;
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Notes */
+            notes?: string[];
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+            /** Segments */
+            segments: components["schemas"]["QueueSegmentView"][];
+            /** Totalestimateminutes */
+            totalEstimateMinutes: number;
+        };
+        /**
+         * QueueItemDoneRequest
+         * @description POST /api/v1/queue/today/items/{id}/done body（set 语义）。
+         */
+        QueueItemDoneRequest: {
+            /** Done */
+            done: boolean;
+        };
+        /**
+         * QueueItemView
+         * @description 队列成员（呈现数据 best-effort：无投影 → title/estimate 为 null）。
+         */
+        QueueItemView: {
+            /** Addedat */
+            addedAt: string;
+            /** Estimateminutes */
+            estimateMinutes?: number | null;
+            /** Id */
+            id: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /** Queuedate */
+            queueDate: string;
+            /** Segment */
+            segment: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "budget" | "level";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "done" | "removed";
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * QueueReorderRequest
+         * @description PUT /api/v1/queue/today/order body：给定的 id 按序列排前，
+         *     未提及行保持相对顺序垫后（语义同工作区 reorder）。
+         */
+        QueueReorderRequest: {
+            /** Order */
+            order: string[];
+        };
+        /**
+         * QueueSegmentMoveRequest
+         * @description PATCH /api/v1/queue/today/items/{id}/segment body。
+         */
+        QueueSegmentMoveRequest: {
+            /** Segment */
+            segment?: string | null;
+        };
+        /**
+         * QueueSegmentOrderRequest
+         * @description PUT /api/v1/queue/today/segments body：段名有序数组（呈现提示）。
+         */
+        QueueSegmentOrderRequest: {
+            /** Order */
+            order?: string[];
+        };
+        /**
+         * QueueSegmentView
+         * @description 派生分段（name=null = 未分组，恒为隐式前置组）。
+         */
+        QueueSegmentView: {
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Name */
+            name: string | null;
+        };
+        /**
+         * QueueSnapshotDetail
+         * @description 打开冻结视图：原始成员顺序原样返回（不可变）。
+         */
+        QueueSnapshotDetail: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Items */
+            items: components["schemas"]["QueueSnapshotItem"][];
+            /** Label */
+            label: string;
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+        };
+        /**
+         * QueueSnapshotItem
+         * @description 冻结成员（ItemRef + 顺序元数据；内容解析在读取侧）。
+         */
+        QueueSnapshotItem: {
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /** Segment */
+            segment: string | null;
+        };
+        /** QueueSnapshotList */
+        QueueSnapshotList: {
+            /** Items */
+            items: components["schemas"]["QueueSnapshotView"][];
+        };
+        /**
+         * QueueSnapshotView
+         * @description 冻结快照元数据（payload 留在服务端）。
+         */
+        QueueSnapshotView: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Label */
+            label: string;
+            /** Queuedate */
+            queueDate: string;
+        };
+        /**
+         * QueueTodayResponse
+         * @description GET /api/v1/queue/today 与 generate/order/segments 的统一视图。
+         */
+        QueueTodayResponse: {
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Queuedate */
+            queueDate: string;
+            /** Segmentorder */
+            segmentOrder: string[];
+            /** Segments */
+            segments: components["schemas"]["QueueSegmentView"][];
+            /** Totalestimateminutes */
+            totalEstimateMinutes: number;
         };
         /**
          * QuizGenerateBody
@@ -11305,6 +12992,16 @@ export interface components {
             dueAt: string;
         };
         /**
+         * RssHubCacheInfo
+         * @description N027: preview freshness (fresh=True when computed for this request).
+         */
+        RssHubCacheInfo: {
+            /** Ages */
+            ageS: number;
+            /** Fresh */
+            fresh: boolean;
+        };
+        /**
          * RssHubCatalog
          * @description GET /api/v1/rsshub/routes (static catalog; configured = instance set).
          */
@@ -11456,6 +13153,41 @@ export interface components {
             configured: boolean;
         };
         /**
+         * RssHubFavoriteItem
+         * @description One N021 route favorite (params carry masked sensitive values only).
+         */
+        RssHubFavoriteItem: {
+            /** Createdat */
+            createdAt: string;
+            /** Label */
+            label: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubFavoritePut
+         * @description PUT /api/v1/rsshub/routes/favorites body (route id + params + label).
+         */
+        RssHubFavoritePut: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Routeid */
+            routeId: string;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -11492,6 +13224,78 @@ export interface components {
             routeId: string;
         };
         /**
+         * RssHubPreviewResult
+         * @description POST /api/v1/rsshub/preview — adds the server-derived routeKey.
+         *
+         *     N021/N025: the key (template id + masked params signature) is built
+         *     server-side; clients use it for favorites/recents/history/refresh
+         *     and never assemble it themselves. N027 adds cache freshness.
+         */
+        RssHubPreviewResult: {
+            /** Alreadysubscribed */
+            alreadySubscribed: boolean;
+            cache: components["schemas"]["RssHubCacheInfo"];
+            /** Description */
+            description?: string | null;
+            encodingInspection?: components["schemas"]["EncodingInspection"] | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "rss" | "atom";
+            /** Routekey */
+            routeKey: string;
+            /** Siteurl */
+            siteUrl?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * RssHubRecentItem
+         * @description One N021 recently used route (params carry masked sensitive values).
+         */
+        RssHubRecentItem: {
+            /** Lastsuccessat */
+            lastSuccessAt?: string | null;
+            /** Lastusedat */
+            lastUsedAt: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubRefreshRequest
+         * @description POST /api/v1/rsshub/refresh body (server-derived route key).
+         */
+        RssHubRefreshRequest: {
+            /** Routekey */
+            routeKey: string;
+        };
+        /**
+         * RssHubRefreshResult
+         * @description POST /api/v1/rsshub/refresh — one forced re-fetch of THAT route.
+         */
+        RssHubRefreshResult: {
+            cache: components["schemas"]["RssHubCacheInfo"];
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * RssHubRoute
          * @description One Lumi-owned RSSHub route descriptor (path built server-side).
          */
@@ -11506,6 +13310,38 @@ export interface components {
             pathTemplate: string;
             /** Title */
             title: string;
+        };
+        /**
+         * RssHubRouteRun
+         * @description One N025 route health timeline row (no secrets — route keys are
+         *     masked server-side before storage).
+         */
+        RssHubRouteRun: {
+            /** Durationms */
+            durationMs: number;
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Failureclass */
+            failureClass?: string | null;
+            /** Id */
+            id: number;
+            /** Ranat */
+            ranAt: string;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed";
+        };
+        /**
+         * RssHubRouteRuns
+         * @description GET /api/v1/rsshub/routes/history — bounded run list, newest first.
+         */
+        RssHubRouteRuns: {
+            /** Items */
+            items: components["schemas"]["RssHubRouteRun"][];
         };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
@@ -11617,6 +13453,58 @@ export interface components {
              * @default all
              */
             view: string;
+        };
+        /**
+         * SearchDistributionDay
+         * @description N145：单日命中计数（窗口内补零后逐日出）。
+         */
+        SearchDistributionDay: {
+            /** Count */
+            count: number;
+            /** Day */
+            day: string;
+        };
+        /**
+         * SearchDistributionResult
+         * @description N145：与 GET /search 同参的聚合视图（SQL GROUP BY，无正文出站）。
+         *
+         *     sources 最多 20 条（超界 sourcesComplete=false 诚实标注）；
+         *     days 为最近 30 天窗口（含 0 计数日，便于直接渲染柱状分布）。
+         */
+        SearchDistributionResult: {
+            /** Dayfrom */
+            dayFrom: string;
+            /** Dayto */
+            dayTo: string;
+            /**
+             * Days
+             * @default []
+             */
+            days: components["schemas"]["SearchDistributionDay"][];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["SearchDistributionSource"][];
+            /**
+             * Sourcescomplete
+             * @default true
+             */
+            sourcesComplete: boolean;
+            /** Total */
+            total: number;
+        };
+        /**
+         * SearchDistributionSource
+         * @description N145：单来源命中计数。
+         */
+        SearchDistributionSource: {
+            /** Count */
+            count: number;
+            /** Feedtitle */
+            feedTitle: string;
+            /** Feedurl */
+            feedUrl: string;
         };
         /**
          * SearchExportBody
@@ -11731,6 +13619,57 @@ export interface components {
             url?: string | null;
         };
         /**
+         * SearchParseQueryBody
+         * @description POST /api/v1/search/parse-query body（N142）。
+         */
+        SearchParseQueryBody: {
+            /** Query */
+            query: string;
+        };
+        /**
+         * SearchParseRecognized
+         * @description 一个被转成条件的片段（kind + 原文）。
+         */
+        SearchParseRecognized: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "date" | "source" | "phrase" | "exclude";
+            /** Text */
+            text: string;
+        };
+        /**
+         * SearchParseResult
+         * @description N142：filters 与保存视图 filters_json 同构（白名单子集）；
+         *     remainingText = 未识别自由词；unrecognized 逐词诚实列出，绝不静默
+         *     丢弃。
+         */
+        SearchParseResult: {
+            /**
+             * Filters
+             * @default {}
+             */
+            filters: {
+                [key: string]: string;
+            };
+            /**
+             * Recognized
+             * @default []
+             */
+            recognized: components["schemas"]["SearchParseRecognized"][];
+            /**
+             * Remainingtext
+             * @default
+             */
+            remainingText: string;
+            /**
+             * Unrecognized
+             * @default []
+             */
+            unrecognized: string[];
+        };
+        /**
          * SearchRebuildResult
          * @description Envelope for POST /api/v1/search/rebuild.
          */
@@ -11772,6 +13711,90 @@ export interface components {
             nextCursor: string | null;
         };
         /**
+         * SearchWhyMissedBody
+         * @description POST /api/v1/search/why-missed body（N143）——与 GET /search 同参
+         *     （除分页/同义词）；entryRef 必须属于当前用户，否则 404。
+         */
+        SearchWhyMissedBody: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Entryref */
+            entryRef: string;
+            /** Exclude */
+            exclude?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** From */
+            from?: string | null;
+            /** Hassummary */
+            hasSummary?: boolean | null;
+            /** Intitle */
+            intitle?: string | null;
+            /** Phrase */
+            phrase?: string | null;
+            /** Query */
+            query: string;
+            /** State */
+            state?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * SearchWhyMissedEntry
+         * @description 被诊断条目的最小元数据（不携带正文全文）。
+         */
+        SearchWhyMissedEntry: {
+            /** Entryref */
+            entryRef: string;
+            /** Feedtitle */
+            feedTitle: string;
+            /** Publishedat */
+            publishedAt: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * SearchWhyMissedReason
+         * @description 一个排除原因（kind + 中文 detail，UI 可直接展示）。
+         */
+        SearchWhyMissedReason: {
+            /** Detail */
+            detail: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "term" | "intitle" | "phrase" | "exclude" | "source" | "category" | "unread" | "starred" | "date" | "hasSummary";
+        };
+        /**
+         * SearchWhyMissedResult
+         * @description N143：matched=false → reasons 列出每个未通过的条件；
+         *     matched=true → 应出现在结果中，rank 为按时间排序的位置（超出
+         *     2000 上界时 rankCapped=true 诚实标注）。
+         */
+        SearchWhyMissedResult: {
+            entry: components["schemas"]["SearchWhyMissedEntry"];
+            /** Matched */
+            matched: boolean;
+            /** Rank */
+            rank?: number | null;
+            /**
+             * Rankcapped
+             * @default false
+             */
+            rankCapped: boolean;
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: components["schemas"]["SearchWhyMissedReason"][];
+        };
+        /**
          * SecretValuePut
          * @description Write-only secret body (shared by AI keys and RSSHub secrets).
          *
@@ -11784,6 +13807,23 @@ export interface components {
         SecretValuePut: {
             /** Value */
             value: string;
+        };
+        /**
+         * SegmentProtectedTerm
+         * @description N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。
+         */
+        SegmentProtectedTerm: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Protected */
+            protected: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Term */
+            term: string;
         };
         /**
          * SegmentRevisionBody
@@ -11912,6 +13952,66 @@ export interface components {
             uuid: string;
         };
         /**
+         * SourceAliasHistoryItem
+         * @description N013：一条改名历史（old 为 NULL = 首设别名；恢复 = 用旧名 PUT）。
+         */
+        SourceAliasHistoryItem: {
+            /**
+             * Changedat
+             * @default
+             */
+            changedAt: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Id */
+            id: number;
+            /** Oldcustomname */
+            oldCustomName?: string | null;
+            /** Upstreamnameatsave */
+            upstreamNameAtSave?: string | null;
+        };
+        /** SourceAliasHistoryList */
+        SourceAliasHistoryList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasHistoryItem"][];
+        };
+        /** SourceAliasList */
+        SourceAliasList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SourceAliasView"][];
+        };
+        /**
+         * SourceAliasUpdate
+         * @description PUT /api/v1/sources/alias — upsert + 变化时写历史（含上游快照）。
+         */
+        SourceAliasUpdate: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+        };
+        /**
+         * SourceAliasView
+         * @description N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。
+         */
+        SourceAliasView: {
+            /** Customname */
+            customName: string;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Updatedat
+             * @default
+             */
+            updatedAt: string;
+        };
+        /**
          * SourceDiscoveryRequest
          * @description POST /api/v1/source-discovery body (0014): a public website URL.
          */
@@ -11974,7 +14074,7 @@ export interface components {
         };
         /**
          * SourceOverrideResult
-         * @description F11/F13/F001：单个来源的 Lumi 覆盖（null = 该维度未启用）。
+         * @description F11/F13/F001/N015：单个来源的 Lumi 覆盖（null = 该维度未启用）。
          */
         SourceOverrideResult: {
             /**
@@ -11991,6 +14091,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;
@@ -12018,6 +14122,10 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Mutewindows */
+            muteWindows?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Readerstyle */
             readerStyle?: {
                 [key: string]: unknown;
@@ -12186,6 +14294,7 @@ export interface components {
          * @description F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。
          */
         SubscriptionVolumeItem: {
+            collectionTiming?: components["schemas"]["CollectionTiming"] | null;
             /** Feedurl */
             feedUrl: string;
             /** Lastpublishedat */
@@ -12432,6 +14541,28 @@ export interface components {
             /** Translatedtitle */
             translatedTitle: string;
         };
+        /** TotpDisableRequest */
+        TotpDisableRequest: {
+            /** Code */
+            code: string;
+            /** Currentpassword */
+            currentPassword: string;
+        };
+        /** TotpEnableRequest */
+        TotpEnableRequest: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * TotpVerifyRequest
+         * @description POST /auth/totp/verify — pending token + TOTP/recovery code.
+         */
+        TotpVerifyRequest: {
+            /** Code */
+            code: string;
+            /** Pendingtoken */
+            pendingToken: string;
+        };
         /**
          * TranslationSegmentBlockIn
          * @description One client-segmented content block.
@@ -12456,6 +14587,16 @@ export interface components {
             failureType?: string | null;
             /** Index */
             index: number;
+            /**
+             * Notranslate
+             * @default false
+             */
+            noTranslate: boolean;
+            /**
+             * Protectedterms
+             * @default []
+             */
+            protectedTerms: components["schemas"]["SegmentProtectedTerm"][];
             /** Revisedat */
             revisedAt?: string | null;
             /**
@@ -12500,6 +14641,71 @@ export interface components {
             segments: components["schemas"]["TranslationSegmentState"][];
             /** Targetlanguage */
             targetLanguage: string;
+        };
+        /**
+         * TranslationVerificationBlock
+         * @description N082：一个块的校验结果（不可校验时诚实给 reason）。
+         */
+        TranslationVerificationBlock: {
+            /** Blockindex */
+            blockIndex: number;
+            /**
+             * Findings
+             * @default []
+             */
+            findings: components["schemas"]["TranslationVerificationFinding"][];
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Revised
+             * @default false
+             */
+            revised: boolean;
+            /** Verifiable */
+            verifiable: boolean;
+        };
+        /**
+         * TranslationVerificationFinding
+         * @description N082：一条可见数字差异（基于可见 token，非语义判断）。
+         */
+        TranslationVerificationFinding: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "missing" | "changed" | "added";
+            /**
+             * Sourcecontext
+             * @default
+             */
+            sourceContext: string;
+            /** Token */
+            token: string;
+            /**
+             * Translatedcontext
+             * @default
+             */
+            translatedContext: string;
+        };
+        /**
+         * TranslationVerificationView
+         * @description GET /api/v1/entries/{ref}/translation-verification 响应。
+         */
+        TranslationVerificationView: {
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["TranslationVerificationBlock"][];
+            /** Entryref */
+            entryRef: string;
+            /** Language */
+            language: string;
+            /**
+             * Totalfindings
+             * @default 0
+             */
+            totalFindings: number;
         };
         /**
          * TrashItem
@@ -12737,24 +14943,95 @@ export interface components {
             targetCount: number;
         };
         /**
+         * WorkspaceGroup
+         * @description N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。
+         */
+        WorkspaceGroup: {
+            /** Items */
+            items: components["schemas"]["WorkspaceItem"][];
+            /** Name */
+            name: string | null;
+        };
+        /**
+         * WorkspaceGroupOrderPut
+         * @description PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。
+         *
+         *     只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。
+         */
+        WorkspaceGroupOrderPut: {
+            /** Order */
+            order: string[];
+        };
+        /**
+         * WorkspaceGroupsResponse
+         * @description Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.
+         *
+         *     ``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是
+         *     命名组的呈现顺序（未列入的组按名字典序追加在后）。
+         */
+        WorkspaceGroupsResponse: {
+            /** Grouporder */
+            groupOrder: string[];
+            /** Groups */
+            groups: components["schemas"]["WorkspaceGroup"][];
+            /** Pinned */
+            pinned: components["schemas"]["WorkspaceItem"][];
+            /** Revision */
+            revision: number;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
          * WorkspaceItem
          * @description One workspace member (ref + ordering; content resolves separately).
+         *
+         *     N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
+         *     排序语义不变（position 升序）。
          */
         WorkspaceItem: {
             /** Addedat */
             addedAt: string;
+            /** Groupname */
+            groupName?: string | null;
             /** Itemref */
             itemRef: string;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
             /** Position */
             position: number;
         };
         /**
          * WorkspaceItemAddRequest
          * @description POST /api/v1/workspaces/{id}/items — one typed ItemRef.
+         *
+         *     N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。
          */
         WorkspaceItemAddRequest: {
+            /** Groupname */
+            groupName?: string | null;
             /** Itemref */
             itemRef: string;
+        };
+        /**
+         * WorkspaceItemGroupMoveRequest
+         * @description PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。
+         *
+         *     ``groupName=null`` = 移回未分组隐式前置组。
+         */
+        WorkspaceItemGroupMoveRequest: {
+            /** Groupname */
+            groupName?: string | null;
+        };
+        /**
+         * WorkspaceItemPinRequest
+         * @description PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。
+         */
+        WorkspaceItemPinRequest: {
+            /** Pinned */
+            pinned: boolean;
         };
         /**
          * WorkspaceItemsResolvedResponse
@@ -12838,6 +15115,75 @@ export interface components {
             workspaceId: string;
         };
         /**
+         * WorkspaceSnapshot
+         * @description N105：一个命名会话快照（元数据视图；payload 留在服务端）。
+         *
+         *     ``itemCount`` 是捕获时刻的成员数（从 payload 派生）。
+         */
+        WorkspaceSnapshot: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Name */
+            name: string;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
+         * WorkspaceSnapshotCreate
+         * @description POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。
+         */
+        WorkspaceSnapshotCreate: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkspaceSnapshotList
+         * @description Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。
+         */
+        WorkspaceSnapshotList: {
+            /** Items */
+            items: components["schemas"]["WorkspaceSnapshot"][];
+        };
+        /**
+         * WorkspaceSnapshotRestoreRequest
+         * @description POST /workspaces/{id}/snapshots/{sid}/restore（N105）.
+         *
+         *     - ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；
+         *     - ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝
+         *       丢固定条目除非 ``force=true``）；
+         *     - 快照里已消失的 ref 诚实上报，绝不复活。
+         */
+        WorkspaceSnapshotRestoreRequest: {
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Mode */
+            mode: string;
+        };
+        /**
+         * WorkspaceSnapshotRestoreResult
+         * @description 恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；
+         *     kept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。
+         */
+        WorkspaceSnapshotRestoreResult: {
+            /** Kept */
+            kept: number;
+            /** Missing */
+            missing: string[];
+            /** Removed */
+            removed: string[];
+            /** Restored */
+            restored: number;
+            /** Revision */
+            revision: number;
+        };
+        /**
          * WorkspaceTemplate
          * @description F083 工作区模板（config 不含条目内容/凭据）。
          */
@@ -12914,6 +15260,156 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_funnel_api_v1_admin_invite_funnel_get: {
+        parameters: {
+            query?: {
+                scheme_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invite_schemes_api_v1_admin_invite_schemes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_invite_scheme_api_v1_admin_invite_schemes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteSchemeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_invite_scheme_api_v1_admin_invite_schemes__scheme_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_invites_from_scheme_api_v1_admin_invite_schemes__scheme_id__generate_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteSchemeBatchRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -14189,7 +16685,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuthStatus"];
+                    "application/json": components["schemas"]["AuthStatus"] | components["schemas"]["LoginChallenge"];
                 };
             };
             /** @description Validation Error */
@@ -14239,6 +16735,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    list_passkeys_api_v1_auth_passkeys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    passkey_register_finish_api_v1_auth_passkeys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_login_api_v1_auth_passkeys_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_login_options_api_v1_auth_passkeys_login_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginOptionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_register_options_api_v1_auth_passkeys_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    delete_passkey_api_v1_auth_passkeys__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -14366,6 +17036,145 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_status_api_v1_auth_totp_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    totp_disable_api_v1_auth_totp_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpDisableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_enable_api_v1_auth_totp_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_setup_api_v1_auth_totp_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    totp_verify_api_v1_auth_totp_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -14925,6 +17734,7 @@ export interface operations {
                 categoryId?: string | null;
                 cursor?: string | null;
                 includeHidden?: boolean;
+                sort?: "received" | null;
             };
             header?: never;
             path?: never;
@@ -15192,7 +18002,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GlossaryHitsBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -15308,6 +18122,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuizSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_revisions_api_v1_entries__entry_ref__revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryRevisionsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15549,6 +18394,39 @@ export interface operations {
             };
         };
     };
+    get_translation_verification_api_v1_entries__entry_ref__translation_verification_get: {
+        parameters: {
+            query?: {
+                language?: string | null;
+            };
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationVerificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post: {
         parameters: {
             query?: never;
@@ -15607,6 +18485,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TranslationSegmentsView"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -15966,6 +18904,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reparse_feed_api_v1_feed_preview_reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedPreviewReparseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPreviewReparseResponse"];
                 };
             };
             /** @description Validation Error */
@@ -20393,6 +23364,390 @@ export interface operations {
             };
         };
     };
+    list_queue_snapshots_api_v1_queue_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotList"];
+                };
+            };
+        };
+    };
+    get_queue_snapshot_api_v1_queue_snapshots__snapshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_queue_snapshot_api_v1_queue_snapshots__snapshot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_today_queue_api_v1_queue_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
+                };
+            };
+        };
+    };
+    freeze_today_queue_api_v1_queue_today_freeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueFreezeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueSnapshotView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_today_queue_api_v1_queue_today_generate_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueGenerateResponse"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_queue_item_api_v1_queue_today_items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_queue_item_api_v1_queue_today_items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_queue_item_done_api_v1_queue_today_items__item_id__done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueItemDoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueSegmentMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_today_queue_api_v1_queue_today_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_queue_segment_order_api_v1_queue_today_segments_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueSegmentOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTodayResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     grade_quiz_api_v1_quiz__quiz_id__grade_post: {
         parameters: {
             query?: never;
@@ -21443,7 +24798,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedPreviewResult"];
+                    "application/json": components["schemas"]["RssHubPreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_refresh_api_v1_rsshub_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRefreshResult"];
                 };
             };
             /** @description Validation Error */
@@ -21473,6 +24861,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubCatalog"];
+                };
+            };
+        };
+    };
+    list_rsshub_favorites_api_v1_rsshub_routes_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"][];
+                };
+            };
+        };
+    };
+    put_rsshub_favorite_api_v1_rsshub_routes_favorites_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubFavoritePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubFavoriteItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_favorite_api_v1_rsshub_routes_favorites__route_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_route_history_api_v1_rsshub_routes_history_get: {
+        parameters: {
+            query: {
+                routeKey: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteRuns"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_recent_api_v1_rsshub_routes_recent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRecentItem"][];
                 };
             };
         };
@@ -21522,6 +25044,47 @@ export interface operations {
             };
         };
     };
+    search_distribution_api_v1_search_distribution_get: {
+        parameters: {
+            query: {
+                q: string;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+                state?: string | null;
+                favorite?: boolean | null;
+                from?: string | null;
+                to?: string | null;
+                intitle?: string | null;
+                phrase?: string | null;
+                exclude?: string | null;
+                hasSummary?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchDistributionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_search_results_api_v1_search_export_post: {
         parameters: {
             query?: never;
@@ -21542,6 +25105,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_search_query_api_v1_search_parse_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchParseQueryBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchParseResult"];
                 };
             };
             /** @description Validation Error */
@@ -22076,6 +25672,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    why_missed_api_v1_search_why_missed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchWhyMissedBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchWhyMissedResult"];
                 };
             };
             /** @description Validation Error */
@@ -22691,6 +26320,120 @@ export interface operations {
             };
         };
     };
+    set_source_alias_api_v1_sources_alias_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceAliasUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_alias_api_v1_sources_alias_delete: {
+        parameters: {
+            query: {
+                feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_alias_history_api_v1_sources_alias_history_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasHistoryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_source_aliases_api_v1_sources_aliases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAliasList"];
+                };
+            };
+        };
+    };
     list_source_overrides_api_v1_sources_overrides_get: {
         parameters: {
             query?: never;
@@ -23119,7 +26862,9 @@ export interface operations {
     };
     delete_subscription_api_v1_subscriptions__subscription_ref__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                keep_artifacts?: boolean | null;
+            };
             header?: never;
             path: {
                 subscription_ref: string;
@@ -23267,6 +27012,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceNotesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_preview_api_v1_subscriptions__subscription_ref__unsubscribe_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -24318,6 +28094,74 @@ export interface operations {
             };
         };
     };
+    get_workspace_groups_api_v1_workspaces__workspace_id__groups_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGroupsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceGroupOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGroupsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspace_items_api_v1_workspaces__workspace_id__items_get: {
         parameters: {
             query?: {
@@ -24423,7 +28267,9 @@ export interface operations {
     };
     remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 workspace_id: string;
@@ -24439,6 +28285,78 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemGroupMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemPinRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItem"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -24611,6 +28529,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSnapshotRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotRestoreResult"];
                 };
             };
             /** @description Validation Error */

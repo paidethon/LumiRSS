@@ -6,9 +6,9 @@
  *   拖动立即生效（WYSIWYG），与 Settings → 阅读 共用同一 settings
  *   store（AC12：禁止第二套 ReaderQuickSettingsStore）；
  * - 字体/背景/简繁为快捷 select；深度项在完整设置；
- * - F15/F17/专注：代码自动换行 / 按屏翻页（settings store 键）；
- *   专注阅读是 Reader 会话级开关（Reader 持有状态，经 props 传入——
- *   settings store 无此键且禁止改 store）；
+ * - F15/专注：代码自动换行（settings store 键）/ 专注阅读是 Reader
+ *   会话级开关（Reader 持有状态，经 props 传入——settings store 无此键
+ *   且禁止改 store）；N052：阅读模式（滚动/分页，设备本地键）；
  * - 「更多阅读设置」进入完整设置（响应式壳与 SettingsButton 同模式）。 */
 
 import { Suspense, useState, type Ref } from 'react'
@@ -19,6 +19,7 @@ import {
   type ReaderBackground,
   type ReaderChineseConversion,
   type ReaderFontFamily,
+  type ReaderReadingMode,
 } from '../store/app-settings'
 import { useIsMobile } from '../lib/use-is-mobile'
 import SettingsShell from './SettingsShell'
@@ -204,13 +205,23 @@ function AaControls({
           checked={settings.readerCodeWrap}
           onChange={(v) => update({ readerCodeWrap: v })}
         />
-        {/* F17：按屏翻页（settings：readerPagedMode；连续滚动不受影响） */}
-        <SwitchRow
-          id="aa-paged-mode"
-          title="按屏翻页"
-          checked={settings.readerPagedMode}
-          onChange={(v) => update({ readerPagedMode: v })}
-        />
+        {/* N052：阅读模式（设备本地 readerReadingMode；'paged' = 分页阅读
+            ——CSS 多栏横向翻页 + 点按翻页区，取代旧「按屏翻页」入口；
+            旧 readerPagedMode=true 的设备经设置迁移落到分页模式） */}
+        <div className={ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">阅读模式</span>
+          <Select
+            aria-label="阅读模式"
+            value={settings.readerReadingMode}
+            onChange={(e) =>
+              update({ readerReadingMode: e.target.value as ReaderReadingMode })
+            }
+            options={[
+              { value: 'scroll', label: '滚动' },
+              { value: 'paged', label: '分页' },
+            ]}
+          />
+        </div>
         {/* 专注阅读：Reader 会话级开关（props 传入；store 无此键） */}
         {onFocusModeChange !== undefined && (
           <SwitchRow

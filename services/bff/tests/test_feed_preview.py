@@ -262,6 +262,18 @@ async def test_preview_rss_returns_metadata_and_is_non_mutating():
         description="Hello world",
         format="rss",
         already_subscribed=False,
+        # N033：预览始终附带编码检查（RSS_DOC 无 encoding 声明 →
+        # declared 为空，严格 UTF-8 校验通过 → detected=utf-8）。
+        encoding_info={
+            "declared": None,
+            "declaredMethod": None,
+            "detected": "utf-8",
+            "detectedMethod": "utf8_validity",
+            "utf8Valid": True,
+            "mojibakeRisk": False,
+            "sample": None,
+            "bodyBytes": len(RSS_DOC),
+        },
     )
     # 无副作用证明：preview 只读了订阅列表，从未触碰任何 mutation。
     assert control.calls == [("list_subscriptions",)]
@@ -449,7 +461,7 @@ class FakePreviewService:
         self.error = error
         self.calls: list[str] = []
 
-    async def preview(self, feed_url: str) -> FeedPreview:
+    async def preview(self, feed_url: str, *, encoding_override=None) -> FeedPreview:
         self.calls.append(feed_url)
         if self.error is not None:
             raise self.error
@@ -491,6 +503,7 @@ def test_preview_route_returns_metadata_shape():
         "description": "Hello world",
         "format": "rss",
         "alreadySubscribed": False,
+        "encodingInspection": None,  # N033（fake 未填 → null）
     }
     assert service.calls == [FEED_URL]
 
