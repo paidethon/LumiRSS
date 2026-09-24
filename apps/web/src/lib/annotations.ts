@@ -359,3 +359,36 @@ export function deleteAnnotation(id: string): void {
     }
   })()
 }
+
+// ---- N071 原文漂移修复（锚点失效 → 重检 → 重绑） ----
+
+/** 修复候选（服务端重检结果：块下标 + 相似度 + 块内摘录窗口）。 */
+export interface RepairCandidate {
+  blockIndex: number
+  score: number
+  excerpt: string
+}
+
+/** 服务端重检存量引文在当前正文块中的位置（候选 ≥0.8，分数降序）。 */
+export async function fetchRepairCandidates(id: string): Promise<RepairCandidate[]> {
+  const client = await import('../api/client')
+  const result = await client.getAnnotationRepairCandidates(id)
+  return result.candidates
+}
+
+/**
+ * 按候选重绑：服务端更新 anchor + anchor_hash（旧锚点进修复历史），
+ * 成功后用服务端返回的批注覆盖本地缓存行。最高相似度 < 0.5 时服务端
+ * 拒绝（throw），调用方诚实提示只能手动处理。
+ */
+export async function repairAnnotationAt(
+  id: string,
+  blockIndex: number,
+  quoteText: string,
+): Promise<Annotation | null> {
+  const client = await import('../api/client')
+  const result = await client.repairAnnotation(id, blockIndex, quoteText)
+  const repaired = fromServer(result.annotation)
+  writeAll(readAllAnnotations().map((a) => (a.id === repaired.id ? repaired : a)))
+  return repaired
+}

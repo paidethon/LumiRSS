@@ -1523,6 +1523,63 @@
     "title": "AiSettingsView",
     "type": "object"
    },
+   "AnnotationColorLabelItem": {
+    "description": "一个颜色的语义标签（label 空 = 未命名，Web 诚实显示原始色名）。",
+    "properties": {
+     "color": {
+      "title": "Color",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "color",
+     "label"
+    ],
+    "title": "AnnotationColorLabelItem",
+    "type": "object"
+   },
+   "AnnotationColorLabelList": {
+    "description": "GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationColorLabelItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "AnnotationColorLabelList",
+    "type": "object"
+   },
+   "AnnotationColorLabelPut": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/annotations/color-labels body（单色 upsert）。",
+    "properties": {
+     "color": {
+      "maxLength": 20,
+      "minLength": 1,
+      "title": "Color",
+      "type": "string"
+     },
+     "label": {
+      "default": "",
+      "maxLength": 50,
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "color"
+    ],
+    "title": "AnnotationColorLabelPut",
+    "type": "object"
+   },
    "AnnotationCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/annotations body。",
@@ -1664,6 +1721,11 @@
     "additionalProperties": false,
     "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。",
     "properties": {
+     "citeBibliography": {
+      "default": false,
+      "title": "Citebibliography",
+      "type": "boolean"
+     },
      "entryRefs": {
       "anyOf": [
        {
@@ -1691,6 +1753,112 @@
      }
     },
     "title": "AnnotationExportRequest",
+    "type": "object"
+   },
+   "AnnotationRepairCandidate": {
+    "description": "一个候选正文块（score = exact/前缀包含 1.0，difflib 模糊比）。",
+    "properties": {
+     "blockIndex": {
+      "minimum": 0.0,
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "excerpt": {
+      "maxLength": 300,
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+     }
+    },
+    "required": [
+     "blockIndex",
+     "score",
+     "excerpt"
+    ],
+    "title": "AnnotationRepairCandidate",
+    "type": "object"
+   },
+   "AnnotationRepairCandidatesResult": {
+    "description": "GET /api/v1/annotations/{id}/repair-candidates 响应。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationRepairCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "quote": {
+      "title": "Quote",
+      "type": "string"
+     }
+    },
+    "required": [
+     "annotationId",
+     "entryRef",
+     "quote"
+    ],
+    "title": "AnnotationRepairCandidatesResult",
+    "type": "object"
+   },
+   "AnnotationRepairRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/annotations/{id}/repair body（用户从候选中选定）。",
+    "properties": {
+     "blockIndex": {
+      "minimum": 0.0,
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "quoteText": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Quotetext",
+      "type": "string"
+     }
+    },
+    "required": [
+     "blockIndex",
+     "quoteText"
+    ],
+    "title": "AnnotationRepairRequest",
+    "type": "object"
+   },
+   "AnnotationRepairResult": {
+    "description": "POST /api/v1/annotations/{id}/repair 响应（更新后的批注 + 本次绑定）。",
+    "properties": {
+     "annotation": {
+      "$ref": "#/components/schemas/AnnotationView"
+     },
+     "blockIndex": {
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "score": {
+      "title": "Score",
+      "type": "number"
+     }
+    },
+    "required": [
+     "annotation",
+     "blockIndex",
+     "score"
+    ],
+    "title": "AnnotationRepairResult",
     "type": "object"
    },
    "AnnotationUpdate": {
@@ -1734,6 +1902,61 @@
      }
     },
     "title": "AnnotationUpdate",
+    "type": "object"
+   },
+   "AnnotationView": {
+    "description": "批注行的稳定投影（annotations CRUD 现行响应形状）。",
+    "properties": {
+     "anchor": {
+      "additionalProperties": true,
+      "title": "Anchor",
+      "type": "object"
+     },
+     "anchorHash": {
+      "title": "Anchorhash",
+      "type": "string"
+     },
+     "color": {
+      "title": "Color",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "excerpt": {
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "entryRef",
+     "anchor",
+     "anchorHash",
+     "excerpt",
+     "note",
+     "color",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "AnnotationView",
     "type": "object"
    },
    "ApiSource": {
@@ -14060,6 +14283,170 @@
     "title": "ReadingProgressPut",
     "type": "object"
    },
+   "ReadingQuestionCreate": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/reading-questions body（链接字段全部可选）。",
+    "properties": {
+     "annotationId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Annotationid"
+     },
+     "entryRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entryref"
+     },
+     "question": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "required": [
+     "question"
+    ],
+    "title": "ReadingQuestionCreate",
+    "type": "object"
+   },
+   "ReadingQuestionList": {
+    "description": "GET /api/v1/reading-questions 响应。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ReadingQuestionView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "ReadingQuestionList",
+    "type": "object"
+   },
+   "ReadingQuestionPatch": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/reading-questions/{id} body（改文本或 open/done）。",
+    "properties": {
+     "question": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Question"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    "title": "ReadingQuestionPatch",
+    "type": "object"
+   },
+   "ReadingQuestionView": {
+    "description": "一个问题行。",
+    "properties": {
+     "annotationId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Annotationid"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "entryRef": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entryref"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "question": {
+      "title": "Question",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "required": [
+     "id",
+     "question",
+     "status",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "ReadingQuestionView",
+    "type": "object"
+   },
    "RecoverPasswordRequest": {
     "description": "POST /auth/recover — recovery invite redemption.",
     "properties": {
@@ -14768,20 +15155,42 @@
    },
    "ReviewQueueAdd": {
     "additionalProperties": false,
-    "description": "POST /api/v1/review-queue body。",
+    "description": "POST /api/v1/review-queue body（N076 泛化：批注或知识卡片）。\n\n向后兼容：缺省 kind='annotation' 且仍以 annotationId 排期。",
     "properties": {
      "annotationId": {
-      "title": "Annotationid",
-      "type": "string"
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Annotationid"
      },
      "dueAt": {
       "minLength": 1,
       "title": "Dueat",
       "type": "string"
+     },
+     "kind": {
+      "default": "annotation",
+      "title": "Kind",
+      "type": "string"
+     },
+     "knowledgeCardId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Knowledgecardid"
      }
     },
     "required": [
-     "annotationId",
      "dueAt"
     ],
     "title": "ReviewQueueAdd",
@@ -21565,6 +21974,7 @@
   },
   "/api/v1/annotations": {
    "get": {
+    "description": "跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。",
     "operationId": "list_annotations_api_v1_annotations_get",
     "parameters": [
      {
@@ -21597,6 +22007,22 @@
         }
        ],
        "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "color",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Color"
       }
      },
      {
@@ -21673,9 +22099,65 @@
     "summary": "Create Annotation"
    }
   },
+  "/api/v1/annotations/color-labels": {
+   "get": {
+    "description": "全调色板颜色标签（label 空 = 未命名 → Web 诚实显示原始色名）。",
+    "operationId": "get_color_labels_api_v1_annotations_color_labels_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationColorLabelList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Color Labels"
+   },
+   "put": {
+    "description": "upsert 单个颜色标签；返回全调色板最新标签。",
+    "operationId": "put_color_label_api_v1_annotations_color_labels_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationColorLabelPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationColorLabelList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Color Label"
+   }
+  },
   "/api/v1/annotations/export": {
    "post": {
-    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。",
+    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：\nciteBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。",
     "operationId": "export_annotations_api_v1_annotations_export_post",
     "requestBody": {
      "content": {
@@ -21871,6 +22353,96 @@
      }
     },
     "summary": "Update Annotation"
+   }
+  },
+  "/api/v1/annotations/{annotation_id}/repair": {
+   "post": {
+    "description": "按用户选定的块重新绑定（anchor + anchor_hash 更新；旧锚点进\nannotation_repair_log，cap 10）。当前正文里最高相似度 < 0.5 → 422\n（repair_refused：只支持手动修复，不假装命中）。",
+    "operationId": "repair_annotation_api_v1_annotations__annotation_id__repair_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "annotation_id",
+      "required": true,
+      "schema": {
+       "title": "Annotation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationRepairRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationRepairResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Repair Annotation"
+   }
+  },
+  "/api/v1/annotations/{annotation_id}/repair-candidates": {
+   "get": {
+    "description": "重检存量引文在当前正文块中的位置：exact/prefix/fuzzy ≥0.8 →\n候选列表（最多 5 条，分数降序）。引文为空 / 原文不可达 → 422 诚实\n拒绝（不猜）。",
+    "operationId": "annotation_repair_candidates_api_v1_annotations__annotation_id__repair_candidates_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "annotation_id",
+      "required": true,
+      "schema": {
+       "title": "Annotation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationRepairCandidatesResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Annotation Repair Candidates"
    }
   },
   "/api/v1/api-sources": {
@@ -32442,6 +33014,195 @@
     "summary": "Put Reading Progress"
    }
   },
+  "/api/v1/reading-questions": {
+   "get": {
+    "operationId": "list_reading_questions_api_v1_reading_questions_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "entryRef",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Entryref"
+      }
+     },
+     {
+      "in": "query",
+      "name": "annotationId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Annotationid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingQuestionList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Reading Questions"
+   },
+   "post": {
+    "operationId": "create_reading_question_api_v1_reading_questions_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReadingQuestionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Reading Question"
+   }
+  },
+  "/api/v1/reading-questions/{question_id}": {
+   "delete": {
+    "operationId": "delete_reading_question_api_v1_reading_questions__question_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "question_id",
+      "required": true,
+      "schema": {
+       "title": "Question Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Reading Question"
+   },
+   "patch": {
+    "operationId": "patch_reading_question_api_v1_reading_questions__question_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "question_id",
+      "required": true,
+      "schema": {
+       "title": "Question Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReadingQuestionPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Reading Question"
+   }
+  },
   "/api/v1/relations": {
    "get": {
     "operationId": "list_relations_api_v1_relations_get",
@@ -32820,6 +33581,44 @@
      }
     },
     "summary": "Postpone Review Queue Item"
+   }
+  },
+  "/api/v1/review-queue/{queue_id}/view": {
+   "post": {
+    "description": "N077：揭示答案时刻 → last_viewed_at（来源追踪；只记时间，\n不缓存任何原文内容）。",
+    "operationId": "view_review_queue_item_api_v1_review_queue__queue_id__view_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "queue_id",
+      "required": true,
+      "schema": {
+       "title": "Queue Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "View Review Queue Item"
    }
   },
   "/api/v1/rsshub/config": {

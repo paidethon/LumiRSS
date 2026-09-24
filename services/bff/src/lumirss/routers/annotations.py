@@ -4,21 +4,49 @@
 链接（F015 段落锚点格式，无凭据）；锚点失效（原文已变化）时在条目
 上诚实标注。导出内容做 Markdown 转义（摘录/批注中的 ``#``/``>``/
 反引号不破坏文档结构）。
+
+N071 原文漂移修复：锚点失效后对当前正文块重检存量引文
+（repair-candidates），用户从候选中选定后 rebind（anchor + hash 更新，
+旧锚点进 annotation_repair_log，cap 10）；最高相似度 < 0.5 → 拒绝
+自动修复（只能手动改文本），绝不假装命中。
+
+N073 颜色语义：调色板颜色的语义标签（color-labels PUT/GET）；列表
+支持 color= 过滤；未命名的颜色诚实回显原始色名。
+
+N075 引用格式导出：citeBibliography=true 时每篇文章追加
+「引用格式：标题 — 来源, 日期」；标题/来源/日期缺失逐项以「不详」
+占位 —— 只用条目既有元数据（search_entries 投影），绝不 AI 补全。
 """
+
+from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from lumirss.annotation_repair import (
+    REPAIR_MIN_SCORE,
+    repair_candidates,
+    score_quote,
+    split_blocks,
+)
 from lumirss.annotation_store import (
+    COLORS,
     MAX_EXCERPT,
     MAX_NOTE,
+    AnchorHashConflict,
     AnnotationInvalid,
     AnnotationStore,
 )
 from lumirss.models import (
+    AnnotationColorLabelList,
+    AnnotationColorLabelPut,
     AnnotationExportDelta,
     AnnotationExportMarkResult,
+    AnnotationRepairCandidatesResult,
+    AnnotationRepairRequest,
+    AnnotationRepairResult,
+    AnnotationView,
 )
 
 router = APIRouter()
@@ -53,6 +81,7 @@ class AnnotationExportRequest(BaseModel):
 
     entryRefs: list[str] | None = None
     q: str | None = None
+    citeBibliography: bool = False
 
 
 class AnnotationExportMarkRequest(BaseModel):
@@ -75,11 +104,15 @@ async def list_annotations(
     request: Request,
     entryRef: str | None = None,
     q: str | None = None,
+    color: str | None = None,
     cursor: str | None = None,
 ) -> Response:
+    """跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。"""
     store = AnnotationStore(request.app.state.db)
+    if color is not None and color not in COLORS:
+        return _invalid_response("color 非法。")
     if entryRef is not None:
-        items = await store.list_for_entry(entryRef)
+        items = await store.list_for_entry(entryRef, color=color)
         return JSONResponse({"items": items, "nextCursor": None})
     after = None
     if cursor:
@@ -87,7 +120,7 @@ async def list_annotations(
         if len(parts) != 2:
             return _invalid_response("cursor 无效。")
         after = (parts[0], parts[1])
-    items, next_cursor = await store.search(q, after)
+    items, next_cursor = await store.search(q, after, color=color)
     return JSONResponse({"items": items, "nextCursor": next_cursor})
 
 
@@ -138,6 +171,160 @@ async def delete_annotation(annotation_id: str, request: Request) -> Response:
     return Response(status_code=204)
 
 
+# ---- N071 原文漂移修复 -------------------------------------------------------
+
+
+def _error_response(status: int, error_type: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"type": error_type, "message": message}},
+    )
+
+
+async def _entry_content_text(request: Request, entry_ref: str) -> str | None:
+    """当前正文文本（FreshRSS 适配器，per-user 绑定）。不可达 → None
+    （调用方诚实返回 entry_unavailable，绝不使用任何缓存正文）。"""
+    from lumirss.deps import _get_adapter_or_none
+    from lumirss.entryref import InvalidEntryReference, decode_entry_ref
+
+    adapter = _get_adapter_or_none(request)
+    if adapter is None:
+        return None
+    try:
+        detail = await adapter.get_entry(decode_entry_ref(entry_ref))
+    except (Exception, InvalidEntryReference):  # noqa: BLE001 — 上游/解码失败同口径
+        return None
+    return detail.contentText or ""
+
+
+@router.get(
+    "/api/v1/annotations/{annotation_id}/repair-candidates",
+    response_model=AnnotationRepairCandidatesResult,
+)
+async def annotation_repair_candidates(
+    annotation_id: str, request: Request
+) -> Response:
+    """重检存量引文在当前正文块中的位置：exact/prefix/fuzzy ≥0.8 →
+    候选列表（最多 5 条，分数降序）。引文为空 / 原文不可达 → 422 诚实
+    拒绝（不猜）。"""
+    store = AnnotationStore(request.app.state.db)
+    item = await store.get(annotation_id)
+    if item is None:
+        return _error_response(404, "annotation_not_found", "批注不存在。")
+    anchor = item["anchor"] if isinstance(item["anchor"], dict) else {}
+    quote = str(item["excerpt"] or anchor.get("exact") or "")
+    if quote.strip() == "":
+        return _error_response(422, "repair_no_quote", "该批注没有可检索的引文。")
+    content_text = await _entry_content_text(request, str(item["entryRef"]))
+    if content_text is None:
+        return _error_response(
+            422,
+            "entry_unavailable",
+            "原文暂不可达，无法生成修复候选（不做缓存正文）。",
+        )
+    blocks = split_blocks(content_text)
+    candidates = repair_candidates(quote, blocks, prefix=str(anchor.get("prefix") or ""))
+    result = AnnotationRepairCandidatesResult(
+        annotationId=item["id"],
+        entryRef=item["entryRef"],
+        quote=quote,
+        candidates=[
+            {
+                "blockIndex": candidate["blockIndex"],
+                "score": candidate["score"],
+                "excerpt": candidate["excerpt"],
+            }
+            for candidate in candidates
+        ],
+    )
+    return JSONResponse(result.model_dump())
+
+
+@router.post(
+    "/api/v1/annotations/{annotation_id}/repair",
+    response_model=AnnotationRepairResult,
+)
+async def repair_annotation(
+    annotation_id: str, payload: AnnotationRepairRequest, request: Request
+) -> Response:
+    """按用户选定的块重新绑定（anchor + anchor_hash 更新；旧锚点进
+    annotation_repair_log，cap 10）。当前正文里最高相似度 < 0.5 → 422
+    （repair_refused：只支持手动修复，不假装命中）。"""
+    store = AnnotationStore(request.app.state.db)
+    item = await store.get(annotation_id)
+    if item is None:
+        return _error_response(404, "annotation_not_found", "批注不存在。")
+    content_text = await _entry_content_text(request, str(item["entryRef"]))
+    if content_text is None:
+        return _error_response(
+            422,
+            "entry_unavailable",
+            "原文暂不可达，无法核对修复位置（不做缓存正文）。",
+        )
+    blocks = split_blocks(content_text)
+    if payload.blockIndex >= len(blocks):
+        return _error_response(422, "repair_block_out_of_range", "blockIndex 超出当前正文范围。")
+    quote = payload.quoteText.strip()
+    if quote == "":
+        return _error_response(422, "repair_no_quote", "quoteText 不能为空。")
+    best = max(score_quote(quote, block) for block in blocks)
+    if best < REPAIR_MIN_SCORE:
+        return _error_response(
+            422,
+            "repair_refused",
+            f"未能在当前原文中找到足够接近的位置（最高相似度 {best:.2f}），请手动修复。",
+        )
+    bound_score = score_quote(quote, blocks[payload.blockIndex])
+    if bound_score < REPAIR_MIN_SCORE:
+        return _error_response(
+            422,
+            "repair_refused",
+            "所选块与引文差异过大（相似度不足 0.5），请重新选择。",
+        )
+    try:
+        updated = await store.rebind(
+            annotation_id,
+            block_index=payload.blockIndex,
+            quote=quote,
+            score=round(bound_score, 4),
+        )
+    except AnchorHashConflict as exc:
+        return _error_response(409, "anchor_conflict", str(exc))
+    if updated is None:
+        return _error_response(404, "annotation_not_found", "批注不存在。")
+    result = AnnotationRepairResult(
+        annotation=AnnotationView(**updated),
+        blockIndex=payload.blockIndex,
+        score=round(bound_score, 4),
+    )
+    return JSONResponse(result.model_dump())
+
+
+# ---- N073 批注颜色语义 -------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/annotations/color-labels", response_model=AnnotationColorLabelList
+)
+async def get_color_labels(request: Request) -> Response:
+    """全调色板颜色标签（label 空 = 未命名 → Web 诚实显示原始色名）。"""
+    store = AnnotationStore(request.app.state.db)
+    items = await store.get_color_labels()
+    return JSONResponse(AnnotationColorLabelList(items=items).model_dump())
+
+
+@router.put("/api/v1/annotations/color-labels", response_model=AnnotationColorLabelList)
+async def put_color_label(payload: AnnotationColorLabelPut, request: Request) -> Response:
+    """upsert 单个颜色标签；返回全调色板最新标签。"""
+    store = AnnotationStore(request.app.state.db)
+    try:
+        await store.set_color_label(payload.color, payload.label.strip())
+    except AnnotationInvalid as exc:
+        return _invalid_response(str(exc))
+    items = await store.get_color_labels()
+    return JSONResponse(AnnotationColorLabelList(items=items).model_dump())
+
+
 def _md_escape(text: str) -> str:
     """Markdown 结构转义：行首 #/>/- 与行内反引号不破坏文档结构。"""
     cleaned = text.replace("`", "\\`").replace("\r", "")
@@ -174,9 +361,38 @@ async def annotations_export_delta(
     return JSONResponse(AnnotationExportDelta(**delta).model_dump())
 
 
+def _bibliography_line(meta: dict[str, str | None]) -> str:
+    """N075 引用格式行：`标题 — 来源, 日期`。标题/来源/日期缺失逐项
+    以「不详」占位（诚实显式 token）——只用条目既有元数据，绝不 AI 补全。"""
+    unknown = "不详"
+    title = (meta.get("title") or "").strip() or unknown
+    source = (meta.get("source") or "").strip() or unknown
+    date = (meta.get("date") or "").strip() or unknown
+    return f"引用格式：{title} — {source}, {date}"
+
+
+async def _entry_bibliography_meta(db: Any, entry_ref: str) -> dict[str, str | None]:
+    """条目元数据（标题/来源/日期）——search_entries 投影（本就随同步
+    维护的可重建投影，含标题与来源名；不触上游，导出离线可用）。"""
+    row = await db.fetch_one(
+        "SELECT title, feed_title, published_at FROM search_entries WHERE entry_ref = ?",
+        (entry_ref,),
+    )
+    if row is None:
+        return {"title": None, "source": None, "date": None}
+    published = str(row["published_at"] or "").strip()
+    date = published[:10] if len(published) >= 10 and published[4] == "-" and published[7] == "-" else None
+    return {
+        "title": str(row["title"] or ""),
+        "source": str(row["feed_title"] or ""),
+        "date": date,
+    }
+
+
 @router.post("/api/v1/annotations/export")
 async def export_annotations(payload: AnnotationExportRequest, request: Request) -> Response:
-    """F052：批注汇编导出（Markdown 下载）。空选择 → 422。"""
+    """F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：
+    citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。"""
     store = AnnotationStore(request.app.state.db)
     if payload.entryRefs is not None and len(payload.entryRefs) == 0:
         return _invalid_response("导出范围为空。")
@@ -202,6 +418,9 @@ async def export_annotations(payload: AnnotationExportRequest, request: Request)
         para = str(anchor.get("paraId", "")) if isinstance(anchor, dict) else ""
         deep_link = f"/reader?entry={entry_ref}" + (f"&para={para}" if para else "")
         lines += ["", f"## 文章 {entry_ref}", "", f"[打开原文（定位段落）]({deep_link})"]
+        if payload.citeBibliography:
+            meta = await _entry_bibliography_meta(request.app.state.db, entry_ref)
+            lines += ["", _md_escape(_bibliography_line(meta))]
         for item in entry_items:
             lines += ["", "> " + _md_escape(str(item["excerpt"]) or "（无摘录）")]
             note = str(item["note"] or "")
