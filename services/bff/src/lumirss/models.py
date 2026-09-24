@@ -1437,25 +1437,81 @@ class WorkspaceListResponse(BaseModel):
 
 
 class WorkspaceItemAddRequest(BaseModel):
-    """POST /api/v1/workspaces/{id}/items — one typed ItemRef."""
+    """POST /api/v1/workspaces/{id}/items — one typed ItemRef.
+
+    N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。"""
 
     model_config = {"extra": "forbid"}
 
     itemRef: str
+    groupName: str | None = None
 
 
 class WorkspaceItem(BaseModel):
-    """One workspace member (ref + ordering; content resolves separately)."""
+    """One workspace member (ref + ordering; content resolves separately).
+
+    N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
+    排序语义不变（position 升序）。"""
 
     itemRef: str
     position: int
     addedAt: str
+    groupName: str | None = None
+    pinned: bool = False
 
 
 class WorkspaceItemsResponse(BaseModel):
     """Envelope for GET /api/v1/workspaces/{id}/items."""
 
     items: list[WorkspaceItem]
+
+
+class WorkspaceGroup(BaseModel):
+    """N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。"""
+
+    name: str | None
+    items: list[WorkspaceItem]
+
+
+class WorkspaceGroupsResponse(BaseModel):
+    """Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.
+
+    ``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是
+    命名组的呈现顺序（未列入的组按名字典序追加在后）。"""
+
+    workspaceId: str
+    revision: int
+    groupOrder: list[str]
+    pinned: list[WorkspaceItem]
+    groups: list[WorkspaceGroup]
+
+
+class WorkspaceGroupOrderPut(BaseModel):
+    """PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。
+
+    只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。"""
+
+    model_config = {"extra": "forbid"}
+
+    order: list[str]
+
+
+class WorkspaceItemGroupMoveRequest(BaseModel):
+    """PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。
+
+    ``groupName=null`` = 移回未分组隐式前置组。"""
+
+    model_config = {"extra": "forbid"}
+
+    groupName: str | None = None
+
+
+class WorkspaceItemPinRequest(BaseModel):
+    """PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。"""
+
+    model_config = {"extra": "forbid"}
+
+    pinned: bool
 
 
 class WorkspaceReorderRequest(BaseModel):
@@ -1516,6 +1572,58 @@ class WorkspaceResumeResponse(BaseModel):
 
     workspaceId: str
     pointer: WorkspaceResumePointer | None = None
+
+
+class WorkspaceSnapshotCreate(BaseModel):
+    """POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。"""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+
+
+class WorkspaceSnapshot(BaseModel):
+    """N105：一个命名会话快照（元数据视图；payload 留在服务端）。
+
+    ``itemCount`` 是捕获时刻的成员数（从 payload 派生）。"""
+
+    id: str
+    workspaceId: str
+    name: str
+    createdAt: str
+    itemCount: int
+
+
+class WorkspaceSnapshotList(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。"""
+
+    items: list[WorkspaceSnapshot]
+
+
+class WorkspaceSnapshotRestoreRequest(BaseModel):
+    """POST /workspaces/{id}/snapshots/{sid}/restore（N105）.
+
+    - ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；
+    - ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝
+      丢固定条目除非 ``force=true``）；
+    - 快照里已消失的 ref 诚实上报，绝不复活。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    mode: str
+    force: bool = False
+
+
+class WorkspaceSnapshotRestoreResult(BaseModel):
+    """恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；
+    kept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。"""
+
+    restored: int
+    missing: list[str]
+    kept: int
+    removed: list[str]
+    revision: int
 
 
 class ResolveRequest(BaseModel):

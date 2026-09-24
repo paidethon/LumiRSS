@@ -64,10 +64,14 @@ import type {
   WebDavTestResult,
   Workspace,
   WorkspaceItem,
+  WorkspaceGroupsResponse,
   WorkspaceItemsResolvedResponse,
   WorkspaceItemsResponse,
   WorkspaceListResponse,
   WorkspaceResumeResponse,
+  WorkspaceSnapshot,
+  WorkspaceSnapshotList,
+  WorkspaceSnapshotRestoreResult,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -1872,11 +1876,139 @@ export async function addWorkspaceItem(workspaceId: string, itemRef: string): Pr
   return (await response.json()) as WorkspaceItem
 }
 
-export async function removeWorkspaceItem(workspaceId: string, itemRef: string): Promise<void> {
+export async function removeWorkspaceItem(
+  workspaceId: string,
+  itemRef: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  // N102：固定条目需显式 ?force=1（BFF 409 workspace_item_pinned 保护）。
+  const forceQuery = options.force === true ? '?force=1' : ''
   await rawRequest(
-    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}`,
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}` +
+      forceQuery,
     { method: 'DELETE' },
   )
+}
+
+// ---- N101/N102/N105：工作区分组 / 固定 / 会话快照 ----
+
+/** N101：分组视图（固定区 + 未分组隐式前置组 + 命名组序列）。 */
+export async function getWorkspaceGroups(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceGroupsResponse> {
+  return request<WorkspaceGroupsResponse>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/groups`,
+    signal,
+  )
+}
+
+/** N101：设置命名组呈现顺序（只重排既有组；PUT 幂等）。 */
+export async function putWorkspaceGroupOrder(
+  workspaceId: string,
+  order: string[],
+): Promise<WorkspaceGroupsResponse> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/groups`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ order }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceGroupsResponse
+}
+
+/** N101：移动条目到分组（groupName=null = 移回未分组）。 */
+export async function moveWorkspaceItemGroup(
+  workspaceId: string,
+  itemRef: string,
+  groupName: string | null,
+): Promise<WorkspaceItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}/group`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ groupName }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItem
+}
+
+/** N102：设置固定标记（set 语义非 toggle）。 */
+export async function setWorkspaceItemPinned(
+  workspaceId: string,
+  itemRef: string,
+  pinned: boolean,
+): Promise<WorkspaceItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}/pin`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ pinned }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceItem
+}
+
+/** N105：捕获当前标签页/分组状态为命名快照。 */
+export async function captureWorkspaceSnapshot(
+  workspaceId: string,
+  name: string,
+): Promise<WorkspaceSnapshot> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/snapshots`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceSnapshot
+}
+
+/** N105：快照列表（新→旧）。 */
+export async function listWorkspaceSnapshots(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceSnapshotList> {
+  return request<WorkspaceSnapshotList>(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/snapshots`,
+    signal,
+  )
+}
+
+/** N105：删除一个快照（Web 侧删除前二次确认）。 */
+export async function deleteWorkspaceSnapshot(
+  workspaceId: string,
+  snapshotId: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** N105：恢复快照（reorder=只重排既有成员 / replace=移除快照外成员；
+ * replace 遇固定条目 409 workspace_item_pinned，需 force=true）。
+ * 返回 diff 摘要 {restored, missing, kept, removed, revision}。 */
+export async function restoreWorkspaceSnapshot(
+  workspaceId: string,
+  snapshotId: string,
+  mode: 'reorder' | 'replace',
+  force = false,
+): Promise<WorkspaceSnapshotRestoreResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/snapshots/${encodeURIComponent(snapshotId)}/restore`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ mode, force }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as WorkspaceSnapshotRestoreResult
 }
 
 // ---- phase2 M1：书签（library/bookmarks）——GET 分页 / POST 幂等创建 /

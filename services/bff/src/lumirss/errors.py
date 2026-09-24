@@ -204,6 +204,7 @@ from lumirss.workspace_archive import (
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
 from lumirss.workspace_goals import GoalInvalid
+from lumirss.workspace_snapshots import WorkspaceSnapshotNotFound
 from lumirss.workspace_templates import (
     TemplateExists,
     TemplateInvalid,
@@ -212,6 +213,7 @@ from lumirss.workspace_templates import (
 from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
+    WorkspaceItemPinned,
     WorkspaceNotFound,
     WorkspaceRevisionConflict,
 )
@@ -313,6 +315,10 @@ _ERROR_RESPONSES = {
     ReservedWorkspaceError: (409, "reserved_workspace"),
     # P15（响应体额外带 currentRevision —— 见专用 handler）
     WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
+    # N102：固定条目拒绝静默移除（force=1 才放行）
+    WorkspaceItemPinned: (409, "workspace_item_pinned"),
+    # N105：快照不存在（不跨工作区取快照）
+    WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -571,6 +577,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(DryRunUnsupported)
     @app.exception_handler(ZipInvalid)
     @app.exception_handler(ZipTooLarge)
+    @app.exception_handler(WorkspaceItemPinned)
+    @app.exception_handler(WorkspaceSnapshotNotFound)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

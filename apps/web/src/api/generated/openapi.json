@@ -15366,16 +15366,122 @@
     "title": "WorkspaceGoalPut",
     "type": "object"
    },
+   "WorkspaceGroup": {
+    "description": "N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "required": [
+     "name",
+     "items"
+    ],
+    "title": "WorkspaceGroup",
+    "type": "object"
+   },
+   "WorkspaceGroupOrderPut": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。\n\n只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。",
+    "properties": {
+     "order": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Order",
+      "type": "array"
+     }
+    },
+    "required": [
+     "order"
+    ],
+    "title": "WorkspaceGroupOrderPut",
+    "type": "object"
+   },
+   "WorkspaceGroupsResponse": {
+    "description": "Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.\n\n``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是\n命名组的呈现顺序（未列入的组按名字典序追加在后）。",
+    "properties": {
+     "groupOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Grouporder",
+      "type": "array"
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceGroup"
+      },
+      "title": "Groups",
+      "type": "array"
+     },
+     "pinned": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceItem"
+      },
+      "title": "Pinned",
+      "type": "array"
+     },
+     "revision": {
+      "title": "Revision",
+      "type": "integer"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId",
+     "revision",
+     "groupOrder",
+     "pinned",
+     "groups"
+    ],
+    "title": "WorkspaceGroupsResponse",
+    "type": "object"
+   },
    "WorkspaceItem": {
-    "description": "One workspace member (ref + ordering; content resolves separately).",
+    "description": "One workspace member (ref + ordering; content resolves separately).\n\nN101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，\n排序语义不变（position 升序）。",
     "properties": {
      "addedAt": {
       "title": "Addedat",
       "type": "string"
      },
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     },
      "itemRef": {
       "title": "Itemref",
       "type": "string"
+     },
+     "pinned": {
+      "default": false,
+      "title": "Pinned",
+      "type": "boolean"
      },
      "position": {
       "title": "Position",
@@ -15392,8 +15498,19 @@
    },
    "WorkspaceItemAddRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.",
+    "description": "POST /api/v1/workspaces/{id}/items — one typed ItemRef.\n\nN101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。",
     "properties": {
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     },
      "itemRef": {
       "title": "Itemref",
       "type": "string"
@@ -15403,6 +15520,40 @@
      "itemRef"
     ],
     "title": "WorkspaceItemAddRequest",
+    "type": "object"
+   },
+   "WorkspaceItemGroupMoveRequest": {
+    "additionalProperties": false,
+    "description": "PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。\n\n``groupName=null`` = 移回未分组隐式前置组。",
+    "properties": {
+     "groupName": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Groupname"
+     }
+    },
+    "title": "WorkspaceItemGroupMoveRequest",
+    "type": "object"
+   },
+   "WorkspaceItemPinRequest": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。",
+    "properties": {
+     "pinned": {
+      "title": "Pinned",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "pinned"
+    ],
+    "title": "WorkspaceItemPinRequest",
     "type": "object"
    },
    "WorkspaceItemsResolvedResponse": {
@@ -15593,6 +15744,132 @@
      "workspaceId"
     ],
     "title": "WorkspaceResumeResponse",
+    "type": "object"
+   },
+   "WorkspaceSnapshot": {
+    "description": "N105：一个命名会话快照（元数据视图；payload 留在服务端）。\n\n``itemCount`` 是捕获时刻的成员数（从 payload 派生）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "workspaceId",
+     "name",
+     "createdAt",
+     "itemCount"
+    ],
+    "title": "WorkspaceSnapshot",
+    "type": "object"
+   },
+   "WorkspaceSnapshotCreate": {
+    "additionalProperties": false,
+    "description": "POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceSnapshotCreate",
+    "type": "object"
+   },
+   "WorkspaceSnapshotList": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshot"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "WorkspaceSnapshotList",
+    "type": "object"
+   },
+   "WorkspaceSnapshotRestoreRequest": {
+    "additionalProperties": false,
+    "description": "POST /workspaces/{id}/snapshots/{sid}/restore（N105）.\n\n- ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；\n- ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝\n  丢固定条目除非 ``force=true``）；\n- 快照里已消失的 ref 诚实上报，绝不复活。",
+    "properties": {
+     "force": {
+      "default": false,
+      "title": "Force",
+      "type": "boolean"
+     },
+     "mode": {
+      "title": "Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "title": "WorkspaceSnapshotRestoreRequest",
+    "type": "object"
+   },
+   "WorkspaceSnapshotRestoreResult": {
+    "description": "恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；\nkept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。",
+    "properties": {
+     "kept": {
+      "title": "Kept",
+      "type": "integer"
+     },
+     "missing": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "removed": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Removed",
+      "type": "array"
+     },
+     "restored": {
+      "title": "Restored",
+      "type": "integer"
+     },
+     "revision": {
+      "title": "Revision",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "restored",
+     "missing",
+     "kept",
+     "removed",
+     "revision"
+    ],
+    "title": "WorkspaceSnapshotRestoreResult",
     "type": "object"
    },
    "WorkspaceTemplate": {
@@ -30910,6 +31187,104 @@
     "summary": "Put Goal"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/groups": {
+   "get": {
+    "description": "N101：分组视图——固定区（N102）在最前，未分组 = 隐式前置组，\n命名组按 group_order_json 排序（未列入的按名字典序追加）。",
+    "operationId": "get_workspace_groups_api_v1_workspaces__workspace_id__groups_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceGroupsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Workspace Groups"
+   },
+   "put": {
+    "description": "N101：设置命名组呈现顺序（PUT 幂等；不创建、不重命名组）。\n\n名字必须是当前真实存在的组（400 拒绝未知名字）；顺序真实变化才\nbump revision。",
+    "operationId": "put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceGroupOrderPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceGroupsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Workspace Group Order"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/items": {
    "get": {
     "operationId": "list_workspace_items_api_v1_workspaces__workspace_id__items_get",
@@ -31007,7 +31382,7 @@
     "summary": "Reorder Workspace Items"
    },
    "post": {
-    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).\n\nThe ref must resolve (ADR 0004): writes never create dangling\nmembership. A known-but-stale domain (FreshRSS unconfigured) passes.",
+    "description": "Idempotent add of one typed ItemRef (returns 201 with current slot).\n\nThe ref must resolve (ADR 0004): writes never create dangling\nmembership. A known-but-stale domain (FreshRSS unconfigured) passes.\nN101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）；幂等重放\n返回既有行原样——改组归属走 PATCH .../group。",
     "operationId": "add_workspace_item_api_v1_workspaces__workspace_id__items_post",
     "parameters": [
      {
@@ -31057,7 +31432,60 @@
   },
   "/api/v1/workspaces/{workspace_id}/items/{item_ref}": {
    "delete": {
+    "description": "移除一个成员（幂等契约：非成员也 404 诚实报错）。\n\nN102：固定条目拒绝静默移除——不带 ``?force=1`` → 409\nworkspace_item_pinned；``?force=1`` 显式确认后才放行。",
     "operationId": "remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "force",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Force",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Workspace Item"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/group": {
+   "patch": {
+    "description": "N101：移动条目到分组（``groupName=null`` 移回未分组隐式前置组）。\n\n条目非成员 → 404；组归属真实变化才 bump revision（幂等重放不\n制造跨设备 409 噪声）。",
+    "operationId": "move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch",
     "parameters": [
      {
       "in": "path",
@@ -31078,8 +31506,25 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemGroupMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
     "responses": {
-     "204": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
       "description": "Successful Response"
      },
      "422": {
@@ -31093,7 +31538,66 @@
       "description": "Validation Error"
      }
     },
-    "summary": "Remove Workspace Item"
+    "summary": "Move Workspace Item Group"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
+   "put": {
+    "description": "N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。\n\n固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。",
+    "operationId": "pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemPinRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pin Workspace Item"
    }
   },
   "/api/v1/workspaces/{workspace_id}/research-pack": {
@@ -31343,6 +31847,195 @@
      }
     },
     "summary": "Save As Template"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots": {
+   "get": {
+    "description": "快照列表（新→旧）。未知工作区 → 404（诚实报错）。",
+    "operationId": "list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Workspace Snapshots"
+   },
+   "post": {
+    "description": "捕获当前标签页/分组状态为命名快照（只存 ref + 排序元数据，\n绝不复制内容；上限 50 个/工作区）。",
+    "operationId": "capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSnapshotCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshot"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Capture Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {
+   "delete": {
+    "description": "删除一个快照（Web 侧删除前二次确认）。",
+    "operationId": "delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}/restore": {
+   "post": {
+    "description": "恢复快照（reorder | replace），返回 diff 摘要。\n\n- 快照中已消失的 ref 上报 ``missing``，绝不复活（内容从未复制）；\n- ``replace`` 移除快照外成员（列表见 ``removed``）；固定条目受\n  N102 保护——拒绝丢固定条目除非 ``force=true``（409\n  workspace_item_pinned）；\n- 真实写库时 bump revision（P15 并发）。",
+    "operationId": "restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceSnapshotRestoreRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotRestoreResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Workspace Snapshot"
    }
   },
   "/feeds/gpt-digest/{spec}.atom": {

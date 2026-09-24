@@ -24,8 +24,12 @@ from lumirss.models import (
     ResolveRequest,
     Workspace,
     WorkspaceCreate,
+    WorkspaceGroupOrderPut,
+    WorkspaceGroupsResponse,
     WorkspaceItem,
     WorkspaceItemAddRequest,
+    WorkspaceItemGroupMoveRequest,
+    WorkspaceItemPinRequest,
     WorkspaceItemsResolvedResponse,
     WorkspaceItemsResponse,
     WorkspaceListResponse,
@@ -34,6 +38,11 @@ from lumirss.models import (
     WorkspaceResumePointer,
     WorkspaceResumePutRequest,
     WorkspaceResumeResponse,
+    WorkspaceSnapshot,
+    WorkspaceSnapshotCreate,
+    WorkspaceSnapshotList,
+    WorkspaceSnapshotRestoreRequest,
+    WorkspaceSnapshotRestoreResult,
 )
 from lumirss.sources import (
     ItemRefUnresolvable,
@@ -65,6 +74,36 @@ _RESOLVE_TIMEOUT_S = 15.0
 _resolve_semaphore: asyncio.Semaphore = asyncio.Semaphore(_RESOLVE_CONCURRENCY)
 
 _logger = logging.getLogger("lumirss.sources")
+
+
+def _groups_model(overview: dict) -> WorkspaceGroupsResponse:
+    """store.group_overview → API 模型（固定区 + 分组序列）。"""
+    return WorkspaceGroupsResponse(
+        workspaceId=overview["workspaceId"],
+        revision=overview["revision"],
+        groupOrder=overview["groupOrder"],
+        pinned=[_item_model(item) for item in overview["pinned"]],
+        groups=[
+            {"name": group["name"], "items": [_item_model(i) for i in group["items"]]}
+            for group in overview["groups"]
+        ],
+    )
+
+
+def _snapshot_model(view: dict) -> WorkspaceSnapshot:
+    return WorkspaceSnapshot(
+        id=view["id"],
+        workspaceId=view["workspaceId"],
+        name=view["name"],
+        createdAt=view["createdAt"],
+        itemCount=view["itemCount"],
+    )
+
+
+def _snapshot_store(request: Request):
+    from lumirss.workspace_snapshots import WorkspaceSnapshotStore
+
+    return WorkspaceSnapshotStore(request.app.state.db, _get_workspace_store(request))
 
 
 async def _resolve_bounded(registry: dict, ref: str) -> ResolvedItem:
@@ -105,6 +144,8 @@ def _item_model(item) -> WorkspaceItem:
         itemRef=item.item_ref,
         position=item.position,
         addedAt=item.added_at,
+        groupName=item.group_name,
+        pinned=item.pinned,
     )
 
 
@@ -202,6 +243,8 @@ async def add_workspace_item(
 
     The ref must resolve (ADR 0004): writes never create dangling
     membership. A known-but-stale domain (FreshRSS unconfigured) passes.
+    N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）；幂等重放
+    返回既有行原样——改组归属走 PATCH .../group。
     """
     registry = _get_source_registry(request)
 
@@ -210,7 +253,7 @@ async def add_workspace_item(
     except ItemRefUnresolvable as exc:
         raise WorkspaceInvalid("引用的内容不存在，无法加入工作区。") from exc
     store: WorkspaceStore = _get_workspace_store(request)
-    item = await store.add_item(workspace_id, payload.itemRef)
+    item = await store.add_item(workspace_id, payload.itemRef, payload.groupName)
     return _item_model(item)
 
 
@@ -250,13 +293,167 @@ async def reorder_workspace_items(
     "/api/v1/workspaces/{workspace_id}/items/{item_ref}", status_code=204
 )
 async def remove_workspace_item(
-    workspace_id: str, item_ref: str, request: Request
+    workspace_id: str, item_ref: str, request: Request, force: bool = False
 ) -> Response:
+    """移除一个成员（幂等契约：非成员也 404 诚实报错）。
+
+    N102：固定条目拒绝静默移除——不带 ``?force=1`` → 409
+    workspace_item_pinned；``?force=1`` 显式确认后才放行。"""
     store: WorkspaceStore = _get_workspace_store(request)
-    removed = await store.remove_item(workspace_id, item_ref)
+    removed = await store.remove_item(workspace_id, item_ref, force=force)
     if not removed:
         raise WorkspaceInvalid("Item is not a member of this workspace.")
     return Response(status_code=204)
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/groups",
+    response_model=WorkspaceGroupsResponse,
+)
+async def get_workspace_groups(
+    workspace_id: str, request: Request, limit: int = _DEFAULT_ITEM_LIMIT
+) -> WorkspaceGroupsResponse:
+    """N101：分组视图——固定区（N102）在最前，未分组 = 隐式前置组，
+    命名组按 group_order_json 排序（未列入的按名字典序追加）。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    overview = await store.group_overview(workspace_id, limit=limit)
+    return _groups_model(overview)
+
+
+@router.put(
+    "/api/v1/workspaces/{workspace_id}/groups",
+    response_model=WorkspaceGroupsResponse,
+)
+async def put_workspace_group_order(
+    workspace_id: str, payload: WorkspaceGroupOrderPut, request: Request
+) -> WorkspaceGroupsResponse:
+    """N101：设置命名组呈现顺序（PUT 幂等；不创建、不重命名组）。
+
+    名字必须是当前真实存在的组（400 拒绝未知名字）；顺序真实变化才
+    bump revision。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    await store.set_group_order(workspace_id, payload.order)
+    overview = await store.group_overview(workspace_id)
+    return _groups_model(overview)
+
+
+@router.patch(
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/group",
+    response_model=WorkspaceItem,
+)
+async def move_workspace_item_group(
+    workspace_id: str,
+    item_ref: str,
+    payload: WorkspaceItemGroupMoveRequest,
+    request: Request,
+) -> WorkspaceItem:
+    """N101：移动条目到分组（``groupName=null`` 移回未分组隐式前置组）。
+
+    条目非成员 → 404；组归属真实变化才 bump revision（幂等重放不
+    制造跨设备 409 噪声）。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    item = await store.set_item_group(workspace_id, item_ref, payload.groupName)
+    if item is None:
+        raise WorkspaceNotFound(f"workspace item {item_ref}")
+    return _item_model(item)
+
+
+@router.put(
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin",
+    response_model=WorkspaceItem,
+)
+async def pin_workspace_item(
+    workspace_id: str, item_ref: str, payload: WorkspaceItemPinRequest, request: Request
+) -> WorkspaceItem:
+    """N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。
+
+    固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。"""
+    store: WorkspaceStore = _get_workspace_store(request)
+    item = await store.set_item_pinned(workspace_id, item_ref, payload.pinned)
+    if item is None:
+        raise WorkspaceNotFound(f"workspace item {item_ref}")
+    return _item_model(item)
+
+
+# -- N105 工作区会话快照 -------------------------------------------------------
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/snapshots",
+    response_model=WorkspaceSnapshot,
+    status_code=201,
+)
+async def capture_workspace_snapshot(
+    workspace_id: str, payload: WorkspaceSnapshotCreate, request: Request
+) -> WorkspaceSnapshot:
+    """捕获当前标签页/分组状态为命名快照（只存 ref + 排序元数据，
+    绝不复制内容；上限 50 个/工作区）。"""
+    snapshot = await _snapshot_store(request).capture(workspace_id, payload.name)
+    return _snapshot_model(snapshot)
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/snapshots",
+    response_model=WorkspaceSnapshotList,
+)
+async def list_workspace_snapshots(
+    workspace_id: str, request: Request
+) -> WorkspaceSnapshotList:
+    """快照列表（新→旧）。未知工作区 → 404（诚实报错）。"""
+    store = _snapshot_store(request)
+    store_for_ws: WorkspaceStore = _get_workspace_store(request)
+    if await store_for_ws.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    views = await store.list_snapshots(workspace_id)
+    return WorkspaceSnapshotList(items=[_snapshot_model(v) for v in views])
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}", status_code=204
+)
+async def delete_workspace_snapshot(
+    workspace_id: str, snapshot_id: str, request: Request
+) -> Response:
+    """删除一个快照（Web 侧删除前二次确认）。"""
+    deleted = await _snapshot_store(request).delete(workspace_id, snapshot_id)
+    if not deleted:
+        from lumirss.workspace_snapshots import WorkspaceSnapshotNotFound
+
+        raise WorkspaceSnapshotNotFound(snapshot_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}/restore",
+    response_model=WorkspaceSnapshotRestoreResult,
+)
+async def restore_workspace_snapshot(
+    workspace_id: str,
+    snapshot_id: str,
+    payload: WorkspaceSnapshotRestoreRequest,
+    request: Request,
+) -> WorkspaceSnapshotRestoreResult:
+    """恢复快照（reorder | replace），返回 diff 摘要。
+
+    - 快照中已消失的 ref 上报 ``missing``，绝不复活（内容从未复制）；
+    - ``replace`` 移除快照外成员（列表见 ``removed``）；固定条目受
+      N102 保护——拒绝丢固定条目除非 ``force=true``（409
+      workspace_item_pinned）；
+    - 真实写库时 bump revision（P15 并发）。"""
+    store = _snapshot_store(request)
+    result = await store.restore(
+        workspace_id, snapshot_id, payload.mode, force=payload.force
+    )
+    summary: WorkspaceStore = _get_workspace_store(request)
+    refreshed = await summary.get_workspace(workspace_id)
+    revision = refreshed.revision if refreshed is not None else 0
+    return WorkspaceSnapshotRestoreResult(
+        restored=result["restored"],
+        missing=result["missing"],
+        kept=result["kept"],
+        removed=result["removed"],
+        revision=revision,
+    )
 
 
 @router.put(

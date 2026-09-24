@@ -6995,6 +6995,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Groups
+         * @description N101：分组视图——固定区（N102）在最前，未分组 = 隐式前置组，
+         *     命名组按 group_order_json 排序（未列入的按名字典序追加）。
+         */
+        get: operations["get_workspace_groups_api_v1_workspaces__workspace_id__groups_get"];
+        /**
+         * Put Workspace Group Order
+         * @description N101：设置命名组呈现顺序（PUT 幂等；不创建、不重命名组）。
+         *
+         *     名字必须是当前真实存在的组（400 拒绝未知名字）；顺序真实变化才
+         *     bump revision。
+         */
+        put: operations["put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/items": {
         parameters: {
             query?: never;
@@ -7011,6 +7039,8 @@ export interface paths {
          *
          *     The ref must resolve (ADR 0004): writes never create dangling
          *     membership. A known-but-stale domain (FreshRSS unconfigured) passes.
+         *     N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）；幂等重放
+         *     返回既有行原样——改组归属走 PATCH .../group。
          */
         post: operations["add_workspace_item_api_v1_workspaces__workspace_id__items_post"];
         delete?: never;
@@ -7035,8 +7065,59 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove Workspace Item */
+        /**
+         * Remove Workspace Item
+         * @description 移除一个成员（幂等契约：非成员也 404 诚实报错）。
+         *
+         *     N102：固定条目拒绝静默移除——不带 ``?force=1`` → 409
+         *     workspace_item_pinned；``?force=1`` 显式确认后才放行。
+         */
         delete: operations["remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move Workspace Item Group
+         * @description N101：移动条目到分组（``groupName=null`` 移回未分组隐式前置组）。
+         *
+         *     条目非成员 → 404；组归属真实变化才 bump revision（幂等重放不
+         *     制造跨设备 409 噪声）。
+         */
+        patch: operations["move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pin Workspace Item
+         * @description N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。
+         *
+         *     固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。
+         */
+        put: operations["pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7124,6 +7205,77 @@ export interface paths {
         put?: never;
         /** Save As Template */
         post: operations["save_as_template_api_v1_workspaces__workspace_id__save_as_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Snapshots
+         * @description 快照列表（新→旧）。未知工作区 → 404（诚实报错）。
+         */
+        get: operations["list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get"];
+        put?: never;
+        /**
+         * Capture Workspace Snapshot
+         * @description 捕获当前标签页/分组状态为命名快照（只存 ref + 排序元数据，
+         *     绝不复制内容；上限 50 个/工作区）。
+         */
+        post: operations["capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Workspace Snapshot
+         * @description 删除一个快照（Web 侧删除前二次确认）。
+         */
+        delete: operations["delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Workspace Snapshot
+         * @description 恢复快照（reorder | replace），返回 diff 摘要。
+         *
+         *     - 快照中已消失的 ref 上报 ``missing``，绝不复活（内容从未复制）；
+         *     - ``replace`` 移除快照外成员（列表见 ``removed``）；固定条目受
+         *       N102 保护——拒绝丢固定条目除非 ``force=true``（409
+         *       workspace_item_pinned）；
+         *     - 真实写库时 bump revision（P15 并发）。
+         */
+        post: operations["restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13915,24 +14067,95 @@ export interface components {
             targetCount: number;
         };
         /**
+         * WorkspaceGroup
+         * @description N101：一个分组（name=null = 未分组隐式前置组）；组内 position 序。
+         */
+        WorkspaceGroup: {
+            /** Items */
+            items: components["schemas"]["WorkspaceItem"][];
+            /** Name */
+            name: string | null;
+        };
+        /**
+         * WorkspaceGroupOrderPut
+         * @description PUT /api/v1/workspaces/{id}/groups — 命名组呈现顺序。
+         *
+         *     只重排既有组（名字必须是当前真实存在的组；不创建、不重命名）。
+         */
+        WorkspaceGroupOrderPut: {
+            /** Order */
+            order: string[];
+        };
+        /**
+         * WorkspaceGroupsResponse
+         * @description Envelope for GET/PUT /api/v1/workspaces/{id}/groups（N101/N102）.
+         *
+         *     ``pinned`` 区在最前（N102：固定排所有组之前）；``groupOrder`` 是
+         *     命名组的呈现顺序（未列入的组按名字典序追加在后）。
+         */
+        WorkspaceGroupsResponse: {
+            /** Grouporder */
+            groupOrder: string[];
+            /** Groups */
+            groups: components["schemas"]["WorkspaceGroup"][];
+            /** Pinned */
+            pinned: components["schemas"]["WorkspaceItem"][];
+            /** Revision */
+            revision: number;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
          * WorkspaceItem
          * @description One workspace member (ref + ordering; content resolves separately).
+         *
+         *     N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
+         *     排序语义不变（position 升序）。
          */
         WorkspaceItem: {
             /** Addedat */
             addedAt: string;
+            /** Groupname */
+            groupName?: string | null;
             /** Itemref */
             itemRef: string;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
             /** Position */
             position: number;
         };
         /**
          * WorkspaceItemAddRequest
          * @description POST /api/v1/workspaces/{id}/items — one typed ItemRef.
+         *
+         *     N101：``groupName`` 可选（null/缺省 = 未分组隐式前置组）。
          */
         WorkspaceItemAddRequest: {
+            /** Groupname */
+            groupName?: string | null;
             /** Itemref */
             itemRef: string;
+        };
+        /**
+         * WorkspaceItemGroupMoveRequest
+         * @description PATCH /api/v1/workspaces/{id}/items/{ref}/group — 移动到分组。
+         *
+         *     ``groupName=null`` = 移回未分组隐式前置组。
+         */
+        WorkspaceItemGroupMoveRequest: {
+            /** Groupname */
+            groupName?: string | null;
+        };
+        /**
+         * WorkspaceItemPinRequest
+         * @description PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。
+         */
+        WorkspaceItemPinRequest: {
+            /** Pinned */
+            pinned: boolean;
         };
         /**
          * WorkspaceItemsResolvedResponse
@@ -14014,6 +14237,75 @@ export interface components {
             pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
             /** Workspaceid */
             workspaceId: string;
+        };
+        /**
+         * WorkspaceSnapshot
+         * @description N105：一个命名会话快照（元数据视图；payload 留在服务端）。
+         *
+         *     ``itemCount`` 是捕获时刻的成员数（从 payload 派生）。
+         */
+        WorkspaceSnapshot: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Name */
+            name: string;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
+         * WorkspaceSnapshotCreate
+         * @description POST /workspaces/{id}/snapshots — 命名捕获当前标签页状态。
+         */
+        WorkspaceSnapshotCreate: {
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkspaceSnapshotList
+         * @description Envelope for GET /api/v1/workspaces/{id}/snapshots（新→旧）。
+         */
+        WorkspaceSnapshotList: {
+            /** Items */
+            items: components["schemas"]["WorkspaceSnapshot"][];
+        };
+        /**
+         * WorkspaceSnapshotRestoreRequest
+         * @description POST /workspaces/{id}/snapshots/{sid}/restore（N105）.
+         *
+         *     - ``reorder``：只重排/重分组/重固定既有成员，快照外成员保留；
+         *     - ``replace``：移除快照外成员再应用（固定条目受 N102 保护——拒绝
+         *       丢固定条目除非 ``force=true``）；
+         *     - 快照里已消失的 ref 诚实上报，绝不复活。
+         */
+        WorkspaceSnapshotRestoreRequest: {
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Mode */
+            mode: string;
+        };
+        /**
+         * WorkspaceSnapshotRestoreResult
+         * @description 恢复 diff 摘要：restored=应用数；missing=快照中已消失的 ref；
+         *     kept=快照外保留数（replace 恒 0）；removed=replace 移除的 ref。
+         */
+        WorkspaceSnapshotRestoreResult: {
+            /** Kept */
+            kept: number;
+            /** Missing */
+            missing: string[];
+            /** Removed */
+            removed: string[];
+            /** Restored */
+            restored: number;
+            /** Revision */
+            revision: number;
         };
         /**
          * WorkspaceTemplate
@@ -26338,6 +26630,74 @@ export interface operations {
             };
         };
     };
+    get_workspace_groups_api_v1_workspaces__workspace_id__groups_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGroupsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_workspace_group_order_api_v1_workspaces__workspace_id__groups_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceGroupOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGroupsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspace_items_api_v1_workspaces__workspace_id__items_get: {
         parameters: {
             query?: {
@@ -26443,7 +26803,9 @@ export interface operations {
     };
     remove_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 workspace_id: string;
@@ -26459,6 +26821,78 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemGroupMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__pin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemPinRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItem"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -26631,6 +27065,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_workspace_snapshot_api_v1_workspaces__workspace_id__snapshots__snapshot_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSnapshotRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSnapshotRestoreResult"];
                 };
             };
             /** @description Validation Error */
