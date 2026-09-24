@@ -382,7 +382,10 @@ def test_n172_no_stage_models_single_call_unchanged(client):
     row = run(_generate(_config(), single, record))
     assert single.calls == 1
     assert record == [("https://ai.local", "base-model", False)]
-    assert json.loads(row["meta_json"]) == {}
+    # meta 只含 N173 句子映射（无分阶段/润色等运行时标注）
+    assert json.loads(row["meta_json"]) == {
+        "sentenceMap": [{"sentence": "总结。", "refs": ["s1"], "verified": True}]
+    }
 
 
 def test_n172_polish_failure_keeps_draft_and_retry_polish(client):
@@ -523,3 +526,141 @@ def test_n172_stage_models_config_roundtrip_and_bounds(client):
     assert config["stageModels"] == {}
     config = run(_config_store().update_config(1, {"stageModels": "not-json"}))
     assert config["stageModels"] == {}
+
+
+# ---- N173 事实检查视图 -------------------------------------------------------
+
+
+class _RawProvider:
+    def __init__(self, raw: str):
+        self.raw = raw
+        self.calls = 0
+
+    async def complete(self, *, messages):
+        self.calls += 1
+        return self.raw
+
+
+def test_n173_sentence_map_built_from_generation(client):
+    """验收：生成后 issue 载荷携带逐句映射（句子继承条目引用）。"""
+    provider = _RawProvider(
+        _single_raw([_item("第一句关于来源。第二句补充背景！", ["s1"])])
+    )
+    row = run(_generate(_config(), provider))
+    dto = _issues_store().issue_to_dto(row)
+    assert [
+        {"sentence": s["sentence"], "refs": s["refs"], "verified": s["verified"]}
+        for s in dto["sentenceMap"]
+    ] == [
+        {"sentence": "第一句关于来源。", "refs": ["s1"], "verified": True},
+        {"sentence": "第二句补充背景！", "refs": ["s1"], "verified": True},
+    ]
+    # 切分保真：句子重组 == 原文
+    assert "".join(s["sentence"] for s in dto["sentenceMap"]) == "第一句关于来源。第二句补充背景！"
+
+
+def test_n173_full_revise_marks_changed_sentences_unmapped(client):
+    """全量修订：改写的句子匹配不到引用 → 待核实；未动句子保留引用。"""
+    run(
+        _issues_store().upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="原标题",
+            body_html="<p>原</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"甲句内容。乙句内容。","sourceIds":["s1"]}]}]',
+            refs_json='{"s1": {"title": "T", "url": "https://a.example.com/x", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    ok = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={
+            "title": "人工修订版",
+            "sections": [
+                {"heading": "h", "items": [{"summary": "甲句内容。人工改写的句子。", "sourceIds": ["s1"]}]}
+            ],
+        },
+    )
+    assert ok.status_code == 200, ok.text
+    dto = ok.json()["issue"]
+    mapped = {s["sentence"]: s for s in dto["sentenceMap"]}
+    assert mapped["甲句内容。"]["verified"] is True
+    assert mapped["人工改写的句子。"]["verified"] is False  # 待核实
+    assert mapped["人工改写的句子。"]["refs"] == []
+
+
+def test_n173_per_sentence_ops_persist_and_atom_follows(client):
+    """验收：逐句改写保留并重算映射；删除的句子从 Atom 导出消失。"""
+    run(
+        _issues_store().upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="Atom 同步期",
+            body_html="<p>原</p>",
+            sections_json='[{"heading":"h","items":[{"summary":"甲句内容。乙句内容。丙句内容。","sourceIds":["s1"]}]}]',
+            refs_json='{"s1": {"title": "T", "url": "https://a.example.com/x", "feedTitle": "示例源", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+        )
+    )
+    revised = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={
+            "sentenceOps": [
+                {"op": "revise", "sectionIndex": 0, "itemIndex": 0, "sentenceIndex": 1, "text": "乙句人工改写。"}
+            ]
+        },
+    )
+    assert revised.status_code == 200, revised.text
+    dto = revised.json()["issue"]
+    item = dto["sections"][0]["items"][0]
+    assert item["summary"] == "甲句内容。乙句人工改写。丙句内容。"
+    mapped = {s["sentence"]: s for s in dto["sentenceMap"]}
+    assert mapped["乙句人工改写。"]["verified"] is False
+    assert mapped["甲句内容。"]["verified"] is True
+
+    # 删除一句 → 内容与 Atom 都不再包含
+    deleted = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={
+            "sentenceOps": [
+                {"op": "delete", "sectionIndex": 0, "itemIndex": 0, "sentenceIndex": 2}
+            ]
+        },
+    )
+    assert deleted.status_code == 200
+    dto = deleted.json()["issue"]
+    assert dto["sections"][0]["items"][0]["summary"] == "甲句内容。乙句人工改写。"
+    assert all(s["sentence"] != "丙句内容。" for s in dto["sentenceMap"])
+
+    # Atom 导出与内容同步（body_html 已重渲染）
+    atom_path = client.get("/api/v1/gpt-digest/feed").json()["atomPath"]
+    assert atom_path.startswith("/feeds/gpt-digest/")
+    token = atom_path.split("/")[-1][: -len(".atom")]
+    atom = client.get(f"/feeds/gpt-digest/{token}.atom")
+    assert atom.status_code == 200
+    assert "丙句内容。" not in atom.text
+    assert "甲句内容。" in atom.text
+
+    # 非法操作：越界索引 422；revise 缺文本 422
+    bad_index = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={"sentenceOps": [{"op": "delete", "sectionIndex": 0, "itemIndex": 0, "sentenceIndex": 9}]},
+    )
+    assert bad_index.status_code == 422
+    bad_text = client.put(
+        "/api/v1/gpt-digest/configs/1/issues/2026-09-18",
+        json={"sentenceOps": [{"op": "revise", "sectionIndex": 0, "itemIndex": 0, "sentenceIndex": 0, "text": "  "}]},
+    )
+    assert bad_text.status_code == 422
+
+
+def test_n173_split_sentences_roundtrip_and_edges():
+    from lumirss.gpt_digest_issues import split_sentences
+
+    text = "A。B！C？\nD…E"
+    assert split_sentences(text) == ["A。", "B！", "C？", "\n", "D…", "E"]
+    assert "".join(split_sentences(text)) == text
+    assert split_sentences("") == []
+    assert split_sentences("没有结束符的句子") == ["没有结束符的句子"]

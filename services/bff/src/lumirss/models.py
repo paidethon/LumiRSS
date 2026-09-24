@@ -1965,11 +1965,21 @@ class GptDigestRef(BaseModel):
     publishedAt: str = ""
 
 
+class GptDigestSentence(BaseModel):
+    """N173：事实检查视图里的一句总结 + 其来源引用。"""
+
+    sentence: str
+    refs: list[str] = []
+    verified: bool = True
+
+
 class GptDigestIssue(BaseModel):
     """一期日报；列表与详情共用（列表 limit 小、正文不重）。
 
     N172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /
-    N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。"""
+    N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。
+    N173：``sentenceMap`` 为逐句事实检查映射（人工改写未匹配到的句子
+    verified=False → UI 标注「待核实」）。"""
 
     issueKey: str
     status: str
@@ -1978,6 +1988,7 @@ class GptDigestIssue(BaseModel):
     refs: dict[str, GptDigestRef] = {}
     model: str = ""
     meta: dict[str, object] = {}
+    sentenceMap: list[GptDigestSentence] = []
     createdAt: str = ""
     publishedAt: str = ""
     updatedAt: str = ""
@@ -1987,13 +1998,30 @@ class GptDigestIssueList(BaseModel):
     items: list[GptDigestIssue] = []
 
 
+class GptDigestSentenceOp(BaseModel):
+    """N173：逐句修订操作（revise 改写文本 / delete 删除整句）。
+
+    索引为 (sectionIndex, itemIndex, sentenceIndex)；revise 必须给出
+    非空 text。改写/新增的句子匹配不到生成时引用 → 待核实（服务端
+    重算映射，不凭空延续引用）。"""
+
+    op: Literal["revise", "delete"]
+    sectionIndex: int = Field(ge=0)
+    itemIndex: int = Field(ge=0)
+    sentenceIndex: int = Field(ge=0)
+    text: str | None = Field(default=None, max_length=4000)
+
+
 class GptDigestIssueRevise(BaseModel):
-    """PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — F08 人工修订。
+    """PUT /api/v1/gpt-digest/configs/{id}/issues/{key} — 人工修订。
 
-    sections 结构沿用生成时 schema；sourceIds 只能引用既有引用集。"""
+    两种用法（可并用）：F08 全量提交（title+sections）；N173 逐句操作
+    （sentenceOps——省略 title/sections 时在当前内容上应用）。sections
+    结构沿用生成时 schema；sourceIds 只能引用既有引用集。"""
 
-    title: str
-    sections: list[dict[str, object]]
+    title: str | None = None
+    sections: list[dict[str, object]] | None = None
+    sentenceOps: list[GptDigestSentenceOp] = []
 
 
 class GptDigestFeedInfo(BaseModel):

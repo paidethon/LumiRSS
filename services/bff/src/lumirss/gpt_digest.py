@@ -36,7 +36,11 @@ from lumirss.ai_provider import (
     AiProviderError,
 )
 from lumirss.gpt_digest_configs import parse_allow_list, parse_slots, parse_stage_models
-from lumirss.gpt_digest_issues import GptDigestIssuesStore, parse_issue_meta
+from lumirss.gpt_digest_issues import (
+    GptDigestIssuesStore,
+    build_sentence_map,
+    parse_issue_meta,
+)
 from lumirss.gpt_digest_store import issue_key_for
 from lumirss.util import utc_now
 
@@ -898,6 +902,7 @@ async def generate_issue(
     body_html = render_issue_html(output, refs)
     # F031：显式生成的新期号 = 草稿（人工审阅后发布）；调度自动发布
     # 保持 published（无人值守）。修订已有期号不改状态。
+    meta.setdefault("sentenceMap", build_sentence_map(output["sections"]))  # N173
     row = await issues.upsert_issue(
         config_id=config_id,
         issue_key=issue_key,
@@ -1089,6 +1094,9 @@ async def retry_polish_issue(
     stage_labels["polish"] = polish_model
     meta["stageModels"] = stage_labels
     meta["polishedAt"] = utc_now()
+    # N173：润色改写了文字但引用仍由条目 sourceIds 携带 → 映射按新文本
+    # 重建（引用继承条目标注，不误标待核实）。
+    meta["sentenceMap"] = build_sentence_map(output["sections"])
     return await issues.upsert_issue(
         config_id=config_id,
         issue_key=issue_key,

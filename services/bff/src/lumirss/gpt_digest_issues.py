@@ -7,9 +7,90 @@ UPDATE 路径，最多产生一个逻辑发布结果。
 """
 
 import json
+import re
 from typing import Any
 
 from lumirss.storage import Database
+
+_SENTENCE_SPLIT_RE = re.compile(r"[^。！？!?…\n]*(?:[。！？!?…]+|\n+|$)")
+
+
+def split_sentences(text: str) -> list[str]:
+    """N173：把一段总结拆成句子（。！？!?… 与换行为界）。
+
+    切分保真：``"".join(split_sentences(t)) == t``（逐句修订后按原样
+    重组，不丢标点也不引入空格）。空白片段不构成句子。"""
+    source = str(text or "")
+    return [part for part in _SENTENCE_SPLIT_RE.findall(source) if part]
+
+
+def build_sentence_map(sections: Any) -> list[dict[str, Any]]:
+    """N173：由 sections 构建逐句事实检查映射。
+
+    每句继承所在条目的引用（模型在该条目上标注的 sourceIds——「模型
+    引用了」的最直接证据）；条目没有引用 → 该句 refs=[]、verified=False
+    （待核实）。生成时写入 meta.sentenceMap。"""
+    sentence_map: list[dict[str, Any]] = []
+    if not isinstance(sections, list):
+        return sentence_map
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            refs = [sid for sid in item.get("sourceIds", []) or [] if isinstance(sid, str)]
+            for sentence in split_sentences(str(item.get("summary") or "")):
+                sentence_map.append(
+                    {
+                        "sentence": sentence,
+                        "refs": refs,
+                        "verified": bool(refs),
+                    }
+                )
+    return sentence_map
+
+
+def recompute_sentence_map(
+    old_map: Any, new_sections: Any
+) -> list[dict[str, Any]]:
+    """N173：人工编辑后的映射重算——按句子原文在同一期内容里匹配。
+
+    与旧映射句子原文一致的句子保留原引用（引用是生成时的事实，编辑不
+    凭空新增）；改写/新增的句子匹配不到 → refs=[]、verified=False（待
+    核实，诚实标注）。删除的句子自然不再出现。"""
+    if not isinstance(old_map, list):
+        old_map = build_sentence_map(new_sections)
+    pool: dict[str, list[dict[str, Any]]] = {}
+    for entry in old_map:
+        if isinstance(entry, dict):
+            pool.setdefault(str(entry.get("sentence") or ""), []).append(entry)
+    sentence_map: list[dict[str, Any]] = []
+    if not isinstance(new_sections, list):
+        return sentence_map
+    for section in new_sections:
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for sentence in split_sentences(str(item.get("summary") or "")):
+                queue = pool.get(sentence)
+                if queue:
+                    entry = queue.pop(0)
+                    refs = entry.get("refs")
+                    sentence_map.append(
+                        {
+                            "sentence": sentence,
+                            "refs": [r for r in refs or [] if isinstance(r, str)],
+                            "verified": bool(refs),
+                        }
+                    )
+                else:
+                    sentence_map.append(
+                        {"sentence": sentence, "refs": [], "verified": False}
+                    )
+    return sentence_map
 
 
 def parse_issue_meta(row: dict[str, Any]) -> dict[str, Any]:
@@ -171,6 +252,11 @@ class GptDigestIssuesStore:
         except ValueError:
             refs = {}
         meta = parse_issue_meta(row)
+        # N173：事实检查句子映射——meta 里存有（编辑后重算）的用之；
+        # 旧期号没有 → 从 sections 现算（引用继承条目标注）。
+        sentence_map = meta.get("sentenceMap")
+        if not isinstance(sentence_map, list):
+            sentence_map = build_sentence_map(sections)
         return {
             "issueKey": str(row.get("issue_key") or ""),
             "status": str(row.get("status") or ""),
@@ -179,6 +265,7 @@ class GptDigestIssuesStore:
             "refs": refs,
             "model": str(row.get("model") or ""),
             "meta": meta,
+            "sentenceMap": sentence_map,
             "createdAt": str(row.get("created_at") or ""),
             "publishedAt": str(row.get("published_at") or ""),
             "updatedAt": str(row.get("updated_at") or ""),
