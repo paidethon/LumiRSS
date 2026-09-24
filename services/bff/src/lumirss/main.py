@@ -24,6 +24,7 @@ from lumirss.middleware import (
     InternalTokenMiddleware,
     RateLimitMiddleware,
     RequestCorrelationMiddleware,
+    RequestLogMiddleware,
     RequestSizeLimitMiddleware,
     SessionAuthMiddleware,
 )
@@ -350,6 +351,10 @@ app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(InternalTokenMiddleware)
 app.add_middleware(SessionAuthMiddleware)
+# E01 structured access log — registered before the correlation layer,
+# so it runs INSIDE it and the request-id contextvar is readable when
+# the record is emitted.
+app.add_middleware(RequestLogMiddleware)
 # pool #47: correlation IDs — outermost of all, so every response
 # (including 401/413 envelopes) carries X-Request-ID.
 app.add_middleware(RequestCorrelationMiddleware)

@@ -172,6 +172,10 @@ class LumiSettings(BaseSettings):
     # forwarded Host header (both Caddys preserve it in this stack).
     LUMIRSS_PUBLIC_ORIGIN: str = ""
 
+    # E01 access log: "json" (default) emits one structured line per
+    # request on the lumirss.access logger; "off" silences it.
+    LUMIRSS_ACCESS_LOG: Literal["json", "off"] = "json"
+
     @field_validator("LUMIRSS_SESSION_MAX_AGE_DAYS")
     @classmethod
     def _sane_session_age(cls, value: int) -> int:
