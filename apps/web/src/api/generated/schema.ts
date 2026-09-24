@@ -1719,6 +1719,9 @@ export interface paths {
         /**
          * Glossary Hits For Entry
          * @description 现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。
+         *
+         *     N083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes
+         *     （客户端块索引，UI 可点击跳转）。
          */
         post: operations["glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post"];
         delete?: never;
@@ -1937,6 +1940,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Translation Verification
+         * @description N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。
+         *
+         *     只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），
+         *     基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、
+         *     不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。
+         */
+        get: operations["get_translation_verification_api_v1_entries__entry_ref__translation_verification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation/segments/generate": {
         parameters: {
             query?: never;
@@ -1978,6 +2005,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Translation Segment No Translate
+         * @description N086：把一块标记为「不翻译」（持久；每条目上限 200 块）。
+         *
+         *     标记后的块不再参与生成：已有缓存译文照常展示，没有则诚实显示
+         *     原文。幂等：重复标记同一块是 no-op。
+         */
+        put: operations["mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put"];
+        post?: never;
+        /**
+         * Unmark Translation Segment No Translate
+         * @description N086：撤销一块的「不翻译」标记（幂等；块恢复可翻译）。
+         */
+        delete: operations["unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision": {
         parameters: {
             query?: never;
@@ -1995,7 +2049,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Translation Segment Revision
-         * @description F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。
+         * @description F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。
          */
         delete: operations["delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete"];
         options?: never;
@@ -9683,6 +9737,30 @@ export interface components {
             templateId: string;
         };
         /**
+         * GlossaryHitsBlockIn
+         * @description N083：可选的逐块命中定位输入（客户端已编号的内容块）。
+         */
+        GlossaryHitsBlockIn: {
+            /** Index */
+            index: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * GlossaryHitsBody
+         * @description POST /api/v1/entries/{ref}/glossary-hits 可选体。
+         *
+         *     blocks 缺省 → 沿用整篇 contentText 的命中（行为不变）；
+         *     blocks 提供时 → 逐块计算，命中附带 blockIndexes（命中位置）。
+         */
+        GlossaryHitsBody: {
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["GlossaryHitsBlockIn"][];
+        };
+        /**
          * GlossaryImportBody
          * @description POST /api/v1/glossary/import body。
          */
@@ -9728,6 +9806,11 @@ export interface components {
             definition: string;
             /** Id */
             id: string;
+            /**
+             * Protect
+             * @default false
+             */
+            protect: boolean;
             /** Sourceref */
             sourceRef?: string | null;
             /** Term */
@@ -9740,11 +9823,16 @@ export interface components {
         };
         /**
          * GlossaryTermCreate
-         * @description POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。
+         * @description POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。
          */
         GlossaryTermCreate: {
             /** Definition */
             definition: string;
+            /**
+             * Protect
+             * @default false
+             */
+            protect: boolean;
             /** Sourceref */
             sourceRef?: string | null;
             /** Term */
@@ -12873,6 +12961,23 @@ export interface components {
             value: string;
         };
         /**
+         * SegmentProtectedTerm
+         * @description N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。
+         */
+        SegmentProtectedTerm: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Protected */
+            protected: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Term */
+            term: string;
+        };
+        /**
          * SegmentRevisionBody
          * @description PUT …/translation/segments/{index}/revision body（F062）。
          */
@@ -13634,6 +13739,16 @@ export interface components {
             failureType?: string | null;
             /** Index */
             index: number;
+            /**
+             * Notranslate
+             * @default false
+             */
+            noTranslate: boolean;
+            /**
+             * Protectedterms
+             * @default []
+             */
+            protectedTerms: components["schemas"]["SegmentProtectedTerm"][];
             /** Revisedat */
             revisedAt?: string | null;
             /**
@@ -13678,6 +13793,71 @@ export interface components {
             segments: components["schemas"]["TranslationSegmentState"][];
             /** Targetlanguage */
             targetLanguage: string;
+        };
+        /**
+         * TranslationVerificationBlock
+         * @description N082：一个块的校验结果（不可校验时诚实给 reason）。
+         */
+        TranslationVerificationBlock: {
+            /** Blockindex */
+            blockIndex: number;
+            /**
+             * Findings
+             * @default []
+             */
+            findings: components["schemas"]["TranslationVerificationFinding"][];
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Revised
+             * @default false
+             */
+            revised: boolean;
+            /** Verifiable */
+            verifiable: boolean;
+        };
+        /**
+         * TranslationVerificationFinding
+         * @description N082：一条可见数字差异（基于可见 token，非语义判断）。
+         */
+        TranslationVerificationFinding: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "missing" | "changed" | "added";
+            /**
+             * Sourcecontext
+             * @default
+             */
+            sourceContext: string;
+            /** Token */
+            token: string;
+            /**
+             * Translatedcontext
+             * @default
+             */
+            translatedContext: string;
+        };
+        /**
+         * TranslationVerificationView
+         * @description GET /api/v1/entries/{ref}/translation-verification 响应。
+         */
+        TranslationVerificationView: {
+            /**
+             * Blocks
+             * @default []
+             */
+            blocks: components["schemas"]["TranslationVerificationBlock"][];
+            /** Entryref */
+            entryRef: string;
+            /** Language */
+            language: string;
+            /**
+             * Totalfindings
+             * @default 0
+             */
+            totalFindings: number;
         };
         /**
          * TrashItem
@@ -16834,7 +17014,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GlossaryHitsBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -17222,6 +17406,39 @@ export interface operations {
             };
         };
     };
+    get_translation_verification_api_v1_entries__entry_ref__translation_verification_get: {
+        parameters: {
+            query?: {
+                language?: string | null;
+            };
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationVerificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_translation_segments_api_v1_entries__entry_ref__translation_segments_generate_post: {
         parameters: {
             query?: never;
@@ -17280,6 +17497,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TranslationSegmentsView"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

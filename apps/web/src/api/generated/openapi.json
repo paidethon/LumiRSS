@@ -5797,6 +5797,46 @@
     "title": "FromTemplateRequest",
     "type": "object"
    },
+   "GlossaryHitsBlockIn": {
+    "description": "N083：可选的逐块命中定位输入（客户端已编号的内容块）。",
+    "properties": {
+     "index": {
+      "maximum": 63.0,
+      "minimum": 0.0,
+      "title": "Index",
+      "type": "integer"
+     },
+     "text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "index",
+     "text"
+    ],
+    "title": "GlossaryHitsBlockIn",
+    "type": "object"
+   },
+   "GlossaryHitsBody": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/{ref}/glossary-hits 可选体。\n\nblocks 缺省 → 沿用整篇 contentText 的命中（行为不变）；\nblocks 提供时 → 逐块计算，命中附带 blockIndexes（命中位置）。",
+    "properties": {
+     "blocks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/GlossaryHitsBlockIn"
+      },
+      "maxItems": 64,
+      "title": "Blocks",
+      "type": "array"
+     }
+    },
+    "title": "GlossaryHitsBody",
+    "type": "object"
+   },
    "GlossaryImportBody": {
     "additionalProperties": false,
     "description": "POST /api/v1/glossary/import body。",
@@ -5888,6 +5928,11 @@
       "title": "Id",
       "type": "string"
      },
+     "protect": {
+      "default": false,
+      "title": "Protect",
+      "type": "boolean"
+     },
      "sourceRef": {
       "anyOf": [
        {
@@ -5918,11 +5963,16 @@
     "type": "object"
    },
    "GlossaryTermCreate": {
-    "description": "POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。",
+    "description": "POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。",
     "properties": {
      "definition": {
       "title": "Definition",
       "type": "string"
+     },
+     "protect": {
+      "default": false,
+      "title": "Protect",
+      "type": "boolean"
      },
      "sourceRef": {
       "anyOf": [
@@ -13038,6 +13088,41 @@
     "title": "SecretValuePut",
     "type": "object"
    },
+   "SegmentProtectedTerm": {
+    "description": "N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。",
+    "properties": {
+     "count": {
+      "default": 0,
+      "title": "Count",
+      "type": "integer"
+     },
+     "protected": {
+      "title": "Protected",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "term": {
+      "title": "Term",
+      "type": "string"
+     }
+    },
+    "required": [
+     "term",
+     "protected"
+    ],
+    "title": "SegmentProtectedTerm",
+    "type": "object"
+   },
    "SegmentRevisionBody": {
     "description": "PUT …/translation/segments/{index}/revision body（F062）。",
     "properties": {
@@ -14774,6 +14859,19 @@
       "title": "Index",
       "type": "integer"
      },
+     "noTranslate": {
+      "default": false,
+      "title": "Notranslate",
+      "type": "boolean"
+     },
+     "protectedTerms": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SegmentProtectedTerm"
+      },
+      "title": "Protectedterms",
+      "type": "array"
+     },
      "revisedAt": {
       "anyOf": [
        {
@@ -14878,6 +14976,115 @@
      "targetLanguage"
     ],
     "title": "TranslationSegmentsView",
+    "type": "object"
+   },
+   "TranslationVerificationBlock": {
+    "description": "N082：一个块的校验结果（不可校验时诚实给 reason）。",
+    "properties": {
+     "blockIndex": {
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "findings": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationVerificationFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "revised": {
+      "default": false,
+      "title": "Revised",
+      "type": "boolean"
+     },
+     "verifiable": {
+      "title": "Verifiable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "blockIndex",
+     "verifiable"
+    ],
+    "title": "TranslationVerificationBlock",
+    "type": "object"
+   },
+   "TranslationVerificationFinding": {
+    "description": "N082：一条可见数字差异（基于可见 token，非语义判断）。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "missing",
+       "changed",
+       "added"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "sourceContext": {
+      "default": "",
+      "title": "Sourcecontext",
+      "type": "string"
+     },
+     "token": {
+      "title": "Token",
+      "type": "string"
+     },
+     "translatedContext": {
+      "default": "",
+      "title": "Translatedcontext",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "token"
+    ],
+    "title": "TranslationVerificationFinding",
+    "type": "object"
+   },
+   "TranslationVerificationView": {
+    "description": "GET /api/v1/entries/{ref}/translation-verification 响应。",
+    "properties": {
+     "blocks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationVerificationBlock"
+      },
+      "title": "Blocks",
+      "type": "array"
+     },
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "language": {
+      "title": "Language",
+      "type": "string"
+     },
+     "totalFindings": {
+      "default": 0,
+      "title": "Totalfindings",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "entryRef",
+     "language"
+    ],
+    "title": "TranslationVerificationView",
     "type": "object"
    },
    "TrashItem": {
@@ -19052,7 +19259,7 @@
   },
   "/api/v1/entries/{entry_ref}/glossary-hits": {
    "post": {
-    "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。",
+    "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。\n\nN083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes\n（客户端块索引，UI 可点击跳转）。",
     "operationId": "glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post",
     "parameters": [
      {
@@ -19065,6 +19272,23 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/GlossaryHitsBody"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "content": {
@@ -19597,6 +19821,62 @@
     "summary": "Generate Entry Translation"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation-verification": {
+   "get": {
+    "description": "N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。\n\n只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），\n基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、\n不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。",
+    "operationId": "get_translation_verification_api_v1_entries__entry_ref__translation_verification_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "language",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Language"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationVerificationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Translation Verification"
+   }
+  },
   "/api/v1/entries/{entry_ref}/translation/segments/generate": {
    "post": {
     "description": "Explicit generation for the bilingual/translated views (money rule:\nonly this endpoint may call a provider; exact cache hits never do).",
@@ -19697,9 +19977,91 @@
     "summary": "Lookup Translation Segments"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/no-translate": {
+   "delete": {
+    "description": "N086：撤销一块的「不翻译」标记（幂等；块恢复可翻译）。",
+    "operationId": "unmark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Unmark Translation Segment No Translate"
+   },
+   "put": {
+    "description": "N086：把一块标记为「不翻译」（持久；每条目上限 200 块）。\n\n标记后的块不再参与生成：已有缓存译文照常展示，没有则诚实显示\n原文。幂等：重复标记同一块是 no-op。",
+    "operationId": "mark_translation_segment_no_translate_api_v1_entries__entry_ref__translation_segments__block_index__no_translate_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mark Translation Segment No Translate"
+   }
+  },
   "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision": {
    "delete": {
-    "description": "F062：撤销一段的手工修订（幂等清空；无缓存行 → 404）。",
+    "description": "F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。",
     "operationId": "delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete",
     "parameters": [
      {
