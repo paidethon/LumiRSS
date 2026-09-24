@@ -18,10 +18,24 @@ from lumirss.api_sources import (
 )
 from lumirss.storage import Database
 from lumirss.token_hash import hash_token
-from lumirss.util import utc_now
+from lumirss.util import UTC, utc_now
 
 _MAX_NAME_LENGTH = 100
 _MAX_SOURCES = 100
+# N129: per-source fetch budget bounds (hourly token bucket).
+_MIN_RUNS_PER_HOUR = 1
+_MAX_RUNS_PER_HOUR = 60
+_RUN_WINDOW_SECONDS = 3600
+
+
+def validate_max_runs_per_hour(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ApiSourceInvalid("maxRunsPerHour must be an integer.")
+    if not _MIN_RUNS_PER_HOUR <= value <= _MAX_RUNS_PER_HOUR:
+        raise ApiSourceInvalid(
+            f"maxRunsPerHour must be within {_MIN_RUNS_PER_HOUR}..{_MAX_RUNS_PER_HOUR}."
+        )
+    return value
 
 
 class ApiSourceStore:
@@ -36,6 +50,7 @@ class ApiSourceStore:
         items_expr: str,
         field_map: dict[str, str],
         pagination: dict[str, Any] | None = None,
+        max_runs_per_hour: int = 4,
     ) -> ApiSourceRecord:
         await self._db.migrate()
         clean_name = _validate_name(name)
@@ -43,6 +58,7 @@ class ApiSourceStore:
         clean_items = validate_items_expr(items_expr)
         clean_fields = validate_field_map(field_map)
         clean_pagination = validate_pagination(pagination)
+        clean_budget = validate_max_runs_per_hour(max_runs_per_hour)
         count = await self._count()
         if count >= _MAX_SOURCES:
             raise ApiSourceInvalid(f"Too many API sources (max {_MAX_SOURCES}).")
@@ -54,7 +70,7 @@ class ApiSourceStore:
             # 一次（FreshRSS 订阅 URL 也用本次明文——订阅后存储值不可再
             # 重建，取消订阅按 uuid 路径段匹配，见 routers/api_sources）。
             await self._db.execute(
-                "INSERT INTO api_sources (uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, pagination, secret_is_hash) VALUES (?, ?, ?, ?, ?, 1, ?, NULL, NULL, NULL, NULL, ?, ?, 1)",
+                "INSERT INTO api_sources (uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, pagination, secret_is_hash, max_runs_per_hour, respect_retry_after) VALUES (?, ?, ?, ?, ?, 1, ?, NULL, NULL, NULL, NULL, ?, ?, 1, ?, 1)",
                 (
                     source_uuid,
                     clean_name,
@@ -64,6 +80,7 @@ class ApiSourceStore:
                     hash_token(secret),
                     now,
                     clean_pagination,
+                    clean_budget,
                 ),
             )
         except sqlite3.IntegrityError as exc:
@@ -75,12 +92,12 @@ class ApiSourceStore:
 
     async def get(self, source_uuid: str) -> ApiSourceRecord | None:
         await self._db.migrate()
-        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift FROM api_sources WHERE uuid = ?", (source_uuid,))
+        row = await self._db.fetch_one("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run FROM api_sources WHERE uuid = ?", (source_uuid,))
         return _record_from_row(row) if row is not None else None
 
     async def list_sources(self) -> list[ApiSourceRecord]:
         await self._db.migrate()
-        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift FROM api_sources ORDER BY created_at ASC, uuid ASC")
+        rows = await self._db.fetch_all("SELECT uuid, name, endpoint, items_expr, field_map, enabled, secret, etag, last_status, last_success_at, last_error, created_at, atom_body, feed_updated, pagination, confirmed_schema, schema_drift, max_runs_per_hour, respect_retry_after, next_allowed_run FROM api_sources ORDER BY created_at ASC, uuid ASC")
         return [_record_from_row(row) for row in rows if row is not None]
 
     async def update(
@@ -93,6 +110,7 @@ class ApiSourceStore:
         field_map: dict[str, str] | None = None,
         enabled: bool | None = None,
         pagination: dict[str, Any] | None = None,
+        max_runs_per_hour: int | None = None,
     ) -> ApiSourceRecord | None:
         current = await self.get(source_uuid)
         if current is None:
@@ -117,6 +135,11 @@ class ApiSourceStore:
             if pagination is not None
             else current.pagination
         )
+        new_budget = (
+            validate_max_runs_per_hour(max_runs_per_hour)
+            if max_runs_per_hour is not None
+            else current.max_runs_per_hour
+        )
         # Config change invalidates cache identity and prior status —
         # including the last-known-good body and its content timestamp
         # (the old feed no longer describes the new configuration).
@@ -124,7 +147,7 @@ class ApiSourceStore:
         # baseline (re-snapshot via POST .../confirm-schema; drift stays
         # silent — honest — until then).
         await self._db.execute(
-            "UPDATE api_sources SET name = ?, endpoint = ?, items_expr = ?, field_map = ?, enabled = ?, pagination = ?, etag = NULL, atom_body = NULL, feed_updated = NULL, last_status = NULL, last_error = NULL, confirmed_schema = NULL, schema_drift = NULL WHERE uuid = ?",
+            "UPDATE api_sources SET name = ?, endpoint = ?, items_expr = ?, field_map = ?, enabled = ?, pagination = ?, max_runs_per_hour = ?, etag = NULL, atom_body = NULL, feed_updated = NULL, last_status = NULL, last_error = NULL, confirmed_schema = NULL, schema_drift = NULL WHERE uuid = ?",
             (
                 new_name,
                 new_endpoint,
@@ -132,6 +155,7 @@ class ApiSourceStore:
                 new_fields,
                 new_enabled,
                 new_pagination,
+                new_budget,
                 source_uuid,
             ),
         )
@@ -185,6 +209,88 @@ class ApiSourceStore:
         row = await self._db.fetch_one("SELECT COUNT(*) AS n FROM api_sources")
         return int(row["n"]) if row is not None else 0
 
+    # -- N129: per-source fetch budget (persisted token bucket) ------------
+
+    async def record_run(self, source_uuid: str) -> None:
+        """One upstream run consumed a bucket token; prune the trailing
+        hour in the same statement batch so the table stays bounded."""
+        now = utc_now()
+        cutoff = _iso_seconds_ago(_RUN_WINDOW_SECONDS)
+        await self._db.execute(
+            "INSERT INTO api_source_runs (source_uuid, ran_at) VALUES (?, ?)",
+            (source_uuid, now),
+        )
+        await self._db.execute(
+            "DELETE FROM api_source_runs WHERE ran_at < ?", (cutoff,)
+        )
+
+    async def exhausted_until(
+        self, source_uuid: str, max_runs_per_hour: int
+    ) -> str | None:
+        """RFC3339 time when the next run is allowed, or None now.
+
+        The bucket counts runs recorded in the trailing hour; when the
+        source's budget is spent the next allowed moment is one hour
+        after the OLDEST run still in the window (tokens refill in
+        order). An upstream Retry-After verdict (``next_allowed_run``
+        column) can push that moment later — never earlier."""
+        cutoff = _iso_seconds_ago(_RUN_WINDOW_SECONDS)
+        rows = await self._db.fetch_all(
+            "SELECT ran_at FROM api_source_runs WHERE source_uuid = ? AND ran_at >= ? ORDER BY ran_at ASC",
+            (source_uuid, cutoff),
+        )
+        if len(rows) < max_runs_per_hour:
+            return None
+        oldest = str(rows[0]["ran_at"])
+        next_refill = _iso_plus_seconds(oldest, _RUN_WINDOW_SECONDS)
+        record = await self.get(source_uuid)
+        blocked_until = record.next_allowed_run if record else None
+        if blocked_until is not None and blocked_until > next_refill:
+            return blocked_until
+        return next_refill
+
+    async def set_next_allowed_run(
+        self, source_uuid: str, when: str | None
+    ) -> None:
+        await self._db.execute(
+            "UPDATE api_sources SET next_allowed_run = ? WHERE uuid = ?",
+            (when, source_uuid),
+        )
+
+    # -- N130: credential rotation (atomic hash swap) -----------------------
+
+    async def swap_secret_hash(
+        self, source_uuid: str, new_credential: str
+    ) -> str | None:
+        """Replace the stored secret hash with the hash of the caller's
+        new credential; returns the OLD stored hash (for the fallback
+        window) or None when the source is unknown. Callers must run the
+        credential test BEFORE calling this — the swap itself is a single
+        statement, so the previous credential never coexists in the row."""
+        record = await self.get(source_uuid)
+        if record is None:
+            return None
+        old_hash = record.secret
+        await self._db.execute(
+            "UPDATE api_sources SET secret = ?, secret_is_hash = 1 WHERE uuid = ?",
+            (hash_token(new_credential), source_uuid),
+        )
+        return old_hash
+
+
+def _iso_seconds_ago(seconds: int) -> str:
+    from datetime import datetime, timedelta
+
+    moment = datetime.now(UTC) - timedelta(seconds=seconds)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso_plus_seconds(iso_timestamp: str, seconds: int) -> str:
+    from datetime import datetime, timedelta
+
+    base = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    return (base + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def _new_uuid() -> str:
     import uuid as _uuid
@@ -220,6 +326,9 @@ def _record_from_row(row: sqlite3.Row) -> ApiSourceRecord:
         pagination=str(row["pagination"]) if row["pagination"] else '{"mode":"none"}',
         confirmed_schema=row["confirmed_schema"],
         schema_drift=row["schema_drift"],
+        max_runs_per_hour=int(row["max_runs_per_hour"] or 4),
+        respect_retry_after=bool(row["respect_retry_after"]),
+        next_allowed_run=row["next_allowed_run"],
     )
 
 

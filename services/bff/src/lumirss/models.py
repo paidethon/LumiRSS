@@ -1789,6 +1789,7 @@ class ApiSourceCreate(BaseModel):
     fieldMap: dict[str, str]
     pagination: dict[str, object] | None = None
     subscribe: bool = True
+    maxRunsPerHour: int = 4
 
 
 class ApiSourceUpdate(BaseModel):
@@ -1802,6 +1803,7 @@ class ApiSourceUpdate(BaseModel):
     fieldMap: dict[str, str] | None = None
     pagination: dict[str, object] | None = None
     enabled: bool | None = None
+    maxRunsPerHour: int | None = None
 
 
 class ApiSource(BaseModel):
@@ -1824,6 +1826,10 @@ class ApiSource(BaseModel):
     pagination: dict[str, object] | None = None
     confirmedSchema: bool = False
     schemaDrift: dict[str, list[str]] | None = None
+    # N129: per-source fetch budget. respectRetryAfter is FIXED true.
+    maxRunsPerHour: int = 4
+    respectRetryAfter: bool = True
+    nextAllowedRun: str | None = None
 
 
 class ApiSourceListResponse(BaseModel):
@@ -1858,6 +1864,44 @@ class ApiSourcePreviewResult(BaseModel):
     totalAvailable: int
     atomPreview: list[dict[str, object]] = []
     paginationDryRun: ApiSourcePaginationDryRun | None = None
+    # N128: honest marker — true only for the offline pasted-sample path.
+    sampleMode: bool = False
+
+
+class ApiSourceSamplePreviewRequest(BaseModel):
+    """POST /api/v1/api-sources/preview-sample (N128).
+
+    Runs the EXACT same mapping + Atom-preview pipeline on a PASTED
+    sample payload: no network, no fetch, no headers — nothing about the
+    request is stored. ``samplePayload`` is the raw JSON document the
+    upstream would return (object or array of objects)."""
+
+    model_config = {"extra": "forbid"}
+
+    samplePayload: object
+    itemsExpr: str
+    fieldMap: dict[str, str]
+
+
+class ApiSourceCredentialResult(BaseModel):
+    """N130 masked credential probe / rotation result.
+
+    Deliberately minimal: no credential material, no request or response
+    header echo — only the honest verdict, a coarse status class and the
+    probe latency."""
+
+    ok: bool
+    statusClass: str
+    latencyMs: int
+    note: str | None = None
+
+
+class ApiSourceCredentialTestRequest(BaseModel):
+    """Body for .../credentials/test and .../credentials/rotate (N130)."""
+
+    model_config = {"extra": "forbid"}
+
+    newCredential: str
 
 
 class ApiSourceConfirmSchemaResult(BaseModel):
@@ -1865,6 +1909,155 @@ class ApiSourceConfirmSchemaResult(BaseModel):
 
     confirmed: bool
     sampledItems: int
+
+
+# ---------------------------------------------------------------------------
+# N011 来源组合包 / N016 暂存待评估 / N017 来源清理建议
+# ---------------------------------------------------------------------------
+
+_BUNDLE_TYPES = ("rss", "api", "mail", "inbox")
+
+
+class BundleExportRequest(BaseModel):
+    """POST /api/v1/sources/bundle/export."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrls: list[str]
+
+
+class BundleSourceEntry(BaseModel):
+    """One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE
+    (snake_case per the bundle format: {feed_url, title, category, type,
+    notes?}). Deliberately NOT the camelCase API DTO style — this model
+    describes the on-disk document."""
+
+    feed_url: str
+    title: str = ""
+    category: str | None = None
+    type: str = "rss"
+    notes: str | None = None
+
+
+class BundleDocument(BaseModel):
+    """The portable bundle document itself."""
+
+    version: int = 1
+    generatedAt: str | None = None
+    sources: list[BundleSourceEntry] = []
+    missing: list[str] = []
+
+
+class BundleImportItem(BaseModel):
+    """Per-item import/preview verdict."""
+
+    feedUrl: str
+    title: str = ""
+    status: str  # new | exists | needs_credentials | invalid
+    type: str = "rss"
+    categoryAction: str = "none"  # none | reuse | create
+    note: str | None = None
+
+
+class BundleImportResult(BaseModel):
+    """Preview (apply=false) and committed import (apply=true) share it."""
+
+    items: list[BundleImportItem] = []
+    counts: dict[str, int] = {}
+    applied: bool = False
+    imported: BundleDocument | None = None
+
+
+class BundleImportRequest(BaseModel):
+    """POST /api/v1/sources/bundle/import body (the bundle document)."""
+
+    model_config = {"extra": "forbid"}
+
+    version: int = 1
+    sources: list[BundleSourceEntry]
+
+
+class StagedSourceSampleEntry(BaseModel):
+    """One bounded preview snapshot entry (N016; metadata only)."""
+
+    title: str
+    link: str | None = None
+    published: str | None = None
+    summary: str | None = None
+
+
+class StagedSource(BaseModel):
+    """One staging-pool row (never a subscription, never counts unread)."""
+
+    id: str
+    url: str
+    title: str
+    addedAt: str
+    note: str | None = None
+    sourceType: str = "rss"
+    origin: str = "staging"
+    enabled: bool = True
+    subscribed: bool = False
+    sample: list[StagedSourceSampleEntry] = []
+
+
+class StagedSourceListResponse(BaseModel):
+    items: list[StagedSource] = []
+
+
+class StagedSourceCreateRequest(BaseModel):
+    """POST /api/v1/sources/staging."""
+
+    model_config = {"extra": "forbid"}
+
+    url: str
+    note: str | None = None
+
+
+class StagedSourceSubscribeResult(BaseModel):
+    """Idempotent subscribe outcome (existing sub → status=exists)."""
+
+    status: str  # subscribed | exists
+    feedUrl: str
+
+
+class CleanupSuggestion(BaseModel):
+    """N017: one long-unopened, still-yielding source."""
+
+    feedUrl: str
+    title: str
+    lastReadAt: str | None = None
+    weeklyYield: float
+    suggestion: str  # demote | mute
+    basis: str | None = None
+
+
+class CleanupSuggestionsResponse(BaseModel):
+    items: list[CleanupSuggestion] = []
+    generatedAt: str
+    basis: str
+
+
+class CleanupApplyRequest(BaseModel):
+    """POST /api/v1/sources/cleanup-suggestions/apply — ONLY the
+    explicitly selected feeds are touched; nothing auto-runs."""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrls: list[str]
+    action: str  # mute | demote_category
+    targetCategoryLabel: str | None = None
+
+
+class CleanupApplyItem(BaseModel):
+    feedUrl: str
+    ok: bool
+    error: str | None = None
+
+
+class CleanupApplyResult(BaseModel):
+    items: list[CleanupApplyItem] = []
+    applied: int = 0
 
 
 # ---------------------------------------------------------------------------

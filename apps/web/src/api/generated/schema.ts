@@ -698,6 +698,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/api-sources/preview-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Sample Source
+         * @description N128 离线样例预览：the SAME mapping + Atom-preview pipeline as the
+         *     live preview, run on the PASTED sample.
+         *
+         *     Zero network (the endpoint is never dialed), zero storage (nothing
+         *     about the request — payload, expressions, and there are no auth
+         *     headers in play at all — is written anywhere), and no header echo by
+         *     construction (the response model has no such field). ``sampleMode``
+         *     marks the response honestly as offline. A sample that maps to ZERO
+         *     items (missing id/title fields, wrong items expression) is surfaced
+         *     as a stable 422 — missing data is never fabricated.
+         */
+        post: operations["preview_sample_source_api_v1_api_sources_preview_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-sources/{source_uuid}": {
         parameters: {
             query?: never;
@@ -743,6 +772,60 @@ export interface paths {
          *     drift warnings clear with it. Nothing else changes.
          */
         post: operations["confirm_schema_api_v1_api_sources__source_uuid__confirm_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Api Source Credential
+         * @description N130 测试并轮换（API 来源）：test first, then one-statement swap.
+         *
+         *     The probe (shape + endpoint reachability, read-only) runs INSIDE the
+         *     same request boundary before any write: a failure raises the stable
+         *     422 ``credential_test_failed`` and the current credential is
+         *     UNTOUCHED. On success the stored hash is swapped atomically, the new
+         *     token is indexed for the machine channel, and the OLD hash is parked
+         *     in the user's SecretsStore for a 10-minute fallback window (reads
+         *     prefer the new credential; a fallback hit is flagged on the source)
+         *     until the lazy sweep prunes it. The response is masked — no secret,
+         *     no atom path echo.
+         */
+        post: operations["rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Api Source Credential
+         * @description N130 轮换预演（API 来源）：shape check + read-only endpoint probe.
+         *
+         *     Nothing is swapped; the current credential stays live no matter the
+         *     outcome. The response is masked ({ok, statusClass, latencyMs}) — the
+         *     credential and every header stay unechoed.
+         */
+        post: operations["test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3093,6 +3176,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Inbox Source Credential
+         * @description N130 测试并轮换（收件连接器）：test first, then one-statement swap.
+         *
+         *     A failed probe raises the stable 422 ``credential_test_failed`` and
+         *     the current bearer secret is UNTOUCHED. On success the stored hash
+         *     is swapped atomically, the new token is indexed for the machine
+         *     channel and the OLD hash is parked in the user's SecretsStore for a
+         *     10-minute fallback window: ingests verifying against the new secret
+         *     fail over ONCE to the old one and the source is flagged
+         *     (fallback_used) so the operator knows a push script lags behind.
+         *     The response is masked — the new secret is never echoed.
+         */
+        post: operations["rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Inbox Source Credential
+         * @description N130 轮换预演（收件连接器）。
+         *
+         *     Push model: there is no upstream to dial — the "real fetch" shape is
+         *     the ingest POST itself, which a rehearsal must not perform (it would
+         *     create content). The probe therefore covers everything a rehearsal
+         *     CAN cover without side effects: the source exists/answers and the
+         *     proposed credential passes the structural gate. Masked response, no
+         *     echo; nothing is swapped.
+         */
+        post: operations["test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox/sources/{source_uuid}/events": {
         parameters: {
             query?: never;
@@ -3385,31 +3524,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/library/bulk-links": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk Links
-         * @description 批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）
-         *     后创建书签或剪藏。
-         *
-         *     单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed
-         *     必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建
-         *     同一信任边界）；抓取失败按 failed 如实上报。
-         */
-        post: operations["bulk_links_api_v1_library_bulk_links_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/library/clips": {
         parameters: {
             query?: never;
@@ -3458,29 +3572,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/library/clips/preview-cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Clip Cleanup
-         * @description N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。
-         *
-         *     确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；
-         *     预览本身绝不改动任何存储内容（原始版本在确认前不变）。
-         */
-        post: operations["preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/library/clips/{item_uuid}": {
         parameters: {
             query?: never;
@@ -3499,50 +3590,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/library/clips/{item_uuid}/candidate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Clip Candidate
-         * @description N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。
-         */
-        get: operations["get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get"];
-        put?: never;
-        post?: never;
-        /**
-         * Discard Clip Candidate
-         * @description N122：丢弃候选版本（保留当前展示版本不动）。
-         */
-        delete: operations["discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/library/clips/{item_uuid}/candidate/apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Apply Clip Candidate
-         * @description N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。
-         */
-        post: operations["apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/library/clips/{item_uuid}/full": {
         parameters: {
             query?: never;
@@ -3552,55 +3599,11 @@ export interface paths {
         };
         /**
          * Get Clip Full
-         * @description F089 详情 + N122：content（当前展示）+ original（原始，不可变）
-         *     + revised + locked + candidate。
+         * @description F089 详情：content（当前展示）+ original（原始，不可变）+ revised。
          */
         get: operations["get_clip_full_api_v1_library_clips__item_uuid__full_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/library/clips/{item_uuid}/lock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Clip Lock
-         * @description N122：显式锁定/解锁（locked 旗标唯一写路径）。
-         */
-        put: operations["set_clip_lock_api_v1_library_clips__item_uuid__lock_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/library/clips/{item_uuid}/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Refresh Clip
-         * @description N122：重新抓取当前剪藏 URL（服务端管线）。
-         *
-         *     未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →
-         *     只存候选，展示版本不动；内容未变 → unchanged。
-         */
-        post: operations["refresh_clip_api_v1_library_clips__item_uuid__refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3631,8 +3634,6 @@ export interface paths {
         /**
          * Save Clip Revision
          * @description 保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。
-         *
-         *     N122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。
          */
         patch: operations["save_clip_revision_api_v1_library_clips__item_uuid__revision_patch"];
         trace?: never;
@@ -4086,30 +4087,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mail/attachments/{attachment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Download Mail Attachment
-         * @description N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。
-         *
-         *     Content-Disposition 恒为 attachment（绝不内联渲染）；响应体大小
-         *     以存储 size 为准并再查上限（防越界写入）。文件名经净化并按
-         *     RFC 5987 编码（非 ASCII 安全）。
-         */
-        get: operations["download_mail_attachment_api_v1_mail_attachments__attachment_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/mail/bridge-lists": {
         parameters: {
             query?: never;
@@ -4219,55 +4196,6 @@ export interface paths {
          *     report — error text carries the failure kind, never credentials.
          */
         post: operations["test_mail_imap_api_v1_mail_imap_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mail/lists/{list_uuid}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Mail Messages
-         * @description N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。
-         *
-         *     每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走
-         *     detail 端点。
-         */
-        get: operations["list_mail_messages_api_v1_mail_lists__list_uuid__messages_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mail Message Detail
-         * @description N125/N126/N127 邮件详情（只读）：
-         *
-         *     - text / html 两个正文形态（mail_bridge ingest 时已双双落库；html
-         *       是净化产物，渲染前客户端仍过 DOMPurify）；
-         *     - blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；
-         *     - attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；
-         *     - identityHints：服务端计算的中性身份提示（或 null）。
-         */
-        get: operations["mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6634,6 +6562,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/bundle/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Source Bundle
+         * @description Credential-free bundle of the requested subscriptions (download).
+         *
+         *     Lumi-generated feeds (api/mail) are sanitized to stable URNs — the
+         *     FreshRSS-side Atom URLs embed per-source secrets that must never
+         *     leave the server. URLs matching no subscription are reported in
+         *     ``missing`` (honest, no fabrication).
+         */
+        post: operations["export_source_bundle_api_v1_sources_bundle_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/bundle/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Source Bundle
+         * @description Import a bundle — dry-run preview BY DEFAULT.
+         *
+         *     ``?apply=true`` commits: RSS rows subscribe once (merge-only, same
+         *     channel as OPML import), types needing credentials land as disabled
+         *     drafts in the staging pool. Existing rows report ``exists`` —
+         *     re-importing the same bundle converges (idempotent). Secrets are
+         *     never copied: a bundle cannot carry them, so nothing can leak.
+         */
+        post: operations["import_source_bundle_api_v1_sources_bundle_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cleanup Suggestions
+         * @description Advisory list: long-unopened sources that still deliver entries.
+         *
+         *     Own-data stats only (read recency projection × projection yield);
+         *     nothing here mutates anything. Unknown read history is reported as
+         *     such — absence of a read timestamp is NOT claimed as "never read".
+         */
+        get: operations["cleanup_suggestions_api_v1_sources_cleanup_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Cleanup Suggestions
+         * @description Apply ONLY the user-confirmed (feedUrl, action) pairs.
+         *
+         *     mute → source_overrides hiddenUntil far future (the existing
+         *     timeline-hide channel — reversible by clearing the override).
+         *     demote_category → the existing move-to-category control path with a
+         *     NEW named category (create-on-move, same as OPML import). Everything
+         *     else is rejected; unknown feeds are reported per item. There is no
+         *     auto-unsubscribe and no batch-everything mode.
+         */
+        post: operations["apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -6682,6 +6712,72 @@ export interface paths {
         get: operations["replacement_preview_api_v1_sources_replacement_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staged Sources
+         * @description The staging pool (staging rows first-class; bundle drafts included
+         *     and honestly flagged with origin/enabled).
+         */
+        get: operations["list_staged_sources_api_v1_sources_staging_get"];
+        put?: never;
+        /**
+         * Stage Source
+         * @description Park a URL for later evaluation: one bounded preview fetch, then a
+         *     staging row. NOT subscribed, NOT counted in unread — nothing in the
+         *     RSS domain changes at all.
+         */
+        post: operations["stage_source_api_v1_sources_staging_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Staged Source */
+        delete: operations["discard_staged_source_api_v1_sources_staging__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscribe Staged Source
+         * @description Promote a staged row through the NORMAL subscribe path — exactly
+         *     once. An existing subscription converges to ``exists`` (idempotent
+         *     retries); either way the staging row is removed after the outcome.
+         */
+        post: operations["subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7529,134 +7625,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspace_id}/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Workspace Cleanup Apply
-         * @description N120：应用选中的清理类目（快照先行，可撤销）。
-         *
-         *     只删 Lumi 自有元数据行（stale rss 成员行 / 空组名 / 悬空分节引用）；
-         *     绝不触碰 FreshRSS 数据；library: 域引用受保护（即使解析不到）。
-         */
-        post: operations["workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/cleanup-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Workspace Cleanup Logs
-         * @description 清理日志（新→旧，上限 5；供撤销入口选择）。
-         */
-        get: operations["workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/cleanup-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Workspace Cleanup Preview
-         * @description N120：只读清理预演——每项带原因，绝不静默；只报告不删除。
-         */
-        get: operations["workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/cleanup/undo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Workspace Cleanup Undo
-         * @description N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。
-         */
-        post: operations["workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/compile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Compile Workspace
-         * @description N114：按大纲汇编草稿（纯预览，绝不落库）。
-         *
-         *     - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
-         *     - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
-         *     - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
-         *       绝不冒充内容。
-         */
-        post: operations["compile_workspace_api_v1_workspaces__workspace_id__compile_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/compile/markdown": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Compile Workspace Markdown
-         * @description N114：汇编草稿的 Markdown 文本版（同样纯预览不落库）。
-         */
-        post: operations["compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspace_id}/contents": {
         parameters: {
             query?: never;
@@ -7915,128 +7883,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspace_id}/sections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Workspace Sections
-         * @description N113：分节大纲（sort_index 序）。成员引用以 item_ref 引用而非复制；
-         *     同一条目可出现在多个分节；引用已不是工作区成员 → 行保留并诚实标记
-         *     ``unresolved``（绝不静默隐藏，N113 契约）。
-         */
-        get: operations["list_workspace_sections_api_v1_workspaces__workspace_id__sections_get"];
-        put?: never;
-        /** Create Workspace Section */
-        post: operations["create_workspace_section_api_v1_workspaces__workspace_id__sections_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/sections/order": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Reorder Workspace Sections
-         * @description N113：分节顺序持久化（PUT 全量 1..N；真实变化 bump revision）。
-         */
-        put: operations["reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/sections/{section_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Workspace Section */
-        delete: operations["delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete"];
-        options?: never;
-        head?: never;
-        /** Rename Workspace Section */
-        patch: operations["rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add Workspace Section Item
-         * @description 把一个工作区成员引用进分节（幂等；同一 ref 可进入多个分节——
-         *     引用而非复制，ADR 0004）。非成员 → 404。
-         */
-        post: operations["add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/order": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Reorder Workspace Section Items
-         * @description N113：节内条目顺序持久化（PUT 全量 1..N）。
-         */
-        put: operations["reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/{item_ref}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove Workspace Section Item
-         * @description 从分节移除一个引用（只拆引用，绝不删除工作区成员本身）。
-         */
-        delete: operations["remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspace_id}/snapshots": {
         parameters: {
             query?: never;
@@ -8193,6 +8039,14 @@ export interface paths {
          *     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
          *     keeps its cached copy functional) and only a source with no last-good
          *     body falls back to the 502 stub.
+         *
+         *     N129 限额友好：every upstream run consults a persisted per-source
+         *     token bucket (api_source_runs, trailing hour, pruned on consult);
+         *     over budget → 429 ``budget_exhausted`` + Retry-After (FreshRSS
+         *     backs off — that is the point). An upstream 429 with Retry-After
+         *     stores ``next_allowed_run`` and serves the last-good body. Lumi
+         *     never works around a rate limit (no alternate credentials, no
+         *     retries that dodge the upstream's verdict).
          */
         get: operations["serve_atom_feeds__source_uuid___secret__atom_get"];
         put?: never;
@@ -8634,12 +8488,24 @@ export interface components {
             lastStatus?: string | null;
             /** Lastsuccessat */
             lastSuccessAt?: string | null;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
+            /** Nextallowedrun */
+            nextAllowedRun?: string | null;
             /** Pagination */
             pagination?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Respectretryafter
+             * @default true
+             */
+            respectRetryAfter: boolean;
             /** Schemadrift */
             schemaDrift?: {
                 [key: string]: string[];
@@ -8674,6 +8540,11 @@ export interface components {
             };
             /** Itemsexpr */
             itemsExpr: string;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
             /** Pagination */
@@ -8685,6 +8556,32 @@ export interface components {
              * @default true
              */
             subscribe: boolean;
+        };
+        /**
+         * ApiSourceCredentialResult
+         * @description N130 masked credential probe / rotation result.
+         *
+         *     Deliberately minimal: no credential material, no request or response
+         *     header echo — only the honest verdict, a coarse status class and the
+         *     probe latency.
+         */
+        ApiSourceCredentialResult: {
+            /** Latencyms */
+            latencyMs: number;
+            /** Note */
+            note?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Statusclass */
+            statusClass: string;
+        };
+        /**
+         * ApiSourceCredentialTestRequest
+         * @description Body for .../credentials/test and .../credentials/rotate (N130).
+         */
+        ApiSourceCredentialTestRequest: {
+            /** Newcredential */
+            newCredential: string;
         };
         /**
          * ApiSourceListResponse
@@ -8746,8 +8643,32 @@ export interface components {
                 [key: string]: unknown;
             }[];
             paginationDryRun?: components["schemas"]["ApiSourcePaginationDryRun"] | null;
+            /**
+             * Samplemode
+             * @default false
+             */
+            sampleMode: boolean;
             /** Totalavailable */
             totalAvailable: number;
+        };
+        /**
+         * ApiSourceSamplePreviewRequest
+         * @description POST /api/v1/api-sources/preview-sample (N128).
+         *
+         *     Runs the EXACT same mapping + Atom-preview pipeline on a PASTED
+         *     sample payload: no network, no fetch, no headers — nothing about the
+         *     request is stored. ``samplePayload`` is the raw JSON document the
+         *     upstream would return (object or array of objects).
+         */
+        ApiSourceSamplePreviewRequest: {
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+            /** Samplepayload */
+            samplePayload: unknown;
         };
         /**
          * ApiSourceUpdate
@@ -8764,6 +8685,8 @@ export interface components {
             } | null;
             /** Itemsexpr */
             itemsExpr?: string | null;
+            /** Maxrunsperhour */
+            maxRunsPerHour?: number | null;
             /** Name */
             name?: string | null;
             /** Pagination */
@@ -9562,53 +9485,124 @@ export interface components {
             title?: string | null;
         };
         /**
-         * BulkLinkResultItem
-         * @description 逐条结果：created | duplicate | failed（failed 必带 reason）。
+         * BundleDocument
+         * @description The portable bundle document itself.
          */
-        BulkLinkResultItem: {
-            /** Reason */
-            reason?: string | null;
-            /** Ref */
-            ref?: string | null;
+        BundleDocument: {
+            /** Generatedat */
+            generatedAt?: string | null;
             /**
-             * Status
-             * @enum {string}
+             * Missing
+             * @default []
              */
-            status: "created" | "duplicate" | "failed";
-            /** Url */
-            url: string;
+            missing: string[];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
         };
         /**
-         * BulkLinksRequest
-         * @description POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。
+         * BundleExportRequest
+         * @description POST /api/v1/sources/bundle/export.
          */
-        BulkLinksRequest: {
-            /**
-             * Target
-             * @enum {string}
-             */
-            target: "bookmark" | "clip";
-            /** Urls */
-            urls: string[];
+        BundleExportRequest: {
+            /** Feedurls */
+            feedUrls: string[];
         };
         /**
-         * BulkLinksResponse
-         * @description Envelope for POST /api/v1/library/bulk-links。
+         * BundleImportItem
+         * @description Per-item import/preview verdict.
          */
-        BulkLinksResponse: {
-            /** Created */
-            created: number;
-            /** Duplicate */
-            duplicate: number;
-            /** Failed */
-            failed: number;
-            /** Items */
-            items: components["schemas"]["BulkLinkResultItem"][];
+        BundleImportItem: {
             /**
-             * Target
-             * @enum {string}
+             * Categoryaction
+             * @default none
              */
-            target: "bookmark" | "clip";
+            categoryAction: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
+        };
+        /**
+         * BundleImportRequest
+         * @description POST /api/v1/sources/bundle/import body (the bundle document).
+         */
+        BundleImportRequest: {
+            /** Sources */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * BundleImportResult
+         * @description Preview (apply=false) and committed import (apply=true) share it.
+         */
+        BundleImportResult: {
+            /**
+             * Applied
+             * @default false
+             */
+            applied: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            imported?: components["schemas"]["BundleDocument"] | null;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["BundleImportItem"][];
+        };
+        /**
+         * BundleSourceEntry
+         * @description One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE
+         *     (snake_case per the bundle format: {feed_url, title, category, type,
+         *     notes?}). Deliberately NOT the camelCase API DTO style — this model
+         *     describes the on-disk document.
+         */
+        BundleSourceEntry: {
+            /** Category */
+            category?: string | null;
+            /** Feed Url */
+            feed_url: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
         };
         /** CardCandidate */
         CardCandidate: {
@@ -9692,6 +9686,71 @@ export interface components {
         CategoryPatch: {
             /** Label */
             label: string;
+        };
+        /** CleanupApplyItem */
+        CleanupApplyItem: {
+            /** Error */
+            error?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /**
+         * CleanupApplyRequest
+         * @description POST /api/v1/sources/cleanup-suggestions/apply — ONLY the
+         *     explicitly selected feeds are touched; nothing auto-runs.
+         */
+        CleanupApplyRequest: {
+            /** Action */
+            action: string;
+            /** Feedurls */
+            feedUrls: string[];
+            /** Targetcategorylabel */
+            targetCategoryLabel?: string | null;
+        };
+        /** CleanupApplyResult */
+        CleanupApplyResult: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupApplyItem"][];
+        };
+        /**
+         * CleanupSuggestion
+         * @description N017: one long-unopened, still-yielding source.
+         */
+        CleanupSuggestion: {
+            /** Basis */
+            basis?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Lastreadat */
+            lastReadAt?: string | null;
+            /** Suggestion */
+            suggestion: string;
+            /** Title */
+            title: string;
+            /** Weeklyyield */
+            weeklyYield: number;
+        };
+        /** CleanupSuggestionsResponse */
+        CleanupSuggestionsResponse: {
+            /** Basis */
+            basis: string;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupSuggestion"][];
         };
         /**
          * Clip
@@ -9924,78 +9983,6 @@ export interface components {
              * @default []
              */
             uncertainties: string[];
-        };
-        /** CompileExcluded */
-        CompileExcluded: {
-            /** Itemref */
-            itemRef: string;
-            /** Reason */
-            reason: string;
-        };
-        /** CompileItem */
-        CompileItem: {
-            /** Citation */
-            citation: string;
-            /**
-             * Excerpt
-             * @default
-             */
-            excerpt: string;
-            /** Itemref */
-            itemRef: string;
-            /** Note */
-            note?: string | null;
-            /** Title */
-            title: string;
-        };
-        /**
-         * CompileRequest
-         * @description N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。
-         */
-        CompileRequest: {
-            /** Sectionids */
-            sectionIds?: string[] | null;
-        };
-        /** CompileResponse */
-        CompileResponse: {
-            /**
-             * Excluded
-             * @default []
-             */
-            excluded: components["schemas"]["CompileExcluded"][];
-            /**
-             * Excludedmissing
-             * @default 0
-             */
-            excludedMissing: number;
-            /** Generatedat */
-            generatedAt: string;
-            /**
-             * Includedcount
-             * @default 0
-             */
-            includedCount: number;
-            /**
-             * Sections
-             * @default []
-             */
-            sections: components["schemas"]["CompileSection"][];
-            /** Workspaceid */
-            workspaceId: string;
-            /** Workspacename */
-            workspaceName: string;
-        };
-        /** CompileSection */
-        CompileSection: {
-            /**
-             * Items
-             * @default []
-             */
-            items: components["schemas"]["CompileItem"][];
-            /** Sectionid */
-            sectionId?: string | null;
-            /** Title */
-            title: string;
         };
         /**
          * ComponentError
@@ -14747,6 +14734,89 @@ export interface components {
             sources: components["schemas"]["SourceRegistryEntry"][];
         };
         /**
+         * StagedSource
+         * @description One staging-pool row (never a subscription, never counts unread).
+         */
+        StagedSource: {
+            /** Addedat */
+            addedAt: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Origin
+             * @default staging
+             */
+            origin: string;
+            /**
+             * Sample
+             * @default []
+             */
+            sample: components["schemas"]["StagedSourceSampleEntry"][];
+            /**
+             * Sourcetype
+             * @default rss
+             */
+            sourceType: string;
+            /**
+             * Subscribed
+             * @default false
+             */
+            subscribed: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * StagedSourceCreateRequest
+         * @description POST /api/v1/sources/staging.
+         */
+        StagedSourceCreateRequest: {
+            /** Note */
+            note?: string | null;
+            /** Url */
+            url: string;
+        };
+        /** StagedSourceListResponse */
+        StagedSourceListResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["StagedSource"][];
+        };
+        /**
+         * StagedSourceSampleEntry
+         * @description One bounded preview snapshot entry (N016; metadata only).
+         */
+        StagedSourceSampleEntry: {
+            /** Link */
+            link?: string | null;
+            /** Published */
+            published?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * StagedSourceSubscribeResult
+         * @description Idempotent subscribe outcome (existing sub → status=exists).
+         */
+        StagedSourceSubscribeResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Status */
+            status: string;
+        };
+        /**
          * StaleSourceItem
          * @description F001：一个超期来源（basis 诚实标注判定依据，绝不把发布时间
          *     冒充抓取成功；无条目投影的来源 basis=unknown 且不判超期）。
@@ -15493,85 +15563,6 @@ export interface components {
             /** Workspaceid */
             workspaceId: string;
         };
-        /** WorkspaceCleanupApplyRequest */
-        WorkspaceCleanupApplyRequest: {
-            /** Categories */
-            categories: string[];
-        };
-        /** WorkspaceCleanupApplyResult */
-        WorkspaceCleanupApplyResult: {
-            /** Logid */
-            logId: string;
-            /**
-             * Removed
-             * @default {}
-             */
-            removed: {
-                [key: string]: unknown;
-            };
-        };
-        /** WorkspaceCleanupCategory */
-        WorkspaceCleanupCategory: {
-            /** Category */
-            category: string;
-            /**
-             * Items
-             * @default []
-             */
-            items: {
-                [key: string]: unknown;
-            }[];
-        };
-        /** WorkspaceCleanupLogList */
-        WorkspaceCleanupLogList: {
-            /**
-             * Items
-             * @default []
-             */
-            items: {
-                [key: string]: unknown;
-            }[];
-        };
-        /** WorkspaceCleanupPreviewResponse */
-        WorkspaceCleanupPreviewResponse: {
-            /**
-             * Actionable
-             * @default []
-             */
-            actionable: string[];
-            /**
-             * Categories
-             * @default []
-             */
-            categories: components["schemas"]["WorkspaceCleanupCategory"][];
-            /**
-             * Reportonly
-             * @default []
-             */
-            reportOnly: string[];
-            /** Workspaceid */
-            workspaceId: string;
-        };
-        /** WorkspaceCleanupUndoRequest */
-        WorkspaceCleanupUndoRequest: {
-            /** Logid */
-            logId?: string | null;
-        };
-        /** WorkspaceCleanupUndoResult */
-        WorkspaceCleanupUndoResult: {
-            /** Logid */
-            logId: string;
-            /**
-             * Restoredrefs
-             * @default 0
-             */
-            restoredRefs: number;
-            /**
-             * Restoredsectionrefs
-             * @default 0
-             */
-            restoredSectionRefs: number;
-        };
         /**
          * WorkspaceCreate
          * @description POST /api/v1/workspaces.
@@ -15596,21 +15587,10 @@ export interface components {
             skippedExampleRefs: string[];
             workspace: components["schemas"]["Workspace"];
         };
-        /**
-         * WorkspaceGoalPut
-         * @description F086 目标写入 + N111 扩展。
-         *
-         *     goalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不
-         *     无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用
-         *     ``model_fields_set`` 区分「未携带」与「显式 null」。
-         */
+        /** WorkspaceGoalPut */
         WorkspaceGoalPut: {
-            /** Conditions */
-            conditions?: string[] | null;
             /** Deadline */
             deadline?: string | null;
-            /** Goaltext */
-            goalText?: string | null;
             /** Targetcount */
             targetCount: number;
         };
@@ -15783,74 +15763,6 @@ export interface components {
          */
         WorkspaceResumeResponse: {
             pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
-            /** Workspaceid */
-            workspaceId: string;
-        };
-        /** WorkspaceSectionCreate */
-        WorkspaceSectionCreate: {
-            /** Title */
-            title: string;
-        };
-        /**
-         * WorkspaceSectionItem
-         * @description 分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。
-         */
-        WorkspaceSectionItem: {
-            /** Addedat */
-            addedAt: string;
-            /** Itemref */
-            itemRef: string;
-            /** Position */
-            position: number;
-            /**
-             * Unresolved
-             * @default false
-             */
-            unresolved: boolean;
-        };
-        /** WorkspaceSectionItemAddRequest */
-        WorkspaceSectionItemAddRequest: {
-            /** Itemref */
-            itemRef: string;
-        };
-        /** WorkspaceSectionItemsOrderPut */
-        WorkspaceSectionItemsOrderPut: {
-            /** Itemrefs */
-            itemRefs: string[];
-        };
-        /** WorkspaceSectionList */
-        WorkspaceSectionList: {
-            /**
-             * Items
-             * @default []
-             */
-            items: components["schemas"]["WorkspaceSectionView"][];
-        };
-        /** WorkspaceSectionOrderPut */
-        WorkspaceSectionOrderPut: {
-            /** Sectionids */
-            sectionIds: string[];
-        };
-        /** WorkspaceSectionPatch */
-        WorkspaceSectionPatch: {
-            /** Title */
-            title: string;
-        };
-        /** WorkspaceSectionView */
-        WorkspaceSectionView: {
-            /** Createdat */
-            createdAt: string;
-            /** Id */
-            id: string;
-            /**
-             * Items
-             * @default []
-             */
-            items: components["schemas"]["WorkspaceSectionItem"][];
-            /** Sortindex */
-            sortIndex: number;
-            /** Title */
-            title: string;
             /** Workspaceid */
             workspaceId: string;
         };
@@ -17223,6 +17135,39 @@ export interface operations {
             };
         };
     };
+    preview_sample_source_api_v1_api_sources_preview_sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceSamplePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourcePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_source_api_v1_api_sources__source_uuid__delete: {
         parameters: {
             query?: never;
@@ -17305,6 +17250,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiSourceConfirmSchemaResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
                 };
             };
             /** @description Validation Error */
@@ -21271,6 +21286,76 @@ export interface operations {
             };
         };
     };
+    rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_inbox_events_api_v1_inbox_sources__source_uuid__events_get: {
         parameters: {
             query?: {
@@ -21761,39 +21846,6 @@ export interface operations {
             };
         };
     };
-    bulk_links_api_v1_library_bulk_links_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BulkLinksRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BulkLinksResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_clips_api_v1_library_clips_get: {
         parameters: {
             query?: {
@@ -21892,26 +21944,6 @@ export interface operations {
             };
         };
     };
-    preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     get_clip_api_v1_library_clips__item_uuid__get: {
         parameters: {
             query?: never;
@@ -21972,160 +22004,7 @@ export interface operations {
             };
         };
     };
-    get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_clip_full_api_v1_library_clips__item_uuid__full_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_clip_lock_api_v1_library_clips__item_uuid__lock_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    refresh_clip_api_v1_library_clips__item_uuid__refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -23156,37 +23035,6 @@ export interface operations {
             };
         };
     };
-    download_mail_attachment_api_v1_mail_attachments__attachment_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                attachment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_bridge_lists_api_v1_mail_bridge_lists_get: {
         parameters: {
             query?: never;
@@ -23378,69 +23226,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MailImapTestResult"];
-                };
-            };
-        };
-    };
-    list_mail_messages_api_v1_mail_lists__list_uuid__messages_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                list_uuid: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                list_uuid: string;
-                message_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -27474,6 +27259,139 @@ export interface operations {
             };
         };
     };
+    export_source_bundle_api_v1_sources_bundle_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_source_bundle_api_v1_sources_bundle_import_post: {
+        parameters: {
+            query?: {
+                apply?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_suggestions_api_v1_sources_cleanup_suggestions_get: {
+        parameters: {
+            query?: {
+                minWeeklyYield?: number;
+                staleDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupSuggestionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CleanupApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_source_overrides_api_v1_sources_overrides_get: {
         parameters: {
             query?: never;
@@ -27547,6 +27465,121 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staged_sources_api_v1_sources_staging_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceListResponse"];
+                };
+            };
+        };
+    };
+    stage_source_api_v1_sources_staging_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StagedSourceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_staged_source_api_v1_sources_staging__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceSubscribeResult"];
                 };
             };
             /** @description Validation Error */
@@ -29006,208 +29039,6 @@ export interface operations {
             };
         };
     };
-    workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceCleanupApplyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceCleanupApplyResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceCleanupLogList"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceCleanupPreviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceCleanupUndoRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceCleanupUndoResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    compile_workspace_api_v1_workspaces__workspace_id__compile_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompileRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompileRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     workspace_contents_api_v1_workspaces__workspace_id__contents_get: {
         parameters: {
             query?: {
@@ -29772,276 +29603,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
                 };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_workspace_sections_api_v1_workspaces__workspace_id__sections_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionList"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_workspace_section_api_v1_workspaces__workspace_id__sections_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceSectionCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceSectionOrderPut"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionList"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                section_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                section_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceSectionPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                section_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceSectionItemAddRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionItem"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                section_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceSectionItemsOrderPut"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSectionList"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-                section_id: string;
-                item_ref: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {

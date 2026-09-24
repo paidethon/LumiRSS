@@ -131,6 +131,23 @@ class InboxStore:
         )
         return secret
 
+    async def swap_secret_hash(
+        self, source_uuid: str, new_credential: str
+    ) -> str | None:
+        """N130: replace the stored hash with hash(new_credential);
+        returns the OLD stored hash (for the caller's fallback window)
+        or None when the source is unknown. The swap is a single
+        statement — the two hashes never coexist in the row."""
+        source = await self.get_source(source_uuid)
+        if source is None:
+            return None
+        old_hash = str(source["secret"])
+        await self._db.execute(
+            "UPDATE inbox_sources SET secret = ?, secret_is_hash = 1 WHERE uuid = ?",
+            (hash_token(new_credential), source_uuid),
+        )
+        return old_hash
+
     async def delete_source(self, source_uuid: str) -> list[str] | None:
         """Delete a connector and every item it pushed.
 

@@ -262,6 +262,12 @@ async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request
     search = _get_search_service(request)
     if update.read is not None:
         await search.set_entry_read(entry_ref, update.read)
+        # N017: bump the per-feed read-recency projection (own-data basis
+        # for cleanup suggestions). Best-effort — never blocks the write.
+        if update.read:
+            from lumirss.source_cleanup import record_feed_read
+
+            await record_feed_read(request.app.state.db, entry_ref)
     if update.starred is not None:
         await search.set_entry_starred(entry_ref, update.starred)
     return Response(status_code=204)

@@ -1872,22 +1872,32 @@ import {
   updateObsidianDevice,
   deleteObsidianDevice,
   listApiSources,
+  getCleanupSuggestions,
   listMailBridgeLists,
   listObsidianDevices,
   listObsidianNotes,
+  listStagedSources,
   previewApiSource,
+  previewApiSourceSample,
   previewObsidianExportTemplate,
   requestObsidianExportHandoff,
   rescanObsidian,
+  rotateApiSourceCredential,
   sendDigestNow,
+  stageSource,
+  subscribeStagedSource,
+  discardStagedSource,
+  testApiSourceCredential,
   updateApiSource,
   updateDigestSettings,
   updateObsidianExportTemplate,
   updateObsidianSettings,
+  applyCleanupSuggestions,
 } from './client'
 import type {
   ApiSourceCreateInput,
   ApiSourcePreviewInput,
+  ApiSourceSamplePreviewInput,
   ApiSourceUpdateInput,
   DigestEntryRefInput,
   DigestSettingsUpdate,
@@ -1938,6 +1948,92 @@ export function useDeleteApiSourceMutation() {
 export function useApiSourcePreviewMutation() {
   return useMutation({
     mutationFn: (input: ApiSourcePreviewInput) => previewApiSource(input),
+  })
+}
+
+// ---- N128 用样例预览 / N130 轮换；N011 组合包 / N016 暂存 / N017 清理建议 ----
+
+export function useApiSourceSamplePreviewMutation() {
+  return useMutation({
+    mutationFn: (input: ApiSourceSamplePreviewInput) => previewApiSourceSample(input),
+  })
+}
+
+export function useTestApiSourceCredentialMutation() {
+  return useMutation({
+    mutationFn: (vars: { uuid: string; newCredential: string }) =>
+      testApiSourceCredential(vars.uuid, vars.newCredential),
+  })
+}
+
+export function useRotateApiSourceCredentialMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { uuid: string; newCredential: string }) =>
+      rotateApiSourceCredential(vars.uuid, vars.newCredential),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['api-sources'] })
+    },
+  })
+}
+
+export function useStagedSources() {
+  return useQuery({
+    queryKey: ['sources', 'staging'],
+    queryFn: ({ signal }) => listStagedSources(signal),
+  })
+}
+
+export function useStageSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { url: string; note?: string }) => stageSource(vars.url, vars.note),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+    },
+  })
+}
+
+export function useSubscribeStagedSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => subscribeStagedSource(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
+  })
+}
+
+export function useDiscardStagedSourceMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => discardStagedSource(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'staging'] })
+    },
+  })
+}
+
+export function useCleanupSuggestions() {
+  return useQuery({
+    queryKey: ['sources', 'cleanup-suggestions'],
+    queryFn: ({ signal }) => getCleanupSuggestions(signal),
+  })
+}
+
+export function useApplyCleanupSuggestionsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      feedUrls: string[]
+      action: 'mute' | 'demote_category'
+      targetCategoryLabel?: string
+    }) => applyCleanupSuggestions(input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'cleanup-suggestions'] })
+      await queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
+    },
   })
 }
 

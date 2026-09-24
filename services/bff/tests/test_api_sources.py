@@ -233,9 +233,12 @@ def test_ssrf_fail_closed_on_private_endpoint(client, monkeypatch):
 # -- Recovery P0-05 ----------------------------------------------------------
 
 
-def _create_source(client, monkeypatch, name="GitHub releases", data=None):
+def _create_source(client, monkeypatch, name="GitHub releases", data=None, max_runs_per_hour=60):
     import lumirss.routers.api_sources as routes
 
+    # N129: these tests exercise ETag/Atomic-serving behavior with many
+    # repeated pulls, so they raise the per-source hourly budget (the
+    # budget gate itself is covered by test_n129_api_source_budget).
     monkeypatch.setattr(routes, "fetch_json", _make_fake_fetch(data or JSON_BODY))
     created = client.post(
         "/api/v1/api-sources",
@@ -251,6 +254,7 @@ def _create_source(client, monkeypatch, name="GitHub releases", data=None):
                 "body": "body",
             },
             "subscribe": False,
+            "maxRunsPerHour": max_runs_per_hour,
         },
     )
     assert created.status_code == 201

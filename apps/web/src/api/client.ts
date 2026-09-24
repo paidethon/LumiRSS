@@ -2441,6 +2441,7 @@ export interface ApiSourceCreateInput {
   fieldMap: ApiSourceFieldMapInput
   pagination?: ApiSourcePaginationInput
   subscribe?: boolean
+  maxRunsPerHour?: number
 }
 
 export interface ApiSourcePreviewInput {
@@ -2458,6 +2459,7 @@ export interface ApiSourceUpdateInput {
   fieldMap?: ApiSourceFieldMapInput | null
   pagination?: ApiSourcePaginationInput | null
   enabled?: boolean | null
+  maxRunsPerHour?: number | null
 }
 
 /** F043：重新确认结构基线（重新快照并解除漂移告警）。 */
@@ -2520,6 +2522,222 @@ export async function previewApiSource(
     contentType: 'application/json',
   })
   return (await response.json()) as ApiSourcePreviewResult
+}
+
+// ---- N128 用样例预览 / N129 预算 / N130 轮换；N011/N016/N017 来源生命周期 ----
+
+export interface ApiSourceSamplePreviewInput {
+  samplePayload: unknown
+  itemsExpr: string
+  fieldMap: ApiSourceFieldMapInput
+}
+
+/** N128 离线样例预览：对粘贴样例跑同一条映射 + Atom 预览管线。
+ * 零网络、零存储、无任何请求头；sampleMode=true 诚实标注。 */
+export async function previewApiSourceSample(
+  input: ApiSourceSamplePreviewInput,
+): Promise<ApiSourcePreviewResult> {
+  const response = await rawRequest(`${API_BASE}/api-sources/preview-sample`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as ApiSourcePreviewResult
+}
+
+export interface ApiSourceCredentialResult {
+  ok: boolean
+  statusClass: string
+  latencyMs: number
+  note?: string | null
+}
+
+/** N130 轮换预演（API 来源）：结构校验 + 只读端点探测（5s 上限）。
+ * 响应脱敏：只有 {ok, statusClass, latencyMs}，凭据与请求头绝不回显。 */
+export async function testApiSourceCredential(
+  uuid: string,
+  newCredential: string,
+): Promise<ApiSourceCredentialResult> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}/credentials/test`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newCredential }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ApiSourceCredentialResult
+}
+
+/** N130 测试并轮换（API 来源）：预演失败 → 422 credential_test_failed
+ * 且当前凭据原样；成功 → 原子换哈希 + 旧凭据进入 10 分钟宽限窗。 */
+export async function rotateApiSourceCredential(
+  uuid: string,
+  newCredential: string,
+): Promise<ApiSourceCredentialResult> {
+  const response = await rawRequest(
+    `${API_BASE}/api-sources/${encodeURIComponent(uuid)}/credentials/rotate`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newCredential }),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as ApiSourceCredentialResult
+}
+
+export interface BundleSourceEntry {
+  feed_url: string
+  title?: string
+  category?: string | null
+  type?: string
+  notes?: string | null
+}
+
+export interface BundleDocument {
+  version: number
+  generatedAt?: string | null
+  sources: BundleSourceEntry[]
+  missing?: string[]
+}
+
+export interface BundleImportItem {
+  feedUrl: string
+  title: string
+  status: 'new' | 'exists' | 'needs_credentials' | 'invalid' | 'failed'
+  type: string
+  categoryAction: 'none' | 'reuse' | 'create'
+  note?: string | null
+}
+
+export interface BundleImportResult {
+  items: BundleImportItem[]
+  counts: Record<string, number>
+  applied: boolean
+}
+
+/** N011 组合包导出：凭据无关的 JSON（Lumi 生成源脱敏为 urn）。 */
+export async function exportSourceBundle(feedUrls: string[]): Promise<BundleDocument> {
+  const response = await rawRequest(`${API_BASE}/sources/bundle/export`, {
+    method: 'POST',
+    body: JSON.stringify({ feedUrls }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BundleDocument
+}
+
+/** N011 组合包导入：默认试运行预览；apply=true 才提交。 */
+export async function importSourceBundle(
+  bundle: BundleDocument,
+  apply: boolean,
+): Promise<BundleImportResult> {
+  const response = await rawRequest(
+    `${API_BASE}/sources/bundle/import?apply=${apply ? 'true' : 'false'}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(bundle),
+      contentType: 'application/json',
+    },
+  )
+  return (await response.json()) as BundleImportResult
+}
+
+export interface StagedSourceSampleEntry {
+  title: string
+  link?: string | null
+  published?: string | null
+  summary?: string | null
+}
+
+export interface StagedSource {
+  id: string
+  url: string
+  title: string
+  addedAt: string
+  note?: string | null
+  sourceType: string
+  origin: 'staging' | 'bundle_draft'
+  enabled: boolean
+  subscribed: boolean
+  sample: StagedSourceSampleEntry[]
+}
+
+/** N016 暂存一个待评估来源（有界预览抓取 + 快照；不订阅、不计未读）。 */
+export async function stageSource(url: string, note?: string): Promise<StagedSource> {
+  const response = await rawRequest(`${API_BASE}/sources/staging`, {
+    method: 'POST',
+    body: JSON.stringify({ url, note: note || null }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as StagedSource
+}
+
+export async function listStagedSources(signal?: AbortSignal): Promise<{ items: StagedSource[] }> {
+  return request<{ items: StagedSource[] }>(`${API_BASE}/sources/staging`, signal)
+}
+
+/** N016 幂等订阅：已存在订阅 → exists；无论结果暂存行都会移除。 */
+export async function subscribeStagedSource(
+  id: string,
+): Promise<{ status: 'subscribed' | 'exists'; feedUrl: string }> {
+  const response = await rawRequest(
+    `${API_BASE}/sources/staging/${encodeURIComponent(id)}/subscribe`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { status: 'subscribed' | 'exists'; feedUrl: string }
+}
+
+export async function discardStagedSource(id: string): Promise<void> {
+  await rawRequest(`${API_BASE}/sources/staging/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export interface CleanupSuggestion {
+  feedUrl: string
+  title: string
+  lastReadAt: string | null
+  weeklyYield: number
+  suggestion: 'demote' | 'mute'
+  basis?: string | null
+}
+
+export interface CleanupSuggestionsResponse {
+  items: CleanupSuggestion[]
+  generatedAt: string
+  basis: string
+}
+
+/** N017 清理建议（只读）：长期未读 × 仍高产的自有数据投影。 */
+export async function getCleanupSuggestions(
+  signal?: AbortSignal,
+): Promise<CleanupSuggestionsResponse> {
+  return request<CleanupSuggestionsResponse>(`${API_BASE}/sources/cleanup-suggestions`, signal)
+}
+
+export interface CleanupApplyItem {
+  feedUrl: string
+  ok: boolean
+  error?: string | null
+}
+
+export interface CleanupApplyResult {
+  items: CleanupApplyItem[]
+  applied: number
+}
+
+/** N017 仅应用用户显式勾选的动作（mute / demote_category）；绝不自动退订。 */
+export async function applyCleanupSuggestions(input: {
+  feedUrls: string[]
+  action: 'mute' | 'demote_category'
+  targetCategoryLabel?: string
+}): Promise<CleanupApplyResult> {
+  const response = await rawRequest(`${API_BASE}/sources/cleanup-suggestions/apply`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as CleanupApplyResult
 }
 
 // ---- phase2 G6：邮件（收信地址 + 每日摘要） ----

@@ -10,9 +10,11 @@ from fastapi.testclient import TestClient
 
 from lumirss.auth_store import AuthStore
 from lumirss.main import app
+import secrets
+
 from lumirss.storage import Database
 
-PASSWORD = "test-password-f038-ok"
+PASSWORD = "pw-f038-" + secrets.token_urlsafe(6)
 
 
 def run(coroutine):

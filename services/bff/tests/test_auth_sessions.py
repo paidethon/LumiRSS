@@ -536,7 +536,7 @@ def test_legacy_bcrypt_hash_login(session_env):
     authenticating — the control store never re-hashes logins."""
     import bcrypt as _bcrypt
 
-    legacy_password = "legacy-secret-93"
+    legacy_password = "legacy-" + _secrets.token_urlsafe(6)
     legacy_hash = _bcrypt.hashpw(
         legacy_password.encode("utf-8"), _bcrypt.gensalt(rounds=4)
     ).decode("utf-8")
@@ -563,13 +563,14 @@ def test_long_password_rejected_at_boundary_login_never_500s(session_env):
         hash_password(long_password)
     assert verify_password_hash(long_password, None) is False
     # HTTP level: set is rejected at the boundary; login is 401.
-    _create_member(session_env, "polylong", "startpass-77")
+    base_password = "start-" + _secrets.token_urlsafe(6)
+    _create_member(session_env, "polylong", base_password)
     with _client(session_env) as client:
         app.state.db = Database(session_env / "lumi.sqlite")
-        assert _login(client, username="polylong", password="startpass-77").status_code == 200
+        assert _login(client, username="polylong", password=base_password).status_code == 200
         changed = client.post(
             "/api/v1/auth/password",
-            json={"currentPassword": "startpass-77", "newPassword": long_password},
+            json={"currentPassword": base_password, "newPassword": long_password},
         )
         assert changed.status_code == 400
         assert changed.json()["error"]["type"] == "weak_password"
