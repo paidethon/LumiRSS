@@ -924,9 +924,25 @@
       ],
       "title": "Lastsuccessat"
      },
+     "maxRunsPerHour": {
+      "default": 4,
+      "title": "Maxrunsperhour",
+      "type": "integer"
+     },
      "name": {
       "title": "Name",
       "type": "string"
+     },
+     "nextAllowedRun": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nextallowedrun"
      },
      "pagination": {
       "anyOf": [
@@ -939,6 +955,11 @@
        }
       ],
       "title": "Pagination"
+     },
+     "respectRetryAfter": {
+      "default": true,
+      "title": "Respectretryafter",
+      "type": "boolean"
      },
      "schemaDrift": {
       "anyOf": [
@@ -1034,6 +1055,11 @@
       "title": "Itemsexpr",
       "type": "string"
      },
+     "maxRunsPerHour": {
+      "default": 4,
+      "title": "Maxrunsperhour",
+      "type": "integer"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -1063,6 +1089,56 @@
      "fieldMap"
     ],
     "title": "ApiSourceCreate",
+    "type": "object"
+   },
+   "ApiSourceCredentialResult": {
+    "description": "N130 masked credential probe / rotation result.\n\nDeliberately minimal: no credential material, no request or response\nheader echo — only the honest verdict, a coarse status class and the\nprobe latency.",
+    "properties": {
+     "latencyMs": {
+      "title": "Latencyms",
+      "type": "integer"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "statusClass": {
+      "title": "Statusclass",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ok",
+     "statusClass",
+     "latencyMs"
+    ],
+    "title": "ApiSourceCredentialResult",
+    "type": "object"
+   },
+   "ApiSourceCredentialTestRequest": {
+    "additionalProperties": false,
+    "description": "Body for .../credentials/test and .../credentials/rotate (N130).",
+    "properties": {
+     "newCredential": {
+      "title": "Newcredential",
+      "type": "string"
+     }
+    },
+    "required": [
+     "newCredential"
+    ],
+    "title": "ApiSourceCredentialTestRequest",
     "type": "object"
    },
    "ApiSourceListResponse": {
@@ -1180,6 +1256,11 @@
        }
       ]
      },
+     "sampleMode": {
+      "default": false,
+      "title": "Samplemode",
+      "type": "boolean"
+     },
      "totalAvailable": {
       "title": "Totalavailable",
       "type": "integer"
@@ -1190,6 +1271,33 @@
      "totalAvailable"
     ],
     "title": "ApiSourcePreviewResult",
+    "type": "object"
+   },
+   "ApiSourceSamplePreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/api-sources/preview-sample (N128).\n\nRuns the EXACT same mapping + Atom-preview pipeline on a PASTED\nsample payload: no network, no fetch, no headers — nothing about the\nrequest is stored. ``samplePayload`` is the raw JSON document the\nupstream would return (object or array of objects).",
+    "properties": {
+     "fieldMap": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Fieldmap",
+      "type": "object"
+     },
+     "itemsExpr": {
+      "title": "Itemsexpr",
+      "type": "string"
+     },
+     "samplePayload": {
+      "title": "Samplepayload"
+     }
+    },
+    "required": [
+     "samplePayload",
+     "itemsExpr",
+     "fieldMap"
+    ],
+    "title": "ApiSourceSamplePreviewRequest",
     "type": "object"
    },
    "ApiSourceUpdate": {
@@ -1242,6 +1350,17 @@
        }
       ],
       "title": "Itemsexpr"
+     },
+     "maxRunsPerHour": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maxrunsperhour"
      },
      "name": {
       "anyOf": [
@@ -3009,6 +3128,215 @@
     "title": "BookmarkUpdate",
     "type": "object"
    },
+   "BundleDocument": {
+    "description": "The portable bundle document itself.",
+    "properties": {
+     "generatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Generatedat"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/BundleSourceEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "title": "BundleDocument",
+    "type": "object"
+   },
+   "BundleExportRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/bundle/export.",
+    "properties": {
+     "feedUrls": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Feedurls",
+      "type": "array"
+     }
+    },
+    "required": [
+     "feedUrls"
+    ],
+    "title": "BundleExportRequest",
+    "type": "object"
+   },
+   "BundleImportItem": {
+    "description": "Per-item import/preview verdict.",
+    "properties": {
+     "categoryAction": {
+      "default": "none",
+      "title": "Categoryaction",
+      "type": "string"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+     },
+     "type": {
+      "default": "rss",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "status"
+    ],
+    "title": "BundleImportItem",
+    "type": "object"
+   },
+   "BundleImportRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/bundle/import body (the bundle document).",
+    "properties": {
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/BundleSourceEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "sources"
+    ],
+    "title": "BundleImportRequest",
+    "type": "object"
+   },
+   "BundleImportResult": {
+    "description": "Preview (apply=false) and committed import (apply=true) share it.",
+    "properties": {
+     "applied": {
+      "default": false,
+      "title": "Applied",
+      "type": "boolean"
+     },
+     "counts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Counts",
+      "type": "object"
+     },
+     "imported": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BundleDocument"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/BundleImportItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "BundleImportResult",
+    "type": "object"
+   },
+   "BundleSourceEntry": {
+    "description": "One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE\n(snake_case per the bundle format: {feed_url, title, category, type,\nnotes?}). Deliberately NOT the camelCase API DTO style — this model\ndescribes the on-disk document.",
+    "properties": {
+     "category": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Category"
+     },
+     "feed_url": {
+      "title": "Feed Url",
+      "type": "string"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     },
+     "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+     },
+     "type": {
+      "default": "rss",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "feed_url"
+    ],
+    "title": "BundleSourceEntry",
+    "type": "object"
+   },
    "CardCandidate": {
     "properties": {
      "concept": {
@@ -3203,6 +3531,165 @@
      "label"
     ],
     "title": "CategoryPatch",
+    "type": "object"
+   },
+   "CleanupApplyItem": {
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "ok"
+    ],
+    "title": "CleanupApplyItem",
+    "type": "object"
+   },
+   "CleanupApplyRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/cleanup-suggestions/apply — ONLY the\nexplicitly selected feeds are touched; nothing auto-runs.",
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "feedUrls": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Feedurls",
+      "type": "array"
+     },
+     "targetCategoryLabel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetcategorylabel"
+     }
+    },
+    "required": [
+     "feedUrls",
+     "action"
+    ],
+    "title": "CleanupApplyRequest",
+    "type": "object"
+   },
+   "CleanupApplyResult": {
+    "properties": {
+     "applied": {
+      "default": 0,
+      "title": "Applied",
+      "type": "integer"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CleanupApplyItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "CleanupApplyResult",
+    "type": "object"
+   },
+   "CleanupSuggestion": {
+    "description": "N017: one long-unopened, still-yielding source.",
+    "properties": {
+     "basis": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Basis"
+     },
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "lastReadAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastreadat"
+     },
+     "suggestion": {
+      "title": "Suggestion",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "weeklyYield": {
+      "title": "Weeklyyield",
+      "type": "number"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title",
+     "weeklyYield",
+     "suggestion"
+    ],
+    "title": "CleanupSuggestion",
+    "type": "object"
+   },
+   "CleanupSuggestionsResponse": {
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "generatedAt": {
+      "title": "Generatedat",
+      "type": "string"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CleanupSuggestion"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "generatedAt",
+     "basis"
+    ],
+    "title": "CleanupSuggestionsResponse",
     "type": "object"
    },
    "Clip": {
@@ -14808,6 +15295,180 @@
     "title": "SourceRegistryResponse",
     "type": "object"
    },
+   "StagedSource": {
+    "description": "One staging-pool row (never a subscription, never counts unread).",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "origin": {
+      "default": "staging",
+      "title": "Origin",
+      "type": "string"
+     },
+     "sample": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/StagedSourceSampleEntry"
+      },
+      "title": "Sample",
+      "type": "array"
+     },
+     "sourceType": {
+      "default": "rss",
+      "title": "Sourcetype",
+      "type": "string"
+     },
+     "subscribed": {
+      "default": false,
+      "title": "Subscribed",
+      "type": "boolean"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "url",
+     "title",
+     "addedAt"
+    ],
+    "title": "StagedSource",
+    "type": "object"
+   },
+   "StagedSourceCreateRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/staging.",
+    "properties": {
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "StagedSourceCreateRequest",
+    "type": "object"
+   },
+   "StagedSourceListResponse": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/StagedSource"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "StagedSourceListResponse",
+    "type": "object"
+   },
+   "StagedSourceSampleEntry": {
+    "description": "One bounded preview snapshot entry (N016; metadata only).",
+    "properties": {
+     "link": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Link"
+     },
+     "published": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Published"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "StagedSourceSampleEntry",
+    "type": "object"
+   },
+   "StagedSourceSubscribeResult": {
+    "description": "Idempotent subscribe outcome (existing sub → status=exists).",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "feedUrl"
+    ],
+    "title": "StagedSourceSubscribeResult",
+    "type": "object"
+   },
    "StaleSourceItem": {
     "description": "F001：一个超期来源（basis 诚实标注判定依据，绝不把发布时间\n冒充抓取成功；无条目投影的来源 basis=unknown 且不判超期）。",
     "properties": {
@@ -18598,6 +19259,45 @@
     "summary": "Preview Source"
    }
   },
+  "/api/v1/api-sources/preview-sample": {
+   "post": {
+    "description": "N128 离线样例预览：the SAME mapping + Atom-preview pipeline as the\nlive preview, run on the PASTED sample.\n\nZero network (the endpoint is never dialed), zero storage (nothing\nabout the request — payload, expressions, and there are no auth\nheaders in play at all — is written anywhere), and no header echo by\nconstruction (the response model has no such field). ``sampleMode``\nmarks the response honestly as offline. A sample that maps to ZERO\nitems (missing id/title fields, wrong items expression) is surfaced\nas a stable 422 — missing data is never fabricated.",
+    "operationId": "preview_sample_source_api_v1_api_sources_preview_sample_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceSamplePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourcePreviewResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Sample Source"
+   }
+  },
   "/api/v1/api-sources/{source_uuid}": {
    "delete": {
     "description": "Delete requires a successful FreshRSS unsubscribe first (P0-05e).\n\nA failed unsubscribe returns the stable 409 ``unsubscribe_failed``\nenvelope and keeps the source, so no dead subscription keeps polling\na removed URL. No ``force`` param by design: FreshRSS-unconfigured\nand already-absent feeds already pass (idempotent), and decommissioning\nFreshRSS (unsetting its env) re-enables deletion.",
@@ -18716,6 +19416,106 @@
      }
     },
     "summary": "Confirm Schema"
+   }
+  },
+  "/api/v1/api-sources/{source_uuid}/credentials/rotate": {
+   "post": {
+    "description": "N130 测试并轮换（API 来源）：test first, then one-statement swap.\n\nThe probe (shape + endpoint reachability, read-only) runs INSIDE the\nsame request boundary before any write: a failure raises the stable\n422 ``credential_test_failed`` and the current credential is\nUNTOUCHED. On success the stored hash is swapped atomically, the new\ntoken is indexed for the machine channel, and the OLD hash is parked\nin the user's SecretsStore for a 10-minute fallback window (reads\nprefer the new credential; a fallback hit is flagged on the source)\nuntil the lazy sweep prunes it. The response is masked — no secret,\nno atom path echo.",
+    "operationId": "rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceCredentialTestRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourceCredentialResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rotate Api Source Credential"
+   }
+  },
+  "/api/v1/api-sources/{source_uuid}/credentials/test": {
+   "post": {
+    "description": "N130 轮换预演（API 来源）：shape check + read-only endpoint probe.\n\nNothing is swapped; the current credential stays live no matter the\noutcome. The response is masked ({ok, statusClass, latencyMs}) — the\ncredential and every header stay unechoed.",
+    "operationId": "test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceCredentialTestRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourceCredentialResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Test Api Source Credential"
    }
   },
   "/api/v1/auth/activate": {
@@ -23749,6 +24549,106 @@
      }
     },
     "summary": "Delete Inbox Source"
+   }
+  },
+  "/api/v1/inbox/sources/{source_uuid}/credentials/rotate": {
+   "post": {
+    "description": "N130 测试并轮换（收件连接器）：test first, then one-statement swap.\n\nA failed probe raises the stable 422 ``credential_test_failed`` and\nthe current bearer secret is UNTOUCHED. On success the stored hash\nis swapped atomically, the new token is indexed for the machine\nchannel and the OLD hash is parked in the user's SecretsStore for a\n10-minute fallback window: ingests verifying against the new secret\nfail over ONCE to the old one and the source is flagged\n(fallback_used) so the operator knows a push script lags behind.\nThe response is masked — the new secret is never echoed.",
+    "operationId": "rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceCredentialTestRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourceCredentialResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rotate Inbox Source Credential"
+   }
+  },
+  "/api/v1/inbox/sources/{source_uuid}/credentials/test": {
+   "post": {
+    "description": "N130 轮换预演（收件连接器）。\n\nPush model: there is no upstream to dial — the \"real fetch\" shape is\nthe ingest POST itself, which a rehearsal must not perform (it would\ncreate content). The probe therefore covers everything a rehearsal\nCAN cover without side effects: the source exists/answers and the\nproposed credential passes the structural gate. Masked response, no\necho; nothing is swapped.",
+    "operationId": "test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_uuid",
+      "required": true,
+      "schema": {
+       "title": "Source Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiSourceCredentialTestRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiSourceCredentialResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Test Inbox Source Credential"
    }
   },
   "/api/v1/inbox/sources/{source_uuid}/events": {
@@ -31142,6 +32042,190 @@
     "summary": "List Source Aliases"
    }
   },
+  "/api/v1/sources/bundle/export": {
+   "post": {
+    "description": "Credential-free bundle of the requested subscriptions (download).\n\nLumi-generated feeds (api/mail) are sanitized to stable URNs — the\nFreshRSS-side Atom URLs embed per-source secrets that must never\nleave the server. URLs matching no subscription are reported in\n``missing`` (honest, no fabrication).",
+    "operationId": "export_source_bundle_api_v1_sources_bundle_export_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BundleExportRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BundleDocument"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Source Bundle"
+   }
+  },
+  "/api/v1/sources/bundle/import": {
+   "post": {
+    "description": "Import a bundle — dry-run preview BY DEFAULT.\n\n``?apply=true`` commits: RSS rows subscribe once (merge-only, same\nchannel as OPML import), types needing credentials land as disabled\ndrafts in the staging pool. Existing rows report ``exists`` —\nre-importing the same bundle converges (idempotent). Secrets are\nnever copied: a bundle cannot carry them, so nothing can leak.",
+    "operationId": "import_source_bundle_api_v1_sources_bundle_import_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "apply",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Apply",
+       "type": "boolean"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BundleImportRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BundleImportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Import Source Bundle"
+   }
+  },
+  "/api/v1/sources/cleanup-suggestions": {
+   "get": {
+    "description": "Advisory list: long-unopened sources that still deliver entries.\n\nOwn-data stats only (read recency projection × projection yield);\nnothing here mutates anything. Unknown read history is reported as\nsuch — absence of a read timestamp is NOT claimed as \"never read\".",
+    "operationId": "cleanup_suggestions_api_v1_sources_cleanup_suggestions_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "minWeeklyYield",
+      "required": false,
+      "schema": {
+       "default": 1.0,
+       "maximum": 1000,
+       "minimum": 0.1,
+       "title": "Minweeklyyield",
+       "type": "number"
+      }
+     },
+     {
+      "in": "query",
+      "name": "staleDays",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 365,
+       "minimum": 7,
+       "title": "Staledays",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CleanupSuggestionsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cleanup Suggestions"
+   }
+  },
+  "/api/v1/sources/cleanup-suggestions/apply": {
+   "post": {
+    "description": "Apply ONLY the user-confirmed (feedUrl, action) pairs.\n\nmute → source_overrides hiddenUntil far future (the existing\ntimeline-hide channel — reversible by clearing the override).\ndemote_category → the existing move-to-category control path with a\nNEW named category (create-on-move, same as OPML import). Everything\nelse is rejected; unknown feeds are reported per item. There is no\nauto-unsubscribe and no batch-everything mode.",
+    "operationId": "apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CleanupApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CleanupApplyResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Cleanup Suggestions"
+   }
+  },
   "/api/v1/sources/overrides": {
    "get": {
     "description": "F11/F13：当前全部来源级显示覆盖（隐藏期 + 阅读起点）。",
@@ -31238,6 +32322,136 @@
      }
     },
     "summary": "Replacement Preview"
+   }
+  },
+  "/api/v1/sources/staging": {
+   "get": {
+    "description": "The staging pool (staging rows first-class; bundle drafts included\nand honestly flagged with origin/enabled).",
+    "operationId": "list_staged_sources_api_v1_sources_staging_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StagedSourceListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Staged Sources"
+   },
+   "post": {
+    "description": "Park a URL for later evaluation: one bounded preview fetch, then a\nstaging row. NOT subscribed, NOT counted in unread — nothing in the\nRSS domain changes at all.",
+    "operationId": "stage_source_api_v1_sources_staging_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/StagedSourceCreateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Stage Source Api V1 Sources Staging Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Stage Source"
+   }
+  },
+  "/api/v1/sources/staging/{source_id}": {
+   "delete": {
+    "operationId": "discard_staged_source_api_v1_sources_staging__source_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_id",
+      "required": true,
+      "schema": {
+       "title": "Source Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Discard Staged Source"
+   }
+  },
+  "/api/v1/sources/staging/{source_id}/subscribe": {
+   "post": {
+    "description": "Promote a staged row through the NORMAL subscribe path — exactly\nonce. An existing subscription converges to ``exists`` (idempotent\nretries); either way the staging row is removed after the outcome.",
+    "operationId": "subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "source_id",
+      "required": true,
+      "schema": {
+       "title": "Source Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StagedSourceSubscribeResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Subscribe Staged Source"
    }
   },
   "/api/v1/sources/stale": {
@@ -34191,7 +35405,7 @@
   },
   "/feeds/{source_uuid}.{secret}.atom": {
    "get": {
-    "description": "The FreshRSS-facing feed. Constant-time secret check, ETag/304,\nbounded fetch + mapping on every pull, honest error status marking.\n\nLast-known-good (P0-05d): success persists the rendered Atom, a\ncontent-derived monotonic feed updated and the matching ETag; an\nupstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS\nkeeps its cached copy functional) and only a source with no last-good\nbody falls back to the 502 stub.",
+    "description": "The FreshRSS-facing feed. Constant-time secret check, ETag/304,\nbounded fetch + mapping on every pull, honest error status marking.\n\nLast-known-good (P0-05d): success persists the rendered Atom, a\ncontent-derived monotonic feed updated and the matching ETag; an\nupstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS\nkeeps its cached copy functional) and only a source with no last-good\nbody falls back to the 502 stub.\n\nN129 限额友好：every upstream run consults a persisted per-source\ntoken bucket (api_source_runs, trailing hour, pruned on consult);\nover budget → 429 ``budget_exhausted`` + Retry-After (FreshRSS\nbacks off — that is the point). An upstream 429 with Retry-After\nstores ``next_allowed_run`` and serves the last-good body. Lumi\nnever works around a rate limit (no alternate credentials, no\nretries that dodge the upstream's verdict).",
     "operationId": "serve_atom_feeds__source_uuid___secret__atom_get",
     "parameters": [
      {

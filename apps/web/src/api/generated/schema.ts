@@ -698,6 +698,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/api-sources/preview-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Sample Source
+         * @description N128 离线样例预览：the SAME mapping + Atom-preview pipeline as the
+         *     live preview, run on the PASTED sample.
+         *
+         *     Zero network (the endpoint is never dialed), zero storage (nothing
+         *     about the request — payload, expressions, and there are no auth
+         *     headers in play at all — is written anywhere), and no header echo by
+         *     construction (the response model has no such field). ``sampleMode``
+         *     marks the response honestly as offline. A sample that maps to ZERO
+         *     items (missing id/title fields, wrong items expression) is surfaced
+         *     as a stable 422 — missing data is never fabricated.
+         */
+        post: operations["preview_sample_source_api_v1_api_sources_preview_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-sources/{source_uuid}": {
         parameters: {
             query?: never;
@@ -743,6 +772,60 @@ export interface paths {
          *     drift warnings clear with it. Nothing else changes.
          */
         post: operations["confirm_schema_api_v1_api_sources__source_uuid__confirm_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Api Source Credential
+         * @description N130 测试并轮换（API 来源）：test first, then one-statement swap.
+         *
+         *     The probe (shape + endpoint reachability, read-only) runs INSIDE the
+         *     same request boundary before any write: a failure raises the stable
+         *     422 ``credential_test_failed`` and the current credential is
+         *     UNTOUCHED. On success the stored hash is swapped atomically, the new
+         *     token is indexed for the machine channel, and the OLD hash is parked
+         *     in the user's SecretsStore for a 10-minute fallback window (reads
+         *     prefer the new credential; a fallback hit is flagged on the source)
+         *     until the lazy sweep prunes it. The response is masked — no secret,
+         *     no atom path echo.
+         */
+        post: operations["rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/api-sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Api Source Credential
+         * @description N130 轮换预演（API 来源）：shape check + read-only endpoint probe.
+         *
+         *     Nothing is swapped; the current credential stays live no matter the
+         *     outcome. The response is masked ({ok, statusClass, latencyMs}) — the
+         *     credential and every header stay unechoed.
+         */
+        post: operations["test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3088,6 +3171,62 @@ export interface paths {
          *     search projections in one operation; RAG invalidation best-effort).
          */
         delete: operations["delete_inbox_source_api_v1_inbox_sources__source_uuid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Inbox Source Credential
+         * @description N130 测试并轮换（收件连接器）：test first, then one-statement swap.
+         *
+         *     A failed probe raises the stable 422 ``credential_test_failed`` and
+         *     the current bearer secret is UNTOUCHED. On success the stored hash
+         *     is swapped atomically, the new token is indexed for the machine
+         *     channel and the OLD hash is parked in the user's SecretsStore for a
+         *     10-minute fallback window: ingests verifying against the new secret
+         *     fail over ONCE to the old one and the source is flagged
+         *     (fallback_used) so the operator knows a push script lags behind.
+         *     The response is masked — the new secret is never echoed.
+         */
+        post: operations["rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inbox/sources/{source_uuid}/credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Inbox Source Credential
+         * @description N130 轮换预演（收件连接器）。
+         *
+         *     Push model: there is no upstream to dial — the "real fetch" shape is
+         *     the ingest POST itself, which a rehearsal must not perform (it would
+         *     create content). The probe therefore covers everything a rehearsal
+         *     CAN cover without side effects: the source exists/answers and the
+         *     proposed credential passes the structural gate. Masked response, no
+         *     echo; nothing is swapped.
+         */
+        post: operations["test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6423,6 +6562,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/bundle/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Source Bundle
+         * @description Credential-free bundle of the requested subscriptions (download).
+         *
+         *     Lumi-generated feeds (api/mail) are sanitized to stable URNs — the
+         *     FreshRSS-side Atom URLs embed per-source secrets that must never
+         *     leave the server. URLs matching no subscription are reported in
+         *     ``missing`` (honest, no fabrication).
+         */
+        post: operations["export_source_bundle_api_v1_sources_bundle_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/bundle/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Source Bundle
+         * @description Import a bundle — dry-run preview BY DEFAULT.
+         *
+         *     ``?apply=true`` commits: RSS rows subscribe once (merge-only, same
+         *     channel as OPML import), types needing credentials land as disabled
+         *     drafts in the staging pool. Existing rows report ``exists`` —
+         *     re-importing the same bundle converges (idempotent). Secrets are
+         *     never copied: a bundle cannot carry them, so nothing can leak.
+         */
+        post: operations["import_source_bundle_api_v1_sources_bundle_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cleanup Suggestions
+         * @description Advisory list: long-unopened sources that still deliver entries.
+         *
+         *     Own-data stats only (read recency projection × projection yield);
+         *     nothing here mutates anything. Unknown read history is reported as
+         *     such — absence of a read timestamp is NOT claimed as "never read".
+         */
+        get: operations["cleanup_suggestions_api_v1_sources_cleanup_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/cleanup-suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Cleanup Suggestions
+         * @description Apply ONLY the user-confirmed (feedUrl, action) pairs.
+         *
+         *     mute → source_overrides hiddenUntil far future (the existing
+         *     timeline-hide channel — reversible by clearing the override).
+         *     demote_category → the existing move-to-category control path with a
+         *     NEW named category (create-on-move, same as OPML import). Everything
+         *     else is rejected; unknown feeds are reported per item. There is no
+         *     auto-unsubscribe and no batch-everything mode.
+         */
+        post: operations["apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/overrides": {
         parameters: {
             query?: never;
@@ -6471,6 +6712,72 @@ export interface paths {
         get: operations["replacement_preview_api_v1_sources_replacement_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staged Sources
+         * @description The staging pool (staging rows first-class; bundle drafts included
+         *     and honestly flagged with origin/enabled).
+         */
+        get: operations["list_staged_sources_api_v1_sources_staging_get"];
+        put?: never;
+        /**
+         * Stage Source
+         * @description Park a URL for later evaluation: one bounded preview fetch, then a
+         *     staging row. NOT subscribed, NOT counted in unread — nothing in the
+         *     RSS domain changes at all.
+         */
+        post: operations["stage_source_api_v1_sources_staging_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Staged Source */
+        delete: operations["discard_staged_source_api_v1_sources_staging__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/staging/{source_id}/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subscribe Staged Source
+         * @description Promote a staged row through the NORMAL subscribe path — exactly
+         *     once. An existing subscription converges to ``exists`` (idempotent
+         *     retries); either way the staging row is removed after the outcome.
+         */
+        post: operations["subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7732,6 +8039,14 @@ export interface paths {
          *     upstream failure serves that body with ``X-Lumi-Stale: 1`` (FreshRSS
          *     keeps its cached copy functional) and only a source with no last-good
          *     body falls back to the 502 stub.
+         *
+         *     N129 限额友好：every upstream run consults a persisted per-source
+         *     token bucket (api_source_runs, trailing hour, pruned on consult);
+         *     over budget → 429 ``budget_exhausted`` + Retry-After (FreshRSS
+         *     backs off — that is the point). An upstream 429 with Retry-After
+         *     stores ``next_allowed_run`` and serves the last-good body. Lumi
+         *     never works around a rate limit (no alternate credentials, no
+         *     retries that dodge the upstream's verdict).
          */
         get: operations["serve_atom_feeds__source_uuid___secret__atom_get"];
         put?: never;
@@ -8173,12 +8488,24 @@ export interface components {
             lastStatus?: string | null;
             /** Lastsuccessat */
             lastSuccessAt?: string | null;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
+            /** Nextallowedrun */
+            nextAllowedRun?: string | null;
             /** Pagination */
             pagination?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Respectretryafter
+             * @default true
+             */
+            respectRetryAfter: boolean;
             /** Schemadrift */
             schemaDrift?: {
                 [key: string]: string[];
@@ -8213,6 +8540,11 @@ export interface components {
             };
             /** Itemsexpr */
             itemsExpr: string;
+            /**
+             * Maxrunsperhour
+             * @default 4
+             */
+            maxRunsPerHour: number;
             /** Name */
             name: string;
             /** Pagination */
@@ -8224,6 +8556,32 @@ export interface components {
              * @default true
              */
             subscribe: boolean;
+        };
+        /**
+         * ApiSourceCredentialResult
+         * @description N130 masked credential probe / rotation result.
+         *
+         *     Deliberately minimal: no credential material, no request or response
+         *     header echo — only the honest verdict, a coarse status class and the
+         *     probe latency.
+         */
+        ApiSourceCredentialResult: {
+            /** Latencyms */
+            latencyMs: number;
+            /** Note */
+            note?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Statusclass */
+            statusClass: string;
+        };
+        /**
+         * ApiSourceCredentialTestRequest
+         * @description Body for .../credentials/test and .../credentials/rotate (N130).
+         */
+        ApiSourceCredentialTestRequest: {
+            /** Newcredential */
+            newCredential: string;
         };
         /**
          * ApiSourceListResponse
@@ -8285,8 +8643,32 @@ export interface components {
                 [key: string]: unknown;
             }[];
             paginationDryRun?: components["schemas"]["ApiSourcePaginationDryRun"] | null;
+            /**
+             * Samplemode
+             * @default false
+             */
+            sampleMode: boolean;
             /** Totalavailable */
             totalAvailable: number;
+        };
+        /**
+         * ApiSourceSamplePreviewRequest
+         * @description POST /api/v1/api-sources/preview-sample (N128).
+         *
+         *     Runs the EXACT same mapping + Atom-preview pipeline on a PASTED
+         *     sample payload: no network, no fetch, no headers — nothing about the
+         *     request is stored. ``samplePayload`` is the raw JSON document the
+         *     upstream would return (object or array of objects).
+         */
+        ApiSourceSamplePreviewRequest: {
+            /** Fieldmap */
+            fieldMap: {
+                [key: string]: string;
+            };
+            /** Itemsexpr */
+            itemsExpr: string;
+            /** Samplepayload */
+            samplePayload: unknown;
         };
         /**
          * ApiSourceUpdate
@@ -8303,6 +8685,8 @@ export interface components {
             } | null;
             /** Itemsexpr */
             itemsExpr?: string | null;
+            /** Maxrunsperhour */
+            maxRunsPerHour?: number | null;
             /** Name */
             name?: string | null;
             /** Pagination */
@@ -9100,6 +9484,126 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * BundleDocument
+         * @description The portable bundle document itself.
+         */
+        BundleDocument: {
+            /** Generatedat */
+            generatedAt?: string | null;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * BundleExportRequest
+         * @description POST /api/v1/sources/bundle/export.
+         */
+        BundleExportRequest: {
+            /** Feedurls */
+            feedUrls: string[];
+        };
+        /**
+         * BundleImportItem
+         * @description Per-item import/preview verdict.
+         */
+        BundleImportItem: {
+            /**
+             * Categoryaction
+             * @default none
+             */
+            categoryAction: string;
+            /** Feedurl */
+            feedUrl: string;
+            /** Note */
+            note?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
+        };
+        /**
+         * BundleImportRequest
+         * @description POST /api/v1/sources/bundle/import body (the bundle document).
+         */
+        BundleImportRequest: {
+            /** Sources */
+            sources: components["schemas"]["BundleSourceEntry"][];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /**
+         * BundleImportResult
+         * @description Preview (apply=false) and committed import (apply=true) share it.
+         */
+        BundleImportResult: {
+            /**
+             * Applied
+             * @default false
+             */
+            applied: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            imported?: components["schemas"]["BundleDocument"] | null;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["BundleImportItem"][];
+        };
+        /**
+         * BundleSourceEntry
+         * @description One credential-free bundle row AS WRITTEN IN THE PORTABLE FILE
+         *     (snake_case per the bundle format: {feed_url, title, category, type,
+         *     notes?}). Deliberately NOT the camelCase API DTO style — this model
+         *     describes the on-disk document.
+         */
+        BundleSourceEntry: {
+            /** Category */
+            category?: string | null;
+            /** Feed Url */
+            feed_url: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Type
+             * @default rss
+             */
+            type: string;
+        };
         /** CardCandidate */
         CardCandidate: {
             /** Concept */
@@ -9182,6 +9686,71 @@ export interface components {
         CategoryPatch: {
             /** Label */
             label: string;
+        };
+        /** CleanupApplyItem */
+        CleanupApplyItem: {
+            /** Error */
+            error?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /**
+         * CleanupApplyRequest
+         * @description POST /api/v1/sources/cleanup-suggestions/apply — ONLY the
+         *     explicitly selected feeds are touched; nothing auto-runs.
+         */
+        CleanupApplyRequest: {
+            /** Action */
+            action: string;
+            /** Feedurls */
+            feedUrls: string[];
+            /** Targetcategorylabel */
+            targetCategoryLabel?: string | null;
+        };
+        /** CleanupApplyResult */
+        CleanupApplyResult: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupApplyItem"][];
+        };
+        /**
+         * CleanupSuggestion
+         * @description N017: one long-unopened, still-yielding source.
+         */
+        CleanupSuggestion: {
+            /** Basis */
+            basis?: string | null;
+            /** Feedurl */
+            feedUrl: string;
+            /** Lastreadat */
+            lastReadAt?: string | null;
+            /** Suggestion */
+            suggestion: string;
+            /** Title */
+            title: string;
+            /** Weeklyyield */
+            weeklyYield: number;
+        };
+        /** CleanupSuggestionsResponse */
+        CleanupSuggestionsResponse: {
+            /** Basis */
+            basis: string;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CleanupSuggestion"][];
         };
         /**
          * Clip
@@ -14165,6 +14734,89 @@ export interface components {
             sources: components["schemas"]["SourceRegistryEntry"][];
         };
         /**
+         * StagedSource
+         * @description One staging-pool row (never a subscription, never counts unread).
+         */
+        StagedSource: {
+            /** Addedat */
+            addedAt: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Origin
+             * @default staging
+             */
+            origin: string;
+            /**
+             * Sample
+             * @default []
+             */
+            sample: components["schemas"]["StagedSourceSampleEntry"][];
+            /**
+             * Sourcetype
+             * @default rss
+             */
+            sourceType: string;
+            /**
+             * Subscribed
+             * @default false
+             */
+            subscribed: boolean;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * StagedSourceCreateRequest
+         * @description POST /api/v1/sources/staging.
+         */
+        StagedSourceCreateRequest: {
+            /** Note */
+            note?: string | null;
+            /** Url */
+            url: string;
+        };
+        /** StagedSourceListResponse */
+        StagedSourceListResponse: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["StagedSource"][];
+        };
+        /**
+         * StagedSourceSampleEntry
+         * @description One bounded preview snapshot entry (N016; metadata only).
+         */
+        StagedSourceSampleEntry: {
+            /** Link */
+            link?: string | null;
+            /** Published */
+            published?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * StagedSourceSubscribeResult
+         * @description Idempotent subscribe outcome (existing sub → status=exists).
+         */
+        StagedSourceSubscribeResult: {
+            /** Feedurl */
+            feedUrl: string;
+            /** Status */
+            status: string;
+        };
+        /**
          * StaleSourceItem
          * @description F001：一个超期来源（basis 诚实标注判定依据，绝不把发布时间
          *     冒充抓取成功；无条目投影的来源 basis=unknown 且不判超期）。
@@ -16483,6 +17135,39 @@ export interface operations {
             };
         };
     };
+    preview_sample_source_api_v1_api_sources_preview_sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceSamplePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourcePreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_source_api_v1_api_sources__source_uuid__delete: {
         parameters: {
             query?: never;
@@ -16565,6 +17250,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiSourceConfirmSchemaResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_api_source_credential_api_v1_api_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_api_source_credential_api_v1_api_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
                 };
             };
             /** @description Validation Error */
@@ -20518,6 +21273,76 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_inbox_source_credential_api_v1_inbox_sources__source_uuid__credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiSourceCredentialTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSourceCredentialResult"];
                 };
             };
             /** @description Validation Error */
@@ -26434,6 +27259,139 @@ export interface operations {
             };
         };
     };
+    export_source_bundle_api_v1_sources_bundle_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_source_bundle_api_v1_sources_bundle_import_post: {
+        parameters: {
+            query?: {
+                apply?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BundleImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_suggestions_api_v1_sources_cleanup_suggestions_get: {
+        parameters: {
+            query?: {
+                minWeeklyYield?: number;
+                staleDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupSuggestionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_cleanup_suggestions_api_v1_sources_cleanup_suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CleanupApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_source_overrides_api_v1_sources_overrides_get: {
         parameters: {
             query?: never;
@@ -26507,6 +27465,121 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staged_sources_api_v1_sources_staging_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceListResponse"];
+                };
+            };
+        };
+    };
+    stage_source_api_v1_sources_staging_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StagedSourceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_staged_source_api_v1_sources_staging__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_staged_source_api_v1_sources_staging__source_id__subscribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedSourceSubscribeResult"];
                 };
             };
             /** @description Validation Error */
