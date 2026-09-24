@@ -61,6 +61,8 @@ const EntryRevisionsPanel = lazy(() => import('./EntryRevisionsPanel'))
 const EntryNotesBacklinks = lazy(() => import('./EntryNotesBacklinks'))
 const EnclosurePlayer = lazy(() => import('./EnclosurePlayer').then((m) => ({ default: m.EnclosurePlayer })))
 import ReaderPlaceholder from './ReaderPlaceholder'
+import ReaderRemainingTime from './ReaderRemainingTime'
+import { textFromHtml } from '../lib/reading-time'
 import { useReadingProgressReporter } from '../lib/reading-progress-reporter'
 import ReaderProgress from './ReaderProgress'
 import { isPlayableEnclosure } from '../lib/enclosure'
@@ -94,6 +96,8 @@ import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
 import { useIsMobile } from '../lib/use-is-mobile'
+import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
+import ReaderSplitOriginal from './ReaderSplitOriginal'
 import { readerStyleCssVars, resolveSourceReaderStyle } from '../lib/source-reader-style'
 
 /** 段落锚点候选：正文容器内的常见内容元素（文档序遍历，取视口线上方
@@ -256,6 +260,8 @@ export default function Reader() {
   // F11：进度条开关；F17：按屏翻页开关（均来自 settings store）。
   const readerShowReadingProgress = useAppSettings((s) => s.settings.readerShowReadingProgress)
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
+  // F075：剩余时间显示 = 进度条 + 阅读时间估算开关同时开启。
+  const readerShowReadingTime = useAppSettings((s) => s.settings.readerShowReadingTime)
   // N052：阅读模式（设备本地）——'paged' = 分页阅读，优先于 F17 按屏翻页。
   const readerReadingMode = useAppSettings((s) => s.settings.readerReadingMode)
   const pagedReading = readerReadingMode === 'paged'
@@ -391,6 +397,8 @@ focusModeRef.current = focusMode
 // 承载——键盘/点击处理器读最新值，不需要因步进而重绑监听）。
 const [paraFocusMode, setParaFocusMode] = useState(false)
 const paraFocusIndexRef = useRef(-1)
+// F077：原文分屏（桌面 ≥1024px；切文章自动关闭——新文章重新选择）。
+const [splitOriginalOpen, setSplitOriginalOpen] = useState(false)
 // F18：自动滚屏状态 + 速度（速度经 ref 读，避免 rAF 循环重启闪烁）。
 const [autoScroll, setAutoScroll] = useState<AutoScrollState>('off')
 const [autoSpeed, setAutoSpeed] = useState<AutoScrollSpeed>('medium')
@@ -455,6 +463,7 @@ useEffect(() => {
   setFindOpen(false)
   setBackMode(null)
   backSavedTopRef.current = null
+  setSplitOriginalOpen(false)
 }, [selectedEntryRef])
 
 // F18：页面 hidden 自动停止（后台不偷滚）。
@@ -770,10 +779,24 @@ const handleScroll = useCallback(() => {
   // F17 翻页按钮边界：到顶禁用上一屏、到底禁用下一屏（无滚动空间双禁）。
   const pagedUpDisabled = !scrollFlags.canUp
   const pagedDownDisabled = !scrollFlags.canDown
+  // F077：分屏只在桌面（≥1024px）生效；url 经 safeExternalHttpUrl 校验。
+  const splitActive = splitOriginalOpen && !isMobile
+  const splitUrl = safeExternalHttpUrl(detail.url)
   return (
-    <div className="relative h-full bg-[var(--lumi-reader-bg)]">
-      {/* F11：阅读进度条（滚动容器顶部；自挂原生 passive 监听） */}
+    <div className={cx('relative h-full bg-[var(--lumi-reader-bg)]', splitActive && 'lumi-reader-split')}>
+      {/* F77 CSS：.lumi-reader-split 在 ≥1024px 时 flex 双栏（index.css） */}
       <ReaderProgress getContainer={getScrollContainer} enabled={readerShowReadingProgress} />
+      {/* F075：进度条旁剩余阅读时间（默认速度实现；F051 校准速度落地后
+          经 speed 接口注入，组件签名不变） */}
+      <ReaderRemainingTime
+        getContainer={getScrollContainer}
+        text={
+          detail.contentText.trim() !== ''
+            ? detail.contentText
+            : textFromHtml(detail.contentHtml ?? '')
+        }
+        enabled={readerShowReadingProgress && readerShowReadingTime}
+      />
       {/* F072：搜索命中定位 chip（命中 N 处/下一处；正文已变化 → 诚实降级）。
           局部 Suspense 边界：lazy 首帧挂起只影响 chip 本身，绝不把
           Reader 主体（含静态哨兵结构）拖进挂起态。 */}
@@ -834,6 +857,8 @@ const handleScroll = useCallback(() => {
             onFocusModeChange={setFocusMode}
             paraFocusMode={paraFocusMode}
             onParaFocusModeChange={setParaFocusMode}
+            splitOriginalOpen={splitOriginalOpen}
+            onToggleSplitOriginal={() => setSplitOriginalOpen((v) => !v)}
           />
         </Suspense>
         {/* O127 内容优先重排：媒体附件（enclosure 属于内容）紧随标题，
@@ -958,6 +983,10 @@ const handleScroll = useCallback(() => {
         )}
       </article>
       </div>
+      {/* F077：原网页分屏右栏（沙箱 iframe；正文左栏自动收窄为半宽） */}
+      {splitActive && (
+        <ReaderSplitOriginal url={splitUrl} onClose={() => setSplitOriginalOpen(false)} />
+      )}
       {/* F17：按屏翻页（滚动容器右下角竖排；连续滚动不受影响）。
           N052：阅读模式 = 分页时由 ReaderPager 接管翻页，F17 不重复出现。 */}
       {!pagedReading && readerPagedMode && (

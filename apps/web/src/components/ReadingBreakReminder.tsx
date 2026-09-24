@@ -25,11 +25,7 @@ export function ReadingBreakReminder({ minutes }: ReadingBreakReminderProps) {
   const [cycle, setCycle] = useState(0)
 
   useEffect(() => {
-    if (minutes <= 0) {
-      setDue(false)
-      return
-    }
-    setDue(false)
+    if (minutes <= 0) return
     let timer: number
     /** 本轮是否已到点提示（提示后不再因 visibility 重排定时器）。 */
     let fired = false
@@ -71,7 +67,10 @@ export function ReadingBreakReminder({ minutes }: ReadingBreakReminderProps) {
         variant="secondary"
         size="sm"
         className="min-h-11"
-        onClick={() => setCycle((c) => c + 1)}
+        onClick={() => {
+          setDue(false)
+          setCycle((c) => c + 1)
+        }}
       >
         知道了
       </Button>

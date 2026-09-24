@@ -208,12 +208,27 @@ export function ChineseTypographySettings() {
             ]}
           />
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-[var(--lumi-text-primary)]">隐藏悬浮干扰元素</p>
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              清理正文里 position:fixed/sticky 的悬浮条与置顶横幅（默认开）
+            </p>
+          </div>
+          <Select
+            aria-label="隐藏悬浮干扰元素"
+            value={settings.readerStripFixedMedia ? 'on' : 'off'}
+            onChange={(e) => update({ readerStripFixedMedia: e.target.value === 'on' })}
+            options={[
+              { value: 'on', label: '开启' },
+              { value: 'off', label: '关闭' },
+            ]}
+          />
+        </div>
       </div>
     </div>
   )
 }
-
-// ---- R5 批3：F063 连续阅读护眼提醒 ----
 
 export function ReadingRhythmSettings() {
   const settings = useAppSettings((s) => s.settings)

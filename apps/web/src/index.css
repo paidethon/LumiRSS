@@ -561,6 +561,19 @@ html[data-reader-paper-texture='true'][data-reader-bg-preset='paper'] .lumi-read
   border-top: 1px solid var(--border);
 }
 
+/* ---- F077：正文/原网页分屏（Reader 根挂 .lumi-reader-split）----
+ * 仅 ≥1024px 双栏：正文滚动容器与原网页 iframe 各占一半；
+ * <1024px 自动退回单栏（调用方在移动端也不渲染分屏栏）。 */
+@media (min-width: 1024px) {
+  .lumi-reader-split {
+    display: flex;
+  }
+  .lumi-reader-split > .lumi-reader-scroll {
+    flex: 1 1 50%;
+    min-width: 0;
+  }
+}
+
 /* 0011 修正补充 §17/§18：文章行动作 hover 增强。
  * Tailwind v4 不支持 [@media..]:group-hover 叠加 variant（stacked
  * variant 限制，同 0007 已知约束）——用原生 CSS 表达：

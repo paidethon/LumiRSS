@@ -369,6 +369,27 @@ export function ReaderPager({ enabled, containerRef, articleRef, entryRef }: Rea
       className="absolute bottom-6 right-4 z-10 flex flex-col items-end gap-1.5"
       data-lumi-pager-nav=""
     >
+      {/* F061：分页迷你地图——当前页/总页可视化 + 拖动/点击跳页条。
+          原生 range：拖动、点击定位、键盘方向键/Home/End 免费获得；
+          goTo 内部钳制页码并保存阅读位置。 */}
+      <div className="flex items-center rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] bg-[var(--lumi-surface-elevated)] px-2.5 py-1.5 shadow-[var(--lumi-shadow-popover)]">
+        <input
+          type="range"
+          dir="ltr"
+          min={1}
+          max={state.pageCount}
+          step={1}
+          value={Math.min(state.page + 1, state.pageCount)}
+          aria-label="跳页（当前页 / 总页）"
+          aria-valuetext={`第 ${state.page + 1} 页，共 ${state.pageCount} 页`}
+          data-lumi-pager-map=""
+          onChange={(event) => {
+            const page = Number.parseInt(event.target.value, 10)
+            if (Number.isFinite(page)) goTo(page - 1)
+          }}
+          className="lumi-slider w-40 min-h-11"
+        />
+      </div>
       <output
         aria-live="polite"
         aria-label="页码"

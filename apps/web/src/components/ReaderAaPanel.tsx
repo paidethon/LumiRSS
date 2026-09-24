@@ -21,11 +21,17 @@ import {
   type ReaderCaptionMode,
   type ReaderChineseConversion,
   type ReaderCodeFontSize,
+  type ReaderContentWidthMode,
   type ReaderFontFamily,
   type ReaderFontWeight,
   type ReaderImageMaxWidth,
   type ReaderReadingMode,
 } from '../store/app-settings'
+import {
+  READER_SIZE_PRESETS,
+  matchReaderSizePreset,
+} from '../lib/reader-style'
+import { cx } from './ui/cx'
 import { useIsMobile } from '../lib/use-is-mobile'
 import SettingsShell from './SettingsShell'
 import { Popover } from './ui/Popover'
@@ -107,9 +113,40 @@ function AaControls({
   const paragraphSpacing = READER_NUMERIC_RANGES.readerParagraphSpacing
   const contentWidth = READER_NUMERIC_RANGES.readerContentWidth
   const pageMargin = READER_NUMERIC_RANGES.readerPageMargin
+  // F067：当前字号/行距命中的联动预设（滑杆微调后为 null = 无高亮）
+  const matchedPreset = matchReaderSizePreset(settings.readerFontSize, settings.readerLineHeight)
 
   return (
     <div className="flex w-full flex-col gap-3" role="group" aria-label="阅读样式">
+      {/* F067：字号+行高联动预设（小/中/大；与单项滑杆并存） */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-[var(--lumi-text-primary)]">预设</span>
+        <div
+          role="group"
+          aria-label="字号行距预设"
+          className="flex overflow-hidden rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]"
+        >
+          {READER_SIZE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              aria-pressed={matchedPreset?.id === preset.id}
+              onClick={() =>
+                update({ readerFontSize: preset.fontSize, readerLineHeight: preset.lineHeight })
+              }
+              className={cx(
+                'min-h-9 px-3 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                matchedPreset?.id === preset.id
+                  ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                  : 'text-[var(--lumi-text-secondary)] hover:bg-[var(--lumi-surface-hover)] hover:text-[var(--lumi-text-primary)]',
+              )}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <Slider
         label="字号"
         steppers
@@ -138,15 +175,42 @@ function AaControls({
         onChange={(v) => update({ readerParagraphSpacing: v })}
         formatValue={(v) => `${v.toFixed(2)}em`}
       />
-      <Slider
-        label="正文宽度"
-        value={settings.readerContentWidth}
-        min={contentWidth.min}
-        max={contentWidth.max}
-        step={contentWidth.step}
-        onChange={(v) => update({ readerContentWidth: v })}
-        formatValue={(v) => `${v}px`}
-      />
+      {/* F065：宽度模式（固定 px / 跟随窗口百分比；设备本） */}
+      <div className={ROW}>
+        <span className="text-sm text-[var(--lumi-text-primary)]">宽度模式</span>
+        <Select
+          aria-label="正文宽度模式"
+          value={settings.readerContentWidthMode}
+          onChange={(e) =>
+            update({ readerContentWidthMode: e.target.value as ReaderContentWidthMode })
+          }
+          options={[
+            { value: 'fixed', label: '固定宽度' },
+            { value: 'viewport', label: '跟随窗口' },
+          ]}
+        />
+      </div>
+      {settings.readerContentWidthMode === 'fixed' ? (
+        <Slider
+          label="正文宽度"
+          value={settings.readerContentWidth}
+          min={contentWidth.min}
+          max={contentWidth.max}
+          step={contentWidth.step}
+          onChange={(v) => update({ readerContentWidth: v })}
+          formatValue={(v) => `${v}px`}
+        />
+      ) : (
+        <Slider
+          label="窗口占比"
+          value={settings.readerContentWidthViewport}
+          min={50}
+          max={100}
+          step={5}
+          onChange={(v) => update({ readerContentWidthViewport: v })}
+          formatValue={(v) => `${Math.round(v)}%`}
+        />
+      )}
       <Slider
         label="页面边距"
         value={settings.readerPageMargin}

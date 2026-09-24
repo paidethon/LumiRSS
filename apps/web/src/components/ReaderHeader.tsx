@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import {
   BookMarked,
   Camera, Check, Clock, ExternalLink, FileCode, FileText, Languages,
-  Link2, Loader2, MessageSquare, MoreHorizontal, Pause, Play, Printer, Quote,
+  Link2, Loader2, MessageSquare, MoreHorizontal, Pause, PanelRight, Play, Printer, Quote,
   Search, Settings2, Share2, Square, Star, Volume2, X,
 } from 'lucide-react'
 import type { EntryDetail } from '../api/types'
@@ -1136,6 +1136,8 @@ export default function ReaderHeader({
   onFocusModeChange,
   paraFocusMode,
   onParaFocusModeChange,
+  splitOriginalOpen,
+  onToggleSplitOriginal,
   sessionStartedAt,
 }: {
   detail: EntryDetail
@@ -1160,6 +1162,9 @@ export default function ReaderHeader({
   /** F062：逐段专注（Reader 会话级状态，透传给 Aa 面板）。 */
   paraFocusMode?: boolean
   onParaFocusModeChange?: (value: boolean) => void
+  /** F077：原文分屏（Reader 持有开关状态；桌面 ≥1024px 才提供入口）。 */
+  splitOriginalOpen?: boolean
+  onToggleSplitOriginal?: () => void
   /** F080：当前会话起始时间戳（本篇打开时刻；Aa 面板显示累计时长）。
    * ReaderHeader 按 entryRef 重挂载（key），挂载时取值即打开时刻。 */
   sessionStartedAt?: number
@@ -1432,6 +1437,18 @@ export default function ReaderHeader({
       ),
     },
   )
+  // F077：正文/原网页分屏（仅桌面 ≥1024px 提供菜单项；状态由 Reader 持有）。
+  if (!isMobile && articleUrl !== null && onToggleSplitOriginal !== undefined) {
+    moreItems.push({
+      key: 'split-original',
+      content: (
+        <span className="flex items-center gap-2">
+          <PanelRight aria-hidden className="size-4" />
+          {splitOriginalOpen ? '关闭原文分屏' : '原文分屏'}
+        </span>
+      ),
+    })
+  }
   // P16：导出到 Obsidian（选设备 → obsidian://new 交接；tooLong → 文件）。
   moreItems.push({
     key: 'export-obsidian',
@@ -1509,6 +1526,10 @@ export default function ReaderHeader({
     }
     if (key === 'export-obsidian') {
       setObsidianExportOpen(true)
+      return
+    }
+    if (key === 'split-original') {
+      onToggleSplitOriginal?.()
       return
     }
     if (key === 'customize') {

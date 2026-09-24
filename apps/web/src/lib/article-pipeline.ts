@@ -264,6 +264,28 @@ function applyCodeLineNumbers(body: HTMLElement): void {
   }
 }
 
+// ---- F079：隐藏 fixed/sticky 干扰媒体 ----
+
+/** inline style 的 position 是否 fixed/sticky（正则读原始 style 属性——
+ * 不依赖 CSSOM，jsdom/浏览器行为一致）。 */
+const FIXED_POSITION_RE = /position\s*:\s*(?:fixed|sticky)(?:\s|;|!|$)/i
+
+/** 非内容元素判定：不含任何块级正文内容（段落/标题/列表/引用/表格）
+ * 的元素视作悬浮装饰（分享条/置顶横幅/悬浮按钮等），整体摘除；
+ * 含正文内容的容器（如包裹全文的 sticky 容器，罕见）保守保留。 */
+const BLOCK_CONTENT_SELECTOR =
+  'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table, figcaption, article'
+
+function stripFixedStickyMedia(body: HTMLElement): void {
+  const candidates = body.querySelectorAll('div, section, aside, header, footer, nav, figure, span')
+  for (const el of candidates) {
+    const style = el.getAttribute('style')
+    if (style === null || !FIXED_POSITION_RE.test(style)) continue
+    if (el.querySelector(BLOCK_CONTENT_SELECTOR) !== null) continue
+    el.remove()
+  }
+}
+
 // ---- 管线入口 ----
 
 export interface ArticlePipelineOptions {
@@ -281,6 +303,9 @@ export interface ArticlePipelineOptions {
   /** F073：代码块行号（管线按行包 .lumi-code-line span + CSS counter）。
    * 与代码高亮/换行共存：textContent 不变（复制无行号污染）。默认关。 */
   codeLineNumbers?: boolean
+  /** F079：清理 position:fixed/sticky 的非内容元素（网页抓取正文常见的
+   * 悬浮分享条/置顶横幅等干扰媒体）。默认关。 */
+  stripFixedMedia?: boolean
 }
 
 /** raw RSS HTML → inert DOM → transforms → DOMPurify 终点。
@@ -299,6 +324,7 @@ export async function renderArticleHtml(
   const needsMath = options.math !== false && containsMathMarkerSafe(rawHtml)
   const needsFirstImageMark = options.firstImageFullBleed === true
   const needsCodeLines = options.codeLineNumbers === true && containsCodeBlock(rawHtml)
+  const needsStripFixed = options.stripFixedMedia === true
   if (
     !needsConversion &&
     !needsBionic &&
@@ -306,7 +332,8 @@ export async function renderArticleHtml(
     !needsFootnotes &&
     !needsMath &&
     !needsFirstImageMark &&
-    !needsCodeLines
+    !needsCodeLines &&
+    !needsStripFixed
   ) {
     return sanitizeArticleHtml(rawHtml)
   }
@@ -314,6 +341,8 @@ export async function renderArticleHtml(
   // DOMParser 产出 inert document：不执行 script、不加载资源
   const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
 
+  // F079：最先执行——被摘除的元素不参与后续 transform
+  if (needsStripFixed) stripFixedStickyMedia(doc.body)
   if (needsFootnotes) transformFootnotes(doc)
   if (needsMath) await renderMathInDom(doc.body)
   if (needsFirstImageMark) markFirstImage(doc)
