@@ -3009,6 +3009,122 @@
     "title": "BookmarkUpdate",
     "type": "object"
    },
+   "BulkLinkResultItem": {
+    "description": "逐条结果：created | duplicate | failed（failed 必带 reason）。",
+    "properties": {
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     },
+     "status": {
+      "enum": [
+       "created",
+       "duplicate",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url",
+     "status"
+    ],
+    "title": "BulkLinkResultItem",
+    "type": "object"
+   },
+   "BulkLinksRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。",
+    "properties": {
+     "target": {
+      "enum": [
+       "bookmark",
+       "clip"
+      ],
+      "title": "Target",
+      "type": "string"
+     },
+     "urls": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Urls",
+      "type": "array"
+     }
+    },
+    "required": [
+     "urls",
+     "target"
+    ],
+    "title": "BulkLinksRequest",
+    "type": "object"
+   },
+   "BulkLinksResponse": {
+    "description": "Envelope for POST /api/v1/library/bulk-links。",
+    "properties": {
+     "created": {
+      "title": "Created",
+      "type": "integer"
+     },
+     "duplicate": {
+      "title": "Duplicate",
+      "type": "integer"
+     },
+     "failed": {
+      "title": "Failed",
+      "type": "integer"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/BulkLinkResultItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "target": {
+      "enum": [
+       "bookmark",
+       "clip"
+      ],
+      "title": "Target",
+      "type": "string"
+     }
+    },
+    "required": [
+     "target",
+     "created",
+     "duplicate",
+     "failed",
+     "items"
+    ],
+    "title": "BulkLinksResponse",
+    "type": "object"
+   },
    "CardCandidate": {
     "properties": {
      "concept": {
@@ -24889,6 +25005,45 @@
     "summary": "Export Bookmark Markdown"
    }
   },
+  "/api/v1/library/bulk-links": {
+   "post": {
+    "description": "批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）\n后创建书签或剪藏。\n\n单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed\n必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建\n同一信任边界）；抓取失败按 failed 如实上报。",
+    "operationId": "bulk_links_api_v1_library_bulk_links_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkLinksRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BulkLinksResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Bulk Links"
+   }
+  },
   "/api/v1/library/clips": {
    "get": {
     "operationId": "list_clips_api_v1_library_clips_get",
@@ -25021,6 +25176,23 @@
     "summary": "Fetch For Clip"
    }
   },
+  "/api/v1/library/clips/preview-cleanup": {
+   "post": {
+    "description": "N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。\n\n确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；\n预览本身绝不改动任何存储内容（原始版本在确认前不变）。",
+    "operationId": "preview_clip_cleanup_api_v1_library_clips_preview_cleanup_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Preview Clip Cleanup"
+   }
+  },
   "/api/v1/library/clips/{item_uuid}": {
    "delete": {
     "operationId": "delete_clip_api_v1_library_clips__item_uuid__delete",
@@ -25090,9 +25262,116 @@
     "summary": "Get Clip"
    }
   },
+  "/api/v1/library/clips/{item_uuid}/candidate": {
+   "delete": {
+    "description": "N122：丢弃候选版本（保留当前展示版本不动）。",
+    "operationId": "discard_clip_candidate_api_v1_library_clips__item_uuid__candidate_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Discard Clip Candidate"
+   },
+   "get": {
+    "description": "N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。",
+    "operationId": "get_clip_candidate_api_v1_library_clips__item_uuid__candidate_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Clip Candidate"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/candidate/apply": {
+   "post": {
+    "description": "N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。",
+    "operationId": "apply_clip_candidate_api_v1_library_clips__item_uuid__candidate_apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Clip Candidate"
+   }
+  },
   "/api/v1/library/clips/{item_uuid}/full": {
    "get": {
-    "description": "F089 详情：content（当前展示）+ original（原始，不可变）+ revised。",
+    "description": "F089 详情 + N122：content（当前展示）+ original（原始，不可变）\n+ revised + locked + candidate。",
     "operationId": "get_clip_full_api_v1_library_clips__item_uuid__full_get",
     "parameters": [
      {
@@ -25126,6 +25405,82 @@
      }
     },
     "summary": "Get Clip Full"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/lock": {
+   "put": {
+    "description": "N122：显式锁定/解锁（locked 旗标唯一写路径）。",
+    "operationId": "set_clip_lock_api_v1_library_clips__item_uuid__lock_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Clip Lock"
+   }
+  },
+  "/api/v1/library/clips/{item_uuid}/refresh": {
+   "post": {
+    "description": "N122：重新抓取当前剪藏 URL（服务端管线）。\n\n未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →\n只存候选，展示版本不动；内容未变 → unchanged。",
+    "operationId": "refresh_clip_api_v1_library_clips__item_uuid__refresh_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_uuid",
+      "required": true,
+      "schema": {
+       "title": "Item Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Refresh Clip"
    }
   },
   "/api/v1/library/clips/{item_uuid}/revision": {
@@ -25197,7 +25552,7 @@
     "summary": "Get Clip Blocks"
    },
    "patch": {
-    "description": "保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。",
+    "description": "保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。\n\nN122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。",
     "operationId": "save_clip_revision_api_v1_library_clips__item_uuid__revision_patch",
     "parameters": [
      {
@@ -26383,6 +26738,44 @@
     "summary": "Restore Trash Item"
    }
   },
+  "/api/v1/mail/attachments/{attachment_id}": {
+   "get": {
+    "description": "N125：附件下载（用户作用域；跨用户/不存在 → 同型 404）。\n\nContent-Disposition 恒为 attachment（绝不内联渲染）；响应体大小\n以存储 size 为准并再查上限（防越界写入）。文件名经净化并按\nRFC 5987 编码（非 ASCII 安全）。",
+    "operationId": "download_mail_attachment_api_v1_mail_attachments__attachment_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "attachment_id",
+      "required": true,
+      "schema": {
+       "title": "Attachment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Download Mail Attachment"
+   }
+  },
   "/api/v1/mail/bridge-lists": {
    "get": {
     "operationId": "list_bridge_lists_api_v1_mail_bridge_lists_get",
@@ -26576,6 +26969,91 @@
      }
     },
     "summary": "Test Mail Imap"
+   }
+  },
+  "/api/v1/mail/lists/{list_uuid}/messages": {
+   "get": {
+    "description": "N125/126/127 配套：单列表的有界消息清单（≤50，新→旧）。\n\n每行只带旗标（附件数 / 被阻止媒体数 / 身份提示存在），正文详情走\ndetail 端点。",
+    "operationId": "list_mail_messages_api_v1_mail_lists__list_uuid__messages_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Mail Messages"
+   }
+  },
+  "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/detail": {
+   "get": {
+    "description": "N125/N126/N127 邮件详情（只读）：\n\n- text / html 两个正文形态（mail_bridge ingest 时已双双落库；html\n  是净化产物，渲染前客户端仍过 DOMPurify）；\n- blockedMedia：ingest 时被剥离的外链媒体 URL（有界 ≤20）；\n- attachments：已存附件（带下载 id）+ 被跳过附件的诚实清单；\n- identityHints：服务端计算的中性身份提示（或 null）。",
+    "operationId": "mail_message_detail_api_v1_mail_lists__list_uuid__messages__message_id__detail_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "list_uuid",
+      "required": true,
+      "schema": {
+       "title": "List Uuid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "message_id",
+      "required": true,
+      "schema": {
+       "title": "Message Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mail Message Detail"
    }
   },
   "/api/v1/mail/lists/{list_uuid}/messages/{message_id}/parse-debug": {

@@ -3525,3 +3525,116 @@ export function useDeleteQueueSnapshotMutation() {
     },
   })
 }
+
+// ---- intake 批次：N121 批量粘贴 / N122 剪藏锁定候选 / N123 清理预览 / 邮件详情 ----
+// 本节 client 函数按段引入（本文件约定 APPEND-ONLY，新增 import 只能
+// 随新节追加在尾部；ESM 顶层 import 提升，行为等价）。
+
+import {
+  applyClipCandidate,
+  bulkLinks,
+  discardClipCandidate,
+  getClipCandidate,
+  getMailMessageDetail,
+  listMailMessages,
+  previewClipCleanup,
+  refreshClip,
+  setClipLock,
+} from './client'
+import type { ClipCandidate, MailMessageDetail } from './client'
+
+/** N121：批量粘贴（逐条 created/duplicate/failed；成功后失效书签与剪藏）。 */
+export function useBulkLinksMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { urls: string[]; target: 'bookmark' | 'clip' }) =>
+      bulkLinks(vars.urls, vars.target),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library'] })
+    },
+  })
+}
+
+/** N122：锁定/解锁（覆盖式写入的唯一开关；成功后失效剪藏 detail）。 */
+export function useClipLockMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { clipRef: string; locked: boolean }) =>
+      setClipLock(vars.clipRef, vars.locked),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：刷新（未锁定 → 应用；锁定 → 候选）。 */
+export function useClipRefreshMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (clipRef: string) => refreshClip(clipRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：查看候选（Dialog 打开时才发请求）。 */
+export function useClipCandidate(clipRef: string | null) {
+  return useQuery({
+    queryKey: ['library', 'clips', 'candidate', clipRef],
+    queryFn: ({ signal }) => getClipCandidate(clipRef!, signal),
+    enabled: clipRef !== null,
+  })
+}
+
+export type { ClipCandidate }
+
+/** N122：应用候选（可带 keepIds 走同一净化管线）。 */
+export function useApplyClipCandidateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { clipRef: string; keepIds?: string[] }) =>
+      applyClipCandidate(vars.clipRef, vars.keepIds),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N122：丢弃候选。 */
+export function useDiscardClipCandidateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (clipRef: string) => discardClipCandidate(clipRef),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['library', 'clips'] })
+    },
+  })
+}
+
+/** N123：清理预览（零写入；逐块建议可改）。 */
+export function useClipCleanupPreviewMutation() {
+  return useMutation({
+    mutationFn: (html: string) => previewClipCleanup(html),
+  })
+}
+
+/** N125/126/127：邮件消息清单（每列表有界 ≤50）。 */
+export function useMailMessages(listUuid: string | null) {
+  return useQuery({
+    queryKey: ['mail', 'messages', listUuid],
+    queryFn: ({ signal }) => listMailMessages(listUuid!, signal),
+    enabled: listUuid !== null,
+  })
+}
+
+export type { MailMessageDetail }
+
+/** N125/126/127：邮件详情（附件 / 双正文形态 / 被阻止媒体 / 身份提示）。 */
+export function useMailMessageDetail(listUuid: string | null, messageId: string | null) {
+  return useQuery({
+    queryKey: ['mail', 'message-detail', listUuid, messageId],
+    queryFn: ({ signal }) => getMailMessageDetail(listUuid!, messageId!, signal),
+    enabled: listUuid !== null && messageId !== null,
+  })
+}

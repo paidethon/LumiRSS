@@ -25,6 +25,10 @@ _ALLOWED_ATTRS = frozenset({"href", "title"})
 _VOID_TAGS = frozenset({"br", "hr"})
 _MAX_INPUT_BYTES = 2 * 1024 * 1024
 _MAX_DATA_URI = 64 * 1024
+# N126：被阻止的外链媒体清单上界（ingest 时如实记录，超出部分丢弃）。
+_MAX_BLOCKED_MEDIA = 20
+# 记录外链媒体的标签（src 属性；外链图片/音视频 = 跟踪与混合内容源）。
+_MEDIA_TAGS = frozenset({"img", "video", "audio", "source", "track", "figure"})
 
 # Dropped together with all of their content — same policy as
 # article_sanitize so stored mail HTML is independently safe against
@@ -53,8 +57,29 @@ class _Sanitizer(HTMLParser):
         self.out: list[str] = []
         self._skip_depth = 0
         self._open_stack: list[str] = []
+        # N126：被剥离的外链媒体 URL（有界；供 blocked_media_json 落库）。
+        self.blocked_media: list[str] = []
+
+    def _record_blocked(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """记录将被剥离的外链媒体 src（http/https 与协议相对地址）。"""
+        if len(self.blocked_media) >= _MAX_BLOCKED_MEDIA:
+            return
+        if tag not in _MEDIA_TAGS:
+            return
+        for name, value in attrs:
+            if name is None or name.lower() not in ("src", "poster") or not value:
+                continue
+            candidate = value.strip()
+            lowered = candidate.lower()
+            if lowered.startswith(("http://", "https://", "//")):
+                self.blocked_media.append(candidate[:500])
+                if len(self.blocked_media) >= _MAX_BLOCKED_MEDIA:
+                    return
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _DROP_VOID or tag in _DROP_WITH_CONTENT or tag not in _ALLOWED_TAGS:
+            # N126：先记录被剥离元素上的外链媒体（跟踪像素/远程图片）。
+            self._record_blocked(tag, attrs)
         if tag in _DROP_VOID:
             return
         if tag in _DROP_WITH_CONTENT:
@@ -113,10 +138,10 @@ class _Sanitizer(HTMLParser):
         self.out.append(html.escape(data, quote=False))
 
 
-def sanitize_email_html(raw: str) -> str:
-    """Strip an email body down to safe presentational HTML."""
+def sanitize_email_html_with_blocked(raw: str) -> tuple[str, list[str]]:
+    """N126：净化 + 被阻止的外链媒体清单（有界 ≤20，去重保序）。"""
     if not isinstance(raw, str):
-        return ""
+        return "", []
     if len(raw.encode("utf-8", errors="replace")) > _MAX_INPUT_BYTES:
         raw = raw[:_MAX_INPUT_BYTES]
     parser = _Sanitizer()
@@ -125,8 +150,21 @@ def sanitize_email_html(raw: str) -> str:
         parser.close()
     except Exception:
         # Unparseable markup degrades to escaped text, never a crash.
-        return "<p>[无法解析的邮件正文]</p>"
-    return "".join(parser.out)
+        return "<p>[无法解析的邮件正文]</p>", []
+    seen: set[str] = set()
+    blocked: list[str] = []
+    for url in parser.blocked_media:
+        if url in seen:
+            continue
+        seen.add(url)
+        blocked.append(url)
+    return "".join(parser.out), blocked
+
+
+def sanitize_email_html(raw: str) -> str:
+    """Strip an email body down to safe presentational HTML."""
+    cleaned, _blocked = sanitize_email_html_with_blocked(raw)
+    return cleaned
 
 
 def html_to_text(raw: str) -> str:

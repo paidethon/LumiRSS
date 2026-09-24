@@ -10,7 +10,11 @@ twice) and the fallback identity is a stable content fingerprint (list
 dedupes deterministically). Seen rows and the entry body commit in ONE
 transaction: a crash in between must not lose the mail forever (the
 entry table doubles as the bounded delivery spool per ADR 0004).
-Attachments are counted (name+size) but their bodies are NEVER stored.
+N125: attachments with an allowed type (pdf/images/text/office) are
+stored BOUNDED (≤5MB each, ≤20 per mail, scripts/executables denied) —
+oversized/unsafe ones stay listed honestly as skipped. N126 records the
+bounded list of blocked remote media; N127 computes server-side identity
+hints (From vs Reply-To / display-name domain mismatch).
 The per-list Atom reuses the api_sources feed URL pattern (outside
 /api/*, secret constant-time compared) and is auto-subscribed into
 FreshRSS best-effort.
@@ -21,24 +25,34 @@ import email.header
 import email.policy
 import hashlib
 import json
+import re
 import secrets as _secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
 from lumirss.db_tx import transaction
-from lumirss.mail_sanitize import html_to_text, sanitize_email_html
+from lumirss.mail_attachments import (
+    MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENTS_PER_MAIL,
+    MailAttachmentStore,
+    classify_attachment,
+)
+from lumirss.mail_sanitize import html_to_text, sanitize_email_html_with_blocked
 from lumirss.storage import Database
 from lumirss.token_hash import hash_token, verify_token
 from lumirss.util import utc_now
 
 _MAX_RAW_BYTES = 10 * 1024 * 1024
 _MAX_PARTS = 40
-_MAX_ATTACHMENT_META = 20
+# N125：附件「清单」上界（含被跳过者，如实列出；与 MIME part 走查上限
+# 一致）。实际入库另受 MAX_ATTACHMENTS_PER_MAIL=20 约束。
+_MAX_ATTACHMENT_META = 40
 _MAX_ENTRIES_PER_LIST = 50
 _MAX_LISTS = 20
 _MAX_DIGEST_REFS = 50
 _MAX_STRUCTURE_BYTES = 2048  # F104：结构快照 JSON 上界（超出截断并标记）
+_MAX_BLOCKED_MEDIA = 20  # N126：被阻止的外链媒体清单上界
 
 
 class MailBridgeInvalid(ValueError):
@@ -170,6 +184,9 @@ class MailBridgeStore:
 
         def _run(connection: sqlite3.Connection) -> None:
             connection.execute(
+                "DELETE FROM mail_attachments WHERE list_uuid = ?", (list_uuid,)
+            )
+            connection.execute(
                 "DELETE FROM mail_seen WHERE list_uuid = ?", (list_uuid,)
             )
             connection.execute(
@@ -226,9 +243,20 @@ class MailBridgeStore:
             }
         html_part, text_part = _extract_bodies(message)
         body_source = html_part if html_part else (text_part or "")
-        clean_html = sanitize_email_html(body_source)
-        clean_text = html_to_text(body_source) if html_part else (text_part or "")
-        attachments = _attachment_metadata(message)
+        # N126：净化同时记录被阻止的外链媒体（有界 ≤20，落 blocked_media_json）。
+        clean_html, blocked_media = sanitize_email_html_with_blocked(body_source)
+        # N126 文本模式：作者纯文本 part 优先（charset 已按声明解码），
+        # 缺失时回退 html_to_text（同一净化产物）。
+        if text_part:
+            clean_text = text_part
+        elif html_part:
+            clean_text = html_to_text(body_source)
+        else:
+            clean_text = ""
+        # N125：附件提取（allowlist + 5MB/20 个上限；超限/不安全 → 如实跳过）。
+        attachment_meta, stored_attachments = _process_attachments(message)
+        # N127：来源身份提示（服务端计算，有界；无异常处 → None）。
+        identity_hints = _identity_hints(message)
         # F104/F110：Message-ID 归一化（去尖括号、仅保留 token@token 形态）
         # ——同时用作去重身份、条目身份与会话串联键（URL 友好、可比较）。
         message_id = _first_msg_id(message.get("Message-ID", "")) or ""
@@ -260,7 +288,7 @@ class MailBridgeStore:
                     (lst.uuid, identity, now),
                 )
             connection.execute(
-                "INSERT INTO mail_bridge_entries (list_uuid, message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mail_bridge_entries (list_uuid, message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, blocked_media_json, identity_hints_json, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     lst.uuid,
                     entry_id,
@@ -268,14 +296,35 @@ class MailBridgeStore:
                     sender[:200],
                     clean_html[:200_000],
                     clean_text[:100_000],
-                    len(attachments),
-                    json.dumps(attachments, ensure_ascii=False),
+                    len(attachment_meta),
+                    json.dumps(attachment_meta, ensure_ascii=False),
                     _structure_json_bounded(structure),
                     in_reply_to,
                     references_head,
+                    (
+                        json.dumps(blocked_media[:_MAX_BLOCKED_MEDIA], ensure_ascii=False)
+                        if blocked_media
+                        else None
+                    ),
+                    (
+                        json.dumps(identity_hints, ensure_ascii=False)
+                        if identity_hints
+                        else None
+                    ),
                     now,
                 ),
             )
+            # N125：放行附件在同一事务里落 BLOB（单文件 ≤5MB、每封 ≤20 个）。
+            attachment_store = MailAttachmentStore(self._db)
+            for item in stored_attachments:
+                attachment_store.save(
+                    connection,
+                    list_uuid=lst.uuid,
+                    message_id=entry_id,
+                    filename=item["filename"],
+                    mime=item["mime"],
+                    content=item["content"],
+                )
 
         try:
             await transaction(self._db, _run)
@@ -288,13 +337,13 @@ class MailBridgeStore:
             "status": "accepted",
             "messageId": message_id or fingerprint[:32],
             "subject": subject,
-            "attachments": len(attachments),
+            "attachments": len(attachment_meta),
         }
 
     async def list_entries(self, list_uuid: str) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, received_at FROM mail_bridge_entries WHERE list_uuid = ? ORDER BY received_at DESC LIMIT ?",
+            "SELECT message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, blocked_media_json, identity_hints_json, received_at FROM mail_bridge_entries WHERE list_uuid = ? ORDER BY received_at DESC LIMIT ?",
             (list_uuid, _MAX_ENTRIES_PER_LIST),
         )
         return [dict(row) for row in rows]
@@ -303,7 +352,7 @@ class MailBridgeStore:
         """F104/F110：单封邮件（按列表隔离；message_id 即条目身份）。"""
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, received_at FROM mail_bridge_entries WHERE list_uuid = ? AND message_id = ?",
+            "SELECT message_id, subject, sender, html, text, attachment_count, attachment_meta, structure_json, in_reply_to, references_head, blocked_media_json, identity_hints_json, received_at FROM mail_bridge_entries WHERE list_uuid = ? AND message_id = ?",
             (list_uuid, message_id),
         )
         return dict(row) if row is not None else None
@@ -489,8 +538,6 @@ def _structure_json_bounded(structure: dict[str, Any]) -> str:
 
 def _tracking_pixel_count(html: str) -> int:
     """F104：原始 HTML 中外链 <img> 数（渲染层本就拦截，如实统计）。"""
-    import re
-
     if not html:
         return 0
     count = 0
@@ -504,8 +551,6 @@ def _tracking_pixel_count(html: str) -> int:
 def _first_msg_id(header_value: Any) -> str | None:
     """从 In-Reply-To / References 头取第一个 msg-id（去尖括号；仅保留
     形如 token@token 的可信形态——服务端解析结果，不信任原文其余部分）。"""
-    import re
-
     text = _decode_header(header_value)
     if not text:
         return None
@@ -521,8 +566,6 @@ def _first_msg_id(header_value: Any) -> str | None:
 
 def mask_from_display(sender: str) -> str:
     """F104：发件人脱敏展示——邮箱本地部分替换为 ***（保留显示名与域）。"""
-    import re
-
     text = str(sender or "").strip()
     if not text:
         return ""
@@ -536,9 +579,12 @@ def _decode_header(value: Any) -> str:
     if value is None:
         return ""
     try:
-        return str(value)
+        text = str(value)
     except Exception:
         return ""
+    # 非 RFC 2047 的裸非 ASCII 头字节会带着 surrogateescape 进入字符串；
+    # 保守替换，绝不让 surrogate 泄漏进存储层（sqlite 拒绝编码）。
+    return text.encode("utf-8", "replace").decode("utf-8", "replace")
 
 
 def _extract_bodies(message: email.message.Message) -> tuple[str | None, str | None]:
@@ -568,32 +614,135 @@ def _extract_bodies(message: email.message.Message) -> tuple[str | None, str | N
     return html_body, text_body
 
 
-def _attachment_metadata(message: email.message.Message) -> list[dict[str, Any]]:
+def _process_attachments(
+    message: email.message.Message,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """N125：附件处理（ingest 时）。
+
+    返回 (meta, stored)：meta 是全部附件的诚实清单（含被跳过者及其
+    原因），stored 只含已放行、待落库的 {filename, mime, content}。
+    上限：每封 ≤20 个、单文件 ≤5MB；脚本/可执行/未知类型按 allowlist
+    语义拒绝（skipped_unsafe），绝不存盘。"""
     meta: list[dict[str, Any]] = []
+    stored: list[dict[str, Any]] = []
     for part in message.walk():
         if part.get_content_disposition() != "attachment":
             continue
         if len(meta) >= _MAX_ATTACHMENT_META:
             break
         try:
-            size = len(part.get_payload(decode=True) or b"")
-        except Exception:
-            size = -1
-        meta.append(
-            {
-                # F104：附件名净化展示（去尖括号/引号/控制符，限长）——
-                # 名字只作展示，绝不进入 HTML/Atom 渲染面。
-                "filename": _sanitize_display_name(
-                    part.get_filename() or "(unnamed)"
-                ),
-                "bytes": size,
-            }
-        )
-    return meta
+            payload = part.get_payload(decode=True) or b""
+        except Exception:  # noqa: BLE001 — 解码失败按 0 字节处理（诚实跳过）
+            payload = b""
+        size = len(payload) if isinstance(payload, bytes) else len(str(payload))
+        filename = _sanitize_display_name(part.get_filename() or "(unnamed)")
+        mime = (part.get_content_type() or "").lower()
+        item: dict[str, Any] = {
+            "filename": filename,
+            "bytes": size,
+            "mime": mime,
+        }
+        if size > MAX_ATTACHMENT_BYTES:
+            item["status"] = "skipped_oversize"
+            item["reason"] = "附件超过 5MB 单文件上限，未保存。"
+        elif not isinstance(payload, bytes) or not payload:
+            item["status"] = "skipped_empty"
+            item["reason"] = "附件内容为空，未保存。"
+        else:
+            allowed_mime = classify_attachment(filename, mime)
+            if allowed_mime is None:
+                item["status"] = "skipped_unsafe"
+                item["reason"] = "附件类型不在允许名单（脚本/可执行等），未保存。"
+            elif len(stored) >= MAX_ATTACHMENTS_PER_MAIL:
+                item["status"] = "skipped_limit"
+                item["reason"] = "超过每封 20 个附件上限，未保存。"
+            else:
+                item["status"] = "stored"
+                item["mime"] = allowed_mime
+                stored.append(
+                    {"filename": filename, "mime": allowed_mime, "content": payload}
+                )
+        meta.append(item)
+    return meta, stored
+
+
+# -- N127 来源身份提示（服务端计算；中性提示，无反欺骗断言） ----------------
+
+
+def _domain_of(address: str) -> str:
+    text = str(address or "").rsplit("@", 1)
+    return text[1].strip().lower() if len(text) == 2 and text[1] else ""
+
+
+def _domains_in_display(display: str) -> list[str]:
+    """显示名里的域名形态（如「Example Corp example.com」→ example.com）。"""
+    found = re.findall(
+        r"(?:^|[\s@（《'\"])((?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,})(?=$|[\s).,;！？，。》'\"])",
+        str(display or "").lower(),
+    )
+    return [domain for domain in found if domain]
+
+
+def _clean_header_text(text: str) -> str:
+    """surrogate 保守替换（结构化地址路径与 _decode_header 共用语义）。"""
+    return str(text or "").encode("utf-8", "replace").decode("utf-8", "replace")
+
+
+def _first_address(header_value: Any) -> tuple[str, str]:
+    """(address, display_name)。解析失败返回 ("", "")。"""
+    if header_value is None:
+        return "", ""
+    try:
+        addresses = getattr(header_value, "addresses", None)
+        if addresses:
+            first = addresses[0]
+            addr = f"{first.username or ''}@{first.domain or ''}" if first.domain else ""
+            return (
+                addr.strip().lower(),
+                _clean_header_text(str(first.display_name or "")),
+            )
+    except Exception:  # noqa: BLE001 — 头解析失败按缺失处理
+        return "", ""
+    text = _decode_header(header_value)
+    match = re.search(r"([^\s<>,;\"]+)@([^\s<>,;\"]+)", text)
+    if match is None:
+        return "", ""
+    display = text.split("<", 1)[0].strip()
+    return f"{match.group(1)}@{match.group(2)}".lower(), display
+
+
+def _identity_hints(message: email.message.Message) -> dict[str, Any] | None:
+    """N127：From vs Reply-To 不一致 + 显示名域名与邮箱域不一致。
+
+    只依据邮件头本身、服务端解析；结果为中性提示（不验证 SPF/DKIM，
+    也绝不声称「已验证/防伪造」）。无任何异常处 → None（诚实：无提示）。"""
+    from_addr, from_display = _first_address(message.get("From"))
+    if not from_addr:
+        return None
+    hints: dict[str, Any] = {
+        "fromAddress": from_addr,
+        "fromDisplay": from_display[:200] if from_display else "",
+    }
+    reply_addr, _reply_display = _first_address(message.get("Reply-To"))
+    mismatch = False
+    if reply_addr and _domain_of(reply_addr) != _domain_of(from_addr):
+        hints["replyToMismatch"] = True
+        hints["replyToAddress"] = reply_addr
+        mismatch = True
+    from_domain = _domain_of(from_addr)
+    name_domains = [
+        domain
+        for domain in _domains_in_display(from_display)
+        if domain != from_domain and not from_domain.endswith(f".{domain}")
+        and not domain.endswith(f".{from_domain}")
+    ]
+    if from_display and from_domain and name_domains:
+        hints["displayNameDomainMismatch"] = True
+        hints["displayNameDomains"] = name_domains[:5]
+        mismatch = True
+    return hints if mismatch else None
 
 
 def _sanitize_display_name(name: str) -> str:
-    import re
-
     cleaned = re.sub(r"[<>&\"'\x00-\x1f]", "_", str(name))
     return cleaned[:120] or "(unnamed)"

@@ -29,6 +29,7 @@ import { KnowledgeCardsManager } from '../KnowledgeCardsManager'
 import { DuplicatesDialog } from '../DuplicatesDialog'
 import { BatchEditDialog } from '../BatchEditDialog'
 import { CheckLinksDialog } from '../CheckLinksDialog'
+import { BulkPasteDialog } from '../BulkPasteDialog'
 import { MergeDialog, type MergeCandidate } from '../MergeDialog'
 import { NotesManager } from '../NotesManager'
 import { Dialog } from '../ui/Dialog'
@@ -300,6 +301,8 @@ export default function BookmarksPage() {
   const [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set())
   const [batchEditOpen, setBatchEditOpen] = useState(false)
   const [checkLinksOpen, setCheckLinksOpen] = useState(false)
+  // N121：批量粘贴（textarea 逐行 URL → bulk-links）。
+  const [bulkPasteOpen, setBulkPasteOpen] = useState(false)
 
   function toggleSelect(ref: string) {
     setSelectedRefs((prev) => {
@@ -395,6 +398,10 @@ export default function BookmarksPage() {
           onClose={() => setMergeOpen(false)}
         />
       )}
+      {/* N121：批量粘贴（逐行 URL → bulk-links，逐条结果展示） */}
+      {bulkPasteOpen && (
+        <BulkPasteDialog target="bookmark" onClose={() => setBulkPasteOpen(false)} />
+      )}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 max-lg:pb-[76px]">
         {/* 头部：标题 + 页签 + 导入 / 导出 / 新建 */}
         <div className="flex flex-wrap items-center gap-2">
@@ -468,6 +475,14 @@ export default function BookmarksPage() {
             >
               回收站
             </button>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-bulk-paste-open=""
+              onClick={() => setBulkPasteOpen(true)}
+            >
+              批量粘贴
+            </Button>
             <NewBookmarkButton />
           </div>
         </div>
