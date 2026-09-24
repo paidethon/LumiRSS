@@ -8,7 +8,11 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../api/client'
-import type { DigestPoolEntry, GptDigestConfig, GptDigestIssue } from '../../api/client'
+import type {
+  DigestPoolEntry,
+  GptDigestConfig,
+  GptDigestIssue,
+} from '../../api/client'
 import {
   useAddDigestPoolEntryMutation,
   useConfigFeed,
@@ -19,6 +23,7 @@ import {
   useCreateGptDigestConfigMutation,
   useDeleteGptDigestConfigMutation,
   useDigestPool,
+  useDigestTrimPreviewQuery,
   useExplainGptDigestIssueMutation,
   useGenerateConfigMutation,
   useWeeklyDigestMutation,
@@ -27,6 +32,7 @@ import {
   useMissingDigestDates,
   usePublishGptDigestIssueMutation,
   useRemoveDigestPoolEntryMutation,
+  useRetryPolishGptDigestIssueMutation,
   useReorderDigestPoolMutation,
   useReviseGptDigestIssueMutation,
   useRotateGptDigestDryRunMutation,
@@ -37,6 +43,14 @@ import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
+
+const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
+
+/** N173：与服务端 split_sentences 同一正则语义（句子索引两端一致）。 */
+function splitSentences(text: string): string[] {
+  const parts = text.match(/[^。！？!?…]*(?:[。！？!?…]+|$)/g)
+  return (parts ?? []).filter((part) => part !== '')
+}
 
 const numberInputCls =
   'w-20 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 min-h-9 text-sm text-[var(--lumi-text-primary)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]'
@@ -151,6 +165,27 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const [lookbackDays, setLookbackDays] = useState(config.lookbackDays)
   // F02：多时点（逗号分隔小时；空 = 单时点 hour）
   const [slotsText, setSlotsText] = useState(config.slots.join(','))
+  // N171：发布日（0=周一…6=周日；空 = 每天）与周末独立时点
+  const [days, setDays] = useState<number[]>(config.days ?? [])
+  const [weekendHoursText, setWeekendHoursText] = useState(
+    (config.weekendHours ?? []).join(','),
+  )
+  // N172：分阶段模型（空 = 该阶段用基础模型）
+  const [selectModel, setSelectModel] = useState(config.stageModels?.select ?? '')
+  const [summarizeModel, setSummarizeModel] = useState(config.stageModels?.summarize ?? '')
+  const [polishModel, setPolishModel] = useState(config.stageModels?.polish ?? '')
+  // N174：固定栏目结构（每行「名称|数量|hide 或 placeholder」，≤8 行）
+  const [columnsText, setColumnsText] = useState(
+    (config.columns ?? [])
+      .map((column) => `${column.name}|${column.count}|${column.emptyPolicy}`)
+      .join('\n'),
+  )
+  // N175：目标阅读时长（分钟；0 = 不启用）
+  const [targetReadingMinutes, setTargetReadingMinutes] = useState(
+    config.targetReadingMinutes ?? 0,
+  )
+  // N176：同事件聚合
+  const [clusterEnabled, setClusterEnabled] = useState(config.clusterEnabled ?? false)
   // F101：本次预览显式放回的材料身份集合（url:/title: 前缀键）
   const [putBackKeys, setPutBackKeys] = useState<string[]>([])
   // F103：轮换两步确认（step: idle → 影响确认 → 已轮换展示新地址）
@@ -167,6 +202,18 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     setSourceKind(config.sourceKind)
     setLookbackDays(config.lookbackDays)
     setSlotsText(config.slots.join(','))
+    setDays(config.days ?? [])
+    setWeekendHoursText((config.weekendHours ?? []).join(','))
+    setSelectModel(config.stageModels?.select ?? '')
+    setSummarizeModel(config.stageModels?.summarize ?? '')
+    setPolishModel(config.stageModels?.polish ?? '')
+    setColumnsText(
+      (config.columns ?? [])
+        .map((column) => `${column.name}|${column.count}|${column.emptyPolicy}`)
+        .join('\n'),
+    )
+    setTargetReadingMinutes(config.targetReadingMinutes ?? 0)
+    setClusterEnabled(config.clusterEnabled ?? false)
     setPutBackKeys([])
     setRotateStep('idle')
   }, [config])
@@ -180,6 +227,50 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   const nextSlots = slotsText.trim() === '' ? [] : parsedSlots
   const slotsChanged = nextSlots.join(',') !== config.slots.join(',')
 
+  // N171：周末独立时点解析（与 slots 同规则；空 = 沿用平日计划）
+  const parsedWeekendHours = weekendHoursText
+    .split(/[,，\s]+/)
+    .map((part) => Number(part))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 23)
+    .slice(0, 4)
+    .sort((a, b) => a - b)
+  const nextWeekendHours = weekendHoursText.trim() === '' ? [] : parsedWeekendHours
+
+  // N174：栏目结构逐行解析（名称|数量|hide 或 placeholder）
+  const nextColumns = columnsText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .map((line) => {
+      const [rawName, rawCount, rawPolicy] = line.split(/[|｜,，]/).map((p) => p.trim())
+      const count = Number(rawCount)
+      return {
+        name: rawName ?? '',
+        count: Number.isInteger(count) && count > 0 ? Math.min(count, 20) : 5,
+        emptyPolicy: rawPolicy === 'placeholder' ? ('placeholder' as const) : ('hide' as const),
+      }
+    })
+    .filter((column) => column.name !== '')
+    .slice(0, 8)
+
+  // N172：仅保留非空阶段模型（空 = 该阶段用基础模型）
+  const nextStageModels: Record<string, string> = {}
+  if (selectModel.trim() !== '') nextStageModels.select = selectModel.trim()
+  if (summarizeModel.trim() !== '') nextStageModels.summarize = summarizeModel.trim()
+  if (polishModel.trim() !== '') nextStageModels.polish = polishModel.trim()
+
+  const stageModelsChanged =
+    JSON.stringify(nextStageModels) !== JSON.stringify(config.stageModels ?? {})
+  const columnsChanged =
+    JSON.stringify(nextColumns) !==
+    JSON.stringify(
+      (config.columns ?? []).map((column) => ({
+        name: column.name,
+        count: column.count,
+        emptyPolicy: column.emptyPolicy,
+      })),
+    )
+
   const dirty =
     config.name !== name ||
     config.hour !== hour ||
@@ -190,7 +281,13 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     config.feedUrlAllow !== feedUrlAllow ||
     config.sourceKind !== sourceKind ||
     config.lookbackDays !== lookbackDays ||
-    slotsChanged
+    slotsChanged ||
+    JSON.stringify([...days].sort()) !== JSON.stringify([...(config.days ?? [])].sort()) ||
+    nextWeekendHours.join(',') !== (config.weekendHours ?? []).join(',') ||
+    stageModelsChanged ||
+    columnsChanged ||
+    (config.targetReadingMinutes ?? 0) !== targetReadingMinutes ||
+    (config.clusterEnabled ?? false) !== clusterEnabled
 
   // §13.4：token 只存哈希——atomPath 为空 = 订阅地址已隐藏（明文不可
   // 重建），新地址经「轮换 token」一次性获取；UI 诚实呈现，不显示坏链。
@@ -327,6 +424,107 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onChange={(e) => setSlotsText(e.target.value)}
         />
       </Row>
+      <Row label="发布日（N171）" hint="点击切换；全部不选 = 每天发布；周末（六/日）可单独配置发布时点">
+        <div className="flex flex-wrap items-center gap-1">
+          {DAY_LABELS.map((label, day) => {
+            const active = days.includes(day)
+            return (
+              <button
+                key={day}
+                type="button"
+                aria-pressed={active}
+                aria-label={`发布日 周${label}`}
+                data-lumi-digest-day={day}
+                className={`min-h-9 w-9 rounded-[var(--lumi-radius-md)] border text-xs ${
+                  active
+                    ? 'border-[var(--lumi-accent)] bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+                    : 'border-[var(--lumi-border)] bg-[var(--lumi-surface)] text-[var(--lumi-text-secondary)]'
+                }`}
+                onClick={() =>
+                  setDays(
+                    active
+                      ? days.filter((d) => d !== day)
+                      : [...days, day].sort((x, y) => x - y),
+                  )
+                }
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </Row>
+      <Row label="周末发布时点（N171）" hint="周六/周日改用这套小时（逗号分隔，如 10,16）；留空 = 沿用平日计划">
+        <input
+          aria-label="周末发布时点"
+          type="text"
+          className={textInputCls}
+          placeholder="10,16"
+          value={weekendHoursText}
+          onChange={(e) => setWeekendHoursText(e.target.value)}
+        />
+      </Row>
+      <Row label="选材模型（N172）" hint="仅选材阶段使用的模型名；留空 = 用基础模型">
+        <input
+          aria-label="选材模型"
+          type="text"
+          className={textInputCls}
+          placeholder="model-id"
+          value={selectModel}
+          onChange={(e) => setSelectModel(e.target.value)}
+        />
+      </Row>
+      <Row label="总结模型（N172）" hint="仅总结阶段使用的模型名；留空 = 用基础模型">
+        <input
+          aria-label="总结模型"
+          type="text"
+          className={textInputCls}
+          placeholder="model-id"
+          value={summarizeModel}
+          onChange={(e) => setSummarizeModel(e.target.value)}
+        />
+      </Row>
+      <Row label="润色模型（N172）" hint="仅润色阶段使用的模型名；留空 = 用基础模型。同一 provider 配置内路由">
+        <input
+          aria-label="润色模型"
+          type="text"
+          className={textInputCls}
+          placeholder="model-id"
+          value={polishModel}
+          onChange={(e) => setPolishModel(e.target.value)}
+        />
+      </Row>
+      <Row
+        label="固定栏目（N174）"
+        hint="每行「名称|数量|hide 或 placeholder」，如：人工智能|5|placeholder；≤8 栏；留空 = 不启用"
+      >
+        <textarea
+          aria-label="固定栏目结构"
+          className={`${textInputCls} min-h-16`}
+          placeholder={'人工智能|5|placeholder\n开源|3|hide'}
+          value={columnsText}
+          onChange={(e) => setColumnsText(e.target.value)}
+        />
+      </Row>
+      <Row label="目标阅读时长（N175）" hint="分钟（0–600）：超预算条目移入素材篮（不删除）；0 = 不启用；估算按每分钟 400 字">
+        <input
+          aria-label="目标阅读时长分钟"
+          type="number"
+          min={0}
+          max={600}
+          className={numberInputCls}
+          value={targetReadingMinutes}
+          onChange={(e) => setTargetReadingMinutes(Number(e.target.value))}
+        />
+      </Row>
+      <Row label="同事件聚合（N176）" hint="开启后：标题高度相似且 48 小时内发布的条目聚合为一条多来源条目；数字不一致时如实标注分歧">
+        <Switch
+          id={`gpt-digest-cluster-${config.id}`}
+          label={`同事件聚合 ${config.name}`}
+          checked={clusterEnabled}
+          onCheckedChange={(checked) => setClusterEnabled(checked)}
+        />
+      </Row>
       <div className="flex flex-wrap items-center gap-2 py-2">
         <Button
           variant="primary"
@@ -346,6 +544,12 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
                 sourceKind,
                 lookbackDays,
                 slots: slotsText.trim() === '' ? [] : parsedSlots,
+                days,
+                weekendHours: nextWeekendHours,
+                stageModels: nextStageModels,
+                columns: nextColumns,
+                targetReadingMinutes,
+                clusterEnabled,
               },
             })
           }
@@ -622,7 +826,10 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
 }
 
 /** F08：单期行 + 展开式修订编辑（标题与各条目总结；sourceIds 不可
- * 新增——保证引用真实性不受人工编辑影响）。 */
+ * 新增——保证引用真实性不受人工编辑影响）。
+ * N172：polishFailed 时显示重试润色；meta 摘要展示分阶段模型。
+ * N173：事实检查视图（逐句核对 + 待核实标注 + 逐句改写/删除）。
+ * N175：素材篮展示 + 裁剪预览。 */
 function IssueRow({
   configId,
   issue,
@@ -637,6 +844,12 @@ function IssueRow({
   const explain = useExplainGptDigestIssueMutation()
   const compare = useCompareGptDigestIssueMutation()
   const facts = useCompareFactsMutation()
+  const retryPolish = useRetryPolishGptDigestIssueMutation()
+  const [factCheckOpen, setFactCheckOpen] = useState(false)
+  const [trimOpen, setTrimOpen] = useState(false)
+  const trim = useDigestTrimPreviewQuery(configId, issue.issueKey, trimOpen)
+  const [editingSentence, setEditingSentence] = useState<number | null>(null)
+  const [sentenceText, setSentenceText] = useState('')
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [summaries, setSummaries] = useState<string[]>(
@@ -661,7 +874,53 @@ function IssueRow({
         summary: (summaries[sIdx]?.split('\n')[iIdx] ?? item.summary).trim() || item.summary,
       })),
     }))
-    revise.mutate({ configId, issueKey: issue.issueKey, payload: { title, sections } })
+    revise.mutate({
+      configId,
+      issueKey: issue.issueKey,
+      payload: { title, sections, sentenceOps: [] },
+    })
+  }
+
+  /** N173：句子原文 → (section, item, sentence) 索引（与后端一致）。 */
+  const locate = (sentence: string) => {
+    for (let sIdx = 0; sIdx < issue.sections.length; sIdx += 1) {
+      const section = issue.sections[sIdx]
+      for (let iIdx = 0; iIdx < section.items.length; iIdx += 1) {
+        const sentences = splitSentences(section.items[iIdx].summary)
+        const fIdx = sentences.indexOf(sentence)
+        if (fIdx !== -1) {
+          return { op: 'delete' as const, sectionIndex: sIdx, itemIndex: iIdx, sentenceIndex: fIdx }
+        }
+      }
+    }
+    return null
+  }
+
+  const meta = (issue.meta ?? {}) as Record<string, unknown>
+  const stageModels = (meta.stageModels ?? {}) as Record<string, string>
+  const polishFailed = meta.polishFailed === true
+  const leftoverPool = (meta.leftoverPool ?? []) as Array<{
+    sectionHeading?: string
+    summary: string
+    sourceIds?: string[]
+    refs?: Array<{ title?: string; url?: string; feedTitle?: string }>
+  }>
+  const applySentenceOp = (
+    op: 'revise' | 'delete',
+    sentence: string,
+    text?: string,
+  ) => {
+    const base = locate(sentence)
+    if (base === null) return
+    revise.mutate({
+      configId,
+      issueKey: issue.issueKey,
+      payload: {
+        sentenceOps: [
+          text === undefined ? { ...base, op } : { ...base, op, text },
+        ],
+      },
+    })
   }
 
   return (
@@ -731,10 +990,209 @@ function IssueRow({
               : '对照上一期'}
           </Button>
         ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          data-lumi-fact-check-toggle=""
+          aria-expanded={factCheckOpen}
+          onClick={() => setFactCheckOpen(!factCheckOpen)}
+        >
+          事实检查
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          data-lumi-trim-toggle=""
+          aria-expanded={trimOpen}
+          onClick={() => setTrimOpen(!trimOpen)}
+        >
+          裁剪预览
+        </Button>
         <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>
           {editing ? '收起' : '修订'}
         </Button>
       </div>
+      {Object.keys(stageModels).length > 0 ? (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-stage-models="">
+          模型（按阶段）：
+          {Object.entries(stageModels)
+            .map(([stage, model]) => `${stage}=${model}`)
+            .join(' · ')}
+        </p>
+      ) : null}
+      {polishFailed ? (
+        <div
+          className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+          data-lumi-polish-failed=""
+          role="status"
+        >
+          <p className="text-xs text-[var(--lumi-text-secondary)]">
+            润色失败（{typeof meta.polishError === 'string' ? meta.polishError : '上次润色未完成'}）；
+            选材与总结的草稿已保留。
+          </p>
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              data-lumi-retry-polish=""
+              disabled={retryPolish.isPending}
+              onClick={() => retryPolish.mutate({ configId, issueKey: issue.issueKey })}
+            >
+              {retryPolish.isPending ? '润色中…' : '重试润色'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {retryPolish.isError && retryPolish.error instanceof ApiError ? (
+        <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+          重试润色失败：{retryPolish.error.message}
+        </p>
+      ) : null}
+      {/* N173：事实检查视图——逐句引用核对；人工改写未匹配到引用的句子标「待核实」 */}
+      {factCheckOpen ? (
+        <div
+          className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+          data-lumi-fact-check=""
+        >
+          <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+            事实检查（逐句核对来源引用）
+          </p>
+          <ul className="flex flex-col gap-1">
+            {issue.sentenceMap.map((sentence, index) => (
+              <li
+                key={`${index}-${sentence.sentence.slice(0, 12)}`}
+                className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--lumi-text-secondary)]"
+                data-lumi-fact-sentence={sentence.sentence}
+              >
+                <span className="min-w-0 flex-1">{sentence.sentence}</span>
+                {sentence.verified ? (
+                  <span
+                    className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-accent-text)]"
+                    data-lumi-fact-verified=""
+                  >
+                    已核对（{sentence.refs.join('、') || '无引用'}）
+                  </span>
+                ) : (
+                  <span
+                    className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-secondary)]"
+                    data-lumi-fact-unverified=""
+                  >
+                    待核实
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`改写句子：${sentence.sentence.slice(0, 10)}`}
+                  disabled={revise.isPending}
+                  onClick={() => {
+                    setEditingSentence(index)
+                    setSentenceText(sentence.sentence)
+                  }}
+                >
+                  改写
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`删除句子：${sentence.sentence.slice(0, 10)}`}
+                  data-lumi-fact-delete={index}
+                  disabled={revise.isPending}
+                  onClick={() => applySentenceOp('delete', sentence.sentence)}
+                >
+                  删除
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {editingSentence !== null && issue.sentenceMap[editingSentence] ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="text-xs text-[var(--lumi-text-tertiary)]">改写后的句子（改写后将标注「待核实」）</span>
+                <input
+                  aria-label="改写句子内容"
+                  type="text"
+                  className={cxText}
+                  value={sentenceText}
+                  onChange={(e) => setSentenceText(e.target.value)}
+                />
+              </label>
+              <Button
+                variant="primary"
+                size="sm"
+                data-lumi-fact-revise-save=""
+                disabled={sentenceText.trim() === '' || revise.isPending}
+                onClick={() => {
+                  const target = issue.sentenceMap[editingSentence]
+                  if (target) applySentenceOp('revise', target.sentence, sentenceText.trim())
+                  setEditingSentence(null)
+                }}
+              >
+                保存改写
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setEditingSentence(null)}>
+                取消
+              </Button>
+            </div>
+          ) : null}
+          {revise.isError && revise.error instanceof ApiError ? (
+            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+              逐句操作失败：{revise.error.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {/* N175：素材篮——因阅读时长预算移出的条目（保留可恢复的出处） */}
+      {leftoverPool.length > 0 ? (
+        <div
+          className="flex flex-col gap-0.5 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+          data-lumi-leftover-pool=""
+        >
+          <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+            素材篮（{leftoverPool.length} 条因阅读时长预算移出，未删除）：
+          </p>
+          <ul className="flex flex-col gap-0.5">
+            {leftoverPool.map((entry, index) => (
+              <li key={index} className="truncate text-xs text-[var(--lumi-text-tertiary)]">
+                {entry.summary.slice(0, 40)}
+                {entry.summary.length > 40 ? '…' : ''}
+                {entry.refs && entry.refs.length > 0
+                  ? `（${entry.refs.map((ref) => ref.feedTitle || ref.title || ref.url).join('、')}）`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {/* N175：裁剪预览——before/after 与将移出的条目（零写入） */}
+      {trimOpen ? (
+        <div
+          className="flex flex-col gap-1 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-2.5"
+          data-lumi-trim-preview=""
+        >
+          {trim.isPending ? (
+            <Skeleton className="h-9 w-full" />
+          ) : trim.isError ? (
+            <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
+              裁剪预览失败：{trim.error instanceof Error ? trim.error.message : '请稍后重试。'}
+            </p>
+          ) : trim.data ? (
+            <>
+              <p className="text-xs text-[var(--lumi-text-secondary)]">{trim.data.note}</p>
+              {trim.data.moved.length > 0 ? (
+                <ul className="flex flex-col gap-0.5">
+                  {trim.data.moved.map((entry, index) => (
+                    <li key={index} className="truncate text-xs text-[var(--lumi-text-tertiary)]">
+                      将移出：{entry.summary.slice(0, 40)}
+                      {entry.summary.length > 40 ? '…' : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {compare.isError && compare.error instanceof ApiError && compare.variables?.issueKey === issue.issueKey ? (
         <p className="text-xs text-[var(--lumi-danger-text, #b3261e)]" role="alert">
           对照失败：{compare.error.message}

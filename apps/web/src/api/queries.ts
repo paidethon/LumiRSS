@@ -1855,8 +1855,10 @@ import {
   listGptDigestConfigs,
   listGptDigestIssues,
   listNotesByEntry,
+  getDigestTrimPreview,
   previewConfigDigest,
   previewGptDigest,
+  retryPolishGptDigestIssue,
   reviseGptDigestIssue,
   rotateGptDigestFeed,
   setSourceOverride,
@@ -2387,6 +2389,27 @@ export function useReviseGptDigestIssueMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
     },
+  })
+}
+
+/** N172：仅重跑润色阶段（选材/总结成果保留；meta.polishFailed 清除）。 */
+export function useRetryPolishGptDigestIssueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { configId: number; issueKey: string }) =>
+      retryPolishGptDigestIssue(vars.configId, vars.issueKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['gpt-digest'] })
+    },
+  })
+}
+
+/** N175：裁剪预览（issue 面板按需开启；零写入、零模型调用）。 */
+export function useDigestTrimPreviewQuery(configId: number, issueKey: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['gpt-digest', 'trim-preview', configId, issueKey],
+    queryFn: ({ signal }) => getDigestTrimPreview(configId, issueKey, signal),
+    enabled,
   })
 }
 

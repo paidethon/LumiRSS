@@ -30,12 +30,13 @@ from lumirss.atom_render import AtomEntry, render_feed
 from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
+    DigestPolishFailed,
     build_preview,
     consume_pool_for_issue,
     generate_issue,
 )
 from lumirss.gpt_digest_configs import GptDigestConfigStore
-from lumirss.gpt_digest_issues import GptDigestIssuesStore
+from lumirss.gpt_digest_issues import GptDigestIssuesStore, parse_issue_meta
 from lumirss.gpt_digest_pool import (
     DigestMaterialPoolStore,
     DigestPoolDuplicate,
@@ -49,9 +50,11 @@ from lumirss.models import (
     GptDigestFeedInfo,
     GptDigestIssueList,
     GptDigestIssueRevise,
+    GptDigestLeftoverItem,
     GptDigestPreview,
     GptDigestSettings,
     GptDigestSettingsUpdate,
+    GptDigestTrimPreview,
 )
 from lumirss.token_hash import verify_token
 
@@ -434,10 +437,14 @@ async def revise_gpt_digest_issue(
     payload: GptDigestIssueRevise,
     request: Request,
 ) -> Response:
-    """F08：人工编辑标题/条目/排序后重新发布同一期。
+    """F08 + N173：人工修订同一期后重新发布。
 
-    修订沿用既有引用（sourceIds 必须存在于生成时的引用集，不可凭空
-    新增）；entry id 不变、updated 前移，订阅端不产生新刊次。"""
+    - F08 全量：提交 title+sections（sourceIds 必须存在于生成时的引用
+      集，不可凭空新增）；entry id 不变、updated 前移。
+    - N173 逐句：``sentenceOps``（revise 改写 / delete 删除）直接作用
+      在当前内容上（省略 title/sections 时）；改写后的句子匹配不到生
+      成时引用 → 映射重算为待核实——绝不凭空延续引用。
+    两种路径都会重算句子映射并重渲染 body_html（Atom 订阅同步）。"""
     issues = _issues(request)
     row = await issues.get_issue(config_id, issue_key)
     if row is None:
@@ -449,13 +456,49 @@ async def revise_gpt_digest_issue(
         refs = json.loads(str(row["refs_json"] or "{}"))
     except ValueError:
         refs = {}
+
+    stored_sections = _stored_sections_list(row)
+    if payload.sentenceOps:
+        if payload.sections is not None:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": {
+                        "type": "invalid_request",
+                        "message": "sentenceOps 与全量 sections 不可同时提交。",
+                    }
+                },
+            )
+        sections = json.loads(json.dumps(stored_sections, ensure_ascii=False))  # 深拷贝
+        error = _apply_sentence_ops(sections, payload.sentenceOps)
+        if error is not None:
+            return JSONResponse(
+                status_code=422,
+                content={"error": {"type": "invalid_request", "message": error}},
+            )
+        title = payload.title if payload.title is not None else str(row["title"])
+    else:
+        if payload.sections is None:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": {
+                        "type": "invalid_request",
+                        "message": "需要 sections 或 sentenceOps。",
+                    }
+                },
+            )
+        sections = payload.sections
+        title = payload.title if payload.title is not None else str(row["title"])
+
     from lumirss.gpt_digest import (
         DigestOutputInvalid,
         parse_and_validate_output,
         render_issue_html,
     )
+    from lumirss.gpt_digest_issues import build_sentence_map, recompute_sentence_map
 
-    output = {"title": payload.title, "sections": payload.sections, "limitations": []}
+    output = {"title": title, "sections": sections, "limitations": []}
     try:
         validated = parse_and_validate_output(
             json.dumps(output, ensure_ascii=False), list(refs.keys())
@@ -465,6 +508,13 @@ async def revise_gpt_digest_issue(
             status_code=422,
             content={"error": {"type": "invalid_issue", "message": str(exc)}},
         )
+    # N173：映射重算——以修订前映射（meta 里存有；旧期号从现内容推导）
+    # 按句子原文匹配：改写/新增 → 待核实；删除 → 消失。
+    meta = parse_issue_meta(dict(row))
+    old_map = meta.get("sentenceMap")
+    if not isinstance(old_map, list):
+        old_map = build_sentence_map(stored_sections)
+    meta["sentenceMap"] = recompute_sentence_map(old_map, validated["sections"])
     body_html = render_issue_html(validated, refs)
     updated = await issues.revise_issue(
         config_id=config_id,
@@ -474,6 +524,7 @@ async def revise_gpt_digest_issue(
         sections=validated["sections"],
         note="人工修订",
         updated_at=_utc_now_seconds(),
+        meta_json=json.dumps(meta, ensure_ascii=False),
     )
     if updated is None:
         return JSONResponse(
@@ -482,6 +533,51 @@ async def revise_gpt_digest_issue(
         )
     dto = issues.issue_to_dto(updated)
     return JSONResponse(status_code=200, content={"issue": dto})
+
+
+def _stored_sections_list(row: dict) -> list[dict]:
+    """期号行 → sections 列表（兼容 dict 存态与 list 存态）。"""
+    try:
+        stored = json.loads(str(row["sections_json"] or "[]"))
+    except ValueError:
+        return []
+    if isinstance(stored, dict):
+        stored = stored.get("sections") or []
+    return [s for s in stored if isinstance(s, dict)]
+
+
+def _apply_sentence_ops(
+    sections: list[dict], ops: list
+) -> str | None:
+    """N173：在 sections 上原位应用逐句操作；非法 → 错误文案（422）。
+
+    句子切分保真（``"".join == 原文``），修订文本直接替换目标句，删除
+    整句移除；操作后重渲染与映射重算由调用方完成。"""
+    from lumirss.gpt_digest_issues import split_sentences
+
+    if len(ops) > 100:
+        return "sentenceOps 数量超限（≤100）。"
+    for op in ops:
+        try:
+            section = sections[op.sectionIndex]
+            item = section["items"][op.itemIndex]
+        except (IndexError, KeyError, TypeError):
+            return "sentenceOps 索引越界。"
+        summary = str(item.get("summary") or "")
+        sentences = split_sentences(summary)
+        if op.sentenceIndex >= len(sentences):
+            return "sentenceOps 句子索引越界。"
+        if op.op == "delete":
+            del sentences[op.sentenceIndex]
+        elif op.op == "revise":
+            text = (op.text or "").strip()
+            if not text:
+                return "revise 操作需要非空 text。"
+            sentences[op.sentenceIndex] = text
+        else:  # pragma: no cover — pydantic Literal 已限定
+            return "未知的 sentenceOps 操作。"
+        item["summary"] = "".join(sentences)
+    return None
 
 
 @router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/publish")
@@ -597,6 +693,116 @@ async def explain_gpt_digest_issue(
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
+@router.get(
+    "/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/trim-preview",
+    response_model=GptDigestTrimPreview,
+)
+async def trim_preview_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> GptDigestTrimPreview:
+    """N175：阅读时长裁剪预览——展示 before/after 与将移入素材篮的条目。
+
+    零写入、零模型调用（对已存期号按当前配置现算）；未配置
+    targetReadingMinutes 时诚实说明并返回原样。"""
+    from lumirss.gpt_digest import estimate_minutes, trim_to_target
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    row = await _issues(request).get_issue(config_id, issue_key)
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "期号不存在。"}},
+        )
+    sections = _stored_sections_list(row)
+    before = round(estimate_minutes(sections), 2)
+    target = int(config.get("targetReadingMinutes") or 0)
+    if target <= 0:
+        return GptDigestTrimPreview(
+            targetReadingMinutes=0,
+            beforeMinutes=before,
+            afterMinutes=before,
+            moved=[],
+            note="未启用阅读时长控制（targetReadingMinutes=0），不会裁剪。",
+        )
+    try:
+        refs = json.loads(str(row["refs_json"] or "{}"))
+    except ValueError:
+        refs = {}
+    _new_sections, moved, stats = trim_to_target(
+        sections, float(target), config.get("columns") or [], refs
+    )
+    return GptDigestTrimPreview(
+        targetReadingMinutes=target,
+        beforeMinutes=stats["beforeMinutes"],
+        afterMinutes=stats["afterMinutes"],
+        moved=[GptDigestLeftoverItem(**item) for item in moved],
+        note=f"将移出 {stats['movedCount']} 条进素材篮（估算约 {stats['beforeMinutes']} → {stats['afterMinutes']} 分钟）。",
+    )
+
+
+@router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish")
+async def retry_polish_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> Response:
+    """N172：仅重跑润色阶段（选材/总结成果保留不动）。
+
+    语义：同 issue_key 修订（entry id 不变、updated 前移、状态不变）；
+    成功清除 meta.polishFailed。失败 502 polish_failed，期号保持原样。"""
+    from lumirss.gpt_digest import (
+        DigestMaterialEmpty,
+        _build_ai_deps,
+        retry_polish_issue,
+    )
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        row = await retry_polish_issue(
+            _issues(request),
+            _config_store(request),
+            config_id=config_id,
+            issue_key=issue_key,
+            config=config,
+            ai_settings=ai_settings,
+            provider_factory=provider_factory,
+        )
+    except DigestMaterialEmpty as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping below
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": {
+                        "type": "ai_not_configured",
+                        "message": "AI 未配置或配置不可用（详见设置）。",
+                    }
+                },
+            )
+        if name in {"AiRateLimited", "AiTimeout", "AiUpstreamError", "AiInvalidResponse"}:
+            return JSONResponse(
+                status_code=502,
+                content={"error": {"type": "ai_upstream", "message": str(exc)}},
+            )
+        raise
+    dto = _issues(request).issue_to_dto(row)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
 @router.post("/api/v1/gpt-digest/configs/{config_id}/weekly")
 async def generate_weekly_digest(config_id: int, request: Request) -> Response:
     """F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。
@@ -631,6 +837,20 @@ async def generate_weekly_digest(config_id: int, request: Request) -> Response:
         return JSONResponse(
             status_code=422,
             content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except DigestPolishFailed as exc:
+        # N172：润色失败——选材/总结草稿已保留（响应携带该草稿），错误
+        # 诚实带阶段名；可经 retry-polish 仅补润色。
+        draft_dto = _issues(request).issue_to_dto(exc.row) if exc.row else None
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "polish_failed",
+                    "message": str(exc),
+                },
+                "issue": draft_dto,
+            },
         )
     except DigestOutputInvalid as exc:
         return JSONResponse(
@@ -925,6 +1145,20 @@ async def _generate_for_config(
         return JSONResponse(
             status_code=422,
             content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except DigestPolishFailed as exc:
+        # N172：润色失败——选材/总结草稿已保留（响应携带该草稿），错误
+        # 诚实带阶段名；可经 retry-polish 仅补润色。
+        draft_dto = _issues(request).issue_to_dto(exc.row) if exc.row else None
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "polish_failed",
+                    "message": str(exc),
+                },
+                "issue": draft_dto,
+            },
         )
     except DigestOutputInvalid as exc:
         return JSONResponse(

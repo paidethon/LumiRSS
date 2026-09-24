@@ -2383,6 +2383,11 @@ export type GptDigestConfigList = G6Schemas['GptDigestConfigList']
 export type GptDigestConfigUpdate = G6Schemas['GptDigestConfigUpdate']
 export type GptDigestCreate = G6Schemas['GptDigestCreate']
 export type GptDigestIssueRevise = G6Schemas['GptDigestIssueRevise']
+export type GptDigestSentence = G6Schemas['GptDigestSentence']
+export type GptDigestSentenceOp = G6Schemas['GptDigestSentenceOp']
+export type GptDigestColumn = G6Schemas['GptDigestColumn']
+export type GptDigestLeftoverItem = G6Schemas['GptDigestLeftoverItem']
+export type GptDigestTrimPreview = G6Schemas['GptDigestTrimPreview']
 export type StorageUsage = G6Schemas['StorageUsage']
 export type SubscriptionVolumeResponse = G6Schemas['SubscriptionVolumeResponse']
 export type SubscriptionVolumeItem = G6Schemas['SubscriptionVolumeItem']
@@ -2917,6 +2922,30 @@ export async function reviseGptDigestIssue(
     { method: 'PUT', body: JSON.stringify(payload), contentType: 'application/json' },
   )
   return (await response.json()) as { issue: GptDigestIssue }
+}
+
+/** N172：仅重跑润色阶段（选材/总结成果保留）。 */
+export async function retryPolishGptDigestIssue(
+  configId: number,
+  issueKey: string,
+): Promise<{ issue: GptDigestIssue }> {
+  const response = await rawRequest(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/retry-polish`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as { issue: GptDigestIssue }
+}
+
+/** N175：阅读时长裁剪预览（before/after + 将移入素材篮的条目；零写入）。 */
+export async function getDigestTrimPreview(
+  configId: number,
+  issueKey: string,
+  signal?: AbortSignal,
+): Promise<GptDigestTrimPreview> {
+  return request<GptDigestTrimPreview>(
+    `${API_BASE}/gpt-digest/configs/${configId}/issues/${encodeURIComponent(issueKey)}/trim-preview`,
+    signal,
+  )
 }
 
 /** F29 反向入口：引用某一 RSS 条目的书签/笔记（新→旧；无效引用为空列表）。 */
