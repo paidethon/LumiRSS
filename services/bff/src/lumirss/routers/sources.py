@@ -35,6 +35,7 @@ from lumirss.models import (
     StaleSourcesResponse,
     SubscriptionVolumeItem,
     SubscriptionVolumeResponse,
+    VolumeDailyBucket,
 )
 from lumirss.util import utc_now
 
@@ -433,7 +434,9 @@ async def replacement_preview(feedUrl: str, request: Request) -> dict[str, objec
     }
 
 @router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)
-async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVolumeResponse:
+async def subscription_volume(
+    request: Request, days: int = 7, daily: bool = False
+) -> SubscriptionVolumeResponse:
     """F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。
 
     口径（显式区分，未知为 null 不冒充零）：
@@ -474,6 +477,26 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
     }
+    # F024/F025/F035：daily=true 时附每源按天分桶（发布时间口径，同
+    # publishedCount 的派生投影；投影未覆盖的源该值为 None）。日期为
+    # UTC 日（published_at 原文即 UTC ISO），窗口内无条目的日期不出现在
+    # 数组里——稀疏数组由前端补零渲染。
+    daily_buckets: dict[str, list[VolumeDailyBucket]] = {}
+    if daily:
+        daily_rows = await db.fetch_all(
+            "SELECT feed_url, substr(published_at, 1, 10) AS day, COUNT(*) AS n FROM search_entries WHERE published_at >= ? GROUP BY feed_url, substr(published_at, 1, 10)",
+            (since,),
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for row in daily_rows:
+            grouped.setdefault(str(row["feed_url"]), {})[str(row["day"])] = int(row["n"])
+        daily_buckets = {
+            feed_url: [
+                VolumeDailyBucket(date=day, count=count)
+                for day, count in sorted(days_map.items())
+            ]
+            for feed_url, days_map in grouped.items()
+        }
     timings: dict[str, dict[str, object]] = {}
     for row in sync_rows:
         crawled = row["overall_crawled"]
@@ -508,6 +531,11 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
                 ),
                 collectionTiming=(
                     CollectionTiming(**timing) if timing else None
+                ),
+                daily=(
+                    daily_buckets.get(subscription.feed_url)
+                    if daily
+                    else None
                 ),
             )
         )

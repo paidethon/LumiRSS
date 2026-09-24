@@ -3431,13 +3431,15 @@ export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsag
   return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)
 }
 
-/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。 */
+/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。
+ * F024：daily=true 时附每源按天分桶（稀疏，UTC 日）。 */
 export async function getSubscriptionVolume(
   signal?: AbortSignal,
   days = 7,
+  daily = false,
 ): Promise<SubscriptionVolumeResponse> {
   return request<SubscriptionVolumeResponse>(
-    `${API_BASE}/sources/volume?days=${days}`,
+    `${API_BASE}/sources/volume?days=${days}${daily ? '&daily=true' : ''}`,
     signal,
   )
 }

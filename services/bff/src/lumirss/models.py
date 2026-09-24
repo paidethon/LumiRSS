@@ -2624,6 +2624,13 @@ class CollectionTiming(BaseModel):
     latencyHint: str | None = None
 
 
+class VolumeDailyBucket(BaseModel):
+    """F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。"""
+
+    date: str
+    count: int
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
@@ -2634,6 +2641,8 @@ class SubscriptionVolumeItem(BaseModel):
     lastSyncedAt: str | None = None
     # N040：三时点采集延迟块（投影未覆盖 → None）。
     collectionTiming: CollectionTiming | None = None
+    # F024：daily=true 时的按天分桶（投影未覆盖 → None）。
+    daily: list[VolumeDailyBucket] | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):

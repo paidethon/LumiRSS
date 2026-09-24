@@ -93,3 +93,70 @@ def test_volume_days_clamped(client):
     response = client.get("/api/v1/sources/volume?days=999")
     assert response.status_code == 200
     assert response.json()["days"] == 30
+
+
+def test_volume_daily_buckets_sparse_semantics(client, monkeypatch):
+    """F024：daily=true 附按天分桶；窗口外日期不计；未覆盖源为 null。"""
+    _install_adapter(["https://covered.example.com/rss", "https://uncovered.example.com/rss"])
+    db = app.state.db
+    import asyncio
+
+    now = datetime.now(UTC)
+    day_a = (now - timedelta(days=2)).strftime("%Y-%m-%d")
+    day_b = (now - timedelta(days=5)).strftime("%Y-%m-%d")
+    out_window = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    async def _seed():
+        await db.migrate()
+        for day, n in ((day_a, 3), (day_b, 1)):
+            for i in range(n):
+                await db.execute(
+                    "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        f"i-{day}-{i}",
+                        f"e-{day}-{i}",
+                        "https://covered.example.com/rss",
+                        "覆盖源",
+                        "A",
+                        "",
+                        "",
+                        "",
+                        f"{day}T10:0{i}:00Z",
+                        0,
+                        0,
+                        1789660000 + i,
+                    ),
+                )
+        await db.execute(
+            "INSERT INTO search_entries (item_id, entry_ref, feed_url, feed_title, title, author, url, content_text, published_at, read, starred, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "i-old",
+                "e-old",
+                "https://covered.example.com/rss",
+                "覆盖源",
+                "OLD",
+                "",
+                "",
+                "",
+                out_window,
+                0,
+                0,
+                1789660009,
+            ),
+        )
+
+    asyncio.run(_seed())
+
+    default_response = client.get("/api/v1/sources/volume?days=30")
+    assert default_response.status_code == 200
+    assert default_response.json()["items"][0]["daily"] is None, "默认不带分桶"
+
+    response = client.get("/api/v1/sources/volume?days=30&daily=true")
+    assert response.status_code == 200
+    items = {item["feedUrl"]: item for item in response.json()["items"]}
+    covered = items["https://covered.example.com/rss"]
+    assert covered["publishedCount"] == 4
+    buckets = {bucket["date"]: bucket["count"] for bucket in covered["daily"]}
+    assert buckets == {day_a: 3, day_b: 1}, "窗口外不计、按日聚合"
+    uncovered = items["https://uncovered.example.com/rss"]
+    assert uncovered["daily"] is None, "投影未覆盖 → 未知"

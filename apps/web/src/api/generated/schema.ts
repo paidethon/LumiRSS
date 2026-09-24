@@ -16663,6 +16663,8 @@ export interface components {
          */
         SubscriptionVolumeItem: {
             collectionTiming?: components["schemas"]["CollectionTiming"] | null;
+            /** Daily */
+            daily?: components["schemas"]["VolumeDailyBucket"][] | null;
             /** Feedurl */
             feedUrl: string;
             /** Lastpublishedat */
@@ -17180,6 +17182,16 @@ export interface components {
              * @default true
              */
             hasFeedToken: boolean;
+        };
+        /**
+         * VolumeDailyBucket
+         * @description F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。
+         */
+        VolumeDailyBucket: {
+            /** Count */
+            count: number;
+            /** Date */
+            date: string;
         };
         /**
          * WebDavSettingsPut
@@ -30193,6 +30205,7 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                daily?: boolean;
             };
             header?: never;
             path?: never;
