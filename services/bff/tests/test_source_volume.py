@@ -6,7 +6,7 @@
 - days 越界收敛到 [1,30]。
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from lumirss.main import app
@@ -31,7 +31,7 @@ def test_volume_counts_and_unknown_semantics(client, monkeypatch):
 
     # 窗口内/窗口外发布时间都相对 now 计算：硬编码日期会随真实时间
     # 滚出 days=7 窗口（时间炸弹），这里保证测试语义永远成立。
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     in_window = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     out_window = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
