@@ -29,10 +29,10 @@ that part of ADR 0005 stands.
    `allow_public_registration` setting (control DB, `instance_settings`
    table, migration 0089). The default lives in the application layer,
    not the database: an absent row means closed, so upgraded instances
-   and fresh installs alike stay closed until an admin explicitly opens
-   `/admin` → registration policy. There is deliberately no env var and
-   no localStorage override — the control DB is the single source of
-   truth, changes are audited (`GET/PUT /api/v1/admin/registration-policy`).
+   and fresh installs alike stay closed until an admin explicitly
+   enables it. There is deliberately no env var and no localStorage
+   override — the control DB is the single source of truth, changes are
+   audited (`GET/PUT /api/v1/admin/registration-policy`).
 3. **Server-enforced, role hardcoded to `member`.** The gate lives in
    the BFF register endpoint, not in a hidden frontend button; a closed
    instance answers a uniform `403 registration_disabled` (no username

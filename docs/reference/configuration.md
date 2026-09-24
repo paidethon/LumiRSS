@@ -45,6 +45,7 @@
 | `LUMIRSS_OBSIDIAN_SCAN_INTERVAL` | 秒 | vault 增量扫描节奏（默认见 `config.py`；`0` 关闭后台扫描） |
 | `LUMIRSS_RAG_INDEX_INTERVAL` | 秒 | RAG 语义索引增量收敛节奏；`0` 关闭（显式 rebuild 仍可用）。模型加载在显式启用后进行，空闲自动卸载 |
 | `LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS` | 空 | 逗号分隔主机名 allow-list：名单内的私网主机可作为**来源 URL / AI·LibreTranslate base URL** 被服务端访问（容器内 RSSHub、自托管 AI 等）。仅跳过"公网地址拒绝"，取回仍逐跳解析、校验、按钉住 IP 直连 |
+| `LUMIRSS_ACCESS_LOG` | `json` | BFF 访问日志：`json` = 每请求一行结构化 JSON（request_id/路由模板/status/duration_ms/服务端派生 actor）；`off` = 静默。脱敏边界：绝不记录 query string、请求体、header、凭据 |
 | `LUMIRSS_INTERNAL_TOKEN` | 空 | 同上表（BFF 侧读取） |
 | `AI_API_KEY` | 空 | 同上表（BFF 侧读取） |
 | `LUMIRSS_VERSION` / `LUMIRSS_COMMIT` | — | 版本与 commit 溯源，由镜像构建注入（见下） |
@@ -76,3 +77,11 @@
 `FRESHRSS_API_PASSWORD` 必填；`RSSHUB_*`、`AI_API_KEY`、`FRESHRSS_DATA_DIR`
 （完整备份用，见 [../how-to/backup-restore.md](../how-to/backup-restore.md)）
 可选。模板：`services/bff/.env.example`。
+
+## 非配置项：注册策略
+
+可选公开注册**刻意不是 env 键**：实例级开关 `allow_public_registration`
+的唯一真源在控制库 `instance_settings` 表（迁移 0089），默认关闭，升级
+与全新安装都不开放；由 admin 经 `GET/PUT
+/api/v1/admin/registration-policy` 显式切换，变更落审计。见
+[ADR 0006](../decisions/0006-public-registration.md)。
