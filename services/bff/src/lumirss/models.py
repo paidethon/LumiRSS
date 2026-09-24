@@ -2359,6 +2359,22 @@ class ObsidianSettings(BaseModel):
     noteCount: int
 
 
+class ObsidianScanFileList(BaseModel):
+    """N138：一类文件级诊断列表（≤50 条 + 诚实截断标志）。"""
+
+    items: list[str] = []
+    truncated: bool = False
+
+
+class ObsidianScanFiles(BaseModel):
+    """N138：最近一次扫描的文件级诊断（新增/更改/删除/跳过）。"""
+
+    added: ObsidianScanFileList = ObsidianScanFileList()
+    changed: ObsidianScanFileList = ObsidianScanFileList()
+    removed: ObsidianScanFileList = ObsidianScanFileList()
+    skipped: ObsidianScanFileList = ObsidianScanFileList()
+
+
 class ObsidianStatus(BaseModel):
     """Honest scanner status (error keeps the old index visible)."""
 
@@ -2367,6 +2383,8 @@ class ObsidianStatus(BaseModel):
     lastError: str | None = None
     noteCount: int = 0
     envRootConfigured: bool = False
+    # N138：最近一次扫描的文件级诊断；从未扫描 → None（诚实空态）。
+    lastScanFiles: ObsidianScanFiles | None = None
 
 
 class ObsidianRescanResult(BaseModel):
@@ -2381,6 +2399,8 @@ class ObsidianRescanResult(BaseModel):
     truncatedNotes: int = 0
     elapsedMs: int
     vaultPath: str = ""
+    # N138：本次扫描的文件级明细（与持久化的「最近一次」一致）。
+    files: ObsidianScanFiles | None = None
 
 
 class NoteView(BaseModel):
@@ -2448,14 +2468,18 @@ class ObsidianExportTemplateView(BaseModel):
     template: str
     defaultTemplate: str
     allowedVars: list[str]
+    # N135：导出重名策略（timestamp_suffix 默认 / exact）。
+    exportNamePolicy: Literal["timestamp_suffix", "exact"] = "timestamp_suffix"
 
 
 class ObsidianExportTemplateUpdate(BaseModel):
-    """PUT /api/v1/obsidian/export-template body."""
+    """PUT /api/v1/obsidian/export-template body — template 与命名策略
+    均可单独更新（None = 保持现状；二者皆缺是无操作，返回现状）。"""
 
     model_config = {"extra": "forbid"}
 
-    template: str = Field(max_length=20000)
+    template: str | None = Field(default=None, max_length=20000)
+    exportNamePolicy: Literal["timestamp_suffix", "exact"] | None = None
 
 
 class ObsidianTemplatePreviewRequest(BaseModel):
@@ -2479,12 +2503,16 @@ class ObsidianTemplatePreviewResult(BaseModel):
 
 
 class ObsidianExportHandoffRequest(BaseModel):
-    """POST /api/v1/obsidian/export-handoff body."""
+    """POST /api/v1/obsidian/export-handoff body.
+
+    ``onlySinceLastExport``（N137 增量导出）：只携带上次导出水位之后
+    有新增/修改的批注（水位来自 annotation_export_log）。"""
 
     model_config = {"extra": "forbid"}
 
     entryRef: str
     deviceId: str
+    onlySinceLastExport: bool = False
 
 
 class ObsidianExportHandoffResult(BaseModel):
@@ -2501,6 +2529,115 @@ class ObsidianExportHandoffResult(BaseModel):
     content: str
     unknownVars: list[str] = []
     deviceLabel: str = ""
+    # N137：本次交接包含的批注数（增量模式=水位之后的条数，如实展示）。
+    annotationCount: int = 0
+
+
+class ObsidianExportValidateRequest(BaseModel):
+    """POST /api/v1/obsidian/export-handoff/validate body（N139 只读校验，
+    与 export-handoff 相同的组装路径，但不交接、不落日志、不 mark）。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    deviceId: str
+    onlySinceLastExport: bool = False
+
+
+class ObsidianExportIssue(BaseModel):
+    """N139：一条校验问题（只读报告；绝不改写用户 Vault 文件）。"""
+
+    kind: Literal["broken_wikilink", "missing_attachment", "duplicate_block_id"]
+    detail: str
+    suggestion: str
+
+
+class ObsidianExportValidateResult(BaseModel):
+    """N139：校验结果（issues 为空 = 通过；vaultChecked=false 表示 Vault
+    不可达、附件存在性未核对——诚实局限，不冒充查过）。"""
+
+    issues: list[ObsidianExportIssue] = []
+    vaultChecked: bool = False
+
+
+class ObsidianBlockRef(BaseModel):
+    """N134：一条块引用（哪篇投影笔记内嵌了 ^lumi-<paraId>）。"""
+
+    paraId: str
+    noteUuid: str
+    title: str = ""
+    relPath: str = ""
+    indexedAt: str = ""
+
+
+class ObsidianBlockRefsResponse(BaseModel):
+    """GET /api/v1/obsidian/block-refs?paraId= 响应。"""
+
+    items: list[ObsidianBlockRef] = []
+
+
+class ObsidianHandoffLogEntry(BaseModel):
+    """N140：一条双向交接记录（pending → confirmed 仅靠显式确认）。"""
+
+    id: str
+    direction: Literal["export", "open", "import_confirm"]
+    entryRef: str = ""
+    noteName: str = ""
+    policy: str = ""
+    status: Literal["pending", "confirmed"] = "pending"
+    createdAt: str
+    confirmedAt: str | None = None
+
+
+class ObsidianHandoffLogList(BaseModel):
+    """GET /api/v1/obsidian/handoff-log 响应（新→旧）。"""
+
+    items: list[ObsidianHandoffLogEntry] = []
+
+
+class ObsidianHandoffLogCreate(BaseModel):
+    """POST /api/v1/obsidian/handoff-log body — 显式记录 open /
+    import_confirm 交接（export 由 export-handoff 路由自动落库）。"""
+
+    model_config = {"extra": "forbid"}
+
+    direction: Literal["open", "import_confirm"]
+    entryRef: str = Field(default="", max_length=300)
+    noteName: str = Field(default="", max_length=300)
+    policy: str = Field(default="", max_length=50)
+
+
+class ObsidianHandoffLogClearResult(BaseModel):
+    """DELETE /api/v1/obsidian/handoff-log 响应（如实报告删除条数）。"""
+
+    cleared: int
+
+
+class AnnotationExportMarkRequest(BaseModel):
+    """POST /api/v1/annotations/export-mark body（N137：成功导出后回标
+    水位；重复调用幂等无害）。"""
+
+    model_config = {"extra": "forbid"}
+
+    ids: list[str] = Field(min_length=1)
+
+
+class AnnotationExportMarkResult(BaseModel):
+    """N137：mark 结果（诚实计数：只含实际存在的批注）。"""
+
+    exportedAt: str
+    count: int
+    entryRefs: list[str] = []
+    ids: list[str] = []
+
+
+class AnnotationExportDelta(BaseModel):
+    """GET /api/v1/annotations/export-delta 响应（增量预览：新增/修改）。"""
+
+    lastExportedAt: str | None = None
+    addedCount: int = 0
+    modifiedCount: int = 0
+    total: int = 0
 
 
 class TagItemsResponse(BaseModel):

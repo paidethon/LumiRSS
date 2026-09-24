@@ -5,6 +5,11 @@
   导入返回既有行，不产生副本；
 - 跨篇检索：excerpt/note LIKE（CJK 直接 LIKE 命中，绑定参数防注入），
   keyset 分页（updated_at + id 为游标，稳定且 opaque）。
+
+N137 增量批注导出：annotation_export_log 追加日志承载导出水位
+（MAX(exported_at)）；delta = updated_at > 水位，按 created_at 区分
+「新增 / 修改」。mark 可重复调用（幂等：只追加日志行，水位只前进，
+不会重复计数）。
 """
 
 import hashlib
@@ -101,12 +106,22 @@ class AnnotationStore:
         )
         return _row_to_dict(row) if row is not None else None
 
-    async def list_for_entry(self, entry_ref: str) -> list[dict[str, Any]]:
+    async def list_for_entry(
+        self, entry_ref: str, *, updated_after: str | None = None
+    ) -> list[dict[str, Any]]:
+        """一篇文章的全部批注；``updated_after``（N137 增量导出）时只返回
+        updated_at 严格晚于该水位的批注。"""
         await self._db.migrate()
-        rows = await self._db.fetch_all(
-            "SELECT id, entry_ref, anchor_json, anchor_hash, excerpt, note, color, created_at, updated_at FROM annotations WHERE entry_ref = ? ORDER BY created_at ASC, id ASC",
-            (entry_ref,),
-        )
+        if updated_after is not None:
+            rows = await self._db.fetch_all(
+                "SELECT id, entry_ref, anchor_json, anchor_hash, excerpt, note, color, created_at, updated_at FROM annotations WHERE entry_ref = ? AND updated_at > ? ORDER BY created_at ASC, id ASC",
+                (entry_ref, updated_after),
+            )
+        else:
+            rows = await self._db.fetch_all(
+                "SELECT id, entry_ref, anchor_json, anchor_hash, excerpt, note, color, created_at, updated_at FROM annotations WHERE entry_ref = ? ORDER BY created_at ASC, id ASC",
+                (entry_ref,),
+            )
         return [_row_to_dict(row) for row in rows]
 
     async def search(
@@ -171,6 +186,83 @@ class AnnotationStore:
             "DELETE FROM review_queue WHERE annotation_id = ?", (annotation_id,)
         )
         return True
+
+    # ------------------------------------------------------------------
+    # N137 增量批注导出：导出水位（annotation_export_log 追加日志）。
+    # ------------------------------------------------------------------
+
+    async def mark_exported(self, ids: list[str]) -> dict[str, Any]:
+        """记录一次成功导出（水位前进）。幂等：重复 mark 只追加日志行，
+        水位取 MAX(exported_at)，增量查询按时间比较、不会重复计数。
+        未知 id 静默跳过（诚实计数只含实际存在的批注）。"""
+        await self._db.migrate()
+        found: list[dict[str, Any]] = []
+        for annotation_id in ids:
+            item = await self.get(str(annotation_id))
+            if item is not None:
+                found.append(item)
+        entry_refs = sorted({item["entryRef"] for item in found})
+        exported_at = utc_now()
+        await self._db.execute(
+            "INSERT INTO annotation_export_log (exported_at, entry_refs_json, count) VALUES (?, ?, ?)",
+            (
+                exported_at,
+                json.dumps(entry_refs, ensure_ascii=False),
+                len(found),
+            ),
+        )
+        return {
+            "exportedAt": exported_at,
+            "count": len(found),
+            "entryRefs": entry_refs,
+            "ids": [item["id"] for item in found],
+        }
+
+    async def last_export_watermark(self) -> str | None:
+        """导出水位 = MAX(exported_at)；从未导出 → None（全量视为新增）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT MAX(exported_at) AS watermark FROM annotation_export_log"
+        )
+        value = row["watermark"] if row is not None else None
+        return str(value) if value else None
+
+    async def export_delta(
+        self, *, entry_ref: str | None = None
+    ) -> dict[str, Any]:
+        """增量预览：水位之后 updated_at 有变化的批注。
+
+        新增 = created_at > 水位（或从未导出 → 全部为新增）；修改 =
+        updated_at > 水位但创建于水位之前。可选 entryRef 收窄到单篇
+        （导出对话框按文章预览）。"""
+        await self._db.migrate()
+        watermark = await self.last_export_watermark()
+        params: list[Any] = []
+        where = "WHERE 1=1"
+        if watermark is not None:
+            where += " AND updated_at > ?"
+            params.append(watermark)
+        if entry_ref:
+            where += " AND entry_ref = ?"
+            params.append(entry_ref)
+        rows = await self._db.fetch_all(
+            f"SELECT created_at, updated_at FROM annotations {where}",
+            tuple(params),
+        )
+        added = 0
+        modified = 0
+        for row in rows:
+            created_at = str(row["created_at"] or "")
+            if watermark is None or created_at > watermark:
+                added += 1
+            else:
+                modified += 1
+        return {
+            "lastExportedAt": watermark,
+            "addedCount": added,
+            "modifiedCount": modified,
+            "total": added + modified,
+        }
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
