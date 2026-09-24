@@ -16,6 +16,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { useReaderUi, ALL_SCOPE } from '../store/reader-ui'
 import { useSearchState } from '../store/search-state'
+import { clearBasketOnLogout } from '../store/search-basket'
 import { useUndo } from '../store/undo'
 import { clearPendingSettingsSync } from '../store/settings-sync'
 import { clearAllDrafts } from './draft-store'
@@ -43,6 +44,8 @@ export function resetAccountState(queryClient: QueryClient): void {
   // 3. 会话级搜索状态 / 撤销槽（撤销动作闭包可能引用 A 的数据）
   useSearchState.getState().clear()
   useUndo.getState().clear()
+  // N147：暂存篮是账号内容足迹（A 勾选的引用不能出现在 B 的篮里）。
+  clearBasketOnLogout()
 
   // 4. 本机敏感足迹（localStorage 键由各模块自持）
   clearAllDrafts() // lumirss-draft-*
