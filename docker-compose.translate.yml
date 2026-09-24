@@ -13,7 +13,9 @@
 #
 # Image: libretranslate/libretranslate:v1.9.6 — latest stable tag at
 # pinning time (hub.docker.com, checked 2026-09-23; prior stable v1.9.5
-# 2026-03-03). The published image ships WITHOUT models baked in
+# 2026-03-03). Digest pin: 1de2d70… = the v1.9.6 multi-arch index, so the
+# tag cannot be re-pushed under us (same drift policy as freshrss/rsshub).
+# The published image ships WITHOUT models baked in
 # (build arg with_models=false); on the very first start the app still
 # downloads the en+zh packages into the volume below because fewer than
 # two packages are installed (verified boot() in libretranslate/init.py),
@@ -41,7 +43,7 @@
 
 services:
   libretranslate:
-    image: libretranslate/libretranslate:v1.9.6
+    image: libretranslate/libretranslate:v1.9.6@sha256:1de2d7056bb8ad607a412f4563d9abe324ff632b43b5be9428bcc8e213aebb32
     container_name: lumirss-libretranslate
     # On-demand BY DESIGN (2 GB host): must not come back on its own after
     # a host reboot or './lumirss update' — start it when you need it.
