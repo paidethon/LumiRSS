@@ -1966,7 +1966,10 @@ class GptDigestRef(BaseModel):
 
 
 class GptDigestIssue(BaseModel):
-    """一期日报；列表与详情共用（列表 limit 小、正文不重）。"""
+    """一期日报；列表与详情共用（列表 limit 小、正文不重）。
+
+    N172：``meta`` 携带运行元数据（分阶段模型标签 / polishFailed /
+    N174 栏目注释 / N175 素材篮与时长 / N176 聚合信息）。"""
 
     issueKey: str
     status: str
@@ -1974,6 +1977,7 @@ class GptDigestIssue(BaseModel):
     sections: list[GptDigestSection] = []
     refs: dict[str, GptDigestRef] = {}
     model: str = ""
+    meta: dict[str, object] = {}
     createdAt: str = ""
     publishedAt: str = ""
     updatedAt: str = ""
@@ -2121,6 +2125,8 @@ class GptDigestConfig(BaseModel):
     slots: list[int] = []
     days: list[int] = []
     weekendHours: list[int] = []
+    # N172：分阶段模型（键 select/summarize/polish；空 = 基础模型）。
+    stageModels: dict[str, str] = {}
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2145,6 +2151,7 @@ class GptDigestCreate(BaseModel):
     slots: list[int] | None = None
     days: list[int] | None = None
     weekendHours: list[int] | None = None
+    stageModels: dict[str, str] | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2163,6 +2170,7 @@ class GptDigestConfigUpdate(BaseModel):
     slots: list[int] | None = None
     days: list[int] | None = None
     weekendHours: list[int] | None = None
+    stageModels: dict[str, str] | None = None
 
 
 class StorageUsage(BaseModel):

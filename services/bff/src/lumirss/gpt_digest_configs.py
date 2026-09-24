@@ -19,6 +19,8 @@ from lumirss.util import utc_now
 _MAX_NAME = 80
 _MAX_SLOTS = 4
 _MAX_DAYS = 7
+_STAGE_KEYS = ("select", "summarize", "polish")
+_MAX_MODEL_STR = 200
 
 
 def parse_days(value: Any) -> list[int]:
@@ -71,6 +73,30 @@ def parse_allow_list(raw: str) -> list[str]:
     return [part.lower() for part in (p.strip() for p in parts) if part.strip()]
 
 
+def parse_stage_models(value: Any) -> dict[str, str]:
+    """N172：分阶段模型解析（dict 或 JSON 串）→ {stage: model}。
+
+    只接受 select / summarize / polish 三个阶段键；值必须是非空字符串
+    （截断到 200 字符）；缺失/空 = 该阶段回退基础模型。用户配置什么
+    模型串就用什么——服务端绝不发明模型名。"""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            value = json.loads(text)
+        except ValueError:
+            return {}
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key in _STAGE_KEYS:
+        raw = value.get(key)
+        if isinstance(raw, str) and raw.strip():
+            result[key] = raw.strip()[:_MAX_MODEL_STR]
+    return result
+
+
 def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     """宽容校验：hour 非法回退现值；窗口/上限/配额收敛到合法区间。"""
     hour = values.get("hour", fallback["hour"])
@@ -102,6 +128,12 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         weekend_hours = ",".join(str(h) for h in parse_slots(weekend_hours))
     else:
         weekend_hours = ",".join(str(h) for h in parse_slots(weekend_hours))
+    # N172：分阶段模型（空对象 = 全部用基础模型，单次调用行为不变）。
+    stage_models = values.get("stageModels", fallback.get("stageModels", {}))
+    if not isinstance(stage_models, str):
+        stage_models = json.dumps(parse_stage_models(stage_models))
+    else:
+        stage_models = json.dumps(parse_stage_models(stage_models))
     source_kind = values.get("sourceKind", fallback.get("sourceKind", "window"))
     if source_kind not in ("window", "read_later", "starred"):
         source_kind = fallback.get("sourceKind", "window")
@@ -114,6 +146,7 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         "slots": slots,
         "days": days,
         "weekendHours": weekend_hours,
+        "stageModels": stage_models,
         "sourceKind": source_kind,
     }
 
@@ -139,6 +172,8 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
         # N171：发布日（空 = 每天）与周末独立时点（空 = 沿用平日计划）。
         "days": parse_days(row["days_json"]) if "days_json" in keys else [],
         "weekendHours": parse_slots(str(row["weekend_hours"] or "")) if "weekend_hours" in keys else [],
+        # N172：分阶段模型（空对象 = 全部用基础模型）。
+        "stageModels": parse_stage_models(row["stage_models_json"]) if "stage_models_json" in keys else {},
         "lastIssueKey": row["last_issue_key"],
         "lastError": row["last_error"],
         "createdAt": str(row["created_at"] or ""),
@@ -151,7 +186,8 @@ class GptDigestConfigStore:
     _COLUMNS = (
         "id, name, enabled, hour, timezone, window_hours, limit_count, "
         "per_source_cap, lookback_days, feed_url_allow, source_kind, slots, "
-        "days_json, weekend_hours, last_issue_key, last_error, created_at"
+        "days_json, weekend_hours, stage_models_json, "
+        "last_issue_key, last_error, created_at"
     )
 
     def __init__(self, db: Database) -> None:
@@ -177,7 +213,7 @@ class GptDigestConfigStore:
         name = str(values.get("name") or "").strip()[:_MAX_NAME] or "未命名日报"
         clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2, "lookbackDays": 7})
         await self._db.execute(
-            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, days_json, weekend_hours, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, days_json, weekend_hours, stage_models_json, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 clamped["hour"],
@@ -191,6 +227,7 @@ class GptDigestConfigStore:
                 clamped["slots"],
                 clamped["days"],
                 clamped["weekendHours"],
+                clamped["stageModels"],
                 utc_now(),
             ),
         )
@@ -209,7 +246,7 @@ class GptDigestConfigStore:
         name = str(values.get("name", current["name"])).strip()[:_MAX_NAME] or current["name"]
         clamped = _clamp_config(values, current)
         await self._db.execute(
-            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ?, days_json = ?, weekend_hours = ? WHERE id = ?",
+            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ?, days_json = ?, weekend_hours = ?, stage_models_json = ? WHERE id = ?",
             (
                 name,
                 1 if values.get("enabled", current["enabled"]) else 0,
@@ -224,6 +261,7 @@ class GptDigestConfigStore:
                 clamped["slots"],
                 clamped["days"],
                 clamped["weekendHours"],
+                clamped["stageModels"],
                 config_id,
             ),
         )

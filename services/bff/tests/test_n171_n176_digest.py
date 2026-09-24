@@ -14,7 +14,16 @@ import json
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from lumirss.gpt_digest import GptDigestScheduler, plan_run
+import pytest
+
+from lumirss.ai_provider import AiTimeout
+from lumirss.gpt_digest import (
+    DigestPolishFailed,
+    GptDigestScheduler,
+    generate_issue,
+    plan_run,
+    retry_polish_issue,
+)
 from lumirss.gpt_digest_configs import GptDigestConfigStore, parse_days
 from lumirss.gpt_digest_issues import GptDigestIssuesStore
 from lumirss.main import app
@@ -96,25 +105,6 @@ class _FakeAdapter:
         return _FakeAdapter._Page(self._docs)
 
 
-def _stage_output(raw_by_marker: dict[str, str], fail_on_marker: str | None = None):
-    """按 system 提示里的阶段标记返回对应输出；fail_on_marker 时抛错。"""
-
-    class _Provider:
-        def __init__(self):
-            self.models: list[str] = []
-            self.stages: list[str] = []
-
-        async def complete(self, *, messages):
-            system = messages[0]["content"]
-            self.stages.append(system)
-            for marker, raw in raw_by_marker.items():
-                if marker in system:
-                    return raw
-            raise AssertionError(f"未知阶段提示：{system[:60]}")
-
-    return _Provider()
-
-
 def _ok_factory(provider, record=None):
     async def factory(base_url: str, model: str, explicit_model: bool = False):
         if record is not None:
@@ -122,6 +112,43 @@ def _ok_factory(provider, record=None):
         return provider
 
     return factory
+
+
+class _StagedProvider:
+    """按 system 提示里的阶段标记返回对应输出；fail_stage 时抛错。"""
+
+    def __init__(
+        self,
+        select_raw: str,
+        summarize_raw: str,
+        polish_raw: str | None = None,
+        fail_stage: str | None = None,
+    ):
+        self.select_raw = select_raw
+        self.summarize_raw = summarize_raw
+        self.polish_raw = polish_raw
+        self.fail_stage = fail_stage
+        self.calls: list[str] = []
+
+    async def complete(self, *, messages):
+        system = messages[0]["content"]
+        if "（select）" in system:
+            self.calls.append("select")
+            if self.fail_stage == "select":
+                raise AiTimeout("上游超时")
+            return self.select_raw
+        if "（summarize）" in system:
+            self.calls.append("summarize")
+            if self.fail_stage == "summarize":
+                raise AiTimeout("上游超时")
+            return self.summarize_raw
+        if "（polish）" in system:
+            self.calls.append("polish")
+            if self.fail_stage == "polish":
+                raise AiTimeout("上游超时")
+            assert self.polish_raw is not None
+            return self.polish_raw
+        raise AssertionError(f"未知阶段提示：{system[:60]}")
 
 
 def _select_raw(groups: list[list[str]]) -> str:
@@ -263,3 +290,236 @@ def test_n171_config_roundtrip_days_and_weekend_hours(client):
     # 清空 = 回到每天 + 沿用平日计划
     config = run(_config_store().update_config(1, {"days": [], "weekendHours": []}))
     assert config["days"] == [] and config["weekendHours"] == []
+
+
+# ---- N172 多模型路由 ---------------------------------------------------------
+
+
+def _polished_raw(sections: list[dict], title: str = "润色后的标题") -> str:
+    return json.dumps(
+        {"title": title, "sections": sections, "limitations": []},
+        ensure_ascii=False,
+    )
+
+
+def _summarize_sections(heading: str = "要点", summary: str = "这是总结。") -> list[dict]:
+    return [{"heading": heading, "items": [_item(summary, ["s1"])]}]
+
+
+async def _generate(config, provider, record=None, draft=True):
+    adapter = _FakeAdapter([_doc("a", "2026-09-18T00:10:00+00:00")])
+    return await generate_issue(
+        _config_store(),
+        _issues_store(),
+        config=config,
+        adapter=adapter,
+        ai_settings=_FakeAiSettings(),
+        provider_factory=_ok_factory(provider, record),
+        db=app.state.db,
+        now=_fixed_now(),
+        draft=draft,
+    )
+
+
+def test_n172_stage_models_used_per_stage(client):
+    """验收：每个阶段用配置的阶段模型调用（fake factory 逐次记录）。"""
+    provider = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        _polished_raw([{"heading": "要点", "items": [_item("润色后的总结。", ["s1"])]}]),
+    )
+    record: list[tuple] = []
+    config = _config(
+        stageModels={"select": "m-sel", "summarize": "m-sum", "polish": "m-pol"}
+    )
+    row = run(_generate(config, provider, record))
+    assert [model for _url, model, _exp in record] == ["m-sel", "m-sum", "m-pol"]
+    assert provider.calls == ["select", "summarize", "polish"]
+    assert all(exp for _url, _model, exp in record)  # 显式阶段路由
+    meta = json.loads(row["meta_json"])
+    assert meta["stageModels"] == {
+        "select": "m-sel",
+        "summarize": "m-sum",
+        "polish": "m-pol",
+    }
+    assert "polishFailed" not in meta
+    # 显式草稿路径：润色后的输出落库
+    assert json.loads(row["sections_json"])["title"] == "润色后的标题"
+
+
+def test_n172_partial_stage_models_fall_back_to_base(client):
+    """未配置的阶段回退基础模型（非显式路由——P17 profile 语义保留）。"""
+    provider = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        _polished_raw(_summarize_sections()),
+    )
+    record: list[tuple] = []
+    config = _config(stageModels={"polish": "m-pol"})
+    run(_generate(config, provider, record))
+    assert [(model, exp) for _url, model, exp in record] == [
+        ("base-model", False),
+        ("base-model", False),
+        ("m-pol", True),
+    ]
+
+
+def test_n172_no_stage_models_single_call_unchanged(client):
+    """未配置分阶段模型 = 单次调用（历史行为）；meta 为空对象。"""
+
+    class _SingleProvider:
+        def __init__(self, raw):
+            self.raw = raw
+            self.calls = 0
+
+        async def complete(self, *, messages):
+            self.calls += 1
+            assert "阶段" not in messages[0]["content"]
+            return self.raw
+
+    single = _SingleProvider(_single_raw([_item("总结。", ["s1"])]))
+    record: list[tuple] = []
+    row = run(_generate(_config(), single, record))
+    assert single.calls == 1
+    assert record == [("https://ai.local", "base-model", False)]
+    assert json.loads(row["meta_json"]) == {}
+
+
+def test_n172_polish_failure_keeps_draft_and_retry_polish(client):
+    """验收：润色失败 → 选材+总结草稿保留（polishFailed 如实标注），
+    retry-polish 仅补润色成功。"""
+    provider = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections(summary="选材总结成果。"), title="草稿标题"),
+        fail_stage="polish",
+    )
+    config = _config(
+        stageModels={"select": "m-sel", "summarize": "m-sum", "polish": "m-pol"}
+    )
+    issues = _issues_store()
+    with pytest.raises(DigestPolishFailed) as excinfo:
+        run(_generate(config, provider))
+    assert "润色阶段（polish）" in str(excinfo.value)
+    row = run(issues.get_issue(1, "2026-09-18"))
+    assert row is not None and row["status"] == "draft"
+    stored = json.loads(row["sections_json"])
+    assert stored["title"] == "草稿标题"  # 选材+总结成果保留
+    meta = json.loads(row["meta_json"])
+    assert meta["polishFailed"] is True
+    last_error = run(_config_store().get_config(1))["lastError"] or ""
+    assert "润色阶段（polish）" in last_error
+
+    # retry-polish：仅润色——好的 provider 只被 ask polish
+    good = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        _polished_raw([{"heading": "要点", "items": [_item("重试润色后的总结。", ["s1"])]}]),
+    )
+    fixed = run(
+        retry_polish_issue(
+            issues,
+            _config_store(),
+            config_id=1,
+            issue_key="2026-09-18",
+            config=config,
+            ai_settings=_FakeAiSettings(),
+            provider_factory=_ok_factory(good),
+        )
+    )
+    assert good.calls == ["polish"]  # 只补润色，不重跑选材/总结
+    assert fixed["status"] == "draft"  # 状态不变
+    assert json.loads(fixed["sections_json"])["title"] == "润色后的标题"
+    meta = json.loads(fixed["meta_json"])
+    assert "polishFailed" not in meta
+    assert meta["stageModels"]["polish"] == "m-pol"
+    assert meta["polishedAt"]
+    assert fixed["model"] == "m-pol"
+
+
+def test_n172_select_failure_aborts_cleanly(client):
+    """验收：选材失败 → 带阶段名的干净中止，不产生任何期号。"""
+    provider = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        fail_stage="select",
+    )
+    config = _config(stageModels={"select": "m-sel"})
+    with pytest.raises(AiTimeout) as excinfo:
+        run(_generate(config, provider))
+    assert "选材阶段（select）" in str(excinfo.value)
+    assert provider.calls == ["select"]  # 失败后不再调用后续阶段
+    assert run(_issues_store().recent_issues(1, 10)) == []
+    last_error = run(_config_store().get_config(1))["lastError"] or ""
+    assert "选材阶段（select）" in last_error
+
+
+def test_n172_summarize_failure_names_stage(client):
+    """总结失败同样带阶段名，且不落任何期号。"""
+    provider = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        fail_stage="summarize",
+    )
+    config = _config(stageModels={"summarize": "m-sum"})
+    with pytest.raises(AiTimeout) as excinfo:
+        run(_generate(config, provider))
+    assert "总结阶段（summarize）" in str(excinfo.value)
+    assert run(_issues_store().recent_issues(1, 10)) == []
+
+
+def test_n172_retry_polish_endpoint(client, monkeypatch):
+    """路由面：retry-polish 成功 200；期号不存在 422 no_material。"""
+    issues = _issues_store()
+    run(
+        issues.upsert_issue(
+            config_id=1,
+            issue_key="2026-09-18",
+            title="草稿",
+            body_html="<p>x</p>",
+            sections_json=json.dumps(
+                {
+                    "title": "草稿",
+                    "sections": [{"heading": "要点", "items": [_item("原文。", ["s1"])]}],
+                    "limitations": [],
+                },
+                ensure_ascii=False,
+            ),
+            refs_json='{"s1": {"title": "T", "url": "https://a.example.com/x", "feedTitle": "F", "publishedAt": "2026-09-18T00:00:00+00:00"}}',
+            model="m",
+            published_at="2026-09-18T00:00:00+00:00",
+            status_for_new="draft",
+            meta_json=json.dumps({"polishFailed": True}, ensure_ascii=False),
+        )
+    )
+    good = _StagedProvider(
+        _select_raw([["s1"]]),
+        _summarize_raw(_summarize_sections()),
+        _polished_raw([{"heading": "要点", "items": [_item("润色文。", ["s1"])]}]),
+    )
+
+    def _fake_ai_deps(_state):
+        return _FakeAiSettings(), _ok_factory(good)
+
+    monkeypatch.setattr("lumirss.gpt_digest._build_ai_deps", _fake_ai_deps)
+    ok = client.post("/api/v1/gpt-digest/configs/1/issues/2026-09-18/retry-polish")
+    assert ok.status_code == 200, ok.text
+    body = ok.json()["issue"]
+    assert body["meta"]["stageModels"]["polish"] == "base-model"
+    assert "polishFailed" not in body["meta"]
+
+    missing = client.post("/api/v1/gpt-digest/configs/1/issues/1999-01-01/retry-polish")
+    assert missing.status_code == 422
+    assert missing.json()["error"]["type"] == "no_material"
+
+
+def test_n172_stage_models_config_roundtrip_and_bounds(client):
+    config = run(
+        _config_store().update_config(
+            1, {"stageModels": {"select": " sel-model ", "bogus": "x", "polish": ""}}
+        )
+    )
+    assert config["stageModels"] == {"select": "sel-model"}
+    config = run(_config_store().update_config(1, {"stageModels": {}}))
+    assert config["stageModels"] == {}
+    config = run(_config_store().update_config(1, {"stageModels": "not-json"}))
+    assert config["stageModels"] == {}

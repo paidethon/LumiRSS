@@ -30,6 +30,7 @@ from lumirss.atom_render import AtomEntry, render_feed
 from lumirss.gpt_digest import (
     DigestMaterialEmpty,
     DigestOutputInvalid,
+    DigestPolishFailed,
     build_preview,
     consume_pool_for_issue,
     generate_issue,
@@ -597,6 +598,64 @@ async def explain_gpt_digest_issue(
     return JSONResponse(status_code=200, content={"issue": dto})
 
 
+@router.post("/api/v1/gpt-digest/configs/{config_id}/issues/{issue_key}/retry-polish")
+async def retry_polish_gpt_digest_issue(
+    config_id: int, issue_key: str, request: Request
+) -> Response:
+    """N172：仅重跑润色阶段（选材/总结成果保留不动）。
+
+    语义：同 issue_key 修订（entry id 不变、updated 前移、状态不变）；
+    成功清除 meta.polishFailed。失败 502 polish_failed，期号保持原样。"""
+    from lumirss.gpt_digest import (
+        DigestMaterialEmpty,
+        _build_ai_deps,
+        retry_polish_issue,
+    )
+
+    config = await _config_store(request).get_config(config_id)
+    if config is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "not_found", "message": "配置不存在。"}},
+        )
+    ai_settings, provider_factory = _build_ai_deps(request.app.state)
+    try:
+        row = await retry_polish_issue(
+            _issues(request),
+            _config_store(request),
+            config_id=config_id,
+            issue_key=issue_key,
+            config=config,
+            ai_settings=ai_settings,
+            provider_factory=provider_factory,
+        )
+    except DigestMaterialEmpty as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — typed mapping below
+        name = type(exc).__name__
+        if name in {"AiNotConfigured", "AiAuthError", "AiModelError"}:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": {
+                        "type": "ai_not_configured",
+                        "message": "AI 未配置或配置不可用（详见设置）。",
+                    }
+                },
+            )
+        if name in {"AiRateLimited", "AiTimeout", "AiUpstreamError", "AiInvalidResponse"}:
+            return JSONResponse(
+                status_code=502,
+                content={"error": {"type": "ai_upstream", "message": str(exc)}},
+            )
+        raise
+    dto = _issues(request).issue_to_dto(row)
+    return JSONResponse(status_code=200, content={"issue": dto})
+
+
 @router.post("/api/v1/gpt-digest/configs/{config_id}/weekly")
 async def generate_weekly_digest(config_id: int, request: Request) -> Response:
     """F03：周报——聚合该配置最近 7 天日刊（≤7 期）为一周回顾。
@@ -631,6 +690,20 @@ async def generate_weekly_digest(config_id: int, request: Request) -> Response:
         return JSONResponse(
             status_code=422,
             content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except DigestPolishFailed as exc:
+        # N172：润色失败——选材/总结草稿已保留（响应携带该草稿），错误
+        # 诚实带阶段名；可经 retry-polish 仅补润色。
+        draft_dto = _issues(request).issue_to_dto(exc.row) if exc.row else None
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "polish_failed",
+                    "message": str(exc),
+                },
+                "issue": draft_dto,
+            },
         )
     except DigestOutputInvalid as exc:
         return JSONResponse(
@@ -925,6 +998,20 @@ async def _generate_for_config(
         return JSONResponse(
             status_code=422,
             content={"error": {"type": "no_material", "message": str(exc)}},
+        )
+    except DigestPolishFailed as exc:
+        # N172：润色失败——选材/总结草稿已保留（响应携带该草稿），错误
+        # 诚实带阶段名；可经 retry-polish 仅补润色。
+        draft_dto = _issues(request).issue_to_dto(exc.row) if exc.row else None
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "type": "polish_failed",
+                    "message": str(exc),
+                },
+                "issue": draft_dto,
+            },
         )
     except DigestOutputInvalid as exc:
         return JSONResponse(
