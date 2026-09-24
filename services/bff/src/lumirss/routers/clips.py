@@ -158,12 +158,20 @@ def _revision_store(request: Request):
     return ClipRevisionStore(request.app.state.db, _get_clip_store(request))
 
 
+def _intake_store(request: Request):
+    """N122/N123 intake store（锁定 / 刷新候选 / 清理分类）。"""
+    from lumirss.clip_intake import ClipIntakeStore
+
+    return ClipIntakeStore(request.app.state.db, _get_clip_store(request))
+
+
 @router.get("/api/v1/library/clips/{item_uuid}/full")
 async def get_clip_full(item_uuid: str, request: Request):
-    """F089 详情：content（当前展示）+ original（原始，不可变）+ revised。"""
+    """F089 详情 + N122：content（当前展示）+ original（原始，不可变）
+    + revised + locked + candidate。"""
     from fastapi.responses import JSONResponse
 
-    detail = await _revision_store(request).detail(item_uuid)
+    detail = await _intake_store(request).detail(item_uuid)
     if detail is None:
         return JSONResponse(
             status_code=404,
@@ -198,9 +206,11 @@ async def get_clip_blocks(item_uuid: str, request: Request):
 async def save_clip_revision(
     item_uuid: str, payload: ClipRevisionRequest, request: Request
 ):
-    """保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。"""
-    store = _revision_store(request)
-    result = await store.save_revision(
+    """保存修订（保留块重组 + 净化；全移除需 force；原始版本不动）。
+
+    N122：锁定中的剪藏拒绝覆盖式写入（409 clip_locked）。"""
+    store = _intake_store(request)
+    result = await store.save_revision_guarded(
         item_uuid,
         keep_ids=payload.blocks,
         note=payload.note,
@@ -224,3 +234,181 @@ async def discard_clip_revision(item_uuid: str, request: Request) -> Response:
             },
         )
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# N122 剪藏版本锁定 / 刷新候选 + N123 清理预览
+# ---------------------------------------------------------------------------
+
+
+@router.put("/api/v1/library/clips/{item_uuid}/lock")
+async def set_clip_lock(item_uuid: str, request: Request):
+    """N122：显式锁定/解锁（locked 旗标唯一写路径）。"""
+    import json as _json
+
+    from fastapi.responses import JSONResponse
+
+    from lumirss.models import ClipLockRequest
+
+    try:
+        body = ClipLockRequest.model_validate(
+            _json.loads(await request.body() or b"{}")
+        )
+    except Exception:  # noqa: BLE001 — 稳定 422
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "请求体需为 {locked: bool}。"}},
+        )
+    try:
+        return await _intake_store(request).set_locked(item_uuid, body.locked)
+    except ClipNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+
+
+@router.post("/api/v1/library/clips/{item_uuid}/refresh")
+async def refresh_clip(item_uuid: str, request: Request):
+    """N122：重新抓取当前剪藏 URL（服务端管线）。
+
+    未锁定 → 直接应用（写入 F089 修订槽，原始永不覆盖）；已锁定 →
+    只存候选，展示版本不动；内容未变 → unchanged。"""
+    from fastapi.responses import JSONResponse
+
+    try:
+        return await _intake_store(request).refresh(item_uuid)
+    except ClipNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+
+
+@router.get("/api/v1/library/clips/{item_uuid}/candidate")
+async def get_clip_candidate(item_uuid: str, request: Request):
+    """N122：查看候选版本（零写入；渲染前客户端仍过 DOMPurify）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.clip_intake import CandidateNotFound
+
+    try:
+        return await _intake_store(request).candidate_html(item_uuid)
+    except CandidateNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "clip_candidate_not_found",
+                    "message": "没有可查看的候选版本。",
+                }
+            },
+        )
+    except ClipNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+
+
+@router.post("/api/v1/library/clips/{item_uuid}/candidate/apply")
+async def apply_clip_candidate(item_uuid: str, request: Request):
+    """N122：应用候选（锁定 → 409 clip_locked；可带 keepIds 走同一净化）。"""
+    import json as _json
+
+    from fastapi.responses import JSONResponse
+
+    from lumirss.clip_intake import CandidateNotFound
+
+    keep_ids: list[str] | None = None
+    try:
+        raw = _json.loads(await request.body() or b"{}")
+        if isinstance(raw, dict) and isinstance(raw.get("keepIds"), list):
+            keep_ids = [str(item) for item in raw["keepIds"][:500]]
+    except ValueError:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "请求体需为 JSON 对象。"}},
+        )
+    try:
+        return await _intake_store(request).apply_candidate(
+            item_uuid, keep_ids=keep_ids
+        )
+    except CandidateNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "clip_candidate_not_found",
+                    "message": "没有可应用的候选版本。",
+                }
+            },
+        )
+    except ClipNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "clip_not_found", "message": "剪辑不存在。"}},
+        )
+
+
+@router.delete("/api/v1/library/clips/{item_uuid}/candidate", status_code=204)
+async def discard_clip_candidate(item_uuid: str, request: Request) -> Response:
+    """N122：丢弃候选版本（保留当前展示版本不动）。"""
+    from fastapi.responses import JSONResponse
+
+    discarded = await _intake_store(request).discard_candidate(item_uuid)
+    if not discarded:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "clip_candidate_not_found",
+                    "message": "没有可丢弃的候选版本。",
+                }
+            },
+        )
+    return Response(status_code=204)
+
+
+@router.post("/api/v1/library/clips/preview-cleanup")
+async def preview_clip_cleanup(request: Request):
+    """N123：清理预览（零写入）：{html} ≤200KB → 每块 {keep, reason}。
+
+    确认后的保存走既有 PATCH revision（同一 sanitize_html 管线）；
+    预览本身绝不改动任何存储内容（原始版本在确认前不变）。"""
+    import json as _json
+
+    from fastapi.responses import JSONResponse
+
+    from lumirss.clip_intake import classify_cleanup_blocks
+
+    _MAX_PREVIEW_BYTES = 200 * 1024
+    try:
+        raw = _json.loads(await request.body() or b"{}")
+    except ValueError:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "请求体需为 JSON 对象。"}},
+        )
+    html = raw.get("html") if isinstance(raw, dict) else None
+    if not isinstance(html, str) or not html.strip():
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"type": "invalid_request", "message": "html 不能为空。"}},
+        )
+    if len(html.encode("utf-8")) > _MAX_PREVIEW_BYTES:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_request",
+                    "message": "html 超过 200KB 清理预览上限。",
+                }
+            },
+        )
+    blocks = classify_cleanup_blocks(html)
+    return {
+        "blocks": blocks,
+        "keepCount": sum(1 for block in blocks if block["keep"]),
+        "totalCount": len(blocks),
+    }

@@ -91,6 +91,7 @@ from lumirss.backup import (
 )
 from lumirss.bookmarks_io import NetscapeParseError
 from lumirss.clip_fetch import ClipFetchError, ClipForbidden
+from lumirss.clip_intake import CandidateNotFound, ClipLocked
 from lumirss.clip_revision import MustKeepOne, RevisionConflict
 from lumirss.cursor import InvalidCursor
 from lumirss.entryref import InvalidEntryReference
@@ -340,6 +341,10 @@ _ERROR_RESPONSES = {
     ClipForbidden: (400, "clip_fetch_forbidden"),
     ClipInvalid: (400, "invalid_clip"),
     ClipNotFound: (404, "clip_not_found"),
+    # N122 剪藏版本锁定（覆盖式写入被锁定旗标拒绝）
+    ClipLocked: (409, "clip_locked"),
+    # N122 候选版本缺失（查看/应用/丢弃候选时无候选可操作）
+    CandidateNotFound: (404, "clip_candidate_not_found"),
     AssetNotFound: (404, "asset_not_found"),
     AssetQuotaExceeded: (413, "quota_exceeded"),
     AssetTooLarge: (413, "snapshot_too_large"),
@@ -518,6 +523,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ClipForbidden)
     @app.exception_handler(ClipInvalid)
     @app.exception_handler(ClipNotFound)
+    @app.exception_handler(ClipLocked)
+    @app.exception_handler(CandidateNotFound)
     @app.exception_handler(AssetNotFound)
     @app.exception_handler(AssetQuotaExceeded)
     @app.exception_handler(AssetTooLarge)

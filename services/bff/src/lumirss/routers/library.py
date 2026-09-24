@@ -33,7 +33,11 @@ from lumirss.models import (
     BookmarkImportResult,
     BookmarkListResponse,
     BookmarkUpdate,
+    BulkLinkResultItem,
+    BulkLinksRequest,
+    BulkLinksResponse,
 )
+from lumirss.url_normalize import normalize_content_url
 
 from ..deps import _get_library_store, _get_tag_store
 
@@ -154,6 +158,129 @@ async def delete_bookmark(item_uuid: str, request: Request) -> Response:
 
     await _rag_mark_stale(request, [f"library:{item_uuid}"])
     return Response(status_code=204)
+
+
+# -- N121 粘贴多链接收件箱（≤50 条由请求模型约束；单条失败不回滚） ---------------
+
+
+@router.post("/api/v1/library/bulk-links", response_model=BulkLinksResponse)
+async def bulk_links(payload: BulkLinksRequest, request: Request) -> BulkLinksResponse:
+    """批量粘贴链接：逐条规范化（url_normalize 去追踪参数做批内去重键）
+    后创建书签或剪藏。
+
+    单条失败绝不回滚整批：每条独立 created | duplicate | failed（failed
+    必带 reason）。剪藏目标的正文由服务端管线重取重导出（与单个创建
+    同一信任边界）；抓取失败按 failed 如实上报。"""
+    store: LibraryStore = _get_library_store(request)
+    items: list[BulkLinkResultItem] = []
+    created = duplicate = failed = 0
+    seen_keys: set[str] = set()
+    clip_store = None
+    if payload.target == "clip":
+        from ..deps import _get_clip_store
+
+        clip_store = _get_clip_store(request)
+    for raw_url in payload.urls:
+        url = (raw_url or "").strip()
+        if not url:
+            # 纯空行不是一次提交（web 端逐行粘贴的常态），静默跳过。
+            continue
+        normalized = normalize_content_url(url)
+        if normalized is None:
+            failed += 1
+            items.append(
+                BulkLinkResultItem(
+                    url=url[:_MAX_URL_LENGTH],
+                    status="failed",
+                    reason="链接必须是合法的 http(s) URL。",
+                )
+            )
+            continue
+        if normalized in seen_keys:
+            # 批内重复：与已存在链接同一语义（duplicate），不重复创建。
+            duplicate += 1
+            items.append(
+                BulkLinkResultItem(
+                    url=url[:_MAX_URL_LENGTH], status="duplicate"
+                )
+            )
+            continue
+        seen_keys.add(normalized)
+        if payload.target == "bookmark":
+            try:
+                view, was_created = await store.create_url_bookmark(
+                    url, url[:_MAX_TITLE_LENGTH]
+                )
+            except BookmarkInvalid as exc:
+                failed += 1
+                items.append(
+                    BulkLinkResultItem(
+                        url=url[:_MAX_URL_LENGTH], status="failed", reason=str(exc)
+                    )
+                )
+                continue
+            if was_created:
+                created += 1
+                items.append(
+                    BulkLinkResultItem(
+                        url=url[:_MAX_URL_LENGTH],
+                        status="created",
+                        ref=view.ref,
+                    )
+                )
+            else:
+                duplicate += 1
+                items.append(
+                    BulkLinkResultItem(
+                        url=url[:_MAX_URL_LENGTH],
+                        status="duplicate",
+                        ref=view.ref,
+                    )
+                )
+            continue
+        # clip 目标：服务端抓取 → 提取 → 清洗 → 落库（失败按条上报）。
+        try:
+            from lumirss.clip_fetch import fetch_extract_sanitize
+
+            article = await fetch_extract_sanitize(url)
+            view, was_created = await clip_store.create_clip(
+                url=article.final_url,
+                title=article.title,
+                content_html=article.content_html,
+                content_text=article.content_text,
+                byline=article.byline,
+            )
+        except Exception as exc:  # noqa: BLE001 — 单条失败不影响其余条目
+            failed += 1
+            items.append(
+                BulkLinkResultItem(
+                    url=url[:_MAX_URL_LENGTH],
+                    status="failed",
+                    reason=str(exc) or "抓取失败。",
+                )
+            )
+            continue
+        if was_created:
+            created += 1
+            items.append(
+                BulkLinkResultItem(
+                    url=url[:_MAX_URL_LENGTH], status="created", ref=view.ref
+                )
+            )
+        else:
+            duplicate += 1
+            items.append(
+                BulkLinkResultItem(
+                    url=url[:_MAX_URL_LENGTH], status="duplicate", ref=view.ref
+                )
+            )
+    return BulkLinksResponse(
+        target=payload.target,
+        created=created,
+        duplicate=duplicate,
+        failed=failed,
+        items=items,
+    )
 
 
 @router.post("/api/v1/library/bookmarks/import", response_model=BookmarkImportResult)

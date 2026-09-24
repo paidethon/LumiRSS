@@ -1706,6 +1706,45 @@ class ClipListResponse(BaseModel):
     nextCursor: str | None
 
 
+class ClipLockRequest(BaseModel):
+    """PUT /api/v1/library/clips/{uuid}/lock — N122 显式锁定/解锁。"""
+
+    model_config = {"extra": "forbid"}
+
+    locked: bool
+
+
+# -- N121 粘贴多链接收件箱 ----------------------------------------------------
+
+
+class BulkLinksRequest(BaseModel):
+    """POST /api/v1/library/bulk-links — 批量粘贴（≤50 条，一条失败不回滚）。"""
+
+    model_config = {"extra": "forbid"}
+
+    urls: list[str] = Field(min_length=1, max_length=50)
+    target: Literal["bookmark", "clip"]
+
+
+class BulkLinkResultItem(BaseModel):
+    """逐条结果：created | duplicate | failed（failed 必带 reason）。"""
+
+    url: str
+    status: Literal["created", "duplicate", "failed"]
+    ref: str | None = None
+    reason: str | None = None
+
+
+class BulkLinksResponse(BaseModel):
+    """Envelope for POST /api/v1/library/bulk-links。"""
+
+    target: Literal["bookmark", "clip"]
+    created: int
+    duplicate: int
+    failed: int
+    items: list[BulkLinkResultItem]
+
+
 class SnapshotCreate(BaseModel):
     """POST /api/v1/library/snapshots."""
 
