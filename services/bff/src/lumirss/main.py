@@ -66,6 +66,7 @@ from lumirss.routers import (
     quiz,
     rag,
     reading_extras,
+    reading_queue,
     relations,
     rsshub,
     search,
@@ -365,6 +366,7 @@ app.include_router(entries.router)
 app.include_router(feed_filters.router)
 app.include_router(annotations.router)
 app.include_router(reading_extras.router)
+app.include_router(reading_queue.router)
 app.include_router(import_batches.router)
 app.include_router(subscriptions.router)
 app.include_router(discovery.router)
