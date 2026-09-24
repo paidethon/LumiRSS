@@ -26,6 +26,7 @@ import asyncio
 import json
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import StreamingResponse
 
 from lumirss.agent_store import (
     CANCELLED_TEXT,
@@ -36,11 +37,22 @@ from lumirss.agent_store import (
 )
 from lumirss.models import (
     AgentApprovalDecision,
+    AgentApprovalPreview,
+    AgentApprovalResult,
     AgentBranchRequest,
+    AgentBranchResult,
+    AgentCancelResult,
+    AgentCitationDetail,
+    AgentMessage,
     AgentMessageCreate,
+    AgentMessageListResponse,
     AgentThread,
     AgentThreadListResponse,
+    AgentThreadSearchHit,
+    AgentThreadSearchResponse,
+    AgentThreadSettings,
     AgentThreadUpdate,
+    AgentTurnAccepted,
 )
 from lumirss.sources import resolve_item
 
@@ -52,6 +64,15 @@ from ..deps import (
 
 router = APIRouter()
 
+
+class MarkdownResponse(Response):
+    """Response class so OpenAPI documents the export payload as a
+    markdown string (E04 contract repair); the route still builds its
+    own Response with the attachment headers."""
+
+    media_type = "text/markdown; charset=utf-8"
+
+
 # Citation resolution hits real resolvers (FreshRSS for rss refs); one
 # page resolves at most this many distinct refs.
 _MAX_CITATION_RESOLVES = 24
@@ -61,6 +82,20 @@ _SSE_IDLE_TIMEOUT_SECONDS = 120.0
 def _thread_model(thread: dict) -> AgentThread:
     return AgentThread(
         id=thread["id"], title=thread["title"], createdAt=thread["createdAt"]
+    )
+
+
+def _message_model(message: dict):
+    """Storage row → wire model (content dict validates against the
+    per-role union; a mismatch fails loudly instead of drifting)."""
+    return AgentMessage(
+        id=message["id"],
+        threadId=message["threadId"],
+        seq=message["seq"],
+        role=message["role"],
+        content=message["content"],
+        citations=message["citations"],
+        createdAt=message["createdAt"],
     )
 
 
@@ -114,16 +149,26 @@ async def delete_thread(thread_id: str, request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.get("/api/v1/agent/threads/{thread_id}/messages")
+@router.get(
+    "/api/v1/agent/threads/{thread_id}/messages",
+    response_model=AgentMessageListResponse,
+)
 async def get_messages(thread_id: str, request: Request, after: int = 0):
     """REST read path (polling fallback) + resolved citation details."""
     store: AgentStore = _get_agent_store(request)
     messages = await store.messages_after(thread_id, after)
     details = await _citation_details(request, messages)
-    return {"items": messages, "citationDetails": details}
+    return AgentMessageListResponse(
+        items=[_message_model(message) for message in messages],
+        citationDetails=[AgentCitationDetail(**detail) for detail in details],
+    )
 
 
-@router.post("/api/v1/agent/threads/{thread_id}/messages", status_code=202)
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/messages",
+    status_code=202,
+    response_model=AgentTurnAccepted,
+)
 async def post_message(
     thread_id: str, payload: AgentMessageCreate, request: Request
 ):
@@ -144,20 +189,32 @@ async def post_message(
     task = loop.start_turn(thread_id, payload.text)
     request.app.state.agent_tasks.add(task)
     task.add_done_callback(request.app.state.agent_tasks.discard)
-    return {"status": "processing"}
+    return AgentTurnAccepted(status="processing")
 
 
-@router.post("/api/v1/agent/threads/{thread_id}/approvals", status_code=200)
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/approvals",
+    status_code=200,
+    response_model=AgentApprovalResult,
+)
 async def decide_approval(
     thread_id: str, payload: AgentApprovalDecision, request: Request
 ):
     loop = _get_agent_loop(request)
-    return await loop.apply_approval(
+    result = await loop.apply_approval(
         thread_id, payload.approvalId, payload.decision
+    )
+    return AgentApprovalResult(
+        status=result["status"],
+        message=result.get("message"),
+        reason=result.get("reason"),
     )
 
 
-@router.post("/api/v1/agent/threads/{thread_id}/cancel")
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/cancel",
+    response_model=AgentCancelResult,
+)
 async def cancel_turn(thread_id: str, request: Request):
     """Server-side cancel: the loop finalizes a partial ``cancelled``
     state in storage (never stuck ``processing``)."""
@@ -167,7 +224,7 @@ async def cancel_turn(thread_id: str, request: Request):
     if thread is None:
         raise ThreadNotFound("会话不存在。")
     if loop.cancel_turn(thread_id):
-        return {"cancelled": True, "status": "cancelling"}
+        return AgentCancelResult(cancelled=True, status="cancelling")
     if await store.is_running(thread_id):
         # Orphaned run marker (post-restart): finalize it directly.
         final = await store.append_message(
@@ -178,7 +235,7 @@ async def cancel_turn(thread_id: str, request: Request):
         await store.clear_run(thread_id)
         loop.publish(thread_id, {"type": "message", "message": final})
         loop.publish(thread_id, {"type": "turn_done", "status": "cancelled"})
-        return {"cancelled": True, "status": "cancelled"}
+        return AgentCancelResult(cancelled=True, status="cancelled")
     raise NoActiveRun("当前没有正在运行的回合。")
 
 
@@ -186,14 +243,25 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@router.get("/api/v1/agent/threads/{thread_id}/events")
+@router.get(
+    "/api/v1/agent/threads/{thread_id}/events",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            "description": (
+                "SSE stream: message/delta/done events; keep-alive comments"
+            ),
+        }
+    },
+)
 async def stream_events(thread_id: str, request: Request, after: int = 0):
     """Real-time SSE: storage replay after `after`, then live deltas from
     the running turn until it reaches a terminal state. Disconnects never
     abort the server-side run — clients reconnect with `after` and get the
-    persisted rows."""
-    from fastapi.responses import StreamingResponse
-
+    persisted rows. (``response_class``/``responses`` are for OpenAPI
+    documentation only; the hand-rolled generator below owns
+    replay/keep-alive.)"""
     store: AgentStore = _get_agent_store(request)
     loop = _get_agent_loop(request)
     queue = loop.subscribe(thread_id)
@@ -257,7 +325,10 @@ def _session_store(request: Request):
     return AgentSessionStore(request.app.state.db, _get_agent_store(request))
 
 
-@router.get("/api/v1/agent/threads/search")
+@router.get(
+    "/api/v1/agent/threads/search",
+    response_model=AgentThreadSearchResponse,
+)
 async def search_threads(request: Request, q: str):
     """F095：会话消息搜索（每线程扫描 ≤200 条、总结果 ≤50）。"""
     from lumirss.agent_session import SearchInvalid
@@ -273,10 +344,16 @@ async def search_threads(request: Request, q: str):
                 "error": {"type": "invalid_search_query", "message": str(exc)}
             },
         )
-    return {"items": items, "truncated": len(items) >= 50}
+    return AgentThreadSearchResponse(
+        items=[AgentThreadSearchHit(**item) for item in items],
+        truncated=len(items) >= 50,
+    )
 
 
-@router.patch("/api/v1/agent/threads/{thread_id}")
+@router.patch(
+    "/api/v1/agent/threads/{thread_id}",
+    response_model=AgentThreadSettings,
+)
 async def update_thread_settings(
     thread_id: str, payload: AgentThreadUpdate, request: Request
 ):
@@ -293,10 +370,13 @@ async def update_thread_settings(
         )
     except KeyError as exc:
         raise ThreadNotFound("会话不存在。") from exc
-    return settings
+    return AgentThreadSettings(**settings)
 
 
-@router.post("/api/v1/agent/threads/{thread_id}/branch")
+@router.post(
+    "/api/v1/agent/threads/{thread_id}/branch",
+    response_model=AgentBranchResult,
+)
 async def branch_thread(
     thread_id: str, payload: AgentBranchRequest, request: Request
 ):
@@ -318,15 +398,18 @@ async def branch_thread(
             },
         )
     thread = await _get_agent_store(request).get_thread(result["threadId"])
-    return {
-        "thread": thread,
-        "branchOf": result["branchOf"],
-        "copiedMessages": result["copiedMessages"],
-        "truncated": result["truncated"],
-    }
+    return AgentBranchResult(
+        thread=_thread_model(thread),
+        branchOf=result["branchOf"],
+        copiedMessages=result["copiedMessages"],
+        truncated=result["truncated"],
+    )
 
 
-@router.get("/api/v1/agent/threads/{thread_id}/export")
+@router.get(
+    "/api/v1/agent/threads/{thread_id}/export",
+    response_class=MarkdownResponse,
+)
 async def export_thread(
     thread_id: str, request: Request, rounds: int = 5, format: str = "md"
 ):
@@ -374,7 +457,8 @@ async def export_thread(
 
 
 @router.post(
-    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/preview"
+    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/preview",
+    response_model=AgentApprovalPreview,
 )
 async def preview_approval(
     thread_id: str, approval_id: str, request: Request
@@ -451,11 +535,11 @@ async def preview_approval(
                 }
             },
         )
-    return {
-        "approvalId": row["approvalId"],
-        "tool": row["tool"],
-        "target": preview.get("target"),
-        "changes": _redact(preview.get("changes") or []),
-        "uncertain": preview.get("uncertain") or [],
-        "note": "预演不执行；批准后按审批行参数执行。",
-    }
+    return AgentApprovalPreview(
+        approvalId=row["approvalId"],
+        tool=row["tool"],
+        target=preview.get("target"),
+        changes=_redact(preview.get("changes") or []),
+        uncertain=preview.get("uncertain") or [],
+        note="预演不执行；批准后按审批行参数执行。",
+    )

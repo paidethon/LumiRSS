@@ -73,6 +73,58 @@
     "title": "ActivationSourceResult",
     "type": "object"
    },
+   "AgentApprovalContent": {
+    "additionalProperties": false,
+    "description": "role=approval message body (server-minted by create_approval).",
+    "properties": {
+     "approvalId": {
+      "title": "Approvalid",
+      "type": "string"
+     },
+     "args": {
+      "additionalProperties": true,
+      "title": "Args",
+      "type": "object"
+     },
+     "callId": {
+      "title": "Callid",
+      "type": "string"
+     },
+     "expiresInMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expiresinminutes"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "threadId": {
+      "title": "Threadid",
+      "type": "string"
+     },
+     "tool": {
+      "title": "Tool",
+      "type": "string"
+     }
+    },
+    "required": [
+     "approvalId",
+     "threadId",
+     "callId",
+     "tool",
+     "args",
+     "status"
+    ],
+    "title": "AgentApprovalContent",
+    "type": "object"
+   },
    "AgentApprovalDecision": {
     "additionalProperties": false,
     "description": "POST /api/v1/agent/threads/{id}/approvals.",
@@ -93,6 +145,183 @@
     "title": "AgentApprovalDecision",
     "type": "object"
    },
+   "AgentApprovalPreview": {
+    "description": "F097 POST .../approvals/{id}/preview — 预演不执行业务写入。",
+    "properties": {
+     "approvalId": {
+      "title": "Approvalid",
+      "type": "string"
+     },
+     "changes": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AgentApprovalPreviewChange"
+      },
+      "title": "Changes",
+      "type": "array"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "target": {
+      "title": "Target",
+      "type": "string"
+     },
+     "tool": {
+      "title": "Tool",
+      "type": "string"
+     },
+     "uncertain": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Uncertain",
+      "type": "array"
+     }
+    },
+    "required": [
+     "approvalId",
+     "tool",
+     "target",
+     "note"
+    ],
+    "title": "AgentApprovalPreview",
+    "type": "object"
+   },
+   "AgentApprovalPreviewChange": {
+    "description": "F097 预演逐字段变化（from → to；敏感值已打码为 ***）。",
+    "properties": {
+     "field": {
+      "title": "Field",
+      "type": "string"
+     },
+     "from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "required": [
+     "field"
+    ],
+    "title": "AgentApprovalPreviewChange",
+    "type": "object"
+   },
+   "AgentApprovalResult": {
+    "description": "POST /api/v1/agent/threads/{id}/approvals — honest terminal\nvariants: rejected / tool_denied / completed.",
+    "properties": {
+     "message": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentMessage"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "status": {
+      "enum": [
+       "rejected",
+       "tool_denied",
+       "completed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "AgentApprovalResult",
+    "type": "object"
+   },
+   "AgentAssistantContent": {
+    "additionalProperties": false,
+    "description": "role=assistant message body (streaming marker / cancel note /\nbranch-truncation notice / toolCalls while the loop is mid-turn).",
+    "properties": {
+     "branchTruncated": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Branchtruncated"
+     },
+     "cancelled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cancelled"
+     },
+     "streaming": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Streaming"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "toolCalls": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AgentToolCall"
+      },
+      "title": "Toolcalls",
+      "type": "array"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "AgentAssistantContent",
+    "type": "object"
+   },
    "AgentBranchRequest": {
     "additionalProperties": false,
     "description": "F099 从指定消息分支。",
@@ -109,6 +338,230 @@
     "title": "AgentBranchRequest",
     "type": "object"
    },
+   "AgentBranchResult": {
+    "description": "F099 POST /api/v1/agent/threads/{id}/branch 响应。",
+    "properties": {
+     "branchOf": {
+      "title": "Branchof",
+      "type": "string"
+     },
+     "copiedMessages": {
+      "title": "Copiedmessages",
+      "type": "integer"
+     },
+     "thread": {
+      "$ref": "#/components/schemas/AgentThread"
+     },
+     "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "thread",
+     "branchOf",
+     "copiedMessages",
+     "truncated"
+    ],
+    "title": "AgentBranchResult",
+    "type": "object"
+   },
+   "AgentCancelResult": {
+    "description": "POST /api/v1/agent/threads/{id}/cancel.",
+    "properties": {
+     "cancelled": {
+      "title": "Cancelled",
+      "type": "boolean"
+     },
+     "status": {
+      "enum": [
+       "cancelling",
+       "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "cancelled",
+     "status"
+    ],
+    "title": "AgentCancelResult",
+    "type": "object"
+   },
+   "AgentCitationDetail": {
+    "description": "One citation ref resolved through the shared Source Registry.",
+    "properties": {
+     "datetime": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Datetime"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excerpt"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Payload",
+      "type": "object"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+     },
+     "staleReason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stalereason"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     }
+    },
+    "required": [
+     "ref",
+     "domain",
+     "kind",
+     "title",
+     "source"
+    ],
+    "title": "AgentCitationDetail",
+    "type": "object"
+   },
+   "AgentEntryRefsScope": {
+    "additionalProperties": false,
+    "description": "F094 范围锁定：锁定到显式条目列表。",
+    "properties": {
+     "entryRefs": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Entryrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRefs"
+    ],
+    "title": "AgentEntryRefsScope",
+    "type": "object"
+   },
+   "AgentMessage": {
+    "description": "One persisted conversation message (storage row, wire format).",
+    "properties": {
+     "citations": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Citations",
+      "type": "array"
+     },
+     "content": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentUserContent"
+       },
+       {
+        "$ref": "#/components/schemas/AgentAssistantContent"
+       },
+       {
+        "$ref": "#/components/schemas/AgentToolContent"
+       },
+       {
+        "$ref": "#/components/schemas/AgentApprovalContent"
+       }
+      ],
+      "title": "Content"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "user",
+       "assistant",
+       "tool",
+       "approval"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     },
+     "threadId": {
+      "title": "Threadid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "threadId",
+     "seq",
+     "role",
+     "content",
+     "createdAt"
+    ],
+    "title": "AgentMessage",
+    "type": "object"
+   },
    "AgentMessageCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/agent/threads/{id}/messages.",
@@ -122,6 +575,31 @@
      "text"
     ],
     "title": "AgentMessageCreate",
+    "type": "object"
+   },
+   "AgentMessageListResponse": {
+    "description": "Envelope for GET /api/v1/agent/threads/{id}/messages.",
+    "properties": {
+     "citationDetails": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AgentCitationDetail"
+      },
+      "title": "Citationdetails",
+      "type": "array"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AgentMessage"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "AgentMessageListResponse",
     "type": "object"
    },
    "AgentThread": {
@@ -163,6 +641,116 @@
      "items"
     ],
     "title": "AgentThreadListResponse",
+    "type": "object"
+   },
+   "AgentThreadSearchHit": {
+    "description": "F095 一条会话消息搜索命中（snippet 含前后文）。",
+    "properties": {
+     "messageIndex": {
+      "title": "Messageindex",
+      "type": "integer"
+     },
+     "role": {
+      "title": "Role",
+      "type": "string"
+     },
+     "snippet": {
+      "title": "Snippet",
+      "type": "string"
+     },
+     "threadId": {
+      "title": "Threadid",
+      "type": "string"
+     },
+     "threadTitle": {
+      "title": "Threadtitle",
+      "type": "string"
+     }
+    },
+    "required": [
+     "threadId",
+     "threadTitle",
+     "messageIndex",
+     "role",
+     "snippet"
+    ],
+    "title": "AgentThreadSearchHit",
+    "type": "object"
+   },
+   "AgentThreadSearchResponse": {
+    "description": "Envelope for GET /api/v1/agent/threads/search.",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AgentThreadSearchHit"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "items",
+     "truncated"
+    ],
+    "title": "AgentThreadSearchResponse",
+    "type": "object"
+   },
+   "AgentThreadSettings": {
+    "description": "PATCH /api/v1/agent/threads/{id} response（下轮生效）。",
+    "properties": {
+     "branchOf": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Branchof"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "scope": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentWorkspaceScope"
+       },
+       {
+        "$ref": "#/components/schemas/AgentEntryRefsScope"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scope"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "toolPolicy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentToolPolicy"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "title"
+    ],
+    "title": "AgentThreadSettings",
     "type": "object"
    },
    "AgentThreadUpdate": {
@@ -216,6 +804,218 @@
      }
     },
     "title": "AgentThreadUpdate",
+    "type": "object"
+   },
+   "AgentToolCall": {
+    "additionalProperties": false,
+    "description": "One assistant tool invocation; arguments stay raw protocol text.",
+    "properties": {
+     "argumentsText": {
+      "title": "Argumentstext",
+      "type": "string"
+     },
+     "callId": {
+      "title": "Callid",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "callId",
+     "name",
+     "argumentsText"
+    ],
+    "title": "AgentToolCall",
+    "type": "object"
+   },
+   "AgentToolContent": {
+    "additionalProperties": false,
+    "description": "role=tool message body.\n\n``result`` is the untrusted envelope (or a bare string in branched\ntranscripts); ``callId`` is dropped when a branch copies the row as\na non-executable transcript record.",
+    "properties": {
+     "approved": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approved"
+     },
+     "branchTranscript": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Branchtranscript"
+     },
+     "callId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Callid"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "result": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentToolResult"
+       },
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Result"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "AgentToolContent",
+    "type": "object"
+   },
+   "AgentToolPolicy": {
+    "additionalProperties": false,
+    "description": "F098 会话工具权限（键皆可缺省；validate_tool_policy 只落提供的键）。",
+    "properties": {
+     "allowedTools": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Allowedtools"
+     },
+     "maxOpsPerTurn": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maxopsperturn"
+     },
+     "mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "all",
+         "readonly"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mode"
+     }
+    },
+    "title": "AgentToolPolicy",
+    "type": "object"
+   },
+   "AgentToolResult": {
+    "additionalProperties": false,
+    "description": "Tool output wrapped as untrusted data (injection boundary).",
+    "properties": {
+     "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+     },
+     "untrusted": {
+      "title": "Untrusted",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "untrusted",
+     "payload"
+    ],
+    "title": "AgentToolResult",
+    "type": "object"
+   },
+   "AgentTurnAccepted": {
+    "description": "202 body for POST /api/v1/agent/threads/{id}/messages.",
+    "properties": {
+     "status": {
+      "const": "processing",
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "AgentTurnAccepted",
+    "type": "object"
+   },
+   "AgentUserContent": {
+    "additionalProperties": false,
+    "description": "role=user message body.",
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "AgentUserContent",
+    "type": "object"
+   },
+   "AgentWorkspaceScope": {
+    "additionalProperties": false,
+    "description": "F094 范围锁定：锁定到单个工作区。",
+    "properties": {
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId"
+    ],
+    "title": "AgentWorkspaceScope",
     "type": "object"
    },
    "AiProfile": {
@@ -12368,6 +13168,98 @@
     "title": "RagInconsistencyList",
     "type": "object"
    },
+   "RagJobSummary": {
+    "description": "F093 最近一次重建作业的进度段（stage/done/remaining）。",
+    "properties": {
+     "done": {
+      "default": 0,
+      "title": "Done",
+      "type": "integer"
+     },
+     "jobId": {
+      "title": "Jobid",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "remaining": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remaining"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "jobId",
+     "kind",
+     "status",
+     "updatedAt"
+    ],
+    "title": "RagJobSummary",
+    "type": "object"
+   },
+   "RagRebuildPauseResult": {
+    "description": "F093 POST /api/v1/rag/rebuild/pause — paused=false 表示没有\n可暂停的作业（jobId/status 同时缺省）。",
+    "properties": {
+     "jobId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jobid"
+     },
+     "paused": {
+      "title": "Paused",
+      "type": "boolean"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     }
+    },
+    "required": [
+     "paused"
+    ],
+    "title": "RagRebuildPauseResult",
+    "type": "object"
+   },
    "RagRebuildResult": {
     "description": "Bounded rebuild report（F093 起为作业感知：jobId/status）。",
     "properties": {
@@ -12533,6 +13425,87 @@
      "semanticUsed"
     ],
     "title": "RagSearchResponse",
+    "type": "object"
+   },
+   "RagStatus": {
+    "description": "GET /api/v1/rag/status — everything the enable/rebuild UI needs.",
+    "properties": {
+     "chunks": {
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "fastembedAvailable": {
+      "title": "Fastembedavailable",
+      "type": "boolean"
+     },
+     "job": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RagJobSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "lastError": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lasterror"
+     },
+     "lastRebuildAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lastrebuildat"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "modelLoaded": {
+      "title": "Modelloaded",
+      "type": "boolean"
+     },
+     "vecRows": {
+      "title": "Vecrows",
+      "type": "integer"
+     },
+     "vecTable": {
+      "title": "Vectable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled",
+     "chunks",
+     "model",
+     "dim",
+     "vecTable",
+     "vecRows",
+     "modelLoaded",
+     "fastembedAvailable"
+    ],
+    "title": "RagStatus",
     "type": "object"
    },
    "ReadLaterItem": {
@@ -19250,7 +20223,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadSearchResponse"
+        }
        }
       },
       "description": "Successful Response"
@@ -19328,7 +20303,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadSettings"
+        }
        }
       },
       "description": "Successful Response"
@@ -19375,7 +20352,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentApprovalResult"
+        }
        }
       },
       "description": "Successful Response"
@@ -19422,7 +20401,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentApprovalPreview"
+        }
        }
       },
       "description": "Successful Response"
@@ -19470,7 +20451,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentBranchResult"
+        }
        }
       },
       "description": "Successful Response"
@@ -19508,7 +20491,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentCancelResult"
+        }
        }
       },
       "description": "Successful Response"
@@ -19529,7 +20514,7 @@
   },
   "/api/v1/agent/threads/{thread_id}/events": {
    "get": {
-    "description": "Real-time SSE: storage replay after `after`, then live deltas from\nthe running turn until it reaches a terminal state. Disconnects never\nabort the server-side run — clients reconnect with `after` and get the\npersisted rows.",
+    "description": "Real-time SSE: storage replay after `after`, then live deltas from\nthe running turn until it reaches a terminal state. Disconnects never\nabort the server-side run — clients reconnect with `after` and get the\npersisted rows. (``response_class``/``responses`` are for OpenAPI\ndocumentation only; the hand-rolled generator below owns\nreplay/keep-alive.)",
     "operationId": "stream_events_api_v1_agent_threads__thread_id__events_get",
     "parameters": [
      {
@@ -19555,11 +20540,13 @@
     "responses": {
      "200": {
       "content": {
-       "application/json": {
-        "schema": {}
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
        }
       },
-      "description": "Successful Response"
+      "description": "SSE stream: message/delta/done events; keep-alive comments"
      },
      "422": {
       "content": {
@@ -19613,8 +20600,10 @@
     "responses": {
      "200": {
       "content": {
-       "application/json": {
-        "schema": {}
+       "text/markdown; charset=utf-8": {
+        "schema": {
+         "type": "string"
+        }
        }
       },
       "description": "Successful Response"
@@ -19662,7 +20651,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentMessageListResponse"
+        }
        }
       },
       "description": "Successful Response"
@@ -19708,7 +20699,9 @@
      "202": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/AgentTurnAccepted"
+        }
        }
       },
       "description": "Successful Response"
@@ -30066,7 +31059,9 @@
      "200": {
       "content": {
        "application/json": {
-        "schema": {}
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildPauseResult"
+        }
        }
       },
       "description": "Successful Response"
@@ -30207,9 +31202,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "additionalProperties": true,
-         "title": "Response Rag Status Api V1 Rag Status Get",
-         "type": "object"
+         "$ref": "#/components/schemas/RagStatus"
         }
        }
       },
