@@ -341,10 +341,11 @@ describe('WorkspacesPage', () => {
         1,
       ),
     )
-    // 移除第一张卡
-    fireEvent.click(screen.getAllByRole('button', { name: '移除' })[0])
+    // N102 起移除动作收进条目操作菜单：先打开「文章 A」的条目菜单再点移除
+    fireEvent.click(screen.getByRole('button', { name: '「文章 A」条目操作' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '移除' }))
     await waitFor(() =>
-      expect(mocks.removeWorkspaceItem).toHaveBeenCalledWith('ws-2', 'rss:e1.a'),
+      expect(mocks.removeWorkspaceItem).toHaveBeenCalledWith('ws-2', 'rss:e1.a', { force: undefined }),
     )
   })
 })
