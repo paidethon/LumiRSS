@@ -1019,6 +1019,15 @@ class BackupCapabilities(BaseModel):
     freshrssData: FreshrssDataBackupCapability
 
 
+class SegmentProtectedTerm(BaseModel):
+    """N083：一个受保护术语在本段的保留结果（诚实报告，不臆造）。"""
+
+    term: str
+    protected: bool
+    count: int = 0
+    reason: str | None = None
+
+
 class TranslationSegmentState(BaseModel):
     """Per-block translation state (lookup = cache only; generate explicit)."""
 
@@ -1031,6 +1040,10 @@ class TranslationSegmentState(BaseModel):
     userRevision: str | None = None
     revisedAt: str | None = None
     revisionStale: bool = False
+    # N086：用户标记「不翻译」的块（不参与生成；缓存译文照常展示）。
+    noTranslate: bool = False
+    # N083：受保护术语在本段的保留结果报告。
+    protectedTerms: list[SegmentProtectedTerm] = []
 
 
 class TranslationSegmentsView(BaseModel):
@@ -1928,6 +1941,9 @@ class GlossaryTerm(BaseModel):
     term: str
     definition: str
     sourceRef: str | None = None
+    # N083：受保护术语 —— 分段翻译后处理会把译文里大小写漂移的该词
+    # 还原为原始词形（完全缺失则如实上报未保护）。
+    protect: bool = False
     createdAt: str = ""
     updatedAt: str = ""
 
@@ -1937,11 +1953,40 @@ class GlossaryTermList(BaseModel):
 
 
 class GlossaryTermCreate(BaseModel):
-    """POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition。"""
+    """POST/PATCH /api/v1/glossary — PATCH 全量替换 term+definition+protect。"""
 
     term: str
     definition: str
     sourceRef: str | None = None
+    protect: bool = False
+
+
+class TranslationVerificationFinding(BaseModel):
+    """N082：一条可见数字差异（基于可见 token，非语义判断）。"""
+
+    kind: Literal["missing", "changed", "added"]
+    token: str
+    sourceContext: str = ""
+    translatedContext: str = ""
+
+
+class TranslationVerificationBlock(BaseModel):
+    """N082：一个块的校验结果（不可校验时诚实给 reason）。"""
+
+    blockIndex: int
+    verifiable: bool
+    revised: bool = False
+    reason: str | None = None
+    findings: list[TranslationVerificationFinding] = []
+
+
+class TranslationVerificationView(BaseModel):
+    """GET /api/v1/entries/{ref}/translation-verification 响应。"""
+
+    entryRef: str
+    language: str
+    totalFindings: int = 0
+    blocks: list[TranslationVerificationBlock] = []
 
 
 class GptDigestConfig(BaseModel):
