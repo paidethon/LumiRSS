@@ -213,6 +213,12 @@ sudo ./lumirss set-password          # 安装/轮换 owner 密码；或 stdin / 
 
 ## 6. Health / readiness / 日志
 
+- 容器 HEALTHCHECK：`bff` 探测 `GET /health/live`（镜像内置）；
+  `web` 探测容器内部 `:9137/index.html`（Caddy 以同一 `/srv` 根渲染的
+  专用 HTTP 站点，探针同时校验响应体含 Vite 构建的 `/assets/` 引用）。
+  该端口不经 basic auth、不受 auto-HTTPS 308 影响，且 compose 从不发布，
+  四种部署形态（DOMAIN / `:80` / external-caddy / basic-auth）下语义一致；
+  `docker compose ps` 的 healthy 状态即来自这两项检查。
 - `GET /health/live` — 进程存活（仅容器内）。
 - `GET /health/ready` — 核心依赖（lumi.sqlite）不可用才 503；
   FreshRSS/RSSHub 故障不影响 readiness（失败隔离）。

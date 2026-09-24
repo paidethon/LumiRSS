@@ -53,4 +53,26 @@ sed "s|__SITE_ADDR__|${SITE_ADDR}|g; \
      s|__INTERNAL_TOKEN_DIRECTIVE__|${TOKEN_DIRECTIVE}|g" \
   "$TEMPLATE" > /etc/caddy/Caddyfile
 
+# E06 container-internal healthcheck site, appended to EVERY rendered mode
+# (noauth / basic auth / session, DOMAIN or ":80" or external-caddy).
+# Why a dedicated plain-HTTP port instead of probing the public site:
+# - with a real DOMAIN, Caddy's auto-HTTPS makes :80 answer 308 redirects
+#   (and https would depend on ACME having issued a cert);
+# - in basic-auth mode every public path answers 401 without credentials;
+# - Caddy ships no built-in HTTP health endpoint (the :2019 admin API only
+#   proves process liveness, not HTTP serving).
+# This site has none of those dependencies: no basic_auth, no TLS, no
+# redirect. It serves the SAME /srv root as the public site, so one probe
+# of /index.html proves BOTH that Caddy's HTTP stack answers AND that the
+# static build artifact is present and servable (the Dockerfile HEALTHCHECK
+# additionally greps the body for the hashed /assets/ bundle references).
+# Compose never publishes 9137, so this stays container-internal.
+cat >> /etc/caddy/Caddyfile <<'EOF'
+
+:9137 {
+	root * /srv
+	file_server
+}
+EOF
+
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
