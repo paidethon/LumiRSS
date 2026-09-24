@@ -5376,7 +5376,8 @@ export async function listArchivedWorkspaces(): Promise<Workspace[]> {
 
 // ---- F085 看板 / F086 目标 --------------------------------------------------
 
-export type BoardStatus = 'todo' | 'reading' | 'done'
+/** N112：三状态扩展为五状态（待处理/阅读中/待摘录/待验证/已完成）。 */
+export type BoardStatus = 'todo' | 'reading' | 'excerpted' | 'needs_verification' | 'done'
 
 export interface BoardCard {
   itemRef: string
@@ -5424,6 +5425,8 @@ export interface WorkspaceGoalView {
   deadline?: string | null
   doneCount?: number
   createdAt?: string
+  goalText?: string | null
+  conditions?: string[]
 }
 
 export async function getWorkspaceGoal(
@@ -5437,12 +5440,18 @@ export async function putWorkspaceGoal(
   workspaceId: string,
   targetCount: number,
   deadline?: string | null,
+  extra?: { goalText?: string | null; conditions?: string[] | null },
 ): Promise<WorkspaceGoalView> {
   const response = await rawRequest(
     `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/goal`,
     {
       method: 'PUT',
-      body: JSON.stringify({ targetCount, deadline: deadline ?? null }),
+      body: JSON.stringify({
+        targetCount,
+        deadline: deadline ?? null,
+        ...(extra?.goalText !== undefined ? { goalText: extra.goalText } : {}),
+        ...(extra?.conditions !== undefined ? { conditions: extra.conditions } : {}),
+      }),
       contentType: 'application/json',
     },
   )
@@ -5456,6 +5465,269 @@ export async function deleteWorkspaceGoal(workspaceId: string): Promise<void> {
     { method: 'DELETE' },
   )
   if (!response.ok) throw await toApiError(response)
+}
+
+// ---- N113 分节大纲 -----------------------------------------------------------
+
+/** 分节成员（unresolved = 引用的条目已不在工作区，诚实标记）。 */
+export interface WorkspaceSectionItem {
+  itemRef: string
+  position: number
+  addedAt: string
+  unresolved: boolean
+}
+
+export interface WorkspaceSectionView {
+  id: string
+  workspaceId: string
+  title: string
+  sortIndex: number
+  createdAt: string
+  items: WorkspaceSectionItem[]
+}
+
+export async function listWorkspaceSections(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<{ items: WorkspaceSectionView[] }> {
+  return request(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections`,
+    signal,
+  )
+}
+
+export async function createWorkspaceSection(
+  workspaceId: string,
+  title: string,
+): Promise<WorkspaceSectionView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections`,
+    { method: 'POST', body: JSON.stringify({ title }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionView
+}
+
+export async function renameWorkspaceSection(
+  workspaceId: string,
+  sectionId: string,
+  title: string,
+): Promise<WorkspaceSectionView> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}`,
+    { method: 'PATCH', body: JSON.stringify({ title }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionView
+}
+
+export async function deleteWorkspaceSection(
+  workspaceId: string,
+  sectionId: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 分节顺序持久化（PUT 全量；真实变化 bump revision）。 */
+export async function reorderWorkspaceSections(
+  workspaceId: string,
+  sectionIds: string[],
+): Promise<{ items: WorkspaceSectionView[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ sectionIds }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: WorkspaceSectionView[] }
+}
+
+/** 条目引用进分节（幂等；同一 ref 可进多节；非成员 404）。 */
+export async function addWorkspaceSectionItem(
+  workspaceId: string,
+  sectionId: string,
+  itemRef: string,
+): Promise<WorkspaceSectionItem> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items`,
+    { method: 'POST', body: JSON.stringify({ itemRef }), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as WorkspaceSectionItem
+}
+
+/** 从分节移除引用（只拆引用，不动工作区成员本身）。 */
+export async function removeWorkspaceSectionItem(
+  workspaceId: string,
+  sectionId: string,
+  itemRef: string,
+): Promise<void> {
+  await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items/${encodeURIComponent(itemRef)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 节内条目顺序持久化（PUT 全量 1..N）。 */
+export async function reorderWorkspaceSectionItems(
+  workspaceId: string,
+  sectionId: string,
+  itemRefs: string[],
+): Promise<{ items: WorkspaceSectionView[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/sections/${encodeURIComponent(sectionId)}/items/order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemRefs }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: WorkspaceSectionView[] }
+}
+
+// ---- N114 汇编预览 -----------------------------------------------------------
+
+export interface CompileItem {
+  itemRef: string
+  title: string
+  excerpt: string
+  citation: string
+  note?: string | null
+}
+
+export interface CompileSection {
+  sectionId: string | null
+  title: string
+  items: CompileItem[]
+}
+
+export interface CompileDraft {
+  workspaceId: string
+  workspaceName: string
+  generatedAt: string
+  sections: CompileSection[]
+  includedCount: number
+  excludedMissing: number
+  excluded: { itemRef: string; reason: string }[]
+}
+
+/** 汇编草稿（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。 */
+export async function compileWorkspace(
+  workspaceId: string,
+  sectionIds?: string[],
+): Promise<CompileDraft> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/compile`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sectionIds: sectionIds ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CompileDraft
+}
+
+/** 汇编草稿 Markdown 文本版（同样纯预览；供下载）。 */
+export async function compileWorkspaceMarkdown(
+  workspaceId: string,
+  sectionIds?: string[],
+): Promise<string> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/compile/markdown`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sectionIds: sectionIds ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return await response.text()
+}
+
+// ---- N120 清理预演 -----------------------------------------------------------
+
+export interface WorkspaceCleanupCategory {
+  category: string
+  items: Record<string, unknown>[]
+}
+
+export interface WorkspaceCleanupPreview {
+  workspaceId: string
+  categories: WorkspaceCleanupCategory[]
+  actionable: string[]
+  reportOnly: string[]
+}
+
+export const CLEANUP_CATEGORY_LABELS: Record<string, string> = {
+  unresolved_refs: '已消失的来源条目',
+  protected_library_refs: '受保护的库引用（不参与清理）',
+  unverifiable_refs: '无法核实（不参与清理）',
+  empty_groups: '空分组',
+  orphan_section_refs: '悬空的分节引用',
+  pinned_group_conflicts: '固定 + 分组冲突（仅提示）',
+}
+
+export async function getWorkspaceCleanupPreview(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceCleanupPreview> {
+  return request(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup-preview`,
+    signal,
+  )
+}
+
+export interface CleanupApplyResult {
+  logId: string
+  removed: Record<string, number>
+}
+
+/** 应用选中的可执行类目（快照先行；只删 Lumi 元数据行）。 */
+export async function applyWorkspaceCleanup(
+  workspaceId: string,
+  categories: string[],
+): Promise<CleanupApplyResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ categories }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CleanupApplyResult
+}
+
+export interface CleanupUndoResult {
+  logId: string
+  restoredRefs: number
+  restoredSectionRefs: number
+}
+
+/** 撤销最近一次（或指定日志的）清理（重复 undo 幂等）。 */
+export async function undoWorkspaceCleanup(
+  workspaceId: string,
+  logId?: string | null,
+): Promise<CleanupUndoResult> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/cleanup/undo`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ logId: logId ?? null }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as CleanupUndoResult
 }
 
 // ---- F087 书签失效检查 -------------------------------------------------------

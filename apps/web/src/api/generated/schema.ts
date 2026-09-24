@@ -7318,6 +7318,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Cleanup Apply
+         * @description N120：应用选中的清理类目（快照先行，可撤销）。
+         *
+         *     只删 Lumi 自有元数据行（stale rss 成员行 / 空组名 / 悬空分节引用）；
+         *     绝不触碰 FreshRSS 数据；library: 域引用受保护（即使解析不到）。
+         */
+        post: operations["workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Cleanup Logs
+         * @description 清理日志（新→旧，上限 5；供撤销入口选择）。
+         */
+        get: operations["workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workspace Cleanup Preview
+         * @description N120：只读清理预演——每项带原因，绝不静默；只报告不删除。
+         */
+        get: operations["workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/cleanup/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Cleanup Undo
+         * @description N120：按日志恢复被移除的行（缺省 = 最近一条；重复 undo 幂等）。
+         */
+        post: operations["workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/compile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compile Workspace
+         * @description N114：按大纲汇编草稿（纯预览，绝不落库）。
+         *
+         *     - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
+         *     - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
+         *     - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
+         *       绝不冒充内容。
+         */
+        post: operations["compile_workspace_api_v1_workspaces__workspace_id__compile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/compile/markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compile Workspace Markdown
+         * @description N114：汇编草稿的 Markdown 文本版（同样纯预览不落库）。
+         */
+        post: operations["compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/contents": {
         parameters: {
             query?: never;
@@ -7571,6 +7699,128 @@ export interface paths {
         /** Save As Template */
         post: operations["save_as_template_api_v1_workspaces__workspace_id__save_as_template_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Sections
+         * @description N113：分节大纲（sort_index 序）。成员引用以 item_ref 引用而非复制；
+         *     同一条目可出现在多个分节；引用已不是工作区成员 → 行保留并诚实标记
+         *     ``unresolved``（绝不静默隐藏，N113 契约）。
+         */
+        get: operations["list_workspace_sections_api_v1_workspaces__workspace_id__sections_get"];
+        put?: never;
+        /** Create Workspace Section */
+        post: operations["create_workspace_section_api_v1_workspaces__workspace_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Workspace Sections
+         * @description N113：分节顺序持久化（PUT 全量 1..N；真实变化 bump revision）。
+         */
+        put: operations["reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Workspace Section */
+        delete: operations["delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Workspace Section */
+        patch: operations["rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Workspace Section Item
+         * @description 把一个工作区成员引用进分节（幂等；同一 ref 可进入多个分节——
+         *     引用而非复制，ADR 0004）。非成员 → 404。
+         */
+        post: operations["add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Workspace Section Items
+         * @description N113：节内条目顺序持久化（PUT 全量 1..N）。
+         */
+        put: operations["reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/sections/{section_id}/items/{item_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Workspace Section Item
+         * @description 从分节移除一个引用（只拆引用，绝不删除工作区成员本身）。
+         */
+        delete: operations["remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9414,6 +9664,78 @@ export interface components {
              * @default []
              */
             uncertainties: string[];
+        };
+        /** CompileExcluded */
+        CompileExcluded: {
+            /** Itemref */
+            itemRef: string;
+            /** Reason */
+            reason: string;
+        };
+        /** CompileItem */
+        CompileItem: {
+            /** Citation */
+            citation: string;
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+            /** Itemref */
+            itemRef: string;
+            /** Note */
+            note?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * CompileRequest
+         * @description N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。
+         */
+        CompileRequest: {
+            /** Sectionids */
+            sectionIds?: string[] | null;
+        };
+        /** CompileResponse */
+        CompileResponse: {
+            /**
+             * Excluded
+             * @default []
+             */
+            excluded: components["schemas"]["CompileExcluded"][];
+            /**
+             * Excludedmissing
+             * @default 0
+             */
+            excludedMissing: number;
+            /** Generatedat */
+            generatedAt: string;
+            /**
+             * Includedcount
+             * @default 0
+             */
+            includedCount: number;
+            /**
+             * Sections
+             * @default []
+             */
+            sections: components["schemas"]["CompileSection"][];
+            /** Workspaceid */
+            workspaceId: string;
+            /** Workspacename */
+            workspaceName: string;
+        };
+        /** CompileSection */
+        CompileSection: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["CompileItem"][];
+            /** Sectionid */
+            sectionId?: string | null;
+            /** Title */
+            title: string;
         };
         /**
          * ComponentError
@@ -14911,6 +15233,85 @@ export interface components {
             /** Workspaceid */
             workspaceId: string;
         };
+        /** WorkspaceCleanupApplyRequest */
+        WorkspaceCleanupApplyRequest: {
+            /** Categories */
+            categories: string[];
+        };
+        /** WorkspaceCleanupApplyResult */
+        WorkspaceCleanupApplyResult: {
+            /** Logid */
+            logId: string;
+            /**
+             * Removed
+             * @default {}
+             */
+            removed: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkspaceCleanupCategory */
+        WorkspaceCleanupCategory: {
+            /** Category */
+            category: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** WorkspaceCleanupLogList */
+        WorkspaceCleanupLogList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** WorkspaceCleanupPreviewResponse */
+        WorkspaceCleanupPreviewResponse: {
+            /**
+             * Actionable
+             * @default []
+             */
+            actionable: string[];
+            /**
+             * Categories
+             * @default []
+             */
+            categories: components["schemas"]["WorkspaceCleanupCategory"][];
+            /**
+             * Reportonly
+             * @default []
+             */
+            reportOnly: string[];
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /** WorkspaceCleanupUndoRequest */
+        WorkspaceCleanupUndoRequest: {
+            /** Logid */
+            logId?: string | null;
+        };
+        /** WorkspaceCleanupUndoResult */
+        WorkspaceCleanupUndoResult: {
+            /** Logid */
+            logId: string;
+            /**
+             * Restoredrefs
+             * @default 0
+             */
+            restoredRefs: number;
+            /**
+             * Restoredsectionrefs
+             * @default 0
+             */
+            restoredSectionRefs: number;
+        };
         /**
          * WorkspaceCreate
          * @description POST /api/v1/workspaces.
@@ -14935,10 +15336,21 @@ export interface components {
             skippedExampleRefs: string[];
             workspace: components["schemas"]["Workspace"];
         };
-        /** WorkspaceGoalPut */
+        /**
+         * WorkspaceGoalPut
+         * @description F086 目标写入 + N111 扩展。
+         *
+         *     goalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不
+         *     无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用
+         *     ``model_fields_set`` 区分「未携带」与「显式 null」。
+         */
         WorkspaceGoalPut: {
+            /** Conditions */
+            conditions?: string[] | null;
             /** Deadline */
             deadline?: string | null;
+            /** Goaltext */
+            goalText?: string | null;
             /** Targetcount */
             targetCount: number;
         };
@@ -15111,6 +15523,74 @@ export interface components {
          */
         WorkspaceResumeResponse: {
             pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /** WorkspaceSectionCreate */
+        WorkspaceSectionCreate: {
+            /** Title */
+            title: string;
+        };
+        /**
+         * WorkspaceSectionItem
+         * @description 分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。
+         */
+        WorkspaceSectionItem: {
+            /** Addedat */
+            addedAt: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position: number;
+            /**
+             * Unresolved
+             * @default false
+             */
+            unresolved: boolean;
+        };
+        /** WorkspaceSectionItemAddRequest */
+        WorkspaceSectionItemAddRequest: {
+            /** Itemref */
+            itemRef: string;
+        };
+        /** WorkspaceSectionItemsOrderPut */
+        WorkspaceSectionItemsOrderPut: {
+            /** Itemrefs */
+            itemRefs: string[];
+        };
+        /** WorkspaceSectionList */
+        WorkspaceSectionList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceSectionView"][];
+        };
+        /** WorkspaceSectionOrderPut */
+        WorkspaceSectionOrderPut: {
+            /** Sectionids */
+            sectionIds: string[];
+        };
+        /** WorkspaceSectionPatch */
+        WorkspaceSectionPatch: {
+            /** Title */
+            title: string;
+        };
+        /** WorkspaceSectionView */
+        WorkspaceSectionView: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceSectionItem"][];
+            /** Sortindex */
+            sortIndex: number;
+            /** Title */
+            title: string;
             /** Workspaceid */
             workspaceId: string;
         };
@@ -27966,6 +28446,208 @@ export interface operations {
             };
         };
     };
+    workspace_cleanup_apply_api_v1_workspaces__workspace_id__cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCleanupApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupApplyResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_logs_api_v1_workspaces__workspace_id__cleanup_logs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupLogList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_preview_api_v1_workspaces__workspace_id__cleanup_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_cleanup_undo_api_v1_workspaces__workspace_id__cleanup_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCleanupUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceCleanupUndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compile_workspace_api_v1_workspaces__workspace_id__compile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compile_workspace_markdown_api_v1_workspaces__workspace_id__compile_markdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     workspace_contents_api_v1_workspaces__workspace_id__contents_get: {
         parameters: {
             query?: {
@@ -28530,6 +29212,276 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_sections_api_v1_workspaces__workspace_id__sections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_section_api_v1_workspaces__workspace_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_workspace_sections_api_v1_workspaces__workspace_id__sections_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_workspace_section_api_v1_workspaces__workspace_id__sections__section_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionItemAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_workspace_section_items_api_v1_workspaces__workspace_id__sections__section_id__items_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSectionItemsOrderPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSectionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_workspace_section_item_api_v1_workspaces__workspace_id__sections__section_id__items__item_ref__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                section_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

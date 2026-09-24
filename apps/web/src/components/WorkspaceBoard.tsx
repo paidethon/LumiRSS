@@ -1,15 +1,17 @@
 /** WorkspaceBoard — F085 工作区看板 + F086 阅读目标卡。
  *
- * 三列（todo/reading/done，各列前 50 条 + 真实总数；>50 诚实提示）。
- * 移动：桌面 HTML5 拖拽 + 每张卡的「移动到…」下拉（键盘可达）。
- * PUT 幂等（重复设置同状态无害）。同一条目在其他工作区的状态独立
- * （服务端按 workspace_id 隔离）。目标卡：进度 = done 去重条目数，
- * 支持编辑/删除，截止日到期诚实标注。
+ * N112：五状态列（todo/reading/excerpted/needs_verification/done，各列
+ * 前 50 条 + 真实总数；>50 诚实提示）。移动：桌面 HTML5 拖拽 + 每张卡的
+ * 「移动到…」下拉（键盘可达）。PUT 幂等（重复设置同状态无害）。同一条目
+ * 在其他工作区的状态独立（服务端按 workspace_id 隔离）。
+ * 目标卡：进度 = done 去重条目数，支持编辑/删除，截止日到期诚实标注。
+ * N111：目标陈述（自由文本）+ 完成条件清单——条件勾选状态是设备本机
+ * （localStorage，lib/goal-conditions），服务端只存文本、绝不存勾选。
  */
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Target, Trash2 } from 'lucide-react'
+import { ListChecks, Pencil, Target, Trash2 } from 'lucide-react'
 import {
   deleteWorkspaceGoal,
   getWorkspaceBoard,
@@ -20,6 +22,10 @@ import {
   type BoardStatus,
   type WorkspaceGoalView,
 } from '../api/client'
+import {
+  loadCheckedConditions,
+  saveCheckedConditions,
+} from '../lib/goal-conditions'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
 import { cx } from './ui/cx'
@@ -27,9 +33,17 @@ import { cx } from './ui/cx'
 const COLUMN_LABELS: Record<BoardStatus, string> = {
   todo: '待处理',
   reading: '阅读中',
+  excerpted: '待摘录',
+  needs_verification: '待验证',
   done: '已完成',
 }
-const BOARD_STATUSES: BoardStatus[] = ['todo', 'reading', 'done']
+const BOARD_STATUSES: BoardStatus[] = [
+  'todo',
+  'reading',
+  'excerpted',
+  'needs_verification',
+  'done',
+]
 
 function shortRef(itemRef: string): string {
   const tail = itemRef.slice(0, 13)
@@ -50,13 +64,34 @@ export function WorkspaceGoalCard({
   const [editing, setEditing] = useState(false)
   const [target, setTarget] = useState('10')
   const [deadline, setDeadline] = useState('')
+  // N111：目标陈述 + 条件清单（编辑态；一行一个条件）
+  const [goalText, setGoalText] = useState('')
+  const [conditionsText, setConditionsText] = useState('')
+  // N111：条件勾选（设备本机）——条件清单或工作区变化时重载（渲染期
+  // 重置模式，见 WorkspacesPage 同款；hook 顺序保持在早退之前）。
+  const conditions = goal.data?.conditions ?? []
+  const [checked, setChecked] = useState<Set<string>>(() => new Set())
+  const [checkedKey, setCheckedKey] = useState('')
+  const conditionsKey = `${workspaceId}\u0000${conditions.join('\u0001')}`
+  if (checkedKey !== conditionsKey) {
+    setCheckedKey(conditionsKey)
+    setChecked(loadCheckedConditions(workspaceId, conditions))
+  }
   const queryClient = useQueryClient()
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['workspace-goal', workspaceId] })
   }
   const put = useMutation({
-    mutationFn: () =>
-      putWorkspaceGoal(workspaceId, Math.max(1, Number(target) || 1), deadline || null),
+    mutationFn: () => {
+      const conditions = conditionsText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '')
+      return putWorkspaceGoal(workspaceId, Math.max(1, Number(target) || 1), deadline || null, {
+        goalText: goalText.trim() === '' ? null : goalText.trim(),
+        conditions,
+      })
+    },
     onSuccess: async () => {
       setEditing(false)
       await invalidate()
@@ -85,7 +120,7 @@ export function WorkspaceGoalCard({
     return (
       <div className="flex items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
         <span>还没有阅读目标。</span>
-        <Button variant="ghost" size="sm" onClick={() => { setEditing(true); setTarget('10'); setDeadline('') }}>
+        <Button variant="ghost" size="sm" onClick={() => { setEditing(true); setTarget('10'); setDeadline(''); setGoalText(''); setConditionsText('') }}>
           设定目标
         </Button>
       </div>
@@ -94,7 +129,7 @@ export function WorkspaceGoalCard({
 
   if (editing) {
     return (
-      <div className="flex flex-wrap items-end gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3" data-goal-editor="">
+      <div className="flex flex-wrap items-end gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3" data-goal-editor="" data-testid="goal-editor">
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-[var(--lumi-text-secondary)]">目标条数（≥1）</span>
           <input
@@ -114,6 +149,29 @@ export function WorkspaceGoalCard({
             onChange={(e) => setDeadline(e.target.value)}
             aria-label="截止日期"
             className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-sm text-[var(--lumi-text-primary)]"
+          />
+        </label>
+        <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs">
+          <span className="text-[var(--lumi-text-secondary)]">目标陈述（可选）</span>
+          <textarea
+            value={goalText}
+            onChange={(e) => setGoalText(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            aria-label="目标陈述"
+            placeholder="为什么读、读到什么程度"
+            className="w-full resize-y rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)]"
+          />
+        </label>
+        <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs">
+          <span className="text-[var(--lumi-text-secondary)]">完成条件（可选，一行一条）</span>
+          <textarea
+            value={conditionsText}
+            onChange={(e) => setConditionsText(e.target.value)}
+            rows={2}
+            aria-label="完成条件"
+            placeholder={'能复述核心论点\n写一篇摘要'}
+            className="w-full resize-y rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)]"
           />
         </label>
         <Button variant="primary" size="sm" disabled={put.isPending} onClick={() => put.mutate()}>
@@ -151,40 +209,77 @@ export function WorkspaceGoalCard({
   const pct = Math.min(100, Math.round((done / total) * 100))
   const overdue =
     data.deadline != null && data.deadline !== '' && new Date(data.deadline).getTime() < Date.now()
+  const toggleCondition = (text: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(text)) next.delete(text)
+      else next.add(text)
+      saveCheckedConditions(workspaceId, conditions, next)
+      return next
+    })
+  }
   return (
     <div
       data-testid="goal-card"
-      className="flex items-center gap-3 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
+      className="flex flex-col gap-2 rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-3"
     >
-      <Target aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent-text)]" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-[var(--lumi-text-primary)]">
-          目标 {done}/{data.targetCount} 条已完成
-          {data.deadline ? (
-            <span className={cx('ml-2', overdue ? 'text-[var(--lumi-danger)]' : 'text-[var(--lumi-text-tertiary)]')}>
-              截止 {data.deadline}{overdue ? '（已到期）' : ''}
-            </span>
-          ) : null}
-        </p>
-        <div
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={data.targetCount ?? 0}
-          aria-valuenow={done}
-          aria-label="阅读目标进度"
-          className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-selected)]"
-        >
-          <div className="h-full rounded-full bg-[var(--lumi-accent)]" style={{ width: `${pct}%` }} />
+      <div className="flex items-center gap-3">
+        <Target aria-hidden className="size-4 shrink-0 text-[var(--lumi-accent-text)]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-[var(--lumi-text-primary)]">
+            目标 {done}/{data.targetCount} 条已完成
+            {data.deadline ? (
+              <span className={cx('ml-2', overdue ? 'text-[var(--lumi-danger)]' : 'text-[var(--lumi-text-tertiary)]')}>
+                截止 {data.deadline}{overdue ? '（已到期）' : ''}
+              </span>
+            ) : null}
+          </p>
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={data.targetCount ?? 0}
+            aria-valuenow={done}
+            aria-label="阅读目标进度"
+            className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--lumi-surface-selected)]"
+          >
+            <div className="h-full rounded-full bg-[var(--lumi-accent)]" style={{ width: `${pct}%` }} />
+          </div>
         </div>
-      </div>
-      {onOpenList && (
-        <Button variant="ghost" size="sm" onClick={onOpenList}>
-          尚未处理
+        {onOpenList && (
+          <Button variant="ghost" size="sm" onClick={onOpenList}>
+            尚未处理
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" aria-label="编辑目标" onClick={() => { setTarget(String(data.targetCount ?? 10)); setDeadline(data.deadline ?? ''); setGoalText(data.goalText ?? ''); setConditionsText((conditions).join('\n')); setEditing(true) }}>
+          <Pencil aria-hidden className="size-3.5" />
         </Button>
+      </div>
+      {data.goalText ? (
+        <p className="whitespace-pre-wrap text-xs text-[var(--lumi-text-secondary)]" data-testid="goal-statement">
+          {data.goalText}
+        </p>
+      ) : null}
+      {conditions.length > 0 && (
+        <fieldset className="flex flex-col gap-1" data-testid="goal-conditions">
+          <legend className="flex items-center gap-1 text-[11px] text-[var(--lumi-text-tertiary)]">
+            <ListChecks aria-hidden className="size-3" />
+            完成条件（勾选只保存在本机）
+          </legend>
+          {conditions.map((condition) => (
+            <label key={condition} className="flex min-h-7 items-center gap-2 text-xs text-[var(--lumi-text-primary)]">
+              <input
+                type="checkbox"
+                checked={checked.has(condition)}
+                onChange={() => toggleCondition(condition)}
+                aria-label={`完成条件：${condition}`}
+              />
+              <span className={cx('min-w-0', checked.has(condition) && 'text-[var(--lumi-text-tertiary)] line-through')}>
+                {condition}
+              </span>
+            </label>
+          ))}
+        </fieldset>
       )}
-      <Button variant="ghost" size="sm" aria-label="编辑目标" onClick={() => { setTarget(String(data.targetCount ?? 10)); setDeadline(data.deadline ?? ''); setEditing(true) }}>
-        <Pencil aria-hidden className="size-3.5" />
-      </Button>
     </div>
   )
 }
@@ -244,7 +339,7 @@ export function WorkspaceBoardView({ workspaceId }: { workspaceId: string }) {
 
   if (board.isPending) {
     return (
-      <div className="mt-3 grid grid-cols-3 gap-2 max-md:grid-cols-1" aria-label="看板加载中">
+      <div className="mt-3 grid max-md:grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-2" aria-label="看板加载中">
         {[0, 1, 2].map((i) => (
           <Skeleton key={i} className="h-40 w-full" />
         ))}
@@ -262,7 +357,7 @@ export function WorkspaceBoardView({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="mt-3 flex flex-col gap-3" data-testid="workspace-board">
       <WorkspaceGoalCard workspaceId={workspaceId} />
-      <div className="grid grid-cols-3 gap-2 max-md:grid-cols-1">
+      <div className="grid max-md:grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-2">
         {columns.map((column) => (
           <section
             key={column.status}

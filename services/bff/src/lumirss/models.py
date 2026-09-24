@@ -3563,13 +3563,25 @@ class WorkspaceGoalView(BaseModel):
     deadline: str | None = None
     doneCount: int = 0
     createdAt: str
+    # N111：自由文本目标陈述 + 完成条件清单（勾选状态设备本机，服务端
+    # 只存文本本身，绝不存勾选状态）。
+    goalText: str | None = None
+    conditions: list[str] = []
 
 
 class WorkspaceGoalPut(BaseModel):
+    """F086 目标写入 + N111 扩展。
+
+    goalText / conditions 缺省（键未出现）= 保留既有值（旧调用方绝不
+    无意清空 N111 数据）；显式 null / 空串 / 空数组 = 清除。路由用
+    ``model_fields_set`` 区分「未携带」与「显式 null」。"""
+
     model_config = {"extra": "forbid"}
 
     targetCount: int = Field(ge=1)
     deadline: str | None = None
+    goalText: str | None = None
+    conditions: list[str] | None = Field(default=None, max_length=20)
 
 
 class BookmarkCheckRequest(BaseModel):
@@ -3612,6 +3624,140 @@ class ResearchPackPreviewResponse(BaseModel):
     missingCount: int
     estBytes: int
     snapshots: list[SnapshotBrief] = []
+
+
+# ===== N113 分节大纲 ==========================================================
+
+class WorkspaceSectionItem(BaseModel):
+    """分节成员（引用而非复制；unresolved = 已不是工作区成员，诚实标记）。"""
+
+    itemRef: str
+    position: int
+    addedAt: str
+    unresolved: bool = False
+
+
+class WorkspaceSectionView(BaseModel):
+    id: str
+    workspaceId: str
+    title: str
+    sortIndex: int
+    createdAt: str
+    items: list[WorkspaceSectionItem] = []
+
+
+class WorkspaceSectionList(BaseModel):
+    items: list[WorkspaceSectionView] = []
+
+
+class WorkspaceSectionCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=100)
+
+
+class WorkspaceSectionPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=100)
+
+
+class WorkspaceSectionOrderPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    sectionIds: list[str] = Field(min_length=1, max_length=500)
+
+
+class WorkspaceSectionItemAddRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+
+
+class WorkspaceSectionItemsOrderPut(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    itemRefs: list[str] = Field(min_length=1, max_length=500)
+
+
+# ===== N114 汇编预览 ==========================================================
+
+class CompileRequest(BaseModel):
+    """N114 汇编预览（纯预览不落库；sectionIds 缺省 = 全部大纲分节）。"""
+
+    model_config = {"extra": "forbid"}
+
+    sectionIds: list[str] | None = Field(default=None, max_length=100)
+
+
+class CompileItem(BaseModel):
+    itemRef: str
+    title: str
+    excerpt: str = ""
+    citation: str
+    note: str | None = None
+
+
+class CompileSection(BaseModel):
+    sectionId: str | None = None
+    title: str
+    items: list[CompileItem] = []
+
+
+class CompileExcluded(BaseModel):
+    itemRef: str
+    reason: str
+
+
+class CompileResponse(BaseModel):
+    workspaceId: str
+    workspaceName: str
+    generatedAt: str
+    sections: list[CompileSection] = []
+    includedCount: int = 0
+    excludedMissing: int = 0
+    excluded: list[CompileExcluded] = []
+
+
+# ===== N120 清理预演 ==========================================================
+
+class WorkspaceCleanupCategory(BaseModel):
+    category: str
+    items: list[dict] = []
+
+
+class WorkspaceCleanupPreviewResponse(BaseModel):
+    workspaceId: str
+    categories: list[WorkspaceCleanupCategory] = []
+    actionable: list[str] = []
+    reportOnly: list[str] = []
+
+
+class WorkspaceCleanupApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    categories: list[str] = Field(min_length=1, max_length=10)
+
+
+class WorkspaceCleanupApplyResult(BaseModel):
+    logId: str
+    removed: dict = {}
+
+
+class WorkspaceCleanupUndoRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    logId: str | None = None
+
+
+class WorkspaceCleanupUndoResult(BaseModel):
+    logId: str
+    restoredRefs: int = 0
+    restoredSectionRefs: int = 0
+
+
+class WorkspaceCleanupLogList(BaseModel):
+    items: list[dict] = []
 
 
 class ClipRevisionRequest(BaseModel):
