@@ -279,6 +279,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/rollback-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Rollback Readiness
+         * @description N197：回滚就绪检查（admin-gated，只读要素清单）。
+         *
+         *     - previousImage：读 ./lumirss snapshot_for_rollback 写下的回滚快照
+         *       清单（LUMIRSS_ROLLBACK_MANIFEST_FILE）——BFF 没有 Docker 访问权，
+         *       镜像存在性只来自脚本侧的诚实记录；
+         *     - backup：LUMIRSS_BACKUP_DIR 里最新 *.backup + N186 只读完整性校验；
+         *     - dbDowngrade：诚实限制说明（SQLite 迁移只向前，无法降级）；
+         *     - canRollback = 前镜像在 AND 备份可校验 AND schema 与备份一致。
+         *
+         *     本端点只给清单，永远不给一键回滚按钮——回滚只由运维侧
+         *     ./lumirss rollback 触发。
+         */
+        get: operations["admin_rollback_readiness_api_v1_admin_rollback_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/rsshub/routes/{route_key}/usage": {
         parameters: {
             query?: never;
@@ -1467,6 +1497,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Login Events
+         * @description 本人最近登录事件（cap 20；kind=new_device 未读即「待确认的新设备」）。
+         *
+         *     响应绝不含设备指纹哈希或任何 token 材料；每条都带 Cache-Control:
+         *     no-store。basic 模式没有账户会话语义 → 401。
+         */
+        get: operations["list_login_events_api_v1_auth_login_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login-events/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Login Events Seen
+         * @description 批量标记已读（信任确认）：body 缺省/ids 缺省 = 全部未读事件。
+         */
+        post: operations["mark_login_events_seen_api_v1_auth_login_events_seen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -2403,6 +2476,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/digest-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entry Digest Usage
+         * @description N180 日报材料使用追踪：这条材料被我的哪些日报配置/期刊/栏目引用。
+         *
+         *     反查只发生在当前用户的库上（refs_json 的 entryRef 反向索引）——
+         *     其他用户的期刊天然不可见；非法引用 → 400；没有引用 → items=[]
+         *     （诚实空，不虚构）。citationAnchor 供 Web 跳转定位到具体引用。
+         */
+        get: operations["entry_digest_usage_api_v1_entries__entry_ref__digest_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/glossary-hits": {
         parameters: {
             query?: never;
@@ -2768,6 +2865,47 @@ export interface paths {
          *     密钥、订阅 token、Agent 会话/审批与 Vault 内容。
          */
         get: operations["export_lumi_data_api_v1_export_lumi_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/export/lumi-data.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Lumi Data Zip
+         * @description zip 交付（manifest.json + 每组件一个 JSON；无任何秘密）。
+         */
+        get: operations["export_lumi_data_zip_api_v1_export_lumi_data_zip_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/export/lumi-data/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Lumi Data Scope
+         * @description 导出前先看范围：每个组件的条数（来源/已读收藏需要 RSS 绑定，
+         *     不可用时如实 available:false——绝不冒充空集是完整范围）。
+         */
+        get: operations["export_lumi_data_scope_api_v1_export_lumi_data_scope_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3629,6 +3767,47 @@ export interface paths {
         post?: never;
         /** Delete Graph View */
         delete: operations["delete_graph_view_api_v1_graph_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/import/lumi-data/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Lumi Data Apply
+         * @description 按 preview 给出的 importId 选择组件合并（跳过已存在、只加新的；
+         *     readingState 只对当前账号已存在的引用生效）。
+         */
+        post: operations["import_lumi_data_apply_api_v1_import_lumi_data_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/import/lumi-data/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Lumi Data Preview
+         * @description 上传导出 zip → 各组件计数 + 冲突（已存在将被跳过）+ importId。
+         */
+        post: operations["import_lumi_data_preview_api_v1_import_lumi_data_preview_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5185,6 +5364,49 @@ export interface paths {
         put?: never;
         /** Move Mail Rule */
         post: operations["move_mail_rule_api_v1_mail_rules__rule_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/activity-purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activity Purge
+         * @description N189：清除 before 之前的服务端活动记录（登录事件 / AI 任务日志 /
+         *     搜索快照；按 include 选择，缺省全清）。响应如实列出各桶删除数与
+         *     保留说明；绝不触碰已读/收藏/笔记等业务状态。已删除的记录不会因
+         *     缓存复活（这些表没有任何缓存写入路径）。
+         */
+        post: operations["activity_purge_api_v1_me_activity_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/activity-purge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity Purge Preview
+         * @description 预览各活动桶在 before 之前的记录数（只读，不清除）。
+         */
+        get: operations["activity_purge_preview_api_v1_me_activity_purge_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10019,6 +10241,18 @@ export interface components {
             url: string;
         };
         /**
+         * ActivityPurgeBody
+         * @description POST /me/activity-purge — 清除某日期之前的服务端活动记录。
+         */
+        ActivityPurgeBody: {
+            /** Before */
+            before: string;
+            /** Include */
+            include?: {
+                [key: string]: boolean;
+            };
+        };
+        /**
          * AgentApprovalContent
          * @description role=approval message body (server-minted by create_approval).
          */
@@ -11656,6 +11890,8 @@ export interface components {
              * @enum {string}
              */
             mode: "basic" | "session";
+            /** Newdevice */
+            newDevice?: boolean | null;
             /** Role */
             role?: ("owner" | "admin" | "member") | null;
             /** Userid */
@@ -13967,6 +14203,11 @@ export interface components {
              * @default 7
              */
             lookbackDays: number;
+            /**
+             * Missedissuepolicy
+             * @default backfill
+             */
+            missedIssuePolicy: string;
             /** Name */
             name: string;
             /**
@@ -13974,6 +14215,13 @@ export interface components {
              * @default 2
              */
             perSourceCap: number;
+            /**
+             * Skiplog
+             * @default []
+             */
+            skipLog: {
+                [key: string]: string;
+            }[];
             /**
              * Slots
              * @default []
@@ -14041,6 +14289,8 @@ export interface components {
             limitCount?: number | null;
             /** Lookbackdays */
             lookbackDays?: number | null;
+            /** Missedissuepolicy */
+            missedIssuePolicy?: string | null;
             /** Name */
             name?: string | null;
             /** Persourcecap */
@@ -14081,6 +14331,8 @@ export interface components {
             limitCount?: number | null;
             /** Lookbackdays */
             lookbackDays?: number | null;
+            /** Missedissuepolicy */
+            missedIssuePolicy?: string | null;
             /** Name */
             name: string;
             /** Persourcecap */
@@ -14163,6 +14415,11 @@ export interface components {
              */
             model: string;
             /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
              * Publishedat
              * @default
              */
@@ -14174,6 +14431,11 @@ export interface components {
             refs: {
                 [key: string]: components["schemas"]["GptDigestRef"];
             };
+            /**
+             * Revised
+             * @default false
+             */
+            revised: boolean;
             /**
              * Sections
              * @default []
@@ -14358,6 +14620,11 @@ export interface components {
              * @default
              */
             publishedAt: string;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
             /** Title */
             title: string;
             /**
@@ -14605,6 +14872,16 @@ export interface components {
         HealthStatus: {
             /** Status */
             status: string;
+        };
+        /**
+         * ImportApplyBody
+         * @description POST /import/lumi-data/apply — 选择要合并的组件。
+         */
+        ImportApplyBody: {
+            /** Components */
+            components: string[];
+            /** Importid */
+            importId: string;
         };
         /**
          * InboxIngestItem
@@ -14965,6 +15242,14 @@ export interface components {
              * @constant
              */
             totpRequired: true;
+        };
+        /**
+         * LoginEventsSeenBody
+         * @description POST /auth/login-events/seen — 批量标记已读（省略 ids = 全部）。
+         */
+        LoginEventsSeenBody: {
+            /** Ids */
+            ids?: number[] | null;
         };
         /**
          * LoginRequest
@@ -21197,6 +21482,26 @@ export interface operations {
             };
         };
     };
+    admin_rollback_readiness_api_v1_admin_rollback_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get: {
         parameters: {
             query?: never;
@@ -23223,6 +23528,70 @@ export interface operations {
             };
         };
     };
+    list_login_events_api_v1_auth_login_events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_login_events_seen_api_v1_auth_login_events_seen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoginEventsSeenBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     logout_api_v1_auth_logout_post: {
         parameters: {
             query?: never;
@@ -24650,6 +25019,37 @@ export interface operations {
             };
         };
     };
+    entry_digest_usage_api_v1_entries__entry_ref__digest_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     glossary_hits_for_entry_api_v1_entries__entry_ref__glossary_hits_post: {
         parameters: {
             query?: never;
@@ -25281,6 +25681,46 @@ export interface operations {
         };
     };
     export_lumi_data_api_v1_export_lumi_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    export_lumi_data_zip_api_v1_export_lumi_data_zip_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    export_lumi_data_scope_api_v1_export_lumi_data_scope_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -26847,6 +27287,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_lumi_data_apply_api_v1_import_lumi_data_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_lumi_data_preview_api_v1_import_lumi_data_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -29722,6 +30215,70 @@ export interface operations {
             path: {
                 rule_id: number;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_purge_api_v1_me_activity_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityPurgeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_purge_preview_api_v1_me_activity_purge_preview_get: {
+        parameters: {
+            query: {
+                before: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

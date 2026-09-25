@@ -101,6 +101,8 @@ import { SettingsHistorySection } from './SettingsHistorySection'
 import { OfflineQuotaSection } from './OfflineQuotaSection'
 // N181：逐来源数据外发清单（来自真实配置，只读）
 import { PrivacyDataFlowsSection } from './PrivacyDataFlowsSection'
+import { DataWizardSection } from './DataWizardSection'
+import { ActivityPurgeSection } from './ActivityPurgeSection'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
 // N067：触控操作练习区（手势重映射的安全练习台账）
@@ -621,6 +623,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             void exportLumiData()
           },
         },
+        // N010：个人数据迁出/迁入向导（选择范围 + zip 导出 + 导入合并）
+        { type: 'custom', node: <DataWizardSection /> },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
         // F114：派生数据保留策略（默认关；预览 → 应用；N188 到期提醒横幅）
@@ -629,6 +633,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '隐私' },
         // N181：逐来源数据外发清单（未配置 = 不发送）
         { type: 'custom', node: <PrivacyDataFlowsSection /> },
+        // N189：清除活动记录（登录事件 / AI 任务日志 / 搜索快照；预览 → 确认）
+        { type: 'custom', node: <ActivityPurgeSection /> },
       ]
     case 'services':
       // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实
