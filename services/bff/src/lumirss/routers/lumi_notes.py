@@ -137,11 +137,13 @@ def _lifecycle(request: Request):
 async def create_note(
     payload: LumiNoteCreate, request: Request
 ) -> LumiNoteDetail:
-    """手动创建笔记（contentMd ≤100KB；同步入搜索投影）。"""
+    """手动创建笔记（contentMd ≤100KB；同步入搜索投影）。
+    N079：可选类型化分栏（facts/interpretation/toVerify）。"""
     note = await _lifecycle(request).create_note(
         title=payload.title,
         content_md=payload.contentMd,
         workspace_id=payload.workspaceId,
+        sections=payload.sections,
     )
     return LumiNoteDetail(**note)
 
@@ -158,6 +160,7 @@ async def get_note(note_id: str, request: Request) -> LumiNoteDetail:
         title=note["title"],
         contentMd=note["contentMd"],
         workspaceId=note["workspaceId"],
+        sections=note["sections"],
         createdAt=note["createdAt"],
         updatedAt=note["updatedAt"],
     )
@@ -169,6 +172,7 @@ async def update_note(
 ) -> LumiNoteDetail:
     """更新（baseUpdatedAt 乐观锁 → 409 note_conflict）。"""
     from lumirss.errors import LumiNoteNotFound
+    from lumirss.note_sections import NoteSectionsInvalid
 
     try:
         note = await _lifecycle(request).update_note(
@@ -176,9 +180,20 @@ async def update_note(
             title=payload.title,
             content_md=payload.contentMd,
             base_updated_at=payload.baseUpdatedAt,
+            sections=payload.sections,
+            sections_given="sections" in payload.model_fields_set,
         )
     except KeyError as exc:
         raise LumiNoteNotFound(note_id) from exc
+    except NoteSectionsInvalid as exc:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {"type": "invalid_note_sections", "message": str(exc)}
+            },
+        )
     return LumiNoteDetail(**note)
 
 

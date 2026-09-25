@@ -2495,8 +2495,19 @@
    },
    "AnnotationExportRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。",
+    "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选 /\nN072 精选篮）。basketId 与 entryRefs/q 互斥（篮是独立导出维度）。",
     "properties": {
+     "basketId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Basketid"
+     },
      "citeBibliography": {
       "default": false,
       "title": "Citebibliography",
@@ -2529,6 +2540,228 @@
      }
     },
     "title": "AnnotationExportRequest",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyItem": {
+    "additionalProperties": false,
+    "description": "逐项确认：把某条批注重绑到目标版本的第 blockIndex 块。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "blockIndex": {
+      "minimum": 0.0,
+      "title": "Blockindex",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "annotationId",
+     "blockIndex"
+    ],
+    "title": "AnnotationMigrateApplyItem",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyItemResult": {
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     }
+    },
+    "required": [
+     "annotationId",
+     "ok"
+    ],
+    "title": "AnnotationMigrateApplyItemResult",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItem"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion",
+     "items"
+    ],
+    "title": "AnnotationMigrateApplyRequest",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyResponse": {
+    "properties": {
+     "applied": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItemResult"
+      },
+      "title": "Applied",
+      "type": "array"
+     },
+     "failed": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItemResult"
+      },
+      "title": "Failed",
+      "type": "array"
+     }
+    },
+    "title": "AnnotationMigrateApplyResponse",
+    "type": "object"
+   },
+   "AnnotationMigrateCandidateItem": {
+    "description": "一条批注在目标版本中的最优候选（score 与 N071 同口径）。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "candidateBlockIndex": {
+      "minimum": 0.0,
+      "title": "Candidateblockindex",
+      "type": "integer"
+     },
+     "excerpt": {
+      "maxLength": 300,
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+     }
+    },
+    "required": [
+     "annotationId",
+     "candidateBlockIndex",
+     "score",
+     "excerpt"
+    ],
+    "title": "AnnotationMigrateCandidateItem",
+    "type": "object"
+   },
+   "AnnotationMigratePreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/annotations/migrate/preview body。\n\nfromVersion/toVersion ∈ current | last_known_full（N032 版本词）；\n二者必须不同（同版本迁移无意义）。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion"
+    ],
+    "title": "AnnotationMigratePreviewRequest",
+    "type": "object"
+   },
+   "AnnotationMigratePreviewResponse": {
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "matched": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateCandidateItem"
+      },
+      "title": "Matched",
+      "type": "array"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     },
+     "unmatched": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateUnmatchedItem"
+      },
+      "title": "Unmatched",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion"
+    ],
+    "title": "AnnotationMigratePreviewResponse",
+    "type": "object"
+   },
+   "AnnotationMigrateUnmatchedItem": {
+    "description": "未能给出候选的批注及原因（no_quote | no_match）——诚实列出，\n绝不混入可确认列表。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "annotationId",
+     "reason"
+    ],
+    "title": "AnnotationMigrateUnmatchedItem",
     "type": "object"
    },
    "AnnotationRepairCandidate": {
@@ -4988,6 +5221,56 @@
     "title": "BackupVerifyReport",
     "type": "object"
    },
+   "BasketCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "BasketCreate",
+    "type": "object"
+   },
+   "BasketItemsAdd": {
+    "additionalProperties": false,
+    "properties": {
+     "annotationIds": {
+      "items": {
+       "type": "string"
+      },
+      "minItems": 1,
+      "title": "Annotationids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "annotationIds"
+    ],
+    "title": "BasketItemsAdd",
+    "type": "object"
+   },
+   "BasketRename": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "BasketRename",
+    "type": "object"
+   },
    "BatchEditApplyItem": {
     "properties": {
      "error": {
@@ -7211,6 +7494,23 @@
      }
     },
     "title": "DataFlowsResponse",
+    "type": "object"
+   },
+   "DeactivationRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/me/deactivation-request body（密码复核）。",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "DeactivationRequest",
     "type": "object"
    },
    "DigestPreview": {
@@ -12040,12 +12340,24 @@
    },
    "LumiNoteCreate": {
     "additionalProperties": false,
-    "description": "F090 手动创建笔记（contentMd ≤100KB）。",
+    "description": "F090 手动创建笔记（contentMd ≤100KB）。N079：可选类型化分栏。",
     "properties": {
      "contentMd": {
       "maxLength": 102400,
       "title": "Contentmd",
       "type": "string"
+     },
+     "sections": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sections"
      },
      "title": {
       "maxLength": 500,
@@ -12081,6 +12393,16 @@
      "createdAt": {
       "title": "Createdat",
       "type": "string"
+     },
+     "sections": {
+      "additionalProperties": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "title": "Sections",
+      "type": "object"
      },
      "title": {
       "title": "Title",
@@ -12155,6 +12477,18 @@
        }
       ],
       "title": "Contentmd"
+     },
+     "sections": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sections"
      },
      "title": {
       "anyOf": [
@@ -16074,6 +16408,54 @@
      "totalEstimateMinutes"
     ],
     "title": "QueueTodayResponse",
+    "type": "object"
+   },
+   "QuickActionCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/QuickActionStep"
+      },
+      "maxItems": 3,
+      "minItems": 2,
+      "title": "Steps",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "steps"
+    ],
+    "title": "QuickActionCreate",
+    "type": "object"
+   },
+   "QuickActionStep": {
+    "additionalProperties": false,
+    "description": "一步：白名单动作 + 允许键的 params（形状校验在 store 层）。",
+    "properties": {
+     "action": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "Action",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": true,
+      "title": "Params",
+      "type": "object"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "title": "QuickActionStep",
     "type": "object"
    },
    "QuizGenerateBody": {
@@ -23044,6 +23426,17 @@
       ],
       "title": "Syncpriority"
      },
+     "translationPolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationpolicy"
+     },
      "unreadAlertThreshold": {
       "anyOf": [
        {
@@ -23193,6 +23586,17 @@
        }
       ],
       "title": "Syncpriority"
+     },
+     "translationPolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationpolicy"
      },
      "unreadAlertThreshold": {
       "anyOf": [
@@ -24914,6 +25318,29 @@
      }
     },
     "title": "TrashList",
+    "type": "object"
+   },
+   "TtsSynthesizeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/tts/synthesize body。",
+    "properties": {
+     "text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     },
+     "voice": {
+      "default": "alloy",
+      "maxLength": 100,
+      "title": "Voice",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "TtsSynthesizeRequest",
     "type": "object"
    },
    "UserQuotaPutRequest": {
@@ -29118,6 +29545,256 @@
     "summary": "Retry Ai Task"
    }
   },
+  "/api/v1/annotation-baskets": {
+   "get": {
+    "operationId": "list_baskets_api_v1_annotation_baskets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Baskets"
+   },
+   "post": {
+    "operationId": "create_basket_api_v1_annotation_baskets_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Basket"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}": {
+   "delete": {
+    "operationId": "delete_basket_api_v1_annotation_baskets__basket_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Basket"
+   },
+   "patch": {
+    "operationId": "rename_basket_api_v1_annotation_baskets__basket_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketRename"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Basket"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}/items": {
+   "get": {
+    "operationId": "list_basket_items_api_v1_annotation_baskets__basket_id__items_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Basket Items"
+   },
+   "post": {
+    "operationId": "add_basket_items_api_v1_annotation_baskets__basket_id__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketItemsAdd"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Basket Items"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}/items/{annotation_id}": {
+   "delete": {
+    "operationId": "remove_basket_item_api_v1_annotation_baskets__basket_id__items__annotation_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "annotation_id",
+      "required": true,
+      "schema": {
+       "title": "Annotation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Basket Item"
+   }
+  },
   "/api/v1/annotations": {
    "get": {
     "description": "跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。",
@@ -29303,7 +29980,7 @@
   },
   "/api/v1/annotations/export": {
    "post": {
-    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：\nciteBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。",
+    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：\nciteBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。\nN072：basketId 给出时按精选篮成员过滤（复用同一导出路径/格式）。",
     "operationId": "export_annotations_api_v1_annotations_export_post",
     "requestBody": {
      "content": {
@@ -29422,6 +30099,84 @@
      }
     },
     "summary": "Mark Annotations Exported"
+   }
+  },
+  "/api/v1/annotations/migrate/apply": {
+   "post": {
+    "description": "N078 应用（逐项确认）：选中项走与 N071 repair 完全相同的 rebind\n（旧锚点进 annotation_repair_log —— 撤销由该历史承载）。目标块与\n引文相似度不足 / 修复后锚点与他条冲突 → 该项 failed（reason），绝不\n覆盖既有目标批注，绝不整批中断。",
+    "operationId": "migrate_annotations_apply_api_v1_annotations_migrate_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationMigrateApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationMigrateApplyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Migrate Annotations Apply"
+   }
+  },
+  "/api/v1/annotations/migrate/preview": {
+   "post": {
+    "description": "N078 预览（零写入）：该文章全部批注对目标版本逐条重检（N071\n同一匹配口径）。找不到候选的批注进 unmatched（no_quote/no_match），\n绝不混入可确认列表。from/to 同版本 → 422；目标版本不可达 → 422。",
+    "operationId": "migrate_annotations_preview_api_v1_annotations_migrate_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationMigratePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationMigratePreviewResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Migrate Annotations Preview"
    }
   },
   "/api/v1/annotations/{annotation_id}": {
@@ -37818,7 +38573,7 @@
     "summary": "List Notes"
    },
    "post": {
-    "description": "手动创建笔记（contentMd ≤100KB；同步入搜索投影）。",
+    "description": "手动创建笔记（contentMd ≤100KB；同步入搜索投影）。\nN079：可选类型化分栏（facts/interpretation/toVerify）。",
     "operationId": "create_note_api_v1_library_notes_post",
     "requestBody": {
      "content": {
@@ -39245,6 +40000,58 @@
      }
     },
     "summary": "Activity Purge Preview"
+   }
+  },
+  "/api/v1/me/deactivation-request": {
+   "get": {
+    "description": "本人停用请求状态（无请求 → {requested: false}）。仅 session 模式。",
+    "operationId": "get_deactivation_request_api_v1_me_deactivation_request_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Deactivation Request"
+   },
+   "post": {
+    "description": "发起停用：密码复核 → status=paused + 待删除标记，会话立即吊销。\n\n宽限期（默认 14 天）内运营者经管理台恢复；到期后的物理删除没有\n自动作业——由运营者手动执行（诚实口径，返回体说明）。",
+    "operationId": "request_deactivation_api_v1_me_deactivation_request_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeactivationRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Request Deactivation"
    }
   },
   "/api/v1/obsidian/block-refs": {
@@ -40998,6 +41805,88 @@
      }
     },
     "summary": "Set Queue Segment Order"
+   }
+  },
+  "/api/v1/quick-actions": {
+   "get": {
+    "operationId": "list_quick_actions_api_v1_quick_actions_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Quick Actions"
+   },
+   "post": {
+    "operationId": "create_quick_action_api_v1_quick_actions_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QuickActionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Quick Action"
+   }
+  },
+  "/api/v1/quick-actions/{action_id}": {
+   "delete": {
+    "operationId": "delete_quick_action_api_v1_quick_actions__action_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "action_id",
+      "required": true,
+      "schema": {
+       "title": "Action Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Quick Action"
    }
   },
   "/api/v1/quiz/{quiz_id}/grade": {
@@ -47776,6 +48665,108 @@
      }
     },
     "summary": "Recent Tasks"
+   }
+  },
+  "/api/v1/tts/cache": {
+   "delete": {
+    "description": "清空本人全部 TTS 缓存（返回真实删除数）。",
+    "operationId": "tts_cache_clear_api_v1_tts_cache_delete",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Tts Cache Clear"
+   },
+   "get": {
+    "description": "缓存清单（size/date；总量与 50MB 上限如实给出）。",
+    "operationId": "tts_cache_list_api_v1_tts_cache_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Tts Cache List"
+   }
+  },
+  "/api/v1/tts/cache/{entry_id}": {
+   "delete": {
+    "description": "删除一条缓存（own only：per-user 库中只存在本人的行，他人 id\n天然 404）。",
+    "operationId": "tts_cache_delete_api_v1_tts_cache__entry_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_id",
+      "required": true,
+      "schema": {
+       "title": "Entry Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tts Cache Delete"
+   }
+  },
+  "/api/v1/tts/synthesize": {
+   "post": {
+    "description": "合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。",
+    "operationId": "tts_synthesize_api_v1_tts_synthesize_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TtsSynthesizeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tts Synthesize"
    }
   },
   "/api/v1/version": {

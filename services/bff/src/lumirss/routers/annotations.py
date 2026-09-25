@@ -43,6 +43,12 @@ from lumirss.models import (
     AnnotationColorLabelPut,
     AnnotationExportDelta,
     AnnotationExportMarkResult,
+    AnnotationMigrateApplyItem,
+    AnnotationMigrateApplyItemResult,
+    AnnotationMigrateApplyRequest,
+    AnnotationMigrateApplyResponse,
+    AnnotationMigratePreviewRequest,
+    AnnotationMigratePreviewResponse,
     AnnotationRepairCandidatesResult,
     AnnotationRepairRequest,
     AnnotationRepairResult,
@@ -75,13 +81,15 @@ class AnnotationUpdate(BaseModel):
 
 
 class AnnotationExportRequest(BaseModel):
-    """POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。"""
+    """POST /api/v1/annotations/export body（范围：全部 / 当前筛选 /
+    N072 精选篮）。basketId 与 entryRefs/q 互斥（篮是独立导出维度）。"""
 
     model_config = {"extra": "forbid"}
 
     entryRefs: list[str] | None = None
     q: str | None = None
     citeBibliography: bool = False
+    basketId: str | None = None
 
 
 class AnnotationExportMarkRequest(BaseModel):
@@ -392,12 +400,27 @@ async def _entry_bibliography_meta(db: Any, entry_ref: str) -> dict[str, str | N
 @router.post("/api/v1/annotations/export")
 async def export_annotations(payload: AnnotationExportRequest, request: Request) -> Response:
     """F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：
-    citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。"""
+    citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。
+    N072：basketId 给出时按精选篮成员过滤（复用同一导出路径/格式）。"""
+    from lumirss.annotation_baskets import AnnotationBasketStore
+
     store = AnnotationStore(request.app.state.db)
-    if payload.entryRefs is not None and len(payload.entryRefs) == 0:
-        return _invalid_response("导出范围为空。")
-    if payload.entryRefs is not None:
+    if payload.basketId is not None:
+        if payload.entryRefs is not None or (payload.q or "").strip():
+            return _invalid_response("basketId 不能与 entryRefs/q 同时使用。")
+        baskets = AnnotationBasketStore(request.app.state.db)
+        if not await baskets.basket_exists(payload.basketId):
+            return _error_response(404, "basket_not_found", "精选篮不存在。")
+        member_ids = await baskets.member_ids(payload.basketId)
         items: list[dict[str, object]] = []
+        for annotation_id in sorted(member_ids):
+            item = await store.get(annotation_id)
+            if item is not None:
+                items.append(item)
+    elif payload.entryRefs is not None and len(payload.entryRefs) == 0:
+        return _invalid_response("导出范围为空。")
+    elif payload.entryRefs is not None:
+        items = []
         for ref in payload.entryRefs:
             items.extend(await store.list_for_entry(ref))
     else:
@@ -433,4 +456,159 @@ async def export_annotations(payload: AnnotationExportRequest, request: Request)
         content=body,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="lumi-annotations.md"'},
+    )
+
+
+
+# ---- N078 批注跨版本迁移 -------------------------------------------------------
+
+
+async def _entry_content_for_version(
+    request: Request, entry_ref: str, version: str
+) -> str | None:
+    """解析版本词对应的正文文本。current → FreshRSS 适配器实时取；
+    last_known_full → N032 本地变体表（html_to_text 同一转换）。不可达
+    / 变体不存在 → None（诚实拒绝，绝不拿缓存正文顶替）。"""
+    from lumirss.annotation_migration import blocks_from_variant_html, validate_version
+
+    version = validate_version(version)
+    if version == "current":
+        content_text = await _entry_content_text(request, entry_ref)
+        return content_text
+    row = await request.app.state.db.fetch_one(
+        "SELECT content_html FROM entry_content_variants WHERE entry_ref = ?",
+        (entry_ref,),
+    )
+    if row is None:
+        return None
+    return "\n".join(blocks_from_variant_html(str(row["content_html"] or "")))
+
+
+@router.post(
+    "/api/v1/annotations/migrate/preview",
+    response_model=AnnotationMigratePreviewResponse,
+)
+async def migrate_annotations_preview(
+    payload: AnnotationMigratePreviewRequest, request: Request
+) -> Response:
+    """N078 预览（零写入）：该文章全部批注对目标版本逐条重检（N071
+    同一匹配口径）。找不到候选的批注进 unmatched（no_quote/no_match），
+    绝不混入可确认列表。from/to 同版本 → 422；目标版本不可达 → 422。"""
+    from lumirss.annotation_migration import (
+        UnknownVersion,
+        VersionContent,
+        preview_items,
+        validate_version,
+    )
+
+    try:
+        from_version = validate_version(payload.fromVersion)
+        to_version = validate_version(payload.toVersion)
+    except UnknownVersion as exc:
+        return _error_response(422, "unknown_annotation_version", str(exc))
+    if from_version == to_version:
+        return _error_response(422, "invalid_migration", "fromVersion 与 toVersion 不能相同。")
+    store = AnnotationStore(request.app.state.db)
+    annotations = await store.list_for_entry(payload.entryRef)
+    if not annotations:
+        return _error_response(404, "annotation_not_found", "该文章没有批注。")
+    content_text = await _entry_content_for_version(request, payload.entryRef, to_version)
+    if content_text is None:
+        return _error_response(
+            422,
+            "entry_unavailable",
+            "目标版本正文不可达（last_known_full 需保留过完整变体），无法生成迁移预览。",
+        )
+    matched, unmatched = preview_items(
+        annotations, VersionContent(version=to_version, blocks=split_blocks(content_text))
+    )
+    result = AnnotationMigratePreviewResponse(
+        entryRef=payload.entryRef,
+        fromVersion=from_version,
+        toVersion=to_version,
+        matched=matched,
+        unmatched=unmatched,
+    )
+    return JSONResponse(result.model_dump())
+
+
+@router.post(
+    "/api/v1/annotations/migrate/apply",
+    response_model=AnnotationMigrateApplyResponse,
+)
+async def migrate_annotations_apply(
+    payload: AnnotationMigrateApplyRequest, request: Request
+) -> Response:
+    """N078 应用（逐项确认）：选中项走与 N071 repair 完全相同的 rebind
+    （旧锚点进 annotation_repair_log —— 撤销由该历史承载）。目标块与
+    引文相似度不足 / 修复后锚点与他条冲突 → 该项 failed（reason），绝不
+    覆盖既有目标批注，绝不整批中断。"""
+    from lumirss.annotation_migration import UnknownVersion, validate_version
+
+    try:
+        from_version = validate_version(payload.fromVersion)
+        to_version = validate_version(payload.toVersion)
+    except UnknownVersion as exc:
+        return _error_response(422, "unknown_annotation_version", str(exc))
+    if from_version == to_version:
+        return _error_response(422, "invalid_migration", "fromVersion 与 toVersion 不能相同。")
+    store = AnnotationStore(request.app.state.db)
+    content_text = await _entry_content_for_version(request, payload.entryRef, to_version)
+    if content_text is None:
+        return _error_response(
+            422,
+            "entry_unavailable",
+            "目标版本正文不可达，无法核对迁移位置（不做缓存正文）。",
+        )
+    blocks = split_blocks(content_text)
+
+    async def apply_one(item: AnnotationMigrateApplyItem):
+        annotation = await store.get(item.annotationId)
+        if annotation is None or annotation["entryRef"] != payload.entryRef:
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="not_found"
+            )
+        if item.blockIndex >= len(blocks):
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="block_out_of_range"
+            )
+        anchor = annotation["anchor"] if isinstance(annotation["anchor"], dict) else {}
+        quote = str(annotation["excerpt"] or anchor.get("exact") or "").strip()
+        if quote == "":
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="no_quote"
+            )
+        bound_score = score_quote(quote, blocks[item.blockIndex])
+        if bound_score < REPAIR_MIN_SCORE:
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="low_score"
+            )
+        try:
+            updated = await store.rebind(
+                item.annotationId,
+                block_index=item.blockIndex,
+                quote=quote,
+                score=round(bound_score, 4),
+            )
+        except AnchorHashConflict:
+            # 目标锚点已被另一条批注占用 → 跳过，绝不覆盖既有批注。
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="target_conflict"
+            )
+        if updated is None:
+            return AnnotationMigrateApplyItemResult(
+                annotationId=item.annotationId, ok=False, reason="not_found"
+            )
+        return AnnotationMigrateApplyItemResult(annotationId=item.annotationId, ok=True)
+
+    applied: list[AnnotationMigrateApplyItemResult] = []
+    failed: list[AnnotationMigrateApplyItemResult] = []
+    for item in payload.items:
+        result = await apply_one(item)
+        if result.ok:
+            applied.append(result)
+        else:
+            failed.append(result)
+    return JSONResponse(
+        AnnotationMigrateApplyResponse(applied=applied, failed=failed).model_dump()
     )

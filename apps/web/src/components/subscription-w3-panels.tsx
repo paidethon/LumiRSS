@@ -681,6 +681,8 @@ export function SourcePolicyDialog({
   const [width, setWidth] = useState<number | ''>('')
   // F066：AI 使用范围（该来源是否参与 AI 消耗；派生数据保留不再更新）。
   const [aiDisabled, setAiDisabled] = useState(false)
+  // N090：per-source 翻译策略（local_only = 只允许浏览器本机翻译）。
+  const [translationPolicy, setTranslationPolicy] = useState<'global' | 'local_only'>('global')
   // N015：分时静音窗口（每周循环；命中期间不出现在通用时间线）。
   const [muteWindows, setMuteWindows] = useState<MuteWindow[]>([])
   // N020：关注级别（服务端过滤通用时间线 + 今日队列排序依据）。
@@ -701,6 +703,7 @@ export function SourcePolicyDialog({
     setLineHeight(typeof style.lineHeight === 'number' ? style.lineHeight : '')
     setWidth(typeof style.width === 'number' ? style.width : '')
     setAiDisabled(Boolean(current?.aiDisabled))
+    setTranslationPolicy(current?.translationPolicy === 'local_only' ? 'local_only' : 'global')
     const stored = current?.muteWindows
     setMuteWindows(
       Array.isArray(stored)
@@ -737,6 +740,7 @@ export function SourcePolicyDialog({
       aiDisabled?: boolean
       muteWindows?: MuteWindow[] | null
       attentionLevel?: 'must_read' | 'normal' | 'low'
+      translationPolicy?: 'local_only' | null
     }) =>
       setSourceOverride({ feedUrl, ...patch }),
     onSuccess: async () => {
@@ -812,6 +816,26 @@ export function SourcePolicyDialog({
             禁用后：摘要/译文/对话返回 403，摘要译文等已生成内容保留但不再更新，图谱索引移除该来源；订阅数据不受影响。
           </span>
         </div>
+        {/* N090：翻译隐私路由（local_only = 浏览器本机翻译，服务端 403） */}
+        <div className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] p-2.5">
+          <label className="flex flex-col gap-1 text-xs text-[var(--lumi-text-secondary)]">
+            翻译策略
+            <select
+              aria-label="翻译策略"
+              data-testid="translation-policy-select"
+              value={translationPolicy}
+              onChange={(e) => { markEdited(); setTranslationPolicy(e.target.value as 'global' | 'local_only') }}
+              className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2 py-1.5 text-sm"
+            >
+              <option value="global">跟随全局引擎</option>
+              <option value="local_only">仅本机（正文不出设备）</option>
+            </select>
+          </label>
+          <span className="text-[11px] text-[var(--lumi-text-tertiary)]">
+            「仅本机」时该来源的段落翻译强制使用浏览器本机引擎；服务端远程生成
+            端点对它一律 403（不产生任何外发请求）。
+          </span>
+        </div>
         {/* N015：分时静音（每周循环窗口；只影响通用时间线，抓取/搜索不受影响） */}
         <div className="flex flex-col gap-1.5 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface)] p-2.5">
           <p className="text-xs font-medium text-[var(--lumi-text-primary)]">分时静音</p>
@@ -866,7 +890,7 @@ export function SourcePolicyDialog({
             size="sm"
             variant="ghost"
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false, muteWindows: null, attentionLevel: 'normal' })}
+            onClick={() => saveMutation.mutate({ extractPolicy: 'rss', readerStyle: null, aiDisabled: false, muteWindows: null, attentionLevel: 'normal', translationPolicy: null })}
           >
             恢复跟随全局
           </Button>
@@ -885,6 +909,7 @@ export function SourcePolicyDialog({
                 aiDisabled,
                 muteWindows: muteWindows.length > 0 ? muteWindows : null,
                 attentionLevel,
+                translationPolicy: translationPolicy === 'local_only' ? 'local_only' : null,
               })
             }
           >

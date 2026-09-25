@@ -184,6 +184,10 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "syncPriority": _column("sync_priority"),
         # N038：按来源保留天数（NULL = 未启用；只驱动派生投影裁剪）。
         "retentionDays": retention_days if retention_days_valid(retention_days) else None,
+        # N090：per-source 翻译策略（NULL = 跟随全局；'local_only'）。
+        "translationPolicy": _column("translation_policy")
+        if _column("translation_policy") in ("local_only",)
+        else None,
         "updatedAt": str(row["updated_at"] or ""),
     }
 
@@ -202,14 +206,14 @@ class SourceOverrideStore:
     async def list_overrides(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL OR language IS NOT NULL OR unread_alert_threshold IS NOT NULL OR sync_priority IS NOT NULL OR retention_days IS NOT NULL ORDER BY updated_at DESC"
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, translation_policy, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL OR language IS NOT NULL OR unread_alert_threshold IS NOT NULL OR sync_priority IS NOT NULL OR retention_days IS NOT NULL OR translation_policy IS NOT NULL ORDER BY updated_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
     async def get_override(self, feed_url: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, updated_at FROM source_overrides WHERE feed_url = ?",
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, translation_policy, updated_at FROM source_overrides WHERE feed_url = ?",
             (feed_url,),
         )
         if row is None:
@@ -233,6 +237,7 @@ class SourceOverrideStore:
             and result["unreadAlertThreshold"] is None
             and result["syncPriority"] is None
             and result["retentionDays"] is None
+            and result["translationPolicy"] is None
         ):
             return None
         return result

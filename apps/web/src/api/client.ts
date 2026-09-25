@@ -3712,6 +3712,8 @@ export async function setSourceOverride(patch: {
   language?: string | null
   unreadAlertThreshold?: number | null
   syncPriority?: number | null
+  /** N090：per-source 翻译策略（'local_only' = 只允许浏览器本机翻译）。 */
+  translationPolicy?: 'local_only' | null
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -6018,6 +6020,7 @@ export async function exportAnnotations(input: {
   entryRefs?: string[]
   q?: string
   citeBibliography?: boolean
+  basketId?: string
 }): Promise<Blob> {
   const response = await rawRequest(`${API_BASE}/annotations/export`, {
     method: 'POST',
@@ -7341,6 +7344,8 @@ export interface LumiNoteDetail {
   workspaceId: string | null
   createdAt: string
   updatedAt: string
+  /** N079：类型化分栏（服务端归一化，三键恒在）。 */
+  sections?: NoteSections
 }
 
 export async function getLumiNote(uuid: string, signal?: AbortSignal): Promise<LumiNoteDetail> {
@@ -7351,6 +7356,7 @@ export async function createLumiNote(body: {
   title: string
   contentMd: string
   workspaceId?: string | null
+  sections?: NoteSections
 }): Promise<LumiNoteDetail> {
   const response = await rawRequest(`${API_BASE}/library/notes`, {
     method: 'POST',
@@ -7363,7 +7369,7 @@ export async function createLumiNote(body: {
 
 export async function updateLumiNote(
   uuid: string,
-  body: { title?: string; contentMd?: string; baseUpdatedAt?: string },
+  body: { title?: string; contentMd?: string; baseUpdatedAt?: string; sections?: NoteSections },
 ): Promise<LumiNoteDetail> {
   const response = await rawRequest(
     `${API_BASE}/library/notes/${encodeURIComponent(uuid)}`,
@@ -9045,6 +9051,80 @@ export async function getBacklogBatches(
   )
 }
 
+// ===== E3-final 批次：N072 精选篮 / N078 跨版本迁移 / N079 分栏 =====
+// ===== N090 翻译策略 / N098 TTS 缓存 / N190 停用 / N199 快捷操作 =====
+
+/** N072：批注精选篮（跨篇手工挑选的导出/回跳单元）。 */
+export interface AnnotationBasket {
+  id: string
+  name: string
+  createdAt: string
+  itemCount: number
+}
+
+export interface AnnotationBasketItem {
+  annotationId: string
+  addedAt: string
+  broken: boolean
+  annotation: Annotation | null
+}
+
+export function listAnnotationBaskets(signal?: AbortSignal): Promise<{ items: AnnotationBasket[] }> {
+  return request(`${API_BASE}/annotation-baskets`, signal)
+}
+
+export async function createAnnotationBasket(name: string): Promise<AnnotationBasket> {
+  const response = await rawRequest(`${API_BASE}/annotation-baskets`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AnnotationBasket
+}
+
+export async function deleteAnnotationBasket(basketId: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/annotation-baskets/${encodeURIComponent(basketId)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok && response.status !== 404) throw await toApiError(response)
+}
+
+export async function addAnnotationBasketItems(
+  basketId: string,
+  annotationIds: string[],
+): Promise<{ added: string[]; skipped: { annotationId: string; reason: string }[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/annotation-baskets/${encodeURIComponent(basketId)}/items`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ annotationIds }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { added: string[]; skipped: { annotationId: string; reason: string }[] }
+}
+
+export async function removeAnnotationBasketItem(basketId: string, annotationId: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/annotation-baskets/${encodeURIComponent(basketId)}/items/${encodeURIComponent(annotationId)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok && response.status !== 404) throw await toApiError(response)
+}
+
+export function listAnnotationBasketItems(
+  basketId: string,
+  signal?: AbortSignal,
+): Promise<{ items: AnnotationBasketItem[] }> {
+  return request(
+    `${API_BASE}/annotation-baskets/${encodeURIComponent(basketId)}/items`,
+    signal,
+  )
+}
+
 /** N049：单批预览（两段式第一步）。 */
 export async function previewBacklogBatch(input: {
   groupBy: 'source' | 'age'
@@ -9077,4 +9157,176 @@ export async function undoBacklogBatch(logId: string): Promise<BacklogBatchLogVi
     `${API_BASE}/entries/backlog/batches/${encodeURIComponent(logId)}/undo`,
     {},
   )
+}
+
+/** N078：批注跨版本迁移（versions = 'current' | 'last_known_full'）。 */
+export type AnnotationVersionKey = 'current' | 'last_known_full'
+
+export interface AnnotationMigrateCandidate {
+  annotationId: string
+  candidateBlockIndex: number
+  score: number
+  excerpt: string
+}
+
+export interface AnnotationMigratePreview {
+  entryRef: string
+  fromVersion: string
+  toVersion: string
+  matched: AnnotationMigrateCandidate[]
+  unmatched: { annotationId: string; reason: string }[]
+}
+
+export async function migrateAnnotationsPreview(input: {
+  entryRef: string
+  fromVersion: AnnotationVersionKey
+  toVersion: AnnotationVersionKey
+}): Promise<AnnotationMigratePreview> {
+  const response = await rawRequest(`${API_BASE}/annotations/migrate/preview`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AnnotationMigratePreview
+}
+
+export interface AnnotationMigrateApplyResult {
+  applied: { annotationId: string; ok: boolean }[]
+  failed: { annotationId: string; ok: boolean; reason: string | null }[]
+}
+
+export async function migrateAnnotationsApply(input: {
+  entryRef: string
+  fromVersion: AnnotationVersionKey
+  toVersion: AnnotationVersionKey
+  items: { annotationId: string; blockIndex: number }[]
+}): Promise<AnnotationMigrateApplyResult> {
+  const response = await rawRequest(`${API_BASE}/annotations/migrate/apply`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as AnnotationMigrateApplyResult
+}
+
+/** N079：笔记类型化分栏（facts / interpretation / toVerify）。 */
+export type NoteSections = {
+  facts: string[]
+  interpretation: string[]
+  toVerify: string[]
+}
+
+/** N098：服务端 TTS 合成与缓存管理（需已配置 TTS provider）。 */
+export async function ttsSynthesize(
+  input: { text: string; voice?: string },
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; cache: 'hit' | 'miss' }> {
+  const response = await fetch(`${API_BASE}/tts/synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ voice: 'alloy', ...input }),
+    signal,
+  })
+  if (!response.ok) throw await toApiError(response)
+  return {
+    blob: await response.blob(),
+    cache: response.headers.get('X-Cache') === 'hit' ? 'hit' : 'miss',
+  }
+}
+
+export interface TtsCacheEntry {
+  id: string
+  textHash: string
+  voice: string
+  model: string
+  sizeBytes: number
+  createdAt: string
+}
+
+export function listTtsCache(signal?: AbortSignal): Promise<{
+  items: TtsCacheEntry[]
+  totalBytes: number
+  count: number
+  capBytes: number
+}> {
+  return request(`${API_BASE}/tts/cache`, signal)
+}
+
+export async function deleteTtsCache(entryId: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/tts/cache/${encodeURIComponent(entryId)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) throw await toApiError(response)
+}
+
+export async function clearTtsCache(): Promise<{ removed: number }> {
+  const response = await rawRequest(`${API_BASE}/tts/cache`, { method: 'DELETE' })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { removed: number }
+}
+
+/** N190：账户停用请求（密码复核；宽限期内运营者可恢复）。 */
+export interface DeactivationStatus {
+  requested: boolean
+  requestedAt?: string
+  scheduledDeletionAt?: string
+  graceDays?: number
+  restoreHint?: string
+  exportHint?: string
+  note?: string
+}
+
+export function getDeactivationStatus(signal?: AbortSignal): Promise<DeactivationStatus> {
+  return request(`${API_BASE}/me/deactivation-request`, signal)
+}
+
+export async function requestAccountDeactivation(password: string): Promise<DeactivationStatus> {
+  const response = await rawRequest(`${API_BASE}/me/deactivation-request`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as DeactivationStatus
+}
+
+/** N199：自定义多步快捷操作（定义；执行在 Web 端走 NORMAL 端点）。 */
+export interface QuickActionStep {
+  action: string
+  params?: Record<string, unknown>
+}
+
+export interface QuickAction {
+  id: string
+  name: string
+  steps: QuickActionStep[]
+  createdAt: string
+  updatedAt: string
+}
+
+export function listQuickActions(signal?: AbortSignal): Promise<{ items: QuickAction[] }> {
+  return request(`${API_BASE}/quick-actions`, signal)
+}
+
+export async function createQuickAction(input: {
+  name: string
+  steps: QuickActionStep[]
+}): Promise<QuickAction> {
+  const response = await rawRequest(`${API_BASE}/quick-actions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as QuickAction
+}
+
+export async function deleteQuickAction(actionId: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/quick-actions/${encodeURIComponent(actionId)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) throw await toApiError(response)
 }

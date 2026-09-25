@@ -1093,6 +1093,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/annotation-baskets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Baskets */
+        get: operations["list_baskets_api_v1_annotation_baskets_get"];
+        put?: never;
+        /** Create Basket */
+        post: operations["create_basket_api_v1_annotation_baskets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotation-baskets/{basket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Basket */
+        delete: operations["delete_basket_api_v1_annotation_baskets__basket_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Basket */
+        patch: operations["rename_basket_api_v1_annotation_baskets__basket_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/annotation-baskets/{basket_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Basket Items */
+        get: operations["list_basket_items_api_v1_annotation_baskets__basket_id__items_get"];
+        put?: never;
+        /** Add Basket Items */
+        post: operations["add_basket_items_api_v1_annotation_baskets__basket_id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotation-baskets/{basket_id}/items/{annotation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Basket Item */
+        delete: operations["remove_basket_item_api_v1_annotation_baskets__basket_id__items__annotation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/annotations": {
         parameters: {
             query?: never;
@@ -1151,6 +1222,7 @@ export interface paths {
          * Export Annotations
          * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：
          *     citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。
+         *     N072：basketId 给出时按精选篮成员过滤（复用同一导出路径/格式）。
          */
         post: operations["export_annotations_api_v1_annotations_export_post"];
         delete?: never;
@@ -1195,6 +1267,51 @@ export interface paths {
          *     前进，增量查询不会重复计数）。ids 为空 → 422。
          */
         post: operations["mark_annotations_exported_api_v1_annotations_export_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/migrate/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Migrate Annotations Apply
+         * @description N078 应用（逐项确认）：选中项走与 N071 repair 完全相同的 rebind
+         *     （旧锚点进 annotation_repair_log —— 撤销由该历史承载）。目标块与
+         *     引文相似度不足 / 修复后锚点与他条冲突 → 该项 failed（reason），绝不
+         *     覆盖既有目标批注，绝不整批中断。
+         */
+        post: operations["migrate_annotations_apply_api_v1_annotations_migrate_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/migrate/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Migrate Annotations Preview
+         * @description N078 预览（零写入）：该文章全部批注对目标版本逐条重检（N071
+         *     同一匹配口径）。找不到候选的批注进 unmatched（no_quote/no_match），
+         *     绝不混入可确认列表。from/to 同版本 → 422；目标版本不可达 → 422。
+         */
+        post: operations["migrate_annotations_preview_api_v1_annotations_migrate_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5089,6 +5206,7 @@ export interface paths {
         /**
          * Create Note
          * @description 手动创建笔记（contentMd ≤100KB；同步入搜索投影）。
+         *     N079：可选类型化分栏（facts/interpretation/toVerify）。
          */
         post: operations["create_note_api_v1_library_notes_post"];
         delete?: never;
@@ -5689,6 +5807,33 @@ export interface paths {
         get: operations["activity_purge_preview_api_v1_me_activity_purge_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/deactivation-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deactivation Request
+         * @description 本人停用请求状态（无请求 → {requested: false}）。仅 session 模式。
+         */
+        get: operations["get_deactivation_request_api_v1_me_deactivation_request_get"];
+        put?: never;
+        /**
+         * Request Deactivation
+         * @description 发起停用：密码复核 → status=paused + 待删除标记，会话立即吊销。
+         *
+         *     宽限期（默认 14 天）内运营者经管理台恢复；到期后的物理删除没有
+         *     自动作业——由运营者手动执行（诚实口径，返回体说明）。
+         */
+        post: operations["request_deactivation_api_v1_me_deactivation_request_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6608,6 +6753,41 @@ export interface paths {
         put: operations["set_queue_segment_order_api_v1_queue_today_segments_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quick-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Quick Actions */
+        get: operations["list_quick_actions_api_v1_quick_actions_get"];
+        put?: never;
+        /** Create Quick Action */
+        post: operations["create_quick_action_api_v1_quick_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quick-actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Quick Action */
+        delete: operations["delete_quick_action_api_v1_quick_actions__action_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9887,6 +10067,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tts/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tts Cache List
+         * @description 缓存清单（size/date；总量与 50MB 上限如实给出）。
+         */
+        get: operations["tts_cache_list_api_v1_tts_cache_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Tts Cache Clear
+         * @description 清空本人全部 TTS 缓存（返回真实删除数）。
+         */
+        delete: operations["tts_cache_clear_api_v1_tts_cache_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts/cache/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Tts Cache Delete
+         * @description 删除一条缓存（own only：per-user 库中只存在本人的行，他人 id
+         *     天然 404）。
+         */
+        delete: operations["tts_cache_delete_api_v1_tts_cache__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tts/synthesize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tts Synthesize
+         * @description 合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。
+         */
+        post: operations["tts_synthesize_api_v1_tts_synthesize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -12137,9 +12382,12 @@ export interface components {
         };
         /**
          * AnnotationExportRequest
-         * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。
+         * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选 /
+         *     N072 精选篮）。basketId 与 entryRefs/q 互斥（篮是独立导出维度）。
          */
         AnnotationExportRequest: {
+            /** Basketid */
+            basketId?: string | null;
             /**
              * Citebibliography
              * @default false
@@ -12149,6 +12397,108 @@ export interface components {
             entryRefs?: string[] | null;
             /** Q */
             q?: string | null;
+        };
+        /**
+         * AnnotationMigrateApplyItem
+         * @description 逐项确认：把某条批注重绑到目标版本的第 blockIndex 块。
+         */
+        AnnotationMigrateApplyItem: {
+            /** Annotationid */
+            annotationId: string;
+            /** Blockindex */
+            blockIndex: number;
+        };
+        /** AnnotationMigrateApplyItemResult */
+        AnnotationMigrateApplyItemResult: {
+            /** Annotationid */
+            annotationId: string;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AnnotationMigrateApplyRequest */
+        AnnotationMigrateApplyRequest: {
+            /** Entryref */
+            entryRef: string;
+            /** Fromversion */
+            fromVersion: string;
+            /** Items */
+            items: components["schemas"]["AnnotationMigrateApplyItem"][];
+            /** Toversion */
+            toVersion: string;
+        };
+        /** AnnotationMigrateApplyResponse */
+        AnnotationMigrateApplyResponse: {
+            /**
+             * Applied
+             * @default []
+             */
+            applied: components["schemas"]["AnnotationMigrateApplyItemResult"][];
+            /**
+             * Failed
+             * @default []
+             */
+            failed: components["schemas"]["AnnotationMigrateApplyItemResult"][];
+        };
+        /**
+         * AnnotationMigrateCandidateItem
+         * @description 一条批注在目标版本中的最优候选（score 与 N071 同口径）。
+         */
+        AnnotationMigrateCandidateItem: {
+            /** Annotationid */
+            annotationId: string;
+            /** Candidateblockindex */
+            candidateBlockIndex: number;
+            /** Excerpt */
+            excerpt: string;
+            /** Score */
+            score: number;
+        };
+        /**
+         * AnnotationMigratePreviewRequest
+         * @description POST /api/v1/annotations/migrate/preview body。
+         *
+         *     fromVersion/toVersion ∈ current | last_known_full（N032 版本词）；
+         *     二者必须不同（同版本迁移无意义）。
+         */
+        AnnotationMigratePreviewRequest: {
+            /** Entryref */
+            entryRef: string;
+            /** Fromversion */
+            fromVersion: string;
+            /** Toversion */
+            toVersion: string;
+        };
+        /** AnnotationMigratePreviewResponse */
+        AnnotationMigratePreviewResponse: {
+            /** Entryref */
+            entryRef: string;
+            /** Fromversion */
+            fromVersion: string;
+            /**
+             * Matched
+             * @default []
+             */
+            matched: components["schemas"]["AnnotationMigrateCandidateItem"][];
+            /** Toversion */
+            toVersion: string;
+            /**
+             * Unmatched
+             * @default []
+             */
+            unmatched: components["schemas"]["AnnotationMigrateUnmatchedItem"][];
+        };
+        /**
+         * AnnotationMigrateUnmatchedItem
+         * @description 未能给出候选的批注及原因（no_quote | no_match）——诚实列出，
+         *     绝不混入可确认列表。
+         */
+        AnnotationMigrateUnmatchedItem: {
+            /** Annotationid */
+            annotationId: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * AnnotationRepairCandidate
@@ -13267,6 +13617,21 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /** BasketCreate */
+        BasketCreate: {
+            /** Name */
+            name: string;
+        };
+        /** BasketItemsAdd */
+        BasketItemsAdd: {
+            /** Annotationids */
+            annotationIds: string[];
+        };
+        /** BasketRename */
+        BasketRename: {
+            /** Name */
+            name: string;
+        };
         /** BatchEditApplyItem */
         BatchEditApplyItem: {
             /** Error */
@@ -14258,6 +14623,14 @@ export interface components {
              * @default []
              */
             flows: components["schemas"]["DataFlowItem"][];
+        };
+        /**
+         * DeactivationRequest
+         * @description POST /api/v1/me/deactivation-request body（密码复核）。
+         */
+        DeactivationRequest: {
+            /** Password */
+            password: string;
         };
         /**
          * DigestPreview
@@ -16283,11 +16656,15 @@ export interface components {
         };
         /**
          * LumiNoteCreate
-         * @description F090 手动创建笔记（contentMd ≤100KB）。
+         * @description F090 手动创建笔记（contentMd ≤100KB）。N079：可选类型化分栏。
          */
         LumiNoteCreate: {
             /** Contentmd */
             contentMd: string;
+            /** Sections */
+            sections?: {
+                [key: string]: unknown;
+            } | null;
             /** Title */
             title: string;
             /** Workspaceid */
@@ -16299,6 +16676,10 @@ export interface components {
             contentMd: string;
             /** Createdat */
             createdAt: string;
+            /** Sections */
+            sections?: {
+                [key: string]: string[];
+            };
             /** Title */
             title: string;
             /** Updatedat */
@@ -16322,6 +16703,10 @@ export interface components {
             baseUpdatedAt?: string | null;
             /** Contentmd */
             contentMd?: string | null;
+            /** Sections */
+            sections?: {
+                [key: string]: unknown;
+            } | null;
             /** Title */
             title?: string | null;
         };
@@ -18158,6 +18543,25 @@ export interface components {
             segments: components["schemas"]["QueueSegmentView"][];
             /** Totalestimateminutes */
             totalEstimateMinutes: number;
+        };
+        /** QuickActionCreate */
+        QuickActionCreate: {
+            /** Name */
+            name: string;
+            /** Steps */
+            steps: components["schemas"]["QuickActionStep"][];
+        };
+        /**
+         * QuickActionStep
+         * @description 一步：白名单动作 + 允许键的 params（形状校验在 store 层）。
+         */
+        QuickActionStep: {
+            /** Action */
+            action: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * QuizGenerateBody
@@ -21290,6 +21694,8 @@ export interface components {
             staleAlertHours?: number | null;
             /** Syncpriority */
             syncPriority?: number | null;
+            /** Translationpolicy */
+            translationPolicy?: string | null;
             /** Unreadalertthreshold */
             unreadAlertThreshold?: number | null;
             /**
@@ -21329,6 +21735,8 @@ export interface components {
             staleAlertHours?: number | null;
             /** Syncpriority */
             syncPriority?: number | null;
+            /** Translationpolicy */
+            translationPolicy?: string | null;
             /** Unreadalertthreshold */
             unreadAlertThreshold?: number | null;
         };
@@ -22104,6 +22512,19 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["TrashItem"][];
+        };
+        /**
+         * TtsSynthesizeRequest
+         * @description POST /api/v1/tts/synthesize body。
+         */
+        TtsSynthesizeRequest: {
+            /** Text */
+            text: string;
+            /**
+             * Voice
+             * @default alloy
+             */
+            voice: string;
         };
         /**
          * UserQuotaPutRequest
@@ -24904,6 +25325,219 @@ export interface operations {
             };
         };
     };
+    list_baskets_api_v1_annotation_baskets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_basket_api_v1_annotation_baskets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BasketCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_basket_api_v1_annotation_baskets__basket_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                basket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_basket_api_v1_annotation_baskets__basket_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                basket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BasketRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_basket_items_api_v1_annotation_baskets__basket_id__items_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                basket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_basket_items_api_v1_annotation_baskets__basket_id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                basket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BasketItemsAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_basket_item_api_v1_annotation_baskets__basket_id__items__annotation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                basket_id: string;
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_annotations_api_v1_annotations_get: {
         parameters: {
             query?: {
@@ -25108,6 +25742,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnnotationExportMarkResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    migrate_annotations_apply_api_v1_annotations_migrate_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationMigrateApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationMigrateApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    migrate_annotations_preview_api_v1_annotations_migrate_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationMigratePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationMigratePreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -32842,6 +33542,59 @@ export interface operations {
             };
         };
     };
+    get_deactivation_request_api_v1_me_deactivation_request_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    request_deactivation_api_v1_me_deactivation_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeactivationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_block_refs_api_v1_obsidian_block_refs_get: {
         parameters: {
             query?: {
@@ -34281,6 +35034,88 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["QueueTodayResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_quick_actions_api_v1_quick_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_quick_action_api_v1_quick_actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickActionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_quick_action_api_v1_quick_actions__action_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -39552,6 +40387,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRecordList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tts_cache_list_api_v1_tts_cache_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    tts_cache_clear_api_v1_tts_cache_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    tts_cache_delete_api_v1_tts_cache__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tts_synthesize_api_v1_tts_synthesize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TtsSynthesizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../../api/client'
+import { resetAccountState } from '../../lib/auth-reset'
 import { useAuthStore } from '../../store/auth'
 import { useAuthSessions, useRevokeSessionMutation, useTotpStatus } from '../../api/queries'
 import { passwordStrength } from '../../lib/password-strength'
@@ -20,6 +21,7 @@ import { PasswordStrengthMeter } from '../ui/PasswordStrengthMeter'
 import { RecentLoginsPanel } from './RecentLoginsPanel'
 import { PasskeysSection } from './PasskeysSection'
 import { TotpSection } from './TotpSection'
+import { DeactivationSection } from './DeactivationSection'
 
 const MIN_PASSWORD = 8
 
@@ -240,6 +242,11 @@ export function AccountSecuritySection() {
       {/* N006 通行密钥 + N007 两步验证（session 模式专属账户安全面）。 */}
       <TotpSection />
       <PasskeysSection totpEnabled={totpEnabled} />
+      {/* N190：账户停用（密码复核 → 宽限期 → 运营者恢复/手动删除）。 */}
+      <DeactivationSection onDeactivated={() => {
+        resetAccountState(queryClient)
+        useAuthStore.getState().setStatus('unauthenticated')
+      }} />
     </section>
   )
 }

@@ -28,7 +28,7 @@
  * - 诚实状态：加载 Skeleton / 空态 / 错误重试，与书签页一致。
  */
 
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -91,6 +91,8 @@ import {
 } from '../WorkspacePreviewPane'
 import type { PreviewTarget } from '../WorkspacePreviewPane'
 import { isOpenable, openResolvedItem } from '../../lib/open-item'
+import { recordRecentWorkspace } from '../../lib/recent-workspaces'
+import { useAuthStore } from '../../store/auth'
 import {
   clearRecentlyClosed,
   discardPreviewDraft,
@@ -911,6 +913,31 @@ export default function WorkspacesPage() {
 
   const wsItems = workspaces.data?.items ?? []
   const effectiveSelectedId = selectedId ?? wsItems[0]?.id ?? null
+  const userId = useAuthStore((s) => s.identity?.userId ?? '')
+
+  // N110：打开工作区即记录到「最近工作区」（device-local，per-user 键）。
+  // 记录是增强数据：失败静默，绝不影响打开动作本身。
+  const recordedWorkspaceRef = useRef<string | null>(null)
+  const wsItemsRef = useRef(wsItems)
+  wsItemsRef.current = wsItems
+  useEffect(() => {
+    if (effectiveSelectedId === null) return
+    if (recordedWorkspaceRef.current === effectiveSelectedId) return
+    recordedWorkspaceRef.current = effectiveSelectedId
+    const name = wsItemsRef.current.find((w) => w.id === effectiveSelectedId)?.name ?? null
+    recordRecentWorkspace(userId, { workspaceId: effectiveSelectedId, name })
+  }, [effectiveSelectedId, userId])
+
+  // N110：最近工作区卡片的一键打开（custom event → 选中该工作区）。
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail
+      if (typeof id === 'string' && id !== '') setSelectedId(id)
+    }
+    document.addEventListener('lumi:open-workspace', onOpen)
+    return () => document.removeEventListener('lumi:open-workspace', onOpen)
+  }, [])
+
   // F25：选中工作区的说明（空 = 不渲染说明区）
   const selectedDescription = wsItems.find((w) => w.id === effectiveSelectedId)?.description
   const selectedWorkspace = wsItems.find((w) => w.id === effectiveSelectedId) ?? null

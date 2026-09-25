@@ -47,6 +47,13 @@ export function KnowledgeCardsPanel({ detail }: { detail: EntryDetail }) {
       ),
     onSuccess: (result) => {
       setSavedResults(result.results.map((r) => ({ concept: r.concept, status: r.status })))
+      // N080：只统计实际创建（status='created'）的卡片，skipped/error 不计。
+      const createdCount = result.results.filter((r) => r.status === 'created').length
+      if (createdCount > 0) {
+        void import('../lib/session-recap').then(({ recordRecapEvent }) => {
+          for (let i = 0; i < createdCount; i += 1) recordRecapEvent('card', detail.entryRef)
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: ['knowledge-cards'] })
     },
   })

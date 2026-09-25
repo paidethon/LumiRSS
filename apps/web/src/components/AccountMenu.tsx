@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { KeyRound, LogOut, MonitorSmartphone, Settings2 } from 'lucide-react'
+import { KeyRound, ListChecks, LogOut, MonitorSmartphone, Settings2 } from 'lucide-react'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../api/client'
 import { useAuthStore, type AuthIdentity } from '../store/auth'
 import { resetAccountState } from '../lib/auth-reset'
@@ -23,6 +23,7 @@ import { navigateAppRoute } from '../lib/app-route'
 import { Menu } from './ui/Menu'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
+import { SessionRecapDialog } from './SessionRecapDialog'
 
 const ROLE_LABELS: Record<AuthIdentity['role'], string> = {
   owner: '运营者',
@@ -50,6 +51,8 @@ export default function AccountMenu() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordDone, setPasswordDone] = useState(false)
   const [logoutPending, setLogoutPending] = useState(false)
+  // N080：阅读成果（会话内实际创建的批注/问题/卡片汇总）。
+  const [recapOpen, setRecapOpen] = useState(false)
 
   // basic 模式 / 身份未核实（登录响应探测失败的兜底）：不渲染身份与退出。
   if (mode !== 'session' || identity === null) return null
@@ -125,6 +128,7 @@ export default function AccountMenu() {
           </button>
         )}
         items={[
+          { key: 'recap', content: <><ListChecks aria-hidden className="size-4" />阅读成果</> },
           { key: 'password', content: <><KeyRound aria-hidden className="size-4" />修改密码</> },
           ...(identity.role === 'owner' || identity.role === 'admin'
             ? [{ key: 'admin', content: <><Settings2 aria-hidden className="size-4" />管理台</> }]
@@ -133,7 +137,9 @@ export default function AccountMenu() {
           { key: 'logout-all', content: <><MonitorSmartphone aria-hidden className="size-4" />退出所有设备</> },
         ]}
         onSelect={(key) => {
-          if (key === 'password') {
+          if (key === 'recap') {
+            setRecapOpen(true)
+          } else if (key === 'password') {
             setPasswordDone(false)
             setPasswordError(null)
             setPasswordDialogOpen(true)
@@ -146,6 +152,9 @@ export default function AccountMenu() {
           }
         }}
       />
+
+      {/* N080：阅读成果（tools 入口；device-local 统计 + 会话笔记） */}
+      <SessionRecapDialog open={recapOpen} onClose={() => setRecapOpen(false)} />
 
       {/* 修改密码（成功后全部会话已轮换，本设备自动换发新 session） */}
       <Dialog

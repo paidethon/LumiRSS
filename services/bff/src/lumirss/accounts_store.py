@@ -198,12 +198,74 @@ class AccountsStore:
         return [dict(r) for r in rows]
 
     async def set_user_status(self, user_id: str, status: str) -> bool:
-        """Pause / resume. Returns False when the user does not exist."""
+        """Pause / resume. Returns False when the user does not exist.
+
+        N190：resume 同时清除停用请求时间戳（恢复 = 撤销待删除标记；
+        状态机见 request_deactivation）。"""
         if status not in ("active", "paused"):
             raise AccountError("Unknown status.")
         await self._db.migrate()
-        cursor = await self._db.execute("UPDATE users SET status = ?, updated_at = ? WHERE id = ? AND role != 'owner'", (status, _now(), user_id))
+        cursor = await self._db.execute(
+            "UPDATE users SET status = ?, deactivation_requested_at = NULL, updated_at = ? WHERE id = ? AND role != 'owner'",
+            (status, _now(), user_id),
+        )
         return bool(cursor)
+
+    # ---- N190 账户停用前迁出 ---------------------------------------------
+
+    async def request_deactivation(self, user_id: str, password: str) -> dict[str, object] | None:
+        """用户发起停用：密码复核通过且非 owner → status='paused' +
+        deactivation_requested_at=now（pending_deletion ≡ 二者同时成立，
+        users.status 的 CHECK 约束不动）。返回 {requestedAt,
+        scheduledDeletionAt(epoch)}；用户不存在/密码错误/owner → None。
+
+        会话吊销由调用方（路由层）执行；这里只负责身份与标记。"""
+        await self._db.migrate()
+        user = await self.get_user(user_id)
+        if user is None or user["role"] == "owner":
+            return None
+        if not verify_password_hash(password, str(user["password_hash"] or "")):
+            return None
+        now = _now()
+        from lumirss.config import LumiSettings
+
+        grace_days = LumiSettings().LUMIRSS_DEACTIVATION_GRACE_DAYS
+        await self._db.execute(
+            "UPDATE users SET status = 'paused', deactivation_requested_at = ?, updated_at = ? WHERE id = ? AND role != 'owner'",
+            (now, now, user_id),
+        )
+        return {"requestedAt": now, "scheduledDeletionAt": now + grace_days * 86400}
+
+    async def get_deactivation(self, user_id: str) -> dict[str, object] | None:
+        """pending_deletion 状态（无标记 → None）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT status, deactivation_requested_at FROM users WHERE id = ?",
+            (user_id,),
+        )
+        if row is None or row["deactivation_requested_at"] is None:
+            return None
+        from lumirss.config import LumiSettings
+
+        grace_days = LumiSettings().LUMIRSS_DEACTIVATION_GRACE_DAYS
+        requested_at = int(row["deactivation_requested_at"])
+        return {
+            "requestedAt": requested_at,
+            "scheduledDeletionAt": requested_at + grace_days * 86400,
+            "graceDays": grace_days,
+        }
+
+    async def verify_credentials_only(self, username: str, password: str) -> dict[str, object] | None:
+        """只验身份、不看 status（N190 登录状态页专用：pending_deletion
+        账户凭密码正确性给出诚实 403 页面，而不是混入通用 401）。
+        owner 之外的任何状态都可能返回行——调用方自行判定 status。"""
+        await self._db.migrate()
+        user = await self.get_user_by_username(username.strip().lower())
+        stored = user["password_hash"] if user else None
+        ok = verify_password_hash(password, stored if isinstance(stored, str) else None)
+        if user is None or not ok:
+            return None
+        return user
 
     async def set_password_hash(self, user_id: str, password_hash: str) -> None:
         await self._db.migrate()
