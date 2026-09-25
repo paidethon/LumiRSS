@@ -6,6 +6,14 @@
 
 ## Current state（2026-09）
 
+- **可观测性已落地**：BFF 结构化访问日志（E01）、web/Caddy 容器真实
+  healthcheck（E06）、GHCR 依赖 digest pin 审计（E07）、CI Playwright
+  核心 journey 门（E05——boot 真实 e2e 栈）、backup/restore 闭环演练
+  （E08）与 upgrade/rollback 真实进程演练（E09，数据零丢失）；
+- **预编译发布管线修正**：BFF 镜像携带运维脚本（set-password /
+  RSSHub config/apply），compose 镜像路径与 publish-images 推送路径
+  一致——三处缺陷均在生产部署实测中发现并修复；
+
 - **MVP（0000–0020）与 Phase 2 knowledge workbench 均已合入 main**：
   Library 域（书签/剪藏/快照）、工作区与服务端稍后读、收件箱推送来源 +
   统一来源注册表（0021）、API 来源（JMESPath→Atom→FreshRSS）、邮件桥 +
@@ -104,14 +112,12 @@
 
 ## Next（候选，立项由用户批准的 spec 决定）
 
-- web（Caddy）服务 healthcheck（发布时已知限制；FreshRSS/RSSHub 的
-  compose healthcheck 与 BFF 生产镜像依赖 pin——uv.lock 冻结安装——
-  均已落地）；
-- Agent 消息 / RAG 状态端点补 `response_model`（OpenAPI 未收录，
-  Web 侧暂以本地 interface 对照维护）；
+- Agent 消息 / RAG 端点的 Web 侧本地 interface 迁移到生成 schema 别名
+  （response_model 已补齐，剩余为 Web 消费端重构）；
 - 剪藏/快照阅读体验打磨；
-- CI 增加 Playwright 全量 journey 门（boot e2e compose 栈；当前 CI 只跑
-  静态冒烟 1/32）。
+- CI Playwright journey 门扩展：AI journey（J4）因 AI purpose-profiles
+  契约漂移暂不在门内，spec 待重写；
+- 来源运维 UI 的 J4 类合并契约回归排查（ny1/nx1 批次）。
 
 ## Explicitly deferred / rejected
 
