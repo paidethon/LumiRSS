@@ -55,6 +55,7 @@ import {
   isValidBgImageDataUrl,
   normalizeOverlayOpacity,
 } from '../lib/reader-bg-image'
+import { normalizeDictApiUrl } from '../lib/dict-lookup'
 
 export const SETTINGS_STORAGE_KEY = 'lumirss-settings'
 
@@ -306,6 +307,13 @@ export interface AppSettings {
    * 缺译文块诚实跳过）+ 原文/译文间隔档位（无/短/长 → 0/500/1200ms）。 */
   speechBilingualAlternate: boolean
   speechBilingualGap: SpeechBilingualGap
+  /** N069：选词词典卡（设备本地）：词典 API 地址模板（含 {word} 占位符，
+   * 归一化见 lib/dict-lookup）。'' = 未配置（卡片诚实提示，零请求）。
+   * 查询只外发所选单词本身，绝不携带上下文。 */
+  dictApiUrl: string
+  /** N070：纯键盘阅读定位（固定键 Alt+↑/↓/Shift 组合；设备本地开关，
+   * 默认关——不改变既有键盘行为）。 */
+  readerKeyNav: boolean
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -360,6 +368,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   speechLexicon: [],
   speechBilingualAlternate: false,
   speechBilingualGap: 'none',
+  // N069：选词词典（设备本地；默认未配置——零外发）
+  dictApiUrl: '',
+  // N070：纯键盘阅读定位（设备本地；默认关）
+  readerKeyNav: false,
 }
 
 // ---- 解析 / 迁移（纯函数，可测试） ----
@@ -776,6 +788,10 @@ export function normalizeSettings(raw: unknown): AppSettings {
       DEFAULT_APP_SETTINGS.speechBilingualAlternate,
     ),
     speechBilingualGap: normalizeSpeechBilingualGap(source.speechBilingualGap),
+    // N069：词典端点模板归一化（非法/缺 {word} → '' = 未配置，零外发）
+    dictApiUrl: normalizeDictApiUrl(source.dictApiUrl),
+    // N070：纯键盘阅读定位开关（布尔归一化，非法回退默认关）
+    readerKeyNav: pickBoolean(source.readerKeyNav, DEFAULT_APP_SETTINGS.readerKeyNav),
   }
 }
 

@@ -12,6 +12,13 @@ import {
   blockRemoteImages,
   decorateBlockedRemoteImages,
 } from '../lib/remote-images'
+import {
+  decorateManualMedia,
+  deferMedia,
+  mediaPolicyFor,
+  writeMediaPolicy,
+  type MediaPolicyMode,
+} from '../lib/media-policy'
 import { attachExternalLinkMenu, CleanLinkPreviewDialog } from './CleanLinkCopy'
 import { WideTablePanel } from './WideTablePanel'
 import { CodeReaderPanel } from './CodeReaderPanel'
@@ -259,6 +266,21 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const imageMode = useAppSettings((s) => s.settings.readerImageMode)
   // F009：默认不加载远程图片（本地/快照资源不受影响；单图点击恢复）
   const blockRemote = useAppSettings((s) => s.settings.readerBlockRemoteImages)
+  // N066：按源媒体策略（设备本地 localStorage 映射；'manual' = 图片/视频/
+  // 音频一律先占位，点击才加载单个元素——初始渲染零外部媒体请求）。
+  const [mediaPolicy, setMediaPolicyState] = useState<MediaPolicyMode>(() =>
+    mediaPolicyFor(detail.feedUrl),
+  )
+  useEffect(() => {
+    setMediaPolicyState(mediaPolicyFor(detail.feedUrl))
+  }, [detail.feedUrl, detail.entryRef])
+  const manualMedia = mediaPolicy === 'manual'
+  const setMediaPolicy = (mode: MediaPolicyMode) => {
+    if (detail.feedUrl !== null && detail.feedUrl !== undefined) {
+      writeMediaPolicy(detail.feedUrl, mode)
+    }
+    setMediaPolicyState(mode)
+  }
   const [imagesAllowed, setImagesAllowed] = useState(false)
   useEffect(() => {
     setImagesAllowed(false)
@@ -401,20 +423,31 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   // 并生成目录；输入已清洗，注入的只有 id 属性，无脚本注入面。
   // F22：hidden 且未单篇覆盖 → 摘除图片地址（不发请求），并统计数量；
   // 覆盖后 memo 重算，直接产回带 src 的版本（defer 结果不回写状态）。
-  const { html: htmlWithIds, toc, deferredImageCount } = useMemo(() => {
-    if (!hasHtml || html === '') return { html, toc: [], deferredImageCount: 0 }
-    const withIds = withHeadingIds(html)
-    if (imageMode !== 'hidden' || imagesAllowed) {
-      // F009：只拦截远程 http(s) 图（本地/快照/data:/blob: 原样保留）
-      if (blockRemote) {
-        const blocked = blockRemoteImages(withIds.html)
-        return { html: blocked.html, toc: withIds.toc, deferredImageCount: 0 }
-      }
-      return { html: withIds.html, toc: withIds.toc, deferredImageCount: 0 }
+  // N066：仅手动策略在 F22/F009 之后追加 deferMedia（img 已被摘除则
+  // 自然跳过；video/audio/poster/source/track 在此摘除），幂等。
+  const { html: htmlWithIds, toc, deferredImageCount, manualMediaCount } = useMemo(() => {
+    if (!hasHtml || html === '') {
+      return { html, toc: [], deferredImageCount: 0, manualMediaCount: 0 }
     }
-    const deferred = deferImages(withIds.html)
-    return { html: deferred.html, toc: withIds.toc, deferredImageCount: deferred.imageCount }
-  }, [html, hasHtml, imageMode, imagesAllowed, blockRemote])
+    const withIds = withHeadingIds(html)
+    let out = withIds.html
+    let deferredImageCount = 0
+    let manualMediaCount = 0
+    if (imageMode === 'hidden' && !imagesAllowed) {
+      const deferred = deferImages(out)
+      out = deferred.html
+      deferredImageCount = deferred.imageCount
+    } else if (blockRemote) {
+      // F009：只拦截远程 http(s) 图（本地/快照/data:/blob: 原样保留）
+      out = blockRemoteImages(out).html
+    }
+    if (manualMedia) {
+      const media = deferMedia(out)
+      out = media.html
+      manualMediaCount = media.mediaCount
+    }
+    return { html: out, toc: withIds.toc, deferredImageCount, manualMediaCount }
+  }, [html, hasHtml, imageMode, imagesAllowed, blockRemote, manualMedia])
 
   // dangerouslySetInnerHTML 的 props 对象必须引用稳定：内联字面量在每次
   // 渲染都是新对象，React 更新该宿主元素时会重设 innerHTML——渲染后
@@ -437,6 +470,8 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     decorateCodeCopyButtons(container)
     // F009：占位 img → 「加载本图」按钮（渲染后装饰，幂等）
     decorateBlockedRemoteImages(container)
+    // N066：仅手动媒体 → 「加载图片/视频/音频」占位按钮（幂等）
+    decorateManualMedia(container)
     // F010：外链右键/长按菜单（复制链接 / 复制干净链接）
     const cleanupMenu = attachExternalLinkMenu(container, (url, x, y) => {
       setLinkMenu({ url, x, y })
@@ -876,6 +911,55 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
                 </button>
               )}
             </div>
+          </div>
+        )}
+        {/* N066：本源媒体加载策略（设备本地，按 feedUrl 记忆）。
+            仅手动 = 图片/视频/音频先占位，点击才加载单个元素。 */}
+        {detail.feedUrl !== null && detail.feedUrl !== undefined && detail.feedUrl !== '' && (
+          <div
+            data-testid="media-policy-bar"
+            className="mb-2 flex flex-wrap items-center gap-2 text-xs text-[var(--lumi-text-secondary)]"
+          >
+            <span>媒体加载（本源）</span>
+            <div
+              role="group"
+              aria-label="本源媒体加载策略"
+              className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+            >
+              <button
+                type="button"
+                aria-pressed={!manualMedia}
+                data-testid="media-policy-default"
+                onClick={() => setMediaPolicy('default')}
+                className={cxRaw(
+                  'min-h-7 rounded-[var(--lumi-radius-sm)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  manualMedia
+                    ? 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]'
+                    : 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]',
+                )}
+              >
+                默认
+              </button>
+              <button
+                type="button"
+                aria-pressed={manualMedia}
+                data-testid="media-policy-manual"
+                onClick={() => setMediaPolicy('manual')}
+                className={cxRaw(
+                  'min-h-7 rounded-[var(--lumi-radius-sm)] px-2 py-0.5 transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  manualMedia
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+                )}
+              >
+                仅手动
+              </button>
+            </div>
+            {manualMedia && manualMediaCount > 0 && (
+              <span data-testid="manual-media-count">
+                仅手动：{manualMediaCount} 个媒体元素待点击加载
+              </span>
+            )}
           </div>
         )}
         {deferredImageCount > 0 ? (

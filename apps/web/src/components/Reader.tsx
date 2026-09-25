@@ -52,6 +52,10 @@ const ProvenanceCard = lazy(() => import('./ProvenanceCard'))
 const EntryRevisionsPanel = lazy(() => import('./EntryRevisionsPanel'))
 const EntryNotesBacklinks = lazy(() => import('./EntryNotesBacklinks'))
 const EnclosurePlayer = lazy(() => import('./EnclosurePlayer').then((m) => ({ default: m.EnclosurePlayer })))
+// N065：附件下载队列（白名单 enclosure 的设备本地下载管理）。
+const AttachmentQueuePanel = lazy(() => import('./AttachmentQueuePanel'))
+// N070：纯键盘阅读定位（Alt+↑/↓/Shift 组合；设置开启才挂监听）。
+const ReaderKeyNav = lazy(() => import('./ReaderKeyNav'))
 import ReaderPlaceholder from './ReaderPlaceholder'
 import { useReadingProgressReporter } from '../lib/reading-progress-reporter'
 import ReaderProgress from './ReaderProgress'
@@ -224,6 +228,8 @@ export default function Reader() {
   const readerPagedMode = useAppSettings((s) => s.settings.readerPagedMode)
   // N052：阅读模式（设备本地）——'paged' = 分页阅读，优先于 F17 按屏翻页。
   const readerReadingMode = useAppSettings((s) => s.settings.readerReadingMode)
+  // N070：纯键盘阅读定位开关（设备本地；默认关）。
+  const readerKeyNav = useAppSettings((s) => s.settings.readerKeyNav)
   const pagedReading = readerReadingMode === 'paged'
   const { data, isPending, isError, error, refetch } = useEntryDetail(selectedEntryRef)
   // F055 消费端：按 entry 的 feed 匹配 source_overrides.readerStyle
@@ -726,6 +732,7 @@ const handleScroll = useCallback(() => {
             }
             focusMode={focusMode}
             onFocusModeChange={setFocusMode}
+            outlineRootRef={articleScrollRef}
           />
         </Suspense>
         {/* O127 内容优先重排：媒体附件（enclosure 属于内容）紧随标题，
@@ -734,6 +741,10 @@ const handleScroll = useCallback(() => {
         {/* F011：enclosure 播放器（audio/video 附件；显式开始，禁止 autoplay） */}
         <Suspense fallback={null}>
           <EnclosurePlayers key={`enclosures-${detail.entryRef}`} detail={detail} />
+        </Suspense>
+        {/* N065：附件下载队列（白名单类型可入队；脚本/可执行诚实拒绝） */}
+        <Suspense fallback={null}>
+          <AttachmentQueuePanel key={`attachments-${detail.entryRef}`} detail={detail} />
         </Suspense>
         {/* Gate：三模式内容区（控件在 ReaderHeader 工具栏；本组件只渲染）。
             original 直渲 ArticleContent（首读关键路径零 lazy）；非 original
@@ -875,6 +886,17 @@ const handleScroll = useCallback(() => {
           containerRef={scrollRef}
           articleRef={articleElementRef}
           entryRef={detailEntryRef}
+        />
+      </Suspense>
+      {/* N070：纯键盘阅读定位（设置开启才生效；指示 chip 固定于左下角，
+          只定位不改已读状态；key=entryRef 换文重置位置）。
+          局部 Suspense：lazy 首帧 null 无感。 */}
+      <Suspense fallback={null}>
+        <ReaderKeyNav
+          key={`keynav-${detailEntryRef}`}
+          entryRef={detail.entryRef}
+          enabled={readerKeyNav}
+          containerRef={scrollRef}
         />
       </Suspense>
       {/* F25：回到顶部 / 返回刚才位置（>600px 且未到底出现；用户滚动重置） */}

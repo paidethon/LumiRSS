@@ -854,6 +854,25 @@ button.lumi-blocked-image:hover {
   background: var(--lumi-surface-hover);
 }
 
+/* N066：仅手动媒体占位按钮（与 F009 拦截占位同一形态；44px 触控目标） */
+button.lumi-manual-media {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  margin: 4px 0;
+  border: 1px dashed var(--lumi-border);
+  border-radius: var(--lumi-radius-md);
+  background: var(--lumi-surface-selected);
+  color: var(--lumi-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+button.lumi-manual-media:hover {
+  background: var(--lumi-surface-hover);
+}
+
 /* F026：摘要证据定位高亮（2s 自动移除；语义 token，不硬编码色值） */
 .lumi-evidence-highlight {
   background: var(--lumi-accent-soft);
