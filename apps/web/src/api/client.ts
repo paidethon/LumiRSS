@@ -1288,6 +1288,27 @@ export interface AdminDeployStatus {
   } | null
 }
 
+// ---- N197 回滚就绪检查（只读要素清单；绝无执行控件） ----
+
+export interface AdminRollbackReadiness {
+  canRollback: boolean
+  previousImage: { state: string; tag: string | null; reason: string | null }
+  backup: {
+    state: string
+    name: string | null
+    reason: string | null
+    verifyOk: boolean
+    findings: Record<string, boolean> | null
+  }
+  schema: { current: number | null; backup: number | null; unchanged: boolean }
+  dbDowngrade: string
+  note: string
+}
+
+export async function getAdminRollbackReadiness(signal?: AbortSignal): Promise<AdminRollbackReadiness> {
+  return request<AdminRollbackReadiness>(`${API_BASE}/admin/rollback-readiness`, signal)
+}
+
 export async function getAdminDeployStatus(signal?: AbortSignal): Promise<AdminDeployStatus> {
   const body = await request<Record<string, unknown>>(`${API_BASE}/admin/deploy-status`, signal)
   if (body.available !== true) {
@@ -5478,6 +5499,7 @@ export interface AuthSessionView {
   expiresAt: number
   userAgent?: string | null
   current: boolean
+  deviceLabel?: string | null
 }
 
 /** F038：活跃会话（绝不含 token/hash 字段）。 */
@@ -5492,6 +5514,182 @@ export async function revokeAuthSession(id: string): Promise<void> {
     { method: 'DELETE' },
   )
   if (!response.ok) throw await toApiError(response)
+}
+
+// ---- N008 登录事件（最近登录 / 新设备提醒） ----
+
+export interface AuthLoginEventView {
+  id: number
+  kind: 'new_device' | 'login'
+  deviceLabel: string
+  createdAt: number
+  seen: boolean
+}
+
+/** N008：本人最近登录事件（cap 20；绝不含指纹/token 材料）。 */
+export async function listLoginEvents(signal?: AbortSignal): Promise<AuthLoginEventView[]> {
+  const data = await request<{ items: AuthLoginEventView[] }>(
+    `${API_BASE}/auth/login-events`,
+    signal,
+  )
+  return data.items
+}
+
+/** N008：批量标记已读（省略 ids = 全部未读事件）。 */
+export async function markLoginEventsSeen(ids?: number[]): Promise<{ marked: number }> {
+  const response = await rawRequest(`${API_BASE}/auth/login-events/seen`, {
+    method: 'POST',
+    body: JSON.stringify(ids ? { ids } : {}),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { marked: number }
+}
+
+// ---- N180 日报材料使用追踪 ----
+
+export interface DigestUsageItem {
+  configId: number
+  configName: string
+  issueKey: string
+  issueDate: string
+  section: string
+  sourceId: string
+  citationAnchor: string
+  publishedAt: string
+}
+
+/** N180：这条材料被我的哪些日报配置/期刊/栏目引用（反查只在本用户库）。 */
+export async function getEntryDigestUsage(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<{ items: DigestUsageItem[] }> {
+  return request<{ items: DigestUsageItem[] }>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/digest-usage`,
+    signal,
+  )
+}
+
+// ---- N010 个人数据迁出/迁入向导 ----
+
+export interface ExportScopeComponent {
+  key: string
+  label: string
+  count: number
+  available: boolean
+  reason?: string | null
+  truncated?: boolean
+}
+
+/** N010：导出前先看范围（各组件条数；不可用组件如实 available:false）。 */
+export async function getLumiDataScope(signal?: AbortSignal): Promise<{ components: ExportScopeComponent[] }> {
+  return request<{ components: ExportScopeComponent[] }>(
+    `${API_BASE}/export/lumi-data/scope`,
+    signal,
+  )
+}
+
+/** N010：下载 zip 导出包（浏览器直接落盘）。 */
+export async function exportLumiDataZip(): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/export/lumi-data.zip`, { method: 'GET' })
+  if (!response.ok) throw await toApiError(response)
+  const blob = await response.blob()
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = match?.[1] ?? 'lumirss-data.zip'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+export interface ImportPreviewComponent {
+  key: string
+  label: string
+  count: number
+  conflicts: number
+}
+
+export interface ImportPreviewResult {
+  importId: string
+  components: ImportPreviewComponent[]
+}
+
+/** N010：上传导出 zip → 各组件计数 + 冲突 + importId。 */
+export async function previewLumiDataImport(file: File): Promise<ImportPreviewResult> {
+  const response = await rawRequest(`${API_BASE}/import/lumi-data/preview`, {
+    method: 'POST',
+    body: file,
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ImportPreviewResult
+}
+
+export interface ImportApplyComponentResult {
+  added?: number
+  skipped?: number
+  failed?: number
+  applied?: number
+  reason?: string
+}
+
+/** N010：按 preview 的 importId 选择组件合并（跳过已存在、只加新的）。 */
+export async function applyLumiDataImport(
+  importId: string,
+  components: string[],
+): Promise<{ components: Record<string, ImportApplyComponentResult> }> {
+  const response = await rawRequest(`${API_BASE}/import/lumi-data/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ importId, components }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { components: Record<string, ImportApplyComponentResult> }
+}
+
+// ---- N189 个人活动记录清除 ----
+
+export interface ActivityPurgeCounts {
+  loginEvents: number
+  aiTaskLogs: number
+  searchSnapshots: number
+}
+
+export interface ActivityPurgePreviewResult {
+  before: string
+  counts: ActivityPurgeCounts
+  retained: string[]
+}
+
+export interface ActivityPurgeResult {
+  before: string
+  deleted: ActivityPurgeCounts
+  retained: string[]
+}
+
+/** N189：清除前预览（只读）。 */
+export async function previewActivityPurge(before: string): Promise<ActivityPurgePreviewResult> {
+  const data = await request<ActivityPurgePreviewResult>(
+    `${API_BASE}/me/activity-purge/preview?before=${encodeURIComponent(before)}`,
+  )
+  return data
+}
+
+/** N189：执行清除（服务端活动记录；业务状态不受影响）。 */
+export async function applyActivityPurge(
+  before: string,
+  include?: Partial<ActivityPurgeCounts>,
+): Promise<ActivityPurgeResult> {
+  const response = await rawRequest(`${API_BASE}/me/activity-purge`, {
+    method: 'POST',
+    body: JSON.stringify({ before, ...(include ? { include } : {}) }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ActivityPurgeResult
 }
 
 // ---- F039 脱敏诊断包 ----

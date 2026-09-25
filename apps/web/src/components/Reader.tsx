@@ -92,6 +92,7 @@ const ReaderPager = lazy(() =>
 )
 const ArticleLinksPanel = lazy(() => import('./ArticleLinksPanel'))
 const ItemRelationsPanel = lazy(() => import('./ItemRelationsPanel'))
+const DigestUsagePanel = lazy(() => import('./DigestUsagePanel'))
 const QuizPanel = lazy(() => import('./QuizPanel').then((m) => ({ default: m.QuizPanel })))
 const KnowledgeCardsPanel = lazy(() => import('./KnowledgeCardsPanel').then((m) => ({ default: m.KnowledgeCardsPanel })))
 const SearchHitsChip = lazy(() => import('./SearchHitsChip').then((m) => ({ default: m.SearchHitsChip })))
@@ -963,6 +964,10 @@ const handleScroll = useCallback(() => {
         {/* F021：手工关联内容（双向列表 + 解除 + 关联选择；无 AI 参与） */}
         <Suspense fallback={null}>
         <ItemRelationsPanel key={`relations-${detail.entryRef}`} itemRef={`rss:${detail.entryRef}`} />
+        </Suspense>
+        {/* N180：日报材料使用追踪（我的配置/期刊引用反查；空态诚实） */}
+        <Suspense fallback={null}>
+          <DigestUsagePanel key={`digest-usage-${detail.entryRef}`} entryRef={detail.entryRef} />
         </Suspense>
         {/* F20：正文锚定高亮/批注（选区浮动条 + 批注卡；设备本地存储）。
             entryRef 必填；contentVersion 缺省时组件按正文文本自行派生，

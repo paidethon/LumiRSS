@@ -76,6 +76,9 @@ import {
   moveInboxRule,
   patchInboxRule,
   listAuthSessions,
+  getEntryDigestUsage,
+  listLoginEvents,
+  markLoginEventsSeen,
   listRelationsForItem,
   deleteAiProfile,
   deleteBookmark,
@@ -3510,6 +3513,28 @@ export function useRevokeSessionMutation() {
   return useMutation({
     mutationFn: revokeAuthSession,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-sessions'] }),
+  })
+}
+
+// ---- N008 登录事件（最近登录 / 新设备提醒） ----
+
+export function useLoginEvents() {
+  return useQuery({ queryKey: ['auth-login-events'], queryFn: ({ signal }) => listLoginEvents(signal) })
+}
+
+export function useEntryDigestUsage(entryRef: string) {
+  return useQuery({
+    queryKey: ['entry-digest-usage', entryRef],
+    queryFn: ({ signal }) => getEntryDigestUsage(entryRef, signal),
+    staleTime: 30_000,
+  })
+}
+
+export function useMarkLoginEventsSeenMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ids?: number[]) => markLoginEventsSeen(ids),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-login-events'] }),
   })
 }
 

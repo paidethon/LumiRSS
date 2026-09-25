@@ -1119,6 +1119,8 @@ class AuthStatus(BaseModel):
     username: str | None = None
     role: Literal["owner", "admin", "member"] | None = None
     initialSources: list[ActivationSourceResult] | None = None
+    # N008：本次登录来自新设备（设备指纹首次出现）时为 True；仅登录路径携带。
+    newDevice: bool | None = None
 
 
 class ApiVersionInfo(BaseModel):
@@ -2624,6 +2626,8 @@ class GptDigestRef(BaseModel):
     url: str = ""
     feedTitle: str = ""
     publishedAt: str = ""
+    # N180：入选期号的条目引用（opaque entryRef；旧期号为空串）。
+    ref: str = ""
 
 
 class GptDigestColumn(BaseModel):
@@ -2677,6 +2681,9 @@ class GptDigestIssue(BaseModel):
     model: str = ""
     meta: dict[str, object] = {}
     sentenceMap: list[GptDigestSentence] = []
+    # N177：人工修订附注 + 可见订正标记（updated_at 晚于 published_at）。
+    note: str = ""
+    revised: bool = False
     createdAt: str = ""
     publishedAt: str = ""
     updatedAt: str = ""
@@ -2849,6 +2856,10 @@ class GptDigestConfig(BaseModel):
     targetReadingMinutes: int = 0
     # N176：同事件聚合（默认关）。
     clusterEnabled: bool = False
+    # N179：缺刊处理策略（backfill=补刊默认 / merge_into_next / skip）。
+    missedIssuePolicy: str = "backfill"
+    # N179：缺刊跳过/并入记录（cap 30，最旧先裁）。
+    skipLog: list[dict[str, str]] = []
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2877,6 +2888,7 @@ class GptDigestCreate(BaseModel):
     columns: list[GptDigestColumn] | None = None
     targetReadingMinutes: int | None = None
     clusterEnabled: bool | None = None
+    missedIssuePolicy: str | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2899,6 +2911,7 @@ class GptDigestConfigUpdate(BaseModel):
     columns: list[GptDigestColumn] | None = None
     targetReadingMinutes: int | None = None
     clusterEnabled: bool | None = None
+    missedIssuePolicy: str | None = None
 
 
 class StorageUsage(BaseModel):

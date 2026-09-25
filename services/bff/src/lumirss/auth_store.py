@@ -17,6 +17,7 @@ Design (matching the task's security model):
 """
 
 import hashlib
+import re
 import secrets
 import time
 
@@ -29,6 +30,10 @@ _TOKEN_BYTES = 32
 
 # Bound on simultaneously-live sessions per user (a few devices).
 MAX_LIVE_SESSIONS = 20
+
+# N008: bounded per-user login event stream (new-device reminders).
+MAX_LOGIN_EVENTS = 50
+_LOGIN_EVENT_KINDS = ("new_device", "login")
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -55,6 +60,44 @@ class WeakPassword(AuthError):
 def _hash_token(raw_token: str) -> str:
     """SHA-256 hex of the raw cookie token — the only stored form."""
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+# N008 device labeling: browser family + platform from the User-Agent.
+_UA_FAMILIES = (
+    ("Edge", r"Edg/"),
+    ("Firefox", r"Firefox/"),
+    ("Chrome", r"Chrome/|CriOS/"),
+    ("Safari", r"Safari/"),
+    ("curl", r"curl/"),
+)
+_UA_PLATFORMS = (
+    ("Windows", r"Windows"),
+    ("Android", r"Android"),
+    ("iOS", r"iPhone|iPad|iPod"),
+    ("macOS", r"Mac OS X|Macintosh"),
+    ("Linux", r"Linux|X11"),
+)
+
+
+def device_label_from_ua(user_agent: str | None) -> str:
+    """「Chrome/Linux」式的脱敏设备标签（绝不回传原始 UA 之外的信息，
+    解析不出 → 「未知设备」）。未知浏览器给出诚实的「浏览器/平台」。"""
+    ua = str(user_agent or "")
+    family = next(
+        (name for name, pattern in _UA_FAMILIES if re.search(pattern, ua)), None
+    )
+    platform = next(
+        (name for name, pattern in _UA_PLATFORMS if re.search(pattern, ua)), None
+    )
+    return f"{family or '浏览器'}/{platform or '未知平台'}"
+
+
+def device_fingerprint(user_agent: str | None) -> str:
+    """同设备判定键：SHA-256(UA族|平台) 前 16 位——不是原始 UA 的哈希，
+    同族同平台的不同版本视为同一台设备（seen 后不再重复提醒）。"""
+    family, _, platform = device_label_from_ua(user_agent).partition("/")
+    basis = f"{family}|{platform}"
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
 
 def _now() -> int:
@@ -128,6 +171,8 @@ class AuthStore:
         uses it to bind every later request to that identity. Also prunes
         expired rows and enforces the per-user live-session cap in the
         same pass (the new row is the most recently seen, so it survives).
+        N008: the row carries the masked device label (UA family/platform)
+        shown in the sessions UI — never the raw UA string.
         """
         await self._db.migrate()
         now = _now()
@@ -135,9 +180,10 @@ class AuthStore:
         raw = secrets.token_urlsafe(_TOKEN_BYTES)
         token_hash = _hash_token(raw)
         agent = user_agent[:200] if user_agent else None
+        device_label = device_label_from_ua(user_agent)
         await self._db.execute(
-            "INSERT INTO auth_sessions (token_hash, created_at, last_seen_at, expires_at, user_agent, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (token_hash, now, now, expires, agent, user_id),
+            "INSERT INTO auth_sessions (token_hash, created_at, last_seen_at, expires_at, user_agent, user_id, device_label) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (token_hash, now, now, expires, agent, user_id, device_label),
         )
         await self._db.execute(
             "DELETE FROM auth_sessions WHERE expires_at < ? OR (user_id = ? AND token_hash NOT IN (SELECT token_hash FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT ?))",
@@ -240,9 +286,9 @@ class AuthStore:
         await self._db.migrate()
         current_hash = _hash_token(current_token) if current_token else None
         if user_id is None:
-            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?", (max(1, min(limit, 50)),))
+            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent, device_label FROM auth_sessions ORDER BY last_seen_at DESC LIMIT ?", (max(1, min(limit, 50)),))
         else:
-            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT ?", (user_id, max(1, min(limit, 50))))
+            rows = await self._db.fetch_all("SELECT token_hash, created_at, last_seen_at, expires_at, user_agent, device_label FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT ?", (user_id, max(1, min(limit, 50))))
         now = _now()
         sessions: list[dict[str, object]] = []
         for row in rows:
@@ -251,6 +297,10 @@ class AuthStore:
                 continue
             token_hash = str(row["token_hash"])
             agent = str(row["user_agent"] or "")
+            label = str(row["device_label"] or "") if "device_label" in row else ""
+            label_value: str | None = label or (
+                device_label_from_ua(agent) if agent else None
+            )
             sessions.append(
                 {
                     "id": token_hash[:8],
@@ -258,6 +308,7 @@ class AuthStore:
                     "lastSeenAt": int(row["last_seen_at"]),
                     "expiresAt": expires_at,
                     "userAgent": agent[:64] if agent else None,
+                    "deviceLabel": label_value,
                     "current": bool(current_hash is not None and token_hash == current_hash),
                 }
             )
@@ -281,3 +332,105 @@ class AuthStore:
             "DELETE FROM auth_sessions WHERE token_hash = ?", (row["token_hash"],)
         )
         return True
+
+    # ---- N008 登录事件（新设备提醒） -------------------------------------
+
+    async def record_login_event(
+        self, *, user_id: str, user_agent: str | None, now: int | None = None
+    ) -> str:
+        """记一次登录；设备指纹首次出现 → kind=new_device，否则 kind=login。
+
+        返回 kind（路由据此决定响应是否携带 newDevice 标记）。事件流有界
+        （每用户最多 MAX_LOGIN_EVENTS 条，超出裁掉最旧）。"""
+        await self._db.migrate()
+        stamp = int(now if now is not None else _now())
+        label = device_label_from_ua(user_agent)
+        fingerprint = device_fingerprint(user_agent)
+        known = await self._db.fetch_one(
+            "SELECT 1 AS x FROM login_events WHERE user_id = ? AND fingerprint = ? LIMIT 1",
+            (user_id, fingerprint),
+        )
+        kind = "login" if known is not None else "new_device"
+        await self._db.execute(
+            "INSERT INTO login_events (user_id, kind, device_label, fingerprint, created_at, seen) VALUES (?, ?, ?, ?, ?, 0)",
+            (user_id, kind, label, fingerprint, stamp),
+        )
+        await self._db.execute(
+            "DELETE FROM login_events WHERE user_id = ? AND id NOT IN (SELECT id FROM login_events WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?)",
+            (user_id, user_id, MAX_LOGIN_EVENTS),
+        )
+        return kind
+
+    async def list_login_events(
+        self, *, user_id: str, limit: int = 20
+    ) -> list[dict[str, object]]:
+        """本人最近登录事件（cap 20；只含展示字段——指纹哈希不出边界）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id, kind, device_label, created_at, seen FROM login_events WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (user_id, max(1, min(limit, 20))),
+        )
+        return [
+            {
+                "id": int(row["id"]),
+                "kind": str(row["kind"]) if row["kind"] in _LOGIN_EVENT_KINDS else "login",
+                "deviceLabel": str(row["device_label"] or ""),
+                "createdAt": int(row["created_at"]),
+                "seen": bool(row["seen"]),
+            }
+            for row in rows
+        ]
+
+    async def mark_login_events_seen(
+        self, *, user_id: str, event_ids: list[int] | None = None
+    ) -> int:
+        """批量标记已读（省略 ids = 全部）；返回实际标记数。"""
+        await self._db.migrate()
+        if event_ids is None:
+            row = await self._db.fetch_one(
+                "SELECT COUNT(*) AS n FROM login_events WHERE user_id = ? AND seen = 0",
+                (user_id,),
+            )
+            await self._db.execute(
+                "UPDATE login_events SET seen = 1 WHERE user_id = ? AND seen = 0",
+                (user_id,),
+            )
+            return int(row["n"]) if row else 0
+        clean = [int(eid) for eid in event_ids[:100] if int(eid) > 0]
+        if not clean:
+            return 0
+        marks = 0
+        for eid in clean:
+            row = await self._db.fetch_one(
+                "SELECT id FROM login_events WHERE user_id = ? AND id = ? AND seen = 0",
+                (user_id, eid),
+            )
+            if row is None:
+                continue
+            await self._db.execute(
+                "UPDATE login_events SET seen = 1 WHERE user_id = ? AND id = ?",
+                (user_id, eid),
+            )
+            marks += 1
+        return marks
+
+    async def purge_login_events_before(self, user_id: str, epoch: int) -> int:
+        """N189 活动清除：删除早于 epoch 的本人登录事件，返回删除数。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM login_events WHERE user_id = ? AND created_at < ?",
+            (user_id, epoch),
+        )
+        await self._db.execute(
+            "DELETE FROM login_events WHERE user_id = ? AND created_at < ?",
+            (user_id, epoch),
+        )
+        return int(row["n"]) if row else 0
+
+    async def count_login_events_before(self, user_id: str, epoch: int) -> int:
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM login_events WHERE user_id = ? AND created_at < ?",
+            (user_id, epoch),
+        )
+        return int(row["n"]) if row else 0

@@ -40,6 +40,7 @@ import {
   generateInvitesFromScheme,
   getAdminCapacity,
   getAdminDeployStatus,
+  getAdminRollbackReadiness,
   getAdminSystem,
   getAdminUpgradePreview,
   getAdminUserQuota,
@@ -1655,6 +1656,124 @@ function DeployStatusSection() {
   )
 }
 
+// ===== 回滚就绪检查（N197）==================================================
+//
+// GET /admin/rollback-readiness 只读要素清单：前一镜像（./lumirss 写下的
+// 回滚快照清单）、最新备份（N186 只读校验）、schema 一致性与诚实的
+// SQLite 不能降级说明。本卡片只有清单——没有、也永远不会有「一键回滚」
+// 执行控件（负向测试断言卡内零按钮）；回滚只由运维侧 ./lumirss rollback
+// 触发。
+
+function RollbackReadinessSection() {
+  const readiness = useQuery({
+    queryKey: ['admin', 'rollback-readiness'],
+    queryFn: ({ signal }) => getAdminRollbackReadiness(signal),
+    staleTime: 10_000,
+  })
+
+  const ELEMENT_LABELS: Record<string, string> = {
+    previousImage: '前一镜像',
+    backup: '最新备份',
+    schema: '数据库 schema',
+  }
+  const STATE_LABELS: Record<string, string> = {
+    present: '存在',
+    absent: '不存在',
+    verified: '校验通过',
+    unverified: '校验未通过',
+  }
+
+  return (
+    <section aria-label="回滚就绪" data-testid="admin-rollback-readiness">
+      <SectionHeading title="回滚就绪" hint="只读要素清单；回滚只能由服务器上的 ./lumirss rollback 执行，这里没有任何执行按钮。" />
+      {readiness.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : readiness.isError ? (
+        // 注意：不用 role="alert"——与既有 admin 测试的表单内联报错
+        // （findByRole('alert')）互不干扰；错误仍如实可见。
+        <p className="text-sm leading-relaxed text-[var(--lumi-danger)]" data-testid="rollback-readiness-error">
+          {adminActionError(readiness.error)}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5" data-testid="rollback-readiness-body">
+          <ul className="flex flex-col divide-y divide-[var(--lumi-separator)]" data-testid="rollback-readiness-elements">
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-previous-image">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.previousImage}</span>
+              <span className="flex items-center gap-2">
+                {readiness.data.previousImage.tag !== null && (
+                  <span className="text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.previousImage.tag}</span>
+                )}
+                <span
+                  className={stateBadge(
+                    STATE_LABELS[readiness.data.previousImage.state] ?? readiness.data.previousImage.state,
+                    readiness.data.previousImage.state === 'present' ? 'ok' : 'muted',
+                  )}
+                >
+                  {STATE_LABELS[readiness.data.previousImage.state] ?? readiness.data.previousImage.state}
+                </span>
+              </span>
+              {readiness.data.previousImage.reason !== null && (
+                <span className="w-full text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.previousImage.reason}</span>
+              )}
+            </li>
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-backup">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.backup}</span>
+              <span className="flex items-center gap-2">
+                {readiness.data.backup.name !== null && (
+                  <span className="text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.backup.name}</span>
+                )}
+                <span
+                  className={stateBadge(
+                    STATE_LABELS[readiness.data.backup.state] ?? readiness.data.backup.state,
+                    readiness.data.backup.state === 'verified' ? 'ok' : readiness.data.backup.state === 'absent' ? 'muted' : 'warn',
+                  )}
+                >
+                  {STATE_LABELS[readiness.data.backup.state] ?? readiness.data.backup.state}
+                </span>
+              </span>
+              {readiness.data.backup.reason !== null && (
+                <span className="w-full text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.backup.reason}</span>
+              )}
+            </li>
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-schema">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.schema}</span>
+              <span className="flex items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+                备份 {readiness.data.schema.backup ?? '—'} / 当前 {readiness.data.schema.current ?? '—'}
+                <span
+                  className={stateBadge(
+                    readiness.data.schema.unchanged ? '一致' : '不一致',
+                    readiness.data.schema.unchanged ? 'ok' : 'warn',
+                  )}
+                >
+                  {readiness.data.schema.unchanged ? '一致' : '不一致'}
+                </span>
+              </span>
+            </li>
+          </ul>
+          <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]" data-testid="rollback-db-downgrade">
+            数据库降级：{readiness.data.dbDowngrade}
+          </p>
+          <p
+            className={
+              readiness.data.canRollback
+                ? 'text-xs text-[var(--lumi-accent-text)]'
+                : 'text-xs text-[var(--lumi-text-secondary)]'
+            }
+            data-testid="rollback-verdict"
+          >
+            {readiness.data.canRollback
+              ? '要素齐全：可以回滚（由运维侧执行）。'
+              : '要素不全：当前不可回滚（见上方清单）。'}
+          </p>
+          <p className="text-[11px] text-[var(--lumi-text-tertiary)]">{readiness.data.note}</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ===== 系统面板（P11）=======================================================
 //
 // 数据全部来自 GET /admin/system（admin-only、服务端派生：版本/运行时/
@@ -1999,6 +2118,9 @@ export default function AdminScreen() {
               <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
                 <DeployStatusSection />
               </div>
+            </div>
+            <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+              <RollbackReadinessSection />
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SystemSection />

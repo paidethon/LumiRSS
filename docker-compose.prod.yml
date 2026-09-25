@@ -23,7 +23,7 @@ name: ${COMPOSE_PROJECT_NAME:-lumirss-prod}
 
 services:
   web:
-    image: ghcr.io/paidethon/lumirss-web:${LUMIRSS_IMAGE_TAG:-latest}
+    image: ghcr.io/paidethon/lumirss/lumirss-web:${LUMIRSS_IMAGE_TAG:-latest}
     container_name: lumirss-web
     restart: unless-stopped
     env_file: .env.prod
@@ -50,7 +50,7 @@ services:
     cpus: 0.5
 
   bff:
-    image: ghcr.io/paidethon/lumirss-bff:${LUMIRSS_IMAGE_TAG:-latest}
+    image: ghcr.io/paidethon/lumirss/lumirss-bff:${LUMIRSS_IMAGE_TAG:-latest}
     container_name: lumirss-bff
     restart: unless-stopped
     env_file: .env.prod

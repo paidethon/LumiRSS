@@ -28,6 +28,9 @@ WORKDIR /app
 # Copy the lock + manifest first (layer-cache friendly), then the source.
 COPY pyproject.toml uv.lock ./
 COPY src ./src
+# 运维脚本（set_password / apply_rsshub_config 等）随镜像分发——
+# ./lumirss set-password 与 RSSHub config/apply 在预编译部署上依赖它们。
+COPY scripts ./scripts
 
 # --frozen: install EXACTLY the tested lockfile (never re-resolve);
 # --no-dev: skip dev/test dependencies; --no-editable: build a real wheel for

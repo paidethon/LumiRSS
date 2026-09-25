@@ -73,6 +73,29 @@
     "title": "ActivationSourceResult",
     "type": "object"
    },
+   "ActivityPurgeBody": {
+    "description": "POST /me/activity-purge — 清除某日期之前的服务端活动记录。",
+    "properties": {
+     "before": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Before",
+      "type": "string"
+     },
+     "include": {
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "title": "Include",
+      "type": "object"
+     }
+    },
+    "required": [
+     "before"
+    ],
+    "title": "ActivityPurgeBody",
+    "type": "object"
+   },
    "AgentApprovalContent": {
     "additionalProperties": false,
     "description": "role=approval message body (server-minted by create_approval).",
@@ -3639,6 +3662,17 @@
       ],
       "title": "Mode",
       "type": "string"
+     },
+     "newDevice": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Newdevice"
      },
      "role": {
       "anyOf": [
@@ -9172,6 +9206,11 @@
       "title": "Lookbackdays",
       "type": "integer"
      },
+     "missedIssuePolicy": {
+      "default": "backfill",
+      "title": "Missedissuepolicy",
+      "type": "string"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -9180,6 +9219,17 @@
       "default": 2,
       "title": "Persourcecap",
       "type": "integer"
+     },
+     "skipLog": {
+      "default": [],
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Skiplog",
+      "type": "array"
      },
      "slots": {
       "default": [],
@@ -9345,6 +9395,17 @@
        }
       ],
       "title": "Lookbackdays"
+     },
+     "missedIssuePolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Missedissuepolicy"
      },
      "name": {
       "anyOf": [
@@ -9544,6 +9605,17 @@
       ],
       "title": "Lookbackdays"
      },
+     "missedIssuePolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Missedissuepolicy"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -9718,6 +9790,11 @@
       "title": "Model",
       "type": "string"
      },
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
      "publishedAt": {
       "default": "",
       "title": "Publishedat",
@@ -9730,6 +9807,11 @@
       "default": {},
       "title": "Refs",
       "type": "object"
+     },
+     "revised": {
+      "default": false,
+      "title": "Revised",
+      "type": "boolean"
      },
      "sections": {
       "default": [],
@@ -10056,6 +10138,11 @@
      "publishedAt": {
       "default": "",
       "title": "Publishedat",
+      "type": "string"
+     },
+     "ref": {
+      "default": "",
+      "title": "Ref",
       "type": "string"
      },
      "title": {
@@ -10581,6 +10668,32 @@
      "status"
     ],
     "title": "HealthStatus",
+    "type": "object"
+   },
+   "ImportApplyBody": {
+    "description": "POST /import/lumi-data/apply — 选择要合并的组件。",
+    "properties": {
+     "components": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Components",
+      "type": "array"
+     },
+     "importId": {
+      "maxLength": 64,
+      "minLength": 4,
+      "title": "Importid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "importId",
+     "components"
+    ],
+    "title": "ImportApplyBody",
     "type": "object"
    },
    "InboxIngestItem": {
@@ -11466,6 +11579,28 @@
      "pendingToken"
     ],
     "title": "LoginChallenge",
+    "type": "object"
+   },
+   "LoginEventsSeenBody": {
+    "description": "POST /auth/login-events/seen — 批量标记已读（省略 ids = 全部）。",
+    "properties": {
+     "ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ids"
+     }
+    },
+    "title": "LoginEventsSeenBody",
     "type": "object"
    },
    "LoginRequest": {
@@ -25871,6 +26006,23 @@
     "summary": "Set Registration Policy"
    }
   },
+  "/api/v1/admin/rollback-readiness": {
+   "get": {
+    "description": "N197：回滚就绪检查（admin-gated，只读要素清单）。\n\n- previousImage：读 ./lumirss snapshot_for_rollback 写下的回滚快照\n  清单（LUMIRSS_ROLLBACK_MANIFEST_FILE）——BFF 没有 Docker 访问权，\n  镜像存在性只来自脚本侧的诚实记录；\n- backup：LUMIRSS_BACKUP_DIR 里最新 *.backup + N186 只读完整性校验；\n- dbDowngrade：诚实限制说明（SQLite 迁移只向前，无法降级）；\n- canRollback = 前镜像在 AND 备份可校验 AND schema 与备份一致。\n\n本端点只给清单，永远不给一键回滚按钮——回滚只由运维侧\n./lumirss rollback 触发。",
+    "operationId": "admin_rollback_readiness_api_v1_admin_rollback_readiness_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Admin Rollback Readiness"
+   }
+  },
   "/api/v1/admin/rsshub/routes/{route_key}/usage": {
    "get": {
     "description": "N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。\n\n隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他\n用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的\nfeed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。\nmember 403；遍历每用户库（邀请制小规模部署，行数有界）。",
@@ -28456,6 +28608,89 @@
     "summary": "Login"
    }
   },
+  "/api/v1/auth/login-events": {
+   "get": {
+    "description": "本人最近登录事件（cap 20；kind=new_device 未读即「待确认的新设备」）。\n\n响应绝不含设备指纹哈希或任何 token 材料；每条都带 Cache-Control:\nno-store。basic 模式没有账户会话语义 → 401。",
+    "operationId": "list_login_events_api_v1_auth_login_events_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Login Events"
+   }
+  },
+  "/api/v1/auth/login-events/seen": {
+   "post": {
+    "description": "批量标记已读（信任确认）：body 缺省/ids 缺省 = 全部未读事件。",
+    "operationId": "mark_login_events_seen_api_v1_auth_login_events_seen_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/LoginEventsSeenBody"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mark Login Events Seen"
+   }
+  },
   "/api/v1/auth/logout": {
    "post": {
     "description": "Revoke the current session and expire the cookie.",
@@ -30245,6 +30480,44 @@
     "summary": "Send Conversation Message"
    }
   },
+  "/api/v1/entries/{entry_ref}/digest-usage": {
+   "get": {
+    "description": "N180 日报材料使用追踪：这条材料被我的哪些日报配置/期刊/栏目引用。\n\n反查只发生在当前用户的库上（refs_json 的 entryRef 反向索引）——\n其他用户的期刊天然不可见；非法引用 → 400；没有引用 → items=[]\n（诚实空，不虚构）。citationAnchor 供 Web 跳转定位到具体引用。",
+    "operationId": "entry_digest_usage_api_v1_entries__entry_ref__digest_usage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Digest Usage"
+   }
+  },
   "/api/v1/entries/{entry_ref}/glossary-hits": {
    "post": {
     "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。\n\nN083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes\n（客户端块索引，UI 可点击跳转）。",
@@ -31309,6 +31582,40 @@
      }
     },
     "summary": "Export Lumi Data"
+   }
+  },
+  "/api/v1/export/lumi-data.zip": {
+   "get": {
+    "description": "zip 交付（manifest.json + 每组件一个 JSON；无任何秘密）。",
+    "operationId": "export_lumi_data_zip_api_v1_export_lumi_data_zip_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Lumi Data Zip"
+   }
+  },
+  "/api/v1/export/lumi-data/scope": {
+   "get": {
+    "description": "导出前先看范围：每个组件的条数（来源/已读收藏需要 RSS 绑定，\n不可用时如实 available:false——绝不冒充空集是完整范围）。",
+    "operationId": "export_lumi_data_scope_api_v1_export_lumi_data_scope_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Lumi Data Scope"
    }
   },
   "/api/v1/favorites": {
@@ -33269,6 +33576,60 @@
      }
     },
     "summary": "Delete Graph View"
+   }
+  },
+  "/api/v1/import/lumi-data/apply": {
+   "post": {
+    "description": "按 preview 给出的 importId 选择组件合并（跳过已存在、只加新的；\nreadingState 只对当前账号已存在的引用生效）。",
+    "operationId": "import_lumi_data_apply_api_v1_import_lumi_data_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ImportApplyBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Import Lumi Data Apply"
+   }
+  },
+  "/api/v1/import/lumi-data/preview": {
+   "post": {
+    "description": "上传导出 zip → 各组件计数 + 冲突（已存在将被跳过）+ importId。",
+    "operationId": "import_lumi_data_preview_api_v1_import_lumi_data_preview_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Import Lumi Data Preview"
    }
   },
   "/api/v1/inbox/events/{event_id}/replay": {
@@ -36892,6 +37253,81 @@
      }
     },
     "summary": "Move Mail Rule"
+   }
+  },
+  "/api/v1/me/activity-purge": {
+   "post": {
+    "description": "N189：清除 before 之前的服务端活动记录（登录事件 / AI 任务日志 /\n搜索快照；按 include 选择，缺省全清）。响应如实列出各桶删除数与\n保留说明；绝不触碰已读/收藏/笔记等业务状态。已删除的记录不会因\n缓存复活（这些表没有任何缓存写入路径）。",
+    "operationId": "activity_purge_api_v1_me_activity_purge_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActivityPurgeBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activity Purge"
+   }
+  },
+  "/api/v1/me/activity-purge/preview": {
+   "get": {
+    "description": "预览各活动桶在 before 之前的记录数（只读，不清除）。",
+    "operationId": "activity_purge_preview_api_v1_me_activity_purge_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "before",
+      "required": true,
+      "schema": {
+       "title": "Before",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activity Purge Preview"
    }
   },
   "/api/v1/obsidian/block-refs": {
