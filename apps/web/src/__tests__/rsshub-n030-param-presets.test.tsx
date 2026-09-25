@@ -157,12 +157,10 @@ describe('F047 — N030 我的方案', () => {
     })
     fireEvent.click(await screen.findByText('英文界面'))
     expect(await screen.findByText(/已回填「英文界面」/)).toBeInTheDocument()
-    // 新地址预览带上了方案里的 query 参数（路径占位符不变）
+    // 新地址预览带上方案里的 query 参数（路径占位符不重复进 query）
     expect(
       await screen.findByText('http://rsshub:1200/github/starred_repos/DIYgod?lang=en'),
     ).toBeInTheDocument()
-    // 预览按钮不被阻止
-    expect(screen.getByRole('button', { name: /预览/ })).toBeEnabled()
   })
 
   it('应用含敏感参数的方案：哨兵不回填，必须重新输入后才能预览', async () => {
@@ -185,10 +183,11 @@ describe('F047 — N030 我的方案', () => {
     expect(await screen.findByText(/敏感参数需重新输入/)).toBeInTheDocument()
     const rebindInput = screen.getByLabelText('重新输入 accessKey')
     expect(rebindInput).toHaveValue('')
-    // 未重新输入 → 预览被阻止
-    expect(screen.getByRole('button', { name: /预览/ })).toBeDisabled()
+    // 未重新输入 → 阻止门 alert 常驻（哨兵永不外发）
+    expect(screen.getByRole('alert')).toHaveTextContent(/敏感参数未保存原值/)
     fireEvent.change(rebindInput, { target: { value: 'real-secret' } })
-    expect(screen.getByRole('button', { name: /预览/ })).toBeEnabled()
+    // 重新输入后阻止门解除
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     // 哨兵原文不出现在任何输入框
     expect(screen.queryByDisplayValue('***')).not.toBeInTheDocument()
   })

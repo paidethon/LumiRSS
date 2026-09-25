@@ -175,10 +175,16 @@ export function RsshubRouteParamsDialog({
 
   // 新地址：现有 query + 修改后的 query 对 + 新增对（不改路径段——路径
   // 参数场景由 matchedRoute 分支用 pathOverrides 重建路径）。
+  // 路径占位符键不进 query：N024 会把模板参数现值种进 queryDraft 供
+  // 对照，若此处不过滤会把路径参数重复追加成 query（真实 bug：应用
+  // 方案后合成 URL 出现 ?user=DIYgod）。
   const builtUrl = useMemo(() => {
     try {
       const parts = new URL(feedUrl)
+      const placeholderKeys =
+        matchedRoute !== null ? pathPlaceholderKeys(matchedRoute.pathTemplate) : []
       for (const [key, value] of Object.entries(queryDraft)) {
+        if (placeholderKeys.includes(key)) continue
         if (value === '') parts.searchParams.delete(key)
         else parts.searchParams.set(key, value)
       }
@@ -189,7 +195,7 @@ export function RsshubRouteParamsDialog({
     } catch {
       return feedUrl
     }
-  }, [feedUrl, queryDraft, newQueryPairs])
+  }, [feedUrl, queryDraft, newQueryPairs, matchedRoute])
 
   const existingQuery = useMemo(() => {
     try {
