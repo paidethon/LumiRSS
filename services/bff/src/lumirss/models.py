@@ -1097,6 +1097,108 @@ class RestoreResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# N181 逐来源数据外发清单 / N185 备份范围 / N186 独立自检 / N188 到期提醒
+# ---------------------------------------------------------------------------
+
+
+class DataFlowItem(BaseModel):
+    """一个能力的数据外发实况（N181，来自当前真实配置）。
+
+    configured=true 时给出 providerHost（仅主机名，绝不含路径/密钥/
+    用户名）与数据类别；configured=false 时其余字段缺省——UI 显示
+    「不发送」。local=true 表示数据不离开本机（如浏览器 TTS）。"""
+
+    capability: str
+    configured: bool = False
+    providerHost: str | None = None
+    dataCategories: list[str] = []
+    local: bool = False
+
+
+class DataFlowsResponse(BaseModel):
+    flows: list[DataFlowItem] = []
+
+
+class BackupScopeInclude(BaseModel):
+    """N185：备份用户数据范围（缺省全 True = 与历史默认一致）。"""
+
+    workspaces: bool = True
+    notes: bool = True
+    annotations: bool = True
+    sourceConfig: bool = True
+
+
+class BackupScopeComponent(BaseModel):
+    component: str
+    included: bool
+    count: int
+
+
+class BackupScopePreview(BaseModel):
+    """POST /api/v1/backups/preview-scope — 范围选择预览（只读）。
+
+    per-component 计数 + always-excluded 清单（凭据 / FreshRSS 内容）。"""
+
+    scope: BackupScopeInclude
+    components: list[BackupScopeComponent] = []
+    alwaysExcluded: list[str] = []
+
+
+class BackupVerifyFindings(BaseModel):
+    """N186：独立完整性自检四项发现（全部为真才算健康）。"""
+
+    checksumOk: bool
+    manifestCountsMatch: bool
+    readable: bool
+    versionCompatible: bool
+
+
+class BackupVerifyIssues(BaseModel):
+    """具体问题：损坏成员 / 缺失附件 / 版本不兼容（健康时全空/None）。"""
+
+    corruptFile: list[str] = []
+    missingAttachment: list[str] = []
+    versionIncompatible: dict[str, object] | None = None
+
+
+class BackupVerifyManifest(BaseModel):
+    createdAt: str | None = None
+    lumiVersion: str | None = None
+    lumiDbSchemaVersion: int | None = None
+    currentDbSchemaVersion: int | None = None
+    components: list[str] = []
+
+
+class BackupVerifyReport(BaseModel):
+    """GET/POST /api/v1/backups/verify — 独立自检报告（不建恢复会话）。"""
+
+    ok: bool
+    findings: BackupVerifyFindings
+    issues: BackupVerifyIssues
+    manifest: BackupVerifyManifest | None = None
+
+
+class RetentionNotice(BaseModel):
+    """N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。"""
+
+    enabled: bool
+    dueSoon: bool
+    dueAt: str | None = None
+    noticeWindowDays: int
+    postponedUntil: str | None = None
+    affectedCounts: dict[str, object] = {}
+    protected: list[str] = []
+    quizNote: str = ""
+
+
+class RetentionPostponeResult(BaseModel):
+    """N188：POST /storage/retention/postpone 的返回（实际生效的推迟）。"""
+
+    postponedUntil: str | None = None
+    days: int
+
+
+# ---------------------------------------------------------------------------
 # Operations status (0018)
 # ---------------------------------------------------------------------------
 
@@ -2599,11 +2701,24 @@ class SettingsHistoryList(BaseModel):
     items: list[SettingsHistoryEntry] = []
 
 
+class SettingsRevertConflict(BaseModel):
+    """N184：一个未能回退的键与原因（显式清单，不再静默）。"""
+
+    key: str
+    reason: str
+
+
 class SettingsRevertResult(BaseModel):
-    """回退结果：applied=已应用的键值；skipped=因新修改被跳过的键。"""
+    """回退结果。
+
+    - applied / skipped：历史线格式（键值映射），保持兼容；
+    - N184 显式化：restored=已回退的键列表；conflicts=未能回退的键与
+      原因（键在记录之后又被改过 → 回退不覆盖新修改）。"""
 
     applied: dict[str, object] = {}
     skipped: dict[str, object] = {}
+    restored: list[str] = []
+    conflicts: list[SettingsRevertConflict] = []
 
 
 class CollectionTiming(BaseModel):
