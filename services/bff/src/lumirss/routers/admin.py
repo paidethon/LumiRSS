@@ -954,3 +954,248 @@ async def set_registration_policy(
     )
     describe = await store.describe("allow_public_registration")
     return _registration_policy_response(describe)
+
+
+# ---------------------------------------------------------------------------
+# N191 用户额度策略包 + N193 单用户后台任务暂停。
+#
+# 策略行（control DB user_quotas）的唯一管理面。执行全部在服务端：
+# 订阅上限在 routers/subscriptions.py 事前拦截（429 quota_exceeded），
+# AI 上限在 ai_quota.quota_denial 与 GET settings/ai/quota 合成（更低者
+# 生效）；成员没有任何写路径（本节端点全部 admin-gated），也不能通过
+# 自设 AI 配置绕过——合成取 min。N193 的 background_paused 由
+# AccountsStore.active_user_ids() 读取，所有 for_each_active_user 后台
+# 循环在源头跳过被暂停成员；登录与阅读不受影响。
+
+
+class UserQuotaPutRequest(BaseModel):
+    """PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；
+    正整数（1..上限界）才是有效设置。未知键 → 422。"""
+
+    maxSources: int | None = Field(default=None, ge=1, le=10_000)
+    aiQuotaPerDay: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class BackgroundPauseRequest(BaseModel):
+    """POST /admin/users/{id}/background-pause body。原因必填——
+    「为什么他的后台任务停了」必须留下人读答案（同步落 audit_log）。"""
+
+    reason: str = Field(min_length=1, max_length=200)
+
+
+def _quota_json(row: dict[str, object] | None, user_id: str) -> dict[str, object]:
+    if row is None:
+        caps: dict[str, object] = {}
+        paused = False
+        pause_reason = None
+        updated_at = None
+        updated_by = None
+    else:
+        caps = dict(row.get("caps") or {})
+        paused = bool(row.get("background_paused"))
+        pause_reason = row.get("background_pause_reason")
+        updated_at = row.get("updated_at")
+        updated_by = row.get("updated_by")
+    return {
+        "userId": user_id,
+        "caps": caps,
+        "backgroundPaused": paused,
+        "backgroundPauseReason": pause_reason,
+        "updatedAt": _iso(int(updated_at)) if isinstance(updated_at, int) and updated_at > 0 else None,
+        "updatedBy": str(updated_by) if updated_by else None,
+    }
+
+
+async def _quota_target(user_id: str, request: Request) -> JSONResponse | dict[str, object]:
+    """共享前置：admin gate + 目标存在性（404）；不限制 owner——
+    读策略行对任何账户都无副作用。返回 error JSONResponse 或 user dict。"""
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    user = await _accounts(request).get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    return user
+
+
+@router.get("/users/{user_id}/quota", response_model=None, response_model_exclude_none=True)
+async def get_user_quota(user_id: str, request: Request) -> JSONResponse:
+    target = await _quota_target(user_id, request)
+    if isinstance(target, JSONResponse):
+        return target
+    from lumirss.user_quotas import UserQuotaStore
+
+    row = await UserQuotaStore(request.app.state.control_db).get_row(user_id)
+    return JSONResponse(content=_quota_json(row, user_id), headers=_NO_STORE)
+
+
+@router.put("/users/{user_id}/quota", response_model=None, response_model_exclude_none=True)
+async def set_user_quota(user_id: str, body: UserQuotaPutRequest, request: Request) -> JSONResponse:
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    from lumirss.user_quotas import UserQuotaStore
+
+    caps = {key: value for key, value in body.model_dump().items() if value is not None}
+    try:
+        stored = await UserQuotaStore(request.app.state.control_db).set_caps(
+            user_id=user_id, caps=caps, updated_by=principal["user_id"]
+        )
+    except Exception as exc:  # QuotaPolicyError → 稳定 400
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_request", "message": str(exc)}},
+            headers=_NO_STORE,
+        )
+    detail = ",".join(f"{key}={value}" for key, value in sorted(stored.items())) or "cleared"
+    await accounts.audit(
+        actor=principal["user_id"], action="user_quota_set", object_type="user", object_id=user_id, detail=detail
+    )
+    row = await UserQuotaStore(request.app.state.control_db).get_row(user_id)
+    return JSONResponse(content=_quota_json(row, user_id), headers=_NO_STORE)
+
+
+@router.delete("/users/{user_id}/quota", response_model=None, response_model_exclude_none=True)
+async def clear_user_quota(user_id: str, request: Request) -> JSONResponse:
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    from lumirss.user_quotas import UserQuotaStore
+
+    cleared = await UserQuotaStore(request.app.state.control_db).clear_caps(
+        user_id=user_id, updated_by=principal["user_id"]
+    )
+    if cleared:
+        await accounts.audit(
+            actor=principal["user_id"], action="user_quota_cleared", object_type="user", object_id=user_id
+        )
+    row = await UserQuotaStore(request.app.state.control_db).get_row(user_id)
+    return JSONResponse(content=_quota_json(row, user_id), headers=_NO_STORE)
+
+
+@router.post("/users/{user_id}/background-pause", response_model=None, response_model_exclude_none=True)
+async def background_pause_user(user_id: str, body: BackgroundPauseRequest, request: Request) -> JSONResponse:
+    """N193：暂停单个成员的重型后台任务（登录/阅读不受影响）。
+
+    与整账户暂停（O152）同源的两条硬边界：owner 不可定位；这里刻意
+    不撤销任何会话——被暂停成员的会话与阅读必须继续有效。"""
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    if user["role"] == "owner":
+        return _forbid("The owner account cannot be background-paused here.")
+    from lumirss.user_quotas import UserQuotaStore
+
+    await UserQuotaStore(request.app.state.control_db).set_background_pause(
+        user_id=user_id, paused=True, reason=body.reason
+    )
+    await accounts.audit(
+        actor=principal["user_id"], action="user_background_paused", object_type="user", object_id=user_id, detail=body.reason
+    )
+    return {"id": user_id, "backgroundPaused": True}
+
+
+@router.post("/users/{user_id}/background-resume", response_model=None, response_model_exclude_none=True)
+async def background_resume_user(user_id: str, request: Request) -> JSONResponse:
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "user_not_found", "message": "No such member."}},
+            headers=_NO_STORE,
+        )
+    from lumirss.user_quotas import UserQuotaStore
+
+    await UserQuotaStore(request.app.state.control_db).set_background_pause(
+        user_id=user_id, paused=False, reason=None
+    )
+    await accounts.audit(
+        actor=principal["user_id"], action="user_background_resumed", object_type="user", object_id=user_id
+    )
+    return {"id": user_id, "backgroundPaused": False}
+
+
+# ---- N192 邀请容量仪表 ------------------------------------------------------
+
+
+@router.get("/capacity", response_model=None, response_model_exclude_none=True)
+async def admin_capacity(request: Request) -> JSONResponse:
+    """N192：池 {ready, held, assigned} + 邀请 {pending, held} + 用户
+    {active, paused} 的真实行聚合。lowCapacity（ready+held < pending）
+    是唯一服务端定义——可交付的 FreshRSS 名额追不上待激活邀请时为真，
+    管理台据它亮出「容量不足」警示。只读计数，绝无邀请码。"""
+    if await _require_admin(request) is None:
+        return _forbid()
+    return JSONResponse(content=await _accounts(request).capacity(), headers=_NO_STORE)
+
+
+# ---- N195 升级影响预览 / N196 升级任务进度 ---------------------------------
+
+
+@router.get("/upgrade-preview", response_model=None, response_model_exclude_none=True)
+async def admin_upgrade_preview(request: Request) -> JSONResponse:
+    """N195：发布清单 × 当前版本 × 迁移差异的只读推演。
+
+    LUMIRSS_RELEASE_MANIFEST 未配置/文件不可读时如实 available:false；
+    不兼容（同版本/降级/库超前于目标）→ blocked:true + 原因。绝不
+    触发任何升级动作——这是预览，执行权只在 ./lumirss update。"""
+    if await _require_admin(request) is None:
+        return _forbid()
+    from lumirss.config import LumiSettings
+    from lumirss.upgrade_preview import build_upgrade_preview, preview_response
+
+    settings = LumiSettings()
+    result = build_upgrade_preview(
+        manifest_path=settings.LUMIRSS_RELEASE_MANIFEST,
+        current_version=settings.LUMIRSS_VERSION,
+        control_db=request.app.state.control_db,
+    )
+    return JSONResponse(content=preview_response(**result), headers=_NO_STORE)
+
+
+@router.get("/deploy-status", response_model=None, response_model_exclude_none=True)
+async def admin_deploy_status(request: Request) -> JSONResponse:
+    """N196：./lumirss update 写入的阶段 JSON 只读透传（admin-gated）。
+
+    未配置/尚无记录/坏文件都是诚实 available:false + 原因；内容本身
+    由脚本写入（阶段名/状态/时间戳/imageTag，绝无秘密）。本端点没有
+    也永远不会有执行控件——升级只由运维侧 ./lumirss update 触发。"""
+    if await _require_admin(request) is None:
+        return _forbid()
+    from lumirss.config import LumiSettings
+    from lumirss.deploy_status import read_deploy_status
+
+    result = read_deploy_status(LumiSettings().LUMIRSS_DEPLOY_STATUS_FILE)
+    return JSONResponse(content=result, headers=_NO_STORE)
