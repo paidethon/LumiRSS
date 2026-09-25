@@ -1329,6 +1329,42 @@ class TranslationSegmentsView(BaseModel):
     segments: list[TranslationSegmentState] = []
 
 
+class TranslationRevisionHistoryItem(BaseModel):
+    """N085：一条被替换下来的历史修订。"""
+
+    oldText: str
+    replacedAt: str
+
+
+class TranslationRevisionHistoryView(BaseModel):
+    """GET …/translation/segments/{index}/revision/history（N085）。"""
+
+    index: int
+    items: list[TranslationRevisionHistoryItem] = []
+
+
+class TranslationCompareSide(BaseModel):
+    """N084：一侧的对照译文（失败侧 text=None + failureType）。"""
+
+    label: str
+    provider: str
+    model: str
+    text: str | None = None
+    failureType: str | None = None
+
+
+class TranslationCompareView(BaseModel):
+    """POST /api/v1/entries/{ref}/translation-compare（N084，ephemeral）。
+
+    available=false 时 reason 说明拒绝原因（provider_not_configured /
+    browser_engine / providers_identical / empty_text）。"""
+
+    available: bool
+    reason: str | None = None
+    sides: list[TranslationCompareSide] = []
+    estimatedChars: int = 0
+
+
 class RestorePreviewFile(BaseModel):
     """One declared archive member (checksum declared by the manifest)."""
 

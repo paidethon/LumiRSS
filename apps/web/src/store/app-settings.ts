@@ -45,11 +45,13 @@ import {
 import {
   normalizeSpeechRate,
   normalizeSpeechSleepMinutes,
+  normalizeSpeechStopMode,
   normalizeSpeechBilingualGap,
   normalizeSpeechLexicon,
   type SpeechBilingualGap,
   type SpeechLexiconEntry,
   type SpeechRate,
+  type SpeechStopMode,
 } from '../lib/reader-speech'
 import {
   isValidBgImageDataUrl,
@@ -341,6 +343,14 @@ export interface AppSettings {
    * 缺译文块诚实跳过）+ 原文/译文间隔档位（无/短/长 → 0/500/1200ms）。 */
   speechBilingualAlternate: boolean
   speechBilingualGap: SpeechBilingualGap
+  /** NF1 N093：按语言自动选声（设备本地）。块级 CJK/拉丁判定为中文的
+   * 块用 speechVoiceURIZh、拉丁块用 speechVoiceURIEn（'' = 该语言走
+   * pickVoice 自动链）；手动 speechVoiceURI 非空时整体手动覆盖恒赢。 */
+  speechVoiceURIZh: string
+  speechVoiceURIEn: string
+  /** NF1 N096：朗读结束模式——'article' 本篇读完即止；'queue' 阅读队列
+   * 流驱动时读完整队列（无队列流时诚实退化为本篇结束）。 */
+  speechStopMode: SpeechStopMode
   /** N069：选词词典卡（设备本地）：词典 API 地址模板（含 {word} 占位符，
    * 归一化见 lib/dict-lookup）。'' = 未配置（卡片诚实提示，零请求）。
    * 查询只外发所选单词本身，绝不携带上下文。 */
@@ -417,6 +427,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   speechLexicon: [],
   speechBilingualAlternate: false,
   speechBilingualGap: 'none',
+  // NF1 N093/N096：按语言自动选声（默认空 = 各语言自动链）与结束模式
+  // （默认到本篇 = 既有行为）。
+  speechVoiceURIZh: '',
+  speechVoiceURIEn: '',
+  speechStopMode: 'article',
   // N069：选词词典（设备本地；默认未配置——零外发）
   dictApiUrl: '',
   // N070：纯键盘阅读定位（设备本地；默认关）
@@ -902,6 +917,17 @@ export function normalizeSettings(raw: unknown): AppSettings {
       DEFAULT_APP_SETTINGS.speechBilingualAlternate,
     ),
     speechBilingualGap: normalizeSpeechBilingualGap(source.speechBilingualGap),
+    // NF1 N093：按语言声音 URI（截断防滥用，'' = 自动）；
+    // N096：结束模式（非法回退 'article'）。
+    speechVoiceURIZh:
+      typeof source.speechVoiceURIZh === 'string'
+        ? source.speechVoiceURIZh.slice(0, 256)
+        : DEFAULT_APP_SETTINGS.speechVoiceURIZh,
+    speechVoiceURIEn:
+      typeof source.speechVoiceURIEn === 'string'
+        ? source.speechVoiceURIEn.slice(0, 256)
+        : DEFAULT_APP_SETTINGS.speechVoiceURIEn,
+    speechStopMode: normalizeSpeechStopMode(source.speechStopMode),
     // N069：词典端点模板归一化（非法/缺 {word} → '' = 未配置，零外发）
     dictApiUrl: normalizeDictApiUrl(source.dictApiUrl),
     // N070：纯键盘阅读定位开关（布尔归一化，非法回退默认关）
