@@ -2955,6 +2955,124 @@ class AnnotationExportDelta(BaseModel):
     total: int = 0
 
 
+# ---- N071 批注原文漂移修复 ---------------------------------------------------
+
+
+class AnnotationRepairCandidate(BaseModel):
+    """一个候选正文块（score = exact/前缀包含 1.0，difflib 模糊比）。"""
+
+    blockIndex: int = Field(ge=0)
+    score: float = Field(ge=0.0, le=1.0)
+    excerpt: str = Field(max_length=300)
+
+
+class AnnotationRepairCandidatesResult(BaseModel):
+    """GET /api/v1/annotations/{id}/repair-candidates 响应。"""
+
+    annotationId: str
+    entryRef: str
+    quote: str
+    candidates: list[AnnotationRepairCandidate] = []
+
+
+class AnnotationRepairRequest(BaseModel):
+    """POST /api/v1/annotations/{id}/repair body（用户从候选中选定）。"""
+
+    model_config = {"extra": "forbid"}
+
+    blockIndex: int = Field(ge=0)
+    quoteText: str = Field(min_length=1, max_length=500)
+
+
+class AnnotationView(BaseModel):
+    """批注行的稳定投影（annotations CRUD 现行响应形状）。"""
+
+    id: str
+    entryRef: str
+    anchor: dict[str, object]
+    anchorHash: str
+    excerpt: str
+    note: str
+    color: str
+    createdAt: str
+    updatedAt: str
+
+
+class AnnotationRepairResult(BaseModel):
+    """POST /api/v1/annotations/{id}/repair 响应（更新后的批注 + 本次绑定）。"""
+
+    annotation: AnnotationView
+    blockIndex: int
+    score: float
+
+
+# ---- N073 批注颜色语义 -------------------------------------------------------
+
+
+class AnnotationColorLabelPut(BaseModel):
+    """PUT /api/v1/annotations/color-labels body（单色 upsert）。"""
+
+    model_config = {"extra": "forbid"}
+
+    color: str = Field(min_length=1, max_length=20)
+    label: str = Field(default="", max_length=50)
+
+
+class AnnotationColorLabelItem(BaseModel):
+    """一个颜色的语义标签（label 空 = 未命名，Web 诚实显示原始色名）。"""
+
+    color: str
+    label: str
+
+
+class AnnotationColorLabelList(BaseModel):
+    """GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。"""
+
+    items: list[AnnotationColorLabelItem] = []
+
+
+# ---- N074 阅读问题清单 -------------------------------------------------------
+
+
+class ReadingQuestionCreate(BaseModel):
+    """POST /api/v1/reading-questions body（链接字段全部可选）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str = Field(min_length=1, max_length=500)
+    entryRef: str | None = None
+    annotationId: str | None = None
+    workspaceId: str | None = None
+
+
+class ReadingQuestionPatch(BaseModel):
+    """PATCH /api/v1/reading-questions/{id} body（改文本或 open/done）。"""
+
+    model_config = {"extra": "forbid"}
+
+    question: str | None = Field(default=None, min_length=1, max_length=500)
+    status: str | None = None
+
+
+class ReadingQuestionView(BaseModel):
+    """一个问题行。"""
+
+    id: str
+    question: str
+    status: str
+    entryRef: str | None = None
+    annotationId: str | None = None
+    workspaceId: str | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class ReadingQuestionList(BaseModel):
+    """GET /api/v1/reading-questions 响应。"""
+
+    items: list[ReadingQuestionView] = []
+
+
 class TagItemsResponse(BaseModel):
     """GET /api/v1/tags/{id}/items — one tag's refs, resolved server-side."""
 

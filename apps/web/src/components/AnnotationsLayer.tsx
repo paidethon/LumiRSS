@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { createReadingQuestion } from '../api/client'
 import { AnnotationPopover } from './AnnotationPopover'
 import { Button } from './ui/Button'
 import {
@@ -23,12 +24,15 @@ import {
   computeContentVersion,
   createAnchor,
   deleteAnnotation,
+  fetchRepairCandidates,
   rangeFromHit,
   readAnnotationsForEntry,
+  repairAnnotationAt,
   resolveAnchor,
   saveAnnotation,
   type Annotation,
   type AnnotationColor,
+  type RepairCandidate,
 } from '../lib/annotations'
 
 // ---- 常量 ----
@@ -111,6 +115,15 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
     | null
   >(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  /** N071：修复流（锚点失效 → 重检候选 → 选定重绑）。 */
+  const [repair, setRepair] = useState<{
+    annotationId: string
+    candidates: RepairCandidate[] | null
+    busy: boolean
+    error: string | null
+  } | null>(null)
+  /** N074：已记为问题的批注 id（卡片级一次性反馈）。 */
+  const [questionMarkedId, setQuestionMarkedId] = useState<string | null>(null)
   /** 已解析的 DOM Range（跳回原文用；失效条目不在表内） */
   const rangesRef = useRef<Map<string, Range>>(new Map())
 
@@ -167,6 +180,8 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
     setAnnotations(readAnnotationsForEntry(entryRef))
     setPopover(null)
     setSelectionText(null)
+    setRepair(null)
+    setQuestionMarkedId(null)
     rangesRef.current = new Map()
   }, [entryRef])
 
@@ -303,6 +318,56 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
     refresh()
   }
 
+  // ---- N071 修复流 ----
+
+  const handleStartRepair = async (id: string) => {
+    setRepair({ annotationId: id, candidates: null, busy: true, error: null })
+    try {
+      const candidates = await fetchRepairCandidates(id)
+      setRepair({
+        annotationId: id,
+        candidates,
+        busy: false,
+        error:
+          candidates.length === 0
+            ? '未能在当前原文中找到足够接近的位置，请手动更新批注文本。'
+            : null,
+      })
+    } catch (error) {
+      setRepair({
+        annotationId: id,
+        candidates: [],
+        busy: false,
+        error: error instanceof Error ? error.message : '修复候选加载失败',
+      })
+    }
+  }
+
+  const handleRepairApply = async (id: string, blockIndex: number, quote: string) => {
+    try {
+      const updated = await repairAnnotationAt(id, blockIndex, quote)
+      if (updated !== null) refresh()
+      setRepair(null)
+    } catch (error) {
+      setRepair({
+        annotationId: id,
+        candidates: [],
+        busy: false,
+        error: error instanceof Error ? error.message : '修复失败',
+      })
+    }
+  }
+
+  // ---- N074 记为问题 ----
+
+  const handleMarkQuestion = (annotation: Annotation, question: string) => {
+    const text = question !== '' ? question : `摘录：${annotation.anchor.exact}`
+    setPopover(null)
+    createReadingQuestion({ question: text, entryRef, annotationId: annotation.id })
+      .then(() => setQuestionMarkedId(annotation.id))
+      .catch(() => setQuestionMarkedId(null))
+  }
+
   const handleJump = (id: string) => {
     const range = rangesRef.current.get(id)
     if (range === undefined) return
@@ -360,6 +425,36 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
                         正文与创建时版本不一致，位置可能有偏移。
                       </p>
                     )}
+                    {questionMarkedId === a.id && (
+                      <p className="mt-1 text-xs text-[var(--lumi-text-secondary)]" role="status">
+                        已记为问题（书签页「批注」→「问题」）。
+                      </p>
+                    )}
+                    {repair !== null && repair.annotationId === a.id && (
+                      <div
+                        className="mt-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2"
+                        aria-label="修复候选"
+                      >
+                        {repair.busy && (
+                          <p className="text-xs text-[var(--lumi-text-secondary)]">正在重检正文…</p>
+                        )}
+                        {repair.error !== null && (
+                          <p className="text-xs text-[var(--lumi-danger, #dc2626)]" role="alert">
+                            {repair.error}
+                          </p>
+                        )}
+                        {(repair.candidates ?? []).map((c) => (
+                          <button
+                            key={c.blockIndex}
+                            type="button"
+                            className="mt-1 block w-full rounded-[var(--lumi-radius-sm)] px-2 py-2 text-left text-xs text-[var(--lumi-text-primary)] hover:bg-[var(--lumi-surface-hover)]"
+                            onClick={() => handleRepairApply(a.id, c.blockIndex, c.excerpt)}
+                          >
+                            块 {c.blockIndex} · 相似度 {Math.round(c.score * 100)}% · {c.excerpt.slice(0, 40)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Button
                         variant="secondary"
@@ -370,6 +465,17 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
                       >
                         跳回原文
                       </Button>
+                      {lost && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="min-h-11"
+                          disabled={repair !== null && repair.busy}
+                          onClick={() => void handleStartRepair(a.id)}
+                        >
+                          修复定位
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
@@ -454,6 +560,11 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
               if (popover.mode === 'create') handleCreateSave(note, color, popover.range)
               else handleEditSave(note, color, popover.annotation)
             }}
+            onMarkQuestion={
+              popover.mode === 'edit'
+                ? (question) => handleMarkQuestion(popover.annotation, question)
+                : undefined
+            }
             onCancel={() => {
               setCreateError(null)
               setPopover(null)

@@ -645,11 +645,38 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Annotations */
+        /**
+         * List Annotations
+         * @description 跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。
+         */
         get: operations["list_annotations_api_v1_annotations_get"];
         put?: never;
         /** Create Annotation */
         post: operations["create_annotation_api_v1_annotations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/color-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Color Labels
+         * @description 全调色板颜色标签（label 空 = 未命名 → Web 诚实显示原始色名）。
+         */
+        get: operations["get_color_labels_api_v1_annotations_color_labels_get"];
+        /**
+         * Put Color Label
+         * @description upsert 单个颜色标签；返回全调色板最新标签。
+         */
+        put: operations["put_color_label_api_v1_annotations_color_labels_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -667,7 +694,8 @@ export interface paths {
         put?: never;
         /**
          * Export Annotations
-         * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。
+         * @description F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：
+         *     citeBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。
          */
         post: operations["export_annotations_api_v1_annotations_export_post"];
         delete?: never;
@@ -734,6 +762,50 @@ export interface paths {
         head?: never;
         /** Update Annotation */
         patch: operations["update_annotation_api_v1_annotations__annotation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/annotations/{annotation_id}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Repair Annotation
+         * @description 按用户选定的块重新绑定（anchor + anchor_hash 更新；旧锚点进
+         *     annotation_repair_log，cap 10）。当前正文里最高相似度 < 0.5 → 422
+         *     （repair_refused：只支持手动修复，不假装命中）。
+         */
+        post: operations["repair_annotation_api_v1_annotations__annotation_id__repair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/annotations/{annotation_id}/repair-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Annotation Repair Candidates
+         * @description 重检存量引文在当前正文块中的位置：exact/prefix/fuzzy ≥0.8 →
+         *     候选列表（最多 5 条，分数降序）。引文为空 / 原文不可达 → 422 诚实
+         *     拒绝（不猜）。
+         */
+        get: operations["annotation_repair_candidates_api_v1_annotations__annotation_id__repair_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/api-sources": {
@@ -5746,6 +5818,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reading-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reading Questions */
+        get: operations["list_reading_questions_api_v1_reading_questions_get"];
+        put?: never;
+        /** Create Reading Question */
+        post: operations["create_reading_question_api_v1_reading_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reading-questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Reading Question */
+        delete: operations["delete_reading_question_api_v1_reading_questions__question_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Reading Question */
+        patch: operations["patch_reading_question_api_v1_reading_questions__question_id__patch"];
+        trace?: never;
+    };
     "/api/v1/relations": {
         parameters: {
             query?: never;
@@ -5899,6 +6007,27 @@ export interface paths {
         put?: never;
         /** Postpone Review Queue Item */
         post: operations["postpone_review_queue_item_api_v1_review_queue__queue_id__postpone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-queue/{queue_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * View Review Queue Item
+         * @description N077：揭示答案时刻 → last_viewed_at（来源追踪；只记时间，
+         *     不缓存任何原文内容）。
+         */
+        post: operations["view_review_queue_item_api_v1_review_queue__queue_id__view_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9571,6 +9700,40 @@ export interface components {
             translationLanguage: "zh-CN" | "en";
         };
         /**
+         * AnnotationColorLabelItem
+         * @description 一个颜色的语义标签（label 空 = 未命名，Web 诚实显示原始色名）。
+         */
+        AnnotationColorLabelItem: {
+            /** Color */
+            color: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * AnnotationColorLabelList
+         * @description GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。
+         */
+        AnnotationColorLabelList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["AnnotationColorLabelItem"][];
+        };
+        /**
+         * AnnotationColorLabelPut
+         * @description PUT /api/v1/annotations/color-labels body（单色 upsert）。
+         */
+        AnnotationColorLabelPut: {
+            /** Color */
+            color: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
+        /**
          * AnnotationCreate
          * @description POST /api/v1/annotations body。
          */
@@ -9647,10 +9810,65 @@ export interface components {
          * @description POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。
          */
         AnnotationExportRequest: {
+            /**
+             * Citebibliography
+             * @default false
+             */
+            citeBibliography: boolean;
             /** Entryrefs */
             entryRefs?: string[] | null;
             /** Q */
             q?: string | null;
+        };
+        /**
+         * AnnotationRepairCandidate
+         * @description 一个候选正文块（score = exact/前缀包含 1.0，difflib 模糊比）。
+         */
+        AnnotationRepairCandidate: {
+            /** Blockindex */
+            blockIndex: number;
+            /** Excerpt */
+            excerpt: string;
+            /** Score */
+            score: number;
+        };
+        /**
+         * AnnotationRepairCandidatesResult
+         * @description GET /api/v1/annotations/{id}/repair-candidates 响应。
+         */
+        AnnotationRepairCandidatesResult: {
+            /** Annotationid */
+            annotationId: string;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["AnnotationRepairCandidate"][];
+            /** Entryref */
+            entryRef: string;
+            /** Quote */
+            quote: string;
+        };
+        /**
+         * AnnotationRepairRequest
+         * @description POST /api/v1/annotations/{id}/repair body（用户从候选中选定）。
+         */
+        AnnotationRepairRequest: {
+            /** Blockindex */
+            blockIndex: number;
+            /** Quotetext */
+            quoteText: string;
+        };
+        /**
+         * AnnotationRepairResult
+         * @description POST /api/v1/annotations/{id}/repair 响应（更新后的批注 + 本次绑定）。
+         */
+        AnnotationRepairResult: {
+            annotation: components["schemas"]["AnnotationView"];
+            /** Blockindex */
+            blockIndex: number;
+            /** Score */
+            score: number;
         };
         /**
          * AnnotationUpdate
@@ -9663,6 +9881,32 @@ export interface components {
             excerpt?: string | null;
             /** Note */
             note?: string | null;
+        };
+        /**
+         * AnnotationView
+         * @description 批注行的稳定投影（annotations CRUD 现行响应形状）。
+         */
+        AnnotationView: {
+            /** Anchor */
+            anchor: {
+                [key: string]: unknown;
+            };
+            /** Anchorhash */
+            anchorHash: string;
+            /** Color */
+            color: string;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note: string;
+            /** Updatedat */
+            updatedAt: string;
         };
         /**
          * ApiSource
@@ -15321,6 +15565,63 @@ export interface components {
             pct: number;
         };
         /**
+         * ReadingQuestionCreate
+         * @description POST /api/v1/reading-questions body（链接字段全部可选）。
+         */
+        ReadingQuestionCreate: {
+            /** Annotationid */
+            annotationId?: string | null;
+            /** Entryref */
+            entryRef?: string | null;
+            /** Question */
+            question: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
+         * ReadingQuestionList
+         * @description GET /api/v1/reading-questions 响应。
+         */
+        ReadingQuestionList: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ReadingQuestionView"][];
+        };
+        /**
+         * ReadingQuestionPatch
+         * @description PATCH /api/v1/reading-questions/{id} body（改文本或 open/done）。
+         */
+        ReadingQuestionPatch: {
+            /** Question */
+            question?: string | null;
+            /** Status */
+            status?: string | null;
+        };
+        /**
+         * ReadingQuestionView
+         * @description 一个问题行。
+         */
+        ReadingQuestionView: {
+            /** Annotationid */
+            annotationId?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef?: string | null;
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+            /** Status */
+            status: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
          * RecoverPasswordRequest
          * @description POST /auth/recover — recovery invite redemption.
          */
@@ -15619,13 +15920,22 @@ export interface components {
         };
         /**
          * ReviewQueueAdd
-         * @description POST /api/v1/review-queue body。
+         * @description POST /api/v1/review-queue body（N076 泛化：批注或知识卡片）。
+         *
+         *     向后兼容：缺省 kind='annotation' 且仍以 annotationId 排期。
          */
         ReviewQueueAdd: {
             /** Annotationid */
-            annotationId: string;
+            annotationId?: string | null;
             /** Dueat */
             dueAt: string;
+            /**
+             * Kind
+             * @default annotation
+             */
+            kind: string;
+            /** Knowledgecardid */
+            knowledgeCardId?: string | null;
         };
         /**
          * ReviewQueuePostpone
@@ -19210,6 +19520,7 @@ export interface operations {
             query?: {
                 entryRef?: string | null;
                 q?: string | null;
+                color?: string | null;
                 cursor?: string | null;
             };
             header?: never;
@@ -19258,6 +19569,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_color_labels_api_v1_annotations_color_labels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationColorLabelList"];
+                };
+            };
+        };
+    };
+    put_color_label_api_v1_annotations_color_labels_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationColorLabelPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationColorLabelList"];
                 };
             };
             /** @description Validation Error */
@@ -19419,6 +19783,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repair_annotation_api_v1_annotations__annotation_id__repair_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationRepairRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRepairResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotation_repair_candidates_api_v1_annotations__annotation_id__repair_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                annotation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRepairCandidatesResult"];
                 };
             };
             /** @description Validation Error */
@@ -27975,6 +28405,136 @@ export interface operations {
             };
         };
     };
+    list_reading_questions_api_v1_reading_questions_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                entryRef?: string | null;
+                annotationId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingQuestionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_reading_question_api_v1_reading_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingQuestionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reading_question_api_v1_reading_questions__question_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_reading_question_api_v1_reading_questions__question_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingQuestionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_relations_api_v1_relations_get: {
         parameters: {
             query: {
@@ -28276,6 +28836,37 @@ export interface operations {
                 "application/json": components["schemas"]["ReviewQueuePostpone"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_review_queue_item_api_v1_review_queue__queue_id__view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

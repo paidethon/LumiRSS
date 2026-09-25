@@ -3721,10 +3721,13 @@ export async function getAnnotationsExportDelta(
     query.set('entryRef', entryRef)
   }
   const qs = query.toString()
-  return request<AnnotationExportDelta>(
-    `${API_BASE}/annotations/export-delta${qs ? `?${qs}` : ''}`,
-    signal,
-  )
+  // ? 号内联在字面量里：契约测试按 `?` 截断路径，变量携带的查询串
+  // 会被折叠成形状错误的多余参数段（同 listKnowledgeCards 口径）。
+  const path =
+    qs === ''
+      ? `${API_BASE}/annotations/export-delta`
+      : `${API_BASE}/annotations/export-delta?${qs}`
+  return request<AnnotationExportDelta>(path, signal)
 }
 
 // ---- phase2 G6：联合收藏（RSS star + library favorite，仅展示层合并） ----
@@ -5094,11 +5097,13 @@ export interface Annotation {
 export async function listAnnotations(params: {
   entryRef?: string
   q?: string
+  color?: string
   cursor?: string
 }): Promise<{ items: Annotation[]; nextCursor: string | null }> {
   const search = new URLSearchParams()
   if (params.entryRef) search.set('entryRef', params.entryRef)
   if (params.q) search.set('q', params.q)
+  if (params.color) search.set('color', params.color)
   if (params.cursor) search.set('cursor', params.cursor)
   return request<{ items: Annotation[]; nextCursor: string | null }>(
     `${API_BASE}/annotations?${search.toString()}`,
@@ -5146,10 +5151,12 @@ export async function getEntryExtractPreview(entryRef: string): Promise<{
   )
 }
 
-/** F052：批注汇编导出（Markdown 下载）。 */
+/** F052：批注汇编导出（Markdown 下载）。N075：citeBibliography=true
+ *  时每篇文章追加「引用格式」行（缺失项「不详」）。 */
 export async function exportAnnotations(input: {
   entryRefs?: string[]
   q?: string
+  citeBibliography?: boolean
 }): Promise<Blob> {
   const response = await rawRequest(`${API_BASE}/annotations/export`, {
     method: 'POST',
@@ -5186,19 +5193,34 @@ export async function listReadingProgress(limit = 5): Promise<{ items: ReadingPr
 }
 
 /** F058：批注复习队列。 */
+/** F058/N076/N077：复习队列项（泛化：批注 | 知识卡片 + 来源追踪）。 */
 export interface ReviewQueueItem {
   id: string
-  annotationId: string
-  entryRef: string
+  itemKind: 'annotation' | 'knowledge_card'
+  annotationId: string | null
+  knowledgeCardId: string | null
+  entryRef: string | null
+  /** 批注锚点段落（N077 查看原文段落 deep link 用；无 → null）。 */
+  paraId: string | null
   dueAt: string
   completedAt: string | null
   due: boolean | null
-  excerpt: string
-  note: string
+  /** N077：揭示时刻（来源追踪）；从未揭示 → null。 */
+  lastViewedAt: string | null
+  /** N077：来源条目仍可达（投影存在性）；无来源 → null。 */
+  sourceAvailable: boolean | null
+  /** 批注项字段（卡片项 → null）。 */
+  excerpt: string | null
+  note: string | null
+  /** 卡片项字段（批注项 → null）。 */
+  concept: string | null
+  explanation: string | null
 }
 
 export async function addReviewQueueItem(input: {
-  annotationId: string
+  kind?: 'annotation' | 'knowledge_card'
+  annotationId?: string
+  knowledgeCardId?: string
   dueAt: string
 }): Promise<{ id: string; rescheduled: boolean }> {
   const response = await rawRequest(`${API_BASE}/review-queue`, {
@@ -5223,6 +5245,125 @@ export async function postponeReviewQueueItem(id: string, dueAt: string): Promis
     body: JSON.stringify({ dueAt }),
     contentType: 'application/json',
   })
+}
+
+/** N077：揭示答案 → 记录 last_viewed_at（来源追踪）。 */
+export async function viewReviewQueueItem(id: string): Promise<{ id: string; lastViewedAt: string }> {
+  const response = await rawRequest(`${API_BASE}/review-queue/${encodeURIComponent(id)}/view`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { id: string; lastViewedAt: string }
+}
+
+/** N071：批注原文漂移修复。 */
+export interface AnnotationRepairCandidate {
+  blockIndex: number
+  score: number
+  excerpt: string
+}
+
+export async function getAnnotationRepairCandidates(
+  id: string,
+): Promise<{ annotationId: string; entryRef: string; quote: string; candidates: AnnotationRepairCandidate[] }> {
+  return request(
+    `${API_BASE}/annotations/${encodeURIComponent(id)}/repair-candidates`,
+  )
+}
+
+export async function repairAnnotation(
+  id: string,
+  blockIndex: number,
+  quoteText: string,
+): Promise<{ annotation: Annotation; blockIndex: number; score: number }> {
+  const response = await rawRequest(`${API_BASE}/annotations/${encodeURIComponent(id)}/repair`, {
+    method: 'POST',
+    body: JSON.stringify({ blockIndex, quoteText }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { annotation: Annotation; blockIndex: number; score: number }
+}
+
+/** N073：批注颜色语义标签（label 空 = 未命名 → 诚实显示原始色名）。 */
+export interface AnnotationColorLabel {
+  color: string
+  label: string
+}
+
+export async function getColorLabels(): Promise<{ items: AnnotationColorLabel[] }> {
+  return request<{ items: AnnotationColorLabel[] }>(`${API_BASE}/annotations/color-labels`)
+}
+
+export async function putColorLabel(color: string, label: string): Promise<{ items: AnnotationColorLabel[] }> {
+  const response = await rawRequest(`${API_BASE}/annotations/color-labels`, {
+    method: 'PUT',
+    body: JSON.stringify({ color, label }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as { items: AnnotationColorLabel[] }
+}
+
+/** N074：阅读问题清单。 */
+export interface ReadingQuestion {
+  id: string
+  question: string
+  status: 'open' | 'done'
+  entryRef: string | null
+  annotationId: string | null
+  workspaceId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export async function createReadingQuestion(input: {
+  question: string
+  entryRef?: string | null
+  annotationId?: string | null
+  workspaceId?: string | null
+}): Promise<ReadingQuestion> {
+  const response = await rawRequest(`${API_BASE}/reading-questions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ReadingQuestion
+}
+
+export async function listReadingQuestions(params: {
+  status?: 'open' | 'done'
+  entryRef?: string
+  annotationId?: string
+}): Promise<{ items: ReadingQuestion[] }> {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.entryRef) search.set('entryRef', params.entryRef)
+  if (params.annotationId) search.set('annotationId', params.annotationId)
+  const qs = search.toString()
+  return request<{ items: ReadingQuestion[] }>(
+    qs === '' ? `${API_BASE}/reading-questions` : `${API_BASE}/reading-questions?${qs}`,
+  )
+}
+
+export async function patchReadingQuestion(
+  id: string,
+  patch: { question?: string; status?: 'open' | 'done' },
+): Promise<ReadingQuestion> {
+  const response = await rawRequest(
+    `${API_BASE}/reading-questions/${encodeURIComponent(id)}`,
+    { method: 'PATCH', body: JSON.stringify(patch), contentType: 'application/json' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ReadingQuestion
+}
+
+export async function deleteReadingQuestion(id: string): Promise<void> {
+  const response = await rawRequest(
+    `${API_BASE}/reading-questions/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await toApiError(response)
 }
 
 /** F063：AI 任务中心 — 最近任务列表（默认/上限 50）。 */
