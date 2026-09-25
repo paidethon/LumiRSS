@@ -56,6 +56,9 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+# 运维脚本（set_password / apply_rsshub_config 等）——runtime 段同样
+# 需要：./lumirss set-password 在生产容器内直接执行它们。
+COPY --from=builder /app/scripts /app/scripts
 
 # P0-04: monolith (web snapshots) — pinned release binary, checksum-verified
 # against the v2.10.1 release artifacts (argv verified via `monolith --help`).
