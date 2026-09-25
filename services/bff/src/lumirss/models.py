@@ -3374,7 +3374,9 @@ class AgentAssistantContent(BaseModel):
 
     N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
     重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
-    标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。"""
+    标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。
+    N165：budgetExhausted = 预算耗尽的消耗摘要（tokens unknown 时为
+    null + tokensKnown=false，绝不谎报 0）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -3386,6 +3388,7 @@ class AgentAssistantContent(BaseModel):
     evidenceStrength: Literal["direct", "partial", "none"] | None = None
     unverifiable: bool | None = None
     unverifiableReason: str | None = None
+    budgetExhausted: dict[str, object] | None = None
 
 
 class AgentToolContent(BaseModel):
@@ -3393,7 +3396,12 @@ class AgentToolContent(BaseModel):
 
     ``result`` is the untrusted envelope (or a bare string in branched
     transcripts); ``callId`` is dropped when a branch copies the row as
-    a non-executable transcript record."""
+    a non-executable transcript record.
+
+    N166 执行时间线：durationMs（真实执行耗时）、maskedArgsSummary
+    （≤80 字符、F097 _redact 脱敏——密钥形态值绝不出现）、resultType
+    （result|error）。N168：retried（重试步骤）/replayed（幂等缓存命
+    中）。N169：stepId（写台账行 id）+ undoable（可撤销）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -3403,6 +3411,13 @@ class AgentToolContent(BaseModel):
     error: str | None = None
     approved: bool | None = None
     branchTranscript: bool | None = None
+    durationMs: int | None = None
+    maskedArgsSummary: str | None = None
+    resultType: str | None = None
+    retried: bool | None = None
+    replayed: bool | None = None
+    stepId: str | None = None
+    undoable: bool | None = None
 
 
 class AgentApprovalContent(BaseModel):
@@ -3417,6 +3432,7 @@ class AgentApprovalContent(BaseModel):
     args: dict[str, object]
     status: str
     expiresInMinutes: int | None = None
+    reconfirmOf: str | None = None
 
 
 AgentMessageRole = Literal["user", "assistant", "tool", "approval"]
@@ -3484,6 +3500,24 @@ class AgentCancelResult(BaseModel):
 
     cancelled: bool
     status: Literal["cancelling", "cancelled"]
+
+
+class AgentPauseResult(BaseModel):
+    """N164 POST /api/v1/agent/threads/{id}/pause."""
+
+    paused: bool
+    status: Literal["pausing", "paused"]
+
+
+class AgentResumeResult(BaseModel):
+    """N164 POST /api/v1/agent/threads/{id}/resume — honest variants:
+    resumed (loop continues), awaiting_approval (user decision needed,
+    possibly a RE-CONFIRM minted for an approval expired mid-pause)."""
+
+    status: Literal["processing", "awaiting_approval"]
+    approval: AgentApprovalContent | None = None
+    reconfirmRequired: bool = False
+    message: AgentMessage | None = None
 
 
 class RagSearchItem(BaseModel):
@@ -4993,9 +5027,8 @@ class RagAskResponse(BaseModel):
 
 
 class AgentThreadUpdate(BaseModel):
-    """F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
-
-    scope=None 显式清除范围锁定；键缺省 = 不修改。"""
+    """F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
+    清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。"""
 
     model_config = {"extra": "forbid"}
 
@@ -5004,6 +5037,8 @@ class AgentThreadUpdate(BaseModel):
     clearScope: bool = False
     toolPolicy: dict | None = None
     clearToolPolicy: bool = False
+    budget: dict | None = None
+    clearBudget: bool = False
 
 
 class AgentBranchRequest(BaseModel):
@@ -5049,6 +5084,15 @@ class AgentToolPolicy(BaseModel):
     maxOpsPerTurn: int | None = None
 
 
+class AgentThreadBudget(BaseModel):
+    """N165 线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。"""
+
+    model_config = {"extra": "forbid"}
+
+    maxToolCalls: int | None = None
+    maxTurns: int | None = None
+
+
 class AgentThreadSettings(BaseModel):
     """PATCH /api/v1/agent/threads/{id} response（下轮生效）。"""
 
@@ -5056,6 +5100,7 @@ class AgentThreadSettings(BaseModel):
     title: str
     scope: AgentThreadScope | None = None
     toolPolicy: AgentToolPolicy | None = None
+    budget: AgentThreadBudget | None = None
     branchOf: str | None = None
 
 
@@ -5131,3 +5176,103 @@ class AgentApprovalPreview(BaseModel):
     changes: list[AgentApprovalPreviewChange] = []
     uncertain: list[str] = []
     note: str
+
+
+# ---------------------------------------------------------------------------
+# Agent ops wave (N164–N170): pause/resume / budget / timeline / approval
+# revise / step retry / diff undo / recipes.
+# ---------------------------------------------------------------------------
+
+
+class AgentApprovalReviseRequest(BaseModel):
+    """N167 POST .../approvals/{id}/revise — 批准前的参数修订。"""
+
+    model_config = {"extra": "forbid"}
+
+    newArgs: dict[str, object]
+
+
+class AgentApprovalReviseResult(BaseModel):
+    """N167 修订产生 NEW 审批行（绑定新 args_hash）；旧行 superseded。"""
+
+    approval: AgentApprovalContent
+    supersededApprovalId: str
+
+
+class AgentRetryResult(BaseModel):
+    """N168 POST .../retry — 只重跑失败/未完成的步骤。"""
+
+    status: Literal["completed", "awaiting_approval"]
+    retried: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
+    approval: AgentApprovalContent | None = None
+
+
+class AgentUndoRequest(BaseModel):
+    """N169 POST .../undo — 按写台账 stepId 差异撤销。"""
+
+    model_config = {"extra": "forbid"}
+
+    stepId: str
+
+
+class AgentUndoResult(BaseModel):
+    """N169 撤销结果：undone=false 时 conflictReason 说明跳过原因。"""
+
+    undone: bool
+    stepId: str
+    tool: str
+    result: dict[str, object] | None = None
+    conflictReason: str | None = None
+
+
+class AgentRecipe(BaseModel):
+    """N170 一条任务配方（whitelist ⊆ 注册表白名单）。"""
+
+    id: str
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    scope: dict[str, object] | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class AgentRecipeCreate(BaseModel):
+    """N170 POST /api/v1/agent/recipes。"""
+
+    model_config = {"extra": "forbid"}
+
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    scope: dict[str, object] | None = None
+
+
+class AgentRecipeListResponse(BaseModel):
+    """Envelope for GET /api/v1/agent/recipes."""
+
+    items: list[AgentRecipe]
+
+
+class AgentRecipePreview(BaseModel):
+    """N170 运行前预览：将创建的会话设置（白名单 → toolPolicy +
+    scope）与首条消息概要；unknownTools 非空 = 白名单越界（运行被拒）。"""
+
+    recipeId: str
+    name: str
+    input: str
+    toolWhitelist: list[str]
+    unknownTools: list[str] = []
+    scope: dict[str, object] | None = None
+    toolPolicy: AgentToolPolicy | None = None
+    threadTitle: str
+    note: str
+
+
+class AgentRecipeRunResult(BaseModel):
+    """N170 POST .../run — 创建新会话并以配方 input 开启第一回合。"""
+
+    recipeId: str
+    thread: AgentThread
+    status: Literal["processing"]

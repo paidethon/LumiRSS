@@ -707,15 +707,35 @@ def _get_agent_loop(request: Request) -> AgentLoop:
 
             return await collect_evidence_texts(request.app.state.db, refs)
 
+        from lumirss.agent_tools import build_undo_support
+
         return AgentLoop(
             _get_agent_store(request),
             registry,
             lambda: _provider_or_none(request),
             session_loader=_session_loader,
             evidence_lookup=_evidence_lookup,
+            undo_service=build_undo_support(
+                workspaces=_get_workspace_store(request),
+                tags=_get_tag_store(request),
+            ),
         )
 
     return _cached_on_app_state(request, "agent_loop", build)
+
+
+def _get_agent_undo(request: Request):
+    """N169 写工具差异撤销执行器（与工具注册表同一服务装配）。"""
+
+    def build():
+        from lumirss.agent_tools import build_undo_support
+
+        return build_undo_support(
+            workspaces=_get_workspace_store(request),
+            tags=_get_tag_store(request),
+        )
+
+    return _cached_on_app_state(request, "agent_undo", build)
 
 
 def _get_agent_dry_run(request: Request):

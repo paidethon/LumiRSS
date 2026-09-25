@@ -196,6 +196,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agent_loop = None
     app.state.agent_tasks = set()
     app.state.agent_dry_run = None  # F097 写操作预演执行器（惰性构建）。
+    app.state.agent_undo = None  # N169 写工具差异撤销执行器（惰性构建）。
     app.state.tag_store = None
     app.state.saved_search_store = None
     # W2（F021–F040）新增服务槽位：与上方同一惰性构建约定。
