@@ -16,6 +16,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { ApiError, mergeQueueConflicts } from '../api/client'
+import type { QueueConflictItem } from '../api/types'
 import {
   ArrowDown,
   ArrowUp,
@@ -103,6 +105,16 @@ export function ReadingQueuePanel({
     title: string
     remaining: number
   } | null>(null)
+  // N046：409 冲突 → 按项合并对话框（逐 ref 保留服务端/本地）。
+  const [mergeConflict, setMergeConflict] = useState<{
+    revision: number
+    conflicts: QueueConflictItem[]
+  } | null>(null)
+  const [mergePending, setMergePending] = useState(false)
+  // N047：canonical URL 撞车提示（非阻断；定位/仍要加入）。
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    duplicateOf: { ref: string; scope: string; title?: string }
+  } | null>(null)
 
   const queue = queueQuery.data ?? null
   const items = queue?.items ?? []
@@ -124,6 +136,99 @@ export function ReadingQueuePanel({
     }, 1000)
     return () => clearTimeout(timer)
   }, [countdown, onOpenEntry])
+
+  /** N046：本设备的本地视图（乐观并发守卫的 yourItem 来源）。 */
+  function revisionGuard(): {
+    expectedRevision?: number
+    clientItems?: { id: string; itemRef: string; status: 'pending' | 'done' | 'removed'; segment?: string | null }[]
+  } {
+    if (queue === null) return {}
+    return {
+      expectedRevision: queue.revision,
+      clientItems: items.map((item) => ({
+        id: item.id,
+        itemRef: item.itemRef,
+        status: item.status as 'pending' | 'done' | 'removed',
+        segment: item.segment ?? null,
+      })),
+    }
+  }
+
+  /** N046：任何变更撞上 409 → 取服务端最新视图，与本地面板状态逐 ref
+   * 比对，弹按项合并对话框（本地面板状态 = 用户正在看的视图）。 */
+  function onRevisionConflict(error: unknown) {
+    if (!(error instanceof ApiError) || error.type !== 'queue_revision_conflict') {
+      return false
+    }
+    void (async () => {
+      const actionError = '队列已被其他设备修改，请逐项选择保留哪边的状态。'
+      setActionError(actionError)
+    })()
+    // 拉最新服务端视图做差异基线（不静默覆盖本地：交给用户裁决）。
+    void (async () => {
+      const { getTodayQueue } = await import('../api/client')
+      const server = await getTodayQueue()
+      const localById = new Map(items.map((item) => [item.id, item]))
+      const conflicts: QueueConflictItem[] = []
+      for (const serverItem of server.items) {
+        const mine = localById.get(serverItem.id)
+        if (mine !== undefined && mine.status === serverItem.status && (mine.segment ?? null) === (serverItem.segment ?? null)) {
+          continue
+        }
+        conflicts.push({
+          ref: serverItem.itemRef,
+          serverItem: {
+            id: serverItem.id,
+            itemRef: serverItem.itemRef,
+            status: serverItem.status,
+            segment: serverItem.segment ?? null,
+            position: serverItem.position,
+            title: serverItem.title,
+          },
+          yourItem:
+            mine === undefined
+              ? null
+              : {
+                  id: mine.id,
+                  itemRef: mine.itemRef,
+                  status: mine.status,
+                  segment: mine.segment ?? null,
+                  position: mine.position,
+                  title: mine.title,
+                },
+        })
+      }
+      // 本地有、服务端没有（id 缺席 = 被另一端移除）也要给裁决机会。
+      const serverIds = new Set(server.items.map((item) => item.id))
+      for (const item of items) {
+        if (!serverIds.has(item.id)) {
+          conflicts.push({
+            ref: item.itemRef,
+            serverItem: {
+              id: item.id,
+              itemRef: item.itemRef,
+              status: 'removed',
+              segment: item.segment ?? null,
+              position: item.position,
+              title: item.title,
+            },
+            yourItem: {
+              id: item.id,
+              itemRef: item.itemRef,
+              status: item.status,
+              segment: item.segment ?? null,
+              position: item.position,
+              title: item.title,
+            },
+          })
+        }
+      }
+      if (conflicts.length > 0) {
+        setMergeConflict({ revision: server.revision, conflicts })
+      }
+    })()
+    return true
+  }
 
   function fail(error: unknown) {
     setActionError(
@@ -148,9 +253,18 @@ export function ReadingQueuePanel({
     if (currentItemRef == null) return
     setActionError(null)
     addItemMutation.mutate(
-      { itemRef: `rss:${currentItemRef}` },
+      { itemRef: `rss:${currentItemRef}`, ...revisionGuard() },
       {
+        onSuccess: (row) => {
+          // N047：撞车提示（非阻断——条目已加入；提供 定位/仍要加入）。
+          if (row.duplicateWarning != null) {
+            // 生成端 schema 将该字段记为自由对象；形状由服务端契约固定
+            // （{duplicateOf: {ref, scope, title?}}），此处收窄。
+            setDuplicateWarning(row.duplicateWarning as { duplicateOf: { ref: string; scope: string; title?: string } })
+          }
+        },
         onError: (error) => {
+          if (onRevisionConflict(error)) return
           const status = (error as { status?: number }).status
           fail(
             status === 409
@@ -165,8 +279,9 @@ export function ReadingQueuePanel({
   function markDone(item: QueueItemView, done: boolean) {
     setActionError(null)
     doneMutation.mutate(
-      { itemId: item.id, done },
+      { itemId: item.id, done, ...revisionGuard() },
       {
+        onError: onRevisionConflict,
         onSuccess: () => {
           if (!done || intervalSeconds === 0) return
           // N048：完成 → 下一篇倒计时（顺序 = 队列 position）。interval
@@ -179,7 +294,6 @@ export function ReadingQueuePanel({
           if (entryRef === null) return
           setCountdown({ entryRef, title: next.title ?? '下一篇', remaining: intervalSeconds })
         },
-        onError: fail,
       },
     )
   }
@@ -194,21 +308,30 @@ export function ReadingQueuePanel({
     const tmp = next[index]!
     next[index] = next[target]!
     next[target] = tmp
-    reorderMutation.mutate(next, { onError: fail })
+    reorderMutation.mutate(next, {
+      onError: (error) => {
+        if (!onRevisionConflict(error)) fail(error)
+      },
+    })
   }
 
   function removeItem(item: QueueItemView) {
     setActionError(null)
     if (countdown !== null && countdown.entryRef === toEntryRef(item.itemRef)) setCountdown(null)
-    removeMutation.mutate(item.id, { onError: fail })
+    removeMutation.mutate(item.id, {
+      onError: (error) => {
+        if (!onRevisionConflict(error)) fail(error)
+      },
+    })
   }
 
   function moveSegment(item: QueueItemView, segment: string | null) {
     setActionError(null)
     segmentMoveMutation.mutate(
-      { itemId: item.id, segment },
+      { itemId: item.id, segment, ...revisionGuard() },
       {
         onError: (error) => {
+          if (onRevisionConflict(error)) return
           const status = (error as { status?: number }).status
           fail(status === 409 ? new Error('该条目今日已完成，先取消完成再移动。') : error)
         },
@@ -533,6 +656,109 @@ export function ReadingQueuePanel({
         </>
       )}
 
+      {/* N046：按项合并对话框（409 冲突后逐项裁决；未提及行原样保留） */}
+      {mergeConflict !== null && (
+        <div
+          role="dialog"
+          aria-modal="false"
+          aria-label="队列冲突按项合并"
+          data-testid="queue-merge-dialog"
+          className="mt-2 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-warning)] bg-[var(--lumi-surface)] p-2.5"
+        >
+          <p className="text-xs font-medium text-[var(--lumi-text-primary)]">
+            队列已被其他设备修改（{mergeConflict.conflicts.length} 项冲突）——请逐项选择保留哪边：
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {mergeConflict.conflicts.map((conflict, index) => (
+              <MergeRow
+                key={conflict.ref + String(index)}
+                name={`merge-${index}`}
+                conflict={conflict}
+                onChange={(action) => {
+                  setMergeConflict((prev) => {
+                    if (prev === null) return prev
+                    const next = [...prev.conflicts]
+                    next[index] = { ...conflict, action } as QueueConflictItem & { action: 'keep-mine' | 'keep-theirs' }
+                    return { ...prev, conflicts: next }
+                  })
+                }}
+              />
+            ))}
+          </ul>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={mergePending}
+              onClick={() => {
+                setMergePending(true)
+                void (async () => {
+                  try {
+                    await mergeQueueConflicts({
+                      expectedRevision: mergeConflict.revision,
+                      resolutions: mergeConflict.conflicts.map((conflict) => ({
+                        itemRef: conflict.ref,
+                        action: (conflict as QueueConflictItem & { action?: 'keep-mine' | 'keep-theirs' }).action ?? 'keep-theirs',
+                        ...(conflict.yourItem !== null &&
+                          (conflict as QueueConflictItem & { action?: 'keep-mine' | 'keep-theirs' }).action === 'keep-mine'
+                          ? {
+                              clientItem: {
+                                id: conflict.yourItem.id,
+                                itemRef: conflict.yourItem.itemRef,
+                                status: conflict.yourItem.status as 'pending' | 'done' | 'removed',
+                                segment: conflict.yourItem.segment,
+                              },
+                            }
+                          : {}),
+                      })),
+                    })
+                    setMergeConflict(null)
+                    setActionError(null)
+                  } catch {
+                    setActionError('合并失败：队列又发生了变化，请重试。')
+                  } finally {
+                    setMergePending(false)
+                  }
+                })()
+              }}
+            >
+              完成合并
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMergeConflict(null)}>
+              放弃修改
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* N047：canonical URL 撞车提示（非阻断：条目已在队列；定位 / 仍要加入） */}
+      {duplicateWarning !== null && (
+        <div
+          role="alert"
+          data-testid="queue-duplicate-warning"
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-accent-soft)] px-2.5 py-1.5 text-xs"
+        >
+          <span className="min-w-0 flex-1 text-[var(--lumi-accent-text)]">
+            疑似已收录：{duplicateWarning.duplicateOf.title ?? duplicateWarning.duplicateOf.ref}
+            （{duplicateWarning.duplicateOf.scope === 'queue' ? '今日必读' : '冻结批次'}）
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const entryRef = toEntryRef(duplicateWarning.duplicateOf.ref)
+              setDuplicateWarning(null)
+              if (entryRef !== null && onOpenEntry !== undefined) onOpenEntry(entryRef)
+            }}
+          >
+            定位
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setDuplicateWarning(null)}>
+            仍要加入
+          </Button>
+        </div>
+      )}
+
       {/* N048 倒计时芯片 */}
       {countdown !== null && (
         <div
@@ -722,5 +948,50 @@ function FrozenView({ snapshotId, onBack }: { snapshotId: string; onBack: () => 
         </ol>
       )}
     </div>
+  )
+}
+
+
+/** N046 合并行：单个冲突 ref 的保留选择（默认保留服务端 = keep-theirs）。 */
+function MergeRow({
+  name,
+  conflict,
+  onChange,
+}: {
+  name: string
+  conflict: QueueConflictItem
+  onChange: (action: 'keep-mine' | 'keep-theirs') => void
+}) {
+  const action = (conflict as QueueConflictItem & { action?: 'keep-mine' | 'keep-theirs' }).action ?? 'keep-theirs'
+  const serverStatus = conflict.serverItem.status === 'removed' ? '已移除' : conflict.serverItem.status === 'done' ? '已完成' : '待读'
+  const yourStatus = conflict.yourItem?.status === 'removed' ? '已移除' : conflict.yourItem?.status === 'done' ? '已完成' : conflict.yourItem === null ? '无本地视图' : '待读'
+  return (
+    <li className="flex flex-wrap items-center gap-1.5 rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] px-2 py-1">
+      <span className="min-w-0 flex-1 truncate text-xs text-[var(--lumi-text-primary)]">
+        {conflict.serverItem.title ?? conflict.serverItem.itemRef}
+      </span>
+      <span className="text-[10px] text-[var(--lumi-text-tertiary)]">
+        服务端：{serverStatus} · 本地：{yourStatus}
+      </span>
+      <label className="flex min-h-7 items-center gap-1 text-[10px]">
+        <input
+          type="radio"
+          name={name}
+          checked={action === 'keep-theirs'}
+          onChange={() => onChange('keep-theirs')}
+        />
+        保留服务端
+      </label>
+      <label className="flex min-h-7 items-center gap-1 text-[10px]">
+        <input
+          type="radio"
+          name={name}
+          checked={action === 'keep-mine'}
+          onChange={() => onChange('keep-mine')}
+          disabled={conflict.yourItem === null}
+        />
+        保留本地
+      </label>
+    </li>
   )
 }

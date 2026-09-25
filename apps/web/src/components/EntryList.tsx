@@ -6,6 +6,11 @@ const AskBatchDialog = lazy(() => import('./AskBatchDialog').then((m) => ({ defa
 const ReadingBudgetPanel = lazy(() => import('./ReadingBudgetPanel').then((m) => ({ default: m.ReadingBudgetPanel })))
 const ReadingQueuePanel = lazy(() => import('./ReadingQueuePanel').then((m) => ({ default: m.ReadingQueuePanel })))
 const BacklogPanel = lazy(() => import('./BacklogPanel').then((m) => ({ default: m.BacklogPanel })))
+// E1: N037 断更恢复横幅 + N047 收录撞车提示 toast
+const RecoveryBanner = lazy(() => import('./RecoveryBanner').then((m) => ({ default: m.RecoveryBanner })))
+const DuplicateWarningToast = lazy(() => import('./DuplicateWarningToast').then((m) => ({ default: m.DuplicateWarningToast })))
+// E1: N050 阅读路径面板（设备本地；tools 行入口）
+const ReadingPathPanel = lazy(() => import('./ReadingPathPanel').then((m) => ({ default: m.ReadingPathPanel })))
 const CompareRead = lazy(() => import('./CompareRead'))
 import {
   useEntries,
@@ -18,6 +23,7 @@ import {
 import type { UiView } from '../lib/read-later'
 import type { EntryListItem, ReadLaterItem } from '../api/types'
 import { useReaderUi } from '../store/reader-ui'
+import { recordReadingPathEntry } from '../lib/reading-path'
 import { scopeKey, scopeTitle } from '../lib/navigation'
 import { useAppSettings } from '../store/app-settings'
 import { groupEntriesByDate } from '../lib/entry-groups'
@@ -495,6 +501,18 @@ function EntriesList() {
     return timelineOrder === 'oldest' ? [...filtered].reverse() : filtered
   }, [data, filterEnabled, filterRules, timelineOrder])
 
+  // E1: N050 设备本地阅读路径记录（打开条目即记；仅 localStorage，
+  // 不发任何请求——服务端没有任何承载端点）。
+  const [readingPathOpen, setReadingPathOpen] = useState(false)
+  const selectedEntry = useMemo(
+    () => entries.find((item) => item.entryRef === selectedEntryRef) ?? null,
+    [entries, selectedEntryRef],
+  )
+  useEffect(() => {
+    if (selectedEntryRef === null || selectedEntryRef === undefined) return
+    recordReadingPathEntry(`rss:${selectedEntryRef}`, selectedEntry?.title ?? null)
+  }, [selectedEntryRef, selectedEntry?.title])
+
   // N034 排序切换（最新优先 → 最早优先 → 按接收时间）。
   const cycleTimelineOrder = () => {
     updateSettings({
@@ -898,6 +916,29 @@ function EntriesList() {
           <BacklogPanel onClose={() => setBacklogOpen(false)} />
         </Suspense>
       )}
+      {/* N037：断更恢复横幅（有待处理窗口才渲染） */}
+      <Suspense fallback={null}>
+        <RecoveryBanner />
+      </Suspense>
+      {/* N050：阅读路径面板（设备本地；恢复/停用/清空） */}
+      {readingPathOpen && (
+        <Suspense fallback={null}>
+          <ReadingPathPanel
+            onOpenEntry={(entryRef) => {
+              openEntry(entryRef)
+            }}
+            onClose={() => setReadingPathOpen(false)}
+          />
+        </Suspense>
+      )}
+      {/* N047：收录撞车提示（定位/仍要加入；非阻断） */}
+      <Suspense fallback={null}>
+        <DuplicateWarningToast
+          onLocate={(entryRef) => {
+            openEntry(entryRef)
+          }}
+        />
+      </Suspense>
       {/* F06 排序切换 + F07 多选入口（列表工具行；移动端也有——列表头
           仅桌面显示，这里是其唯一工具入口） */}
       <div className="flex flex-wrap items-center justify-end gap-1.5 border-b border-[var(--lumi-separator)] px-4 py-1">
@@ -930,6 +971,21 @@ function EntriesList() {
           )}
         >
           今日必读
+        </button>
+        {/* N050：阅读路径入口（设备本地） */}
+        <button
+          type="button"
+          aria-pressed={readingPathOpen}
+          onClick={() => setReadingPathOpen((v) => !v)}
+          className={cx(
+            'mr-auto flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] px-2.5 py-1 text-xs transition-colors duration-[var(--lumi-motion-fast)]',
+            'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+            readingPathOpen
+              ? 'bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]'
+              : 'text-[var(--lumi-text-tertiary)] hover:text-[var(--lumi-text-secondary)]',
+          )}
+        >
+          阅读路径
         </button>
         {/* F024：积压整理入口 */}
         <button

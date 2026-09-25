@@ -79,6 +79,7 @@ import type {
   WorkspaceSnapshotList,
   WorkspaceSnapshotRestoreResult,
   QueueGenerateResponse,
+  QueueAddResponse,
   QueueItemView,
   QueueSnapshotDetail,
   QueueSnapshotList,
@@ -8030,45 +8031,89 @@ export async function generateTodayQueue(input: {
   return postJson<QueueGenerateResponse>(`${API_BASE}/queue/today/generate`, body)
 }
 
-/** 手动加入（新 201 / 重复或复活 200 / 今天已完成 409 queue_item_done）。 */
+/** N046：变更请求附带的乐观并发守卫字段（expectedRevision + 本地视图）。 */
+export interface QueueRevisionGuard {
+  expectedRevision?: number
+  clientItems?: { id: string; itemRef: string; status: 'pending' | 'done' | 'removed'; segment?: string | null }[]
+}
+
+/** 手动加入（新 201 / 重复或复活 200 / 今天已完成 409 queue_item_done；
+ * N046 expectedRevision 落后 → 409；N047 撞车 warning 附在成功响应）。 */
 export async function addQueueItem(input: {
   itemRef: string
   segment?: string | null
-}): Promise<QueueItemView> {
-  return postJson<QueueItemView>(`${API_BASE}/queue/today/items`, {
+} & QueueRevisionGuard): Promise<QueueAddResponse> {
+  return postJson<QueueAddResponse>(`${API_BASE}/queue/today/items`, {
     itemRef: input.itemRef,
     ...(input.segment !== undefined ? { segment: input.segment } : {}),
+    ...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
+    ...(input.clientItems !== undefined ? { clientItems: input.clientItems } : {}),
   })
 }
 
-/** 移除（status=removed，行保留；再移除 → 404）。 */
-export async function removeQueueItem(itemId: string): Promise<void> {
-  await rawRequest(`${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}`, {
+/** 移除（status=removed，行保留；再移除 → 404；N046 expectedRevision
+ * 落后 → 409）。 */
+export async function removeQueueItem(
+  itemId: string,
+  guard?: QueueRevisionGuard,
+): Promise<void> {
+  // 注意：expectedRevision 查询串拼在独立变量上——api 契约测试按模板
+  // 字面量提取路径形状（相邻插值会被解析成 `{}{}`）。
+  const path = `${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}`
+  const url =
+    guard?.expectedRevision !== undefined
+      ? `${path}?expectedRevision=${guard.expectedRevision}`
+      : path
+  await rawRequest(url, {
     method: 'DELETE',
   })
 }
 
 /** 完成状态（set 语义，不是 toggle；绝不隐式改写上游已读）。 */
-export async function setQueueItemDone(itemId: string, done: boolean): Promise<QueueItemView> {
+export async function setQueueItemDone(
+  itemId: string,
+  done: boolean,
+  guard?: QueueRevisionGuard,
+): Promise<QueueItemView> {
   return postJson<QueueItemView>(
     `${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}/done`,
-    { done },
+    {
+      done,
+      ...(guard?.expectedRevision !== undefined ? { expectedRevision: guard.expectedRevision } : {}),
+      ...(guard?.clientItems !== undefined ? { clientItems: guard.clientItems } : {}),
+    },
   )
 }
 
 /** 持久化重排（给定的 id 按序列排前；未提及行垫后）。 */
-export async function reorderTodayQueue(order: string[]): Promise<QueueTodayResponse> {
-  return putJson<QueueTodayResponse>(`${API_BASE}/queue/today/order`, { order })
+export async function reorderTodayQueue(
+  order: string[],
+  guard?: QueueRevisionGuard,
+): Promise<QueueTodayResponse> {
+  return putJson<QueueTodayResponse>(`${API_BASE}/queue/today/order`, {
+    order,
+    ...(guard?.expectedRevision !== undefined ? { expectedRevision: guard.expectedRevision } : {}),
+    ...(guard?.clientItems !== undefined ? { clientItems: guard.clientItems } : {}),
+  })
 }
 
 /** 行菜单移动分段（segment=null = 移回未分组）。 */
 export async function moveQueueItemSegment(
   itemId: string,
   segment: string | null,
+  guard?: QueueRevisionGuard,
 ): Promise<QueueItemView> {
   return rawRequestJson<QueueItemView>(
     `${API_BASE}/queue/today/items/${encodeURIComponent(itemId)}/segment`,
-    { method: 'PATCH', body: JSON.stringify({ segment }), contentType: 'application/json' },
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        segment,
+        ...(guard?.expectedRevision !== undefined ? { expectedRevision: guard.expectedRevision } : {}),
+        ...(guard?.clientItems !== undefined ? { clientItems: guard.clientItems } : {}),
+      }),
+      contentType: 'application/json',
+    },
   )
 }
 
@@ -8749,4 +8794,200 @@ export async function rerunRagEvalSample(sampleId: string): Promise<RagEvalRerun
   )
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as RagEvalRerunDiff
+}
+
+// ---- E1: N036 刷新队列可视化 / N037 断更恢复补读 / N038 保留策略预演 /
+//      N039 附件失效检测 / N045 阅读中断便签 / N046 队列冲突合并 /
+//      N049 积压分批 ------------------------------------------------------
+
+import type {
+  BacklogBatchApplyResponse,
+  BacklogBatchLogListResponse,
+  BacklogBatchLogView,
+  BacklogBatchPreviewResponse,
+  BacklogBatchesResponse,
+  FeedRecoveryView,
+  MediaFailureListResponse,
+  QueueMergeResponse,
+  ReadingNoteView,
+  RecoveryToQueueResult,
+  SourceRetentionApplyResult,
+  SourceRetentionPreview,
+  SourceRefreshStatusResponse,
+} from './types'
+
+/** N036：每来源最近刷新状态（lastChecked/lastResult/pending + 最近 5）。 */
+export async function getSourceRefreshStatus(
+  signal?: AbortSignal,
+): Promise<SourceRefreshStatusResponse> {
+  return request<SourceRefreshStatusResponse>(`${API_BASE}/sources/refresh-status`, signal)
+}
+
+/** N037：断更恢复窗口列表（includeConsumed=false 只看待处理）。 */
+export async function listRecoveries(
+  includeConsumed = true,
+  signal?: AbortSignal,
+): Promise<{ items: FeedRecoveryView[] }> {
+  return request<{ items: FeedRecoveryView[] }>(
+    `${API_BASE}/sources/recoveries?includeConsumed=${includeConsumed ? '1' : '0'}`,
+    signal,
+  )
+}
+
+/** N037：恢复窗口一次性消费 → 加入今日必读队列（source=recovery，
+ * 逐条幂等去重；重复消费 409）。 */
+export async function recoveryToQueue(
+  recoveryId: string,
+  segment?: string | null,
+): Promise<RecoveryToQueueResult> {
+  return postJson<RecoveryToQueueResult>(
+    `${API_BASE}/sources/recoveries/${encodeURIComponent(recoveryId)}/to-queue`,
+    { ...(segment != null ? { segment } : {}) },
+  )
+}
+
+/** N038：按来源保留策略预演（只读；投影口径；预演≠执行）。 */
+export async function getRetentionPreview(
+  feedUrl: string,
+  days: number,
+  signal?: AbortSignal,
+): Promise<SourceRetentionPreview> {
+  return request<SourceRetentionPreview>(
+    `${API_BASE}/sources/retention-preview?feedUrl=${encodeURIComponent(feedUrl)}&days=${days}`,
+    signal,
+  )
+}
+
+/** N038：应用保留策略（落库；prune=true 立即裁剪本地投影——FreshRSS
+ * 零调用，投影可在下次同步再生）。 */
+export async function applyRetention(
+  feedUrl: string,
+  days: number | null,
+  prune: boolean,
+): Promise<SourceRetentionApplyResult> {
+  return postJson<SourceRetentionApplyResult>(`${API_BASE}/sources/retention-apply`, {
+    feedUrl,
+    days,
+    prune,
+  })
+}
+
+/** N039：失效附件列表。 */
+export async function listMediaFailures(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<MediaFailureListResponse> {
+  return request<MediaFailureListResponse>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/media-failures`,
+    signal,
+  )
+}
+
+/** N039：上报失效附件（≤20 条/次；幂等 upsert）。 */
+export async function reportMediaFailures(
+  entryRef: string,
+  failures: { kind: 'image' | 'media' | 'other'; src: string }[],
+): Promise<MediaFailureListResponse> {
+  return postJson<MediaFailureListResponse>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/media-failures`,
+    { failures },
+  )
+}
+
+/** N045：取阅读中断便签（无 → null）。 */
+export async function getReadingNote(
+  entryRef: string,
+  signal?: AbortSignal,
+): Promise<ReadingNoteView | null> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/note`,
+    { signal },
+  )
+  if (response.status === 404) return null
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as ReadingNoteView
+}
+
+/** N045：保存阅读中断便签（≤200 字符，latest-wins）。 */
+export async function putReadingNote(
+  entryRef: string,
+  note: string,
+  paraId?: string | null,
+): Promise<ReadingNoteView> {
+  return rawRequestJson<ReadingNoteView>(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/note`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ note, ...(paraId != null ? { paraId } : {}) }),
+      contentType: 'application/json',
+    },
+  )
+}
+
+/** N045：删除便签（幂等）。 */
+export async function deleteReadingNote(entryRef: string): Promise<void> {
+  await rawRequest(`${API_BASE}/entries/${encodeURIComponent(entryRef)}/note`, {
+    method: 'DELETE',
+  })
+}
+
+/** N046：按项合并（对 409 冲突逐 ref 显式裁决；未提及行原样保留）。 */
+export async function mergeQueueConflicts(input: {
+  expectedRevision: number
+  resolutions: {
+    itemRef: string
+    action: 'keep-mine' | 'keep-theirs'
+    clientItem?: { id: string; itemRef: string; status: 'pending' | 'done' | 'removed'; segment?: string | null }
+  }[]
+}): Promise<QueueMergeResponse> {
+  return postJson<QueueMergeResponse>(`${API_BASE}/queue/today/merge-conflicts`, {
+    expectedRevision: input.expectedRevision,
+    resolutions: input.resolutions,
+  })
+}
+
+/** N049：积压分批视图（groupBy=source|age）。 */
+export async function getBacklogBatches(
+  groupBy: 'source' | 'age',
+  olderThanDays: number,
+  signal?: AbortSignal,
+): Promise<BacklogBatchesResponse> {
+  return request<BacklogBatchesResponse>(
+    `${API_BASE}/entries/backlog/batches?groupBy=${groupBy}&olderThanDays=${olderThanDays}`,
+    signal,
+  )
+}
+
+/** N049：单批预览（两段式第一步）。 */
+export async function previewBacklogBatch(input: {
+  groupBy: 'source' | 'age'
+  key: string
+  olderThanDays: number
+}): Promise<BacklogBatchPreviewResponse> {
+  return postJson<BacklogBatchPreviewResponse>(`${API_BASE}/entries/backlog/batch-preview`, input)
+}
+
+/** N049：单批确认执行（两段式第二步；写撤销台账）。 */
+export async function applyBacklogBatch(input: {
+  groupBy: 'source' | 'age'
+  key: string
+  olderThanDays: number
+  confirmPreviewToken: string
+}): Promise<BacklogBatchApplyResponse> {
+  return postJson<BacklogBatchApplyResponse>(`${API_BASE}/entries/backlog/batch-apply`, input)
+}
+
+/** N049：撤销台账（cap 5；undone=false 可撤销）。 */
+export async function listBacklogBatchLogs(
+  signal?: AbortSignal,
+): Promise<BacklogBatchLogListResponse> {
+  return request<BacklogBatchLogListResponse>(`${API_BASE}/entries/backlog/batches/log`, signal)
+}
+
+/** N049：按批撤销（恢复该批置读的条目为未读；一次性）。 */
+export async function undoBacklogBatch(logId: string): Promise<BacklogBatchLogView> {
+  return postJson<BacklogBatchLogView>(
+    `${API_BASE}/entries/backlog/batches/${encodeURIComponent(logId)}/undo`,
+    {},
+  )
 }

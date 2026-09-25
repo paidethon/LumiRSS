@@ -2385,6 +2385,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/backlog/batch-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backlog Batch Apply
+         * @description N049：单批确认执行（token 校验失败/条件漂移 → 409）。
+         *
+         *     逐条走既有 set-read 管线；实际置读成功的 refs 写入撤销台账
+         *     （backlog_batch_log，cap 5）——撤销以此为准，失败项绝不进台账。
+         */
+        post: operations["backlog_batch_apply_api_v1_entries_backlog_batch_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog/batch-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backlog Batch Preview
+         * @description N049：单批预览（真实 count + 前 20 样本 + 一次性 token）。零写入。
+         */
+        post: operations["backlog_batch_preview_api_v1_entries_backlog_batch_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backlog Batches View
+         * @description N049：积压分批视图（与 F024 同一候选口径：未读 + 未加星 +
+         *     不在稍后读工作区 + 早于截止时间）。
+         *
+         *     - groupBy=source：每来源一批（key = feed_url）；
+         *     - groupBy=age：固定账龄桶（7-30/30-90/90-365/365+ 天）；
+         *     - count 是服务端真实全量计数；entryRefs 最多 100 条（诚实有界，
+         *       超出部分仍会被该批确认执行覆盖）。
+         */
+        get: operations["backlog_batches_view_api_v1_entries_backlog_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog/batches/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backlog Batch Logs
+         * @description N049：撤销台账（新→旧；cap 5；undone=false 可撤销）。
+         */
+        get: operations["backlog_batch_logs_api_v1_entries_backlog_batches_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/backlog/batches/{log_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Backlog Batch
+         * @description N049：按批撤销——台账 refs 逐条恢复 read=0（适配器 + 投影镜像，
+         *     set 语义）。撤销一次性（重复撤销 → 409 backlog_batch_already_undone）。
+         */
+        post: operations["undo_backlog_batch_api_v1_entries_backlog_batches__log_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/compare": {
         parameters: {
             query?: never;
@@ -2559,6 +2669,62 @@ export interface paths {
          */
         post: operations["save_knowledge_cards_api_v1_entries__entry_ref__knowledge_cards_save_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/media-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Media Failures
+         * @description N039：该条目的失效附件列表（每条目 cap 50，按 lastSeenAt 新→旧）。
+         */
+        get: operations["list_media_failures_api_v1_entries__entry_ref__media_failures_get"];
+        put?: never;
+        /**
+         * Report Media Failures
+         * @description N039：上报失效附件（≤20 条/次；（kind, src) 幂等 upsert——重复
+         *     上报只刷新 lastSeenAt 与 hitCount，绝不翻倍）。
+         *
+         *     纯记录：本端点没有任何抓取/重试路径；「单项重新加载」的 cache-bust
+         *     由 Web 读取侧对 src 追加一次性参数完成，服务端绝不改写 src。
+         */
+        post: operations["report_media_failures_api_v1_entries__entry_ref__media_failures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Reading Note
+         * @description N045：取便签（无 → 404 reading_note_not_found）。
+         */
+        get: operations["get_reading_note_api_v1_entries__entry_ref__note_get"];
+        /**
+         * Put Reading Note
+         * @description N045：upsert 阅读中断便签（latest-wins，无冲突分支）。
+         */
+        put: operations["put_reading_note_api_v1_entries__entry_ref__note_put"];
+        post?: never;
+        /**
+         * Delete Reading Note
+         * @description N045：删除便签（幂等：不存在也是 204）。
+         */
+        delete: operations["delete_reading_note_api_v1_entries__entry_ref__note_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6250,6 +6416,10 @@ export interface paths {
          * Add Queue Item
          * @description 手动加入（新 201；重复 pending 幂等 200；removed 复活 200；
          *     今天已完成 → 409 queue_item_done）。
+         *
+         *     N046：expectedRevision 落后 → 409 queue_revision_conflict（写入前
+         *     发生，冲突绝不半途落库）。N047：加入成功后做 canonical URL 撞车
+         *     检查——warning 附在成功响应里（非阻断，绝不因撞车拒绝写入）。
          */
         post: operations["add_queue_item_api_v1_queue_today_items_post"];
         delete?: never;
@@ -6270,7 +6440,10 @@ export interface paths {
         post?: never;
         /**
          * Remove Queue Item
-         * @description 移除（status=removed，行保留；再移除同一行 → 404）。
+         * @description 移除（status=removed，行保留；再移除 → 404）。
+         *
+         *     N046：expectedRevision 落后 → 409（DELETE 无 body，clientItems 不
+         *     随行——冲突体的 yourItem 为 null，客户端以本地面板状态补全）。
          */
         delete: operations["remove_queue_item_api_v1_queue_today_items__item_id__delete"];
         options?: never;
@@ -6290,7 +6463,8 @@ export interface paths {
         /**
          * Set Queue Item Done
          * @description 完成状态（set 语义：done=true/false，不是 toggle；完成按条目
-         *     身份记账，绝不隐式改写上游已读状态）。
+         *     身份记账，绝不隐式改写上游已读状态）。N046：expectedRevision
+         *     落后 → 409。
          */
         post: operations["set_queue_item_done_api_v1_queue_today_items__item_id__done_post"];
         delete?: never;
@@ -6314,9 +6488,36 @@ export interface paths {
         head?: never;
         /**
          * Move Queue Item Segment
-         * @description 行菜单移动分段（segment=null = 移回未分组）。
+         * @description 行菜单移动分段（segment=null = 移回未分组）。N046：
+         *     expectedRevision 落后 → 409。
          */
         patch: operations["move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch"];
+        trace?: never;
+    };
+    "/api/v1/queue/today/merge-conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Queue Conflicts
+         * @description 按项合并：对 409 冲突体里的每个 ref 显式选择 keep-mine（应用
+         *     clientItem 的 status/segment）或 keep-theirs（保持服务端现状）。
+         *
+         *     - 修订号必须仍与 current 一致（期间又被改 → 再 409，重新取差异）；
+         *     - 合并整体 bump 一次修订号；未提及的行原样保留（unmodified
+         *       items survive——负向契约）；
+         *     - keep-theirs 语义 = 放弃本地该行的变更，不是删除服务端行。
+         */
+        post: operations["merge_queue_conflicts_api_v1_queue_today_merge_conflicts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/queue/today/order": {
@@ -6329,7 +6530,8 @@ export interface paths {
         get?: never;
         /**
          * Reorder Today Queue
-         * @description 持久化重排（跨设备可见；done 行位置同样可排）。
+         * @description 持久化重排（跨设备可见；done 行位置同样可排）。N046：
+         *     expectedRevision 落后 → 409。
          */
         put: operations["reorder_today_queue_api_v1_queue_today_order_put"];
         post?: never;
@@ -8695,6 +8897,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sources/recoveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources Recoveries
+         * @description N037：断更恢复窗口列表（error/stale → ok 跳变时由刷新记录路径
+         *     自动创建；consumed=true 表示已加入过补读队列）。
+         */
+        get: operations["sources_recoveries_api_v1_sources_recoveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/recoveries/{recovery_id}/to-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recovery To Queue
+         * @description N037：把恢复窗口内的条目加入今日必读队列（source=recovery）。
+         *
+         *     - 一次性消费：consumed=1 原子置位；重复调用 409
+         *       recovery_already_consumed；
+         *     - 逐条走队列既有 add 管线（dedup by ref：同日同条目幂等返回
+         *       existing 行，绝不重复入队/重排）；
+         *     - 条目解析失败的 ref（已删除/退订）诚实跳过并计数（绝不复活）。
+         */
+        post: operations["recovery_to_queue_api_v1_sources_recoveries__recovery_id__to_queue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/refresh-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources Refresh Status
+         * @description N036：每来源最近刷新状态（lastChecked/lastResult/pending + 最近
+         *     5 条检查记录）。
+         *
+         *     数据只来自两条写入路径（F050 手动探测 + 投影增量同步的有效交付）；
+         *     没有任何调度器在背后跑（负向契约）。「立即检查」= 复用既有 F050
+         *     探测（POST /api/v1/subscriptions/health-check），不另设端点。
+         */
+        get: operations["sources_refresh_status_api_v1_sources_refresh_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/replacement-preview": {
         parameters: {
             query?: never;
@@ -8710,6 +8984,55 @@ export interface paths {
          *     不判断"失效"（那由 FreshRSS 的 feed error 状态承载）。
          */
         get: operations["replacement_preview_api_v1_sources_replacement_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/retention-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sources Retention Apply
+         * @description N038：应用保留策略——落库 source_overrides.retention_days，
+         *     可选立即裁剪本地投影（starred 恒排除）。
+         *
+         *     **FreshRSS 零调用**（负向契约，测试以适配器 mock 断言）：本端点
+         *     任何一个代码路径都不触上游；retention_days 只驱动派生投影的本地
+         *     裁剪，投影可在下次同步再生（诚实行为，非上游删除替代品）。
+         */
+        post: operations["sources_retention_apply_api_v1_sources_retention_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/retention-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources Retention Preview
+         * @description N038：按来源保留策略预演（只读，投影口径估算）。
+         *
+         *     响应以 note 诚实标注：「预估值基于 Lumi 投影，实际删除需在
+         *     FreshRSS 原生界面执行」；freshrssNativeUrl 为 P09 委托入口坐标
+         *     （未绑定 → null）。starred 恒排除并单独计数（绝不进删除路径）。
+         */
+        get: operations["sources_retention_preview_api_v1_sources_retention_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -12381,6 +12704,124 @@ export interface components {
             failed: components["schemas"]["BacklogSampleItem"][];
         };
         /**
+         * BacklogBatchApplyRequest
+         * @description POST /api/v1/entries/backlog/batch-apply body（两段式第二步）。
+         */
+        BacklogBatchApplyRequest: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Confirmpreviewtoken */
+            confirmPreviewToken: string;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /**
+             * Groupby
+             * @enum {string}
+             */
+            groupBy: "source" | "age";
+            /** Key */
+            key: string;
+            /** Olderthandays */
+            olderThanDays: number;
+        };
+        /** BacklogBatchApplyResponse */
+        BacklogBatchApplyResponse: {
+            /** Applied */
+            applied: number;
+            /** Batchlogid */
+            batchLogId?: string | null;
+            /** Effectiveexclusions */
+            effectiveExclusions: string[];
+            /** Failed */
+            failed: components["schemas"]["BacklogSampleItem"][];
+            /** Undoavailable */
+            undoAvailable: boolean;
+        };
+        /** BacklogBatchLogListResponse */
+        BacklogBatchLogListResponse: {
+            /** Items */
+            items: components["schemas"]["BacklogBatchLogView"][];
+        };
+        /**
+         * BacklogBatchLogView
+         * @description 撤销台账行（undone=false 的批次可撤销；cap 5）。
+         */
+        BacklogBatchLogView: {
+            /** Appliedcount */
+            appliedCount: number;
+            /** Batchkey */
+            batchKey: string;
+            /** Createdat */
+            createdAt: string;
+            /** Groupby */
+            groupBy: string;
+            /** Id */
+            id: string;
+            /** Refcount */
+            refCount: number;
+            /** Undone */
+            undone: boolean;
+        };
+        /**
+         * BacklogBatchPreviewRequest
+         * @description POST /api/v1/entries/backlog/batch-preview body（两段式第一步）。
+         */
+        BacklogBatchPreviewRequest: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /**
+             * Groupby
+             * @enum {string}
+             */
+            groupBy: "source" | "age";
+            /** Key */
+            key: string;
+            /** Olderthandays */
+            olderThanDays: number;
+        };
+        /** BacklogBatchPreviewResponse */
+        BacklogBatchPreviewResponse: {
+            /** Batchkey */
+            batchKey: string;
+            /** Confirmpreviewtoken */
+            confirmPreviewToken: string;
+            /** Count */
+            count: number;
+            /** Effectiveexclusions */
+            effectiveExclusions: string[];
+            /**
+             * Groupby
+             * @enum {string}
+             */
+            groupBy: "source" | "age";
+            /** Sample */
+            sample: components["schemas"]["BacklogSampleItem"][];
+        };
+        /**
+         * BacklogBatchView
+         * @description 分批视图（count = 服务端真实全量计数；refs ≤100 诚实有界）。
+         */
+        BacklogBatchView: {
+            /** Count */
+            count: number;
+            /** Entryrefs */
+            entryRefs: string[];
+            /** Key */
+            key: string;
+        };
+        /** BacklogBatchesResponse */
+        BacklogBatchesResponse: {
+            /** Batches */
+            batches: components["schemas"]["BacklogBatchView"][];
+            /**
+             * Groupby
+             * @enum {string}
+             */
+            groupBy: "source" | "age";
+        };
+        /**
          * BacklogPreviewRequest
          * @description POST /api/v1/entries/backlog-preview body.
          *
@@ -15885,6 +16326,48 @@ export interface components {
             /** Subject */
             subject?: string | null;
         };
+        /**
+         * MediaFailureItem
+         * @description POST /api/v1/entries/{entry_ref}/media-failures body 单项。
+         */
+        MediaFailureItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "media" | "other";
+            /** Src */
+            src: string;
+        };
+        /** MediaFailureListResponse */
+        MediaFailureListResponse: {
+            /** Failures */
+            failures: components["schemas"]["MediaFailureView"][];
+        };
+        /**
+         * MediaFailureReport
+         * @description POST /api/v1/entries/{entry_ref}/media-failures body（≤20 条/次）。
+         */
+        MediaFailureReport: {
+            /** Failures */
+            failures: components["schemas"]["MediaFailureItem"][];
+        };
+        /**
+         * MediaFailureView
+         * @description 失效附件记录（src 原样保存；重载的 cache-bust 只在读取侧）。
+         */
+        MediaFailureView: {
+            /** Firstseenat */
+            firstSeenAt: string;
+            /** Hitcount */
+            hitCount: number;
+            /** Kind */
+            kind: string;
+            /** Lastseenat */
+            lastSeenAt: string;
+            /** Src */
+            src: string;
+        };
         /** MergeFieldCompare */
         MergeFieldCompare: {
             /** Duplicate */
@@ -17159,10 +17642,76 @@ export interface components {
          * @description POST /api/v1/queue/today/items body。
          */
         QueueAddRequest: {
+            /** Clientitems */
+            clientItems?: components["schemas"]["QueueClientItem"][];
+            /** Expectedrevision */
+            expectedRevision?: number | null;
             /** Itemref */
             itemRef: string;
             /** Segment */
             segment?: string | null;
+        };
+        /**
+         * QueueAddResponse
+         * @description 加入响应 = 队列行 + N047 撞车提示（非阻断：条目已加入）。
+         */
+        QueueAddResponse: {
+            /** Addedat */
+            addedAt: string;
+            /** Duplicatewarning */
+            duplicateWarning?: {
+                [key: string]: unknown;
+            } | null;
+            /** Estimateminutes */
+            estimateMinutes?: number | null;
+            /** Id */
+            id: string;
+            /** Itemref */
+            itemRef: string;
+            /**
+             * Outcome
+             * @default created
+             * @enum {string}
+             */
+            outcome: "created" | "duplicate" | "resurrected";
+            /** Position */
+            position: number;
+            /** Queuedate */
+            queueDate: string;
+            /** Segment */
+            segment: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "budget" | "level" | "recovery";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "done" | "removed";
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * QueueClientItem
+         * @description N046：客户端本地视图行（冲突差异提示 + 按项合并的 keep-mine 源）。
+         */
+        QueueClientItem: {
+            /** Id */
+            id: string;
+            /** Itemref */
+            itemRef: string;
+            /** Position */
+            position?: number | null;
+            /** Segment */
+            segment?: string | null;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "done" | "removed";
         };
         /**
          * QueueFreezeRequest
@@ -17203,6 +17752,11 @@ export interface components {
             notes?: string[];
             /** Queuedate */
             queueDate: string;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
             /** Segmentorder */
             segmentOrder: string[];
             /** Segments */
@@ -17215,8 +17769,12 @@ export interface components {
          * @description POST /api/v1/queue/today/items/{id}/done body（set 语义）。
          */
         QueueItemDoneRequest: {
+            /** Clientitems */
+            clientItems?: components["schemas"]["QueueClientItem"][];
             /** Done */
             done: boolean;
+            /** Expectedrevision */
+            expectedRevision?: number | null;
         };
         /**
          * QueueItemView
@@ -17241,7 +17799,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "manual" | "budget" | "level";
+            source: "manual" | "budget" | "level" | "recovery";
             /**
              * Status
              * @enum {string}
@@ -17251,11 +17809,64 @@ export interface components {
             title?: string | null;
         };
         /**
+         * QueueMergeRequest
+         * @description POST /api/v1/queue/today/merge-conflicts body。
+         */
+        QueueMergeRequest: {
+            /** Expectedrevision */
+            expectedRevision: number;
+            /** Resolutions */
+            resolutions: components["schemas"]["QueueMergeResolution"][];
+        };
+        /**
+         * QueueMergeResolution
+         * @description N046：单个冲突 ref 的显式裁决。
+         */
+        QueueMergeResolution: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "keep-mine" | "keep-theirs";
+            clientItem?: components["schemas"]["QueueClientItem"] | null;
+            /** Itemref */
+            itemRef: string;
+        };
+        /**
+         * QueueMergeResponse
+         * @description 合并后的今日视图 + 合并元数据。
+         */
+        QueueMergeResponse: {
+            /** Items */
+            items: components["schemas"]["QueueItemView"][];
+            /** Merge */
+            merge: {
+                [key: string]: unknown;
+            };
+            /** Queuedate */
+            queueDate: string;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /** Segmentorder */
+            segmentOrder: string[];
+            /** Segments */
+            segments: components["schemas"]["QueueSegmentView"][];
+            /** Totalestimateminutes */
+            totalEstimateMinutes: number;
+        };
+        /**
          * QueueReorderRequest
          * @description PUT /api/v1/queue/today/order body：给定的 id 按序列排前，
          *     未提及行保持相对顺序垫后（语义同工作区 reorder）。
          */
         QueueReorderRequest: {
+            /** Clientitems */
+            clientItems?: components["schemas"]["QueueClientItem"][];
+            /** Expectedrevision */
+            expectedRevision?: number | null;
             /** Order */
             order: string[];
         };
@@ -17264,6 +17875,10 @@ export interface components {
          * @description PATCH /api/v1/queue/today/items/{id}/segment body。
          */
         QueueSegmentMoveRequest: {
+            /** Clientitems */
+            clientItems?: components["schemas"]["QueueClientItem"][];
+            /** Expectedrevision */
+            expectedRevision?: number | null;
             /** Segment */
             segment?: string | null;
         };
@@ -17345,6 +17960,11 @@ export interface components {
             items: components["schemas"]["QueueItemView"][];
             /** Queuedate */
             queueDate: string;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
             /** Segmentorder */
             segmentOrder: string[];
             /** Segments */
@@ -18112,6 +18732,27 @@ export interface components {
             status: "ok" | "unavailable";
         };
         /**
+         * ReadingNotePut
+         * @description PUT /api/v1/entries/{entry_ref}/note body（N045）。
+         */
+        ReadingNotePut: {
+            /** Note */
+            note: string;
+            /** Paraid */
+            paraId?: string | null;
+        };
+        /** ReadingNoteView */
+        ReadingNoteView: {
+            /** Entryref */
+            entryRef: string;
+            /** Note */
+            note: string;
+            /** Paraid */
+            paraId?: string | null;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
          * ReadingProgressPut
          * @description PUT /api/v1/reading-progress body。
          */
@@ -18194,6 +18835,14 @@ export interface components {
             newPassword: string;
             /** Token */
             token: string;
+        };
+        /**
+         * RecoveryToQueueRequest
+         * @description POST /api/v1/sources/recoveries/{id}/to-queue body（N037）。
+         */
+        RecoveryToQueueRequest: {
+            /** Segment */
+            segment?: string | null;
         };
         /**
          * RedirectHop
@@ -18496,6 +19145,21 @@ export interface components {
             lumiRestored: boolean;
             /** Safetybackupid */
             safetyBackupId?: string | null;
+        };
+        /**
+         * RetentionApplyRequest
+         * @description POST /api/v1/sources/retention-apply body（N038）。
+         */
+        RetentionApplyRequest: {
+            /** Days */
+            days?: number | null;
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Prune
+             * @default false
+             */
+            prune: boolean;
         };
         /**
          * RetentionNotice
@@ -21671,10 +22335,17 @@ export interface components {
          *
          *     N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
          *     排序语义不变（position 升序）。
+         *
+         *     N047：``duplicateWarning`` 只在 add 响应中出现（canonical URL 撞车
+         *     提示，非阻断——条目已加入）；其余端点恒 None。
          */
         WorkspaceItem: {
             /** Addedat */
             addedAt: string;
+            /** Duplicatewarning */
+            duplicateWarning?: {
+                [key: string]: unknown;
+            } | null;
             /** Groupname */
             groupName?: string | null;
             /** Itemref */
@@ -25876,6 +26547,157 @@ export interface operations {
             };
         };
     };
+    backlog_batch_apply_api_v1_entries_backlog_batch_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacklogBatchApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogBatchApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_batch_preview_api_v1_entries_backlog_batch_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacklogBatchPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogBatchPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_batches_view_api_v1_entries_backlog_batches_get: {
+        parameters: {
+            query?: {
+                groupBy?: "source" | "age";
+                olderThanDays?: number;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogBatchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlog_batch_logs_api_v1_entries_backlog_batches_log_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogBatchLogListResponse"];
+                };
+            };
+        };
+    };
+    undo_backlog_batch_api_v1_entries_backlog_batches__log_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogBatchLogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     compare_entries_api_v1_entries_compare_post: {
         parameters: {
             query?: never;
@@ -26134,6 +26956,167 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CardSaveResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_media_failures_api_v1_entries__entry_ref__media_failures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaFailureListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_media_failures_api_v1_entries__entry_ref__media_failures_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaFailureReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaFailureListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reading_note_api_v1_entries__entry_ref__note_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingNoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_reading_note_api_v1_entries__entry_ref__note_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingNotePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingNoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reading_note_api_v1_entries__entry_ref__note_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -32619,7 +33602,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueueItemView"];
+                    "application/json": components["schemas"]["QueueAddResponse"];
                 };
             };
             /** @description Created */
@@ -32628,7 +33611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueueItemView"];
+                    "application/json": components["schemas"]["QueueAddResponse"];
                 };
             };
             /** @description Validation Error */
@@ -32644,7 +33627,9 @@ export interface operations {
     };
     remove_queue_item_api_v1_queue_today_items__item_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                expectedRevision?: number | null;
+            };
             header?: never;
             path: {
                 item_id: string;
@@ -32728,6 +33713,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueueItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_queue_conflicts_api_v1_queue_today_merge_conflicts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueMergeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -36634,10 +37652,171 @@ export interface operations {
             };
         };
     };
+    sources_recoveries_api_v1_sources_recoveries_get: {
+        parameters: {
+            query?: {
+                includeConsumed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recovery_to_queue_api_v1_sources_recoveries__recovery_id__to_queue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recovery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoveryToQueueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_refresh_status_api_v1_sources_refresh_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     replacement_preview_api_v1_sources_replacement_preview_get: {
         parameters: {
             query: {
                 feedUrl: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_retention_apply_api_v1_sources_retention_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_retention_preview_api_v1_sources_retention_preview_get: {
+        parameters: {
+            query: {
+                feedUrl: string;
+                days?: number;
             };
             header?: never;
             path?: never;

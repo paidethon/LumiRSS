@@ -39,6 +39,8 @@ import {
 } from '../lib/reader-speech'
 import type { ReaderViewMode } from '../lib/translation-blocks'
 import ArticleContent from './ArticleContent'
+// E1: N039 失效附件面板（lazy，随正文工具面板区块按需加载）
+const MediaFailuresPanel = lazy(() => import('./MediaFailuresPanel'))
 // bundle guard：阅读工具栏只在选中文章后出现，且本就挂在局部
 // `<Suspense fallback={null}>` 边界里——与下方摘要/对话/查找条同一
 // 模式改 lazy 分包（首开瞬时 null，chunk 缓存后同步渲染）。正文
@@ -952,6 +954,10 @@ const handleScroll = useCallback(() => {
         {/* F29：来源相关笔记反向入口（无笔记引用时零渲染） */}
         <Suspense fallback={null}>
         <EntryNotesBacklinks key={`notes-${detail.entryRef}`} entryRef={detail.entryRef} />
+        </Suspense>
+        {/* E1: N039 失效附件面板（自动记录 + 单项一次性重载；无自动重试） */}
+        <Suspense fallback={null}>
+          <MediaFailuresPanel key={`media-${detail.entryRef}`} entryRef={detail.entryRef} />
         </Suspense>
         {/* F069：文章阅读自测（生成→作答→评分→再来一次） */}
         <Suspense fallback={null}>
