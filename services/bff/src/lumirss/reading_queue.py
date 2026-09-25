@@ -53,8 +53,14 @@ _PAYLOAD_VERSION = 1
 _MAX_SEGMENT_LENGTH = 60
 _MAX_LABEL_LENGTH = 100
 
-_QUEUE_SOURCES = ("manual", "budget", "level")
+_QUEUE_SOURCES = ("manual", "budget", "level", "recovery")
 _QUEUE_STATUSES = ("pending", "done", "removed")
+
+# N046：可手动加入的来源（budget/level 只属于生成管线）。
+_MANUAL_SOURCES = ("manual", "recovery")
+
+# N046：冲突提示列表上限（诚实有界；超出部分以 truncated 标注）。
+_MAX_CONFLICTS = 100
 
 
 class QueueInvalid(Exception):
@@ -75,6 +81,28 @@ class QueueSnapshotNotFound(Exception):
 
 class QueueSnapshotLimit(Exception):
     """快照数达到上限——400 queue_snapshot_limit。"""
+
+
+class QueueRevisionConflict(Exception):
+    """N046：客户端 expectedRevision 落后于服务端——409。
+
+    响应体额外携带 currentRevision 与逐 ref 的差异提示
+    （conflicts: [{ref, serverItem, yourItem}]；yourItem 为 null 表示
+    客户端没有该行的本地视图）。客户端「按项合并」逐条选择
+    keep-mine / keep-theirs 后经 merge 提交。"""
+
+    def __init__(
+        self,
+        current_revision: int,
+        conflicts: list[dict[str, Any]],
+        message: str | None = None,
+    ) -> None:
+        self.current_revision = current_revision
+        self.conflicts = conflicts
+        super().__init__(
+            message
+            or "队列已被其他设备修改：请逐项选择保留服务端还是本地的状态。"
+        )
 
 
 def today_queue_date() -> str:
@@ -143,7 +171,97 @@ class ReadingQueueStore:
             "segments": self._derive_segments(items, segment_order),
             "segmentOrder": segment_order,
             "totalEstimateMinutes": self._total_estimate(items),
+            "revision": await self.current_revision(),
         }
+
+    # -- N046 revision guard ---------------------------------------------------
+
+    async def current_revision(self, queue_date: str | None = None) -> int:
+        """当前队列修订号（meta 行不存在 = 0；只增不减）。"""
+        await self._db.migrate()
+        day = queue_date or today_queue_date()
+        row = await self._db.fetch_one(
+            "SELECT queue_revision FROM reading_queue_meta WHERE queue_date = ?",
+            (day,),
+        )
+        if row is None or row["queue_revision"] is None:
+            return 0
+        return int(row["queue_revision"])
+
+    async def _bump_revision(self, queue_date: str | None = None) -> int:
+        day = queue_date or today_queue_date()
+        await self._db.execute(
+            "INSERT INTO reading_queue_meta (queue_date, segment_order_json, queue_revision)"
+            " VALUES (?, '[]', 1)"
+            " ON CONFLICT(queue_date) DO UPDATE SET"
+            " queue_revision = queue_revision + 1",
+            (day,),
+        )
+        return await self.current_revision(day)
+
+    @staticmethod
+    def _bump_revision_tx(conn: sqlite3.Connection, queue_date: str) -> None:
+        """事务内修订号 +1（meta 行懒创建；与既有行同语句原子生效）。"""
+        conn.execute(
+            "INSERT INTO reading_queue_meta (queue_date, segment_order_json, queue_revision)"
+            " VALUES (?, '[]', 1)"
+            " ON CONFLICT(queue_date) DO UPDATE SET"
+            " queue_revision = queue_revision + 1",
+            (queue_date,),
+        )
+
+    @staticmethod
+    def _check_revision(
+        expected_revision: int | None,
+        current_revision: int,
+        client_items: list[dict[str, Any]] | None,
+        server_items: list[dict[str, Any]],
+    ) -> None:
+        """expectedRevision 给定且落后 → 抛 QueueRevisionConflict。
+
+        差异提示逐 ref 计算：服务端行与客户端本地视图（按 id 匹配）
+        的 status/segment 不一致，或客户端缺该行视图（yourItem=null）。
+        未传 client_items 时只给 serverItem（yourItem=null），差异提示
+        退化为「服务端现状」——客户端仍可整页重取或仅凭 ref 合并。"""
+        if expected_revision is None or expected_revision == current_revision:
+            return
+        by_id = {str(item["id"]): item for item in (client_items or [])}
+        conflicts: list[dict[str, Any]] = []
+        for server in server_items:
+            mine = by_id.get(str(server["id"]))
+            if mine is not None and (
+                mine.get("status") == server["status"]
+                and mine.get("segment") == server["segment"]
+            ):
+                continue
+            conflicts.append(
+                {
+                    "ref": server["itemRef"],
+                    "serverItem": {
+                        "id": server["id"],
+                        "itemRef": server["itemRef"],
+                        "status": server["status"],
+                        "segment": server["segment"],
+                        "position": server["position"],
+                        "title": server["title"],
+                    },
+                    "yourItem": (
+                        {
+                            "id": str(mine["id"]),
+                            "itemRef": str(mine.get("itemRef") or server["itemRef"]),
+                            "status": str(mine.get("status") or "pending"),
+                            "segment": mine.get("segment"),
+                            "position": mine.get("position"),
+                            "title": mine.get("title"),
+                        }
+                        if mine is not None
+                        else None
+                    ),
+                }
+            )
+            if len(conflicts) >= _MAX_CONFLICTS:
+                break
+        raise QueueRevisionConflict(current_revision, conflicts)
 
     @staticmethod
     def _total_estimate(items: list[dict[str, Any]]) -> int:
@@ -381,23 +499,36 @@ class ReadingQueueStore:
                     " queue_date, source, status, segment) VALUES (?, ?, ?, ?, ?, 'budget', 'pending', NULL)",
                     (f"rq-{uuid.uuid4().hex}", candidate["ref"], now, next_position, day),
                 )
+            self._bump_revision_tx(conn, day)
 
         await transaction(self._db, _tx)
 
     # -- N041 manual add / remove / done / reorder -----------------------------
 
     async def add_item(
-        self, item_ref: str, segment: str | None = None
+        self,
+        item_ref: str,
+        segment: str | None = None,
+        *,
+        source: str = "manual",
+        expected_revision: int | None = None,
+        client_items: list[dict[str, Any]] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        """手动加入（source=manual）。返回 (视图, 结果)。
+        """手动加入（source=manual；N037 补读走 source=recovery）。返回
+        (视图, 结果)。
 
         - 新加入 → ``created``（201）；
         - 今天已存在 pending 行 → ``duplicate``（幂等返回，绝不重排）；
         - 今天已被移除（removed）→ ``resurrected``（显式重新加入，
           垫到队尾）；
         - 今天已完成（done）→ 抛 QueueItemDone（409；先取消完成再加）。
+
+        N046：``expected_revision`` 给定且落后 → 409
+        QueueRevisionConflict（先于任何写入发生——冲突绝不半途落库）。
         """
         await self._db.migrate()
+        if source not in _MANUAL_SOURCES:
+            raise QueueInvalid(f"source 必须是 {' 或 '.join(_MANUAL_SOURCES)}。")
         clean_segment = _clean_segment(segment)
         try:
             parse_item_ref(item_ref)
@@ -408,6 +539,9 @@ class ReadingQueueStore:
             "SELECT id, status FROM reading_queue WHERE queue_date = ? AND entry_ref = ?",
             (day, item_ref),
         )
+        if existing is None:
+            # 新行：先做修订守卫（仅当确要写入时）。
+            await self._guard_revision(expected_revision, client_items, day)
         if existing is not None:
             if existing["status"] == "pending":
                 row = await self._get_row(str(existing["id"]))
@@ -424,6 +558,7 @@ class ReadingQueueStore:
                 " WHERE id = ?",
                 (clean_segment, utc_now(), day, str(existing["id"])),
             )
+            await self._bump_revision(day)
             row = await self._get_row(str(existing["id"]))
             return row, "resurrected"
 
@@ -437,11 +572,41 @@ class ReadingQueueStore:
             "INSERT INTO reading_queue (id, entry_ref, added_at, position, queue_date,"
             " source, status, segment) VALUES (?, ?, ?,"
             " (SELECT COALESCE(MAX(position), 0) + 1 FROM reading_queue WHERE queue_date = ?),"
-            " ?, 'manual', 'pending', ?)",
-            (item_id, item_ref, utc_now(), day, day, clean_segment),
+            " ?, ?, 'pending', ?)",
+            (item_id, item_ref, utc_now(), day, day, source, clean_segment),
         )
+        await self._bump_revision(day)
         row = await self._get_row(item_id)
         return row, "created"
+
+    async def _guard_revision(
+        self,
+        expected_revision: int | None,
+        client_items: list[dict[str, Any]] | None,
+        day: str,
+    ) -> None:
+        if expected_revision is None:
+            return
+        current = await self.current_revision(day)
+        if expected_revision == current:
+            return
+        server_items = await self._conflict_rows(day)
+        self._check_revision(expected_revision, current, client_items, server_items)
+
+    async def _conflict_rows(self, day: str) -> list[dict[str, Any]]:
+        """冲突差异提示用的全量行（含 removed——「另一端已移除」同样是
+        客户端需要看到的差异；正式视图不出 removed 行）。"""
+        rows = await self._db.fetch_all(
+            "SELECT q.id, q.entry_ref, q.added_at, q.position, q.queue_date,"
+            " q.source, q.status, q.segment, se.title AS projection_title,"
+            " se.content_text AS projection_text"
+            " FROM reading_queue q"
+            " LEFT JOIN search_entries se ON se.entry_ref = substr(q.entry_ref, 5)"
+            " WHERE q.queue_date = ?"
+            " ORDER BY q.position ASC, q.rowid ASC",
+            (day,),
+        )
+        return [self._row_view(row) for row in rows]
 
     async def _get_row(self, item_id: str) -> dict[str, Any]:
         row = await self._db.fetch_one(
@@ -457,10 +622,17 @@ class ReadingQueueStore:
             raise QueueItemNotFound(item_id)
         return self._row_view(row)
 
-    async def remove_item(self, item_id: str) -> dict[str, Any]:
+    async def remove_item(
+        self,
+        item_id: str,
+        *,
+        expected_revision: int | None = None,
+        client_items: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """移除（status=removed，行保留——生成绝不复活被移除的条目）。"""
         await self._db.migrate()
         view = await self._get_row(item_id)
+        await self._guard_revision(expected_revision, client_items, view["queueDate"])
 
         def _tx(conn: sqlite3.Connection) -> None:
             conn.execute(
@@ -477,25 +649,42 @@ class ReadingQueueStore:
                     "UPDATE reading_queue SET position = ? WHERE id = ?",
                     (index, row[0]),
                 )
+            self._bump_revision_tx(conn, view["queueDate"])
 
         await transaction(self._db, _tx)
         return view
 
-    async def set_item_done(self, item_id: str, done: bool) -> dict[str, Any]:
+    async def set_item_done(
+        self,
+        item_id: str,
+        done: bool,
+        *,
+        expected_revision: int | None = None,
+        client_items: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """完成状态（set 语义，按条目身份记账；绝不隐式改写上游已读）。"""
         await self._db.migrate()
-        await self._get_row(item_id)
+        row = await self._get_row(item_id)
+        await self._guard_revision(expected_revision, client_items, row["queueDate"])
         status = "done" if done else "pending"
         await self._db.execute(
             "UPDATE reading_queue SET status = ? WHERE id = ?", (status, item_id)
         )
+        await self._bump_revision(row["queueDate"])
         return await self._get_row(item_id)
 
-    async def reorder(self, item_ids: list[str]) -> None:
+    async def reorder(
+        self,
+        item_ids: list[str],
+        *,
+        expected_revision: int | None = None,
+        client_items: list[dict[str, Any]] | None = None,
+    ) -> None:
         """持久化重排：给定 id 按 1..k 排列，未提及的非 removed 行保持
         当前相对顺序垫在后面（语义同工作区 reorder）。"""
         await self._db.migrate()
         day = today_queue_date()
+        await self._guard_revision(expected_revision, client_items, day)
 
         def _tx(conn: sqlite3.Connection) -> None:
             rows = conn.execute(
@@ -512,22 +701,96 @@ class ReadingQueueStore:
                     "UPDATE reading_queue SET position = ? WHERE id = ? AND queue_date = ?",
                     (index, row_id, day),
                 )
+            self._bump_revision_tx(conn, day)
 
         await transaction(self._db, _tx)
 
     # -- N042 segments ---------------------------------------------------------
 
-    async def set_item_segment(self, item_id: str, segment: str | None) -> dict[str, Any]:
+    async def set_item_segment(
+        self,
+        item_id: str,
+        segment: str | None,
+        *,
+        expected_revision: int | None = None,
+        client_items: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """行菜单移动分段（N042）；新段名随行诞生（派生语义，无段表）。"""
         await self._db.migrate()
         clean = _clean_segment(segment)
-        await self._get_row(item_id)
+        row = await self._get_row(item_id)
+        await self._guard_revision(expected_revision, client_items, row["queueDate"])
         await self._db.execute(
             "UPDATE reading_queue SET segment = ? WHERE id = ?", (clean, item_id)
         )
+        await self._bump_revision(row["queueDate"])
         if clean is not None:
             await self._append_segment_names([clean])
         return await self._get_row(item_id)
+
+    # -- N046 按项合并 ----------------------------------------------------------
+
+    async def merge_conflicts(
+        self,
+        expected_revision: int,
+        resolutions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """按项合并：逐冲突 ref 显式选择 keep-mine（应用客户端状态）或
+        keep-theirs（保持服务端现状）。修订号必须与 current 一致（否则
+        再 409）；合并整体 bump 一次修订号。返回合并后的今日视图。
+
+        keep-mine 应用字段 = status + segment（位置顺序不属于本冲突
+        语义——两端重排以最后写入为准，无 per-item 内容差异可解）。"""
+        day = today_queue_date()
+        current = await self.current_revision(day)
+        if expected_revision != current:
+            server_items = await self._conflict_rows(day)
+            self._check_revision(expected_revision, current, None, server_items)
+        applied = 0
+        for resolution in resolutions:
+            action = resolution.get("action")
+            ref = resolution.get("itemRef")
+            if action not in ("keep-mine", "keep-theirs") or not isinstance(ref, str):
+                raise QueueInvalid("resolution 必须是 {itemRef, action: keep-mine|keep-theirs}。")
+            if action == "keep-theirs":
+                continue
+            client_item = resolution.get("clientItem")
+            if not isinstance(client_item, dict):
+                raise QueueInvalid("keep-mine 需要 clientItem（本地状态视图）。")
+            row = await self._db.fetch_one(
+                "SELECT id, status FROM reading_queue WHERE queue_date = ? AND entry_ref = ?",
+                (day, ref),
+            )
+            if row is None:
+                continue  # 服务端无此行：keep-mine 无处可落，诚实跳过
+            status = client_item.get("status")
+            if status not in _QUEUE_STATUSES:
+                status = str(row["status"])
+            segment = client_item.get("segment")
+            clean_segment = (
+                _clean_segment(segment) if segment is not None else None
+            )
+            if row["status"] == "removed" and status != "removed":
+                # keep-mine 复活被另一端移除的行（垫到队尾，语义同
+                # add_item 的显式复活）。
+                await self._db.execute(
+                    "UPDATE reading_queue SET status = ?, segment = ?,"
+                    " added_at = ?, position = (SELECT COALESCE(MAX(position), 0) + 1"
+                    "  FROM reading_queue WHERE queue_date = ?)"
+                    " WHERE id = ?",
+                    (status, clean_segment, utc_now(), day, str(row["id"])),
+                )
+            else:
+                await self._db.execute(
+                    "UPDATE reading_queue SET status = ?, segment = ? WHERE id = ?",
+                    (status, clean_segment, str(row["id"])),
+                )
+            applied += 1
+        if applied > 0:
+            await self._bump_revision(day)
+        view = await self.today_view()
+        view["merge"] = {"applied": applied, "resolutions": len(resolutions)}
+        return view
 
     async def set_segment_order(self, names: list[str]) -> list[str]:
         """段顺序（呈现提示；meta 行懒创建——N101 group_order_json 同构）。"""

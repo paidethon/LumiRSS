@@ -277,7 +277,26 @@ async def add_workspace_item(
         raise WorkspaceInvalid("引用的内容不存在，无法加入工作区。") from exc
     store: WorkspaceStore = _get_workspace_store(request)
     item = await store.add_item(workspace_id, payload.itemRef, payload.groupName)
-    return _item_model(item)
+    # N047：canonical URL 撞车检查（非阻断——条目已加入；warning 附在
+    # 响应里，客户端提供 定位/仍要加入）。比较范围 = 队列 pending 行 +
+    # 队列冻结快照 + 本工作区其他成员。解析不出 URL 的条目不提示。
+    duplicate_warning = None
+    try:
+        from lumirss.link_dedupe import find_duplicate_for_ref
+
+        same_ws = [
+            (other.item_ref, "workspace")  # ItemRef 同构：rss:<entryRef>
+            for other in await store.list_items(workspace_id, limit=200)
+            if other.item_ref != payload.itemRef
+        ]
+        duplicate_warning = await find_duplicate_for_ref(
+            request.app.state.db, payload.itemRef, extra_refs=same_ws
+        )
+    except Exception:  # noqa: BLE001 — 提示是尽力而为，绝不阻断加入
+        duplicate_warning = None
+    model = _item_model(item)
+    model.duplicateWarning = duplicate_warning
+    return model
 
 
 @router.get(

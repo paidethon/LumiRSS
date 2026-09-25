@@ -8,7 +8,7 @@ format. The entry-domain models (0003/0004) are built directly by the
 adapter and returned by the routes, so there is no second mapping layer.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1895,13 +1895,17 @@ class WorkspaceItem(BaseModel):
     """One workspace member (ref + ordering; content resolves separately).
 
     N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
-    排序语义不变（position 升序）。"""
+    排序语义不变（position 升序）。
+
+    N047：``duplicateWarning`` 只在 add 响应中出现（canonical URL 撞车
+    提示，非阻断——条目已加入）；其余端点恒 None。"""
 
     itemRef: str
     position: int
     addedAt: str
     groupName: str | None = None
     pinned: bool = False
+    duplicateWarning: dict[str, Any] | None = None
 
 
 class WorkspaceItemsResponse(BaseModel):
