@@ -1102,6 +1102,241 @@ export async function listAdminAudit(signal?: AbortSignal, limit = 20): Promise<
   })
 }
 
+// ---- N191 成员额度策略包 + N193 后台任务暂停（admin-only，同一策略行） ----
+
+/** 成员策略行（user_quotas）：caps 里没有的键 = 管理员未设限；
+ * backgroundPaused 只停重型后台任务，登录/阅读不受影响。 */
+export interface AdminUserQuota {
+  userId: string
+  caps: { maxSources: number | null; aiQuotaPerDay: number | null }
+  backgroundPaused: boolean
+  backgroundPauseReason: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+function normalizeUserQuota(body: Record<string, unknown>, userId: string): AdminUserQuota {
+  const caps = (body.caps ?? {}) as Record<string, unknown>
+  const num = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+  return {
+    userId: String(body.userId ?? userId),
+    caps: { maxSources: num(caps.maxSources), aiQuotaPerDay: num(caps.aiQuotaPerDay) },
+    backgroundPaused: body.backgroundPaused === true,
+    backgroundPauseReason: pickString(body.backgroundPauseReason),
+    updatedAt: toIso(body.updatedAt),
+    updatedBy: pickString(body.updatedBy),
+  }
+}
+
+/** 读成员策略行（额度 + 后台暂停标志）。 */
+export async function getAdminUserQuota(userId: string, signal?: AbortSignal): Promise<AdminUserQuota> {
+  const body = await request<Record<string, unknown>>(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`,
+    signal,
+  )
+  return normalizeUserQuota(body, userId)
+}
+
+/** 设置成员额度（传 null 的键 = 清除该上限；服务端是唯一真源）。 */
+export async function setAdminUserQuota(
+  userId: string,
+  caps: { maxSources: number | null; aiQuotaPerDay: number | null },
+): Promise<AdminUserQuota> {
+  const response = await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...(caps.maxSources !== null ? { maxSources: caps.maxSources } : {}),
+      ...(caps.aiQuotaPerDay !== null ? { aiQuotaPerDay: caps.aiQuotaPerDay } : {}),
+    }),
+    contentType: 'application/json',
+  })
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeUserQuota(body, userId)
+}
+
+/** 清除成员额度策略（N193 后台暂停标志保留——两者生命周期独立）。 */
+export async function clearAdminUserQuota(userId: string): Promise<AdminUserQuota> {
+  const response = await rawRequest(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`,
+    { method: 'DELETE' },
+  )
+  const body = (await response.json()) as Record<string, unknown>
+  return normalizeUserQuota(body, userId)
+}
+
+/** 暂停单个成员的重型后台任务（必须给原因；登录/阅读不受影响）。 */
+export async function pauseAdminUserBackground(userId: string, reason: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/background-pause`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+    contentType: 'application/json',
+  })
+}
+
+/** 恢复成员的后台任务（原因随之清空）。 */
+export async function resumeAdminUserBackground(userId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/background-resume`, {
+    method: 'POST',
+  })
+}
+
+// ---- N192 邀请容量仪表（真实行聚合；lowCapacity 服务端定义） ----
+
+export interface AdminCapacity {
+  pool: { ready: number; held: number; assigned: number }
+  invites: { pending: number; held: number }
+  users: { active: number; paused: number }
+  /** ready+held < pending：可交付名额追不上待激活邀请。 */
+  lowCapacity: boolean
+}
+
+export async function getAdminCapacity(signal?: AbortSignal): Promise<AdminCapacity> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/capacity`, signal)
+  const pool = (body.pool ?? {}) as Record<string, unknown>
+  const invites = (body.invites ?? {}) as Record<string, unknown>
+  const users = (body.users ?? {}) as Record<string, unknown>
+  const num = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+  return {
+    pool: { ready: num(pool.ready), held: num(pool.held), assigned: num(pool.assigned) },
+    invites: { pending: num(invites.pending), held: num(invites.held) },
+    users: { active: num(users.active), paused: num(users.paused) },
+    lowCapacity: body.lowCapacity === true,
+  }
+}
+
+// ---- N195 升级影响预览（只读推演；绝不触发任何升级） ----
+
+export interface AdminUpgradePreview {
+  /** false = 未配置清单/文件不可读/解析失败（reason 说明）。 */
+  available: boolean
+  reason: string | null
+  currentVersion: string | null
+  targetVersion: string | null
+  /** 目标有而本地未应用的迁移文件名（升序）。 */
+  newMigrations: string[]
+  /** manifest 声明的最低可升级版本；未声明为 null。 */
+  minCompat: string | null
+  /** true = 不兼容（同版本/降级/库超前于目标），blockedReason 说明。 */
+  blocked: boolean
+  blockedReason: string | null
+}
+
+export async function getAdminUpgradePreview(signal?: AbortSignal): Promise<AdminUpgradePreview> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/upgrade-preview`, signal)
+  const migrations = Array.isArray(body.newMigrations) ? body.newMigrations : []
+  return {
+    available: body.available === true,
+    reason: pickString(body.reason),
+    currentVersion: pickString(body.currentVersion),
+    targetVersion: pickString(body.targetVersion),
+    newMigrations: migrations.map((name) => String(name)),
+    minCompat: pickString(body.minCompat),
+    blocked: body.blocked === true,
+    blockedReason: pickString(body.blockedReason),
+  }
+}
+
+// ---- N196 升级任务进度（./lumirss update 写入；本页只读、无执行控件） ----
+
+export interface AdminDeployStage {
+  /** running/ok/failed/interrupted。 */
+  status: string
+  startedAt: string | null
+  finishedAt: string | null
+  note: string | null
+}
+
+export interface AdminDeployStatus {
+  available: boolean
+  reason: string | null
+  deploy: {
+    imageTag: string | null
+    startedAt: string | null
+    updatedAt: string | null
+    stages: Record<string, AdminDeployStage>
+    result: { status: string; finishedAt: string | null } | null
+  } | null
+}
+
+export async function getAdminDeployStatus(signal?: AbortSignal): Promise<AdminDeployStatus> {
+  const body = await request<Record<string, unknown>>(`${API_BASE}/admin/deploy-status`, signal)
+  if (body.available !== true) {
+    return { available: false, reason: pickString(body.reason) ?? null, deploy: null }
+  }
+  const deploy = (body.deploy ?? {}) as Record<string, unknown>
+  const stagesRaw = (deploy.stages ?? {}) as Record<string, unknown>
+  const stages: Record<string, AdminDeployStage> = {}
+  for (const [name, raw] of Object.entries(stagesRaw)) {
+    const row = (raw ?? {}) as Record<string, unknown>
+    stages[name] = {
+      status: String(row.status ?? 'unknown'),
+      startedAt: toIso(row.startedAt),
+      finishedAt: toIso(row.finishedAt),
+      note: pickString(row.note),
+    }
+  }
+  const resultRaw = (deploy.result ?? null) as Record<string, unknown> | null
+  return {
+    available: true,
+    reason: null,
+    deploy: {
+      imageTag: pickString(deploy.imageTag),
+      startedAt: toIso(deploy.startedAt),
+      updatedAt: toIso(deploy.updatedAt),
+      stages,
+      result:
+        resultRaw !== null
+          ? { status: String(resultRaw.status ?? 'unknown'), finishedAt: toIso(resultRaw.finishedAt) }
+          : null,
+    },
+  }
+}
+
+// ---- N198 版本差异功能导览（成员可读；adminOnly 条目服务端已过滤） ----
+
+export interface WhatsNewFeature {
+  id: string
+  title: string
+  /** 功能入口提示（应用内路径或说明；展示用）。 */
+  entry: string
+  adminOnly?: boolean
+}
+
+export interface WhatsNewResponse {
+  /** 清单版本；文件缺失/损坏为 null（前端隐藏导览）。 */
+  version: string | null
+  sinceVersion: string | null
+  features: WhatsNewFeature[]
+}
+
+export async function getWhatsNew(
+  sinceVersion: string | null,
+  signal?: AbortSignal,
+): Promise<WhatsNewResponse> {
+  const path =
+    sinceVersion !== null
+      ? `${API_BASE}/whats-new?sinceVersion=${encodeURIComponent(sinceVersion)}`
+      : `${API_BASE}/whats-new`
+  const body = await request<Record<string, unknown>>(path, signal)
+  const features = Array.isArray(body.features) ? body.features : []
+  return {
+    version: pickString(body.version),
+    sinceVersion: sinceVersion,
+    features: features.map((raw) => {
+      const row = (raw ?? {}) as Record<string, unknown>
+      const feature: WhatsNewFeature = {
+        id: String(row.id ?? ''),
+        title: String(row.title ?? ''),
+        entry: pickString(row.entry) ?? '',
+      }
+      if (row.adminOnly === true) feature.adminOnly = true
+      return feature
+    }),
+  }
+}
+
 /** 0013 Gate 2：直接 RSS/Atom 预览（无副作用；不接 AbortSignal ——
  * POST 语义与 Mutation 一致，避免预览中途被取消造成状态不一致）。 */
 export async function previewFeed(feedUrl: string): Promise<FeedPreviewMetadata> {

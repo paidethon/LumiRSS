@@ -83,6 +83,7 @@ from lumirss.routers import (
     task_records,
     totp,
     view_feed,
+    whats_new,
     workspace_w5,
     workspaces,
 )
@@ -426,5 +427,7 @@ app.include_router(task_records.router)
 # W5 (F081–F100)
 app.include_router(library_w5.router)
 app.include_router(workspace_w5.router)
+# N198 版本功能导览（成员可读；adminOnly 条目服务端角色过滤）
+app.include_router(whats_new.router)
 
 register_error_handlers(app)

@@ -79,6 +79,11 @@ jobs:
       # scope for this project size), but every value an operator needs to
       # verify what they run. './lumirss export-images' picks this file up
       # automatically when it sits next to the checkout.
+      # N195: the manifest also carries the TARGET tree's migration list so
+      # GET /admin/upgrade-preview can diff it against the applied
+      # schema_migrations and show (or block) the DB impact before an
+      # update. min_compat is a maintainer-declared upgrade floor
+      # (null = no declared floor); pin a version here when one exists.
       - name: Emit release manifest + SHA256SUMS
         run: |
           set -euo pipefail
@@ -87,6 +92,7 @@ jobs:
           bff_digest="${{ steps.bff.outputs.digest }}"
           web_digest="${{ steps.web.outputs.digest }}"
           test -n "$bff_digest" && test -n "$web_digest"
+          migrations_json="$(python3 -c 'import glob, json, os; print(json.dumps(sorted(os.path.basename(p) for p in glob.glob("services/bff/src/lumirss/migrations/*.sql"))))')"
           cat > release-manifest.json <<JSON
           {
             "schema": "lumirss-release-manifest/v1",
@@ -98,6 +104,8 @@ jobs:
               "bff": "ghcr.io/$repo/lumirss-bff@$bff_digest",
               "web": "ghcr.io/$repo/lumirss-web@$web_digest"
             },
+            "migrations": $migrations_json,
+            "min_compat": null,
             "note": "Unsigned advisory manifest (plain checksums, no signing infra). Verify with SHA256SUMS; pin LUMIRSS_IMAGE_TAG=$version in .env.prod."
           }
           JSON

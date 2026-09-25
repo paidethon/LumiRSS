@@ -3810,6 +3810,22 @@
     "title": "AuthorSummary",
     "type": "object"
    },
+   "BackgroundPauseRequest": {
+    "description": "POST /admin/users/{id}/background-pause body。原因必填——\n「为什么他的后台任务停了」必须留下人读答案（同步落 audit_log）。",
+    "properties": {
+     "reason": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "title": "BackgroundPauseRequest",
+    "type": "object"
+   },
    "BacklogApplyRequest": {
     "additionalProperties": false,
     "description": "POST /api/v1/entries/backlog-apply body — must carry the one-shot\npreview token (30s) so the applied condition cannot drift.",
@@ -21334,6 +21350,39 @@
     "title": "TrashList",
     "type": "object"
    },
+   "UserQuotaPutRequest": {
+    "description": "PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；\n正整数（1..上限界）才是有效设置。未知键 → 422。",
+    "properties": {
+     "aiQuotaPerDay": {
+      "anyOf": [
+       {
+        "maximum": 100000.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Aiquotaperday"
+     },
+     "maxSources": {
+      "anyOf": [
+       {
+        "maximum": 10000.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Maxsources"
+     }
+    },
+    "title": "UserQuotaPutRequest",
+    "type": "object"
+   },
    "UserRoleRequest": {
     "description": "POST /admin/users/{id}/role — owner-only provisioning body.\n\nAnything outside ``member``/``admin`` (including ``owner`` — there is\nexactly one owner and it is never assignable through the API) is a\nvalidation error (422).",
     "properties": {
@@ -22750,6 +22799,40 @@
     "summary": "Audit Tail"
    }
   },
+  "/api/v1/admin/capacity": {
+   "get": {
+    "description": "N192：池 {ready, held, assigned} + 邀请 {pending, held} + 用户\n{active, paused} 的真实行聚合。lowCapacity（ready+held < pending）\n是唯一服务端定义——可交付的 FreshRSS 名额追不上待激活邀请时为真，\n管理台据它亮出「容量不足」警示。只读计数，绝无邀请码。",
+    "operationId": "admin_capacity_api_v1_admin_capacity_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Admin Capacity"
+   }
+  },
+  "/api/v1/admin/deploy-status": {
+   "get": {
+    "description": "N196：./lumirss update 写入的阶段 JSON 只读透传（admin-gated）。\n\n未配置/尚无记录/坏文件都是诚实 available:false + 原因；内容本身\n由脚本写入（阶段名/状态/时间戳/imageTag，绝无秘密）。本端点没有\n也永远不会有执行控件——升级只由运维侧 ./lumirss update 触发。",
+    "operationId": "admin_deploy_status_api_v1_admin_deploy_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Admin Deploy Status"
+   }
+  },
   "/api/v1/admin/invite-funnel": {
    "get": {
     "description": "Per-scheme invite funnel counts (N004), aggregated from real rows.\n\nResponses carry counts ONLY — never invite codes, hashes or links.\nfailedActivation comes from the invite_activation_failed audit\nevents written by the activation boundary.",
@@ -23142,6 +23225,23 @@
     "summary": "System Status"
    }
   },
+  "/api/v1/admin/upgrade-preview": {
+   "get": {
+    "description": "N195：发布清单 × 当前版本 × 迁移差异的只读推演。\n\nLUMIRSS_RELEASE_MANIFEST 未配置/文件不可读时如实 available:false；\n不兼容（同版本/降级/库超前于目标）→ blocked:true + 原因。绝不\n触发任何升级动作——这是预览，执行权只在 ./lumirss update。",
+    "operationId": "admin_upgrade_preview_api_v1_admin_upgrade_preview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Admin Upgrade Preview"
+   }
+  },
   "/api/v1/admin/users": {
    "get": {
     "operationId": "list_users_api_v1_admin_users_get",
@@ -23156,6 +23256,91 @@
      }
     },
     "summary": "List Users"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/background-pause": {
+   "post": {
+    "description": "N193：暂停单个成员的重型后台任务（登录/阅读不受影响）。\n\n与整账户暂停（O152）同源的两条硬边界：owner 不可定位；这里刻意\n不撤销任何会话——被暂停成员的会话与阅读必须继续有效。",
+    "operationId": "background_pause_user_api_v1_admin_users__user_id__background_pause_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BackgroundPauseRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Background Pause User"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/background-resume": {
+   "post": {
+    "operationId": "background_resume_user_api_v1_admin_users__user_id__background_resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Background Resume User"
    }
   },
   "/api/v1/admin/users/{user_id}/pause": {
@@ -23193,6 +23378,123 @@
      }
     },
     "summary": "Pause User"
+   }
+  },
+  "/api/v1/admin/users/{user_id}/quota": {
+   "delete": {
+    "operationId": "clear_user_quota_api_v1_admin_users__user_id__quota_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Clear User Quota"
+   },
+   "get": {
+    "operationId": "get_user_quota_api_v1_admin_users__user_id__quota_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get User Quota"
+   },
+   "put": {
+    "operationId": "set_user_quota_api_v1_admin_users__user_id__quota_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserQuotaPutRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set User Quota"
    }
   },
   "/api/v1/admin/users/{user_id}/reset-password": {
@@ -38967,7 +39269,7 @@
   },
   "/api/v1/settings/ai/quota": {
    "get": {
-    "description": "F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。",
+    "description": "F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。\n\nN191：上限是管理员策略包与成员自设配置的合成结果（更低者生效，\n成员未配置时管理员日上限单独生效）——这里如实反映有效口径。",
     "operationId": "get_ai_quota_api_v1_settings_ai_quota_get",
     "responses": {
      "200": {
@@ -40019,7 +40321,7 @@
     "summary": "Subscriptions"
    },
    "post": {
-    "description": "Subscribe to a feed URL; returns the server-confirmed subscription.\n\n409 when already subscribed (checked before any write); 400 feed_rejected\nwhen FreshRSS cannot add the feed. The write is attempted exactly once\n(no retry on timeout — clients re-read and reconcile).",
+    "description": "Subscribe to a feed URL; returns the server-confirmed subscription.\n\n409 when already subscribed (checked before any write); 400 feed_rejected\nwhen FreshRSS cannot add the feed. The write is attempted exactly once\n(no retry on timeout — clients re-read and reconcile).\n\nN191：管理员策略包（user_quotas.maxSources）在此事前拦截——按当前\n用户投影 search_feeds 计数，第 N+1 个来源直接 429 quota_exceeded，\nFreshRSS 侧零请求；成员没有任何路径可以提升该上限（设置端点是\nadmin-only，且本路由执行不读任何客户端提供的上限）。",
     "operationId": "create_subscription_api_v1_subscriptions_post",
     "requestBody": {
      "content": {
@@ -41050,6 +41352,55 @@
      }
     },
     "summary": "Version"
+   }
+  },
+  "/api/v1/whats-new": {
+   "get": {
+    "operationId": "whats_new_api_v1_whats_new_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "sinceVersion",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sinceversion"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Whats New Api V1 Whats New Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Whats New"
    }
   },
   "/api/v1/workspace-archive": {

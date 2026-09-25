@@ -50,6 +50,10 @@ const mocks = vi.hoisted(() => ({
   getInviteFunnel: vi.fn(),
   getRegistrationPolicy: vi.fn(),
   updateRegistrationPolicy: vi.fn(),
+  getAdminUserQuota: vi.fn(),
+  getAdminCapacity: vi.fn(),
+  getAdminUpgradePreview: vi.fn(),
+  getAdminDeployStatus: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -75,6 +79,10 @@ vi.mock('../api/client', async (importOriginal) => {
     getInviteFunnel: mocks.getInviteFunnel,
     getRegistrationPolicy: mocks.getRegistrationPolicy,
     updateRegistrationPolicy: mocks.updateRegistrationPolicy,
+    getAdminUserQuota: mocks.getAdminUserQuota,
+    getAdminCapacity: mocks.getAdminCapacity,
+    getAdminUpgradePreview: mocks.getAdminUpgradePreview,
+    getAdminDeployStatus: mocks.getAdminDeployStatus,
   }
 })
 
@@ -230,6 +238,28 @@ beforeEach(() => {
     allowPublicRegistration: false,
     updatedAt: null,
     updatedBy: null,
+  })
+  // N191/N192/N195/N196：新管理台区块的默认诚实空态（不打扰既有用例）。
+  mocks.getAdminCapacity.mockResolvedValue({
+    pool: { ready: 0, held: 0, assigned: 0 },
+    invites: { pending: 0, held: 0 },
+    users: { active: 0, paused: 0 },
+    lowCapacity: false,
+  })
+  mocks.getAdminUpgradePreview.mockResolvedValue({
+    available: false,
+    reason: 'not configured',
+    currentVersion: null,
+    targetVersion: null,
+    newMigrations: [],
+    minCompat: null,
+    blocked: false,
+    blockedReason: null,
+  })
+  mocks.getAdminDeployStatus.mockResolvedValue({
+    available: false,
+    reason: 'not configured',
+    deploy: null,
   })
 })
 

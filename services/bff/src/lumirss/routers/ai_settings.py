@@ -135,12 +135,22 @@ async def put_ai_settings(
 
 @router.get("/api/v1/settings/ai/quota")
 async def get_ai_quota(request: Request) -> dict[str, object]:
-    """F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。"""
+    """F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。
+
+    N191：上限是管理员策略包与成员自设配置的合成结果（更低者生效，
+    成员未配置时管理员日上限单独生效）——这里如实反映有效口径。"""
     from lumirss.ai_quota import usage_snapshot
+    from lumirss.user_quotas import effective_ai_limits
+    from lumirss.user_scope import current_user_id
 
     values = await _get_ai_settings_store(request).load()
     window = values[KEY_QUOTA_WINDOW]
     max_calls = int(values[KEY_QUOTA_MAX_CALLS] or "0")
+    uid = current_user_id()
+    if uid:
+        window, max_calls = await effective_ai_limits(
+            request.app.state.control_db, uid, window=window, max_calls=max_calls
+        )
     return await usage_snapshot(request.app.state.db, window, max_calls)
 
 

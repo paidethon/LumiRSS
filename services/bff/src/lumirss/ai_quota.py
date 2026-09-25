@@ -131,7 +131,11 @@ async def quota_denial(request: Any) -> Any:
     """路由侧守卫：已配置配额则原子预占；超额 → 429 JSONResponse。
 
     返回 None = 放行（含未配置）。响应体与 Retry-After 头都携带
-    retryAfter / windowReset。"""
+    retryAfter / windowReset。
+
+    N191：管理员策略上限在成员自设配置之后合成——更低者生效；
+    成员未配置而管理员已设限时，管理员上限以 day 窗口单独生效
+    （成员端没有任何路径可以提升它）。"""
     from fastapi.responses import JSONResponse
 
     from lumirss.ai_settings import (
@@ -144,6 +148,15 @@ async def quota_denial(request: Any) -> Any:
     values = await AiSettingsStore(db).load()
     window = values[KEY_QUOTA_WINDOW]
     max_calls = int(values[KEY_QUOTA_MAX_CALLS] or "0")
+    from lumirss.user_scope import current_user_id
+
+    uid = current_user_id()
+    if uid:
+        from lumirss.user_quotas import effective_ai_limits
+
+        window, max_calls = await effective_ai_limits(
+            request.app.state.control_db, uid, window=window, max_calls=max_calls
+        )
     if not window or max_calls <= 0:
         return None
     try:

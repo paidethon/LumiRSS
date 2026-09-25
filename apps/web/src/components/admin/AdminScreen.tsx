@@ -21,14 +21,28 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, Copy, Layers, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Gauge,
+  Layers,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
 import {
   ApiError,
+  clearAdminUserQuota,
   createAdminInvite,
   createInviteScheme,
   deleteInviteScheme,
   generateInvitesFromScheme,
+  getAdminCapacity,
+  getAdminDeployStatus,
   getAdminSystem,
+  getAdminUpgradePreview,
+  getAdminUserQuota,
   getFreshRssPool,
   getInviteFunnel,
   getRegistrationPolicy,
@@ -37,11 +51,14 @@ import {
   listAdminUsers,
   listInviteSchemes,
   pauseAdminUser,
+  pauseAdminUserBackground,
   registerFreshRssPool,
   resetAdminUserPassword,
   resumeAdminUser,
+  resumeAdminUserBackground,
   revokeAdminInvite,
   revokeAdminUserSessions,
+  setAdminUserQuota,
   updateRegistrationPolicy,
   type AdminInvite,
   type AdminInviteCreated,
@@ -126,6 +143,255 @@ interface ConfirmState {
   action: () => Promise<void>
 }
 
+// ===== 成员额度编辑器（N191）+ 后台任务暂停（N193）=========================
+//
+// 同一策略行（control DB user_quotas）的两个管理面合在一个对话框：
+// 额度上限（来源数 / AI 日上限，空 = 清除该上限）与后台任务暂停
+// （必须给原因）。执行全部在服务端——这里只是转述与输入收集；
+// 保存/清除/暂停/恢复都会在审计日志留痕（系统面板「最近动态」可见）。
+// owner 行没有后台暂停区（服务端拒绝，UI 不提供无效控件）。
+
+function QuotaDialog({
+  user,
+  onClose,
+}: {
+  user: AdminUser
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const quota = useQuery({
+    queryKey: ['admin', 'user-quota', user.id],
+    queryFn: ({ signal }) => getAdminUserQuota(user.id, signal),
+    enabled: user.role !== 'owner',
+    staleTime: 5_000,
+  })
+  const [maxSources, setMaxSources] = useState('')
+  const [aiQuotaPerDay, setAiQuotaPerDay] = useState('')
+  const [seeded, setSeeded] = useState(false)
+  const [pauseReason, setPauseReason] = useState('')
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [savedNote, setSavedNote] = useState<string | null>(null)
+
+  // 服务端值只在首次打开时填充表单（避免每次重取覆盖输入中的值）。
+  if (quota.data && !seeded) {
+    setMaxSources(quota.data.caps.maxSources !== null ? String(quota.data.caps.maxSources) : '')
+    setAiQuotaPerDay(quota.data.caps.aiQuotaPerDay !== null ? String(quota.data.caps.aiQuotaPerDay) : '')
+    setSeeded(true)
+  }
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'user-quota', user.id] })
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
+  }
+
+  const save = useMutation({
+    mutationFn: () =>
+      setAdminUserQuota(user.id, {
+        maxSources: maxSources !== '' ? Number.parseInt(maxSources, 10) : null,
+        aiQuotaPerDay: aiQuotaPerDay !== '' ? Number.parseInt(aiQuotaPerDay, 10) : null,
+      }),
+    onSuccess: (result) => {
+      setActionError(null)
+      setSavedNote(
+        result.caps.maxSources === null && result.caps.aiQuotaPerDay === null
+          ? '已保存：该成员暂无生效上限。'
+          : `已保存：来源 ≤ ${result.caps.maxSources ?? '∞'}，AI 日上限 ${result.caps.aiQuotaPerDay ?? '∞'}。`,
+      )
+      queryClient.setQueryData(['admin', 'user-quota', user.id], result)
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
+    },
+    onError: (error) => setActionError(adminActionError(error)),
+  })
+  const clear = useMutation({
+    mutationFn: () => clearAdminUserQuota(user.id),
+    onSuccess: (result) => {
+      setActionError(null)
+      setSavedNote('已清除额度策略。')
+      setMaxSources('')
+      setAiQuotaPerDay('')
+      queryClient.setQueryData(['admin', 'user-quota', user.id], result)
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'audit'] })
+    },
+    onError: (error) => setActionError(adminActionError(error)),
+  })
+  const pauseBg = useMutation({
+    mutationFn: () => pauseAdminUserBackground(user.id, pauseReason),
+    onSuccess: () => {
+      setActionError(null)
+      setPauseReason('')
+      invalidate()
+    },
+    onError: (error) => setActionError(adminActionError(error)),
+  })
+  const resumeBg = useMutation({
+    mutationFn: () => resumeAdminUserBackground(user.id),
+    onSuccess: () => {
+      setActionError(null)
+      invalidate()
+    },
+    onError: (error) => setActionError(adminActionError(error)),
+  })
+
+  const isOwner = user.role === 'owner'
+  const backgroundPaused = quota.data?.backgroundPaused === true
+  const pending = save.isPending || clear.isPending || pauseBg.isPending || resumeBg.isPending
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`${user.username} 的额度与后台任务`}
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          关闭
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {isOwner ? (
+          <p className="text-xs leading-relaxed text-[var(--lumi-text-tertiary)]">
+            运营者账号不参与成员额度与后台暂停（控制台自身不受限）。
+          </p>
+        ) : quota.isPending ? (
+          <div aria-busy="true">
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : quota.isError ? (
+          <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+            {adminActionError(quota.error)}
+          </p>
+        ) : (
+          <>
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                setSavedNote(null)
+                save.mutate()
+              }}
+              data-testid="quota-form"
+            >
+              <p className="text-xs font-semibold text-[var(--lumi-text-secondary)]">额度上限（空 = 不设限）</p>
+              <div className="flex flex-wrap gap-2">
+                <div className="min-w-32 flex-1">
+                  <label htmlFor={`quota-sources-${user.id}`} className="mb-1 block text-xs text-[var(--lumi-text-secondary)]">
+                    订阅来源数上限
+                  </label>
+                  <input
+                    id={`quota-sources-${user.id}`}
+                    type="number"
+                    min={1}
+                    max={10_000}
+                    value={maxSources}
+                    onChange={(e) => setMaxSources(e.target.value)}
+                    placeholder="不设限"
+                    data-testid="quota-max-sources"
+                    className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+                  />
+                </div>
+                <div className="min-w-32 flex-1">
+                  <label htmlFor={`quota-ai-${user.id}`} className="mb-1 block text-xs text-[var(--lumi-text-secondary)]">
+                    AI 调用日上限
+                  </label>
+                  <input
+                    id={`quota-ai-${user.id}`}
+                    type="number"
+                    min={1}
+                    max={100_000}
+                    value={aiQuotaPerDay}
+                    onChange={(e) => setAiQuotaPerDay(e.target.value)}
+                    placeholder="不设限"
+                    data-testid="quota-ai-per-day"
+                    className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="submit" variant="primary" size="sm" disabled={pending || save.isPending} className="min-h-11">
+                  {save.isPending ? '保存中…' : '保存额度'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => clear.mutate()}
+                  data-testid="quota-clear"
+                >
+                  清除策略
+                </Button>
+              </div>
+            </form>
+
+            <div className="flex flex-col gap-2 border-t border-[var(--lumi-separator)] pt-3" data-testid="background-pause-area">
+              <p className="text-xs font-semibold text-[var(--lumi-text-secondary)]">
+                后台任务{backgroundPaused ? '（已暂停 — 登录与阅读不受影响）' : ''}
+              </p>
+              {backgroundPaused ? (
+                <>
+                  <p className="text-xs text-[var(--lumi-text-tertiary)]">
+                    暂停原因：{quota.data?.backgroundPauseReason ?? '—'}
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => resumeBg.mutate()}
+                    data-testid="background-resume"
+                    className="min-h-11 self-start"
+                  >
+                    {resumeBg.isPending ? '恢复中…' : '恢复后台任务'}
+                  </Button>
+                </>
+              ) : (
+                <form
+                  className="flex items-end gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    setSavedNote(null)
+                    if (pauseReason.trim() !== '') pauseBg.mutate()
+                  }}
+                >
+                  <div className="min-w-40 flex-1">
+                    <label htmlFor={`bg-reason-${user.id}`} className="mb-1 block text-xs text-[var(--lumi-text-secondary)]">
+                      暂停原因（必填，会记入审计日志）
+                    </label>
+                    <input
+                      id={`bg-reason-${user.id}`}
+                      type="text"
+                      value={pauseReason}
+                      maxLength={200}
+                      required
+                      onChange={(e) => setPauseReason(e.target.value)}
+                      placeholder="如：暂时停用此人 RSSHub 重活"
+                      data-testid="background-reason"
+                      className="min-h-11 w-full rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 text-sm text-[var(--lumi-text-primary)] placeholder:text-[var(--lumi-text-tertiary)] focus-visible outline-2 -outline-offset-1 outline-[var(--lumi-focus-ring)]"
+                    />
+                  </div>
+                  <Button type="submit" variant="secondary" size="sm" disabled={pending} className="min-h-11">
+                    {pauseBg.isPending ? '暂停中…' : '暂停后台任务'}
+                  </Button>
+                </form>
+              )}
+            </div>
+          </>
+        )}
+
+        {savedNote !== null && (
+          <p role="status" className="text-xs text-[var(--lumi-accent-text)]" data-testid="quota-saved-note">
+            {savedNote}
+          </p>
+        )}
+        {actionError !== null && (
+          <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+            {actionError}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
 function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="mb-3">
@@ -150,6 +416,7 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
   })
   const [actionError, setActionError] = useState<string | null>(null)
   const [resetLink, setResetLink] = useState<string | null>(null)
+  const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null)
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
 
@@ -222,6 +489,7 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
                     方案 · {user.schemeName}
                   </span>
                 )}
+                {quotaUser?.id === user.id && <span className={`${badgeBase} bg-[var(--lumi-accent-soft)] text-[var(--lumi-accent-text)]`}>额度编辑中</span>}
               </p>
               <p className="mt-0.5 truncate text-xs text-[var(--lumi-text-tertiary)]">
                 {user.displayName ?? '未设置显示名'}
@@ -229,6 +497,15 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setQuotaUser(user)}
+                data-testid={`quota-open-${user.username}`}
+              >
+                <Gauge aria-hidden className="size-4" />
+                额度
+              </Button>
               {user.status === 'active' ? (
                 <Button
                   size="sm"
@@ -303,6 +580,8 @@ function MembersSection({ onConfirm }: { onConfirm: (state: ConfirmState) => voi
           <OneTimeLink url={resetLink} />
         </div>
       )}
+
+      {quotaUser !== null && <QuotaDialog user={quotaUser} onClose={() => setQuotaUser(null)} />}
     </section>
   )
 }
@@ -1138,6 +1417,244 @@ function PoolSection() {
   )
 }
 
+// ===== 邀请容量仪表（N192）===================================================
+//
+// 数字全部来自服务端真实行聚合（GET /admin/capacity）：池 ready/held/
+// assigned、邀请 pending/held、用户 active/paused。低容量警示的判定
+// 也在服务端（ready+held < pending）——前端只转述，不自创口径。
+
+function CapacitySection() {
+  const capacity = useQuery({
+    queryKey: ['admin', 'capacity'],
+    queryFn: ({ signal }) => getAdminCapacity(signal),
+    staleTime: 10_000,
+  })
+
+  return (
+    <section aria-label="邀请容量" data-testid="admin-capacity">
+      <SectionHeading title="容量" hint="可交付的 FreshRSS 名额与待激活邀请的真实计数。" />
+      {capacity.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : capacity.isError ? (
+        <p role="alert" className="text-sm leading-relaxed text-[var(--lumi-danger)]">
+          {adminActionError(capacity.error)}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2" data-testid="capacity-cards">
+            {(
+              [
+                { key: 'ready', label: '池可绑定', value: capacity.data.pool.ready },
+                { key: 'held', label: '池已预约', value: capacity.data.pool.held },
+                { key: 'assigned', label: '池已分配', value: capacity.data.pool.assigned },
+                { key: 'pending', label: '待激活邀请', value: capacity.data.invites.pending },
+                { key: 'inviteHeld', label: '邀请占用名额', value: capacity.data.invites.held },
+                { key: 'active', label: '活跃成员', value: capacity.data.users.active },
+              ] as const
+            ).map((card) => (
+              <div
+                key={card.key}
+                className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-center"
+                data-testid={`capacity-${card.key}`}
+              >
+                <p className="text-lg font-semibold text-[var(--lumi-text-primary)]">{card.value}</p>
+                <p className="text-xs text-[var(--lumi-text-tertiary)]">{card.label}</p>
+              </div>
+            ))}
+          </div>
+          {capacity.data.users.paused > 0 && (
+            <p className="mt-2 text-xs text-[var(--lumi-text-tertiary)]">
+              暂停中成员：{capacity.data.users.paused}
+            </p>
+          )}
+          {capacity.data.lowCapacity && (
+            <p
+              role="status"
+              className="mt-2 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-danger)] px-2 py-1.5 text-xs font-medium text-[var(--lumi-danger-contrast)]"
+              data-testid="capacity-warning"
+            >
+              容量不足：可绑定 + 已预约名额少于待激活邀请 —— 请先登记新的 FreshRSS 池账号，否则新成员激活时可能无号可绑。
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ===== 升级影响预览（N195）===================================================
+//
+// GET /admin/upgrade-preview 的只读转述：清单未配置 → 如实说明；目标
+// 版本、将执行的迁移清单、最低兼容版本；不兼容 → blocked + 原因。
+// 这里没有任何执行控件——升级只由运维侧 ./lumirss update 触发。
+
+function UpgradePreviewSection() {
+  const preview = useQuery({
+    queryKey: ['admin', 'upgrade-preview'],
+    queryFn: ({ signal }) => getAdminUpgradePreview(signal),
+    staleTime: 10_000,
+  })
+
+  return (
+    <section aria-label="升级预览" data-testid="admin-upgrade-preview">
+      <SectionHeading title="升级预览" hint="发布清单 × 当前版本 × 数据库迁移差异的只读推演；升级本身由 ./lumirss update 执行。" />
+      {preview.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : preview.isError ? (
+        <p role="alert" className="text-sm leading-relaxed text-[var(--lumi-danger)]">
+          {adminActionError(preview.error)}
+        </p>
+      ) : !preview.data.available ? (
+        <p className="text-sm leading-relaxed text-[var(--lumi-text-secondary)]" data-testid="upgrade-preview-unavailable">
+          暂无可预览的升级信息：{preview.data.reason ?? '未配置发布清单。'}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5" data-testid="upgrade-preview-body">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-xs text-[var(--lumi-text-tertiary)]">目标版本</span>
+            <span className="text-sm font-medium text-[var(--lumi-text-primary)]">
+              {preview.data.currentVersion} → {preview.data.targetVersion}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="shrink-0 text-xs text-[var(--lumi-text-tertiary)]">将执行的数据库迁移</span>
+            <span className="min-w-0 truncate text-sm text-[var(--lumi-text-primary)]" data-testid="upgrade-preview-migrations">
+              {preview.data.newMigrations.length > 0
+                ? `${preview.data.newMigrations.length} 个（${preview.data.newMigrations[0]}…）`
+                : '无'}
+            </span>
+          </div>
+          {preview.data.minCompat !== null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs text-[var(--lumi-text-tertiary)]">最低可升级版本</span>
+              <span className="text-sm text-[var(--lumi-text-primary)]">{preview.data.minCompat}</span>
+            </div>
+          )}
+          {preview.data.newMigrations.length > 0 && (
+            <ul className="mt-1 flex flex-col gap-0.5" data-testid="upgrade-preview-migration-list">
+              {preview.data.newMigrations.map((name) => (
+                <li key={name} className="truncate text-xs text-[var(--lumi-text-tertiary)]">
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
+          {preview.data.blocked ? (
+            <p
+              role="alert"
+              className="mt-1 rounded-[var(--lumi-radius-md)] bg-[var(--lumi-danger)] px-2 py-1.5 text-xs font-medium text-[var(--lumi-danger-contrast)]"
+              data-testid="upgrade-preview-blocked"
+            >
+              {preview.data.blockedReason ?? '该目标版本与本实例不兼容。'}
+            </p>
+          ) : (
+            <p role="status" className="mt-1 text-xs text-[var(--lumi-accent-text)]" data-testid="upgrade-preview-ok">
+              未发现不兼容项。
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ===== 升级任务进度（N196）===================================================
+//
+// ./lumirss update 写入的阶段 JSON（GET /admin/deploy-status 只读透传）。
+// 本卡片严格只读：没有「开始升级 / 重试 / 回滚」任何执行控件（负向
+// 测试断言卡内零按钮）——升级的执行权只属于服务器上的运维命令。
+
+const DEPLOY_STAGE_LABELS: Record<string, string> = {
+  backup: '备份',
+  pull: '拉取镜像',
+  migrate: '迁移',
+  health: '健康检查',
+}
+
+const DEPLOY_STATE_LABELS: Record<string, string> = {
+  running: '进行中',
+  ok: '完成',
+  failed: '失败',
+  interrupted: '被中断',
+}
+
+function DeployStatusSection() {
+  const status = useQuery({
+    queryKey: ['admin', 'deploy-status'],
+    queryFn: ({ signal }) => getAdminDeployStatus(signal),
+    staleTime: 10_000,
+  })
+
+  return (
+    <section aria-label="升级进度" data-testid="admin-deploy-status">
+      <SectionHeading title="升级进度" hint="./lumirss update 的阶段上报（只读）；升级只能由服务器上的运维命令执行。" />
+      {status.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : status.isError ? (
+        <p role="alert" className="text-sm leading-relaxed text-[var(--lumi-danger)]">
+          {adminActionError(status.error)}
+        </p>
+      ) : !status.data.available ? (
+        <p className="text-sm leading-relaxed text-[var(--lumi-text-secondary)]" data-testid="deploy-status-unavailable">
+          暂无升级进度：{status.data.reason ?? '未配置进度上报文件。'}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5" data-testid="deploy-status-body">
+          {status.data.deploy?.imageTag !== null && status.data.deploy?.imageTag !== undefined && (
+            <p className="text-xs text-[var(--lumi-text-tertiary)]">
+              目标镜像 tag：{status.data.deploy.imageTag}
+            </p>
+          )}
+          <ul className="flex flex-col divide-y divide-[var(--lumi-separator)]" data-testid="deploy-status-stages">
+            {Object.entries(status.data.deploy?.stages ?? {}).map(([name, stage]) => (
+              <li key={name} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5">
+                <span className="text-sm text-[var(--lumi-text-primary)]">
+                  {DEPLOY_STAGE_LABELS[name] ?? name}
+                </span>
+                <span className="flex items-center gap-2">
+                  {stage.finishedAt !== null && (
+                    <span className="text-xs text-[var(--lumi-text-tertiary)]">
+                      {formatListTime(stage.finishedAt, 'absolute')}
+                    </span>
+                  )}
+                  <span
+                    className={stateBadge(
+                      DEPLOY_STATE_LABELS[stage.status] ?? stage.status,
+                      stage.status === 'ok' ? 'ok' : stage.status === 'failed' || stage.status === 'interrupted' ? 'warn' : 'muted',
+                    )}
+                    data-testid={`deploy-stage-${name}`}
+                  >
+                    {DEPLOY_STATE_LABELS[stage.status] ?? stage.status}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {status.data.deploy?.result !== null && status.data.deploy?.result !== undefined && (
+            <p className="text-xs text-[var(--lumi-text-secondary)]" data-testid="deploy-status-result">
+              结果：
+              {status.data.deploy.result.status === 'success'
+                ? '升级成功'
+                : status.data.deploy.result.status === 'failed'
+                  ? '升级失败（可执行 ./lumirss rollback）'
+                  : status.data.deploy.result.status}
+              {status.data.deploy.result.finishedAt !== null
+                ? ` · ${formatListTime(status.data.deploy.result.finishedAt, 'absolute')}`
+                : ''}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ===== 系统面板（P11）=======================================================
 //
 // 数据全部来自 GET /admin/system（admin-only、服务端派生：版本/运行时/
@@ -1196,6 +1713,10 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   user_role_change: '变更角色',
   user_revoke_sessions: '撤销成员会话',
   user_password_reset: '重置成员密码',
+  user_quota_set: '设置成员额度',
+  user_quota_cleared: '清除成员额度',
+  user_background_paused: '暂停成员后台任务',
+  user_background_resumed: '恢复成员后台任务',
   pool_add: '登记 FreshRSS 入池',
 }
 
@@ -1460,6 +1981,9 @@ export default function AdminScreen() {
                 <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
                   <PoolSection />
                 </div>
+                <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+                  <CapacitySection />
+                </div>
               </div>
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
@@ -1467,6 +1991,14 @@ export default function AdminScreen() {
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SchemesSection onConfirm={setConfirmState} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+              <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+                <UpgradePreviewSection />
+              </div>
+              <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+                <DeployStatusSection />
+              </div>
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SystemSection />

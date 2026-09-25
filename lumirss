@@ -66,6 +66,9 @@ LumiRSS — self-hosted reader lifecycle
   sudo ./lumirss deploy --low-memory            single-user resource preset
                                   (tighter container limits + RSSHub caps)
   ./lumirss update                              backup → pull → up → health
+                                  (with LUMIRSS_DEPLOY_STATUS_FILE set, stage
+                                  progress is written as JSON and shown
+                                  read-only in the admin console)
   ./lumirss status                              containers, health, versions
   ./lumirss logs [service] [-f]                 stack or single-service logs
   ./lumirss backup                              tar.gz of lumi + FreshRSS data
@@ -94,7 +97,9 @@ LumiRSS — self-hosted reader lifecycle
 
 Environment overrides: LUMIRSS_IMAGE_TAG, LUMIRSS_BACKUP_DIR,
 LUMIRSS_DOMAIN, LUMIRSS_AUTH_USER, LUMIRSS_AUTH_HASH,
-LUMIRSS_AUTH_PASSWORD, LUMIRSS_UPSTREAM_PORT (non-interactive deploys).
+LUMIRSS_AUTH_PASSWORD, LUMIRSS_UPSTREAM_PORT (non-interactive deploys),
+LUMIRSS_DEPLOY_STATUS_FILE (update-stage progress JSON for the admin
+console; absolute path shared with the BFF container).
 
 Production deploys are prebuilt-only: images always come from GHCR
 (pinned by LUMIRSS_IMAGE_TAG); a pull failure aborts and leaves the
@@ -317,7 +322,10 @@ images_pull_or_build() { # $1 = "--build" (dev-only; refused on prod compose)
   err "image pull failed and no local images exist for tag '$tag' — aborting."
   err "The previously deployed stack (if any) is still running and untouched."
   err "Check network/registry access to ghcr.io, or import an offline bundle: './lumirss import-images <DIR>'."
-  exit 1
+  # N196: return (not exit) so ./lumirss update can record the failed
+  # pull stage + overall result in the deploy-status file first; callers
+  # exit 1 themselves.
+  return 1
 }
 
 wait_health() { # wait_health <timeout_seconds>
@@ -331,6 +339,67 @@ wait_health() { # wait_health <timeout_seconds>
     fi
   done
   log "healthy."
+}
+
+# ---------------------------------------------------------------------------
+# N196 升级进度上报：LUMIRSS_DEPLOY_STATUS_FILE 设置时，./lumirss update
+# 把每个阶段（backup/pull/migrate/health）的运行/结果状态写入该路径的
+# JSON（schema lumirss-deploy-status/v1），BFF GET /admin/deploy-status
+# 把它只读转述给管理台进度页。写入是 best-effort：任何 I/O 失败只
+# warn，绝不影响升级本身。文件内容绝无秘密——只有阶段名、状态、
+# RFC3339(UTC) 时间戳与公开的镜像 tag。无效/缺失的旧文件会被整体
+# 重写，不让坏状态卡住新的升级。
+deploy_status_write() { # deploy_status_write STAGE STATUS [NOTE] ; result: deploy_status_write result STATUS
+  [[ -n "${LUMIRSS_DEPLOY_STATUS_FILE:-}" ]] || return 0
+  LUMIRSS_DEPLOY_STAGE="$1" LUMIRSS_DEPLOY_STATE="$2" LUMIRSS_DEPLOY_NOTE="${3:-}" \
+  LUMIRSS_DEPLOY_PATH="$LUMIRSS_DEPLOY_STATUS_FILE" LUMIRSS_DEPLOY_TAG="${IMAGE_TAG:-}" \
+  python3 -c '
+import datetime, json, os
+
+path = os.environ["LUMIRSS_DEPLOY_PATH"]
+now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+stage = os.environ["LUMIRSS_DEPLOY_STAGE"]
+state = os.environ["LUMIRSS_DEPLOY_STATE"]
+note = os.environ.get("LUMIRSS_DEPLOY_NOTE", "")
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict) and loaded.get("schema") == "lumirss-deploy-status/v1":
+            data = loaded
+    except (OSError, ValueError):
+        data = {}
+data.setdefault("schema", "lumirss-deploy-status/v1")
+data.setdefault("command", "update")
+data["imageTag"] = os.environ.get("LUMIRSS_DEPLOY_TAG", "") or None
+data["updatedAt"] = now
+if "startedAt" not in data:
+    data["startedAt"] = now
+stages = data.setdefault("stages", {})
+if stage == "result":
+    for entry in stages.values():
+        if isinstance(entry, dict) and entry.get("status") == "running":
+            entry["status"] = "interrupted"
+            entry["finishedAt"] = now
+    data["result"] = {"status": state, "finishedAt": now}
+else:
+    entry = stages.get(stage)
+    if not isinstance(entry, dict):
+        entry = {}
+    if state == "running" or "startedAt" not in entry:
+        entry["startedAt"] = now
+    entry["status"] = state
+    entry["finishedAt"] = None if state == "running" else now
+    if note:
+        entry["note"] = note
+    stages[stage] = entry
+tmp = path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False, indent=1, sort_keys=True)
+    fh.write("\n")
+os.replace(tmp, path)
+' || warn "could not write deploy status (progress page will stay stale)"
 }
 
 snapshot_for_rollback() {
@@ -354,7 +423,7 @@ cmd_deploy() {
     return 0
   fi
   snapshot_for_rollback
-  images_pull_or_build "${1:-}"
+  images_pull_or_build "${1:-}" || exit 1
   DC_D up -d --remove-orphans
   if wait_health 180; then
     if ((EXTERNAL_MODE == 1)); then
@@ -389,14 +458,41 @@ cmd_deploy() {
 cmd_update() {
   require_env_file
   preflight
-  cmd_backup || warn "pre-update backup failed — continuing (existing backups: $BACKUP_DIR)"
+  # N196: every stage is reported (running → ok/failed) into
+  # $LUMIRSS_DEPLOY_STATUS_FILE when set; writes are best-effort and
+  # never alter the upgrade flow itself.
+  deploy_status_write backup running
+  if cmd_backup; then
+    deploy_status_write backup ok
+  else
+    deploy_status_write backup failed
+    warn "pre-update backup failed — continuing (existing backups: $BACKUP_DIR)"
+  fi
   snapshot_for_rollback
-  images_pull_or_build "${1:-}"
-  DC_D up -d --remove-orphans
+  deploy_status_write pull running
+  if ! images_pull_or_build "${1:-}"; then
+    deploy_status_write pull failed
+    deploy_status_write result failed
+    exit 1
+  fi
+  deploy_status_write pull ok
+  deploy_status_write migrate running "containers recreated; the BFF applies SQLite migrations at startup"
+  if ! DC_D up -d --remove-orphans; then
+    deploy_status_write migrate failed
+    deploy_status_write result failed
+    err "container recreate failed — the previous stack may still be running; check './lumirss logs'."
+    exit 1
+  fi
+  deploy_status_write migrate ok
+  deploy_status_write health running
   if wait_health 180; then
+    deploy_status_write health ok
+    deploy_status_write result success
     log "update complete."
     ./lumirss status || true
   else
+    deploy_status_write health failed
+    deploy_status_write result failed
     err "update failed health check — run './lumirss rollback'."
     exit 1
   fi
@@ -442,7 +538,7 @@ cmd_backup() {
   for vol in lumi-data freshrss-data; do
     BACKUP_IMAGE="${LUMIRSS_BACKUP_IMAGE:-alpine:3.20}"
     docker_cmd run --rm -v "${proj}_${vol}:/src:ro" -v "$dir":/dst "$BACKUP_IMAGE" \
-      tar czf "/dst/${vol}.tar.gz" -C /src . || { err "backup of $vol failed"; exit 1; }
+      tar czf "/dst/${vol}.tar.gz" -C /src . || { err "backup of $vol failed"; return 1; }
   done
   tar czf "$BACKUP_DIR/$stamp.config.tar.gz" -C . "$ENV_FILE" docker-compose.prod.yml
   echo "$stamp" > "$BACKUP_DIR/LATEST"
