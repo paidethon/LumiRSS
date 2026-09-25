@@ -4,15 +4,18 @@
 import asyncio
 import logging
 import time
+import urllib.parse
 from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from lumirss.config import LumiSettings, _validate_service_base_url
 from lumirss.deps import (
+    _get_control_adapter,
     _get_rsshub_control_store,
     _get_rsshub_credentials_store,
     _get_rsshub_preview_cache,
@@ -24,10 +27,17 @@ from lumirss.models import (
     RssHubCatalog,
     RssHubConfigView,
     RssHubFavoriteItem,
+    RssHubParamPresetApply,
+    RssHubParamPresetItem,
     RssHubPreviewResult,
     RssHubRecentItem,
     RssHubRefreshResult,
+    RssHubRouteMySources,
     RssHubRouteRuns,
+    RssHubRouteSourceEntry,
+    RssHubRouteUsage,
+    RssHubUpgradeCheckReport,
+    RssHubUpgradeChecks,
 )
 from lumirss.routers.ai_settings import SecretValuePut
 from lumirss.rsshub import (
@@ -44,12 +54,18 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     config_view,
 )
+from lumirss.rsshub_param_presets import (
+    RssHubParamPresetStore,
+    RssHubPresetNotFound,
+    _validate_preset_params,
+)
 from lumirss.rsshub_route_store import (
     RssHubRouteStore,
     compute_route_key,
+    mask_params,
     parse_route_key,
 )
-from lumirss.user_scope import require_user_id
+from lumirss.user_scope import require_user_id, user_context
 from lumirss.util import utc_now
 
 logger = logging.getLogger(__name__)
@@ -787,3 +803,315 @@ async def apply_rsshub_config(request: Request) -> Response:
     return Response(status_code=204)
 
 
+
+
+# ---- N029: 路由与来源关系图（我的来源 + 管理员计数聚合） ---------------------
+
+_MAX_RECENT_ENTRIES_PER_SOURCE = 5
+
+
+def _parsed_route_key_or_400(route_key: str) -> tuple[str, dict[str, str]]:
+    """route_key → (template_id, 脱敏参数签名)；畸形 → 稳定 400。"""
+    parsed = parse_route_key(route_key)
+    if parsed is None:
+        raise RssHubInvalidParameters("Malformed RSSHub route key.")
+    return parsed
+
+
+def _matches_route_key(
+    feed_url: str, template_id: str, signature: dict[str, str]
+) -> bool:
+    """feed_url 是否由该 route_key（模板 + 脱敏参数）生成。
+
+    反向映射：BFF 组合的 RSSHub feed URL = base + 模板路径（+ 可选
+    query 参数）。路径段反解出模板与占位符参数，query 参数一并并入
+    （订阅时刻的 route_key 同样包含 query 参数），与 route_key 的
+    脱敏签名比对——敏感值两侧都是 '***' 哨兵，因此含凭据的路由也能
+    匹配，而服务端从不触碰真实凭据值。"""
+    from lumirss.rsshub import match_route_path
+
+    parts = urllib.parse.urlsplit(feed_url)
+    matched = match_route_path(parts.path)
+    if matched is None:
+        return False
+    route, path_params = matched
+    if route.id != template_id:
+        return False
+    query_pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    merged = {**path_params, **dict(query_pairs)}
+    return mask_params(merged) == signature
+
+
+async def _projection_stats(
+    request: Request, feed_url: str
+) -> tuple[int, list[dict[str, str]]]:
+    """(unreadCount, recentEntries≤5) —— search_entries 派生投影（可重建）。
+
+    投影为空时返回 (0, [])：诚实口径是「投影没有该来源的数据」，UI
+    文案不得把它表述成「确认没有未读」。"""
+    db = request.app.state.db
+    await db.migrate()
+    unread_row = await db.fetch_one(
+        "SELECT COUNT(*) AS n FROM search_entries WHERE feed_url = ? AND read = 0",
+        (feed_url,),
+    )
+    recent_rows = await db.fetch_all(
+        "SELECT entry_ref, title, published_at FROM search_entries "
+        "WHERE feed_url = ? ORDER BY published_at DESC, id DESC LIMIT ?",
+        (feed_url, _MAX_RECENT_ENTRIES_PER_SOURCE),
+    )
+    recent = [
+        {
+            "ref": str(row["entry_ref"]),
+            "title": str(row["title"]),
+            "published": str(row["published_at"]),
+        }
+        for row in recent_rows
+    ]
+    unread = int(unread_row["n"]) if unread_row is not None else 0
+    return unread, recent
+
+
+@router.get(
+    "/api/v1/rsshub/routes/{route_key}/my-sources",
+    response_model=RssHubRouteMySources,
+    response_model_exclude_none=False,
+)
+async def rsshub_route_my_sources(
+    route_key: str, request: Request
+) -> dict[str, object]:
+    """N029：该路由模板生成的**本人**订阅（路由 → 来源关系图）。
+
+    仅当前用户作用域：control 适配器的订阅列表 + search_entries 投影
+    都按请求身份路由，其他账户的数据在这里结构上不可达。"""
+    template_id, signature = _parsed_route_key_or_400(route_key)
+    items: list[dict[str, object]] = []
+    control = _get_control_adapter(request)
+    for subscription in await control.list_subscriptions():
+        if not _matches_route_key(subscription.feed_url, template_id, signature):
+            continue
+        unread, recent = await _projection_stats(request, subscription.feed_url)
+        items.append(
+            {
+                "feedUrl": subscription.feed_url,
+                "title": subscription.title,
+                "unreadCount": unread,
+                "recentEntries": [
+                    RssHubRouteSourceEntry(**entry) for entry in recent
+                ],
+            }
+        )
+    return {
+        "routeKey": route_key,
+        "templateId": template_id,
+        "items": [
+            {
+                "feedUrl": item["feedUrl"],
+                "title": item["title"],
+                "unreadCount": item["unreadCount"],
+                "recentEntries": item["recentEntries"],
+            }
+            for item in items
+        ],
+    }
+
+
+@router.get(
+    "/api/v1/admin/rsshub/routes/{route_key}/usage",
+    response_model=RssHubRouteUsage,
+    response_model_exclude_none=False,
+)
+async def rsshub_route_usage_admin(
+    route_key: str, request: Request
+) -> dict[str, object]:
+    """N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。
+
+    隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他
+    用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的
+    feed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。
+    member 403；遍历每用户库（邀请制小规模部署，行数有界）。"""
+    guard = _admin_guard(request)
+    if guard is not None:
+        return guard
+    template_id, signature = _parsed_route_key_or_400(route_key)
+    from lumirss.accounts_store import AccountsStore
+
+    db = request.app.state.db
+    user_count = 0
+    source_count = 0
+    total_entries = 0
+    for uid in await AccountsStore(request.app.state.control_db).active_user_ids():
+        with user_context(uid):
+            await db.migrate()
+            feed_rows = await db.fetch_all("SELECT feed_url FROM search_feeds", ())
+            user_sources = 0
+            user_entries = 0
+            for row in feed_rows:
+                feed_url = str(row["feed_url"])
+                if not _matches_route_key(feed_url, template_id, signature):
+                    continue
+                user_sources += 1
+                count_row = await db.fetch_one(
+                    "SELECT COUNT(*) AS n FROM search_entries WHERE feed_url = ?",
+                    (feed_url,),
+                )
+                user_entries += int(count_row["n"]) if count_row else 0
+        if user_sources > 0:
+            user_count += 1
+            source_count += user_sources
+            total_entries += user_entries
+    return {
+        "routeKey": route_key,
+        "templateId": template_id,
+        "userCount": user_count,
+        "sourceCount": source_count,
+        "totalEntries": total_entries,
+        "basis": (
+            "search_feeds/search_entries 派生投影（可重建）；"
+            "userCount = 拥有至少一条该路由来源的用户数；投影落后 ≠ 没有使用。"
+        ),
+    }
+
+
+# ---- N030: 路由可复用参数方案 -------------------------------------------------
+
+
+class RssHubParamPresetCreate(BaseModel):
+    """POST /api/v1/rsshub/param-presets body（方案名 + 参数组合）。"""
+
+    routeId: str = Field(min_length=1)
+    params: dict[str, str] = Field(default_factory=dict)
+    name: str = Field(min_length=1, max_length=80)
+
+
+def _preset_store(request: Request) -> RssHubParamPresetStore:
+    return RssHubParamPresetStore(request.app.state.db)
+
+
+@router.get(
+    "/api/v1/rsshub/param-presets",
+    response_model=list[RssHubParamPresetItem],
+    response_model_exclude_none=False,
+)
+async def list_rsshub_param_presets(request: Request) -> list[dict[str, object]]:
+    """N030 我的方案（每用户私有；敏感值只以 '***' 哨兵出现）。"""
+    return await _preset_store(request).list_presets()
+
+
+@router.post(
+    "/api/v1/rsshub/param-presets",
+    status_code=201,
+    response_model=RssHubParamPresetItem,
+    response_model_exclude_none=False,
+)
+async def create_rsshub_param_preset(
+    body: RssHubParamPresetCreate, request: Request
+) -> dict[str, object]:
+    """保存当前参数组合为方案（cap 20/用户；敏感值入库前哨兵化）。
+
+    校验在**真实值**上做（与 preview 同 pattern 规则），存储一律
+    mask_params——DB 与响应里都查不到敏感原文。"""
+    route = _catalog_route(body.routeId)
+    clean_params = _validate_preset_params(route, body.params)
+    return await _preset_store(request).create(
+        template_id=body.routeId,
+        params=clean_params,
+        name=body.name.strip(),
+    )
+
+
+@router.delete("/api/v1/rsshub/param-presets/{preset_id}", status_code=204)
+async def delete_rsshub_param_preset(
+    preset_id: str, request: Request
+) -> Response:
+    """删除一个方案；404 当该用户没有此方案（跨用户即 404）。"""
+    deleted = await _preset_store(request).delete(preset_id)
+    if not deleted:
+        raise RssHubPresetNotFound("Parameter preset not found.")
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/rsshub/param-presets/{preset_id}/apply",
+    response_model=RssHubParamPresetApply,
+    response_model_exclude_none=False,
+)
+async def apply_rsshub_param_preset(
+    preset_id: str, request: Request
+) -> dict[str, object]:
+    """N030 应用方案 → 参数表单回填数据（create-draft；纯只读）。
+
+    hasSensitive 方案要求敏感键重新输入（requiresRebind=true +
+    sensitiveKeys）——服务端从未存过真实值，哨兵回填本就会被 preview
+    的 pattern 校验拒绝；这里把契约显式化，UI 据此标「需重新绑定」。"""
+    return await _preset_store(request).apply(preset_id)
+
+
+# ---- N028: 管理员级路由升级兼容检查 -------------------------------------------
+
+
+def _admin_guard(request: Request) -> JSONResponse | None:
+    """O167 同一 admin 语义：服务端角色判定，绝不信任请求体。"""
+    from lumirss.user_scope import principal_of
+
+    principal = principal_of(request.scope)
+    if principal is None or principal.get("role") not in ("owner", "admin"):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": {
+                    "type": "forbidden",
+                    "message": "Administrator role required.",
+                }
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    return None
+
+
+class RssHubUpgradeCheckRequest(BaseModel):
+    """POST /api/v1/admin/rsshub/upgrade-check body。"""
+
+    targetImage: str | None = Field(default=None, min_length=1, max_length=300)
+
+
+@router.post(
+    "/api/v1/admin/rsshub/upgrade-check",
+    response_model=RssHubUpgradeCheckReport,
+    response_model_exclude_none=False,
+)
+async def run_rsshub_upgrade_check(
+    body: RssHubUpgradeCheckRequest, request: Request
+) -> dict[str, object]:
+    """N028 预升级路由兼容基线（admin-gated；只读探测 + 报告落库）。
+
+    诚实范围（测试固定）：
+    - 探测对象 = **管理员本人**用户库可见的路由键（订阅 URL 反推 +
+      本人收藏/最近使用），每次最多 12 条真实 preview（其余 skipped）；
+    - 只对**当前运行实例**探测——targetImage 恒记 pending（Lumi 无
+      Docker 视角，绝不臆造「新镜像已生效」）；逐路由状态锚定到
+      checkedImage（目录快照的固定镜像 sha）；
+    - keep-old = 默认：本端点零镜像/容器操作，只写报告（keep-last-3）。
+    """
+    guard = _admin_guard(request)
+    if guard is not None:
+        return guard
+    from lumirss.rsshub_upgrade_check import run_upgrade_check
+
+    return await run_upgrade_check(request, target_image=body.targetImage)
+
+
+@router.get(
+    "/api/v1/admin/rsshub/upgrade-check",
+    response_model=RssHubUpgradeChecks,
+    response_model_exclude_none=False,
+)
+async def list_rsshub_upgrade_checks(request: Request) -> dict[str, object]:
+    """N028 最近检查报告（新→旧，≤3；admin-gated，存本人用户库）。"""
+    guard = _admin_guard(request)
+    if guard is not None:
+        return guard
+    from lumirss.rsshub_upgrade_check import RssHubUpgradeCheckStore
+
+    reports = await RssHubUpgradeCheckStore(request.app.state.db).list_reports()
+    return {"items": reports}

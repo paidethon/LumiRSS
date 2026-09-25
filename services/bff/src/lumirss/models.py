@@ -398,6 +398,14 @@ class EncodingInspection(BaseModel):
     bodyBytes: int = 0
 
 
+class RedirectHop(BaseModel):
+    """N035 重定向链的一跳（url 的 query 凭据值已由服务端掩码）。"""
+
+    url: str
+    status: int | None = None
+    final: bool = False
+
+
 class FeedPreviewResult(BaseModel):
     """POST /api/v1/feed-preview and POST /api/v1/rsshub/preview.
 
@@ -412,6 +420,9 @@ class FeedPreviewResult(BaseModel):
     alreadySubscribed: bool
     # N033：编码检查（直连预览路径附带；rsshub/preview 无抓取 → None）。
     encodingInspection: EncodingInspection | None = None
+    # N035：真实重定向链（F044 迁移向导展示「重定向链 + 最终域名」；
+    # rsshub/preview 不经用户 URL 抓取 → None）。
+    redirectChain: list[RedirectHop] | None = None
 
 
 class FeedPreviewReparseRequest(BaseModel):
@@ -553,6 +564,119 @@ class RssHubRouteRuns(BaseModel):
     """GET /api/v1/rsshub/routes/history — bounded run list, newest first."""
 
     items: list[RssHubRouteRun]
+
+
+# ---- N029 路由与来源关系图 --------------------------------------------------
+
+
+class RssHubRouteSourceEntry(BaseModel):
+    """该路由下某来源的最近条目（派生投影；≤5 条，只读）。"""
+
+    ref: str
+    title: str
+    published: str
+
+
+class RssHubRouteSourceItem(BaseModel):
+    """N029 我的来源：由该路由模板 + 参数生成的本账户订阅。"""
+
+    feedUrl: str
+    title: str
+    # unreadCount / recentEntries 来自 search_entries 派生投影（可重建）；
+    # 投影为空时 unreadCount=0、recentEntries=[]（诚实口径，不区分「没
+    # 有未读」与「投影未覆盖」——投影落后 ≠ 没有新内容）。
+    unreadCount: int
+    recentEntries: list[RssHubRouteSourceEntry] = []
+
+
+class RssHubRouteMySources(BaseModel):
+    """GET /api/v1/rsshub/routes/{routeKey}/my-sources — 仅本人作用域。"""
+
+    routeKey: str
+    templateId: str
+    items: list[RssHubRouteSourceItem] = []
+
+
+class RssHubRouteUsage(BaseModel):
+    """GET /api/v1/admin/rsshub/routes/{routeKey}/usage — 跨用户聚合，
+    只有计数：绝不返回其他用户的标题 / 名称 / URL。"""
+
+    routeKey: str
+    templateId: str
+    userCount: int
+    sourceCount: int
+    totalEntries: int
+    basis: str
+
+
+# ---- N030 路由可复用参数方案 -------------------------------------------------
+
+
+class RssHubParamPresetItem(BaseModel):
+    """一个参数方案（params 里的敏感值在服务端已替换为 '***' 哨兵）。"""
+
+    id: str
+    routeKey: str
+    templateId: str
+    name: str
+    params: dict[str, str]
+    hasSensitive: bool
+    createdAt: str
+
+
+class RssHubParamPresetApply(BaseModel):
+    """POST .../param-presets/{id}/apply — 回填数据（不抓取、不订阅）。
+
+    requiresRebind=True 时 sensitiveKeys 里的参数必须重新输入后才能
+    预览（服务端从不存储敏感值，哨兵回填会被 pattern 校验拒绝）。"""
+
+    id: str
+    routeKey: str
+    templateId: str
+    params: dict[str, str]
+    hasSensitive: bool
+    requiresRebind: bool
+    sensitiveKeys: list[str] = []
+
+
+# ---- N028 路由升级兼容检查 ---------------------------------------------------
+
+
+class RssHubUpgradeCheckRoute(BaseModel):
+    """单路由探测结果（params 已脱敏；routeKey 即存储键）。"""
+
+    routeKey: str
+    status: Literal["ok", "failed", "skipped"]
+    entryCount: int | None = None
+    failureClass: str | None = None
+    origin: str
+
+
+class RssHubUpgradeCheckReport(BaseModel):
+    """一次升级兼容检查报告（keep-last-3）。
+
+    checkedImage = 目录快照（rsshub_routes.generated.json）生成时所在
+    的固定镜像——逐路由状态锚定到这个已知的镜像证据；targetImage 是
+    运营者声明的目标镜像，targetStatus 恒为 'pending'：检查只对当前
+    运行实例探测，新镜像生效与否由运维侧确认（Lumi 无 Docker 视角，
+    绝不臆造「已生效」）。"""
+
+    id: int
+    ranAt: str
+    targetImage: str | None = None
+    targetStatus: str | None = None
+    checkedImage: str | None = None
+    routeCount: int
+    okCount: int
+    failedCount: int
+    skippedCount: int
+    routes: list[RssHubUpgradeCheckRoute] = []
+
+
+class RssHubUpgradeChecks(BaseModel):
+    """GET /api/v1/admin/rsshub/upgrade-check — 最近报告（新→旧，≤3）。"""
+
+    items: list[RssHubUpgradeCheckReport] = []
 
 
 # ---------------------------------------------------------------------------

@@ -274,6 +274,10 @@ async def test_preview_rss_returns_metadata_and_is_non_mutating():
             "sample": None,
             "bodyBytes": len(RSS_DOC),
         },
+        # N035：无重定向 → 单跳链（首跳即 final）。
+        redirect_chain=(
+            {"url": FEED_URL, "status": 200, "final": True},
+        ),
     )
     # 无副作用证明：preview 只读了订阅列表，从未触碰任何 mutation。
     assert control.calls == [("list_subscriptions",)]
@@ -504,6 +508,7 @@ def test_preview_route_returns_metadata_shape():
         "format": "rss",
         "alreadySubscribed": False,
         "encodingInspection": None,  # N033（fake 未填 → null）
+        "redirectChain": None,  # N035（fake 未填 → null）
     }
     assert service.calls == [FEED_URL]
 

@@ -196,6 +196,10 @@ from lumirss.rsshub_control import (
     RssHubInvalidValue,
     RssHubUnknownKey,
 )
+from lumirss.rsshub_param_presets import (
+    RssHubPresetLimit,
+    RssHubPresetNotFound,
+)
 from lumirss.saved_search_store import (
     SavedSearchInvalid,
     SavedSearchLimit,
@@ -299,6 +303,9 @@ _ERROR_RESPONSES = {
     RssHubFetchError: (502, "rsshub_fetch_error"),
     # N021 route favorites
     RssHubFavoriteNotFound: (404, "rsshub_favorite_not_found"),
+    # N030 route param presets
+    RssHubPresetLimit: (400, "rsshub_param_preset_limit"),
+    RssHubPresetNotFound: (404, "rsshub_param_preset_not_found"),
     # 0015 AI settings
     InvalidAiSettings: (400, "invalid_ai_settings"),
     AiProfileNotFound: (404, "ai_profile_not_found"),
@@ -541,6 +548,8 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(RssHubRouteNotFound)
     @app.exception_handler(RssHubInvalidParameters)
     @app.exception_handler(RssHubFavoriteNotFound)
+    @app.exception_handler(RssHubPresetLimit)
+    @app.exception_handler(RssHubPresetNotFound)
     @app.exception_handler(InvalidAppSettings)
     @app.exception_handler(AppSettingsConflict)
     @app.exception_handler(InvalidAiSettings)
@@ -757,6 +766,28 @@ def register_error_handlers(app) -> None:
                 }
             },
         )
+
+    @app.exception_handler(FeedFetchError)
+    @app.exception_handler(UnsafeFeedUrl)
+    async def feed_fetch_redirect_chain_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        """N035：feed 抓取边界拒绝时透出重定向链（失败跳展示）。
+
+        稳定错误类型与状态码不变（_ERROR_RESPONSES 为准）；仅当链上
+        有多跳、或存在从未到达的失败跳（status=None，如私网/回环拒绝）
+        时附加 redirectChain + failedHop——单跳普通失败无诊断增值，
+        响应形状保持与历史一致。URL 的 query 已由 safe_fetch 掩码。"""
+        status, error_type = _ERROR_RESPONSES[type(exc)]
+        chain = getattr(exc, "redirect_chain", None) or []
+        content: dict[str, object] = {
+            "error": {"type": error_type, "message": str(exc)}
+        }
+        if len(chain) > 1 or any(hop.get("status") is None for hop in chain):
+            error_payload: dict[str, object] = content["error"]
+            error_payload["redirectChain"] = [dict(hop) for hop in chain]
+            error_payload["failedHop"] = chain[-1]["url"]
+        return JSONResponse(status_code=status, content=content)
 
 
     @app.exception_handler(ApiSourceBudgetExhausted)
