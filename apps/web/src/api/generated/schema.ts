@@ -6535,6 +6535,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Search Snapshots
+         * @description N141：快照列表（最新优先；引用计数而非引用清单，出站有界）。
+         */
+        get: operations["list_search_snapshots_api_v1_search_snapshots_get"];
+        put?: never;
+        /**
+         * Create Search Snapshot
+         * @description N141 冻结：对当前查询+过滤作用域做一次 keyset 全量迭代（≤2000
+         *     条，触界诚实标注 truncated），把引用清单存入 per-user 快照表
+         *     （cap 20，超界自动淘汰最老）。查询为空/非法 → 400。
+         */
+        post: operations["create_search_snapshot_api_v1_search_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/snapshots/{snapshot_id}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Search Snapshot
+         * @description N141 比较：对快照存储的作用域原样复跑（存什么跑什么，绝不
+         *     重新解释），与冻结清单做差分：
+         *
+         *     - added / removed：双向集合差（保持 newest-first 顺序；列表 ≤200
+         *       条，counts 为全量诚实计数）；
+         *     - rankChanges：两侧共同引用按位置排名，|位移| > 5 才列入；
+         *     - permissionLost：removed 中在本账户投影已不再解析的引用——
+         *       per-user 库查不到与 404 同语义，绝不泄露他人条目存在性；
+         *     - 任一侧触界截断 → complete=false。快照缺失 → 404。
+         */
+        post: operations["compare_search_snapshot_api_v1_search_snapshots__snapshot_id__compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search/synonyms": {
         parameters: {
             query?: never;
@@ -6589,6 +6643,30 @@ export interface paths {
         head?: never;
         /** Update Synonym */
         patch: operations["update_synonym_api_v1_search_synonyms__synonym_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/search/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Timeline
+         * @description N149：与 GET /search 相同的权限与过滤作用域（per-user DB 路由 +
+         *     同一过滤链），24 个月逐月计数在 SQL 完成（GROUP BY 月份前缀）——
+         *     只回每月计数，绝不搬运正文。批注腿只含本人批注（annotations 表在
+         *     per-user 库中），excerpt/note LIKE 匹配查询，≤10 条 + 超界诚实
+         *     标注。同义词扩展不参与（聚合口径 = 基础词条过滤链，与 N145 一致）。
+         */
+        get: operations["search_timeline_api_v1_search_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/search/views": {
@@ -6721,6 +6799,28 @@ export interface paths {
         head?: never;
         /** Reorder Pinned View */
         patch: operations["reorder_pinned_view_api_v1_search_views__view_id__pin_order_patch"];
+        trace?: never;
+    };
+    "/api/v1/search/views/{view_id}/scope/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlink Saved Search Scope
+         * @description N144：解除已失效的工作区关联（scopeBroken 后的用户显式动作）。
+         *
+         *     只清 workspace_id——内容类型范围保留；视图缺失 → 404。
+         */
+        post: operations["unlink_saved_search_scope_api_v1_search_views__view_id__scope_unlink_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/search/views/{view_id}/token/enable": {
@@ -7897,6 +7997,8 @@ export interface paths {
          * @description Merge source tag INTO target in one transaction (pool #16):
          *     duplicate bindings collapse, the rest re-point, the source tag is
          *     deleted. Lumi-owned bindings only — FreshRSS categories untouched.
+         *
+         *     N150：合并执行前已在同一事务内快照源绑定（24h 内可撤销一次）。
          */
         post: operations["merge_tags_api_v1_tags_merge_post"];
         delete?: never;
@@ -7920,6 +8022,29 @@ export interface paths {
         get: operations["merge_tag_preview_api_v1_tags_merge_preview_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags/merge/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Tag Merge
+         * @description Undo the latest merge within 24h (N150): recreate the source tag
+         *     (new id) and restore its bindings exactly; the target keeps the
+         *     merged bindings. No snapshot / TTL expired → 404; source name
+         *     already taken again (including by a previous undo) → 409.
+         */
+        post: operations["undo_tag_merge_api_v1_tags_merge_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16327,6 +16452,8 @@ export interface components {
              * @default
              */
             categoryKey: string;
+            /** Contenttypes */
+            contentTypes?: string[] | null;
             /** Filters */
             filters?: {
                 [key: string]: string | boolean | null;
@@ -16340,6 +16467,8 @@ export interface components {
              * @default all
              */
             view: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
         };
         /**
          * SavedSearchList
@@ -16366,6 +16495,14 @@ export interface components {
             name: string;
         };
         /**
+         * SavedSearchScopeUnlinkResult
+         * @description POST …/views/{id}/scope/unlink（N144）——解除已失效的工作区关联
+         *     （内容类型范围保留）；返回更新后的视图。
+         */
+        SavedSearchScopeUnlinkResult: {
+            view: components["schemas"]["SavedSearchView"];
+        };
+        /**
          * SavedSearchView
          * @description One saved search view (pool #09): query + filter intent, never a
          *     result snapshot — opening a view re-runs the search.
@@ -16376,6 +16513,8 @@ export interface components {
              * @default
              */
             categoryKey: string;
+            /** Contenttypes */
+            contentTypes?: string[] | null;
             /** Createdat */
             createdAt: string;
             /** Filters */
@@ -16400,6 +16539,11 @@ export interface components {
             pinned: boolean;
             /** Query */
             query: string;
+            /**
+             * Scopebroken
+             * @default false
+             */
+            scopeBroken: boolean;
             /** Updatedat */
             updatedAt: string;
             /**
@@ -16407,6 +16551,8 @@ export interface components {
              * @default all
              */
             view: string;
+            /** Workspaceid */
+            workspaceId?: string | null;
         };
         /**
          * SearchDistributionDay
@@ -16663,6 +16809,185 @@ export interface components {
             libraryNextCursor?: string | null;
             /** Nextcursor */
             nextCursor: string | null;
+        };
+        /**
+         * SearchSnapshotCompareResult
+         * @description N141 差分：added/removed（引用清单，≤200 条 + 全量 counts）、
+         *     rankChanges（|位移| > 5）、permissionLost（快照引用在本账户投影中
+         *     已不再解析——与 404 同语义，绝不泄露他人条目存在性）。
+         *     任一侧冻结/复跑触界截断 → complete=false 诚实标注。
+         */
+        SearchSnapshotCompareResult: {
+            /**
+             * Added
+             * @default []
+             */
+            added: string[];
+            /**
+             * Complete
+             * @default true
+             */
+            complete: boolean;
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Permissionlost
+             * @default []
+             */
+            permissionLost: string[];
+            /**
+             * Rankchanges
+             * @default []
+             */
+            rankChanges: components["schemas"]["SearchSnapshotRankChange"][];
+            /**
+             * Removed
+             * @default []
+             */
+            removed: string[];
+        };
+        /**
+         * SearchSnapshotCreate
+         * @description POST /api/v1/search/snapshots body（N141）——与 GET /search 同参
+         *     （除分页/同义词扩展；快照口径 = 基础词条过滤链，与 N143/N145 一致）。
+         */
+        SearchSnapshotCreate: {
+            /** Categoryid */
+            categoryId?: string | null;
+            /** Exclude */
+            exclude?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Feedurl */
+            feedUrl?: string | null;
+            /** From */
+            from?: string | null;
+            /** Hassummary */
+            hasSummary?: boolean | null;
+            /** Intitle */
+            intitle?: string | null;
+            /** Phrase */
+            phrase?: string | null;
+            /** Q */
+            q: string;
+            /** State */
+            state?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * SearchSnapshotList
+         * @description GET /api/v1/search/snapshots。
+         */
+        SearchSnapshotList: {
+            /** Items */
+            items: components["schemas"]["SearchSnapshotView"][];
+        };
+        /**
+         * SearchSnapshotRankChange
+         * @description 一个共同引用的排名变化（绝对位移 > 5 才列入）。
+         */
+        SearchSnapshotRankChange: {
+            /** Entryref */
+            entryRef: string;
+            /** Newrank */
+            newRank: number;
+            /** Oldrank */
+            oldRank: number;
+        };
+        /**
+         * SearchSnapshotView
+         * @description 一个已冻结的搜索快照（N141）：查询 + 过滤作用域 + 结果引用计数
+         *     （引用清单本身绝不在列表中出站，仅 compare 内部使用）。
+         */
+        SearchSnapshotView: {
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Filters
+             * @default {}
+             */
+            filters: {
+                [key: string]: string | boolean;
+            };
+            /** Id */
+            id: string;
+            /** Query */
+            query: string;
+            /** Refcount */
+            refCount: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * SearchTimelineAnnotation
+         * @description N149：与查询匹配的一条本人批注（excerpt/note LIKE 命中）。
+         */
+        SearchTimelineAnnotation: {
+            /** Color */
+            color: string;
+            /** Createdat */
+            createdAt: string;
+            /** Entryref */
+            entryRef: string;
+            /** Excerpt */
+            excerpt: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * SearchTimelineMonth
+         * @description N149：单月命中计数（YYYY-MM；窗口内补零后逐月出）。
+         */
+        SearchTimelineMonth: {
+            /** Count */
+            count: number;
+            /** Month */
+            month: string;
+        };
+        /**
+         * SearchTimelineResult
+         * @description N149 主题演变时间线：24 个月逐月计数（SQL 聚合，无正文出站）+
+         *     匹配查询的本人批注（LIKE，≤10 条；超界 annotationsComplete=false
+         *     诚实标注——仅本人批注，per-user DB 天然隔离他人）。
+         */
+        SearchTimelineResult: {
+            /**
+             * Annotations
+             * @default []
+             */
+            annotations: components["schemas"]["SearchTimelineAnnotation"][];
+            /**
+             * Annotationscomplete
+             * @default true
+             */
+            annotationsComplete: boolean;
+            /** Monthfrom */
+            monthFrom: string;
+            /** Monthto */
+            monthTo: string;
+            /**
+             * Months
+             * @default []
+             */
+            months: components["schemas"]["SearchTimelineMonth"][];
+            /** Total */
+            total: number;
         };
         /**
          * SearchWhyMissedBody
@@ -17496,6 +17821,23 @@ export interface components {
             movedBindings: number;
             /** Targetid */
             targetId: number;
+        };
+        /**
+         * TagMergeUndoResult
+         * @description POST /api/v1/tags/merge/undo（N150）——撤销最近一次合并：
+         *     重建源标签（新 id）并恢复其绑定；目标保留合并来的绑定。
+         *     无快照/超 24h 窗口 → 404；源标签名已被占用（含上一次 undo 自身
+         *     的重建）→ 409。
+         */
+        TagMergeUndoResult: {
+            /** Name */
+            name: string;
+            /** Restoredbindings */
+            restoredBindings: number;
+            /** Sourcetagid */
+            sourceTagId: number;
+            /** Targettagid */
+            targetTagId: number;
         };
         /**
          * TagRenameRequest
@@ -29631,6 +29973,90 @@ export interface operations {
             };
         };
     };
+    list_search_snapshots_api_v1_search_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotList"];
+                };
+            };
+        };
+    };
+    create_search_snapshot_api_v1_search_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchSnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_search_snapshot_api_v1_search_snapshots__snapshot_id__compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSnapshotCompareResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_synonyms_api_v1_search_synonyms_get: {
         parameters: {
             query?: never;
@@ -29772,6 +30198,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_timeline_api_v1_search_timeline_get: {
+        parameters: {
+            query: {
+                q: string;
+                feedUrl?: string | null;
+                categoryId?: string | null;
+                state?: string | null;
+                favorite?: boolean | null;
+                from?: string | null;
+                to?: string | null;
+                intitle?: string | null;
+                phrase?: string | null;
+                exclude?: string | null;
+                hasSummary?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchTimelineResult"];
                 };
             };
             /** @description Validation Error */
@@ -30039,6 +30506,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedSearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_saved_search_scope_api_v1_search_views__view_id__scope_unlink_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchScopeUnlinkResult"];
                 };
             };
             /** @description Validation Error */
@@ -31953,6 +32451,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_tag_merge_api_v1_tags_merge_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagMergeUndoResult"];
                 };
             };
         };

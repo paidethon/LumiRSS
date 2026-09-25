@@ -1,20 +1,29 @@
-/** search-insight — N142/N143/N145 搜索理解与排障的取数层（纯逻辑 +
- * 薄 fetch 包装）。
+/** search-insight — N142/N143/N145/N147/N141/N149 搜索理解与排障的取数层
+ * （纯逻辑 + 薄 fetch 包装）。
  *
- * 为什么不走 api/client：client.ts 属禁改文件（与 lib/search-advanced
- * 同一约束），三个新端点在此自带同构 fetch（API_BASE = '/api/v1'，仅
- * 相对路径，同源由 Vite 代理 / Caddy 反代承担）；后续 client.ts 收录
- * 后应迁移回去（登记为合同缺口）。
+ * 取数位置：快照（N141）/时间线（N149）与既有 N142-N147 端点同居本
+ * 模块——同一 DistributionParams 口径复用，自带同构 fetch（API_BASE =
+ * '/api/v1'，仅相对路径，同源由 Vite 代理 / Caddy 反代承担）；域内
+ * 邻接端点（标签合并撤销 N150、保存视图范围 N144）则收录于
+ * api/client.ts，与其既有函数并列。
  *
  * 诚实口径：
  * - parse-query 的 unrecognized 原样透传（服务端已保证不静默丢弃）；
  * - why-missed 的 reasons / rank / rankCapped 原样透传（不编造结论）；
- * - distribution 只含 SQL 聚合计数（服务端不回传正文）。
+ * - distribution 只含 SQL 聚合计数（服务端不回传正文）；
+ * - snapshot compare 的 added/removed/rankChanges/permissionLost 原样
+ *   透传（complete=false 时不冒充完整）；
+ * - timeline 的月份计数与批注列表原样透传（annotationsComplete=false
+ *   诚实标注截断）。
  */
 
 import type {
   SearchDistributionResult,
   SearchParseResult,
+  SearchSnapshotCompareResult,
+  SearchSnapshotList,
+  SearchSnapshotView,
+  SearchTimelineResult,
   SearchWhyMissedResult,
 } from '../api/types'
 
@@ -168,4 +177,72 @@ export async function fetchDistribution(
 ): Promise<SearchDistributionResult> {
   const response = await insightFetch(buildDistributionUrl(params), {}, signal)
   return (await response.json()) as SearchDistributionResult
+}
+
+// ---- N141 搜索快照比较 -------------------------------------------------------
+
+/** POST /api/v1/search/snapshots（冻结当前结果引用；≤2000 诚实截断）。 */
+export async function createSearchSnapshot(
+  params: DistributionParams,
+  signal?: AbortSignal,
+): Promise<SearchSnapshotView> {
+  const response = await insightFetch(
+    `${API_BASE}/search/snapshots`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: params.q,
+        feedUrl: params.feedUrl ?? null,
+        categoryId: params.categoryId ?? null,
+        state: params.state ?? null,
+        favorite: params.favorite ?? false,
+        from: params.from ?? null,
+        to: params.to ?? null,
+        intitle: params.intitle ?? null,
+        phrase: params.phrase ?? null,
+        exclude: params.exclude ?? null,
+        hasSummary: params.hasSummary ?? null,
+      }),
+    },
+    signal,
+  )
+  return (await response.json()) as SearchSnapshotView
+}
+
+/** GET /api/v1/search/snapshots（有界列表：引用计数而非引用清单）。 */
+export async function fetchSearchSnapshots(
+  signal?: AbortSignal,
+): Promise<SearchSnapshotList> {
+  const response = await insightFetch(`${API_BASE}/search/snapshots`, {}, signal)
+  return (await response.json()) as SearchSnapshotList
+}
+
+/** POST /api/v1/search/snapshots/{id}/compare（对存储作用域原样复跑）。 */
+export async function compareSearchSnapshot(
+  snapshotId: string,
+  signal?: AbortSignal,
+): Promise<SearchSnapshotCompareResult> {
+  const response = await insightFetch(
+    `${API_BASE}/search/snapshots/${encodeURIComponent(snapshotId)}/compare`,
+    { method: 'POST' },
+    signal,
+  )
+  return (await response.json()) as SearchSnapshotCompareResult
+}
+
+// ---- N149 主题演变时间线 -----------------------------------------------------
+
+/** 构造 timeline 请求 URL（与 distribution 完全同参，仅端点不同）。 */
+export function buildTimelineUrl(params: DistributionParams): string {
+  return `${buildDistributionUrl(params).replace('/search/distribution', '/search/timeline')}`
+}
+
+/** GET /api/v1/search/timeline（24 个月逐月计数 + 本人批注，≤10 条）。 */
+export async function fetchSearchTimeline(
+  params: DistributionParams,
+  signal?: AbortSignal,
+): Promise<SearchTimelineResult> {
+  const response = await insightFetch(buildTimelineUrl(params), {}, signal)
+  return (await response.json()) as SearchTimelineResult
 }

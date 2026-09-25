@@ -194,9 +194,14 @@ from lumirss.saved_search_store import (
     SavedSearchInvalid,
     SavedSearchLimit,
     SavedSearchNotFound,
+    SavedSearchWorkspaceMissing,
 )
 from lumirss.search_debug import SearchEntryNotFound
 from lumirss.search_index import SearchQueryError
+from lumirss.search_snapshot_store import (
+    SearchSnapshotInvalid,
+    SearchSnapshotNotFound,
+)
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
 from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
@@ -214,7 +219,12 @@ from lumirss.staged_source_store import (
 from lumirss.subscriptionref import (
     InvalidSubscriptionReference,
 )
-from lumirss.tags import TagInvalid, TagNotFound
+from lumirss.tags import (
+    TagInvalid,
+    TagMergeSourceRecreated,
+    TagMergeUndoNotFound,
+    TagNotFound,
+)
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 from lumirss.workspace_archive import (
     ArchivedWorkspace,
@@ -413,10 +423,18 @@ _ERROR_RESPONSES = {
     # phase2 G8 tags
     TagInvalid: (400, "invalid_tag"),
     TagNotFound: (404, "tag_not_found"),
+    # N150 tag merge undo
+    TagMergeUndoNotFound: (404, "tag_merge_undo_not_found"),
+    TagMergeSourceRecreated: (409, "tag_merge_source_recreated"),
     # pool #09 saved search views
     SavedSearchInvalid: (400, "invalid_saved_search"),
     SavedSearchNotFound: (404, "saved_search_not_found"),
     SavedSearchLimit: (409, "saved_search_limit"),
+    # N144 saved search scope
+    SavedSearchWorkspaceMissing: (400, "workspace_not_found"),
+    # N141 search snapshots
+    SearchSnapshotInvalid: (400, "invalid_search_snapshot"),
+    SearchSnapshotNotFound: (404, "search_snapshot_not_found"),
     # phase2 recovery P0-08 (agent run lifecycle)
     ThreadNotFound: (404, "thread_not_found"),
     PendingApprovalBlocked: (409, "pending_approval"),
@@ -592,9 +610,14 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ApprovalInvalid)
     @app.exception_handler(TagInvalid)
     @app.exception_handler(TagNotFound)
+    @app.exception_handler(TagMergeUndoNotFound)
+    @app.exception_handler(TagMergeSourceRecreated)
     @app.exception_handler(SavedSearchInvalid)
     @app.exception_handler(SavedSearchNotFound)
     @app.exception_handler(SavedSearchLimit)
+    @app.exception_handler(SavedSearchWorkspaceMissing)
+    @app.exception_handler(SearchSnapshotInvalid)
+    @app.exception_handler(SearchSnapshotNotFound)
     @app.exception_handler(ThreadNotFound)
     @app.exception_handler(PendingApprovalBlocked)
     @app.exception_handler(NoActiveRun)

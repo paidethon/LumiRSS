@@ -177,6 +177,23 @@ class AnnotationStore:
             next_cursor = f"{last['updatedAt']}|{last['id']}"
         return items, next_cursor
 
+    async def search_bounded(
+        self, q: str, *, limit: int = 10
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """N149 主题演变时间线：本人批注按 excerpt/note LIKE 检索，
+        硬上限 limit；命中超过上限 → (前 limit 条, False) 诚实截断。
+
+        与 search() 同一 LIKE 口径（批注检索的既有行为）；annotations
+        表在 per-user 库中，只可能是本人批注——他人批注天然不可见。"""
+        await self._db.migrate()
+        like = f"%{q}%"
+        rows = await self._db.fetch_all(
+            "SELECT id, entry_ref, anchor_json, anchor_hash, excerpt, note, color, created_at, updated_at FROM annotations WHERE excerpt LIKE ? OR note LIKE ? ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (like, like, max(1, limit) + 1),
+        )
+        complete = len(rows) <= limit
+        return [_row_to_dict(row) for row in rows[:limit]], complete
+
     async def update(
         self,
         annotation_id: str,

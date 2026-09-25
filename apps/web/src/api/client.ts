@@ -61,6 +61,7 @@ import type {
   SavedSearchViewList,
   TagMergePreview,
   TagMergeResult,
+  TagMergeUndoResult,
   WebDavSettings,
   WebDavTestResult,
   Workspace,
@@ -3921,6 +3922,16 @@ export async function mergeTags(sourceId: number, targetId: number): Promise<Tag
   return (await response.json()) as TagMergeResult
 }
 
+/** N150：撤销最近一次标签合并（24h 窗口内；窗口外 404、源名已被占用
+ * （含上次 undo 自身重建）→ 409，错误信封原样上抛）。 */
+export async function undoTagMerge(): Promise<TagMergeUndoResult> {
+  const response = await rawRequest(`${API_BASE}/tags/merge/undo`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as TagMergeUndoResult
+}
+
 /** 绑定标签（POST 201 TagBinding）。 */
 export async function assignTag(input: TagAssignInput): Promise<TagSummary> {
   const response = await rawRequest(`${API_BASE}/tags/assign`, {
@@ -4048,7 +4059,15 @@ export async function getSavedSearchViews(
 }
 
 export async function createSavedSearchView(
-  body: { name: string; query: string; view: string; categoryKey: string },
+  body: {
+    name: string
+    query: string
+    view: string
+    categoryKey: string
+    /** N144：检索范围（可选）。 */
+    workspaceId?: string | null
+    contentTypes?: string[] | null
+  },
 ): Promise<SavedSearchView> {
   const response = await rawRequest(`${API_BASE}/search/views`, {
     method: 'POST',
@@ -4057,6 +4076,19 @@ export async function createSavedSearchView(
   })
   if (!response.ok) throw await toApiError(response)
   return (await response.json()) as SavedSearchView
+}
+
+/** N144：解除已失效的工作区关联（只清 workspace_id，内容类型保留）。 */
+export async function unlinkSavedSearchScope(
+  id: string,
+): Promise<SavedSearchView> {
+  const response = await rawRequest(
+    `${API_BASE}/search/views/${encodeURIComponent(id)}/scope/unlink`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  const body = (await response.json()) as { view: SavedSearchView }
+  return body.view
 }
 
 export async function renameSavedSearchView(

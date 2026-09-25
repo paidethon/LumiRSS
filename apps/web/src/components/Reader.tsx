@@ -668,10 +668,11 @@ const handleScroll = useCallback(() => {
       {/* F11：阅读进度条（滚动容器顶部；自挂原生 passive 监听） */}
       <ReaderProgress getContainer={getScrollContainer} enabled={readerShowReadingProgress} />
       {/* F072：搜索命中定位 chip（命中 N 处/下一处；正文已变化 → 诚实降级）。
-          局部 Suspense 边界：lazy 首帧挂起只影响 chip 本身，绝不把
+          N146：viewMode 传入 → 译文 overlay 激活时命中上下文带原文+译文
+          配对片段。局部 Suspense 边界：lazy 首帧挂起只影响 chip 本身，绝不把
           Reader 主体（含静态哨兵结构）拖进挂起态。 */}
       <Suspense fallback={null}>
-        <SearchHitsChip entryRef={detailEntryRef} getRoot={getFindRoot} detailReady={!isPending && !isError} />
+        <SearchHitsChip entryRef={detailEntryRef} getRoot={getFindRoot} detailReady={!isPending && !isError} viewMode={viewMode} />
       </Suspense>
       {/* F13：文内查找条（工具栏 Search 按钮打开；Escape/× 关闭清高亮） */}
       {(findOpen || linksOpen) && (

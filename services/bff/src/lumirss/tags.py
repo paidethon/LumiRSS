@@ -11,9 +11,11 @@ the active tag space. Attach validates the binding is new before the
 per-item cap applies (idempotent re-attach always succeeds).
 """
 
+import json
 import sqlite3
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from lumirss.db_tx import transaction
@@ -23,6 +25,8 @@ from lumirss.util import utc_now
 
 _MAX_NAME_LENGTH = 50
 _MAX_TAGS_PER_ITEM = 30
+# N150：合并撤销窗口（TTL）。
+_UNDO_TTL = 24 * 3600
 
 
 class TagInvalid(ValueError):
@@ -31,6 +35,18 @@ class TagInvalid(ValueError):
 
 class TagNotFound(Exception):
     """No such tag."""
+
+
+class TagMergeUndoNotFound(Exception):
+    """N150：没有可撤销的合并（无快照或已超 24h 窗口）→ 404。"""
+
+
+class TagMergeSourceRecreated(Exception):
+    """N150：源标签名已被占用（含上一次 undo 自身重建）→ 409。"""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
 
 
 @dataclass(frozen=True)
@@ -140,11 +156,43 @@ class TagStore:
         bindings collapse, the rest re-point to the target, the source
         tag row is removed. One transaction — no half-merged state.
         Touches Lumi-owned item_tags/tags only; FreshRSS categories are
-        never involved."""
+        never involved.
+
+        N150：同一事务内先快照源标签绑定到 tag_merge_undo（单例行，新
+        合并覆盖旧快照），崩溃/中止都不会留下「无快照的合并」。"""
         await self.merge_preview(source_tag_id, target_tag_id)  # shared validation
 
         def _merge(conn: sqlite3.Connection) -> dict[str, Any]:
             conn.execute("BEGIN IMMEDIATE")
+            # N150：先在写锁内快照（dedupe/移动删除发生之前）。
+            source_name_row = conn.execute(
+                "SELECT name FROM tags WHERE id = ?", (source_tag_id,)
+            ).fetchone()
+            rows = conn.execute(
+                "SELECT item_ref, origin, status, created_at FROM item_tags WHERE tag_id = ?",
+                (source_tag_id,),
+            ).fetchall()
+            bindings = [
+                {
+                    "itemRef": str(row["item_ref"]),
+                    "origin": str(row["origin"]),
+                    "status": str(row["status"]),
+                    "createdAt": str(row["created_at"]),
+                }
+                for row in rows
+            ]
+            conn.execute("DELETE FROM tag_merge_undo WHERE id = 1")
+            conn.execute(
+                "INSERT INTO tag_merge_undo (id, source_tag_id, source_tag_name, target_tag_id, bindings_json, created_at)"
+                " VALUES (1, ?, ?, ?, ?, ?)",
+                (
+                    source_tag_id,
+                    str(source_name_row["name"]) if source_name_row is not None else "",
+                    target_tag_id,
+                    json.dumps(bindings, ensure_ascii=False),
+                    utc_now(),
+                ),
+            )
             deduped_cur = conn.execute(
                 "DELETE FROM item_tags WHERE tag_id = ? AND item_ref IN (SELECT item_ref FROM item_tags WHERE tag_id = ?)",
                 (source_tag_id, target_tag_id),
@@ -163,6 +211,75 @@ class TagStore:
             }
 
         return await transaction(self._db, _merge)
+
+    # -- N150：标签合并撤销 ---------------------------------------------------
+
+    async def undo_merge(self) -> dict[str, Any]:
+        """撤销最近一次合并（24h 窗口内）：重建源标签并原样恢复其绑定
+        （含被折叠的重复绑定——目标保留合并来的绑定，两侧语义都与合并
+        前一致）。单行快照在成功后保留：再次 undo 必须以 409 失败（源
+        标签名已被上一次 undo 占用），绝不二次恢复；无快照或超 TTL →
+        404。恢复动作单事务完成。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT source_tag_name, target_tag_id, bindings_json, created_at FROM tag_merge_undo WHERE id = 1",
+            (),
+        )
+        if row is None:
+            raise TagMergeUndoNotFound("没有可撤销的标签合并。")
+        try:
+            created_at = datetime.fromisoformat(str(row["created_at"]))
+        except ValueError as exc:
+            raise TagMergeUndoNotFound("合并快照时间戳无效。") from exc
+        elapsed = datetime.now(UTC) - created_at
+        if elapsed.total_seconds() > _UNDO_TTL:
+            # TTL 过期：快照失效（清除后按 404 诚实上报）。
+            await self._db.execute("DELETE FROM tag_merge_undo WHERE id = 1", ())
+            raise TagMergeUndoNotFound("合并撤销窗口（24 小时）已过期。")
+        name = normalize_tag_name(str(row["source_tag_name"]))
+        target_tag_id = int(row["target_tag_id"])
+        try:
+            bindings = json.loads(str(row["bindings_json"]))
+        except ValueError as exc:
+            raise TagMergeUndoNotFound("合并快照数据损坏。") from exc
+        if not isinstance(bindings, list):
+            raise TagMergeUndoNotFound("合并快照数据损坏。")
+
+        # 与「撤销后源标签已存在」同源冲突：合并后有人重建了同名标签 →
+        # 409（含上一次 undo 的重建）。
+        existing = await self._db.fetch_one(
+            "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (name,)
+        )
+        if existing is not None:
+            raise TagMergeSourceRecreated(name)
+
+        def _undo(conn: sqlite3.Connection) -> dict[str, Any]:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (name,))
+            new_source_id = int(cur.lastrowid)
+            restored = 0
+            for binding in bindings:
+                if not isinstance(binding, dict):
+                    continue
+                item_ref = str(binding.get("itemRef") or "")
+                origin = str(binding.get("origin") or "manual")
+                status = str(binding.get("status") or "active")
+                created = str(binding.get("createdAt") or utc_now())
+                if not item_ref or origin not in ("manual", "source", "ai"):
+                    continue
+                conn.execute(
+                    "INSERT INTO item_tags (item_ref, tag_id, origin, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (item_ref, new_source_id, origin, status, created),
+                )
+                restored += 1
+            return {
+                "sourceTagId": new_source_id,
+                "name": name,
+                "targetTagId": target_tag_id,
+                "restoredBindings": restored,
+            }
+
+        return await transaction(self._db, _undo)
 
     async def attach(
         self,

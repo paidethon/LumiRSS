@@ -55,7 +55,8 @@ function savedViews(): SavedSearchViewList {
         createdAt: '2026-09-01T00:00:00Z',
         pinned: false,
         hasFeedToken: false,
-      updatedAt: '2026-09-01T00:00:00Z',
+        scopeBroken: false,
+        updatedAt: '2026-09-01T00:00:00Z',
       },
     ],
   }
