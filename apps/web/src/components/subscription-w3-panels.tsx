@@ -27,8 +27,10 @@ import {
   retryImportBatch,
   runHealthCheck,
   trialFeedFilterRule,
+  type ApiError,
   type HealthCheckItem,
 } from '../api/client'
+import type { FeedPreviewMetadata, RedirectHop } from '../api/types'
 import { listSourceOverrides, previewFeed, setSourceOverride } from '../api/client'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
@@ -45,6 +47,78 @@ function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : '请稍后重试。'
 }
 
+function isApiError(error: unknown): error is ApiError {
+  return error instanceof Error && error.name === 'ApiError'
+}
+
+/** N035：重定向链视图 — 每跳掩码 URL + 状态；多跳时给最终域名，
+ * 失败变体把「请求从未发出 / 未完成」的跳（status=null）标为失败跳。
+ * url 的 query 凭据值已由服务端掩码，这里不再自行改写。 */
+function RedirectChainView({
+  hops,
+  variant,
+}: {
+  hops: RedirectHop[]
+  variant: 'success' | 'failure'
+}) {
+  const last = hops[hops.length - 1] ?? null
+  let finalHost: string | null = null
+  if (variant === 'success' && last !== null) {
+    try {
+      finalHost = new URL(last.url).hostname
+    } catch {
+      finalHost = null
+    }
+  }
+  return (
+    <div
+      role="group"
+      aria-label="重定向链"
+      className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs"
+    >
+      <p className="font-medium text-[var(--lumi-text-primary)]">
+        重定向链（{hops.length} 跳）
+        {variant === 'success' && hops.length > 1 ? ' —— 该地址发生了重定向' : ''}
+      </p>
+      <ol className="mt-1.5 flex flex-col gap-1">
+        {hops.map((hop, index) => {
+          const failedHop = hop.status === null
+          return (
+            <li key={`${hop.url}-${index}`} className="flex min-w-0 items-start gap-1.5">
+              <span aria-hidden className="shrink-0 text-[var(--lumi-text-tertiary)]">
+                {index + 1}.
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cx(
+                    'block break-all font-mono text-[11px]',
+                    failedHop && variant === 'failure'
+                      ? 'text-[var(--lumi-danger)]'
+                      : 'text-[var(--lumi-text-secondary)]',
+                  )}
+                >
+                  {hop.url}
+                </span>
+                <span className="block text-[11px] text-[var(--lumi-text-tertiary)]">
+                  {hop.status === null
+                    ? variant === 'failure'
+                      ? '失败跳：请求未完成（未发出或被拒绝）'
+                      : '未记录状态'
+                    : `HTTP ${hop.status}`}
+                  {hop.final ? ' · 最终地址' : ''}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+      {finalHost !== null && (
+        <p className="mt-1.5 text-[var(--lumi-text-secondary)]">最终域名：{finalHost}</p>
+      )}
+    </div>
+  )
+}
+
 // ---- F044 更换订阅地址向导 --------------------------------------------------
 
 export interface MigrateDialogProps {
@@ -59,15 +133,20 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
   const queryClient = useQueryClient()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [newUrl, setNewUrl] = useState('')
-  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<Error | null>(null)
+  const [previewData, setPreviewData] = useState<FeedPreviewMetadata | null>(null)
   const [result, setResult] = useState<Awaited<ReturnType<typeof migrateSubscription>> | null>(null)
   const previewMutation = useMutation({
     mutationFn: () => previewFeed(newUrl.trim()),
-    onSuccess: () => {
+    onSuccess: (metadata) => {
       setPreviewError(null)
+      setPreviewData(metadata)
       setStep(2)
     },
-    onError: (error) => setPreviewError(errMsg(error)),
+    onError: (error) => {
+      setPreviewData(null)
+      setPreviewError(error as Error)
+    },
   })
   const migrateMutation = useMutation({
     mutationFn: () => migrateSubscription(subscriptionRef, newUrl.trim()),
@@ -83,9 +162,19 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
       setStep(1)
       setNewUrl('')
       setPreviewError(null)
+      setPreviewData(null)
       setResult(null)
     }
   }, [open])
+
+  // N035：成功预览 / 校验失败两条路径都取重定向链（服务端已掩码 query）。
+  // 成功侧单跳链 = 未发生重定向，不渲染该区块（避免噪音）；失败侧以
+  // 服务端是否附链为准（仅多跳或存在失败跳时服务端才附）。
+  const successRedirects = previewData?.redirectChain ?? null
+  const successChain =
+    successRedirects !== null && successRedirects.length > 1 ? successRedirects : null
+  const failureChain =
+    previewError !== null && isApiError(previewError) ? previewError.redirectChain : null
 
   return (
     <Dialog open={open} onClose={onClose} title={`更换订阅地址 — ${title}`}>
@@ -108,9 +197,12 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
             </p>
           )}
           {previewError && (
-            <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
-              {previewError}
-            </p>
+            <>
+              <p role="alert" className="text-xs leading-relaxed text-[var(--lumi-danger)]">
+                {errMsg(previewError)}
+              </p>
+              {failureChain !== null && <RedirectChainView hops={failureChain} variant="failure" />}
+            </>
           )}
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={onClose}>取消</Button>
@@ -131,6 +223,7 @@ export function MigrateSubscriptionDialog({ open, onClose, subscriptionRef, feed
           <p className="flex items-center gap-1.5 text-xs text-[var(--lumi-success, var(--lumi-text-primary))]">
             <CheckCircle2 aria-hidden className="size-3.5" /> 新地址可达且为有效 feed。
           </p>
+          {successChain !== null && <RedirectChainView hops={successChain} variant="success" />}
           <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
             <p className="font-medium text-[var(--lumi-text-primary)]">迁移前请了解：</p>
             <ul className="mt-1.5 list-disc pl-4">

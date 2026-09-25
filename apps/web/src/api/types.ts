@@ -68,6 +68,16 @@ export type RssHubRouteRun = Schemas['RssHubRouteRun']
 export type RssHubRouteRuns = Schemas['RssHubRouteRuns']
 // N027 预览缓存控制（refresh 单路由强制重取）
 export type RssHubRefreshResult = Schemas['RssHubRefreshResult']
+// N029 路由与来源关系图（我的来源；管理员聚合只有计数）
+export type RssHubRouteSourceEntry = Schemas['RssHubRouteSourceEntry']
+export type RssHubRouteSourceItem = Schemas['RssHubRouteSourceItem']
+export type RssHubRouteMySources = Schemas['RssHubRouteMySources']
+export type RssHubRouteUsage = Schemas['RssHubRouteUsage']
+// N030 路由可复用参数方案（params 内敏感值只以 '***' 哨兵出现）
+export type RssHubParamPresetItem = Schemas['RssHubParamPresetItem']
+export type RssHubParamPresetApply = Schemas['RssHubParamPresetApply']
+// N035 重定向链（F044 迁移向导展示；url 的 query 凭据值服务端已掩码）
+export type RedirectHop = Schemas['RedirectHop']
 
 // ---- 0015/0016 AI ----
 

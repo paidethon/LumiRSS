@@ -8518,6 +8518,20 @@
       "title": "Format",
       "type": "string"
      },
+     "redirectChain": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/RedirectHop"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Redirectchain"
+     },
      "siteUrl": {
       "anyOf": [
        {
@@ -15893,6 +15907,36 @@
     "title": "RecoverPasswordRequest",
     "type": "object"
    },
+   "RedirectHop": {
+    "description": "N035 重定向链的一跳（url 的 query 凭据值已由服务端掩码）。",
+    "properties": {
+     "final": {
+      "default": false,
+      "title": "Final",
+      "type": "boolean"
+     },
+     "status": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status"
+     },
+     "url": {
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "RedirectHop",
+    "type": "object"
+   },
    "RegisterRequest": {
     "description": "POST /auth/register (P0 public registration).",
     "properties": {
@@ -17189,6 +17233,132 @@
     "title": "RssHubFavoritePut",
     "type": "object"
    },
+   "RssHubParamPresetApply": {
+    "description": "POST .../param-presets/{id}/apply — 回填数据（不抓取、不订阅）。\n\nrequiresRebind=True 时 sensitiveKeys 里的参数必须重新输入后才能\n预览（服务端从不存储敏感值，哨兵回填会被 pattern 校验拒绝）。",
+    "properties": {
+     "hasSensitive": {
+      "title": "Hassensitive",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "requiresRebind": {
+      "title": "Requiresrebind",
+      "type": "boolean"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "sensitiveKeys": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sensitivekeys",
+      "type": "array"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "routeKey",
+     "templateId",
+     "params",
+     "hasSensitive",
+     "requiresRebind"
+    ],
+    "title": "RssHubParamPresetApply",
+    "type": "object"
+   },
+   "RssHubParamPresetCreate": {
+    "description": "POST /api/v1/rsshub/param-presets body（方案名 + 参数组合）。",
+    "properties": {
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeId": {
+      "minLength": 1,
+      "title": "Routeid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeId",
+     "name"
+    ],
+    "title": "RssHubParamPresetCreate",
+    "type": "object"
+   },
+   "RssHubParamPresetItem": {
+    "description": "一个参数方案（params 里的敏感值在服务端已替换为 '***' 哨兵）。",
+    "properties": {
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "hasSensitive": {
+      "title": "Hassensitive",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Params",
+      "type": "object"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "routeKey",
+     "templateId",
+     "name",
+     "params",
+     "hasSensitive",
+     "createdAt"
+    ],
+    "title": "RssHubParamPresetItem",
+    "type": "object"
+   },
    "RssHubParameter": {
     "description": "One RSSHub route parameter descriptor (form-renderable).",
     "properties": {
@@ -17305,6 +17475,20 @@
       ],
       "title": "Format",
       "type": "string"
+     },
+     "redirectChain": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/RedirectHop"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Redirectchain"
      },
      "routeKey": {
       "title": "Routekey",
@@ -17477,6 +17661,33 @@
     "title": "RssHubRoute",
     "type": "object"
    },
+   "RssHubRouteMySources": {
+    "description": "GET /api/v1/rsshub/routes/{routeKey}/my-sources — 仅本人作用域。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubRouteSourceItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId"
+    ],
+    "title": "RssHubRouteMySources",
+    "type": "object"
+   },
    "RssHubRouteRun": {
     "description": "One N025 route health timeline row (no secrets — route keys are\nmasked server-side before storage).",
     "properties": {
@@ -17552,6 +17763,267 @@
      "items"
     ],
     "title": "RssHubRouteRuns",
+    "type": "object"
+   },
+   "RssHubRouteSourceEntry": {
+    "description": "该路由下某来源的最近条目（派生投影；≤5 条，只读）。",
+    "properties": {
+     "published": {
+      "title": "Published",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "title",
+     "published"
+    ],
+    "title": "RssHubRouteSourceEntry",
+    "type": "object"
+   },
+   "RssHubRouteSourceItem": {
+    "description": "N029 我的来源：由该路由模板 + 参数生成的本账户订阅。",
+    "properties": {
+     "feedUrl": {
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "recentEntries": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubRouteSourceEntry"
+      },
+      "title": "Recententries",
+      "type": "array"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "unreadCount": {
+      "title": "Unreadcount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "feedUrl",
+     "title",
+     "unreadCount"
+    ],
+    "title": "RssHubRouteSourceItem",
+    "type": "object"
+   },
+   "RssHubRouteUsage": {
+    "description": "GET /api/v1/admin/rsshub/routes/{routeKey}/usage — 跨用户聚合，\n只有计数：绝不返回其他用户的标题 / 名称 / URL。",
+    "properties": {
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "sourceCount": {
+      "title": "Sourcecount",
+      "type": "integer"
+     },
+     "templateId": {
+      "title": "Templateid",
+      "type": "string"
+     },
+     "totalEntries": {
+      "title": "Totalentries",
+      "type": "integer"
+     },
+     "userCount": {
+      "title": "Usercount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "routeKey",
+     "templateId",
+     "userCount",
+     "sourceCount",
+     "totalEntries",
+     "basis"
+    ],
+    "title": "RssHubRouteUsage",
+    "type": "object"
+   },
+   "RssHubUpgradeCheckReport": {
+    "description": "一次升级兼容检查报告（keep-last-3）。\n\ncheckedImage = 目录快照（rsshub_routes.generated.json）生成时所在\n的固定镜像——逐路由状态锚定到这个已知的镜像证据；targetImage 是\n运营者声明的目标镜像，targetStatus 恒为 'pending'：检查只对当前\n运行实例探测，新镜像生效与否由运维侧确认（Lumi 无 Docker 视角，\n绝不臆造「已生效」）。",
+    "properties": {
+     "checkedImage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Checkedimage"
+     },
+     "failedCount": {
+      "title": "Failedcount",
+      "type": "integer"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "okCount": {
+      "title": "Okcount",
+      "type": "integer"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "routeCount": {
+      "title": "Routecount",
+      "type": "integer"
+     },
+     "routes": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubUpgradeCheckRoute"
+      },
+      "title": "Routes",
+      "type": "array"
+     },
+     "skippedCount": {
+      "title": "Skippedcount",
+      "type": "integer"
+     },
+     "targetImage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetimage"
+     },
+     "targetStatus": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetstatus"
+     }
+    },
+    "required": [
+     "id",
+     "ranAt",
+     "routeCount",
+     "okCount",
+     "failedCount",
+     "skippedCount"
+    ],
+    "title": "RssHubUpgradeCheckReport",
+    "type": "object"
+   },
+   "RssHubUpgradeCheckRequest": {
+    "description": "POST /api/v1/admin/rsshub/upgrade-check body。",
+    "properties": {
+     "targetImage": {
+      "anyOf": [
+       {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetimage"
+     }
+    },
+    "title": "RssHubUpgradeCheckRequest",
+    "type": "object"
+   },
+   "RssHubUpgradeCheckRoute": {
+    "description": "单路由探测结果（params 已脱敏；routeKey 即存储键）。",
+    "properties": {
+     "entryCount": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Entrycount"
+     },
+     "failureClass": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failureclass"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "routeKey": {
+      "title": "Routekey",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "failed",
+       "skipped"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "routeKey",
+     "status",
+     "origin"
+    ],
+    "title": "RssHubUpgradeCheckRoute",
+    "type": "object"
+   },
+   "RssHubUpgradeChecks": {
+    "description": "GET /api/v1/admin/rsshub/upgrade-check — 最近报告（新→旧，≤3）。",
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RssHubUpgradeCheckReport"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "RssHubUpgradeChecks",
     "type": "object"
    },
    "SaveAsTemplateRequest": {
@@ -23206,6 +23678,102 @@
      }
     },
     "summary": "Set Registration Policy"
+   }
+  },
+  "/api/v1/admin/rsshub/routes/{route_key}/usage": {
+   "get": {
+    "description": "N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。\n\n隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他\n用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的\nfeed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。\nmember 403；遍历每用户库（邀请制小规模部署，行数有界）。",
+    "operationId": "rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_key",
+      "required": true,
+      "schema": {
+       "title": "Route Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRouteUsage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Route Usage Admin"
+   }
+  },
+  "/api/v1/admin/rsshub/upgrade-check": {
+   "get": {
+    "description": "N028 最近检查报告（新→旧，≤3；admin-gated，存本人用户库）。",
+    "operationId": "list_rsshub_upgrade_checks_api_v1_admin_rsshub_upgrade_check_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubUpgradeChecks"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Upgrade Checks"
+   },
+   "post": {
+    "description": "N028 预升级路由兼容基线（admin-gated；只读探测 + 报告落库）。\n\n诚实范围（测试固定）：\n- 探测对象 = **管理员本人**用户库可见的路由键（订阅 URL 反推 +\n  本人收藏/最近使用），每次最多 12 条真实 preview（其余 skipped）；\n- 只对**当前运行实例**探测——targetImage 恒记 pending（Lumi 无\n  Docker 视角，绝不臆造「新镜像已生效」）；逐路由状态锚定到\n  checkedImage（目录快照的固定镜像 sha）；\n- keep-old = 默认：本端点零镜像/容器操作，只写报告（keep-last-3）。",
+    "operationId": "run_rsshub_upgrade_check_api_v1_admin_rsshub_upgrade_check_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubUpgradeCheckRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubUpgradeCheckReport"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run Rsshub Upgrade Check"
    }
   },
   "/api/v1/admin/system": {
@@ -37041,6 +37609,139 @@
     "summary": "Detect Rsshub"
    }
   },
+  "/api/v1/rsshub/param-presets": {
+   "get": {
+    "description": "N030 我的方案（每用户私有；敏感值只以 '***' 哨兵出现）。",
+    "operationId": "list_rsshub_param_presets_api_v1_rsshub_param_presets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/RssHubParamPresetItem"
+         },
+         "title": "Response List Rsshub Param Presets Api V1 Rsshub Param Presets Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rsshub Param Presets"
+   },
+   "post": {
+    "description": "保存当前参数组合为方案（cap 20/用户；敏感值入库前哨兵化）。\n\n校验在**真实值**上做（与 preview 同 pattern 规则），存储一律\nmask_params——DB 与响应里都查不到敏感原文。",
+    "operationId": "create_rsshub_param_preset_api_v1_rsshub_param_presets_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RssHubParamPresetCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubParamPresetItem"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Rsshub Param Preset"
+   }
+  },
+  "/api/v1/rsshub/param-presets/{preset_id}": {
+   "delete": {
+    "description": "删除一个方案；404 当该用户没有此方案（跨用户即 404）。",
+    "operationId": "delete_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "preset_id",
+      "required": true,
+      "schema": {
+       "title": "Preset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rsshub Param Preset"
+   }
+  },
+  "/api/v1/rsshub/param-presets/{preset_id}/apply": {
+   "post": {
+    "description": "N030 应用方案 → 参数表单回填数据（create-draft；纯只读）。\n\nhasSensitive 方案要求敏感键重新输入（requiresRebind=true +\nsensitiveKeys）——服务端从未存过真实值，哨兵回填本就会被 preview\n的 pattern 校验拒绝；这里把契约显式化，UI 据此标「需重新绑定」。",
+    "operationId": "apply_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "preset_id",
+      "required": true,
+      "schema": {
+       "title": "Preset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubParamPresetApply"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Rsshub Param Preset"
+   }
+  },
   "/api/v1/rsshub/preview": {
    "post": {
     "description": "Preview one configured RSSHub route — NON-MUTATING.\n\nConstructs the path server-side (validated + encoded parameters),\nfetches the generated feed from the server-configured RSSHub\ninstance, parses offline and reads the subscription list for\nalreadySubscribed. The returned feedUrl is the FreshRSS-facing\nsubscription URL; subscribing is POST /api/v1/subscriptions (0013).\n\nN021: a SUCCESSFUL preview upserts the route into the per-user\n最近使用 list. N025: every attempt that reaches the fetch stage is\nwritten to the route health timeline (last 20 kept per route).\nSensitive parameter values are masked to '***' before anything is\nstored. Failed previews never record a 最近使用 entry.\n\nN027: successful previews are cached per (user, route_key) with a\nshort TTL; a cache hit reports ``cache: {ageS > 0, fresh: false}``\nand does NOT re-fetch, re-record a timeline row, or touch 最近使用 —\nit was not an upstream attempt. The E2E base override always\nbypasses the cache.",
@@ -37306,6 +38007,46 @@
      }
     },
     "summary": "List Rsshub Recent"
+   }
+  },
+  "/api/v1/rsshub/routes/{route_key}/my-sources": {
+   "get": {
+    "description": "N029：该路由模板生成的**本人**订阅（路由 → 来源关系图）。\n\n仅当前用户作用域：control 适配器的订阅列表 + search_entries 投影\n都按请求身份路由，其他账户的数据在这里结构上不可达。",
+    "operationId": "rsshub_route_my_sources_api_v1_rsshub_routes__route_key__my_sources_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "route_key",
+      "required": true,
+      "schema": {
+       "title": "Route Key",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RssHubRouteMySources"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rsshub Route My Sources"
    }
   },
   "/api/v1/search": {

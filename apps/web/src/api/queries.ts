@@ -123,9 +123,13 @@ import {
   getRssHubConfig,
   getRssHubFavorites,
   getRssHubRecent,
+  getRssHubParamPresets,
+  getRssHubRouteMySources,
   getRssHubRouteHistory,
   getRssHubRoutes,
   refreshRssHubRoute,
+  createRssHubParamPreset,
+  deleteRssHubParamPreset,
   getSubscriptions,
   getWebDavSettings,
   getWorkspaceContents,
@@ -891,6 +895,48 @@ export function useRssHubRefreshMutation() {
       await queryClient.invalidateQueries({
         queryKey: ['rsshub-route-history', routeKey],
       })
+    },
+  })
+}
+
+/** N029：我的来源（该 routeKey 生成的本人订阅；routeKey 为 null 不发
+ * 请求——预览前无 key；服务端只回本人数据 + 派生投影计数）。 */
+export function useRssHubRouteMySources(routeKey: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['rsshub-route-my-sources', routeKey],
+    queryFn: ({ signal }) => getRssHubRouteMySources(routeKey as string, signal),
+    enabled: routeKey !== null && enabled,
+  })
+}
+
+/** N030：我的参数方案（每用户私有；enabled=false 不发请求）。 */
+export function useRssHubParamPresets(enabled: boolean) {
+  return useQuery({
+    queryKey: ['rsshub-param-presets'],
+    queryFn: ({ signal }) => getRssHubParamPresets(signal),
+    enabled,
+  })
+}
+
+/** N030：保存方案（成功后失效方案列表缓存；cap 20 拒绝是稳定错误）。 */
+export function useCreateRssHubParamPresetMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { routeId: string; params: Record<string, string>; name: string }) =>
+      createRssHubParamPreset(vars),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-param-presets'] })
+    },
+  })
+}
+
+/** N030：删除方案（成功后失效方案列表缓存）。 */
+export function useDeleteRssHubParamPresetMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (presetId: string) => deleteRssHubParamPreset(presetId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['rsshub-param-presets'] })
     },
   })
 }
