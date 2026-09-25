@@ -383,6 +383,92 @@ html[data-code-wrap='on'] .article-content pre code {
   outline-offset: 1px;
 }
 
+/* ---- N057：代码块独立阅读页 ----
+ * 「展开代码」入口：pre 右上角、复制按钮左侧（复制按钮 min-width 44px
+ * 占据 right 0.375rem 起；本按钮再左移）。图标按钮：DOM 装饰内联 SVG，
+ * 可访问名由 aria-label 提供（同 .lumi-para-link 例外模式）。 */
+.article-content pre .lumi-code-expand-btn {
+  position: absolute;
+  top: 0.375rem;
+  right: 3.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--lumi-surface, var(--bg));
+  color: var(--lumi-text-secondary);
+  cursor: pointer;
+  z-index: 1;
+}
+.article-content pre .lumi-code-expand-btn:hover {
+  color: var(--lumi-text-primary);
+  background: var(--lumi-surface-selected);
+}
+.article-content pre .lumi-code-expand-btn:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+}
+/* 面板内行号栏：sticky left（横向滚动时保持可见），实底防透字。 */
+.lumi-code-gutter {
+  position: sticky;
+  left: 0;
+  background: var(--lumi-surface);
+}
+/* 面板内搜索匹配：普通匹配浅底，当前匹配强调底（data-current）。 */
+.lumi-code-match {
+  background: var(--lumi-accent-soft);
+  color: inherit;
+  border-radius: 2px;
+}
+.lumi-code-match[data-current='true'] {
+  background: var(--lumi-accent);
+  color: var(--lumi-accent-contrast);
+}
+
+/* ---- N063：宽表面板行列聚焦 ----
+ * 表头 sticky top / 首列 sticky left（克隆表格内；实底防透字），
+ * 左上角同时两向 sticky 需要更高 z 序；触控行高 ≥ 44px。 */
+.lumi-wt-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--lumi-surface-elevated);
+}
+.lumi-wt-col0 {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--lumi-surface-elevated);
+}
+.lumi-wt-head.lumi-wt-col0 {
+  z-index: 3;
+}
+.lumi-wt-cell {
+  min-height: 44px;
+}
+.lumi-wt-focus {
+  background: var(--lumi-surface-selected);
+}
+
+/* ---- N064：公式专注视图 ----
+ * 正文公式（有 TeX 原文接线）的可点击暗示 + 键盘焦点；专注面板内
+ * 公式放大展示（复用 KaTeX 输出，仅字号放大）。 */
+.article-content [data-lumi-formula-ready] {
+  cursor: zoom-in;
+}
+.article-content [data-lumi-formula-ready]:focus-visible {
+  outline: 2px solid var(--lumi-focus-ring);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.lumi-formula-focus .katex {
+  font-size: 2em;
+}
+
 /* ---- 专注阅读模式（Reader 会话级开关，article[data-lumi-focus]） ----
  * 视口中心块全亮，其余块降透明度；滚动帧内由 lib/reader-focus 打标。
  * 减少动效偏好下不做过渡。 */

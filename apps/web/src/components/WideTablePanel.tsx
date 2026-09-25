@@ -1,9 +1,13 @@
-/** 宽表格展开面板工具（F012 复制/下载 + F013 列排序与数值筛选）。
+/** 宽表格展开面板工具（F012 复制/下载 + F013 列排序与数值筛选
+ * + N063 行列聚焦）。
  *
  * 只作用于面板内的克隆表格（DOM 层展示：重排/隐藏行），原文
- * （ArticleContent 的 sanitize 输出）不受影响；「重置」恢复原序。 */
+ * （ArticleContent 的 sanitize 输出）不受影响；「重置」恢复原序。
+ * N063：表头/首列 sticky（横向滚动时保持可见）；悬停/点按高亮当前
+ * 行+列（事件委托 + class 切换，不进 React 状态）；复制/导出仍然
+ * 只来自数据矩阵（与高亮无关）。 */
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownAZ, Copy, Download, RotateCcw } from 'lucide-react'
 import { tableToMatrix, matrixToTsv, matrixToCsv } from '../lib/table-export'
 import {
@@ -16,6 +20,9 @@ import {
 } from '../lib/table-view'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
+
+/** N063：当前行/列高亮 class（index.css 提供 sticky 与高亮样式）。 */
+const FOCUS_CLASS = 'lumi-wt-focus'
 
 interface ViewRow {
   /** 行在原表中的序号（稳定排序决胜 + 重置）。 */
@@ -81,6 +88,53 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
     setSortDir(null)
     setFilters(new Map())
   }
+
+  // N063：悬停/点按高亮当前行+列（事件委托挂在滚动宿主上；直接切换
+  // class，不进 React 状态——重渲染只由排序/筛选触发，且 className
+  // 属性重写天然清掉残留标记）。触屏点按同样命中（click 也委托）。
+  useEffect(() => {
+    const host = hostRef.current
+    if (host === null) return
+    let active: HTMLElement[] = []
+    const clear = () => {
+      for (const el of active) el.classList.remove(FOCUS_CLASS)
+      active = []
+    }
+    const highlight = (cell: Element) => {
+      const row = cell.parentElement
+      if (!(row instanceof HTMLTableRowElement)) return
+      const table = row.parentElement?.parentElement
+      if (!(table instanceof HTMLTableElement)) return
+      const col = Array.prototype.indexOf.call(row.cells, cell)
+      if (col === -1) return
+      clear()
+      for (const c of Array.from(row.cells)) {
+        c.classList.add(FOCUS_CLASS)
+        active.push(c)
+      }
+      for (const r of table.rows) {
+        const c = r.cells[col]
+        if (c !== undefined && !active.includes(c)) {
+          c.classList.add(FOCUS_CLASS)
+          active.push(c)
+        }
+      }
+    }
+    const onOver = (event: Event) => {
+      const target = event.target as Element | null
+      const cell = target?.closest('td, th')
+      if (cell !== null && cell !== undefined) highlight(cell)
+    }
+    host.addEventListener('mouseover', onOver)
+    host.addEventListener('click', onOver)
+    host.addEventListener('mouseleave', clear)
+    return () => {
+      host.removeEventListener('mouseover', onOver)
+      host.removeEventListener('click', onOver)
+      host.removeEventListener('mouseleave', clear)
+      clear()
+    }
+  }, [])
 
   async function copyTable() {
     const tsv = matrixToTsv(visibleRows.map((row) => row.cells))
@@ -171,7 +225,11 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
               {header.map((label, col) => (
                 <th
                   key={col}
-                  className="border-b border-[var(--lumi-border)] px-2 py-1.5 text-left font-semibold"
+                  className={cx(
+                    // N063：表头 sticky top；首列表头同时 sticky left。
+                    'lumi-wt-head border-b border-[var(--lumi-border)] px-2 py-1.5 text-left font-semibold',
+                    col === 0 && 'lumi-wt-col0',
+                  )}
                 >
                   <button
                     type="button"
@@ -204,7 +262,15 @@ export function WideTablePanel({ table }: { table: HTMLTableElement }) {
             {visibleRows.map((row) => (
               <tr key={row.index} data-row-index={row.index}>
                 {header.map((_, col) => (
-                  <td key={col} className="border-b border-[var(--lumi-separator)] px-2 py-1.5">
+                  <td
+                    key={col}
+                    className={cx(
+                      // N063：首列 sticky left；触控最小行高由
+                      // .lumi-wt-cell 保证（44px）。
+                      'lumi-wt-cell border-b border-[var(--lumi-separator)] px-2 py-1.5',
+                      col === 0 && 'lumi-wt-col0',
+                    )}
+                  >
                     {row.cells[col] ?? ''}
                   </td>
                 ))}

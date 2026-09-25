@@ -12,12 +12,17 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LocateFixed, X } from 'lucide-react'
 import { cx } from './ui/cx'
 
 export interface LightboxImage {
   src: string
   alt?: string
+  /** N062：说明文字（figcaption > title > aria-label）；null = 未提供
+   * 说明（UI 明示「未提供说明」，不假装有）。 */
+  caption?: string | null
+  /** N062：图片来源主机名（取不到为 null）。 */
+  host?: string | null
 }
 
 export interface ArticleLightboxProps {
@@ -30,6 +35,9 @@ export interface ArticleLightboxProps {
   startIndex?: number
   /** 内容模式（如表格展开面板）。 */
   children?: ReactNode
+  /** N061：在原文中查看（点击关闭灯箱并定位到正文源图；未提供 = 不渲染
+   * 入口——调用方没有源元素时诚实缺席）。参数为灯箱内当前图序号。 */
+  onLocate?: (index: number) => void
 }
 
 const MIN_ZOOM = 1
@@ -42,6 +50,7 @@ export default function ArticleLightbox({
   images,
   startIndex = 0,
   children,
+  onLocate,
 }: ArticleLightboxProps) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [index, setIndex] = useState(startIndex)
@@ -184,11 +193,37 @@ export default function ArticleLightbox({
               transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${zoom})`,
             }}
           />
-          {/* 底部控制条：缩放（1–4x）+ 多图计数；点击不关闭 */}
+          {/* N062：说明区（图片下方、控制条上方）：figcaption/title/
+              aria-label 提取结果；未提取到 → 明示「未提供说明」；
+              来源主机名始终展示（未知显示「来源未知」）。 */}
+          <div
+            data-testid="lightbox-caption"
+            className="absolute bottom-16 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-[var(--lumi-radius-lg)] bg-black/50 px-3 py-1.5 text-center"
+          >
+            <p className={cx('text-xs leading-relaxed', image.caption ? 'text-white' : 'text-white/60')}>
+              {image.caption ?? '未提供说明'}
+            </p>
+            <p className="mt-0.5 text-[10px] text-white/50">
+              {image.host ?? '来源未知'}
+            </p>
+          </div>
+          {/* 底部控制条：在原文中查看（N061）+ 缩放（1–4x）+ 多图计数；
+              点击不关闭 */}
           <div
             className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/50 px-2 py-1"
             onClick={(e) => e.stopPropagation()}
           >
+            {onLocate !== undefined && (
+              <button
+                type="button"
+                aria-label="在原文中查看"
+                onClick={() => onLocate(Math.min(index, images!.length - 1))}
+                className="inline-flex min-h-8 min-w-11 items-center justify-center gap-1 rounded-full px-2 text-xs text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+              >
+                <LocateFixed aria-hidden className="size-3.5" />
+                在原文中查看
+              </button>
+            )}
             <button
               type="button"
               aria-label="缩小"

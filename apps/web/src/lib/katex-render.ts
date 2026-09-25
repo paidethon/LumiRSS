@@ -7,8 +7,8 @@
  *   之类宏不可用；产物再过现有净化边界（article-pipeline 终点）；
  * - 渲染失败 → 保留原文文本（诚实降级）；
  * - 超长表达式（>10k 字符）跳过渲染（性能边界）；
- * - KaTeX 输出含 annotation（TeX 原文）——复制段落时公式原文可复制。
- */
+ * - TeX 原文挂在包装 span 的 data-lumi-tex（N064 公式专注视图消费；
+ *   data-* 属性可穿过 DOMPurify 边界——见 renderMathInDom 内注释）。 */
 
 const MAX_EXPR_LENGTH = 10_000
 
@@ -119,6 +119,13 @@ export async function renderMathInDom(root: ParentNode): Promise<number> {
       const afterNode = document.createTextNode(text.slice(idx + match.text.length))
       const span = document.createElement('span')
       span.innerHTML = html // katex 输出；随后整树过 DOMPurify（最终边界）
+      // N064 公式专注视图：把 TeX 原文挂在包装 span 的 data 属性上。
+      // 注：KaTeX output:'html' 本就不产出 <annotation>；且应用 sanitize
+      // 策略是纯 HTML profile（MathML 命名空间整体剔除），annotation 即便
+      // 产出也活不过净化边界。data-* 属性可安全穿过 DOMPurify（默认允许
+      // data-*），是同一 TeX 原文的诚实载体；专注视图与「复制 LaTeX」
+      // 只消费该值，渲染仍 trust:false（与管线渲染同一信任级别）。
+      span.setAttribute('data-lumi-tex', tex)
       parent.replaceChild(beforeNode, node)
       parent.insertBefore(span, beforeNode.nextSibling)
       parent.insertBefore(afterNode, span.nextSibling)
