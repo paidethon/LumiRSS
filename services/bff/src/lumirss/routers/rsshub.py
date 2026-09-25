@@ -24,6 +24,9 @@ from lumirss.models import (
     RssHubCatalog,
     RssHubConfigView,
     RssHubFavoriteItem,
+    RssHubParamsDiffRequest,
+    RssHubParamsDiffResult,
+    RssHubParamsDiffSide,
     RssHubPreviewResult,
     RssHubRecentItem,
     RssHubRefreshResult,
@@ -34,11 +37,18 @@ from lumirss.rsshub import (
     FAILURE_BAD_CONTENT,
     FAILURE_NO_NEW_CONTENT,
     NO_NEW_CONTENT_WINDOW,
+    ZERO_ENTRY_HINT,
     RssHubFetchError,
     RssHubInvalidParameters,
     RssHubNotConfigured,
     RssHubRefreshRateLimited,
     RssHubRouteNotFound,
+    build_path,
+    count_feed_entries,
+    diff_title_sets,
+    extract_entry_titles,
+    requires_json,
+    safe_rsshub_path,
 )
 from lumirss.rsshub_control import (
     RssHubInvalidValue,
@@ -118,6 +128,8 @@ async def rsshub_routes(request: Request) -> dict[str, object]:
                     }
                     for parameter in route.parameters
                 ],
+                # N023：依赖元数据（未标注 → null，UI 显示「未知」chips）。
+                "requires": requires_json(route),
             }
             for route in service.list_routes()
         ],
@@ -183,6 +195,11 @@ async def rsshub_preview(
     route_key = compute_route_key(body.routeId, body.params)
     user_id = require_user_id()
     cache = _get_rsshub_preview_cache(request)
+    # N023：依赖元数据来自静态 catalog（未知路由 → None，诚实呈现）。
+    from lumirss.rsshub import _CATALOG_BY_ID
+
+    catalog_route = _CATALOG_BY_ID.get(body.routeId)
+    route_requires = requires_json(catalog_route) if catalog_route else None
     if override is None:
         hit = cache.get(user_id, route_key)
         if hit is not None:
@@ -190,6 +207,10 @@ async def rsshub_preview(
             data = _preview_json(cached_preview)
             data["routeKey"] = route_key
             data["cache"] = {"ageS": age_s, "fresh": False}
+            data["requires"] = route_requires
+            data["zeroEntryHint"] = (
+                ZERO_ENTRY_HINT if cached_preview.entry_count == 0 else None
+            )
             return data
     started = time.monotonic()
     try:
@@ -231,6 +252,9 @@ async def rsshub_preview(
     data = _preview_json(preview)
     data["routeKey"] = route_key
     data["cache"] = {"ageS": 0.0, "fresh": True}
+    # N023：依赖 chips + 0 条目诚实提示（依赖可能未满足，非健康状态）。
+    data["requires"] = route_requires
+    data["zeroEntryHint"] = ZERO_ENTRY_HINT if preview.entry_count == 0 else None
     return data
 
 
@@ -507,6 +531,68 @@ async def rsshub_refresh(
         "ranAt": utc_now(),
         "durationMs": _elapsed_ms(started),
         "cache": {"ageS": 0.0, "fresh": True},
+    }
+
+
+# ---- N024：路由变更差异预览（旧/新参数两侧有界抓取，严格只读） --------------
+
+
+@router.post(
+    "/api/v1/rsshub/params-diff",
+    response_model=RssHubParamsDiffResult,
+    response_model_exclude_none=False,
+)
+async def rsshub_params_diff(
+    body: RssHubParamsDiffRequest, request: Request
+) -> dict[str, object]:
+    """N024：编辑既有 RSSHub 来源参数前的差异对照（零写入）。
+
+    同一次请求内有界抓取旧参数 feed 与新参数 feed（都走实例配置 origin
+    的 origin-locked 路径），离线解析标题并做集合 diff：
+    - added = 仅新 feed 有的标题；removed = 仅旧 feed 有的标题；
+      duplicates = 两侧都有（标题为对照键——entry id 不跨参数稳定）；
+    - 一侧抓取/解析失败 → 该侧 error 如实说明，titles=null，diff 基于
+      可用一侧诚实计算（绝不臆造空 = 全量增删的假差异）；
+    - newUrl 是 FreshRSS 面向的订阅地址（与 preview 同一构造）；
+    - 应用语义与 F047 相同：确认走迁移端点（新建订阅 + 旧源保留），
+      本端点本身绝不改任何状态（取消 = 什么都没发生）。"""
+    import urllib.parse
+
+    route = _catalog_route(body.routeId)  # 未知路由 → 404 类稳定错误
+    new_path = build_path(route, body.newParams)  # 非法参数 → 稳定错误
+    service = _get_rsshub_service(request)
+    settings = service.load_settings()
+
+    parts = urllib.parse.urlsplit(body.oldFeedUrl)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise RssHubInvalidParameters("oldFeedUrl must be an absolute http(s) URL.")
+    if not safe_rsshub_path(parts.path):
+        raise RssHubInvalidParameters("oldFeedUrl path is not a usable RSSHub path.")
+    old_path = parts.path + (f"?{parts.query}" if parts.query else "")
+
+    async def _side(path: str) -> RssHubParamsDiffSide:
+        try:
+            document = await service.fetch_document(path)
+        except RssHubFetchError as exc:
+            return RssHubParamsDiffSide(url=path, titles=None, error=str(exc))
+        return RssHubParamsDiffSide(
+            url=path,
+            entryCount=count_feed_entries(document),
+            titles=extract_entry_titles(document),
+        )
+
+    old_side = await _side(old_path)
+    new_side = await _side(new_path)
+    diff = diff_title_sets(old_side.titles or [], new_side.titles or [])
+    return {
+        "old": old_side,
+        "new": new_side,
+        **diff,
+        "newUrl": f"{settings.freshrss_base_url}{new_path}",
+        "note": (
+            "对照为只读预览；取消不产生任何变更。确认应用后新建订阅并保留旧订阅"
+            "（可自行退订）。"
+        ),
     }
 
 

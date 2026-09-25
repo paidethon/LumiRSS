@@ -36,6 +36,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import timedelta
 
+import feedparser
 import httpx
 from pydantic import ValidationError
 
@@ -68,12 +69,14 @@ __all__ = [
     "RssHubParameter",
     "RssHubPreviewCache",
     "RssHubRefreshRateLimited",
+    "RssHubRequires",
     "RssHubRoute",
     "RssHubRouteNotFound",
     "RssHubService",
     "build_path",
     "looks_like_rsshub_error_page",
     "match_route_path",
+    "requires_json",
 ]
 
 _MAX_REDIRECTS = 5
@@ -203,6 +206,32 @@ class RssHubParameter:
 
 
 @dataclass(frozen=True)
+class RssHubRequires:
+    """N023：路由依赖元数据（curated 静态数据）。
+
+    三态字段：True = 需要 / False = 不需要 / None = 未知（诚实呈现，
+    绝不把未知冒充为「不需要」）。来源是 Lumi 维护的 curated 知识
+    （RSSHub 文档/路由实现的已知事实），随目录条目一起人工维护。"""
+
+    login: bool | None = None
+    cookies: bool | None = None
+    render: bool | None = None
+    extra_service: bool | None = None
+
+
+def requires_json(route: "RssHubRoute") -> dict[str, bool | None] | None:
+    """路由依赖 → wire 形状（未标注的路由 → None，UI 显示「未知」）。"""
+    if route.requires is None:
+        return None
+    return {
+        "login": route.requires.login,
+        "cookies": route.requires.cookies,
+        "render": route.requires.render,
+        "extraService": route.requires.extra_service,
+    }
+
+
+@dataclass(frozen=True)
 class RssHubRoute:
     """One supported RSSHub route (Lumi-owned, stable contract)."""
 
@@ -211,11 +240,18 @@ class RssHubRoute:
     description: str
     path_template: str  # e.g. "/github/starred_repos/{user}"
     parameters: tuple[RssHubParameter, ...]
+    # N023：依赖元数据（None = 未标注 → 依赖未知，诚实呈现）。
+    requires: RssHubRequires | None = None
 
 
 # Lumi-curated catalog. Every entry verified against the pinned local
 # RSSHub instance (docker-compose, diygod/rsshub@387fd32) on 2026-09-01:
 # each route returned HTTP 200 with a parseable RSS/Atom document.
+#
+# N023 ``requires`` is curated static knowledge per route (RSSHub route
+# implementation / docs facts), NOT runtime probing: True = 该路由需要 /
+# False = 不需要 / None = 未知（诚实呈现为「未知」，绝不冒充「不需要」）。
+# Partial metadata is intentional — unknown facets stay None.
 CATALOG: tuple[RssHubRoute, ...] = (
     RssHubRoute(
         id="ithome-ranking-24h",
@@ -223,6 +259,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="IT之家 24 小时热门新闻榜。",
         path_template="/ithome/ranking/24h",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="github-starred-repos",
@@ -239,6 +276,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
                 help="GitHub 用户名（字母 / 数字 / 连字符）。",
             ),
         ),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="zhihu-people-activities",
@@ -255,6 +293,8 @@ CATALOG: tuple[RssHubRoute, ...] = (
                 help="知乎主页 URL 末尾的用户 ID（如 zhang-jia-wei）。",
             ),
         ),
+        # 知乎路由需要配置 ZHIHU_COOKIES 才能稳定出内容（RSSHub 文档已知事实）。
+        requires=RssHubRequires(login=None, cookies=True, render=None, extra_service=False),
     ),
     RssHubRoute(
         id="zhihu-daily",
@@ -262,6 +302,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="知乎日报当日精选。",
         path_template="/zhihu/daily",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="sspai-matrix",
@@ -269,6 +310,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="少数派社区 Matrix 最新文章。",
         path_template="/sspai/matrix",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="hackernews",
@@ -276,6 +318,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="Hacker News 首页热门。",
         path_template="/hackernews",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="youtube-channel",
@@ -292,6 +335,8 @@ CATALOG: tuple[RssHubRoute, ...] = (
                 help="频道 URL 中的 channel ID（UC 开头）。",
             ),
         ),
+        # YouTube 路由依赖实例配置的 YouTube Data API key（额外服务）。
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=True),
     ),
     RssHubRoute(
         id="v2ex-topics",
@@ -308,6 +353,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
                 help="hot = 最热；latest = 最新。",
             ),
         ),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="cnbeta",
@@ -315,6 +361,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="cnBeta 中文业界资讯。",
         path_template="/cnbeta",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="huxiu-article",
@@ -322,6 +369,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="虎嗅网最新文章。",
         path_template="/huxiu/article",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="36kr-newsflashes",
@@ -329,6 +377,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="36氪 7×24 小时快讯。",
         path_template="/36kr/newsflashes",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="coolapk-hot",
@@ -336,6 +385,8 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="酷安社区热门帖子。",
         path_template="/coolapk/hot",
         parameters=(),
+        # 酷安需要实例配置凭据生成请求签名（RSSHub 文档已知事实）。
+        requires=RssHubRequires(login=None, cookies=True, render=None, extra_service=False),
     ),
     RssHubRoute(
         id="readhub",
@@ -343,6 +394,7 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="Readhub 科技热门话题。",
         path_template="/readhub",
         parameters=(),
+        requires=RssHubRequires(login=False, cookies=False, render=False, extra_service=False),
     ),
     RssHubRoute(
         id="douban-book-latest",
@@ -350,6 +402,8 @@ CATALOG: tuple[RssHubRoute, ...] = (
         description="豆瓣读书新书速递。",
         path_template="/douban/book/latest",
         parameters=(),
+        # 豆瓣部分部署需要 Cookie（实例而异）→ cookies 诚实标注未知。
+        requires=RssHubRequires(login=False, cookies=None, render=False, extra_service=False),
     ),
 )
 
@@ -454,6 +508,16 @@ class RssHubService:
 
     def list_routes(self) -> list[RssHubRoute]:
         return list(CATALOG)
+
+    async def fetch_document(self, path: str) -> bytes:
+        """Bounded in-origin fetch of one RSSHub path (N024 diff sides).
+
+        Same origin-locked boundary as preview; the path is appended to
+        the OPERATOR-CONFIGURED base. Raises RssHubFetchError — callers
+        that diff two sides catch per side and report honestly."""
+        settings = self.load_settings()
+        body, _final_url = await self._fetch_feed(settings.RSSHUB_BASE_URL, path)
+        return body
 
     async def preview(
         self,
@@ -595,3 +659,61 @@ def looks_like_rsshub_error_page(body: bytes) -> bool:
     return any(marker in head for marker in _ERROR_PAGE_MARKERS) and any(
         word in head for word in _ERROR_PAGE_WORDS
     )
+
+
+# ---- N024 路由变更差异预览（标题级 diff；严格只读） -------------------------
+
+# diff 列表边界（预览是对照用途，不是全文搬运；诚实有界）。
+DIFF_TITLE_LIMIT = 50
+
+ZERO_ENTRY_HINT = (
+    "本次预览返回 0 条目：该路由的依赖（登录 / Cookie / 浏览器渲染 / "
+    "额外服务）可能未满足——请先检查 RSSHub 实例配置，这不是健康状态。"
+)
+
+
+def extract_entry_titles(body: bytes) -> list[str]:
+    """Bounded offline title extraction for the params diff.
+
+    Parse failures count as no titles (the diff side carries the real
+    signal via its own error/entryCount fields); titles are whitespace-
+    collapsed and capped at DIFF_TITLE_LIMIT.
+    """
+    try:
+        parsed = feedparser.parse(body)
+    except Exception:  # noqa: BLE001 — diff 是辅助对照，解析失败如实为空
+        return []
+    titles: list[str] = []
+    for entry in parsed.entries or []:
+        title = entry.get("title")
+        if isinstance(title, str) and title.strip():
+            titles.append(" ".join(title.split()))
+    return titles[:DIFF_TITLE_LIMIT]
+
+
+def diff_title_sets(
+    old_titles: list[str], new_titles: list[str]
+) -> dict[str, list[str]]:
+    """标题集合 diff（added = 仅新 / removed = 仅旧 / duplicates = 两侧都有）。
+
+    标题是对照键（entry id 不跨参数稳定）；页内重复标题先按首现去重，
+    保持稳定顺序。列表各自有界（DIFF_TITLE_LIMIT）。"""
+    old_set = set(old_titles)
+    new_set = set(new_titles)
+    return {
+        "added": list(dict.fromkeys(t for t in new_titles if t not in old_set)),
+        "removed": list(dict.fromkeys(t for t in old_titles if t not in new_set)),
+        "duplicates": list(dict.fromkeys(t for t in new_titles if t in old_set)),
+    }
+
+
+def safe_rsshub_path(path: str) -> bool:
+    """Structural check for a client-supplied RSSHub path (N024 old URL).
+
+    Same rules as build_path's post-check: must start with '/', no empty
+    / ``.`` / ``..`` segments. The path is appended to the OPERATOR-
+    CONFIGURED base (origin-locked fetch), so this is a shape check, not
+    an SSRF boundary."""
+    if not path.startswith("/") or "//" in path:
+        return False
+    return all(segment not in ("", ".", "..") for segment in path.split("/")[1:])

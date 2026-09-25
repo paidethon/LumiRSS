@@ -470,6 +470,19 @@ class RssHubParameter(BaseModel):
     help: str
 
 
+class RssHubRequires(BaseModel):
+    """N023：路由依赖元数据（curated 静态数据；null = 未知，诚实呈现）。
+
+    ``login`` 需要登录账号 / ``cookies`` 需要 Cookie / ``render`` 需要
+    浏览器渲染（puppeteer）/ ``extraService`` 需要额外服务（如 API key
+    配置）。三态：true（需要）/ false（不需要）/ None（未知）。"""
+
+    login: bool | None = None
+    cookies: bool | None = None
+    render: bool | None = None
+    extraService: bool | None = None
+
+
 class RssHubRoute(BaseModel):
     """One Lumi-owned RSSHub route descriptor (path built server-side)."""
 
@@ -478,6 +491,8 @@ class RssHubRoute(BaseModel):
     description: str
     pathTemplate: str
     parameters: list[RssHubParameter]
+    # N023：依赖元数据（null = 该路由未标注，UI 显示「未知」chips）。
+    requires: RssHubRequires | None = None
 
 
 class RssHubCatalog(BaseModel):
@@ -519,10 +534,15 @@ class RssHubPreviewResult(FeedPreviewResult):
 
     N021/N025: the key (template id + masked params signature) is built
     server-side; clients use it for favorites/recents/history/refresh
-    and never assemble it themselves. N027 adds cache freshness."""
+    and never assemble it themselves. N027 adds cache freshness. N023
+    adds dependency metadata + the zero-entry honest hint."""
 
     routeKey: str
     cache: RssHubCacheInfo
+    # N023：路由依赖 chips（未知路由 / 未标注 → null，UI 显示「未知」）。
+    requires: RssHubRequires | None = None
+    # N023：0 条目结果上的诚实提示（依赖可能未满足；非健康状态）。
+    zeroEntryHint: str | None = None
 
 
 class RssHubRefreshResult(BaseModel):
@@ -534,6 +554,37 @@ class RssHubRefreshResult(BaseModel):
     ranAt: str
     durationMs: int
     cache: RssHubCacheInfo
+
+
+class RssHubParamsDiffRequest(BaseModel):
+    """POST /api/v1/rsshub/params-diff body（N024：变更前对照，只读）。"""
+
+    oldFeedUrl: str = Field(min_length=1, max_length=2048)
+    """现有订阅的 RSSHub feed 地址（路径用于取旧参数与旧 feed 内容）。"""
+    routeId: str = Field(min_length=1)
+    """新参数所属的目录路由 id（必须是 Lumi catalog 已知路由）。"""
+    newParams: dict[str, str] = Field(default_factory=dict)
+
+
+class RssHubParamsDiffSide(BaseModel):
+    """对照的一侧（old/new；抓取失败 → error 如实说明，titles 为 null）。"""
+
+    url: str
+    entryCount: int | None = None
+    titles: list[str] | None = None
+    error: str | None = None
+
+
+class RssHubParamsDiffResult(BaseModel):
+    """N024：新旧参数 feed 的标题级差异（bounded；cancelled 前零写入）。"""
+
+    old: RssHubParamsDiffSide
+    new: RssHubParamsDiffSide
+    added: list[str] = []
+    removed: list[str] = []
+    duplicates: list[str] = []
+    newUrl: str
+    note: str
 
 
 class RssHubRouteRun(BaseModel):
@@ -629,6 +680,106 @@ class OpmlImportResult(BaseModel):
     failed: list[OpmlImportFailed]
     skipped: list[OpmlImportSkipped] = []
     categoriesCreated: list[str]
+
+
+# ---------------------------------------------------------------------------
+# N018 OPML 树对照导入（plan → apply → undo）
+# ---------------------------------------------------------------------------
+
+
+class OpmlTreeNewFeed(BaseModel):
+    """树对照计划中「将新订阅」的 feed（分类为有效 label 或 null）。"""
+
+    feedUrl: str
+    title: str
+    categoryLabel: str | None = None
+
+
+class OpmlTreeMoveFeed(BaseModel):
+    """树对照计划中「将移动分类」的已订阅 feed（from 为 null = 当前未分组）。"""
+
+    feed: str
+    from_: str | None = Field(default=None, alias="from")
+    to: str
+    toCategoryId: str
+    subscriptionRef: str
+
+    model_config = {"populate_by_name": True}
+
+
+class OpmlTreeDuplicateFeed(BaseModel):
+    """树对照计划中的已订阅 feed（action: skip = 不动 | update = 随分类移动）。"""
+
+    feed: str
+    title: str
+    action: Literal["skip", "update"]
+
+
+class OpmlTreePlan(BaseModel):
+    """POST /api/v1/opml/import/tree-preview（严格只读的对照计划）。"""
+
+    totalFeeds: int
+    newFeeds: list[OpmlTreeNewFeed] = []
+    invalidEntries: int = 0
+    createCategories: list[str] = []
+    reuseCategories: list[str] = []
+    moveFeeds: list[OpmlTreeMoveFeed] = []
+    duplicateFeeds: list[OpmlTreeDuplicateFeed] = []
+    notes: list[str] = []
+
+
+class OpmlTreeApplyAdded(BaseModel):
+    """树对照 apply 中新订阅的 feed。"""
+
+    feedUrl: str
+    title: str
+    categoryLabel: str | None = None
+    categoryApplied: bool
+
+
+class OpmlTreeApplyFailed(BaseModel):
+    """树对照 apply 中失败的一步（kind: subscribe | category）。"""
+
+    feedUrl: str
+    kind: str
+    error: str
+
+
+class OpmlTreeApplyResult(BaseModel):
+    """POST /api/v1/opml/import/tree-apply（logId 供 undo）。"""
+
+    logId: int
+    added: list[OpmlTreeApplyAdded] = []
+    moved: list[dict[str, object]] = []
+    skipped: list[dict[str, object]] = []
+    failed: list[OpmlTreeApplyFailed] = []
+    categoriesCreated: list[str] = []
+
+
+class OpmlImportLogEntry(BaseModel):
+    """一条 N018 撤销台账（cap 5；undoneAt 非 null = 已撤销过）。"""
+
+    id: int
+    importedAt: str
+    createdCategoryLabels: list[str] = []
+    movedFeeds: list[dict[str, object]] = []
+    undoneAt: str | None = None
+
+
+class OpmlImportLogList(BaseModel):
+    items: list[OpmlImportLogEntry] = []
+
+
+class OpmlUndoResult(BaseModel):
+    """POST /api/v1/opml/import/{id}/undo（逐项如实汇报；建类不删——
+    greader API 无分类删除端点，诚实边界）。"""
+
+    logId: int
+    movedBack: list[dict[str, object]] = []
+    notRestored: list[dict[str, object]] = []
+    categoriesDeleted: list[str] = []
+    categoriesNotDeleted: list[dict[str, object]] = []
+    note: str
 
 
 # ---------------------------------------------------------------------------
@@ -2631,6 +2782,11 @@ class SourceOverrideResult(BaseModel):
     aiDisabled: bool = False
     # N015：分时静音窗口（每周循环；[]/None = 未启用）。
     muteWindows: list[dict[str, object]] | None = None
+    # N020：关注级别（must_read | normal | low；normal = 默认）。
+    attentionLevel: str = "normal"
+    # N014：已接受的低频建议（'accepted' 或 None）。纯记录——不改变
+    # 抓取行为（FreshRSS 调度粒度由实例 CRON_MIN 决定）。
+    refreshAdvisory: str | None = None
     updatedAt: str = ""
 
 
@@ -2650,6 +2806,83 @@ class SourceOverrideUpdate(BaseModel):
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
     # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
     muteWindows: list[dict[str, object]] | None = None
+    # N020：关注级别（None=恢复 normal，缺席=不改）。
+    attentionLevel: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# N014 自适应低活跃建议 / N019 来源接入说明卡
+# ---------------------------------------------------------------------------
+
+
+class FreshnessSuggestionBasis(BaseModel):
+    """N014 建议依据（全部来自派生投影，可重建）。"""
+
+    weeks: int
+    yield_: float = Field(alias="yield")
+    medianGapDays: float
+
+    model_config = {"populate_by_name": True}
+
+
+class FreshnessSuggestionItem(BaseModel):
+    """N014：一条低活跃建议（含已记录决定状态 + 诚实调度说明）。"""
+
+    feedUrl: str
+    subscriptionRef: str
+    title: str
+    currentPattern: str
+    suggested: str
+    basis: FreshnessSuggestionBasis
+    refreshAdvisory: str | None = None
+
+
+class FreshnessSuggestionsResponse(BaseModel):
+    """GET /api/v1/sources/freshness-suggestions（只读）。"""
+
+    items: list[FreshnessSuggestionItem] = []
+    schedulingNote: str
+    basis: str
+    generatedAt: str
+
+
+class FreshnessAdvisoryApplyResult(BaseModel):
+    """POST /api/v1/sources/freshness-suggestions/apply（记录决定）。"""
+
+    feedUrl: str
+    refreshAdvisory: str | None
+    schedulingNote: str
+
+
+class SourceAccessCardView(BaseModel):
+    """N019：一个来源的接入说明卡（凭据只存归属标签，绝无凭据值）。"""
+
+    feedUrl: str
+    acquisition: str | None = None
+    limits: str | None = None
+    credentialOwnership: str | None = None
+    maintenance: str | None = None
+    updatedAt: str | None = None
+
+
+class SourceAccessCardList(BaseModel):
+    items: list[SourceAccessCardView] = []
+
+
+class SourceAccessCardUpdate(BaseModel):
+    """PUT /api/v1/sources/access-card — 整卡 upsert（缺席字段=清空）。
+
+    credentialOwnership 只接受 'self' | 'shared' | 'none'（归属标签，
+    不是凭据值）；未知字段键 → 422（extra=forbid：契约上不存在凭据值
+    字段，超集直接拒绝）。"""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str
+    acquisition: str | None = None
+    limits: str | None = None
+    credentialOwnership: str | None = None
+    maintenance: str | None = None
 
 
 class SourceAliasView(BaseModel):

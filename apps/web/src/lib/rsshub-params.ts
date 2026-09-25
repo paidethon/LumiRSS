@@ -54,3 +54,40 @@ export function rsshubFailureClassLabel(failureClass: string): string {
   }
   return known[failureClass] ?? failureClass
 }
+
+export interface KeyedTemplate {
+  /** Lumi catalog 的 {key} 占位模板（如 /github/starred_repos/{user}）。 */
+  pathTemplate: string
+}
+
+/**
+ * N024：从 feedUrl 路径反推 {key} 模板的当前参数值（段级一一对应，
+ * 与 BFF build_path 的 `[^/]+` 段语义一致）。模板与路径段数不符 →
+ * null（诚实回退，不臆造参数）。
+ */
+export function extractTemplateParams(
+  template: string,
+  feedUrl: string,
+): Record<string, string> | null {
+  let feedPath: string
+  try {
+    feedPath = new URL(feedUrl).pathname
+  } catch {
+    return null
+  }
+  const normalized = template.startsWith('/') ? template : `/${template}`
+  const templateSegments = normalized.split('/')
+  const feedSegments = feedPath.split('/')
+  if (templateSegments.length !== feedSegments.length) return null
+  const params: Record<string, string> = {}
+  for (let index = 0; index < templateSegments.length; index += 1) {
+    const segment = templateSegments[index] ?? ''
+    const placeholder = /^\{(\w+)\}$/.exec(segment)
+    if (placeholder !== null) {
+      params[placeholder[1] ?? ''] = decodeURIComponent(feedSegments[index] ?? '')
+      continue
+    }
+    if (segment !== feedSegments[index]) return null
+  }
+  return params
+}

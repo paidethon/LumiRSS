@@ -8,9 +8,10 @@
 - ``reading_queue`` 是 Lumi 自有状态（每用户库，无 user_id 列）；行只存
   统一 ItemRef，绝不复制内容（ADR 0004）。条目删除/退订后行仍存在，
   解析失败由读取侧诚实呈现占位（绝不复活）；
-- 生成算法的诚实基础：N020 关注级别（source_overrides 级别列）在本仓库
-  尚未实现——``levels`` 参数没有可依据的数据，当前候选只按
-  **未读 + 近期（published_at recency）** 挑选；预算上限用粗估读时
+- 生成算法的诚实基础：候选按 **未读 + N020 关注级别（must_read 优先，
+  normal 次之，low 垫后；未设置级别 = normal）+ 近期（published_at
+  recency）** 挑选；``levels`` 参数非空时候选池限定到指定级别。
+  预算上限用粗估读时
   ``minutes = max(1, ceil(len(content_text) / 400))``（服务端只有投影
   纯文本；400 字符/分钟是有意的粗常量，与 Web 侧 CJK 感知估算不同源，
   响应以 ``basis``/``notes`` 字段诚实标注）。若一个候选都装不下且确有
@@ -220,11 +221,18 @@ class ReadingQueueStore:
         budget_minutes: int | None = None,
         workspace_id: str | None = None,
         force: bool = False,
+        levels: list[str] | None = None,
     ) -> dict[str, Any]:
         """生成（或幂等返回）今天的队列；返回 today_view + generated 等元数据。
 
-        ``levels``（N020 关注级别）在本仓库尚未实现，由路由层决定是否
-        附带「已忽略」的诚实标注；store 层从不依据它挑选候选。"""
+        N020（已接线）：候选按来源关注级别排序——must_read 优先，其次
+        normal（未设置级别 = normal），low 垫后（同级内仍按
+        published_at recency 降序）；``levels`` 非空时把候选池限定到
+        指定级别（normal = 未设置级别）。预算上限仍用粗估读时
+        ``minutes = max(1, ceil(len(content_text) / 400))``，响应以
+        ``basis``/``notes`` 字段诚实标注。若一个候选都装不下且确有
+        未读，收进最近一篇（宁可超预算也不交空队列，诚实于「budget
+        是估算」）。"""
         await self._db.migrate()
         day = today_queue_date()
         effective_budget = _DEFAULT_BUDGET_MINUTES if budget_minutes is None else budget_minutes
@@ -265,6 +273,7 @@ class ReadingQueueStore:
             budget_minutes=effective_budget,
             workspace_id=workspace_id,
             excluded_refs=kept_done,
+            levels=levels,
         )
         if candidates:
             await self._insert_generated(day, candidates)
@@ -273,10 +282,15 @@ class ReadingQueueStore:
             {
                 "generated": True,
                 "force": force,
-                "basis": "unread+recency",
+                "basis": "unread+attention-level+recency" if levels else "unread+recency",
                 "budgetMinutes": effective_budget,
             }
         )
+        if levels:
+            view["notes"] = [
+                f"levels={','.join(levels)}：候选池已限定到指定关注级别"
+                "（normal = 未设置级别）。",
+            ]
         return view
 
     async def _candidate_rows(
@@ -285,10 +299,15 @@ class ReadingQueueStore:
         budget_minutes: int,
         workspace_id: str | None,
         excluded_refs: list[str],
+        levels: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """候选：未读 + 近期（published_at DESC）；按预算贪心装填。
+        """候选：未读 + 关注级别排序（must_read → normal → low）+ 近期。
 
-        - 装不下的候选跳过（更近但很长的文不挡后面短文，语义同 F014）；
+        - 级别来自 source_overrides.attention_level（N020；NULL = normal），
+          LEFT JOIN 服务端排序，同级内按 published_at DESC；
+        - ``levels``（N020）非空时候选池限定到指定级别（HAVING 语义，
+          无匹配行不报错）；装不下的候选跳过（更近但很长的文不挡后面
+          短文，语义同 F014）；
         - 全都装不下且确有候选 → 收最近一篇（宁可超预算，不交空队列）；
         - workspace_id 提供时，候选限定为该工作区成员（ItemRef 同构）。
         """
@@ -300,10 +319,22 @@ class ReadingQueueStore:
                 " WHERE w.workspace_id = ? AND w.item_ref = 'rss:' || s.entry_ref)"
             )
             params.append(workspace_id)
+        level_filter = ""
+        if levels:
+            clean = [level for level in levels if level in ("must_read", "normal", "low")]
+            if clean:
+                placeholders = ",".join("?" for _ in clean)
+                level_filter = (
+                    f" AND COALESCE(so.attention_level, 'normal') IN ({placeholders})"
+                )
+                params.extend(clean)
         rows = await self._db.fetch_all(
             "SELECT s.entry_ref, s.title, s.content_text FROM search_entries s"
-            " WHERE s.read = 0" + where_extra +
-            " ORDER BY s.published_at DESC, s.id DESC"
+            " LEFT JOIN source_overrides so ON so.feed_url = s.feed_url"
+            " WHERE s.read = 0" + where_extra + level_filter +
+            " ORDER BY CASE COALESCE(so.attention_level, 'normal')"
+            " WHEN 'must_read' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,"
+            " s.published_at DESC, s.id DESC"
             " LIMIT 500",
             tuple(params),
         )

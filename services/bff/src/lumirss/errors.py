@@ -167,6 +167,10 @@ from lumirss.opml import (
     OpmlTooLarge,
     OpmlTooManyFeeds,
 )
+from lumirss.opml_import_log import (
+    OpmlImportLogNotFound,
+    OpmlImportLogUndone,
+)
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
 from lumirss.rag import RagModelUnavailable, RagRebuildBusy
 from lumirss.reading_queue import (
@@ -210,12 +214,14 @@ from lumirss.search_snapshot_store import (
 )
 from lumirss.secrets_store import SecretsStoreError
 from lumirss.snapshots import MonolithUnavailable, SnapshotFailed
+from lumirss.source_access_cards import AccessCardInvalid
 from lumirss.source_aliases import SourceAliasInvalid, SourceAliasNotFound
 from lumirss.source_bundle import BundleInvalid
 from lumirss.source_discovery import (
     InvalidSourceUrl,
     NoFeedDiscovered,
 )
+from lumirss.source_overrides import AttentionLevelInvalid
 from lumirss.sources import ItemRefUnresolvable
 from lumirss.staged_source_store import (
     StagedSourceConflict,
@@ -504,6 +510,11 @@ _ERROR_RESPONSES = {
     DryRunUnsupported: (422, "dry_run_unsupported"),
     ZipInvalid: (422, "invalid_research_pack_request"),
     ZipTooLarge: (413, "research_pack_too_large"),
+    # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
+    AccessCardInvalid: (422, "invalid_access_card"),
+    OpmlImportLogNotFound: (404, "opml_import_log_not_found"),
+    OpmlImportLogUndone: (409, "opml_import_already_undone"),
+    AttentionLevelInvalid: (422, "invalid_attention_level"),
 }
 
 
@@ -697,6 +708,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(QueueItemDone)
     @app.exception_handler(QueueSnapshotNotFound)
     @app.exception_handler(QueueSnapshotLimit)
+    # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
+    @app.exception_handler(AccessCardInvalid)
+    @app.exception_handler(OpmlImportLogNotFound)
+    @app.exception_handler(OpmlImportLogUndone)
+    @app.exception_handler(AttentionLevelInvalid)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

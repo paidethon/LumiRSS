@@ -1590,6 +1590,48 @@ export async function importOpml(
   return (await response.json()) as OpmlImportResult
 }
 
+// ---- N018 OPML 树对照导入（plan → apply → undo） ---------------------------
+
+export type OpmlTreePlan = G6Schemas['OpmlTreePlan']
+export type OpmlTreeApplyResult = G6Schemas['OpmlTreeApplyResult']
+export type OpmlUndoResult = G6Schemas['OpmlUndoResult']
+export type OpmlImportLogEntry = G6Schemas['OpmlImportLogEntry']
+
+/** N018：OPML 分类树对照预览（严格只读；文件重新上传由服务端解析）。 */
+export async function previewOpmlTreeImport(file: File): Promise<OpmlTreePlan> {
+  const response = await rawRequest(`${API_BASE}/opml/import/tree-preview`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlTreePlan
+}
+
+/** N018：应用树对照计划（订阅新 feed → 建类/移动随行；写撤销台账）。 */
+export async function applyOpmlTreeImport(file: File): Promise<OpmlTreeApplyResult> {
+  const response = await rawRequest(`${API_BASE}/opml/import/tree-apply`, {
+    method: 'POST',
+    body: file,
+    contentType: file.type || 'application/xml',
+  })
+  return (await response.json()) as OpmlTreeApplyResult
+}
+
+/** N018：撤销一次树对照导入（feed 移回原分类；空分类无法经 greader
+ * API 删除——响应 categoriesNotDeleted 如实说明）。 */
+export async function undoOpmlImport(logId: number): Promise<OpmlUndoResult> {
+  const response = await rawRequest(
+    `${API_BASE}/opml/import/${encodeURIComponent(String(logId))}/undo`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as OpmlUndoResult
+}
+
+/** N018：最近撤销台账（≤5 行）。 */
+export async function listOpmlImportLog(): Promise<{ items: OpmlImportLogEntry[] }> {
+  return request<{ items: OpmlImportLogEntry[] }>(`${API_BASE}/opml/import/log`)
+}
+
 /** 0013 Gate 4：FreshRSS 高级逃生入口（未配置 → null；BFF 永不暴露
  * 内部 base URL）。 */
 export async function getFreshRssUiUrl(signal?: AbortSignal): Promise<FreshRssUiInfo> {
@@ -1632,6 +1674,25 @@ export async function previewRssHub(
     contentType: 'application/json',
   })
   return (await response.json()) as RssHubPreviewMetadata
+}
+
+// ---- N024：路由变更差异预览（旧/新参数两侧有界抓取，严格只读） --------------
+
+export type RssHubParamsDiffResult = G6Schemas['RssHubParamsDiffResult']
+
+/** N024：编辑既有 RSSHub 来源参数前的差异对照（零写入；确认应用走
+ * migrateSubscription——取消则什么都没发生）。 */
+export async function diffRssHubParams(input: {
+  oldFeedUrl: string
+  routeId: string
+  newParams: Record<string, string>
+}): Promise<RssHubParamsDiffResult> {
+  const response = await rawRequest(`${API_BASE}/rsshub/params-diff`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubParamsDiffResult
 }
 
 // ---- N021 路由收藏与最近使用（服务端持久化，跨设备） ----
@@ -3383,7 +3444,7 @@ export async function listSourceOverrides(): Promise<{ items: SourceOverrideResu
   return request<{ items: SourceOverrideResult[] }>(`${API_BASE}/sources/overrides`)
 }
 
-/** F11/F13/F001/N015：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
+/** F11/F13/F001/N015/N020：来源显示覆盖（sentinel：null=清除该维度，缺席=不改）。 */
 export async function setSourceOverride(patch: {
   feedUrl: string
   hiddenUntil?: string | null
@@ -3395,6 +3456,8 @@ export async function setSourceOverride(patch: {
   aiDisabled?: boolean
   /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
   muteWindows?: { days: number[]; start: string; end: string }[] | null
+  /** N020：关注级别（null=恢复 normal，缺席=不改）。 */
+  attentionLevel?: 'must_read' | 'normal' | 'low' | null
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -3402,6 +3465,64 @@ export async function setSourceOverride(patch: {
     contentType: 'application/json',
   })
   return (await response.json()) as SourceOverrideResult
+}
+
+// ---- N014 自适应低活跃建议 / N019 来源接入说明卡 ----------------------------
+
+/** N014：低活跃来源建议（依据 = 派生投影 trailing 8 周画像）。 */
+export type FreshnessSuggestionsResponse = G6Schemas['FreshnessSuggestionsResponse']
+export type FreshnessSuggestionItem = G6Schemas['FreshnessSuggestionItem']
+
+export async function getFreshnessSuggestions(): Promise<FreshnessSuggestionsResponse> {
+  return request<FreshnessSuggestionsResponse>(`${API_BASE}/sources/freshness-suggestions`)
+}
+
+/** N014：接受建议 = 记录 refreshAdvisory=accepted（纯记录——不改变
+ * FreshRSS 抓取行为，逐源频率需在 FreshRSS 原生界面调整）。 */
+export async function applyFreshnessAdvisory(feedUrl: string): Promise<{
+  feedUrl: string
+  refreshAdvisory: string | null
+  schedulingNote: string
+}> {
+  const response = await rawRequest(`${API_BASE}/sources/freshness-suggestions/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ feedUrl }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as {
+    feedUrl: string
+    refreshAdvisory: string | null
+    schedulingNote: string
+  }
+}
+
+/** N019：来源接入说明卡（结构化字段；凭据只存归属标签，绝无凭据值）。 */
+export type SourceAccessCardView = G6Schemas['SourceAccessCardView']
+export type SourceAccessCardList = G6Schemas['SourceAccessCardList']
+
+export async function getSourceAccessCard(feedUrl: string): Promise<SourceAccessCardView> {
+  return request<SourceAccessCardView>(
+    `${API_BASE}/sources/access-card?feedUrl=${encodeURIComponent(feedUrl)}`,
+  )
+}
+
+export async function listSourceAccessCards(): Promise<SourceAccessCardList> {
+  return request<SourceAccessCardList>(`${API_BASE}/sources/access-cards`)
+}
+
+export async function putSourceAccessCard(patch: {
+  feedUrl: string
+  acquisition?: string | null
+  limits?: string | null
+  credentialOwnership?: 'self' | 'shared' | 'none' | null
+  maintenance?: string | null
+}): Promise<SourceAccessCardView> {
+  const response = await rawRequest(`${API_BASE}/sources/access-card`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as SourceAccessCardView
 }
 
 /** N013：一个来源的显示别名（服务端真源；展示时优先于上游标题）。 */
