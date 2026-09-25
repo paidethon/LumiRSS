@@ -8,6 +8,8 @@
  * 反馈：成功「已复制 ✓」/ 失败「复制失败」，1.6s 后还原——失败可见，
  * 不假装成功。 */
 
+import { maskPlainTextIfActive } from './privacy-mask'
+
 export interface CodeCopyDeps {
   writeText?: (text: string) => Promise<void>
   /** 测试注入的定时器（默认 setTimeout）。 */
@@ -41,6 +43,8 @@ export function decorateCodeCopyButtons(
     const source = codeBlockText(pre)
     if (source.trim() === '') continue
 
+    // N182：遮罩开启时剪贴板写遮罩文本（原文不离开屏幕面）。
+    const writeSource = (raw: string) => writeText(maskPlainTextIfActive(raw))
     const button = container.ownerDocument.createElement('button')
     button.type = 'button'
     button.className = BUTTON_CLASS
@@ -48,7 +52,7 @@ export function decorateCodeCopyButtons(
     button.setAttribute('aria-label', '复制代码')
     button.addEventListener('click', () => {
       const text = codeBlockText(pre)
-      writeText(text)
+      writeSource(text)
         .then(() => {
           button.textContent = '已复制 ✓'
         })

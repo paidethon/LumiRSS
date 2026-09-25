@@ -14,6 +14,7 @@
 
 import { create } from 'zustand'
 import { clamp } from '../lib/clamp'
+import { PRESET_SCHEMA_VERSION } from '../lib/reader-preset-device'
 import {
   HEX_COLOR_PATTERN,
   NUMERIC_RANGES,
@@ -184,6 +185,9 @@ export interface ReaderPreset {
   id: string
   name: string
   builtin: boolean
+  /** N058：版本标签随预设进 portable 同步（缺省按当前 schema 补齐；
+   * 服务端 ge=1 校验）。 */
+  schemaVersion?: number
   vars: {
     readerFontFamily: ReaderFontFamily
     readerFontSize: ReaderFontSize
@@ -589,6 +593,10 @@ function normalizePresets(raw: unknown): ReaderPreset[] {
       id,
       name,
       builtin: false,
+      schemaVersion:
+        typeof p.schemaVersion === 'number' && p.schemaVersion >= 1
+          ? p.schemaVersion
+          : PRESET_SCHEMA_VERSION,
       vars: {
         readerFontFamily: pickString(v.readerFontFamily, READER_FONT_FAMILIES, 'system'),
         readerFontSize: pickReaderNumber('readerFontSize', v.readerFontSize),
@@ -1185,7 +1193,21 @@ export function portableSettings(settings: AppSettings): PortableValues {
   const out = {} as PortableValues
   for (const key of PORTABLE_KEYS) {
     const value = settings[key]
-    out[key] = typeof value === 'number' ? Number(value.toFixed(3)) : value
+    if (key === 'readerPresets') {
+      // N058：预设进 portable 同步——剥离设备本地字段（builtin），
+      // 仅携带 {id, name, schemaVersion, vars}（服务端 extra=forbid）。
+      const presets = value as ReaderPreset[]
+      ;(out as Record<string, unknown>)[key] = presets.map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        schemaVersion: preset.schemaVersion ?? PRESET_SCHEMA_VERSION,
+        vars: preset.vars,
+      }))
+      continue
+    }
+    out[key] = typeof value === 'number'
+      ? Number(value.toFixed(3))
+      : (value as string | number | boolean)
   }
   return out
 }

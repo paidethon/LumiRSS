@@ -29,6 +29,16 @@ function maskText(text: string): string {
   return MASK_CHAR.repeat(Math.max(1, Math.min([...text].length, 24)))
 }
 
+/** N182：文本级遮罩 —— 遮罩开启时，复制/导出等「离开屏幕面」的文本
+ * 路径（剪贴板写入、Markdown/HTML 导出）先经此变换；遮罩关闭时原样
+ * 返回（零成本直通）。与 DOM 遮罩同一替换语义：整段替换为 ▮，原文
+ * 不进入剪贴板/导出文件（负向断言覆盖）。 */
+export function maskPlainTextIfActive(text: string): string {
+  if (!isPrivacyEnabled()) return text
+  if (text === '') return text
+  return maskText(text)
+}
+
 function applyMask(root: ParentNode): void {
   const nodes = root.querySelectorAll<HTMLElement>('[data-privacy-text]')
   for (const node of nodes) {

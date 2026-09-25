@@ -7,6 +7,7 @@
  * 剥掉 <script> 标签对（regex 级防御，不重写 sanitizer—— sanitizer
  * 仍只在渲染路径唯一存在）。 */
 
+import { maskPlainTextIfActive } from './privacy-mask'
 import { guardCell } from './table-export'
 
 /** F068/F012 同源转义：公式形似段落前置撇号（guardCell）。 */
@@ -47,15 +48,20 @@ function splitParagraphs(text: string): string[] {
     .filter((p) => p !== '')
 }
 
-/** 纯构建：Markdown 导出内容（# 标题 + > 来源·日期 + 链接 + 分段正文）。 */
+/** 纯构建：Markdown 导出内容（# 标题 + > 来源·日期 + 链接 + 分段正文）。
+ * N182：遮罩开启时标题/来源/正文先经 maskPlainTextIfActive（原文绝不
+ * 进入导出文件）。 */
 export function buildMarkdownExport(input: ExportInput): string {
-  const lines: string[] = [`# ${input.title}`]
-  const meta = [input.source, input.date].filter((v) => v !== '').join(' · ')
+  const title = maskPlainTextIfActive(input.title)
+  const source = maskPlainTextIfActive(input.source)
+  const text = maskPlainTextIfActive(input.text)
+  const lines: string[] = [`# ${title}`]
+  const meta = [source, input.date].filter((v) => v !== '').join(' · ')
   if (meta !== '') lines.push('', `> ${meta}`)
   if (input.url !== null && input.url !== '') {
     lines.push('', `原文链接：${input.url}`)
   }
-  for (const paragraph of splitParagraphs(input.text)) {
+  for (const paragraph of splitParagraphs(text)) {
     lines.push('', paragraph)
   }
   return `${lines.join('\n')}\n`
@@ -63,24 +69,38 @@ export function buildMarkdownExport(input: ExportInput): string {
 
 /** 纯构建：独立 HTML 导出文档（语义 table/th/td、结构原样保留）。 */
 export function buildHtmlExport(input: ExportInput): string {
+  // N182：与 Markdown 同一口径——遮罩开启时标题/来源/正文先遮罩。
+  const title = maskPlainTextIfActive(input.title)
+  const source = maskPlainTextIfActive(input.source)
+  const maskedText = maskPlainTextIfActive(input.text)
   const meta: string[] = []
-  if (input.source !== '') meta.push(escapeHtml(input.source))
+  if (input.source !== '') meta.push(escapeHtml(source))
   if (input.date !== '') meta.push(escapeHtml(input.date))
   const link =
     input.url !== null && input.url !== ''
       ? `\n    <p><a href="${escapeHtml(input.url)}">原文链接</a></p>`
       : ''
-  const body = input.html !== null ? stripScriptTags(input.html) : ''
+  // 遮罩开启 → 不导出未消毒 HTML 传输层，改用遮罩后的纯文本段
+  // （原文残余只会藏在 html 路径里，直接绕开它）。
+  const maskActive = maskedText !== input.text
+  const body =
+    input.html !== null && !maskActive
+      ? stripScriptTags(input.html)
+      : maskedText
+          .split(/\n\s*\n/)
+          .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+          .filter((p) => p !== '<p></p>')
+          .join('\n    ')
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(input.title)}</title>
+    <title>${escapeHtml(title)}</title>
 </head>
 <body>
     <article>
-    <h1>${escapeHtml(input.title)}</h1>
+    <h1>${escapeHtml(title)}</h1>
     ${meta.length > 0 ? `<p class="lumi-export-meta">${meta.join(' · ')}</p>` : ''}${link}
     ${body}
     </article>

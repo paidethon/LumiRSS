@@ -19,7 +19,7 @@
  * 复制按钮，并诚实标注「只显示这一次」。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -68,6 +68,11 @@ import {
 } from '../../api/client'
 import { useAuthStore } from '../../store/auth'
 import { navigateAppRoute } from '../../lib/app-route'
+import {
+  mintAdminStepUp,
+  notifyStepUpRequired,
+  onStepUpRequired,
+} from '../../lib/step-up'
 import { formatListTime, formatRelativeTime } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -98,10 +103,83 @@ function inviteState(invite: AdminInvite): { label: string; actionable: boolean 
 function adminActionError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.type === 'network_error') return '网络不可用 —— 请检查网络连接后重试。'
+    // N009：敏感操作需要临时提权——通知管理台弹出密码对话框。
+    if (error.type === 'step_up_required') {
+      notifyStepUpRequired()
+      return '该操作需要临时提权验证（输入管理员密码后再试一次）。'
+    }
     if (error.status === 403) return '需要管理员权限，操作被服务端拒绝。'
     if (error.message !== '') return error.message
   }
   return '操作失败，请稍后重试。'
+}
+
+/** N009：临时提权密码对话框（铸造一次性令牌后关闭；下一次敏感操作
+ * 自动携带 X-Lumi-Step-Up 头）。 */
+function StepUpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  if (!open) return null
+  const submit = async () => {
+    setPending(true)
+    setError(null)
+    try {
+      await mintAdminStepUp(password)
+      setPassword('')
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证失败，请重试。')
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <div
+      role="dialog"
+      aria-label="临时提权验证"
+      data-testid="step-up-dialog"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div className="w-full max-w-sm rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+        <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
+          敏感操作验证
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          请输入你的管理员密码完成临时提权（5 分钟内有效，单次使用）。
+        </p>
+        <form
+          className="mt-3 flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit()
+          }}
+        >
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-label="管理员密码"
+            autoComplete="current-password"
+            className="min-h-9 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
+          />
+          {error !== null && (
+            <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" type="button" onClick={onClose}>
+              取消
+            </Button>
+            <Button variant="primary" size="sm" type="submit" disabled={pending || password === ''}>
+              {pending ? '验证中…' : '验证'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
 }
 
 /** 一次性链接展示 + 复制（token 只出现一次的诚实 UI）。 */
@@ -2044,6 +2122,11 @@ export default function AdminScreen() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [confirmPending, setConfirmPending] = useState(false)
+  // N009：敏感操作 403 step_up_required → 弹出临时提权密码对话框。
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+  useEffect(() => {
+    return onStepUpRequired(() => setStepUpOpen(true))
+  }, [])
 
   const forbidden =
     identity === null
@@ -2054,6 +2137,7 @@ export default function AdminScreen() {
 
   return (
     <div className="min-h-dvh overflow-y-auto bg-[var(--lumi-canvas)]" data-testid="admin-screen">
+      <StepUpDialog open={stepUpOpen} onClose={() => setStepUpOpen(false)} />
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <div className="mb-5 flex items-center gap-3">
           <Button

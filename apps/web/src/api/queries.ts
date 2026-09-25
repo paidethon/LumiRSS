@@ -1459,8 +1459,11 @@ export function useRestorePreviewMutation() {
 export function useRestoreExecuteMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { restoreSessionId: string; confirmation: string }) =>
-      executeRestore(vars.restoreSessionId, vars.confirmation),
+    mutationFn: (vars: {
+      restoreSessionId: string
+      confirmation: string
+      decisions?: Record<string, 'skip' | 'overwrite'>
+    }) => executeRestore(vars.restoreSessionId, vars.confirmation, vars.decisions),
     onSuccess: async () => {
       // AUDIT-012：破坏性恢复替换了整个 Lumi 数据库——feeds/entries/
       // subscriptions/categories/AI/webdav/rsshub/backups 等全部缓存都
