@@ -80,6 +80,12 @@ import type {
   QueueSnapshotList,
   QueueSnapshotView,
   QueueTodayResponse,
+  BackupScopeInclude,
+  BackupScopePreview,
+  BackupVerifyReport,
+  DataFlowsResponse,
+  RetentionNoticeData,
+  RetentionPostponeData,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -1927,13 +1933,47 @@ export async function materializeRssHubEnvFile(): Promise<{
   }
 }
 
-export async function createBackup(target: 'local' | 'webdav'): Promise<BackupJob> {
+export async function createBackup(
+  target: 'local' | 'webdav',
+  include?: BackupScopeInclude,
+): Promise<BackupJob> {
   const response = await rawRequest(`${API_BASE}/backups`, {
     method: 'POST',
-    body: JSON.stringify({ target }),
+    body: JSON.stringify(include ? { target, include } : { target }),
     contentType: 'application/json',
   })
   return (await response.json()) as BackupJob
+}
+
+/** N185：备份内容选择预览（只读；不创建任务）。 */
+export async function previewBackupScope(
+  include?: Partial<BackupScopeInclude>,
+): Promise<BackupScopePreview> {
+  const response = await rawRequest(`${API_BASE}/backups/preview-scope`, {
+    method: 'POST',
+    body: JSON.stringify({ include: include ?? {} }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupScopePreview
+}
+
+/** N186：独立完整性自检（只出报告，不建恢复会话）。 */
+export async function verifyBackup(body: {
+  source: 'local' | 'remote'
+  jobId?: string
+  fileName?: string
+}): Promise<BackupVerifyReport> {
+  const response = await rawRequest(`${API_BASE}/backups/verify`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as BackupVerifyReport
+}
+
+/** N181：逐来源数据外发清单（来自服务端真实配置；只读）。 */
+export async function getDataFlows(signal?: AbortSignal): Promise<DataFlowsResponse> {
+  return request<DataFlowsResponse>(`${API_BASE}/privacy/data-flows`, signal)
 }
 
 export async function listRemoteBackups(signal?: AbortSignal): Promise<RemoteBackupsResponse> {
@@ -7150,6 +7190,21 @@ export async function previewStorageRetention(): Promise<RetentionPreview> {
 export async function applyStorageRetention(): Promise<RetentionApplyResult> {
   const response = await rawRequest(`${API_BASE}/storage/retention/apply`, { method: 'POST' })
   return (await response.json()) as RetentionApplyResult
+}
+
+/** N188：数据保留到期提醒（只读；推迟生效期内 dueSoon=false）。 */
+export async function getRetentionNotice(signal?: AbortSignal): Promise<RetentionNoticeData> {
+  return request<RetentionNoticeData>(`${API_BASE}/storage/retention/notice`, signal)
+}
+
+/** N188：推迟到期提醒（days 钳制到 1–30 天）。 */
+export async function postponeRetention(days: number): Promise<RetentionPostponeData> {
+  const response = await rawRequest(`${API_BASE}/storage/retention/postpone`, {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RetentionPostponeData
 }
 
 /** F115：两份本地备份 manifest 比较（incomparable 诚实呈现）。 */

@@ -157,8 +157,12 @@ async def revert_settings_history(
     冲突语义（回退不覆盖新修改）：对每个变更键，若当前值已不再等于
     该条记录的 after 值（之后又被改过），则跳过该键并如实返回；
     其余键应用 before 值。回退本身作为一次 update 记入历史（可再
-    次撤销）；至少一个键被应用时才有实际写入。"""
+    次撤销）；至少一个键被应用时才有实际写入。
+
+    N184 显式化：冲突键不再只以 skipped 映射出现——响应带 restored
+    （已回退键列表）与 conflicts（键 + 原因清单），由 UI 明示。"""
     from lumirss.app_settings import PortableSettingsPatch
+    from lumirss.models import SettingsRevertConflict
     from lumirss.settings_history import SettingsHistoryStore, compute_diff
 
     store = _get_app_settings_store(request)
@@ -170,14 +174,23 @@ async def revert_settings_history(
     current_doc, _ = await store.load()
     current = current_doc.model_dump()
     skipped: dict[str, object] = {}
+    conflicts: list[SettingsRevertConflict] = []
     patch_values: dict[str, object] = {}
     for key, change in entry["diff"].items():
         if current.get(key) == change["after"]:
             patch_values[key] = change["before"]
         else:
             skipped[key] = current.get(key)
+            conflicts.append(
+                SettingsRevertConflict(
+                    key=key,
+                    reason="该键在记录之后又被修改，回退不覆盖新修改",
+                )
+            )
     if not patch_values:
-        return SettingsRevertResult(applied={}, skipped=skipped)
+        return SettingsRevertResult(
+            applied={}, skipped=skipped, restored=[], conflicts=conflicts
+        )
     try:
         patch = PortableSettingsPatch.model_validate(patch_values)
     except ValidationError as exc:
@@ -189,4 +202,9 @@ async def revert_settings_history(
     after_doc = merged.model_dump()
     diff = compute_diff(current, after_doc)
     await SettingsHistoryStore(request.app.state.db).record("revert", diff)
-    return SettingsRevertResult(applied=patch_values, skipped=skipped)
+    return SettingsRevertResult(
+        applied=patch_values,
+        skipped=skipped,
+        restored=sorted(patch_values),
+        conflicts=conflicts,
+    )

@@ -12,21 +12,22 @@
 
 import { useState } from 'react'
 import {
+  useBackupVerifyMutation,
   useBackups,
   useRemoteBackups,
   useRestoreExecuteMutation,
   useRestorePreviewMutation,
 } from '../../../api/queries'
-import type { BackupJob, RestorePreview, RestoreResult } from '../../../api/types'
+import type { BackupJob, BackupVerifyReport, RestorePreview, RestoreResult } from '../../../api/types'
 import { clearPendingSettingsSync } from '../../../store/settings-sync'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { Skeleton } from '../../ui/Skeleton'
 import { cx } from '../../ui/cx'
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-react'
 import { componentLabel, formatBytes, formatJobTime } from './backup-format'
 
-type Step = 'select' | 'preview' | 'confirm' | 'result'
+type Step = 'select' | 'preview' | 'confirm' | 'result' | 'verify'
 
 const CONFIRM_TEXT = 'RESTORE'
 
@@ -40,10 +41,12 @@ interface SelectedSource {
 function SourcePicker({
   localJobs,
   onPick,
+  onVerify,
   onBack,
 }: {
   localJobs: BackupJob[]
   onPick: (picked: SelectedSource) => void
+  onVerify: (jobId: string) => void
   onBack: () => void
 }) {
   const remote = useRemoteBackups(true)
@@ -62,24 +65,41 @@ function SourcePicker({
         ) : (
           <ul className="mt-2 divide-y divide-[var(--lumi-separator)] rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]">
             {restorable.slice(0, 8).map((job) => (
-              <li key={job.id}>
+              <li key={job.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <button
                   type="button"
                   onClick={() =>
                     onPick({ source: 'local', jobId: job.id, label: job.summary?.filename ?? job.id })
                   }
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--lumi-surface-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  className="min-w-0 flex-1 text-left transition-colors hover:opacity-80 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
-                      {job.summary?.filename ?? job.id}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-[var(--lumi-text-tertiary)]">
-                      {formatJobTime(job.finishedAt ?? job.createdAt)} · {formatBytes(job.summary?.sizeBytes)}
-                    </span>
+                  <span className="block truncate text-sm text-[var(--lumi-text-primary)]">
+                    {job.summary?.filename ?? job.id}
                   </span>
-                  <span className="shrink-0 text-xs text-[var(--lumi-accent-text)]">选择</span>
+                  <span className="mt-0.5 block text-xs text-[var(--lumi-text-tertiary)]">
+                    {formatJobTime(job.finishedAt ?? job.createdAt)} · {formatBytes(job.summary?.sizeBytes)}
+                  </span>
                 </button>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-verify-job={job.id}
+                    aria-label="仅校验完整性（不恢复）"
+                    onClick={() => onVerify(job.id)}
+                  >
+                    仅校验
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onPick({ source: 'local', jobId: job.id, label: job.summary?.filename ?? job.id })
+                    }
+                    className="text-xs text-[var(--lumi-accent-text)] transition-colors hover:opacity-80 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]"
+                  >
+                    选择
+                  </button>
+                </span>
               </li>
             ))}
           </ul>
@@ -301,23 +321,103 @@ function ResultPane({ result, onReload }: { result: RestoreResult; onReload: () 
   )
 }
 
+/** N186：独立自检报告（只读发现，不建恢复会话、不触发恢复）。 */
+function VerifyReportPane({
+  report,
+  onBack,
+}: {
+  report: BackupVerifyReport
+  onBack: () => void
+}) {
+  const findings: { key: keyof BackupVerifyReport['findings']; label: string }[] = [
+    { key: 'checksumOk', label: 'SHA-256 校验和' },
+    { key: 'manifestCountsMatch', label: 'manifest 计数一致' },
+    { key: 'readable', label: '成员可读（SQLite integrity）' },
+    { key: 'versionCompatible', label: '版本兼容' },
+  ]
+  return (
+    <div className="flex flex-col gap-3" data-verify-report="">
+      <div className="flex items-start gap-2.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] px-3.5 py-2.5">
+        {report.ok ? (
+          <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
+        ) : (
+          <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-danger)]" />
+        )}
+        <div className="min-w-0 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          <p className="text-sm font-medium text-[var(--lumi-text-primary)]">
+            {report.ok ? '完整性自检通过' : '完整性自检发现问题'}
+          </p>
+          <p className="mt-0.5">本操作只读校验，未创建恢复会话、未修改任何文件。</p>
+        </div>
+      </div>
+
+      <ul className="flex flex-col gap-1 text-xs">
+        {findings.map((finding) => (
+          <li key={finding.key} className="flex items-center justify-between gap-3" data-verify-finding={finding.key}>
+            <span className="text-[var(--lumi-text-secondary)]">{finding.label}</span>
+            {report.findings[finding.key] ? (
+              <span className="flex items-center gap-1 text-[var(--lumi-accent-text)]">
+                <CheckCircle2 aria-hidden className="size-3.5" />通过
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[var(--lumi-danger)]">
+                <XCircle aria-hidden className="size-3.5" />未通过
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {(report.issues.corruptFile.length > 0 ||
+        report.issues.missingAttachment.length > 0 ||
+        report.issues.versionIncompatible !== null) && (
+        <div className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2.5 text-xs" data-verify-issues="">
+          {report.issues.corruptFile.length > 0 && (
+            <p className="text-[var(--lumi-danger)]">损坏/可疑成员：{report.issues.corruptFile.join('、')}</p>
+          )}
+          {report.issues.missingAttachment.length > 0 && (
+            <p className="mt-1 text-[var(--lumi-danger)]">缺失附件：{report.issues.missingAttachment.join('、')}</p>
+          )}
+          {report.issues.versionIncompatible != null && (
+            <p className="mt-1 text-[var(--lumi-danger)]">
+              版本不兼容（{String(report.issues.versionIncompatible.field)}：备份{' '}
+              {String(report.issues.versionIncompatible.backup)} / 当前{' '}
+              {String(report.issues.versionIncompatible.current)}）。
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <Button size="sm" variant="ghost" onClick={onBack}>
+          返回
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const jobs = useBackups()
   const previewMutation = useRestorePreviewMutation()
   const executeMutation = useRestoreExecuteMutation()
+  const verifyMutation = useBackupVerifyMutation()
 
   const [step, setStep] = useState<Step>('select')
   const [selected, setSelected] = useState<SelectedSource | null>(null)
   const [preview, setPreview] = useState<RestorePreview | null>(null)
   const [result, setResult] = useState<RestoreResult | null>(null)
+  const [verifySource, setVerifySource] = useState<string>('')
 
   const reset = () => {
     setStep('select')
     setSelected(null)
     setPreview(null)
     setResult(null)
+    setVerifySource('')
     previewMutation.reset()
     executeMutation.reset()
+    verifyMutation.reset()
   }
 
   const close = () => {
@@ -339,6 +439,16 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
         // 失败也进入 preview 步骤：展示安全错误 + 「返回重选」
         onError: () => setStep('preview'),
       },
+    )
+  }
+
+  // N186：仅校验——独立自检，不创建恢复会话、绝不触发恢复
+  const verifyOnly = (jobId: string) => {
+    const job = (jobs.data ?? []).find((item) => item.id === jobId)
+    setVerifySource(job?.summary?.filename ?? jobId)
+    verifyMutation.mutate(
+      { source: 'local', jobId },
+      { onSuccess: () => setStep('verify'), onError: () => setStep('verify') },
     )
   }
 
@@ -384,7 +494,41 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
       }
     >
       {step === 'select' && (
-        <SourcePicker localJobs={jobs.data ?? []} onPick={pick} onBack={close} />
+        <SourcePicker localJobs={jobs.data ?? []} onPick={pick} onVerify={verifyOnly} onBack={close} />
+      )}
+
+      {step === 'verify' && (
+        <>
+          <p className="mb-3 text-xs text-[var(--lumi-text-tertiary)]">来源：{verifySource}</p>
+          {verifyMutation.isPending && (
+            <div role="status" aria-label="正在校验备份完整性" className="flex flex-col gap-2 py-2">
+              <p className="flex items-center gap-2 text-sm text-[var(--lumi-text-secondary)]">
+                <Loader2 aria-hidden className="size-4 animate-spin" />
+                正在校验 checksum / manifest / 版本…
+              </p>
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )}
+          {!verifyMutation.isPending && verifyMutation.isError && (
+            <div role="alert" className="flex flex-col gap-2">
+              <p className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-danger)]">
+                <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+                校验失败：{verifyMutation.error instanceof Error ? verifyMutation.error.message : '备份文件无效。'}
+              </p>
+              <div className="flex justify-end">
+                <Button size="sm" variant="ghost" onClick={() => { setStep('select'); verifyMutation.reset() }}>
+                  返回
+                </Button>
+              </div>
+            </div>
+          )}
+          {!verifyMutation.isPending && !verifyMutation.isError && verifyMutation.data && (
+            <VerifyReportPane
+              report={verifyMutation.data}
+              onBack={() => { setStep('select'); verifyMutation.reset() }}
+            />
+          )}
+        </>
       )}
 
       {step !== 'select' && selected && (

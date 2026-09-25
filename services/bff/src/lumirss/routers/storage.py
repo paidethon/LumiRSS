@@ -15,12 +15,16 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from lumirss.config import LumiSettings
-from lumirss.models import StorageUsage
+from lumirss.models import (
+    RetentionNotice,
+    RetentionPostponeResult,
+    StorageUsage,
+)
 
 router = APIRouter()
 _logger = logging.getLogger("lumirss.storage")
@@ -155,3 +159,58 @@ async def apply_storage_retention(request: Request) -> dict[str, Any]:
     from lumirss.storage_retention import retention_apply
 
     return await retention_apply(request.app.state.db)
+
+
+# -- N188 数据保留到期提醒 ------------------------------------------------------
+
+
+@router.get("/api/v1/storage/retention/notice", response_model=RetentionNotice)
+async def retention_notice(request: Request) -> dict[str, Any]:
+    """N188：到期提醒（只读）。策略启用且将有行在提醒窗口（7 天）内到期
+    （或已到期）→ dueSoon=true + dueAt + 将影响计数（F114 预览口径）；
+    保护类（收藏/人工笔记/批注/卡片/凭据/运行中任务）如实列出。推迟
+    生效期内提醒被抑制。本端点绝不删除任何数据——apply 保持人工唯一
+    入口，没有任何后台调度会调用它。"""
+    from lumirss.storage_retention import retention_notice
+
+    return await retention_notice(request.app.state.db)
+
+
+class RetentionPostponeBody(BaseModel):
+    """N188：推迟天数（超出 1–30 的部分在服务端钳制收敛）。"""
+
+    days: int
+
+
+@router.post(
+    "/api/v1/storage/retention/postpone",
+    response_model=RetentionPostponeResult,
+)
+async def postpone_retention(
+    body: RetentionPostponeBody, request: Request
+) -> dict[str, Any]:
+    """N188：推迟到期提醒（days 钳制到 1–30；超过上界按 30 天收敛）。
+    只推迟「提醒」，不改变策略边界，也不影响手动 apply。"""
+    from datetime import UTC, datetime, timedelta
+
+    from lumirss.storage_retention import (
+        POSTPONE_MAX_DAYS,
+        save_postpone_until,
+    )
+
+    days = max(1, min(int(body.days), POSTPONE_MAX_DAYS))
+    now = datetime.now(UTC)
+    until = await save_postpone_until(request.app.state.db, now + timedelta(days=days))
+    return {
+        "postponedUntil": until.strftime("%Y-%m-%dT%H:%M:%S+00:00") if until else None,
+        "days": days,
+    }
+
+
+@router.delete("/api/v1/storage/retention/postpone", status_code=204)
+async def cancel_retention_postpone(request: Request) -> Response:
+    """N188：取消推迟（提醒恢复按 dueAt 出现）。"""
+    from lumirss.storage_retention import save_postpone_until
+
+    await save_postpone_until(request.app.state.db, None)
+    return Response(status_code=204)

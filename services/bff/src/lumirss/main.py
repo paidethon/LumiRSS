@@ -63,6 +63,7 @@ from lumirss.routers import (
     operations,
     opml,
     passkeys,
+    privacy,
     qa_templates,
     quiz,
     rag,
@@ -390,6 +391,7 @@ app.include_router(entry_ai.router)
 app.include_router(settings.router)
 app.include_router(operations.router)
 app.include_router(backup.router)
+app.include_router(privacy.router)
 app.include_router(search.router)
 app.include_router(search_synonyms.router)
 app.include_router(view_feed.router)

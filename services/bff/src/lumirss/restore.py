@@ -21,9 +21,11 @@ failure stage and return a safe (stacktrace-free, credential-free) message.
 
 import asyncio
 import json
+import os
 import posixpath
 import shutil
 import sqlite3
+import tempfile
 import time
 import uuid
 import zipfile
@@ -143,6 +145,181 @@ def _verify_checksums(archive: zipfile.ZipFile, manifest: dict[str, Any]) -> Non
     undeclared = names - declared
     if undeclared:
         raise BackupInvalid("Backup contains files not declared in the manifest.")
+
+
+def verify_backup_findings(zip_path: Path, db: Database) -> dict[str, Any]:
+    """N186 独立完整性自检（只读；不建恢复会话、不写任何状态）。
+
+    复用 preview 的校验内核——_load_manifest 的 manifest 结构/版本规则、
+    _sha256_stream 的流式哈希口径、_sqlite_snapshot_is_valid 的
+    integrity 口径——但逐项分类为发现（findings + 具体问题），而不是
+    首个失败即抛异常中断，让「哪里坏了」显式呈现。"""
+    findings: dict[str, bool] = {
+        "checksumOk": True,
+        "manifestCountsMatch": True,
+        "readable": True,
+        "versionCompatible": True,
+    }
+    issues: dict[str, Any] = {
+        "corruptFile": [],
+        "missingAttachment": [],
+        "versionIncompatible": None,
+    }
+    manifest_summary: dict[str, Any] | None = None
+
+    def _report() -> dict[str, Any]:
+        ok = all(findings.values())
+        manifest_block = dict(manifest_summary) if manifest_summary is not None else None
+        return {
+            "ok": ok,
+            "findings": findings,
+            "issues": issues,
+            "manifest": manifest_block,
+        }
+
+    def _fail_version(field: str, backup: Any, current: Any) -> None:
+        findings["versionCompatible"] = False
+        issues["versionIncompatible"] = {
+            "field": field,
+            "backup": backup,
+            "current": current,
+        }
+
+    try:
+        archive = zipfile.ZipFile(zip_path)
+    except (zipfile.BadZipFile, EOFError, RuntimeError, OSError):
+        # 归档整体不可读：四项发现按「无法验证 = 不通过」如实报告。
+        findings["checksumOk"] = False
+        findings["manifestCountsMatch"] = False
+        findings["readable"] = False
+        issues["corruptFile"].append(zip_path.name)
+        return _report()
+
+    with archive:
+        names = set(archive.namelist())
+        manifest: dict[str, Any] | None = None
+        try:
+            manifest = _load_manifest(archive)
+        except BackupUnsupportedVersion:
+            # manifest 本身可解析，只是版本更新：继续对余下内容做诚实
+            # 自检（re-parse 一次以获得 files），并标注不兼容。
+            try:
+                candidate = json.loads(archive.read("manifest.json").decode("utf-8"))
+            except Exception:  # noqa: BLE001 — 损坏如实报告
+                candidate = None
+            if (
+                isinstance(candidate, dict)
+                and isinstance(candidate.get("files"), list)
+                and candidate["files"]
+            ):
+                manifest = candidate
+            else:
+                findings["manifestCountsMatch"] = False
+                findings["readable"] = False
+                issues["corruptFile"].append("manifest.json")
+        except BackupInvalid:
+            findings["manifestCountsMatch"] = False
+            findings["readable"] = False
+            issues["corruptFile"].append("manifest.json")
+
+        if manifest is None:
+            return _report()
+
+        manifest_summary = {
+            "createdAt": manifest.get("createdAt"),
+            "lumiVersion": manifest.get("lumiVersion"),
+            "lumiDbSchemaVersion": manifest.get("lumiDbSchemaVersion"),
+            "currentDbSchemaVersion": _current_db_schema(db),
+            "components": manifest.get("components", []),
+        }
+
+        # ---- 版本兼容（与 preview 同口径：backupSchemaVersion 上限 +
+        #      lumiDbSchemaVersion 不得超过当前库）----
+        schema_version = manifest.get("backupSchemaVersion")
+        if schema_version != BACKUP_SCHEMA_VERSION:
+            _fail_version("backupSchemaVersion", schema_version, BACKUP_SCHEMA_VERSION)
+        db_version = manifest.get("lumiDbSchemaVersion")
+        if not isinstance(db_version, int):
+            findings["versionCompatible"] = False
+            issues["versionIncompatible"] = {
+                "field": "lumiDbSchemaVersion",
+                "backup": db_version,
+                "current": _current_db_schema(db),
+            }
+        elif db_version > _current_db_schema(db):
+            _fail_version("lumiDbSchemaVersion", db_version, _current_db_schema(db))
+
+        # ---- 逐文件 checksum / size（缺 → missingAttachment；不匹配 →
+        #      corruptFile），复用 restore 的流式哈希口径 ----
+        declared: set[str] = {"manifest.json"}
+        for entry in manifest["files"]:
+            path = entry.get("path")
+            if not isinstance(path, str) or not path:
+                findings["manifestCountsMatch"] = False
+                issues["corruptFile"].append("manifest.json")
+                continue
+            declared.add(path)
+            if path not in names:
+                findings["checksumOk"] = False
+                findings["manifestCountsMatch"] = False
+                issues["missingAttachment"].append(path)
+                continue
+            expected_sha = entry.get("sha256")
+            expected_size = entry.get("size")
+            if not isinstance(expected_sha, str) or not isinstance(expected_size, int):
+                findings["manifestCountsMatch"] = False
+                issues["corruptFile"].append(path)
+                continue
+            try:
+                info = archive.getinfo(path)
+                if info.file_size > MAX_MEMBER_BYTES:
+                    raise BackupInvalid("Backup contains an oversized file.")
+                with archive.open(path) as member:
+                    digest = _sha256_stream(member)
+                if digest != expected_sha or info.file_size != expected_size:
+                    findings["checksumOk"] = False
+                    issues["corruptFile"].append(path)
+            except (
+                zipfile.BadZipFile,
+                EOFError,
+                RuntimeError,
+                OSError,
+                BackupInvalid,
+            ):
+                findings["checksumOk"] = False
+                findings["readable"] = False
+                issues["corruptFile"].append(path)
+
+        # ---- 计数一致：声明集合与归档成员一一对应（多余成员同属失配）----
+        undeclared = names - declared
+        if undeclared:
+            findings["manifestCountsMatch"] = False
+            issues["corruptFile"].extend(sorted(undeclared)[:10])
+
+        # ---- 可读性：lumi.sqlite 成员 integrity_check（有界落盘后检查）----
+        if "lumi.sqlite" in names and findings["checksumOk"]:
+            fd, tmp_name = tempfile.mkstemp(prefix=".verify-", suffix=".sqlite")
+            os.close(fd)
+            tmp = Path(tmp_name)
+            try:
+                info = archive.getinfo("lumi.sqlite")
+                if info.file_size <= MAX_MEMBER_BYTES:
+                    with archive.open("lumi.sqlite") as member, tmp.open("wb") as out:
+                        while True:
+                            chunk = member.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                    if not _sqlite_snapshot_is_valid(tmp):
+                        findings["readable"] = False
+                        issues["corruptFile"].append("lumi.sqlite")
+            except (zipfile.BadZipFile, EOFError, RuntimeError, OSError):
+                findings["readable"] = False
+                issues["corruptFile"].append("lumi.sqlite")
+            finally:
+                tmp.unlink(missing_ok=True)
+
+    return _report()
 
 
 def _reject_unsafe_member(name: str, info: zipfile.ZipInfo) -> str:
