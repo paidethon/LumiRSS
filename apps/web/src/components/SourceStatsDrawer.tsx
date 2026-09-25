@@ -12,17 +12,28 @@
  * 数据 = GET /sources/volume?days=30&daily=true（派生投影聚合，只读，
  * 不复制 RSS 全文）。 */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, Check, Copy, ExternalLink, QrCode } from 'lucide-react'
 import { renderSVG } from 'uqr'
-import { getSubscriptionVolume } from '../api/client'
+import { getSubscriptionVolume, listSourceOverrides } from '../api/client'
+import { useSetSourceOverrideMutation } from '../api/queries'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
 import { EmptyState } from './ui/EmptyState'
 import { Skeleton } from './ui/Skeleton'
 
 const WINDOW_DAYS = 30
+
+/** F032 语言档（ISO 639-1；空 = 未标注）。 */
+const LANGUAGE_OPTIONS = ['zh', 'en', 'ja', 'de', 'fr', 'es', 'ru'] as const
+/** F031 同步优先级档（服务端约束 0..2；FreshRSS 拥有上游调度，
+ * 优先级的当前消费点是来源列表排序与统计展示——诚实标注）。 */
+const PRIORITY_OPTIONS = [
+  { value: 0, label: '普通' },
+  { value: 1, label: '高' },
+  { value: 2, label: '低' },
+] as const
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -187,6 +198,11 @@ export function SourceStatsDrawer({
             </div>
           </section>
 
+          <SourceMetadataEditor
+            feedUrl={feedUrl}
+            unreadProjected={item.unreadProjected ?? null}
+          />
+
           <section className="flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm" onClick={copyFeed}>
@@ -231,5 +247,137 @@ export function SourceStatsDrawer({
         </div>
       )}
     </Dialog>
+  )
+}
+
+/** F032/F034/F031 元数据编辑区：语言标注 / 未读警戒阈值 / 同步优先级。
+ * 保存走 PUT /sources/overrides（sentinel：null=清除，缺席=不改）；
+ * 警戒：投影未读数超过阈值时行内警示。 */
+function SourceMetadataEditor({
+  feedUrl,
+  unreadProjected,
+}: {
+  feedUrl: string
+  unreadProjected: number | null
+}) {
+  const overrides = useQuery({
+    queryKey: ['source-overrides'],
+    queryFn: () => listSourceOverrides(),
+    staleTime: 60_000,
+  })
+  const current = overrides.data?.items?.find((o) => o.feedUrl === feedUrl) ?? null
+
+  const [language, setLanguage] = useState<string>(current?.language ?? '')
+  const [thresholdText, setThresholdText] = useState<string>(
+    current?.unreadAlertThreshold != null ? String(current.unreadAlertThreshold) : '',
+  )
+  const [priority, setPriority] = useState<number>(current?.syncPriority ?? 0)
+  const [saved, setSaved] = useState(false)
+  const save = useSetSourceOverrideMutation()
+
+  useEffect(() => {
+    setLanguage(current?.language ?? '')
+    setThresholdText(
+      current?.unreadAlertThreshold != null ? String(current.unreadAlertThreshold) : '',
+    )
+    setPriority(current?.syncPriority ?? 0)
+  }, [current?.language, current?.unreadAlertThreshold, current?.syncPriority])
+
+  const thresholdInvalid =
+    thresholdText.trim() !== '' && !/^\d+$/.test(thresholdText.trim())
+
+  const handleSave = () => {
+    save.mutate(
+      {
+        feedUrl,
+        language: language === '' ? null : language,
+        unreadAlertThreshold:
+          thresholdText.trim() === '' ? null : Number(thresholdText.trim()),
+        syncPriority: priority,
+      },
+      {
+        onSuccess: () => {
+          setSaved(true)
+          setTimeout(() => setSaved(false), 2000)
+        },
+      },
+    )
+  }
+
+  const overThreshold =
+    current?.unreadAlertThreshold != null &&
+    unreadProjected != null &&
+    unreadProjected > current.unreadAlertThreshold
+
+  return (
+    <section className="flex flex-col gap-2 border-t border-[var(--lumi-border)] pt-3">
+      <h4 className="text-xs font-medium text-[var(--lumi-text-secondary)]">来源元数据</h4>
+      {overThreshold && (
+        <p
+          role="status"
+          data-testid="source-unread-alert"
+          className="text-xs text-[var(--lumi-warning,#b45309)]"
+        >
+          投影未读 {unreadProjected} 条，已超过警戒阈值 {current?.unreadAlertThreshold}。
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--lumi-text-secondary)]">
+        <label className="flex items-center gap-1">
+          语言
+          <select
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 py-1 text-xs text-[var(--lumi-text-primary)]"
+          >
+            <option value="">未标注</option>
+            {LANGUAGE_OPTIONS.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
+          未读警戒
+          <input
+            type="text"
+            inputMode="numeric"
+            value={thresholdText}
+            placeholder="未设置"
+            onChange={(event) => setThresholdText(event.target.value)}
+            className="w-16 rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 py-1 text-xs text-[var(--lumi-text-primary)]"
+            aria-invalid={thresholdInvalid}
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          优先级
+          <select
+            value={priority}
+            onChange={(event) => setPriority(Number(event.target.value))}
+            className="rounded-[var(--lumi-radius-sm)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-1.5 py-1 text-xs text-[var(--lumi-text-primary)]"
+          >
+            {PRIORITY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={save.isPending || thresholdInvalid}
+          onClick={handleSave}
+        >
+          {saved ? <Check aria-hidden className="size-4" /> : null}
+          {saved ? '已保存' : '保存'}
+        </Button>
+      </div>
+      {save.isError && (
+        <p role="alert" className="text-xs text-[var(--lumi-danger,#b91c1c)]">
+          保存失败，请稍后重试。
+        </p>
+      )}
+    </section>
   )
 }

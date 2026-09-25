@@ -2513,6 +2513,10 @@ class SourceOverrideResult(BaseModel):
     aiDisabled: bool = False
     # N015：分时静音窗口（每周循环；[]/None = 未启用）。
     muteWindows: list[dict[str, object]] | None = None
+    # F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级（NULL=未设置）。
+    language: str | None = None
+    unreadAlertThreshold: int | None = None
+    syncPriority: int | None = None
     updatedAt: str = ""
 
 
@@ -2532,6 +2536,10 @@ class SourceOverrideUpdate(BaseModel):
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
     # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
     muteWindows: list[dict[str, object]] | None = None
+    # F032/F034/F031：来源元数据（None=清除，缺席=不改）。
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2}(-[A-Za-z]{2,4})?$")
+    unreadAlertThreshold: int | None = Field(default=None, ge=1, le=100_000)
+    syncPriority: int | None = Field(default=None, ge=0, le=2)
 
 
 class SourceAliasView(BaseModel):
@@ -2643,6 +2651,8 @@ class SubscriptionVolumeItem(BaseModel):
     collectionTiming: CollectionTiming | None = None
     # F024：daily=true 时的按天分桶（投影未覆盖 → None）。
     daily: list[VolumeDailyBucket] | None = None
+    # F034：投影口径未读数（未覆盖 → None，不冒充零）。
+    unreadProjected: int | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):

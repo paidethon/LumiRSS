@@ -288,6 +288,16 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
         await set_ai_disabled(request.app.state.db, payload.feedUrl, bool(payload.aiDisabled))
         if payload.aiDisabled:
             await _drop_feed_from_rag(request, payload.feedUrl)
+    # F032/F034/F031：语言 / 未读警戒阈值 / 同步优先级。
+    if "language" in fields or "unreadAlertThreshold" in fields or "syncPriority" in fields:
+        metadata_kwargs: dict[str, object] = {}
+        if "language" in fields:
+            metadata_kwargs["language"] = payload.language
+        if "unreadAlertThreshold" in fields:
+            metadata_kwargs["unread_alert_threshold"] = payload.unreadAlertThreshold
+        if "syncPriority" in fields:
+            metadata_kwargs["sync_priority"] = payload.syncPriority
+        await store.set_source_metadata(payload.feedUrl, **metadata_kwargs)
     result = await store.get_override(payload.feedUrl)
     if result is None:
         result = {
@@ -470,9 +480,16 @@ async def subscription_volume(
         sync_rows = await db.fetch_all(
             "SELECT feed_url, MAX(published_at) AS overall_published, MAX(crawled_at) AS overall_crawled, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
         )
+        # F034：投影口径的每源未读数（search_entries.read=0，派生可重建；
+        # 未覆盖 → None，不冒充零）。
+        unread_rows = await db.fetch_all(
+            "SELECT feed_url, COUNT(*) AS n FROM search_entries WHERE read = 0 GROUP BY feed_url"
+        )
+        unread_counts = {str(row["feed_url"]): int(row["n"]) for row in unread_rows}
     except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
         window_rows = []
         sync_rows = []
+        unread_counts = {}
     counts = {
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
@@ -537,6 +554,7 @@ async def subscription_volume(
                     if daily
                     else None
                 ),
+                unreadProjected=unread_counts.get(subscription.feed_url),
             )
         )
     return SubscriptionVolumeResponse(

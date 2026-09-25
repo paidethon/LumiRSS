@@ -16376,6 +16376,8 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Language */
+            language?: string | null;
             /** Mutewindows */
             muteWindows?: {
                 [key: string]: unknown;
@@ -16388,6 +16390,10 @@ export interface components {
             showFrom?: string | null;
             /** Stalealerthours */
             staleAlertHours?: number | null;
+            /** Syncpriority */
+            syncPriority?: number | null;
+            /** Unreadalertthreshold */
+            unreadAlertThreshold?: number | null;
             /**
              * Updatedat
              * @default
@@ -16407,6 +16413,8 @@ export interface components {
             feedUrl: string;
             /** Hiddenuntil */
             hiddenUntil?: string | null;
+            /** Language */
+            language?: string | null;
             /** Mutewindows */
             muteWindows?: {
                 [key: string]: unknown;
@@ -16419,6 +16427,10 @@ export interface components {
             showFrom?: string | null;
             /** Stalealerthours */
             staleAlertHours?: number | null;
+            /** Syncpriority */
+            syncPriority?: number | null;
+            /** Unreadalertthreshold */
+            unreadAlertThreshold?: number | null;
         };
         /**
          * SourceRegistryEntry
@@ -16675,6 +16687,8 @@ export interface components {
             publishedCount?: number | null;
             /** Title */
             title: string;
+            /** Unreadprojected */
+            unreadProjected?: number | null;
         };
         /**
          * SubscriptionVolumeResponse

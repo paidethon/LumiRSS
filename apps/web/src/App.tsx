@@ -58,7 +58,10 @@ const UndoSnackbar = lazy(() => import('./components/UndoSnackbar'))
 const SettingsConflictDialog = lazy(() => import('./components/SettingsConflictDialog'))
 const VersionUpdateToast = lazy(() => import('./components/VersionUpdateToast'))
 const InstallHint = lazy(() => import('./components/InstallHint'))
-import Reader from './components/Reader'
+// Reader 是登录后才渲染的阅读面（登录前 AuthEntrance 独占），其
+// 重子件（翻译/TTS/批注/语音）已各自懒加载——本体也按既有「一级页
+// lazy」契约分包，登录态首屏只拉时间线所需代码（bundle guard）。
+const Reader = lazy(() => import('./components/Reader'))
 import Sidebar from './components/Sidebar'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
@@ -546,7 +549,9 @@ export default function App() {
               </button>
             </div>
           )}
-          <Reader />
+          <Suspense fallback={<Skeleton className="h-full w-full" data-testid="reader-lazy-loading" />}>
+            <Reader />
+          </Suspense>
         </section>
         )}
       </main>

@@ -2277,10 +2277,14 @@ export function useSetSourceOverrideMutation() {
       hiddenUntil?: string | null
       showFrom?: string | null
       staleAlertHours?: number | null
+      language?: string | null
+      unreadAlertThreshold?: number | null
+      syncPriority?: number | null
     }) => setSourceOverride(patch),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['entries'] })
       await queryClient.invalidateQueries({ queryKey: ['stale-sources'] })
+      await queryClient.invalidateQueries({ queryKey: ['sources-volume'] })
     },
   })
 }
