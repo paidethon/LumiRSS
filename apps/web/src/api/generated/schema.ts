@@ -2636,6 +2636,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entries/{entry_ref}/translation-compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Translation Block
+         * @description N084：同一块正文经两个已配置提供方对照翻译（翻译引擎 vs chat
+         *     用途 AI Profile）。EPHEMERAL：不写任何缓存行；成本口径 chars×2。
+         *     只配置了一个提供方 / 引擎为 browser / 两侧同一配置 → 诚实
+         *     available=false + reason。
+         */
+        post: operations["compare_translation_block_api_v1_entries__entry_ref__translation_compare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entries/{entry_ref}/translation-verification": {
         parameters: {
             query?: never;
@@ -2748,6 +2771,47 @@ export interface paths {
          * @description F062：撤销一段译文的手工修订（幂等清空；无缓存行 → 404）。
          */
         delete: operations["delete_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Translation Segment Revision History
+         * @description N085：一段的修订历史（最新在前；每段上限 5 条）。无缓存行 → 404。
+         */
+        get: operations["get_translation_segment_revision_history_api_v1_entries__entry_ref__translation_segments__block_index__revision_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Translation Segment Revision
+         * @description N085：恢复上一版修订——弹出最新历史条目作为当前修订（当前文本
+         *     不回推历史；逐次点击逐版回退）。无历史 / 无缓存行 → 404。
+         */
+        post: operations["restore_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_restore_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -19921,6 +19985,78 @@ export interface components {
             pendingToken: string;
         };
         /**
+         * TranslationCompareBody
+         * @description POST …/translation-compare body（N084）。
+         */
+        TranslationCompareBody: {
+            /** Blockindex */
+            blockIndex: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * TranslationCompareSide
+         * @description N084：一侧的对照译文（失败侧 text=None + failureType）。
+         */
+        TranslationCompareSide: {
+            /** Failuretype */
+            failureType?: string | null;
+            /** Label */
+            label: string;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * TranslationCompareView
+         * @description POST /api/v1/entries/{ref}/translation-compare（N084，ephemeral）。
+         *
+         *     available=false 时 reason 说明拒绝原因（provider_not_configured /
+         *     browser_engine / providers_identical / empty_text）。
+         */
+        TranslationCompareView: {
+            /** Available */
+            available: boolean;
+            /**
+             * Estimatedchars
+             * @default 0
+             */
+            estimatedChars: number;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Sides
+             * @default []
+             */
+            sides: components["schemas"]["TranslationCompareSide"][];
+        };
+        /**
+         * TranslationRevisionHistoryItem
+         * @description N085：一条被替换下来的历史修订。
+         */
+        TranslationRevisionHistoryItem: {
+            /** Oldtext */
+            oldText: string;
+            /** Replacedat */
+            replacedAt: string;
+        };
+        /**
+         * TranslationRevisionHistoryView
+         * @description GET …/translation/segments/{index}/revision/history（N085）。
+         */
+        TranslationRevisionHistoryView: {
+            /** Index */
+            index: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["TranslationRevisionHistoryItem"][];
+        };
+        /**
          * TranslationSegmentBlockIn
          * @description One client-segmented content block.
          */
@@ -25051,6 +25187,41 @@ export interface operations {
             };
         };
     };
+    compare_translation_block_api_v1_entries__entry_ref__translation_compare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslationCompareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationCompareView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_translation_verification_api_v1_entries__entry_ref__translation_verification_get: {
         parameters: {
             query?: {
@@ -25268,6 +25439,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_translation_segment_revision_history_api_v1_entries__entry_ref__translation_segments__block_index__revision_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslationRevisionHistoryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_ref: string;
+                block_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentRevisionResult"];
+                };
             };
             /** @description Validation Error */
             422: {

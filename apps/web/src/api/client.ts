@@ -2172,6 +2172,78 @@ export async function deleteTranslationSegmentRevision(
   if (!response.ok) throw await toApiError(response)
 }
 
+/** N085：一段的修订历史（最新在前；cap 5）。 */
+export interface TranslationRevisionHistoryItem {
+  oldText: string
+  replacedAt: string
+}
+
+export async function getTranslationSegmentRevisionHistory(
+  entryRef: string,
+  blockIndex: number,
+): Promise<{ index: number; items: TranslationRevisionHistoryItem[] }> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/revision/history`,
+    { method: 'GET' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    index: number
+    items: TranslationRevisionHistoryItem[]
+  }
+}
+
+/** N085：恢复上一版修订（弹出最新历史条目作为当前修订）。 */
+export async function restoreTranslationSegmentRevision(
+  entryRef: string,
+  blockIndex: number,
+): Promise<{ index: number; userRevision: string; revisedAt: string; revisionStale: boolean }> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation/segments/${blockIndex}/revision/restore`,
+    { method: 'POST' },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    index: number
+    userRevision: string
+    revisedAt: string
+    revisionStale: boolean
+  }
+}
+
+/** N084：单块翻译提供方对照（ephemeral——不写缓存；成本 chars×2）。 */
+export interface TranslationCompareSide {
+  label: string
+  provider: string
+  model: string
+  text: string | null
+  failureType: string | null
+}
+
+export interface TranslationCompareResult {
+  available: boolean
+  reason: string | null
+  sides: TranslationCompareSide[]
+  estimatedChars: number
+}
+
+export async function compareTranslationBlock(
+  entryRef: string,
+  blockIndex: number,
+  text: string,
+): Promise<TranslationCompareResult> {
+  const response = await rawRequest(
+    `${API_BASE}/entries/${encodeURIComponent(entryRef)}/translation-compare`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ blockIndex, text }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as TranslationCompareResult
+}
+
 /** N086：把一块标记为「不翻译」（持久；该块不再参与生成）。 */
 export async function markNoTranslateBlock(
   entryRef: string,
