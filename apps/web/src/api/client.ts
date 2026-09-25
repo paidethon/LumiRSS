@@ -3456,15 +3456,12 @@ export async function setSourceOverride(patch: {
   aiDisabled?: boolean
   /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
   muteWindows?: { days: number[]; start: string; end: string }[] | null
-<<<<<<< HEAD
   /** N020：关注级别（null=恢复 normal，缺席=不改）。 */
   attentionLevel?: 'must_read' | 'normal' | 'low' | null
-=======
   /** F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级。 */
   language?: string | null
   unreadAlertThreshold?: number | null
   syncPriority?: number | null
->>>>>>> feat/r5-f-source
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
