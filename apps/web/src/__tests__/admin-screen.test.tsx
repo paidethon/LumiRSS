@@ -174,13 +174,13 @@ const SYSTEM: AdminSystemInfo = {
     libraryItems: 67,
   },
   services: [
-    { name: 'sqlite', configured: true, status: 'healthy', latencyMs: null },
-    { name: 'freshrss', configured: true, status: 'healthy', latencyMs: 23 },
-    { name: 'rsshub', configured: false, status: 'unconfigured', latencyMs: null },
-    { name: 'obsidian', configured: false, status: 'unconfigured', latencyMs: null },
-    { name: 'webdav', configured: false, status: 'unconfigured', latencyMs: null },
-    { name: 'ai', configured: true, status: 'configured', latencyMs: null },
-    { name: 'imap', configured: false, status: 'unconfigured', latencyMs: null },
+    { name: 'sqlite', configured: true, status: 'healthy', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    { name: 'freshrss', configured: true, status: 'healthy', latencyMs: 23, checkedAt: ISO(-5_000), stale: false },
+    { name: 'rsshub', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    { name: 'obsidian', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    { name: 'webdav', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    { name: 'ai', configured: true, status: 'configured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    { name: 'imap', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
   ],
   tasks: [
     { name: 'search_sync', enabled: true, state: 'running', lastRunAt: null },
@@ -668,6 +668,29 @@ describe('系统面板（P11）', () => {
       expect(mocks.getAdminSystem).toHaveBeenCalledTimes(2)
       expect(mocks.listAdminAudit).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('N194 探针时效：正常服务显示「检测于 X 前」；过期服务标注「可能过期」并取代正常徽标', async () => {
+    const staleServices = [
+      { name: 'sqlite', configured: true, status: 'healthy', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+      { name: 'freshrss', configured: true, status: 'healthy', latencyMs: 23, checkedAt: ISO(-360_000), stale: true },
+      { name: 'rsshub', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: null, stale: false },
+      { name: 'obsidian', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+      { name: 'webdav', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+      { name: 'ai', configured: true, status: 'configured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+      { name: 'imap', configured: false, status: 'unconfigured', latencyMs: null, checkedAt: ISO(-5_000), stale: false },
+    ]
+    mocks.getAdminSystem.mockResolvedValue({ ...SYSTEM, services: staleServices })
+    renderAdmin()
+    const services = await screen.findByTestId('admin-system-services')
+    // 正常探针：附带探针时间（相对时间随渲染时刻略有漂移，用模式断言）
+    expect(services).toHaveTextContent(/检测于 \d+ 秒前/)
+    // 过期探针：专用标记（可能过期），正常「正常」徽标被取代
+    const staleBadge = await screen.findByTestId('admin-service-stale-freshrss')
+    expect(staleBadge).toHaveTextContent(/检测于 \d+ 分钟前（可能过期）/)
+    expect(staleBadge).toHaveTextContent('可能过期')
+    // freshrss 行内不再出现独立的「正常」徽标文本——行内只有过期态。
+    expect(within(staleBadge).queryByText('正常')).not.toBeInTheDocument()
   })
 })
 

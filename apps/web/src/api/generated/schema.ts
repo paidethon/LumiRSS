@@ -5323,6 +5323,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/snapshots/{asset_uuid}/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Snapshot Resources
+         * @description N124：只删除选中类别的内联资源；条目本体与 library 行保留。
+         *
+         *     - 共享文件（sha256 去重让多行引用同一物理文件）→ 本行改写为
+         *       自己的私有新文件，旧文件留给其他引用行，绝不改写他人内容；
+         *     - 独占文件 → 原子改写（tmp + move；崩溃至多留下 reconcile()
+         *       可清扫的孤儿 tmp）；
+         *     - 被清理的子资源在既有完整性清单（resources 列）中如实标记
+         *       missing——随后的快照诊断端点按缺失回显；
+         *     - 内容变化 → RAG 标记 stale（与删除快照同一诚实语义）。
+         */
+        post: operations["cleanup_snapshot_resources_api_v1_library_snapshots__asset_uuid__cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/snapshots/{asset_uuid}/retry-failed": {
         parameters: {
             query?: never;
@@ -5338,6 +5366,31 @@ export interface paths {
          *     在 validate 层拒绝）；无失败 → no-op 返回 0（幂等）。
          */
         post: operations["retry_failed_resources_api_v1_library_snapshots__asset_uuid__retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/snapshots/{asset_uuid}/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Snapshot Storage
+         * @description N124：单个快照的资源预算。
+         *
+         *     ``totalBytes`` = 磁盘文件的真实大小（monolith 单文件化，子资源内联
+         *     为 base64 data: URI）；``breakdown`` 按 data: URI 的 MIME 类别算术
+         *     拆分（images 带内联数量；styles/attachments 计解码后字节）——纯
+         *     长度计算，绝不整包解码。
+         */
+        get: operations["snapshot_storage_api_v1_library_snapshots__asset_uuid__storage_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10897,6 +10950,32 @@ export interface paths {
         put?: never;
         /** Save As Template */
         post: operations["save_as_template_api_v1_workspaces__workspace_id__save_as_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Workspace
+         * @description N109：在「当前工作区自己的条目」内做标题 + 全文检索。
+         *
+         *     范围严格限定工作区成员关系：先把 workspace_items 的 ref 全部取出，
+         *     再按域查各自的派生投影（rss → search_entries.content_text；library
+         *     → search_library.body）。其他工作区的条目即使内容命中也绝不返回；
+         *     投影缺失（ref 已失效/未同步）的成员诚实跳过。命中 ≤200 条，每条
+         *     摘要 ≤160 字符。
+         */
+        get: operations["search_workspace_api_v1_workspaces__workspace_id__search_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -21434,6 +21513,17 @@ export interface components {
             sectionIds?: string[] | null;
         };
         /**
+         * SnapshotCleanupRequest
+         * @description POST /api/v1/library/snapshots/{id}/cleanup body.
+         *
+         *     ``kinds`` 非空、白名单（images/styles/attachments）；条目本体
+         *     （页面 HTML 文本 / 标题 / library 行）永不参与清理。
+         */
+        SnapshotCleanupRequest: {
+            /** Kinds */
+            kinds: ("images" | "styles" | "attachments")[];
+        };
+        /**
          * SnapshotCreate
          * @description POST /api/v1/library/snapshots.
          */
@@ -23289,6 +23379,52 @@ export interface components {
          */
         WorkspaceResumeResponse: {
             pointer?: components["schemas"]["WorkspaceResumePointer"] | null;
+            /** Workspaceid */
+            workspaceId: string;
+        };
+        /**
+         * WorkspaceSearchHit
+         * @description N109：工作区内检索的单条命中（成员范围严格限定）。
+         */
+        WorkspaceSearchHit: {
+            /**
+             * Domain
+             * @enum {string}
+             */
+            domain: "rss" | "library";
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+            /** Itemref */
+            itemRef: string;
+            /**
+             * Matchedin
+             * @default title
+             * @enum {string}
+             */
+            matchedIn: "title" | "content" | "title+content";
+            /** Title */
+            title: string;
+        };
+        /**
+         * WorkspaceSearchResponse
+         * @description Envelope for GET /api/v1/workspaces/{id}/search?q=（N109）.
+         *
+         *     ``results`` 上限 200 条（``truncated`` 如实标记截断）；只包含该
+         *     工作区自己的成员——其他工作区的条目绝不出现。
+         */
+        WorkspaceSearchResponse: {
+            /** Query */
+            query: string;
+            /** Results */
+            results: components["schemas"]["WorkspaceSearchHit"][];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
             /** Workspaceid */
             workspaceId: string;
         };
@@ -32679,7 +32815,77 @@ export interface operations {
             };
         };
     };
+    cleanup_snapshot_resources_api_v1_library_snapshots__asset_uuid__cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_failed_resources_api_v1_library_snapshots__asset_uuid__retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snapshot_storage_api_v1_library_snapshots__asset_uuid__storage_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -42020,6 +42226,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_workspace_api_v1_workspaces__workspace_id__search_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSearchResponse"];
                 };
             };
             /** @description Validation Error */

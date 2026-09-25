@@ -48,6 +48,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react'
 import { MarkdownImportPanel } from '../MarkdownImportPanel'
@@ -64,6 +65,7 @@ import {
   useWorkspaceContents,
   useWorkspaceGroups,
   useWorkspaceResume,
+  useWorkspaceSearch,
   useWorkspaces,
 } from '../../api/queries'
 import { ApiError, exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
@@ -107,6 +109,7 @@ import {
 import type { RecentClosedItem } from '../../lib/workspace-tabs'
 import type { ResolvedItem } from '../../api/types'
 import type { Workspace, WorkspaceGroupsResponse } from '../../api/types'
+import type { WorkspaceSearchHit } from '../../api/client'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -117,6 +120,84 @@ import UnifiedContentCard from '../UnifiedContentCard'
 import { staleState } from '../../lib/stale-label'
 import { DOCS_LINKS } from '../../lib/docs-links'
 import { cx } from '../ui/cx'
+
+/** N109：本工作区检索结果（命中 = 成员范围严格限定；打开 = 复用预览窗格）。 */
+const MATCHED_IN_TEXT: Record<WorkspaceSearchHit['matchedIn'], string> = {
+  title: '标题',
+  content: '全文',
+  'title+content': '标题+全文',
+}
+
+function WorkspaceSearchResults({
+  search,
+  query,
+  onOpen,
+}: {
+  search: { isPending: boolean; isError: boolean; refetch: () => void; data?: { truncated: boolean; results: WorkspaceSearchHit[] } | undefined }
+  query: string
+  onOpen: (hit: WorkspaceSearchHit) => void
+}) {
+  if (search.isPending) {
+    return (
+      <div className="flex flex-col gap-2" aria-label="搜索中">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    )
+  }
+  if (search.isError) {
+    return (
+      <div role="alert" className="flex flex-col gap-2">
+        <p className="text-xs text-[var(--lumi-danger)]">搜索失败，请稍后重试。</p>
+        <div>
+          <Button size="sm" variant="secondary" onClick={() => search.refetch()}>
+            重试
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  const results = search.data?.results ?? []
+  if (results.length === 0) {
+    return (
+      <p className="text-xs text-[var(--lumi-text-tertiary)]" data-testid="workspace-search-empty">
+        没有匹配「{query}」的条目。
+      </p>
+    )
+  }
+  return (
+    <>
+      <ul className="flex flex-col gap-1.5" data-testid="workspace-search-results" aria-label="本工作区搜索结果">
+        {results.map((hit) => (
+          <li
+            key={hit.itemRef}
+            className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
+          >
+            <div className="flex min-h-7 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-[var(--lumi-text-primary)]">
+                {hit.title !== '' ? hit.title : hit.itemRef}
+              </span>
+              <span className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-secondary)]">
+                {MATCHED_IN_TEXT[hit.matchedIn]}
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => onOpen(hit)}>
+                打开
+              </Button>
+            </div>
+            {hit.excerpt !== '' && (
+              <p className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                {hit.excerpt}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {search.data?.truncated && (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">结果较多，仅显示前 200 条。</p>
+      )}
+    </>
+  )
+}
 
 /** 新建工作区 Dialog（条件挂载；创建成功后选中新工作区）。 */
 function CreateWorkspaceDialog({
@@ -973,6 +1054,10 @@ export default function WorkspacesPage() {
   const [moveGroupTarget, setMoveGroupTarget] = useState<ResolvedItem | null>(null)
   // N113：移动到分节 Dialog 目标。
   const [moveSectionTarget, setMoveSectionTarget] = useState<ResolvedItem | null>(null)
+  // N109：本工作区内检索（严格限定成员范围；空 = 不搜，不发请求）。
+  const [searchText, setSearchText] = useState('')
+  const search = useWorkspaceSearch(effectiveSelectedId, searchText)
+  const searchActive = searchText.trim() !== ''
 
   // 换工作区：重载本机折叠状态 + 关闭预览（预览属于原工作区上下文）。
   const workspaceKey = effectiveSelectedId ?? ''
@@ -987,6 +1072,7 @@ export default function WorkspacesPage() {
     setPreviewBlocked(false)
     setMoveGroupTarget(null)
     setMoveSectionTarget(null)
+    setSearchText('')
   }
 
   // ---- P15：续读指针 + 跨设备并发诚实提示 ----
@@ -1095,6 +1181,17 @@ export default function WorkspacesPage() {
     discardPreviewDraft(effectiveSelectedId, preview.ref)
     setPreviewDraft('')
     setPreviewBlocked(false)
+  }
+
+  // N109：搜索结果「打开」——优先复用当前列表里的完整 ResolvedItem
+  //（保留 stale 标记等），不在当前解析页里时回退为最小预览目标。
+  const openSearchHit = (hit: WorkspaceSearchHit) => {
+    const resolved = resolvedItems.find((item) => item.ref === hit.itemRef)
+    if (resolved !== undefined) {
+      openPreview(resolved)
+      return
+    }
+    openPreview({ ref: hit.itemRef, title: hit.title, excerpt: hit.excerpt })
   }
 
   const restoreRecentlyClosed = (entry: RecentClosedItem) => {
@@ -1554,6 +1651,34 @@ export default function WorkspacesPage() {
             </ul>
           </section>
         )}
+        {/* N109：本工作区检索（列表视图；搜索时以结果列表取代内容列表） */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
+          <div className="mt-3 flex flex-col gap-2" data-testid="workspace-search">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lumi-text-tertiary)]"
+              />
+              <input
+                type="search"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="搜索本工作区（标题与全文）"
+                aria-label="搜索本工作区"
+                data-testid="workspace-search-input"
+                className={cx(
+                  'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+                  'py-2.5 pl-9 pr-3 text-sm text-[var(--lumi-text-primary)]',
+                  'placeholder:text-[var(--lumi-text-tertiary)]',
+                  'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+                )}
+              />
+            </div>
+            {searchActive && (
+              <WorkspaceSearchResults search={search} query={searchText.trim()} onOpen={openSearchHit} />
+            )}
+          </div>
+        )}
         {/* 选中工作区的内容：看板（F085/F086）或列表；大纲（N113-N120） */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'outline' ? (
           <WorkspaceOutlinePanel
@@ -1562,7 +1687,7 @@ export default function WorkspacesPage() {
           />
         ) : effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
           <WorkspaceBoardView workspaceId={effectiveSelectedId} />
-        ) : effectiveSelectedId !== null && !workspaces.isError && (
+        ) : effectiveSelectedId !== null && !workspaces.isError && !searchActive && (
           contents.isPending ? (
             <ul className="mt-3 flex flex-col gap-2" aria-label="工作区内容加载中">
               {Array.from({ length: 3 }, (_, i) => (
