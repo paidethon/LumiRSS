@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from lumirss.main import app
 
 PASSWORD = secrets.token_urlsafe(16)
+WRONG_PASSWORD = 'wrong-' + secrets.token_urlsafe(6)
 MEMBER = "n190member"
 
 
@@ -113,8 +114,14 @@ def test_n190_request_blocks_login_and_owner_restores(monkeypatch, tmp_path):
         # 运营者恢复（既有 resume 端点 = 清停用标记）
         users = session_client.get("/api/v1/admin/users", headers=owner).json()
         member_id = next(r["id"] for r in users if r["username"] == MEMBER)
+        # N009 提权门：resume 是敏感操作——先 step-up 再携带令牌。
+        step = session_client.post(
+            "/api/v1/admin/step-up", json={"password": PASSWORD}, headers=owner
+        )
+        assert step.status_code == 200, step.text
+        owner_step = {**owner, "X-Lumi-Step-Up": step.json()["token"]}
         resumed = session_client.post(
-            f"/api/v1/admin/users/{member_id}/resume", headers=owner
+            f"/api/v1/admin/users/{member_id}/resume", headers=owner_step
         )
         assert resumed.status_code == 200, resumed.text
 
