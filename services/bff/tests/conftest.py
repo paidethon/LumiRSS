@@ -12,6 +12,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_db_path(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """每个测试默认拿到独立临时 LUMIRSS_DB_PATH——不使用 client 夹具的
+    测试（如直接构造 service 的单测）也不会落到开发者真实 data/ 库。
+    需要自定路径的测试随后 monkeypatch 覆盖即可（后设置者生效）。"""
+    import os
+
+    monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path_factory.mktemp("lumi-db") / "lumi.sqlite"))
+    assert os.environ["LUMIRSS_DB_PATH"]  # keep linters honest about the import
+
+
+@pytest.fixture(autouse=True)
 def _isolate_freshrss_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FRESHRSS_DATA_DIR", "")
 
