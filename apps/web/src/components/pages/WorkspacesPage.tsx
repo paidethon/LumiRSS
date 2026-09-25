@@ -80,6 +80,7 @@ import {
   TemplatesDialog,
 } from '../WorkspaceExtras'
 import { WorkspaceSnapshotsPanel } from '../WorkspaceSnapshotsPanel'
+import { WorkspaceCollectRulesPanel } from '../WorkspaceCollectRulesPanel'
 import {
   PreviewDraftActions,
   PreviewDraftNotice,
@@ -1594,9 +1595,13 @@ export default function WorkspacesPage() {
             </ul>
           )
         )}
-        {/* N105：会话快照区（保存 / 恢复 / 删除）。 */}
+        {/* N105：会话快照区（保存 / 恢复 / 删除 / N115 对比）。 */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
           <WorkspaceSnapshotsPanel workspaceId={effectiveSelectedId} />
+        )}
+        {/* N118：收集规则区（手动触发：预演 → 收进工作区）。 */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
+          <WorkspaceCollectRulesPanel workspaceId={effectiveSelectedId} />
         )}
       </div>
       {createOpen && (

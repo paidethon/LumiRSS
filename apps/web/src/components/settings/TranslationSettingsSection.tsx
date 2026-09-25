@@ -23,6 +23,7 @@ import {
   useTestLibreTranslateMutation,
   useUpdateAiSettingsMutation,
 } from '../../api/queries'
+import { LocalTranslationCapabilitySection } from './LocalTranslationCapabilitySection'
 import { Select } from '../ui/Select'
 import { Button } from '../ui/Button'
 import { cx } from '../ui/cx'
@@ -291,6 +292,10 @@ export function TranslationSettingsSection() {
           </table>
         </section>
       )}
+
+      {/* N088/N089：本机翻译能力（离线能力检测 + 语言对支持与模型存储）。
+          独立于当前引擎选择——检测的是「此设备」的能力，任何引擎下都诚实可得。 */}
+      <LocalTranslationCapabilitySection remoteEndpoint={s.baseUrl} />
 
       <section className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-3.5">
         <h3 className="text-sm font-medium text-[var(--lumi-text-primary)]">AI 提供者与模型</h3>

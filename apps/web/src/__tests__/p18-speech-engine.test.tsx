@@ -208,13 +208,15 @@ describe('P18 — 逐块朗读引擎', () => {
     expect(events.ended).toBe(0)
   })
 
-  it('utterance onerror → onError 透出并停机（错误后不再接续）', () => {
+  it('utterance onerror → onError 透出并停机（错误后不再接续；N100 未分类话术）', () => {
     const speech = stubSpeech(VOICES)
     const { engine, events } = makeEngine()
 
     engine.speakFrom(['一', '二'], 0)
     ;(speech.speak.mock.calls[0]![0] as MockUtterance).onerror!()
-    expect(events.errors).toEqual(['朗读失败，请重试。'])
+    expect(events.errors).toEqual([
+      '朗读失败：语音引擎报错但原因未分类。请重试；持续失败请换一个声音再试。',
+    ])
     expect(engine.speaking).toBe(false)
     expect(speech.speak).toHaveBeenCalledTimes(1)
   })
@@ -393,7 +395,7 @@ describe('P18 — ReaderHeader 朗读面板接线', () => {
       expect(paragraphs[0]!.hasAttribute('data-speech-active')).toBe(true)
 
       fireEvent.click(screen.getByRole('button', { name: '朗读设置' }))
-      expect(screen.getByText('正在朗读 第 1 / 3 段')).toBeInTheDocument()
+      expect(screen.getByText('正在朗读 第 1 / 3 段 · 剩余 2 段')).toBeInTheDocument()
       expect(screen.getByText(BLOCK_TEXT.slice(0, 40))).toBeInTheDocument()
 
       act(() => {
@@ -401,11 +403,11 @@ describe('P18 — ReaderHeader 朗读面板接线', () => {
       })
       expect(paragraphs[1]!.hasAttribute('data-speech-active')).toBe(true)
       expect(paragraphs[0]!.hasAttribute('data-speech-active')).toBe(false)
-      expect(screen.getByText('正在朗读 第 2 / 3 段')).toBeInTheDocument()
+      expect(screen.getByText('正在朗读 第 2 / 3 段 · 剩余 1 段')).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: '停止朗读' }))
       expect(paragraphs[1]!.hasAttribute('data-speech-active')).toBe(false)
-      expect(screen.queryByText('正在朗读 第 2 / 3 段')).not.toBeInTheDocument()
+      expect(screen.queryByText('正在朗读 第 2 / 3 段 · 剩余 1 段')).not.toBeInTheDocument()
     } finally {
       cleanupDom()
     }

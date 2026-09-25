@@ -18,7 +18,7 @@ from datetime import UTC
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
@@ -806,3 +806,207 @@ async def put_source_access_card(
     return await SourceAccessCardStore(request.app.state.db).put_card(
         payload.feedUrl, fields
     )
+
+
+# ---- E1: N036 刷新队列可视化 / N037 断更恢复补读 / N038 保留策略预演 -------
+
+
+class RecoveryToQueueRequest(BaseModel):
+    """POST /api/v1/sources/recoveries/{id}/to-queue body（N037）。"""
+
+    model_config = {"extra": "forbid"}
+
+    segment: str | None = None
+    """可选：入队行统一落入的分段标签（省略 = 未分组）。"""
+
+
+class RetentionApplyRequest(BaseModel):
+    """POST /api/v1/sources/retention-apply body（N038）。"""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str = Field(min_length=1)
+    days: int | None = Field(default=None, ge=7, le=3650)
+    """保留天数；null = 清除该来源的保留策略（纯记录，无即时删除）。"""
+    prune: bool = False
+    """true = 落库后立即按该天数裁剪**本地投影**（starred 恒排除；
+    FreshRSS 零调用——见 source_retention 模块诚实边界）。"""
+
+
+@router.get("/api/v1/sources/refresh-status")
+async def sources_refresh_status(request: Request) -> dict[str, object]:
+    """N036：每来源最近刷新状态（lastChecked/lastResult/pending + 最近
+    5 条检查记录）。
+
+    数据只来自两条写入路径（F050 手动探测 + 投影增量同步的有效交付）；
+    没有任何调度器在背后跑（负向契约）。「立即检查」= 复用既有 F050
+    探测（POST /api/v1/subscriptions/health-check），不另设端点。"""
+    from lumirss.refresh_log import SourceRefreshLogStore
+
+    snapshot = await SourceRefreshLogStore(request.app.state.db).status_snapshot()
+    return snapshot
+
+
+@router.get("/api/v1/sources/recoveries")
+async def sources_recoveries(
+    request: Request, includeConsumed: bool = True
+) -> dict[str, object]:
+    """N037：断更恢复窗口列表（error/stale → ok 跳变时由刷新记录路径
+    自动创建；consumed=true 表示已加入过补读队列）。"""
+    from lumirss.refresh_log import SourceRefreshLogStore
+
+    items = await SourceRefreshLogStore(request.app.state.db).recoveries(
+        include_consumed=includeConsumed
+    )
+    return {"items": items}
+
+
+@router.post("/api/v1/sources/recoveries/{recovery_id}/to-queue")
+async def recovery_to_queue(
+    recovery_id: str, payload: RecoveryToQueueRequest, request: Request
+) -> dict[str, object]:
+    """N037：把恢复窗口内的条目加入今日必读队列（source=recovery）。
+
+    - 一次性消费：consumed=1 原子置位；重复调用 409
+      recovery_already_consumed；
+    - 逐条走队列既有 add 管线（dedup by ref：同日同条目幂等返回
+      existing 行，绝不重复入队/重排）；
+    - 条目解析失败的 ref（已删除/退订）诚实跳过并计数（绝不复活）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.reading_queue import (
+        QueueItemDone,
+        ReadingQueueStore,
+    )
+    from lumirss.refresh_log import (
+        RecoveryAlreadyConsumed,
+        RecoveryNotFound,
+        SourceRefreshLogStore,
+    )
+
+    store = SourceRefreshLogStore(request.app.state.db)
+    try:
+        refs = await store.consume_recovery(recovery_id)
+    except RecoveryNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "recovery_not_found",
+                    "message": "恢复窗口不存在。",
+                }
+            },
+        )
+    except RecoveryAlreadyConsumed:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "recovery_already_consumed",
+                    "message": "该恢复窗口已加入过补读队列。",
+                }
+            },
+        )
+    queue = ReadingQueueStore(request.app.state.db)
+    added = 0
+    duplicates = 0
+    skipped = 0
+    for ref in refs:
+        try:
+            _row, outcome = await queue.add_item(
+                f"rss:{ref}", payload.segment, source="recovery"
+            )
+        except QueueItemDone:
+            duplicates += 1  # 今日已完成：不再入队（完成状态优先）
+            continue
+        except Exception:  # noqa: BLE001 — 单条解析失败不中断（诚实跳过）
+            skipped += 1
+            continue
+        if outcome == "created":
+            added += 1
+        else:
+            duplicates += 1
+    return {
+        "recoveryId": recovery_id,
+        "added": added,
+        "duplicates": duplicates,
+        "skipped": skipped,
+        "note": "已加入今日必读队列（source=recovery）；同日同条目幂等，绝不重复入队。",
+    }
+
+
+@router.get("/api/v1/sources/retention-preview")
+async def sources_retention_preview(
+    request: Request,
+    feedUrl: str = Query(min_length=1),
+    days: int = Query(default=30, ge=7, le=3650),
+) -> dict[str, object]:
+    """N038：按来源保留策略预演（只读，投影口径估算）。
+
+    响应以 note 诚实标注：「预估值基于 Lumi 投影，实际删除需在
+    FreshRSS 原生界面执行」；freshrssNativeUrl 为 P09 委托入口坐标
+    （未绑定 → null）。starred 恒排除并单独计数（绝不进删除路径）。"""
+    from lumirss.source_overrides import SourceOverrideStore
+    from lumirss.source_retention import retention_preview
+
+    override = await SourceOverrideStore(request.app.state.db).get_override(feedUrl)
+    applied = override.get("retentionDays") if override else None
+    native_origin: str | None = None
+    try:
+        await request.app.state.db.migrate()
+        row = await request.app.state.db.fetch_one(
+            "SELECT public_url FROM freshrss_binding WHERE id = 1"
+        )
+        if row is not None and row["public_url"]:
+            native_origin = str(row["public_url"])
+    except Exception:  # noqa: BLE001 — 未绑定诚实降级 null
+        native_origin = None
+    return await retention_preview(
+        request.app.state.db,
+        feedUrl,
+        days=days,
+        applied_days=applied,
+        native_origin=native_origin,
+    )
+
+
+@router.post("/api/v1/sources/retention-apply")
+async def sources_retention_apply(
+    payload: RetentionApplyRequest, request: Request
+) -> dict[str, object]:
+    """N038：应用保留策略——落库 source_overrides.retention_days，
+    可选立即裁剪本地投影（starred 恒排除）。
+
+    **FreshRSS 零调用**（负向契约，测试以适配器 mock 断言）：本端点
+    任何一个代码路径都不触上游；retention_days 只驱动派生投影的本地
+    裁剪，投影可在下次同步再生（诚实行为，非上游删除替代品）。"""
+    from lumirss.source_overrides import (
+        SourceOverrideStore,
+        retention_days_valid,
+    )
+    from lumirss.source_retention import prune_projection
+
+    if payload.days is not None and not retention_days_valid(payload.days):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_retention_days",
+                    "message": "retentionDays 必须在 7..3650 之间。",
+                }
+            },
+        )
+    store = SourceOverrideStore(request.app.state.db)
+    await store.set_retention_days(payload.feedUrl, payload.days)
+    pruned = 0
+    if payload.prune and payload.days is not None:
+        pruned = await prune_projection(
+            request.app.state.db, payload.feedUrl, days=payload.days
+        )
+    return {
+        "feedUrl": payload.feedUrl,
+        "retentionDays": payload.days,
+        "prunedProjectionEntries": pruned,
+        "freshrssTouched": False,
+        "note": "保留策略只驱动 Lumi 派生投影的本地裁剪；实际删除需在 FreshRSS 原生界面执行。",
+    }

@@ -27,7 +27,9 @@ import {
 import { identityFromSession, useAuthStore } from '../store/auth'
 import { resetAccountState } from '../lib/auth-reset'
 import { navigateAppRoute, readActivateToken } from '../lib/app-route'
+import { passwordStrength } from '../lib/password-strength'
 import { Button } from './ui/Button'
+import { PasswordStrengthMeter } from './ui/PasswordStrengthMeter'
 
 /** 与 BFF USERNAME_RE 同规则：3–32 位，小写字母/数字/`-`/`_`，字母或数字开头。 */
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,31}$/
@@ -360,6 +362,11 @@ export default function ActivateScreen() {
                   {fieldErrors.password}
                 </p>
               )}
+              {/* N005：本地强度提示（纯函数；不发任何网络请求）。 */}
+              <PasswordStrengthMeter
+                strength={passwordStrength(password)}
+                id="activate-password-strength"
+              />
             </div>
 
             <div>

@@ -3,7 +3,7 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, model_validator
 
 from lumirss.cursor import InvalidCursor, decode_cursor, encode_cursor
@@ -25,6 +25,8 @@ router = APIRouter()
 
 # F024：单批执行上限（超出部分需要再次预览+确认，避免不可控大批量）。
 _BACKLOG_APPLY_CAP = 1000
+# N049：单批（按批确认）执行上限。
+_BACKLOG_BATCH_APPLY_CAP = 200
 
 
 class EntryStateUpdate(BaseModel):
@@ -253,6 +255,29 @@ async def entry_detail(
     return JSONResponse(detail.model_dump())
 
 
+@router.get("/api/v1/entries/{entry_ref}/digest-usage", response_model=None)
+async def entry_digest_usage(entry_ref: str, request: Request) -> Response:
+    """N180 日报材料使用追踪：这条材料被我的哪些日报配置/期刊/栏目引用。
+
+    反查只发生在当前用户的库上（refs_json 的 entryRef 反向索引）——
+    其他用户的期刊天然不可见；非法引用 → 400；没有引用 → items=[]
+    （诚实空，不虚构）。citationAnchor 供 Web 跳转定位到具体引用。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.entryref import InvalidEntryReference as _IER
+    from lumirss.gpt_digest_issues import digest_usage_for_entry
+
+    try:
+        decode_entry_ref(entry_ref.removeprefix("rss:"))
+    except _IER:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_entry_ref", "message": "Invalid entry reference."}},
+        )
+    items = await digest_usage_for_entry(request.app.state.db, entry_ref)
+    return JSONResponse(content={"items": items})
+
+
 @router.patch("/api/v1/entries/{entry_ref}/state", status_code=204)
 async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request) -> Response:
     """Set the read/starred state of one entry (set semantics, not toggle).
@@ -415,3 +440,392 @@ async def backlog_apply(payload: BacklogApplyRequest, request: Request) -> dict:
 
 
 _ = (_BACKLOG_APPLY_CAP,)  # cap referenced above; BacklogConflict mapped via BacklogConflict import in apply
+
+
+# ---- E1: N039 附件失效检测 / N045 阅读中断便签 -----------------------------
+
+
+class MediaFailureItem(BaseModel):
+    """POST /api/v1/entries/{entry_ref}/media-failures body 单项。"""
+
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["image", "media", "other"]
+    src: str = Field(min_length=1, max_length=2048)
+
+
+class MediaFailureReport(BaseModel):
+    """POST /api/v1/entries/{entry_ref}/media-failures body（≤20 条/次）。"""
+
+    model_config = {"extra": "forbid"}
+
+    failures: list[MediaFailureItem] = Field(min_length=1, max_length=20)
+
+
+class MediaFailureView(BaseModel):
+    """失效附件记录（src 原样保存；重载的 cache-bust 只在读取侧）。"""
+
+    kind: str
+    src: str
+    firstSeenAt: str
+    lastSeenAt: str
+    hitCount: int
+
+
+class MediaFailureListResponse(BaseModel):
+    failures: list[MediaFailureView]
+
+
+@router.get(
+    "/api/v1/entries/{entry_ref}/media-failures",
+    response_model=MediaFailureListResponse,
+)
+async def list_media_failures(entry_ref: str, request: Request) -> MediaFailureListResponse:
+    """N039：该条目的失效附件列表（每条目 cap 50，按 lastSeenAt 新→旧）。"""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.media_failures import MediaFailureStore
+
+    failures = await MediaFailureStore(request.app.state.db).list_failures(entry_ref)
+    return MediaFailureListResponse(failures=[MediaFailureView(**f) for f in failures])
+
+
+@router.post(
+    "/api/v1/entries/{entry_ref}/media-failures",
+    response_model=MediaFailureListResponse,
+)
+async def report_media_failures(
+    entry_ref: str, payload: MediaFailureReport, request: Request
+) -> MediaFailureListResponse:
+    """N039：上报失效附件（≤20 条/次；（kind, src) 幂等 upsert——重复
+    上报只刷新 lastSeenAt 与 hitCount，绝不翻倍）。
+
+    纯记录：本端点没有任何抓取/重试路径；「单项重新加载」的 cache-bust
+    由 Web 读取侧对 src 追加一次性参数完成，服务端绝不改写 src。"""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.media_failures import MediaFailureStore
+
+    failures = await MediaFailureStore(request.app.state.db).record(
+        entry_ref, [item.model_dump() for item in payload.failures]
+    )
+    return MediaFailureListResponse(failures=[MediaFailureView(**f) for f in failures])
+
+
+class ReadingNotePut(BaseModel):
+    """PUT /api/v1/entries/{entry_ref}/note body（N045）。"""
+
+    model_config = {"extra": "forbid"}
+
+    note: str = Field(min_length=1, max_length=200)
+    """一句话便签（≤200 字符；服务端再钳一次）。"""
+    paraId: str | None = Field(default=None, max_length=200)
+    """留便签时的段落锚点（重开时定位展示；与 F056 同构）。"""
+
+
+class ReadingNoteView(BaseModel):
+    entryRef: str
+    note: str
+    paraId: str | None = None
+    updatedAt: str
+
+
+@router.put("/api/v1/entries/{entry_ref}/note", response_model=ReadingNoteView)
+async def put_reading_note(
+    entry_ref: str, payload: ReadingNotePut, request: Request
+) -> ReadingNoteView:
+    """N045：upsert 阅读中断便签（latest-wins，无冲突分支）。"""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.reading_notes import ReadingNoteStore
+
+    view = await ReadingNoteStore(request.app.state.db).put(
+        entry_ref, payload.note, payload.paraId
+    )
+    return ReadingNoteView(**view)
+
+
+@router.get("/api/v1/entries/{entry_ref}/note", response_model=ReadingNoteView)
+async def get_reading_note(entry_ref: str, request: Request) -> ReadingNoteView:
+    """N045：取便签（无 → 404 reading_note_not_found）。"""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.errors import ReadingNoteNotFound
+    from lumirss.reading_notes import ReadingNoteStore
+
+    view = await ReadingNoteStore(request.app.state.db).get(entry_ref)
+    if view is None:
+        raise ReadingNoteNotFound(entry_ref)
+    return ReadingNoteView(**view)
+
+
+@router.delete("/api/v1/entries/{entry_ref}/note", status_code=204)
+async def delete_reading_note(entry_ref: str, request: Request) -> Response:
+    """N045：删除便签（幂等：不存在也是 204）。"""
+    decode_entry_ref(entry_ref)  # raises InvalidEntryReference → 400
+    from lumirss.reading_notes import ReadingNoteStore
+
+    await ReadingNoteStore(request.app.state.db).delete(entry_ref)
+    return Response(status_code=204)
+
+
+# ---- E1: N049 阅读积压分批处理 ----------------------------------------------
+
+
+class BacklogBatchView(BaseModel):
+    """分批视图（count = 服务端真实全量计数；refs ≤100 诚实有界）。"""
+
+    key: str
+    count: int
+    entryRefs: list[str] = Field(max_length=100)
+
+
+class BacklogBatchesResponse(BaseModel):
+    groupBy: Literal["source", "age"]
+    batches: list[BacklogBatchView]
+
+
+class BacklogBatchPreviewRequest(BaseModel):
+    """POST /api/v1/entries/backlog/batch-preview body（两段式第一步）。"""
+
+    model_config = {"extra": "forbid"}
+
+    groupBy: Literal["source", "age"]
+    key: str = Field(min_length=1, max_length=300)
+    olderThanDays: int = Field(ge=1, le=3650)
+    feedUrl: str | None = None
+    categoryId: str | None = None
+
+
+class BacklogBatchPreviewResponse(BaseModel):
+    batchKey: str
+    groupBy: Literal["source", "age"]
+    count: int
+    sample: list[BacklogSampleItem]
+    effectiveExclusions: list[str]
+    confirmPreviewToken: str
+
+
+class BacklogBatchApplyRequest(BacklogBatchPreviewRequest):
+    """POST /api/v1/entries/backlog/batch-apply body（两段式第二步）。"""
+
+    confirmPreviewToken: str = Field(min_length=1)
+
+
+class BacklogBatchApplyResponse(BaseModel):
+    batchLogId: str | None = None
+    applied: int
+    failed: list[BacklogSampleItem]
+    effectiveExclusions: list[str]
+    undoAvailable: bool
+
+
+class BacklogBatchLogView(BaseModel):
+    """撤销台账行（undone=false 的批次可撤销；cap 5）。"""
+
+    id: str
+    createdAt: str
+    groupBy: str
+    batchKey: str
+    refCount: int
+    appliedCount: int
+    undone: bool
+
+
+class BacklogBatchLogListResponse(BaseModel):
+    items: list[BacklogBatchLogView]
+
+
+def _batch_condition(payload: BacklogBatchPreviewRequest) -> dict:
+    from lumirss.backlog import _batch_condition_dict
+
+    return _batch_condition_dict(
+        group_by=payload.groupBy,
+        batch_key=payload.key,
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+    )
+
+
+@router.get("/api/v1/entries/backlog/batches", response_model=BacklogBatchesResponse)
+async def backlog_batches_view(
+    request: Request,
+    groupBy: Literal["source", "age"] = "source",
+    olderThanDays: int = Query(default=30, ge=1, le=3650),
+    feedUrl: str | None = None,
+    categoryId: str | None = None,
+) -> BacklogBatchesResponse:
+    """N049：积压分批视图（与 F024 同一候选口径：未读 + 未加星 +
+    不在稍后读工作区 + 早于截止时间）。
+
+    - groupBy=source：每来源一批（key = feed_url）；
+    - groupBy=age：固定账龄桶（7-30/30-90/90-365/365+ 天）；
+    - count 是服务端真实全量计数；entryRefs 最多 100 条（诚实有界，
+      超出部分仍会被该批确认执行覆盖）。"""
+    from lumirss.backlog import backlog_batches
+
+    batches = await backlog_batches(
+        request.app.state.db,
+        group_by=groupBy,
+        older_than_days=olderThanDays,
+        feed_url=feedUrl,
+        category_id=categoryId,
+    )
+    return BacklogBatchesResponse(
+        groupBy=groupBy,
+        batches=[BacklogBatchView(**batch) for batch in batches],
+    )
+
+
+@router.post(
+    "/api/v1/entries/backlog/batch-preview", response_model=BacklogBatchPreviewResponse
+)
+async def backlog_batch_preview(
+    payload: BacklogBatchPreviewRequest, request: Request
+) -> BacklogBatchPreviewResponse:
+    """N049：单批预览（真实 count + 前 20 样本 + 一次性 token）。零写入。"""
+    from lumirss.backlog import (
+        _EFFECTIVE_EXCLUSIONS,
+        backlog_batch_rows,
+        issue_preview_token,
+    )
+
+    condition = _batch_condition(payload)
+    rows = await backlog_batch_rows(
+        request.app.state.db,
+        group_by=payload.groupBy,
+        batch_key=payload.key,
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+        limit=None,
+    )
+    token = issue_preview_token(condition)
+    return BacklogBatchPreviewResponse(
+        batchKey=payload.key,
+        groupBy=payload.groupBy,
+        count=len(rows),
+        sample=[_sample_model(row) for row in rows[:20]],
+        effectiveExclusions=list(_EFFECTIVE_EXCLUSIONS),
+        confirmPreviewToken=token,
+    )
+
+
+@router.post(
+    "/api/v1/entries/backlog/batch-apply", response_model=BacklogBatchApplyResponse
+)
+async def backlog_batch_apply(
+    payload: BacklogBatchApplyRequest, request: Request
+) -> BacklogBatchApplyResponse:
+    """N049：单批确认执行（token 校验失败/条件漂移 → 409）。
+
+    逐条走既有 set-read 管线；实际置读成功的 refs 写入撤销台账
+    （backlog_batch_log，cap 5）——撤销以此为准，失败项绝不进台账。"""
+    import asyncio as _asyncio
+
+    from lumirss.backlog import (
+        _EFFECTIVE_EXCLUSIONS,
+        backlog_batch_rows,
+        record_batch_log,
+        validate_apply_token,
+    )
+
+    condition = _batch_condition(payload)
+    validate_apply_token(payload.confirmPreviewToken, condition)  # 409 on drift
+    rows = await backlog_batch_rows(
+        request.app.state.db,
+        group_by=payload.groupBy,
+        batch_key=payload.key,
+        older_than_days=payload.olderThanDays,
+        feed_url=payload.feedUrl,
+        category_id=payload.categoryId,
+        limit=_BACKLOG_BATCH_APPLY_CAP,
+    )
+    if not rows:
+        return BacklogBatchApplyResponse(
+            applied=0,
+            failed=[],
+            effectiveExclusions=list(_EFFECTIVE_EXCLUSIONS),
+            undoAvailable=False,
+        )
+    adapter = _get_adapter(request)
+    search = _get_search_service(request)
+
+    applied_refs: list[str] = []
+    failed: list[BacklogSampleItem] = []
+
+    async def _mark(row) -> bool:
+        from lumirss.entryref import decode_entry_ref
+
+        try:
+            item_id = decode_entry_ref(row["entry_ref"])
+            await adapter.set_entry_state(item_id, read=True, starred=None)
+            await search.set_entry_read(row["entry_ref"], True)
+            return True
+        except Exception:  # noqa: BLE001 — 单条失败不中断整批
+            return False
+
+    results = await _asyncio.gather(*(_mark(row) for row in rows))
+    for row, ok in zip(rows, results, strict=True):
+        if ok:
+            applied_refs.append(str(row["entry_ref"]))
+        else:
+            failed.append(_sample_model(row))
+    log_id: str | None = None
+    if applied_refs:
+        log_id = await record_batch_log(
+            request.app.state.db,
+            group_by=payload.groupBy,
+            batch_key=payload.key,
+            refs=applied_refs,
+            applied_count=len(applied_refs),
+        )
+    return BacklogBatchApplyResponse(
+        batchLogId=log_id,
+        applied=len(applied_refs),
+        failed=failed,
+        effectiveExclusions=list(_EFFECTIVE_EXCLUSIONS),
+        undoAvailable=log_id is not None,
+    )
+
+
+@router.get("/api/v1/entries/backlog/batches/log", response_model=BacklogBatchLogListResponse)
+async def backlog_batch_logs(request: Request) -> BacklogBatchLogListResponse:
+    """N049：撤销台账（新→旧；cap 5；undone=false 可撤销）。"""
+    from lumirss.backlog import list_batch_logs
+
+    return BacklogBatchLogListResponse(
+        items=[BacklogBatchLogView(**log) for log in await list_batch_logs(request.app.state.db)]
+    )
+
+
+@router.post("/api/v1/entries/backlog/batches/{log_id}/undo", response_model=BacklogBatchLogView)
+async def undo_backlog_batch(log_id: str, request: Request) -> BacklogBatchLogView:
+    """N049：按批撤销——台账 refs 逐条恢复 read=0（适配器 + 投影镜像，
+    set 语义）。撤销一次性（重复撤销 → 409 backlog_batch_already_undone）。"""
+    import asyncio as _asyncio
+
+    from lumirss.backlog import (
+        batch_log_refs_for_undo,
+        list_batch_logs,
+    )
+
+    refs = await batch_log_refs_for_undo(request.app.state.db, log_id)
+    if refs:
+        adapter = _get_adapter(request)
+        search = _get_search_service(request)
+
+        async def _unmark(ref: str) -> None:
+            from lumirss.entryref import decode_entry_ref
+
+            try:
+                await adapter.set_entry_state(decode_entry_ref(ref), read=False, starred=None)
+                await search.set_entry_read(ref, False)
+            except Exception:  # noqa: BLE001 — 单条失败不中断（条目可能已删除）
+                pass
+
+        await _asyncio.gather(*(_unmark(ref) for ref in refs))
+    logs = await list_batch_logs(request.app.state.db)
+    for log in logs:
+        if log["id"] == log_id:
+            return BacklogBatchLogView(**log)
+    from lumirss.backlog import BatchLogNotFound
+
+    raise BatchLogNotFound(log_id)

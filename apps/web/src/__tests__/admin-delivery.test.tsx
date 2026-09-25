@@ -13,6 +13,7 @@ import {
   type AdminAuditEntry,
   type AdminCapacity,
   type AdminDeployStatus,
+  type AdminRollbackReadiness,
   type AdminInvite,
   type AdminSystemInfo,
   type AdminUpgradePreview,
@@ -52,6 +53,7 @@ const mocks = vi.hoisted(() => ({
   getAdminCapacity: vi.fn(),
   getAdminUpgradePreview: vi.fn(),
   getAdminDeployStatus: vi.fn(),
+  getAdminRollbackReadiness: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -85,6 +87,7 @@ vi.mock('../api/client', async (importOriginal) => {
     getAdminCapacity: mocks.getAdminCapacity,
     getAdminUpgradePreview: mocks.getAdminUpgradePreview,
     getAdminDeployStatus: mocks.getAdminDeployStatus,
+    getAdminRollbackReadiness: mocks.getAdminRollbackReadiness,
   }
 })
 
@@ -161,6 +164,21 @@ const DEPLOY_RUNNING: AdminDeployStatus = {
   },
 }
 
+const ROLLBACK_NOT_READY: AdminRollbackReadiness = {
+  canRollback: false,
+  previousImage: { state: 'present', tag: 'v1.2.2', reason: null },
+  backup: {
+    state: 'unverified',
+    name: 'lumirss-20260925T000000Z.backup',
+    reason: '校验未通过（见 findings）',
+    verifyOk: false,
+    findings: { checksumOk: false, manifestCountsMatch: true, readable: true, versionCompatible: true },
+  },
+  schema: { current: 130, backup: 122, unchanged: false },
+  dbDowngrade: 'SQLite 迁移只向前：无法降级。',
+  note: '本检查只读。回滚由运维侧 ./lumirss rollback 执行——这里没有任何执行控件。',
+}
+
 function renderAdmin() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -184,6 +202,7 @@ beforeEach(() => {
   mocks.getAdminCapacity.mockResolvedValue(CAPACITY)
   mocks.getAdminUpgradePreview.mockResolvedValue(PREVIEW_OK)
   mocks.getAdminDeployStatus.mockResolvedValue(DEPLOY_RUNNING)
+  mocks.getAdminRollbackReadiness.mockResolvedValue(ROLLBACK_NOT_READY)
   mocks.getAdminUserQuota.mockResolvedValue(QUOTA_CAROL)
   mocks.setAdminUserQuota.mockImplementation((_userId: string, caps: { maxSources: number | null }) =>
     Promise.resolve({ ...QUOTA_CAROL, caps, updatedAt: ISO(0), updatedBy: 'u1' }),
@@ -268,6 +287,40 @@ describe('N196 升级任务进度（只读）', () => {
     renderAdmin()
     const note = await screen.findByTestId('deploy-status-unavailable')
     expect(note).toHaveTextContent('LUMIRSS_DEPLOY_STATUS_FILE')
+  })
+})
+
+// ===== N197 回滚就绪检查（只读要素清单）=====================================
+
+describe('N197 回滚就绪检查（只读）', () => {
+  it('要素清单：前镜像 / 备份 / schema 状态与 dbDowngrade 诚实说明', async () => {
+    renderAdmin()
+    const section = await screen.findByTestId('admin-rollback-readiness')
+    expect(await within(section).findByTestId('rollback-element-previous-image')).toHaveTextContent('v1.2.2')
+    expect(within(section).getByTestId('rollback-element-backup')).toHaveTextContent('校验未通过')
+    expect(within(section).getByTestId('rollback-element-schema')).toHaveTextContent('不一致')
+    expect(within(section).getByTestId('rollback-db-downgrade')).toHaveTextContent('只向前')
+    expect(within(section).getByTestId('rollback-verdict')).toHaveTextContent('当前不可回滚')
+  })
+
+  it('要素齐全 → 「可以回滚（由运维侧执行）」，但卡内零按钮（负向断言）', async () => {
+    mocks.getAdminRollbackReadiness.mockResolvedValue({
+      ...ROLLBACK_NOT_READY,
+      canRollback: true,
+      backup: {
+        state: 'verified',
+        name: 'lumirss-20260925T000000Z.backup',
+        reason: null,
+        verifyOk: true,
+        findings: { checksumOk: true, manifestCountsMatch: true, readable: true, versionCompatible: true },
+      },
+      schema: { current: 130, backup: 130, unchanged: true },
+    })
+    renderAdmin()
+    const section = await screen.findByTestId('admin-rollback-readiness')
+    expect(await within(section).findByTestId('rollback-verdict')).toHaveTextContent('可以回滚')
+    // 负向：清单卡内零按钮 —— 永远没有一键回滚执行控件。
+    expect(within(section).queryAllByRole('button')).toHaveLength(0)
   })
 })
 

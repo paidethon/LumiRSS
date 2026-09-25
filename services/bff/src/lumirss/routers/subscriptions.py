@@ -2,6 +2,7 @@
 
 
 
+import contextlib
 import time
 
 from fastapi import APIRouter, Query, Request, Response
@@ -612,6 +613,13 @@ async def health_check(payload: HealthCheckRequest, request: Request) -> Respons
             return await probe(ref)
 
     results = list(await _asyncio.gather(*(bounded(ref) for ref in refs)))
+
+    # N036：探测结果写入 per-user source_refresh_log（ok|stale|error）。
+    # 只对能解析到 feed_url 的 ref 记录（not_found 的 ref 没有来源身份，
+    # 不编造记录）；error/stale → ok 的跳变在此处自动产生 N037 恢复
+    # 窗口。写入尽力而为：日志失败绝不影响探测响应本身。
+    with contextlib.suppress(Exception):  # 旁路观测，绝不阻断探测响应
+        await _record_refresh_logs(request, by_ref, results)
     return JSONResponse({"items": results, "checkedAt": utc_now()})
 
 
@@ -830,6 +838,39 @@ async def freshrss_native_url(request: Request) -> Response:
             },
         )
     return JSONResponse(content={"origin": origin, "username": username})
+
+
+async def _record_refresh_logs(request: Request, by_ref: dict, results: list) -> None:
+    """N036：逐源记录刷新检查结果（F050 探测路径的旁路写入）。
+
+    - 分类：探测 ok + 投影最新条目未超阈值 → ok；探测 ok 但超阈值 →
+      stale（可达但断更）；其余（auth/not_found/rate_limited/timeout/
+      bad_content/network_error）→ error；
+    - entry_count 恒 0——探测不数条目（诚实于检查方式）；
+    - error/stale → ok 跳变在 SourceRefreshLogStore.record 内部检测并
+      创建 N037 恢复窗口。"""
+    from lumirss.refresh_log import (
+        SourceRefreshLogStore,
+        classify_probe_result,
+        stale_cutoff_iso,
+    )
+
+    store = SourceRefreshLogStore(request.app.state.db)
+    now = utc_now()
+    for result in results:
+        ref = result.get("ref")
+        sub = by_ref.get(ref) if isinstance(ref, str) else None
+        if sub is None:
+            continue
+        status = str(result.get("status") or "network_error")
+        result_kind = classify_probe_result(status)
+        if result_kind == "ok":
+            newest = await store.newest_published_at(sub.feed_url)
+            if newest is not None:
+                hours = await store.stale_threshold_hours(sub.feed_url)
+                if newest < stale_cutoff_iso(now, hours):
+                    result_kind = "stale"
+        await store.record(sub.feed_url, result_kind, entry_count=0, now=now)
 
 
 async def _probe_feed_url(

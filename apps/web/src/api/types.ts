@@ -198,6 +198,24 @@ export type WorkspaceGroup = Schemas['WorkspaceGroup']
 export type WorkspaceSnapshot = Schemas['WorkspaceSnapshot']
 export type WorkspaceSnapshotList = Schemas['WorkspaceSnapshotList']
 export type WorkspaceSnapshotRestoreResult = Schemas['WorkspaceSnapshotRestoreResult']
+/** N115：两快照差异（只读；ref 定位走既有 views/resolve 端点）。 */
+export type WorkspaceSnapshotDiff = Schemas['WorkspaceSnapshotDiff']
+export type WorkspaceSnapshotDiffMove = Schemas['WorkspaceSnapshotDiffMove']
+export type WorkspaceSnapshotDiffGroupChange = Schemas['WorkspaceSnapshotDiffGroupChange']
+/** N116：汇编只读分享包请求（includeNotes 固定 false）。 */
+export type SharePackageRequest = Schemas['SharePackageRequest']
+/** N118：工作区收集规则（手动触发，绝不后台抓取）。 */
+export type WorkspaceCollectRule = Schemas['WorkspaceCollectRule']
+export type WorkspaceCollectRuleList = Schemas['WorkspaceCollectRuleList']
+export type WorkspaceCollectPreview = Schemas['WorkspaceCollectPreview']
+export type WorkspaceCollectApplyResult = Schemas['WorkspaceCollectApplyResult']
+/** N119：归档工作区摘要卡。 */
+export type WorkspaceArchiveEntry = Schemas['WorkspaceArchiveEntry']
+export type WorkspaceArchiveSummary = Schemas['WorkspaceArchiveSummary']
+/** N156：资料冲突对照（纯词法，非语义裁决）。 */
+export type QaConflictRequest = Schemas['QaConflictRequest']
+export type QaConflictResponse = Schemas['QaConflictResponse']
+export type QaConflictItem = Schemas['QaConflictItem']
 export type ResolvedItem = Schemas['ResolvedItem']
 export type WorkspaceItemsResolvedResponse = Schemas['WorkspaceItemsResolvedResponse']
 /** P15：「上次看到哪」续读指针（每工作区一个；pointer=null = 无）。 */
@@ -247,3 +265,114 @@ export type QueueSnapshotView = Schemas['QueueSnapshotView']
 export type QueueSnapshotList = Schemas['QueueSnapshotList']
 /** 打开冻结视图（原始成员顺序；消失 ref 由 Web 呈现占位）。 */
 export type QueueSnapshotDetail = Schemas['QueueSnapshotDetail']
+
+// ---- E1: N036 刷新队列可视化 + N037 断更恢复补读 ----
+
+/** 单条刷新检查记录（N036）。 */
+export type SourceRefreshEntry = { checkedAt: string; result: string; entryCount: number }
+export type SourceRefreshStatusFeed = {
+  feedUrl: string
+  lastChecked: string
+  lastResult: 'ok' | 'stale' | 'error'
+  pending: boolean
+  recoveryAvailable: boolean
+  recent: { checkedAt: string; result: string; entryCount: number }[]
+}
+export type SourceRefreshStatusResponse = {
+  feeds: SourceRefreshStatusFeed[]
+  checkedAt: string
+}
+/** N037 恢复窗口（consumed=true 表示已加入过补读队列）。 */
+export type FeedRecoveryView = {
+  id: string
+  feedUrl: string
+  windowStart: string
+  windowEnd: string
+  refCount: number
+  consumed: boolean
+  createdAt: string
+}
+export type RecoveryToQueueResult = {
+  recoveryId: string
+  added: number
+  duplicates: number
+  skipped: number
+  note: string
+}
+
+// ---- E1: N038 按来源保留策略预演 ----
+
+export type SourceRetentionPreview = {
+  feedUrl: string
+  retentionDays: number
+  appliedRetentionDays: number | null
+  cutoff: string
+  totalEntries: number
+  olderEntries: number
+  starredExcluded: number
+  prunableEntries: number
+  basis: string
+  note: string
+  freshrssNativeUrl: string | null
+}
+export type SourceRetentionApplyResult = {
+  feedUrl: string
+  retentionDays: number | null
+  prunedProjectionEntries: number
+  freshrssTouched: boolean
+  note: string
+}
+
+// ---- E1: N039 附件失效检测 ----
+
+export type MediaFailureView = {
+  kind: string
+  src: string
+  firstSeenAt: string
+  lastSeenAt: string
+  hitCount: number
+}
+export type MediaFailureListResponse = { failures: MediaFailureView[] }
+
+// ---- E1: N045 阅读中断便签 ----
+
+export type ReadingNoteView = {
+  entryRef: string
+  note: string
+  paraId: string | null
+  updatedAt: string
+}
+
+// ---- E1: N046 队列冲突合并 ----
+
+export type QueueAddResponse = Schemas['QueueAddResponse']
+export type QueueMergeResponse = Schemas['QueueMergeResponse']
+/** 409 queue_revision_conflict 冲突体的逐 ref 差异提示。 */
+export type QueueConflictItem = {
+  ref: string
+  serverItem: {
+    id: string
+    itemRef: string
+    status: string
+    segment: string | null
+    position: number
+    title?: string | null
+  }
+  yourItem: {
+    id: string
+    itemRef: string
+    status: string
+    segment: string | null
+    position: number | null
+    title?: string | null
+  } | null
+}
+
+// ---- E1: N049 阅读积压分批处理 ----
+
+export type BacklogBatchView = Schemas['BacklogBatchView']
+export type BacklogBatchesResponse = Schemas['BacklogBatchesResponse']
+export type BacklogBatchPreviewResponse = Schemas['BacklogBatchPreviewResponse']
+export type BacklogBatchApplyResponse = Schemas['BacklogBatchApplyResponse']
+export type BacklogBatchLogView = Schemas['BacklogBatchLogView']
+export type BacklogBatchLogListResponse = Schemas['BacklogBatchLogListResponse']

@@ -27,6 +27,7 @@ import {
   RagChunkPreviewPanel,
   RagConsistencyPanel,
   RagCoveragePanel,
+  RagEvalSamplesPanel,
   RagExclusionsPanel,
   RagTrySearchPanel,
 } from '../RagW5Panels'
@@ -207,6 +208,11 @@ export function RagSettingsSection() {
         <section aria-label="版本一致性" className="flex flex-col gap-1.5">
           <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">版本一致性</h4>
           <RagConsistencyPanel />
+        </section>
+        {/* N159：检索质量收藏（评测样例；私有 local-only）。 */}
+        <section aria-label="评测样例" className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold text-[var(--lumi-text-primary)]">评测样例</h4>
+          <RagEvalSamplesPanel />
         </section>
       </div>
 

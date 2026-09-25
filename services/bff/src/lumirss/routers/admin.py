@@ -1199,3 +1199,56 @@ async def admin_deploy_status(request: Request) -> JSONResponse:
 
     result = read_deploy_status(LumiSettings().LUMIRSS_DEPLOY_STATUS_FILE)
     return JSONResponse(content=result, headers=_NO_STORE)
+
+
+@router.get("/rollback-readiness", response_model=None, response_model_exclude_none=True)
+async def admin_rollback_readiness(request: Request) -> JSONResponse:
+    """N197：回滚就绪检查（admin-gated，只读要素清单）。
+
+    - previousImage：读 ./lumirss snapshot_for_rollback 写下的回滚快照
+      清单（LUMIRSS_ROLLBACK_MANIFEST_FILE）——BFF 没有 Docker 访问权，
+      镜像存在性只来自脚本侧的诚实记录；
+    - backup：LUMIRSS_BACKUP_DIR 里最新 *.backup + N186 只读完整性校验；
+    - dbDowngrade：诚实限制说明（SQLite 迁移只向前，无法降级）；
+    - canRollback = 前镜像在 AND 备份可校验 AND schema 与备份一致。
+
+    本端点只给清单，永远不给一键回滚按钮——回滚只由运维侧
+    ./lumirss rollback 触发。"""
+    if await _require_admin(request) is None:
+        return _forbid()
+    import asyncio
+
+    from lumirss.config import LumiSettings
+    from lumirss.migrations import schema_version
+    from lumirss.restore import verify_backup_findings
+    from lumirss.rollback_readiness import (
+        build_rollback_readiness,
+        latest_backup_path,
+        read_rollback_manifest,
+    )
+
+    settings = LumiSettings()
+    manifest = read_rollback_manifest(settings.LUMIRSS_ROLLBACK_MANIFEST_FILE)
+    latest = latest_backup_path(settings.LUMIRSS_BACKUP_DIR)
+    if latest is not None:
+        report = await asyncio.to_thread(
+            verify_backup_findings, latest, request.app.state.control_db
+        )
+        backup_schema = None
+        manifest_block = report.get("manifest") if isinstance(report, dict) else None
+        if isinstance(manifest_block, dict):
+            value = manifest_block.get("lumiDbSchemaVersion")
+            backup_schema = int(value) if isinstance(value, int) else None
+    else:
+        report = None
+        backup_schema = None
+    current_schema = await asyncio.to_thread(schema_version, request.app.state.control_db)
+    result = build_rollback_readiness(
+        manifest=manifest,
+        backup_report=report,
+        backup_name=latest.name if latest is not None else None,
+        current_schema_version=current_schema,
+        backup_schema_version=backup_schema,
+        backup_dir_configured=bool(settings.LUMIRSS_BACKUP_DIR.strip()),
+    )
+    return JSONResponse(content=result, headers=_NO_STORE)

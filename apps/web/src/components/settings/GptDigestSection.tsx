@@ -41,6 +41,7 @@ import {
 } from '../../api/queries'
 import { formatTimestamp } from '../../lib/date-format'
 import { Button } from '../ui/Button'
+import { Select } from '../ui/Select'
 import { Switch } from '../ui/Switch'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -186,6 +187,10 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
   )
   // N176：同事件聚合
   const [clusterEnabled, setClusterEnabled] = useState(config.clusterEnabled ?? false)
+  // N179：缺刊处理策略（backfill=补刊默认 / merge_into_next / skip）
+  const [missedIssuePolicy, setMissedIssuePolicy] = useState(
+    config.missedIssuePolicy ?? 'backfill',
+  )
   // F101：本次预览显式放回的材料身份集合（url:/title: 前缀键）
   const [putBackKeys, setPutBackKeys] = useState<string[]>([])
   // F103：轮换两步确认（step: idle → 影响确认 → 已轮换展示新地址）
@@ -214,6 +219,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     )
     setTargetReadingMinutes(config.targetReadingMinutes ?? 0)
     setClusterEnabled(config.clusterEnabled ?? false)
+    setMissedIssuePolicy(config.missedIssuePolicy ?? 'backfill')
     setPutBackKeys([])
     setRotateStep('idle')
   }, [config])
@@ -287,7 +293,8 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
     stageModelsChanged ||
     columnsChanged ||
     (config.targetReadingMinutes ?? 0) !== targetReadingMinutes ||
-    (config.clusterEnabled ?? false) !== clusterEnabled
+    (config.clusterEnabled ?? false) !== clusterEnabled ||
+    (config.missedIssuePolicy ?? 'backfill') !== missedIssuePolicy
 
   // §13.4：token 只存哈希——atomPath 为空 = 订阅地址已隐藏（明文不可
   // 重建），新地址经「轮换 token」一次性获取；UI 诚实呈现，不显示坏链。
@@ -525,6 +532,38 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
           onCheckedChange={(checked) => setClusterEnabled(checked)}
         />
       </Row>
+      <Row label="缺刊处理（N179）" hint="错过发布时点且超出补刊窗口的期号：补刊（默认，原期号补生成）/ 并入下一期（窗口材料经素材池并入）/ 跳过并记录">
+        <Select
+          aria-label={`缺刊处理策略 ${config.name}`}
+          className="min-h-10"
+          value={missedIssuePolicy}
+          onChange={(e) => setMissedIssuePolicy(e.target.value)}
+          options={[
+            { value: 'backfill', label: '补刊（默认）' },
+            { value: 'merge_into_next', label: '并入下一期' },
+            { value: 'skip', label: '跳过并记录' },
+          ]}
+        />
+      </Row>
+      {(config.skipLog?.length ?? 0) > 0 && (
+        <Row label="缺刊记录（N179）" hint="策略处理过的缺刊（最多保留 30 条）">
+          <ul
+            className="flex max-h-28 flex-col gap-0.5 overflow-y-auto text-xs text-[var(--lumi-text-secondary)]"
+            data-testid="lumi-digest-skip-log"
+          >
+            {[...config.skipLog].reverse().map((entry) => (
+              <li key={`${entry.date}:${entry.reason}`}>
+                {entry.date} ·{' '}
+                {entry.reason === 'policy_skip'
+                  ? '按策略跳过'
+                  : entry.reason === 'merged_into_next'
+                    ? '已并入下一期'
+                    : entry.reason}
+              </li>
+            ))}
+          </ul>
+        </Row>
+      )}
       <div className="flex flex-wrap items-center gap-2 py-2">
         <Button
           variant="primary"
@@ -550,6 +589,7 @@ function ConfigForm({ config }: { config: GptDigestConfig }) {
                 columns: nextColumns,
                 targetReadingMinutes,
                 clusterEnabled,
+                missedIssuePolicy,
               },
             })
           }
@@ -925,6 +965,15 @@ function IssueRow({
 
   return (
     <li className="flex flex-col gap-1 text-sm text-[var(--lumi-text-secondary)]">
+      {issue.revised && (
+        <p
+          className="rounded-[var(--lumi-radius-md)] bg-[var(--lumi-surface-selected)] px-2 py-1 text-xs text-[var(--lumi-text-secondary)]"
+          data-testid="lumi-digest-revision-banner"
+        >
+          <strong>【已订正 {issue.updatedAt}】</strong>
+          {issue.note ? <span className="ml-1">{issue.note}</span> : null}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate">
           {issue.issueKey} · {issue.title}

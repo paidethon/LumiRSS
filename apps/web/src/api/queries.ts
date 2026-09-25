@@ -76,6 +76,9 @@ import {
   moveInboxRule,
   patchInboxRule,
   listAuthSessions,
+  getEntryDigestUsage,
+  listLoginEvents,
+  markLoginEventsSeen,
   listRelationsForItem,
   deleteAiProfile,
   deleteBookmark,
@@ -158,6 +161,13 @@ import {
   listWorkspaceItems,
   listWorkspaces,
   listWorkspaceSnapshots,
+  diffWorkspaceSnapshots,
+  listCollectRules,
+  createCollectRule,
+  setCollectRuleEnabled,
+  deleteCollectRule,
+  previewCollectRule,
+  applyCollectRule,
   lookupTranslationSegments,
   moveSubscription,
   moveWorkspaceItemGroup,
@@ -1603,14 +1613,32 @@ async function invalidateWorkspaceState(queryClient: ReturnType<typeof useQueryC
   ])
 }
 
+/** N047：canonical URL 撞车提示的全局暂存（最新一条；toast 呈现，
+ * 定位/仍要加入由消费方决定）。非阻断——条目已加入，提示只是尽力而为。 */
+export type DuplicateWarningPayload = {
+  duplicateWarning: { duplicateOf: { ref: string; scope: string; title?: string } }
+  itemRef: string
+}
+
 export function useAddWorkspaceItemMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (vars: { workspaceId: string; itemRef: string }) =>
       addWorkspaceItem(vars.workspaceId, vars.itemRef),
-    onSuccess: () => invalidateWorkspaceState(queryClient),
+    onSuccess: (item, vars) => {
+      if (item.duplicateWarning != null) {
+        // 形状由服务端契约固定（生成端为自由对象）；存独立 key 供 toast 消费。
+        queryClient.setQueryData<DuplicateWarningPayload>(DUPLICATE_WARNING_KEY, {
+          duplicateWarning: item.duplicateWarning as DuplicateWarningPayload['duplicateWarning'],
+          itemRef: vars.itemRef,
+        })
+      }
+      invalidateWorkspaceState(queryClient)
+    },
   })
 }
+
+export const DUPLICATE_WARNING_KEY = ['duplicate-warning'] as const
 
 export function useRemoveWorkspaceItemMutation() {
   const queryClient = useQueryClient()
@@ -1779,6 +1807,93 @@ export function useRestoreWorkspaceSnapshotMutation() {
         vars.force ?? false,
       ),
     onSuccess: () => invalidateWorkspaceState(queryClient),
+  })
+}
+
+// ---- N115：两快照差异（只读） ----
+
+export function useWorkspaceSnapshotDiff(
+  workspaceId: string | null,
+  snapshotIdA: string | null,
+  snapshotIdB: string | null,
+) {
+  return useQuery({
+    queryKey: ['workspace-snapshot-diff', workspaceId, snapshotIdA, snapshotIdB],
+    queryFn: ({ signal }) =>
+      diffWorkspaceSnapshots(workspaceId!, snapshotIdA!, snapshotIdB!, signal),
+    enabled: workspaceId !== null && snapshotIdA !== null && snapshotIdB !== null,
+  })
+}
+
+// ---- N118：工作区收集规则 ----
+
+export function useWorkspaceCollectRules(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-collect-rules', workspaceId],
+    queryFn: ({ signal }) => listCollectRules(workspaceId!, signal),
+    enabled: workspaceId !== null,
+  })
+}
+
+function invalidateCollectRules(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId?: string,
+) {
+  void queryClient.invalidateQueries({ queryKey: ['workspace-collect-rules'] })
+  if (workspaceId !== undefined) {
+    void queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    void queryClient.invalidateQueries({ queryKey: ['workspace-items'] })
+  }
+}
+
+export function useCreateCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      workspaceId: string
+      body: {
+        feedUrl?: string | null
+        tag?: string | null
+        keyword?: string | null
+        maxItems?: number
+        enabled?: boolean
+      }
+    }) => createCollectRule(vars.workspaceId, vars.body),
+    onSuccess: (_data, vars) => invalidateCollectRules(queryClient, vars.workspaceId),
+  })
+}
+
+export function useSetCollectRuleEnabledMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string; enabled: boolean }) =>
+      setCollectRuleEnabled(vars.workspaceId, vars.ruleId, vars.enabled),
+    onSuccess: () => invalidateCollectRules(queryClient),
+  })
+}
+
+export function useDeleteCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      deleteCollectRule(vars.workspaceId, vars.ruleId),
+    onSuccess: () => invalidateCollectRules(queryClient),
+  })
+}
+
+export function usePreviewCollectRuleMutation() {
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      previewCollectRule(vars.workspaceId, vars.ruleId),
+  })
+}
+
+export function useApplyCollectRuleMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { workspaceId: string; ruleId: string }) =>
+      applyCollectRule(vars.workspaceId, vars.ruleId),
+    onSuccess: (_data, vars) => invalidateCollectRules(queryClient, vars.workspaceId),
   })
 }
 
@@ -3419,6 +3534,28 @@ export function useRevokeSessionMutation() {
   })
 }
 
+// ---- N008 登录事件（最近登录 / 新设备提醒） ----
+
+export function useLoginEvents() {
+  return useQuery({ queryKey: ['auth-login-events'], queryFn: ({ signal }) => listLoginEvents(signal) })
+}
+
+export function useEntryDigestUsage(entryRef: string) {
+  return useQuery({
+    queryKey: ['entry-digest-usage', entryRef],
+    queryFn: ({ signal }) => getEntryDigestUsage(entryRef, signal),
+    staleTime: 30_000,
+  })
+}
+
+export function useMarkLoginEventsSeenMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ids?: number[]) => markLoginEventsSeen(ids),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['auth-login-events'] }),
+  })
+}
+
 // ---- N006 通行密钥 / N007 两步验证（账户安全面） ----
 
 export function usePasskeys() {
@@ -4071,3 +4208,219 @@ export function useRunAgentRecipeMutation() {
     },
   })
 }
+
+// ---- E1: N036 刷新状态 / N037 断更恢复 / N039 失效附件 / N045 便签 /
+//      N049 积压分批（client 函数按段引入；本文件 APPEND-ONLY） ------------
+
+import {
+  applyBacklogBatch,
+  applyRetention,
+  deleteReadingNote,
+  getBacklogBatches,
+  getReadingNote,
+  getRetentionPreview,
+  getSourceRefreshStatus,
+  listBacklogBatchLogs,
+  listMediaFailures,
+  listRecoveries,
+  previewBacklogBatch,
+  putReadingNote,
+  recoveryToQueue,
+  reportMediaFailures,
+  runHealthCheck,
+  undoBacklogBatch,
+} from './client'
+import type {
+  BacklogBatchApplyResponse,
+  MediaFailureListResponse,
+  ReadingNoteView,
+} from './types'
+import type { FeedRecoveryView, SourceRetentionPreview } from './types'
+
+/** N036：来源刷新状态（dots + 最近刷新）。 */
+export function useSourceRefreshStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['sources', 'refresh-status'],
+    queryFn: ({ signal }) => getSourceRefreshStatus(signal),
+    enabled,
+  })
+}
+
+/** N036：立即检查 = 复用 F050 探测（服务端顺带写刷新日志）；成功后
+ * 失效刷新状态视图。 */
+export function useRefreshNowMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (refs: string[]) => {
+      const result = await runHealthCheck(refs)
+      return result
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'refresh-status'] })
+    },
+  })
+}
+
+/** N037：断更恢复窗口（横幅数据源；只看待处理）。 */
+export function useRecoveries(enabled = true) {
+  return useQuery({
+    queryKey: ['sources', 'recoveries', 'pending'],
+    queryFn: ({ signal }) => listRecoveries(false, signal),
+    enabled,
+    select: (data: { items: FeedRecoveryView[] }) => data.items,
+  })
+}
+
+/** N037：加入补读队列（一次性消费）。 */
+export function useRecoveryToQueueMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recoveryId: string) => recoveryToQueue(recoveryId),
+    onSuccess: async (_data, recoveryId) => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'recoveries'] })
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'recoveries', 'pending'] })
+      void recoveryId
+      await queryClient.invalidateQueries({ queryKey: ['queue', 'today'] })
+    },
+  })
+}
+
+/** N038：保留策略预演（显式触发版；enabled 由调用方控制）。 */
+export function useRetentionPreview(feedUrl: string | null, days: number) {
+  return useQuery({
+    queryKey: ['sources', 'retention-preview', feedUrl, days],
+    queryFn: ({ signal }) => getRetentionPreview(feedUrl as string, days, signal),
+    enabled: feedUrl !== null,
+  })
+}
+
+/** N038：应用保留策略（可选立即裁剪本地投影）。 */
+export function useSourceRetentionApplyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { feedUrl: string; days: number | null; prune: boolean }) =>
+      applyRetention(input.feedUrl, input.days, input.prune),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sources', 'retention-preview'] })
+      await queryClient.invalidateQueries({ queryKey: ['entries'] })
+    },
+  })
+}
+
+/** N039：失效附件列表。 */
+export function useMediaFailures(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['entry', entryRef, 'media-failures'],
+    queryFn: ({ signal }) => listMediaFailures(entryRef as string, signal),
+    enabled: entryRef !== null,
+  })
+}
+
+/** N039：上报失效附件（img onError 等路径调用；幂等）。 */
+export function useReportMediaFailureMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      entryRef: string
+      failures: { kind: 'image' | 'media' | 'other'; src: string }[]
+    }) => reportMediaFailures(input.entryRef, input.failures),
+    onSuccess: async (_data: MediaFailureListResponse, input) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['entry', input.entryRef, 'media-failures'],
+      })
+    },
+  })
+}
+
+/** N045：阅读中断便签（无 → null；reopen 时回显 + 定位）。 */
+export function useReadingNote(entryRef: string | null) {
+  return useQuery({
+    queryKey: ['entry', entryRef, 'note'],
+    queryFn: ({ signal }) => getReadingNote(entryRef as string, signal),
+    enabled: entryRef !== null,
+  })
+}
+
+/** N045：保存便签（PUT，latest-wins）。 */
+export function useSaveReadingNoteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { entryRef: string; note: string; paraId?: string | null }) =>
+      putReadingNote(input.entryRef, input.note, input.paraId),
+    onSuccess: async (_data: ReadingNoteView, input) => {
+      await queryClient.invalidateQueries({ queryKey: ['entry', input.entryRef, 'note'] })
+    },
+  })
+}
+
+/** N045：删除便签。 */
+export function useDeleteReadingNoteMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (entryRef: string) => deleteReadingNote(entryRef),
+    onSuccess: async (_data, entryRef) => {
+      await queryClient.invalidateQueries({ queryKey: ['entry', entryRef, 'note'] })
+    },
+  })
+}
+
+/** N049：积压分批视图。 */
+export function useBacklogBatches(groupBy: 'source' | 'age', olderThanDays: number, enabled = true) {
+  return useQuery({
+    queryKey: ['backlog', 'batches', groupBy, olderThanDays],
+    queryFn: ({ signal }) => getBacklogBatches(groupBy, olderThanDays, signal),
+    enabled,
+  })
+}
+
+/** N049：单批两段式（preview → apply）。 */
+export function useBacklogBatchMutations() {
+  const queryClient = useQueryClient()
+  const previewBatch = useMutation({
+    mutationFn: (input: { groupBy: 'source' | 'age'; key: string; olderThanDays: number }) =>
+      previewBacklogBatch(input),
+  })
+  const applyBatch = useMutation({
+    mutationFn: (input: {
+      groupBy: 'source' | 'age'
+      key: string
+      olderThanDays: number
+      confirmPreviewToken: string
+    }) => applyBacklogBatch(input),
+    onSuccess: async (data: BacklogBatchApplyResponse) => {
+      if (data.applied > 0) {
+        await queryClient.invalidateQueries({ queryKey: ['entries'] })
+        await queryClient.invalidateQueries({ queryKey: ['backlog', 'batches'] })
+      }
+    },
+  })
+  return { previewBatch, applyBatch }
+}
+
+/** N049：撤销台账 + 按批撤销。 */
+export function useBacklogBatchLogs() {
+  return useQuery({
+    queryKey: ['backlog', 'batches', 'log'],
+    queryFn: ({ signal }) => listBacklogBatchLogs(signal),
+  })
+}
+
+export function useUndoBacklogBatchMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (logId: string) => undoBacklogBatch(logId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['backlog', 'batches'] })
+      await queryClient.invalidateQueries({ queryKey: ['entries'] })
+    },
+  })
+}
+
+/** N038 预览的直接触发形态（组件内按钮用）。 */
+export function useSourceRetentionPreviewMutation() {
+  return useMutation({
+    mutationFn: (input: { feedUrl: string; days: number }): Promise<SourceRetentionPreview> =>
+      getRetentionPreview(input.feedUrl, input.days),
+  })
+}
+

@@ -126,6 +126,104 @@ class WorkspaceSnapshotStore:
 
         return await transaction(self._db, _tx)
 
+    # -- diff (N115) ---------------------------------------------------------
+
+    async def diff(
+        self, workspace_id: str, snapshot_id_a: str, snapshot_id_b: str
+    ) -> dict[str, Any]:
+        """N115：两快照差异（纯只读，绝不触碰工作区成员行）。
+
+        - ``added``：B 有 A 无（按 B 内 position 序）；
+        - ``removed``：A 有 B 无（按 A 内 position 序）；
+        - ``moved``：两者都有但 position 变化（按 B 序）；
+        - ``groupChanges``：两者都有但分组归属变化（None = 未分组；
+          按 B 序）。
+        全部只携带 ref 与排序元数据——ref 的内容定位走既有 views/
+        resolve 端点，本端点绝不解析内容。"""
+        state_a = await self._load_state(workspace_id, snapshot_id_a)
+        state_b = await self._load_state(workspace_id, snapshot_id_b)
+        refs_a = {state["ref"]: state for state in state_a}
+        refs_b = {state["ref"]: state for state in state_b}
+
+        added = [
+            state["ref"]
+            for state in sorted(state_b, key=lambda s: s["position"])
+            if state["ref"] not in refs_a
+        ]
+        removed = [
+            state["ref"]
+            for state in sorted(state_a, key=lambda s: s["position"])
+            if state["ref"] not in refs_b
+        ]
+        moved = []
+        group_changes = []
+        for state in sorted(state_b, key=lambda s: s["position"]):
+            other = refs_a.get(state["ref"])
+            if other is None:
+                continue
+            if other["position"] != state["position"]:
+                moved.append(
+                    {
+                        "ref": state["ref"],
+                        "fromPos": other["position"],
+                        "toPos": state["position"],
+                    }
+                )
+            if other["group"] != state["group"]:
+                group_changes.append(
+                    {
+                        "ref": state["ref"],
+                        "from": other["group"],
+                        "to": state["group"],
+                    }
+                )
+        return {
+            "snapshotA": snapshot_id_a,
+            "snapshotB": snapshot_id_b,
+            "added": added,
+            "removed": removed,
+            "moved": moved,
+            "groupChanges": group_changes,
+        }
+
+    async def _load_state(
+        self, workspace_id: str, snapshot_id: str
+    ) -> list[dict[str, Any]]:
+        """快照 payload → 排序元数据列表（与 restore 同一容错口径）。"""
+        row = await self._db.fetch_one(
+            "SELECT payload_json FROM workspace_snapshots WHERE workspace_id = ? AND id = ?",
+            (workspace_id, snapshot_id),
+        )
+        if row is None:
+            raise WorkspaceSnapshotNotFound(snapshot_id)
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except ValueError as exc:
+            raise WorkspaceInvalid("Snapshot payload is not valid JSON.") from exc
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            raise WorkspaceInvalid("Snapshot payload is missing items.")
+        state: list[dict[str, Any]] = []
+        for entry in items:
+            if not isinstance(entry, dict) or not isinstance(entry.get("item_ref"), str):
+                continue
+            state.append(
+                {
+                    "ref": str(entry["item_ref"]),
+                    "group": (
+                        str(entry["group"])
+                        if isinstance(entry.get("group"), str)
+                        else None
+                    ),
+                    "position": (
+                        int(entry["position"])
+                        if isinstance(entry.get("position"), int)
+                        else 0
+                    ),
+                }
+            )
+        return state
+
     # -- restore -------------------------------------------------------------
 
     async def restore(

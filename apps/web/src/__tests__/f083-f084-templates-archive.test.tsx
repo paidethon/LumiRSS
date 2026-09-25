@@ -102,7 +102,17 @@ describe('F084 工作区归档（归档条）', () => {
       const method = init?.method ?? 'GET'
       if (method === 'GET' && url.endsWith('/workspace-archive')) {
         return Promise.resolve(
-          jsonResponse([{ id: 'ws-arch', name: '旧项目', position: 8, itemCount: 3, reserved: false, description: null, archived: true, archivedAt: '2026-09-18T00:00:00Z' }]),
+          jsonResponse([{
+            id: 'ws-arch', name: '旧项目', position: 8, itemCount: 3, reserved: false,
+            description: null, archived: true, archivedAt: '2026-09-18T00:00:00Z',
+            revision: 1,
+            // N119：归档摘要卡（服务端真实行派生）。
+            summary: {
+              itemCount: 3, doneCount: 2,
+              goalProgress: { targetCount: 5, doneCount: 2 },
+              archivedAt: '2026-09-18T00:00:00Z', daysActive: 12,
+            },
+          }]),
         )
       }
       if (method === 'PATCH' && url.endsWith('/workspaces/ws-arch/archive')) {

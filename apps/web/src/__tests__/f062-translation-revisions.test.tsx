@@ -113,7 +113,13 @@ describe('F062 译文修订面板', () => {
         expect.objectContaining({ method: 'POST' }),
       )
     })
-    const defaultBody = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)
+    // N085：面板挂载/选段会先请求修订历史——generate 调用按 URL 定位，
+    // 不受历史请求影响。
+    const generateCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).endsWith('/segments/generate'),
+    )
+    expect(generateCalls.length).toBeGreaterThanOrEqual(1)
+    const defaultBody = JSON.parse((generateCalls[0]?.[1] as RequestInit).body as string)
     expect(defaultBody.overwriteRevisions).toBeUndefined()
 
     // 全部覆盖：确认对话框 → 确认后 body 带 overwriteRevisions:true
@@ -125,8 +131,11 @@ describe('F062 译文修订面板', () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
+    const overwriteCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).endsWith('/segments/generate'),
+    )
     const overwriteBody = JSON.parse(
-      (fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[1] as RequestInit).body as string,
+      (overwriteCalls[overwriteCalls.length - 1]?.[1] as RequestInit).body as string,
     )
     expect(overwriteBody.overwriteRevisions).toBe(true)
   })
