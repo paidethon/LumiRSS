@@ -1307,6 +1307,12 @@ class SavedSearchView(BaseModel):
     filters: dict[str, str | bool | None] | None = None
     # F061：私有 Atom 订阅是否已启用（布尔；token 本身绝不返回）。
     hasFeedToken: bool = False
+    # N144：按检索范围收藏（工作区 + 内容类型；可选）。
+    # scopeBroken：workspaceId 指向的工作区已被删除 —— 诚实标注，
+    # 绝不静默失联；前端给出「已失效」横幅 + 解除关联动作。
+    workspaceId: str | None = None
+    contentTypes: list[str] | None = None
+    scopeBroken: bool = False
 
 
 class SavedSearchList(BaseModel):
@@ -1336,6 +1342,16 @@ class SavedSearchCreate(BaseModel):
     categoryKey: str = ""
     # F035：构建器完整意图（可选；None = 只存 q 解析路径）。
     filters: dict[str, str | bool | None] | None = None
+    # N144：检索范围（可选；工作区必须真实存在，否则 400）。
+    workspaceId: str | None = None
+    contentTypes: list[str] | None = None
+
+
+class SavedSearchScopeUnlinkResult(BaseModel):
+    """POST …/views/{id}/scope/unlink（N144）——解除已失效的工作区关联
+    （内容类型范围保留）；返回更新后的视图。"""
+
+    view: SavedSearchView
 
 
 class SavedSearchRename(BaseModel):
@@ -3362,6 +3378,18 @@ class TagMergeResult(BaseModel):
     dedupedBindings: int
 
 
+class TagMergeUndoResult(BaseModel):
+    """POST /api/v1/tags/merge/undo（N150）——撤销最近一次合并：
+    重建源标签（新 id）并恢复其绑定；目标保留合并来的绑定。
+    无快照/超 24h 窗口 → 404；源标签名已被占用（含上一次 undo 自身
+    的重建）→ 409。"""
+
+    sourceTagId: int
+    name: str
+    targetTagId: int
+    restoredBindings: int
+
+
 class TagSuggestionsResponse(BaseModel):
     """AI suggestions — computed only, never stored until accepted."""
 
@@ -3796,6 +3824,102 @@ class SearchDistributionResult(BaseModel):
     days: list[SearchDistributionDay] = []
     dayFrom: str
     dayTo: str
+
+
+# ---------------------------------------------------------------------------
+# N141 / N149 — 搜索快照比较 + 主题演变时间线
+# ---------------------------------------------------------------------------
+
+
+class SearchSnapshotCreate(BaseModel):
+    """POST /api/v1/search/snapshots body（N141）——与 GET /search 同参
+    （除分页/同义词扩展；快照口径 = 基础词条过滤链，与 N143/N145 一致）。"""
+
+    model_config = {"extra": "forbid"}
+
+    q: str = Field(min_length=1, max_length=200)
+    feedUrl: str | None = None
+    categoryId: str | None = None
+    state: str | None = None
+    favorite: bool = False
+    from_: str | None = Field(default=None, alias="from")
+    to: str | None = None
+    intitle: str | None = None
+    phrase: str | None = None
+    exclude: str | None = None
+    hasSummary: bool | None = None
+
+
+class SearchSnapshotView(BaseModel):
+    """一个已冻结的搜索快照（N141）：查询 + 过滤作用域 + 结果引用计数
+    （引用清单本身绝不在列表中出站，仅 compare 内部使用）。"""
+
+    id: str
+    query: str
+    filters: dict[str, str | bool] = {}
+    refCount: int
+    truncated: bool = False
+    createdAt: str
+
+
+class SearchSnapshotList(BaseModel):
+    """GET /api/v1/search/snapshots。"""
+
+    items: list[SearchSnapshotView]
+
+
+class SearchSnapshotRankChange(BaseModel):
+    """一个共同引用的排名变化（绝对位移 > 5 才列入）。"""
+
+    entryRef: str
+    oldRank: int
+    newRank: int
+
+
+class SearchSnapshotCompareResult(BaseModel):
+    """N141 差分：added/removed（引用清单，≤200 条 + 全量 counts）、
+    rankChanges（|位移| > 5）、permissionLost（快照引用在本账户投影中
+    已不再解析——与 404 同语义，绝不泄露他人条目存在性）。
+    任一侧冻结/复跑触界截断 → complete=false 诚实标注。"""
+
+    added: list[str] = []
+    removed: list[str] = []
+    rankChanges: list[SearchSnapshotRankChange] = []
+    permissionLost: list[str] = []
+    counts: dict[str, int] = {}
+    complete: bool = True
+
+
+class SearchTimelineMonth(BaseModel):
+    """N149：单月命中计数（YYYY-MM；窗口内补零后逐月出）。"""
+
+    month: str
+    count: int
+
+
+class SearchTimelineAnnotation(BaseModel):
+    """N149：与查询匹配的一条本人批注（excerpt/note LIKE 命中）。"""
+
+    id: str
+    entryRef: str
+    excerpt: str
+    note: str
+    color: str
+    createdAt: str
+    updatedAt: str
+
+
+class SearchTimelineResult(BaseModel):
+    """N149 主题演变时间线：24 个月逐月计数（SQL 聚合，无正文出站）+
+    匹配查询的本人批注（LIKE，≤10 条；超界 annotationsComplete=false
+    诚实标注——仅本人批注，per-user DB 天然隔离他人）。"""
+
+    months: list[SearchTimelineMonth] = []
+    monthFrom: str
+    monthTo: str
+    total: int
+    annotations: list[SearchTimelineAnnotation] = []
+    annotationsComplete: bool = True
 
 
 # ---------------------------------------------------------------------------

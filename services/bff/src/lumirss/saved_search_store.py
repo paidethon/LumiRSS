@@ -22,11 +22,17 @@ _MAX_QUERY_LENGTH = 200
 _MAX_CATEGORY_KEY = 200
 _ALLOWED_VIEWS = ("all", "unread", "starred")
 
+# N144：检索范围内容类型白名单（RSS 腿 + 库腿各 kind，与 Web
+# LibrarySearchItem kind 口径一致）。
+_ALLOWED_CONTENT_TYPES = (
+    "rss", "bookmark", "clip", "obsidian_note", "snapshot", "api_item",
+)
+
 # F061：列表/读取携带的列（feed_secret 绝不进 _row 输出——管理端只给
 # hasFeedToken 布尔；原始值仅供公开路由常量时间比对）。
 _ROW_COLUMNS = (
     "id, name, query, params, pinned, pin_order, filters_json, feed_secret, "
-    "created_at, updated_at"
+    "workspace_id, content_types_json, created_at, updated_at"
 )
 
 
@@ -40,6 +46,14 @@ class SavedSearchNotFound(Exception):
 
 class SavedSearchLimit(Exception):
     """The saved-view cap was reached (mapped to 409)."""
+
+
+class SavedSearchWorkspaceMissing(Exception):
+    """N144：scope 指向的工作区不存在（创建时校验，映射 400）。"""
+
+    def __init__(self, workspace_id: str) -> None:
+        super().__init__(workspace_id)
+        self.workspace_id = workspace_id
 
 
 def normalize_name(name: Any) -> str:
@@ -111,6 +125,21 @@ def normalize_params(raw: Any) -> dict[str, Any]:
     return {"view": view, "categoryKey": category_key}
 
 
+def normalize_content_types(raw: Any) -> list[str] | None:
+    """N144：内容类型白名单（去重保序；空/None = 无内容类型范围）。"""
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise SavedSearchInvalid("contentTypes 必须是数组。")
+    clean: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or value not in _ALLOWED_CONTENT_TYPES:
+            raise SavedSearchInvalid("contentTypes 含未支持的类型。")
+        if value not in clean:
+            clean.append(value)
+    return clean or None
+
+
 class SavedSearchStore:
     """CRUD over the saved_searches table (newest-first listing)."""
 
@@ -133,10 +162,34 @@ class SavedSearchStore:
         )
         return self._row(row) if row is not None else None
 
-    async def create(self, name: Any, query: Any, params: Any) -> dict[str, Any]:
+    async def create(
+        self,
+        name: Any,
+        query: Any,
+        params: Any,
+        *,
+        # 引号注记：类体内 `list` 已是下面的 list() 方法名。
+        workspace_id: str | None = None,
+        content_types: "list[str] | None" = None,
+    ) -> dict[str, Any]:
         clean_name = normalize_name(name)
         clean_query = normalize_query(query)
         clean_params = normalize_params(params)
+        # N144：范围列（可选）。工作区在写入前校验存在性——保存一个
+        # 一开始就指向不存在工作区的视图是客户端错误（400），与
+        # 「保存后工作区被删 → scopeBroken 诚实标注」是两回事。
+        clean_workspace_id: str | None = None
+        if workspace_id is not None:
+            if not isinstance(workspace_id, str) or not workspace_id or len(workspace_id) > 200:
+                raise SavedSearchInvalid("workspaceId 非法。")
+            await self._db.migrate()
+            row = await self._db.fetch_one(
+                "SELECT id FROM workspaces WHERE id = ?", (workspace_id,)
+            )
+            if row is None:
+                raise SavedSearchWorkspaceMissing(workspace_id)
+            clean_workspace_id = workspace_id
+        clean_content_types = normalize_content_types(content_types)
         await self._db.migrate()
         now = utc_now()
         view_id = str(_uuid.uuid4())
@@ -153,12 +206,19 @@ class SavedSearchStore:
                     f"保存的搜索最多 {_MAX_SAVED_SEARCHES} 条，请先删除不需要的视图。"
                 )
             conn.execute(
-                "INSERT INTO saved_searches (id, name, query, params, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO saved_searches (id, name, query, params, workspace_id, content_types_json, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     view_id,
                     clean_name,
                     clean_query,
                     json.dumps(clean_params, ensure_ascii=False, sort_keys=True),
+                    clean_workspace_id,
+                    (
+                        json.dumps(clean_content_types, ensure_ascii=False)
+                        if clean_content_types is not None
+                        else None
+                    ),
                     now,
                     now,
                 ),
@@ -261,6 +321,14 @@ class SavedSearchStore:
     def _row(row: Any) -> dict[str, Any]:
         row_dict = dict(row)
         filters_json = row_dict.get("filters_json")
+        content_types_json = row_dict.get("content_types_json")
+        try:
+            content_types = (
+                json.loads(str(content_types_json)) if content_types_json else None
+            )
+        except ValueError:
+            content_types = None
+        workspace_id = row_dict.get("workspace_id")
         return {
             "id": str(row["id"]),
             "name": str(row["name"]),
@@ -273,9 +341,41 @@ class SavedSearchStore:
             "filters": json.loads(filters_json) if filters_json else None,
             # F061：布尔暴露启用态；secret 本身永不随管理端出站。
             "hasFeedToken": bool(row_dict.get("feed_secret")),
+            # N144：检索范围（scopeBroken 由路由层对照 workspaces 表计算）。
+            "workspaceId": str(workspace_id) if workspace_id else None,
+            "contentTypes": (
+                [str(t) for t in content_types]
+                if isinstance(content_types, list)
+                else None
+            ),
             "createdAt": str(row["created_at"]),
             "updatedAt": str(row["updated_at"]),
         }
+
+    # -- N144：检索范围（工作区 + 内容类型） ----------------------------------
+
+    async def existing_workspace_ids(self) -> set[str]:
+        """当前库中真实存在的工作区 id 集合（scopeBroken 判定用）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all("SELECT id FROM workspaces", ())
+        return {str(row["id"]) for row in rows}
+
+    async def set_workspace_scope(
+        self, view_id: str, workspace_id: str | None
+    ) -> dict[str, Any] | None:
+        """解除/设置工作区范围（N144 unlink：workspace_id = NULL）。
+
+        内容类型范围保留不动；返回更新后的行，视图缺失 → None。"""
+        await self._db.migrate()
+        if await self.get(view_id) is None:
+            return None
+        await self._db.execute(
+            "UPDATE saved_searches SET workspace_id = ?, updated_at = ? WHERE id = ?",
+            (workspace_id, utc_now(), view_id),
+        )
+        updated = await self.get(view_id)
+        assert updated is not None
+        return updated
 
     # -- F061：私有 Atom 订阅 token ------------------------------------------
 

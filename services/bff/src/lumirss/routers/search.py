@@ -25,6 +25,7 @@ from lumirss.models import (
     SavedSearchList,
     SavedSearchPinOrder,
     SavedSearchRename,
+    SavedSearchScopeUnlinkResult,
     SavedSearchView,
     SearchDistributionResult,
     SearchParseQueryBody,
@@ -32,6 +33,14 @@ from lumirss.models import (
     SearchParseResult,
     SearchRebuildResult,
     SearchResponse,
+    SearchSnapshotCompareResult,
+    SearchSnapshotCreate,
+    SearchSnapshotList,
+    SearchSnapshotRankChange,
+    SearchSnapshotView,
+    SearchTimelineAnnotation,
+    SearchTimelineMonth,
+    SearchTimelineResult,
     SearchWhyMissedBody,
     SearchWhyMissedEntry,
     SearchWhyMissedReason,
@@ -50,6 +59,10 @@ from lumirss.search_index import (
 from lumirss.search_library import (
     decode_library_search_cursor,
     encode_library_search_cursor,
+)
+from lumirss.search_snapshot_store import (
+    SearchSnapshotNotFound,
+    SearchSnapshotStore,
 )
 
 from ..deps import _get_search_service
@@ -396,7 +409,11 @@ def _get_saved_search_store(request: Request) -> SavedSearchStore:
     )
 
 
-def _saved_model(row: dict[str, Any]) -> SavedSearchView:
+def _saved_model(row: dict[str, Any], workspace_ids: set[str]) -> SavedSearchView:
+    workspace_id = row.get("workspaceId")
+    # N144：scopeBroken = 引用的工作区已不存在（删除后不静默改写视图，
+    # 也不伪造成「正常」——由前端给「已失效」横幅 + 解除关联动作）。
+    scope_broken = workspace_id is not None and workspace_id not in workspace_ids
     return SavedSearchView(
         id=row["id"],
         name=row["name"],
@@ -408,16 +425,25 @@ def _saved_model(row: dict[str, Any]) -> SavedSearchView:
         filters=row.get("filters"),
         # F061：只暴露布尔，token 本身绝不返回。
         hasFeedToken=row.get("hasFeedToken", False),
+        # N144：检索范围。
+        workspaceId=workspace_id,
+        contentTypes=row.get("contentTypes"),
+        scopeBroken=scope_broken,
         createdAt=row["createdAt"],
         updatedAt=row["updatedAt"],
     )
+
+
+async def _existing_workspace_ids(request: Request) -> set[str]:
+    return await _get_saved_search_store(request).existing_workspace_ids()
 
 
 @router.get("/api/v1/search/views", response_model=SavedSearchList)
 async def list_saved_search_views(request: Request) -> SavedSearchList:
     store = _get_saved_search_store(request)
     rows = await store.list()
-    return SavedSearchList(items=[_saved_model(row) for row in rows])
+    workspace_ids = await _existing_workspace_ids(request)
+    return SavedSearchList(items=[_saved_model(row, workspace_ids) for row in rows])
 
 
 @router.post(
@@ -428,15 +454,19 @@ async def create_saved_search_view(
 ) -> SavedSearchView:
     """Save the current query + filter intent (not the result set)."""
     store = _get_saved_search_store(request)
+    # 指向不存在的工作区 → SavedSearchWorkspaceMissing（400
+    # workspace_not_found，由 errors.py 稳定映射）。
     row = await store.create(
         payload.name, payload.query,
         {"view": payload.view, "categoryKey": payload.categoryKey},
+        workspace_id=payload.workspaceId,
+        content_types=payload.contentTypes,
     )
     if payload.filters is not None:
         from lumirss.saved_search_store import normalize_filters
 
         row = await store.set_filters(row["id"], normalize_filters(payload.filters))
-    return _saved_model(row)
+    return _saved_model(row, await _existing_workspace_ids(request))
 
 
 @router.patch(
@@ -449,7 +479,7 @@ async def rename_saved_search_view(
     row = await store.rename(view_id, payload.name)
     if row is None:
         raise SavedSearchNotFound(view_id)
-    return _saved_model(row)
+    return _saved_model(row, await _existing_workspace_ids(request))
 
 
 @router.delete("/api/v1/search/views/{view_id}", status_code=204)
@@ -467,7 +497,8 @@ async def delete_saved_search_view(view_id: str, request: Request) -> Response:
 async def list_pinned_views(request: Request) -> SavedSearchList:
     store = _get_saved_search_store(request)
     rows = await store.pinned_views()
-    return SavedSearchList(items=[_saved_model(row) for row in rows])
+    workspace_ids = await _existing_workspace_ids(request)
+    return SavedSearchList(items=[_saved_model(row, workspace_ids) for row in rows])
 
 
 @router.post("/api/v1/search/views/{view_id}/pin", response_model=SavedSearchView)
@@ -476,7 +507,7 @@ async def pin_saved_search_view(view_id: str, request: Request) -> SavedSearchVi
     row = await store.set_pinned(view_id, True)
     if row is None:
         raise SavedSearchNotFound(view_id)
-    return _saved_model(row)
+    return _saved_model(row, await _existing_workspace_ids(request))
 
 
 @router.post("/api/v1/search/views/{view_id}/unpin", response_model=SavedSearchView)
@@ -485,7 +516,7 @@ async def unpin_saved_search_view(view_id: str, request: Request) -> SavedSearch
     row = await store.set_pinned(view_id, False)
     if row is None:
         raise SavedSearchNotFound(view_id)
-    return _saved_model(row)
+    return _saved_model(row, await _existing_workspace_ids(request))
 
 
 @router.patch("/api/v1/search/views/{view_id}/pin-order", response_model=SavedSearchView)
@@ -496,7 +527,26 @@ async def reorder_pinned_view(
     row = await store.set_pin_order(view_id, payload.pinOrder)
     if row is None:
         raise SavedSearchNotFound(view_id)
-    return _saved_model(row)
+    return _saved_model(row, await _existing_workspace_ids(request))
+
+
+@router.post(
+    "/api/v1/search/views/{view_id}/scope/unlink",
+    response_model=SavedSearchScopeUnlinkResult,
+)
+async def unlink_saved_search_scope(
+    view_id: str, request: Request
+) -> SavedSearchScopeUnlinkResult:
+    """N144：解除已失效的工作区关联（scopeBroken 后的用户显式动作）。
+
+    只清 workspace_id——内容类型范围保留；视图缺失 → 404。"""
+    store = _get_saved_search_store(request)
+    row = await store.set_workspace_scope(view_id, None)
+    if row is None:
+        raise SavedSearchNotFound(view_id)
+    return SavedSearchScopeUnlinkResult(
+        view=_saved_model(row, await _existing_workspace_ids(request))
+    )
 
 
 async def _count_view_matches(request: Request, view: dict[str, Any]) -> dict[str, Any]:
@@ -1028,3 +1078,348 @@ async def search_distribution(
         dayFrom=day_from.isoformat(),
         dayTo=day_to.isoformat(),
     )
+
+
+# ---------------------------------------------------------------------------
+# N141：搜索快照比较 —— 冻结当前结果引用清单，稍后对同一作用域复跑
+# 做诚实差分（added / removed / rankChanges / permissionLost）。
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_CAP = 2000
+_SNAPSHOT_LIST_CAP = 200
+_RANK_CHANGE_THRESHOLD = 5
+
+
+def _get_search_snapshot_store(request: Request) -> SearchSnapshotStore:
+    from lumirss.deps import _cached_on_app_state
+
+    return _cached_on_app_state(
+        request,
+        "search_snapshot_store",
+        lambda: SearchSnapshotStore(request.app.state.db),
+    )
+
+
+def _snapshot_search_params(payload: SearchSnapshotCreate) -> dict[str, Any]:
+    """Body → service.search kwargs（与 GET /search 的校验语义一致）。"""
+    if payload.feedUrl is not None and payload.categoryId is not None:
+        raise SearchQueryError("feedUrl and categoryId are mutually exclusive.")
+    if payload.state is not None and payload.state != "unread":
+        raise SearchQueryError('state only supports "unread".')
+    return {
+        "query": payload.q.strip(),
+        "feed_url": payload.feedUrl,
+        "category_id": payload.categoryId,
+        "unread_only": payload.state == "unread",
+        "starred_only": bool(payload.favorite),
+        "published_from": payload.from_,
+        "published_to": payload.to,
+        "intitle": payload.intitle,
+        "phrase": payload.phrase,
+        "exclude": payload.exclude,
+        "has_summary": payload.hasSummary,
+    }
+
+
+async def _collect_search_refs(
+    request: Request, *, params: dict[str, Any], cap: int
+) -> tuple[list[str], bool]:
+    """keyset 全量迭代同一过滤链（复用生产查询路径）；返回 (refs, complete)。
+
+    complete=False = 触及 cap 上界被诚实截断（与 F075 同一口径）。"""
+    service = _get_search_service(request)
+    scope = {
+        "q": params["query"],
+        "feedUrl": params["feed_url"],
+        "categoryId": params["category_id"],
+        "unread": params["unread_only"],
+        "favorite": params["starred_only"],
+        "from": params["published_from"],
+        "to": params["published_to"],
+        "intitle": params["intitle"],
+        "phrase": params["phrase"],
+        "exclude": params["exclude"],
+        "hasSummary": params["has_summary"],
+    }
+    refs: list[str] = []
+    keyset = None
+    complete = True
+    for _ in range(9):  # 8 页 × 250 = 2000 上界 + 1 次收尾探测
+        result = await service.search(limit=250, keyset=keyset, **params)
+        refs.extend(str(row["entryRef"]) for row in result["rows"])
+        if not result["hasMore"] or result["nextKeyset"] is None or len(refs) >= cap:
+            break
+        keyset = decode_search_cursor(
+            encode_search_cursor(*result["nextKeyset"], scope=scope), scope=scope
+        )
+    else:
+        complete = False
+    if len(refs) > cap:
+        refs = refs[:cap]
+        complete = False
+    return refs, complete
+
+
+@router.get(
+    "/api/v1/search/snapshots",
+    response_model=SearchSnapshotList,
+    response_model_exclude_none=False,
+)
+async def list_search_snapshots(request: Request) -> SearchSnapshotList:
+    """N141：快照列表（最新优先；引用计数而非引用清单，出站有界）。"""
+    store = _get_search_snapshot_store(request)
+    rows = await store.list()
+    return SearchSnapshotList(
+        items=[
+            SearchSnapshotView(
+                id=row["id"],
+                query=row["query"],
+                filters=row["filters"],
+                refCount=row["refCount"],
+                truncated=row["truncated"],
+                createdAt=row["createdAt"],
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.post(
+    "/api/v1/search/snapshots",
+    response_model=SearchSnapshotView,
+    status_code=201,
+    response_model_exclude_none=False,
+)
+async def create_search_snapshot(
+    payload: SearchSnapshotCreate, request: Request
+) -> SearchSnapshotView:
+    """N141 冻结：对当前查询+过滤作用域做一次 keyset 全量迭代（≤2000
+    条，触界诚实标注 truncated），把引用清单存入 per-user 快照表
+    （cap 20，超界自动淘汰最老）。查询为空/非法 → 400。"""
+    query = payload.q.strip()
+    if not query:
+        raise SearchQueryError("Search query is empty.")
+    if len(query) > 200:
+        raise SearchQueryError("Search query is too long.")
+
+    params = _snapshot_search_params(payload)
+    refs, complete = await _collect_search_refs(
+        request, params=params, cap=_SNAPSHOT_CAP
+    )
+    store = _get_search_snapshot_store(request)
+    filters_payload = {
+        key: value
+        for key, value in {
+            "feedUrl": payload.feedUrl,
+            "categoryId": payload.categoryId,
+            "state": payload.state,
+            "favorite": bool(payload.favorite) or None,
+            "from": payload.from_,
+            "to": payload.to,
+            "intitle": payload.intitle,
+            "phrase": payload.phrase,
+            "exclude": payload.exclude,
+            "hasSummary": payload.hasSummary,
+        }.items()
+        if value is not None
+    }
+    row = await store.create(
+        query, filters_payload, refs, truncated=not complete
+    )
+    return SearchSnapshotView(
+        id=row["id"],
+        query=row["query"],
+        filters=row["filters"],
+        refCount=row["refCount"],
+        truncated=row["truncated"],
+        createdAt=row["createdAt"],
+    )
+
+
+@router.post(
+    "/api/v1/search/snapshots/{snapshot_id}/compare",
+    response_model=SearchSnapshotCompareResult,
+    response_model_exclude_none=False,
+)
+async def compare_search_snapshot(
+    snapshot_id: str, request: Request
+) -> SearchSnapshotCompareResult:
+    """N141 比较：对快照存储的作用域原样复跑（存什么跑什么，绝不
+    重新解释），与冻结清单做差分：
+
+    - added / removed：双向集合差（保持 newest-first 顺序；列表 ≤200
+      条，counts 为全量诚实计数）；
+    - rankChanges：两侧共同引用按位置排名，|位移| > 5 才列入；
+    - permissionLost：removed 中在本账户投影已不再解析的引用——
+      per-user 库查不到与 404 同语义，绝不泄露他人条目存在性；
+    - 任一侧触界截断 → complete=false。快照缺失 → 404。"""
+    store = _get_search_snapshot_store(request)
+    snapshot = await store.get(snapshot_id)
+    if snapshot is None:
+        raise SearchSnapshotNotFound(snapshot_id)
+
+    filters = snapshot.get("filters") or {}
+    params: dict[str, Any] = {
+        "query": snapshot["query"],
+        "feed_url": filters.get("feedUrl"),
+        "category_id": filters.get("categoryId"),
+        "unread_only": filters.get("state") == "unread",
+        "starred_only": bool(filters.get("favorite", False)),
+        "published_from": filters.get("from"),
+        "published_to": filters.get("to"),
+        "intitle": filters.get("intitle"),
+        "phrase": filters.get("phrase"),
+        "exclude": filters.get("exclude"),
+        "has_summary": filters.get("hasSummary"),
+    }
+    current_refs, complete_current = await _collect_search_refs(
+        request, params=params, cap=_SNAPSHOT_CAP
+    )
+    old_refs = snapshot.get("refs") or []
+    complete = complete_current and not snapshot.get("truncated", False)
+
+    old_set = set(old_refs)
+    new_set = set(current_refs)
+    added_all = [ref for ref in current_refs if ref not in old_set]
+    removed_all = [ref for ref in old_refs if ref not in new_set]
+
+    old_rank = {ref: index + 1 for index, ref in enumerate(old_refs)}
+    rank_changes_all = [
+        SearchSnapshotRankChange(
+            entryRef=ref, oldRank=old_rank[ref], newRank=index + 1
+        )
+        for index, ref in enumerate(current_refs)
+        if ref in old_rank and abs(old_rank[ref] - (index + 1)) > _RANK_CHANGE_THRESHOLD
+    ]
+
+    # permissionLost：仅对 removed 引用做存在性检查（有界 ≤2000）。
+    search_store = _get_search_service(request).store
+    resolved = await search_store.entry_refs_existing(removed_all)
+    permission_lost_all = [ref for ref in removed_all if ref not in resolved]
+
+    return SearchSnapshotCompareResult(
+        added=added_all[:_SNAPSHOT_LIST_CAP],
+        removed=removed_all[:_SNAPSHOT_LIST_CAP],
+        rankChanges=rank_changes_all[:_SNAPSHOT_LIST_CAP],
+        permissionLost=permission_lost_all[:_SNAPSHOT_LIST_CAP],
+        counts={
+            "snapshot": len(old_set),
+            "current": len(new_set),
+            "added": len(added_all),
+            "removed": len(removed_all),
+            "rankChanges": len(rank_changes_all),
+            "permissionLost": len(permission_lost_all),
+        },
+        complete=complete,
+    )
+
+
+# ---------------------------------------------------------------------------
+# N149：主题演变时间线 —— 24 个月逐月计数（SQL 聚合，同参同权限）+
+# 匹配查询的本人批注（LIKE，≤10 条诚实截断）。
+# ---------------------------------------------------------------------------
+
+
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    total = year * 12 + (month - 1) + delta
+    return total // 12, total % 12 + 1
+
+
+@router.get(
+    "/api/v1/search/timeline",
+    response_model=SearchTimelineResult,
+    response_model_exclude_none=False,
+)
+async def search_timeline(
+    request: Request,
+    q: str,
+    feedUrl: str | None = None,
+    categoryId: str | None = None,
+    state: str | None = None,
+    favorite: bool | None = None,
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = None,
+    intitle: str | None = None,
+    phrase: str | None = None,
+    exclude: str | None = None,
+    hasSummary: bool | None = None,
+) -> SearchTimelineResult:
+    """N149：与 GET /search 相同的权限与过滤作用域（per-user DB 路由 +
+    同一过滤链），24 个月逐月计数在 SQL 完成（GROUP BY 月份前缀）——
+    只回每月计数，绝不搬运正文。批注腿只含本人批注（annotations 表在
+    per-user 库中），excerpt/note LIKE 匹配查询，≤10 条 + 超界诚实
+    标注。同义词扩展不参与（聚合口径 = 基础词条过滤链，与 N145 一致）。"""
+    from datetime import date
+
+    from lumirss.annotation_store import AnnotationStore
+    from lumirss.search_index import split_terms
+
+    query = q.strip()
+    if not query:
+        raise SearchQueryError("Search query is empty.")
+    if len(query) > 200:
+        raise SearchQueryError("Search query is too long.")
+    if feedUrl is not None and categoryId is not None:
+        raise SearchQueryError(
+            "feedUrl and categoryId are mutually exclusive."
+        )
+    if state is not None and state != "unread":
+        raise SearchQueryError('state only supports "unread".')
+
+    store = _get_search_service(request).store
+    await store.ensure_migrated()
+    common: dict[str, Any] = dict(
+        terms=split_terms(query),
+        intitle_terms=split_terms(intitle or "")[:2] or None,
+        phrase=(phrase or "").strip() or None,
+        exclude_terms=split_terms(exclude or "")[:2] or None,
+        feed_url=feedUrl,
+        category_id=categoryId,
+        unread_only=state == "unread",
+        starred_only=bool(favorite),
+        published_from=from_,
+        published_to=to,
+        has_summary=hasSummary,
+    )
+    today = date.today()
+    start_year, start_month = _shift_month(today.year, today.month, -23)
+    next_year, next_month = _shift_month(today.year, today.month, 1)
+    month_from = f"{start_year:04d}-{start_month:02d}"
+    month_to = f"{next_year:04d}-{next_month:02d}"
+    month_rows = await store.distribution_months(
+        **common, month_from=month_from, month_to=month_to
+    )
+    by_month = {str(row["month"]): int(row["n"]) for row in month_rows}
+    months: list[SearchTimelineMonth] = []
+    year, month = start_year, start_month
+    for _ in range(24):
+        key = f"{year:04d}-{month:02d}"
+        months.append(SearchTimelineMonth(month=key, count=by_month.get(key, 0)))
+        year, month = _shift_month(year, month, 1)
+    total = sum(entry.count for entry in months)
+
+    annotation_store = AnnotationStore(request.app.state.db)
+    annotations_raw, annotations_complete = await annotation_store.search_bounded(
+        query, limit=10
+    )
+    annotations = [
+        SearchTimelineAnnotation(
+            id=item["id"],
+            entryRef=item["entryRef"],
+            excerpt=item["excerpt"],
+            note=item["note"],
+            color=item["color"],
+            createdAt=item["createdAt"],
+            updatedAt=item["updatedAt"],
+        )
+        for item in annotations_raw
+    ]
+    return SearchTimelineResult(
+        months=months,
+        monthFrom=month_from,
+        monthTo=month_to,
+        total=total,
+        annotations=annotations,
+        annotationsComplete=annotations_complete,
+    )
+
