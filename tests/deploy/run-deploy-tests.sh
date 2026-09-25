@@ -603,6 +603,89 @@ fi
 rm -rf "$sb" "$stub_dir" "$ex_log" "$im_log" "$bad_log"
 
 # ---------------------------------------------------------------------------
+echo "== 14. update writes stage progress JSON (N196, stub docker) =="
+sb="$(new_sandbox)"
+stub_dir="$(mktemp -d)"
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+# stub docker: everything succeeds, compose subcommands answer sanely
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  run) exit 0;;
+  inspect) echo healthy;;
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo " Pulled";;
+      exec) exit 0;;   # wait_health probe inside the bff container
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+status_dir="$(mktemp -d)"
+status_file="$status_dir/deploy-status.json"
+update_out="$(cd "$sb" && cp -f .env.prod.example .env.prod \
+  && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$status_file" \
+     LUMIRSS_IMAGE_TAG=abcdef123456 ./lumirss update 2>&1)"
+rc=$?
+assert_eq "update with status reporting completes" "0" "$rc"
+[[ -s "$status_file" ]] && ok "status file written" || bad "status file missing"
+assert_contains "status JSON has every stage ok + result success + tag" "STATUS-JSON-OK" "$(python3 - "$status_file" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    print("STATUS-JSON-BAD"); raise SystemExit
+stages = data.get("stages", {})
+ok = data.get("schema") == "lumirss-deploy-status/v1"
+for name in ("backup", "pull", "migrate", "health"):
+    ok = ok and stages.get(name, {}).get("status") == "ok"
+    ok = ok and bool(stages.get(name, {}).get("startedAt")) and bool(stages.get(name, {}).get("finishedAt"))
+ok = ok and data.get("result", {}).get("status") == "success" and data.get("imageTag") == "abcdef123456"
+print("STATUS-JSON-OK" if ok else "STATUS-JSON-BAD")
+PY
+)"
+assert_not_contains "status file carries no secrets" "LUMIRSS_INTERNAL_TOKEN" "$(cat "$status_file")"
+
+# Failed pull → honest failed stages + failed result, exit nonzero.
+cat > "$stub_dir/docker" <<'STUB'
+#!/bin/sh
+cmd="$1"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  info) exit 0;;
+  image)  # `docker image inspect` fails: no local images either
+    sub="$1"; shift
+    case "$sub" in inspect) exit 1;; *) exit 0;; esac;;
+  ps) exit 0;;
+  compose)
+    sub="$1"; shift
+    case "$sub" in
+      version) exit 0;;
+      config) echo '{"name": "lumirss-prod"}';;
+      pull) echo "Image Skipped";;
+      *) exit 0;;
+    esac;;
+  *) exit 0;;
+esac
+STUB
+chmod +x "$stub_dir/docker"
+fail_dir="$(mktemp -d)"
+fail_file="$fail_dir/deploy-status-failed.json"
+fail_out="$(cd "$sb" && env PATH="$stub_dir:$PATH" LUMIRSS_DEPLOY_STATUS_FILE="$fail_file" \
+  ./lumirss update 2>&1)"
+rc=$?
+assert_eq "failed pull exits 1" "1" "$rc"
+assert_contains "failed update records pull failed + result failed" "failed failed" \
+  "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["stages"]["pull"]["status"], d["result"]["status"])' "$fail_file" 2>/dev/null || echo broken)"
+rm -rf "$sb" "$stub_dir" "$status_dir" "$fail_dir"
+
+# ---------------------------------------------------------------------------
 echo
 echo "deploy-lifecycle tests: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then exit 1; fi
