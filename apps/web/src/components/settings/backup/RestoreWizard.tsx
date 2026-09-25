@@ -27,7 +27,7 @@ import { cx } from '../../ui/cx'
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-react'
 import { componentLabel, formatBytes, formatJobTime } from './backup-format'
 
-type Step = 'select' | 'preview' | 'confirm' | 'result' | 'verify'
+type Step = 'select' | 'preview' | 'conflicts' | 'confirm' | 'result' | 'verify'
 
 const CONFIRM_TEXT = 'RESTORE'
 
@@ -232,6 +232,79 @@ function PreviewPane({
   )
 }
 
+/** N187：冲突决策步骤——逐对象 skip|overwrite（缺省 skip = 保留现状）。
+ * 清单来自 preview.conflicts（活动状态 vs 备份成员的 exists/differs 对比）。 */
+function ConflictStep({
+  conflicts,
+  decisions,
+  onChange,
+  onCancel,
+  onContinue,
+}: {
+  conflicts: NonNullable<RestorePreview['conflicts']>
+  decisions: Record<string, 'skip' | 'overwrite'>
+  onChange: (path: string, strategy: 'skip' | 'overwrite') => void
+  onCancel: () => void
+  onContinue: () => void
+}) {
+  const conflictCount = conflicts.filter((item) => item.differs || item.exists).length
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex items-start gap-1.5 text-sm leading-relaxed text-[var(--lumi-text-primary)]">
+        <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--lumi-accent-text)]" />
+        备份中的对象与当前状态存在重叠。请为每个对象选择处理方式：
+        「保留现状」不动现有数据；「覆盖」用备份内容替换。
+      </p>
+      <ul
+        data-testid="restore-conflict-list"
+        className="max-h-64 divide-y divide-[var(--lumi-separator)] overflow-y-auto rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)]"
+      >
+        {conflicts.map((item) => {
+          const current = decisions[item.path] ?? 'skip'
+          return (
+            <li key={item.path} className="flex items-center gap-2 px-3 py-2 text-xs">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-[var(--lumi-text-primary)]">{item.path}</p>
+                <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+                  {componentLabel(item.component)}
+                  {item.exists ? (item.differs ? ' · 与当前内容不同' : ' · 与当前内容相同') : ' · 当前不存在'}
+                </p>
+              </div>
+              <label className="flex shrink-0 items-center gap-1">
+                <input
+                  type="radio"
+                  name={`conflict-${item.path}`}
+                  checked={current === 'skip'}
+                  onChange={() => onChange(item.path, 'skip')}
+                />
+                保留现状
+              </label>
+              <label className="flex shrink-0 items-center gap-1">
+                <input
+                  type="radio"
+                  name={`conflict-${item.path}`}
+                  checked={current === 'overwrite'}
+                  onChange={() => onChange(item.path, 'overwrite')}
+                />
+                覆盖
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+        共 {conflicts.length} 个对象（{conflictCount} 个与当前状态重叠）。缺省全部「保留现状」。
+      </p>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onCancel}>取消</Button>
+        <Button size="sm" variant="danger" onClick={onContinue}>
+          继续确认…
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function ConfirmPane({
   onConfirmed,
   onCancel,
@@ -406,6 +479,8 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
   const [step, setStep] = useState<Step>('select')
   const [selected, setSelected] = useState<SelectedSource | null>(null)
   const [preview, setPreview] = useState<RestorePreview | null>(null)
+  // N187：逐对象冲突决策（path → 'skip'|'overwrite'；缺省 skip）。
+  const [decisions, setDecisions] = useState<Record<string, 'skip' | 'overwrite'>>({})
   const [result, setResult] = useState<RestoreResult | null>(null)
   const [verifySource, setVerifySource] = useState<string>('')
 
@@ -413,6 +488,7 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
     setStep('select')
     setSelected(null)
     setPreview(null)
+    setDecisions({})
     setResult(null)
     setVerifySource('')
     previewMutation.reset()
@@ -455,7 +531,7 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
   const execute = (confirmation: string) => {
     if (!preview) return
     executeMutation.mutate(
-      { restoreSessionId: preview.restoreSessionId, confirmation },
+      { restoreSessionId: preview.restoreSessionId, confirmation, decisions },
       {
         onSuccess: (data) => {
           // AUDIT-012：恢复成功后立即丢弃未落库的本地设置变更，
@@ -563,11 +639,28 @@ export function RestoreWizard({ open, onClose }: { open: boolean; onClose: () =>
           {!previewMutation.isPending && preview && !previewFailed && (
             <PreviewPane
               preview={preview}
-              onConfirm={() => setStep('confirm')}
+              onConfirm={() =>
+                // N187：存在冲突对象 → 先进入冲突决策步骤（缺省 skip）。
+                setStep(
+                  (preview.conflicts?.length ?? 0) > 0 ? 'conflicts' : 'confirm',
+                )
+              }
               onCancel={close}
             />
           )}
         </>
+      )}
+
+      {step === 'conflicts' && preview && (
+        <ConflictStep
+          conflicts={preview.conflicts ?? []}
+          decisions={decisions}
+          onChange={(path, strategy) =>
+            setDecisions((prev) => ({ ...prev, [path]: strategy }))
+          }
+          onCancel={close}
+          onContinue={() => setStep('confirm')}
+        />
       )}
 
       {step === 'confirm' && (

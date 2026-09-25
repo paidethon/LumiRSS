@@ -1219,13 +1219,22 @@ async def serve_gpt_digest_atom(spec: str, request: Request) -> Response:
     if config is None:
         return Response(status_code=404)
     rows = await _issues(request).recent_issues(config_id, _MAX_FEED_ITEMS)
+    from lumirss.gpt_digest import revision_banner_html
+
     entries = [
         AtomEntry(
             entry_id=f"urn:lumirss:gptdigest:{config_id}:{row['issue_key']}",
             title=str(row["title"]),
             updated=str(row["updated_at"]),
             published=str(row["published_at"]),
-            content_html=str(row["body_html"]),
+            # N177：修订过的期号在 Atom 条目顶端渲染可见订正块（与 Web
+            # 端一致；未修订 → 空串，绝不给未修订内容加标记）。
+            content_html=(
+                revision_banner_html(
+                    row.get("note"), row["updated_at"], row["published_at"]
+                )
+                + str(row["body_html"])
+            ),
         )
         for row in rows
     ]

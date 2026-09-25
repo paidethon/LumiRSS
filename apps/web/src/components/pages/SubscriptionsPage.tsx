@@ -18,7 +18,7 @@
  *
  * 点 feed 主区域 → selectScope + section 回首页（与侧栏导航同一语义）。 */
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -58,6 +58,10 @@ import {
   useFirstRunVisible,
 } from '../FirstRunChecklist'
 import { VolumeOverview } from '../VolumeOverview'
+// N036：来源刷新状态面板（lazy；与 EntryList 工具面板同一加载策略）
+const SourceRefreshStatusPanel = lazy(() =>
+  import('../SourceRefreshStatusPanel').then((m) => ({ default: m.SourceRefreshStatusPanel })),
+)
 import {
   SourceStaleAlertDialog,
   StaleSourcesPanel,
@@ -498,6 +502,10 @@ export default function SubscriptionsPage() {
         ) : null}
         {/* F12：收件量概览（可折叠；识别信息过载与异常停更） */}
         <VolumeOverview />
+        {/* N036：来源刷新状态（dots + 最近刷新 + 立即检查；无调度器） */}
+        <Suspense fallback={null}>
+          <SourceRefreshStatusPanel />
+        </Suspense>
         {/* 搜索订阅源（本地过滤，文案诚实） */}
         <div className="relative mb-3">
           <Search

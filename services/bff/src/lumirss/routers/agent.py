@@ -54,6 +54,7 @@ from lumirss.models import (
     AgentRecipeListResponse,
     AgentRecipePreview,
     AgentRecipeRunResult,
+    AgentResearchPresetRequest,
     AgentResumeResult,
     AgentRetryResult,
     AgentScopePreviewRequest,
@@ -93,6 +94,8 @@ class MarkdownResponse(Response):
 # page resolves at most this many distinct refs.
 _MAX_CITATION_RESOLVES = 24
 _SSE_IDLE_TIMEOUT_SECONDS = 120.0
+# N163：研究模式预设的回合数上限（防长跑；预算键校验沿用 validate_budget）。
+_N163_PRESET_MAX_TURNS = 3
 
 
 def _thread_model(thread: dict) -> AgentThread:
@@ -395,6 +398,39 @@ async def update_thread_settings(
     return AgentThreadSettings(**settings)
 
 
+# -- N163 研究模式预设 ---------------------------------------------------------
+
+
+@router.post(
+    "/api/v1/agent/presets/research",
+    response_model=AgentThreadSettings,
+)
+async def apply_research_preset(
+    payload: AgentResearchPresetRequest, request: Request
+) -> AgentThreadSettings:
+    """N163：一键研究模式——readonly + 保留当前 scope + read-tool 白名单
+    + 回合数上限，一次 PATCH 落库（下轮生效）。
+
+    - scope 刻意不动（「当前范围」由用户另行设置，预设绝不放大授权）；
+    - 白名单 = 注册表里的全部只读工具（服务端 evaluate_policy 强制：
+      readonly 模式下写工具一律 403 readonly_mode）；
+    - 回合上限固定 N163_PRESET_MAX_TURNS，防长跑。"""
+    store = _session_store(request)
+    loop = _get_agent_loop(request)
+    try:
+        settings = await store.update_settings(
+            payload.threadId,
+            tool_policy={
+                "mode": "readonly",
+                "allowedTools": loop.read_tool_names(),
+            },
+            budget={"maxTurns": _N163_PRESET_MAX_TURNS},
+        )
+    except KeyError as exc:
+        raise ThreadNotFound("会话不存在。") from exc
+    return AgentThreadSettings(**settings)
+
+
 @router.post(
     "/api/v1/agent/scope-preview",
     response_model=AgentScopeSummary,
@@ -534,6 +570,7 @@ async def preview_approval(
     from lumirss.agent_export import _redact
     from lumirss.agent_store import APPROVAL_TTL_MINUTES
     from lumirss.agent_tools import DryRunUnsupported
+    from lumirss.models import AgentApprovalBatchPreview
 
     from ..deps import _get_agent_dry_run
 
@@ -604,7 +641,17 @@ async def preview_approval(
         target=preview.get("target"),
         changes=_redact(preview.get("changes") or []),
         uncertain=preview.get("uncertain") or [],
-        note="预演不执行；批准后按审批行参数执行。",
+        note="预演不执行；批准后按审批行参数执行。"
+        + (
+            " 批量写入：一次批准覆盖整批（逐对象幂等落地）。"
+            if preview.get("batch")
+            else ""
+        ),
+        batch=(
+            AgentApprovalBatchPreview(**preview["batch"])
+            if preview.get("batch")
+            else None
+        ),
     )
 
 

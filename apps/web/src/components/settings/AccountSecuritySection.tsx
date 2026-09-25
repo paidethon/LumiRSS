@@ -12,11 +12,16 @@ import { useState } from 'react'
 import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, changePassword, logoutCurrent, logoutEverywhere } from '../../api/client'
+import { resetAccountState } from '../../lib/auth-reset'
 import { useAuthStore } from '../../store/auth'
 import { useAuthSessions, useRevokeSessionMutation, useTotpStatus } from '../../api/queries'
+import { passwordStrength } from '../../lib/password-strength'
 import { Button } from '../ui/Button'
+import { PasswordStrengthMeter } from '../ui/PasswordStrengthMeter'
+import { RecentLoginsPanel } from './RecentLoginsPanel'
 import { PasskeysSection } from './PasskeysSection'
 import { TotpSection } from './TotpSection'
+import { DeactivationSection } from './DeactivationSection'
 
 const MIN_PASSWORD = 8
 
@@ -153,6 +158,8 @@ export function AccountSecuritySection() {
           minLength={MIN_PASSWORD}
           required
         />
+        {/* N005：本地强度提示——纯函数评估，绝不发任何网络请求。 */}
+        <PasswordStrengthMeter strength={passwordStrength(next)} id="account-new-password-strength" />
         <Field
           id="account-confirm-password"
           label="确认新密码"
@@ -230,9 +237,16 @@ export function AccountSecuritySection() {
         </div>
       </div>
       <SessionsPanel />
+      {/* N008：最近登录事件（新设备提醒 + 批量标记已读）。 */}
+      <RecentLoginsPanel />
       {/* N006 通行密钥 + N007 两步验证（session 模式专属账户安全面）。 */}
       <TotpSection />
       <PasskeysSection totpEnabled={totpEnabled} />
+      {/* N190：账户停用（密码复核 → 宽限期 → 运营者恢复/手动删除）。 */}
+      <DeactivationSection onDeactivated={() => {
+        resetAccountState(queryClient)
+        useAuthStore.getState().setStatus('unauthenticated')
+      }} />
     </section>
   )
 }
@@ -253,7 +267,8 @@ function SessionsPanel() {
           <li key={session.id} className="flex items-center gap-2 text-xs" data-lumi-session-row="">
             <span className="font-mono text-[var(--lumi-text-tertiary)]">{session.id}</span>
             <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-secondary)]">
-              {session.userAgent ?? '未知设备'}
+              {/* N008：优先展示脱敏设备标签（Chrome/Linux 形态）。 */}
+              {session.deviceLabel ?? session.userAgent ?? '未知设备'}
             </span>
             {session.current ? (
               <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-accent-soft)] px-2 py-0.5 text-[11px] text-[var(--lumi-accent-text)]">

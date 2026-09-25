@@ -3,7 +3,7 @@
 - 失配判定：分块存储的源文档正文 hash（content_hash，F093 起写入）
   ≠ 当前投影正文 hash（sha256(content_text/body)）；
 - 仅元数据变化（标题/标签/来源名）不影响正文 hash → 不列（负向）；
-- 模型版本变化（分块 model_id ≠ 当前 MODEL_ID）→ 全部列出并标注
+- 模型版本变化（分块 model_id ≠ 当前 LIVE 模型）→ 全部列出并标注
   basis=embedding_model；
 - 修复 = 对选中 refs 走既有 index_refs（重分块+重嵌入，原子替换），
   有界（≤50/次）；无失配 → 空清单（诚实空态）。
@@ -14,7 +14,7 @@
 import hashlib
 from typing import Any
 
-from lumirss.rag import MODEL_ID, RagService
+from lumirss.rag import RagService
 from lumirss.util import utc_now
 
 _MAX_INCONSISTENCIES = 100
@@ -29,21 +29,24 @@ async def scan_inconsistencies(
 ) -> dict[str, Any]:
     db = service._db  # noqa: SLF001 — 同模块族协作
     await db.migrate()
+    # N157：以 LIVE 模型为基准（换模型 pending 时 live 仍是旧模型，
+    # 索引自洽即不算失配；切换结果由 rebuild/swap 统一生效）。
+    model_id, _dim = await service.live_model()
     # 模型版本变化：非当前模型的分块 → 全部列出（basis=embedding_model）。
     stale_model_rows = await db.fetch_all(
         "SELECT ref, model_id FROM rag_chunks WHERE model_id <> ? GROUP BY ref, model_id LIMIT ?",
-        (MODEL_ID, max(1, min(limit, 500))),
+        (model_id, max(1, min(limit, 500))),
     )
     items: list[dict[str, Any]] = [
         {"ref": str(r["ref"]), "storedHash": None, "currentHash": None, "basis": "embedding_model"}
         for r in stale_model_rows
     ]
     if items:
-        return {"modelId": MODEL_ID, "items": items[:limit]}
+        return {"modelId": model_id, "items": items[:limit]}
 
     rows = await db.fetch_all(
         "SELECT c.ref AS ref, MIN(c.content_hash) AS stored_hash, c.model_id AS model_id FROM rag_chunks c WHERE c.model_id = ? GROUP BY c.ref ORDER BY c.ref ASC",
-        (MODEL_ID,),
+        (model_id,),
     )
     for row in rows:
         if len(items) >= limit:
@@ -73,7 +76,7 @@ async def scan_inconsistencies(
                     "basis": "content_hash",
                 }
             )
-    return {"modelId": MODEL_ID, "items": items}
+    return {"modelId": model_id, "items": items}
 
 
 async def repair_refs(

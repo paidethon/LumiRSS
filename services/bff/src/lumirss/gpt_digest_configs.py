@@ -24,6 +24,55 @@ _MAX_MODEL_STR = 200
 _MAX_COLUMNS = 8
 _MAX_COLUMN_COUNT = 20
 _EMPTY_POLICIES = ("hide", "placeholder")
+# N179：缺刊处理策略（backfill=补刊，默认——既有行为；merge_into_next=
+# 错过的窗口材料并入下一期；skip=跳过并记录 skip_log）。
+MISSED_ISSUE_POLICIES = ("backfill", "merge_into_next", "skip")
+_DEFAULT_POLICY = "backfill"
+_MAX_POLICY_NAME = 20
+# N179：缺刊跳过/并入记录上限（store 层裁剪最旧）。
+_MAX_SKIP_LOG = 30
+
+
+def parse_missed_issue_policy(value: Any) -> str:
+    """N179：策略解析（非法/缺失回退 backfill——与历史行为一致）。"""
+    text = str(value or "").strip()
+    return text if text in MISSED_ISSUE_POLICIES else _DEFAULT_POLICY
+
+
+def parse_skip_log(value: Any) -> list[dict[str, str]]:
+    """N179：skip_log_json → [{date, reason}]（损坏/缺失诚实回退空列表；
+    最多保留最近 _MAX_SKIP_LOG 条）。"""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    if not isinstance(value, list):
+        return []
+    entries: list[dict[str, str]] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            continue
+        date = str(raw.get("date") or "")[:_MAX_POLICY_NAME]
+        reason = str(raw.get("reason") or "")[:40]
+        if date:
+            entries.append({"date": date, "reason": reason})
+    return entries[-_MAX_SKIP_LOG:]
+
+
+def append_skip_log(entries: list[dict[str, str]], date: str, reason: str) -> list[dict[str, str]]:
+    """N179：幂等追加一条 {date, reason}（同 date+reason 不重复），
+    超出上限裁掉最旧。纯函数——返回新列表。"""
+    clean_date = str(date or "")[:_MAX_POLICY_NAME]
+    clean_reason = str(reason or "")[:40]
+    if not clean_date:
+        return list(entries)
+    rest = [
+        e for e in entries
+        if not (e.get("date") == clean_date and e.get("reason") == clean_reason)
+    ]
+    rest.append({"date": clean_date, "reason": clean_reason})
+    return rest[-_MAX_SKIP_LOG:]
 
 
 def parse_days(value: Any) -> list[int]:
@@ -193,6 +242,10 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
     source_kind = values.get("sourceKind", fallback.get("sourceKind", "window"))
     if source_kind not in ("window", "read_later", "starred"):
         source_kind = fallback.get("sourceKind", "window")
+    # N179：缺刊处理策略（非法回退 backfill）。
+    missed_policy = parse_missed_issue_policy(
+        values.get("missedIssuePolicy", fallback.get("missedIssuePolicy", _DEFAULT_POLICY))
+    )
     return {
         "hour": hour,
         "windowHours": min(max(window, 1), 72),
@@ -207,6 +260,7 @@ def _clamp_config(values: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
         "targetReadingMinutes": min(max(target_minutes, 0), 600),
         "clusterEnabled": 1 if cluster_enabled else 0,
         "sourceKind": source_kind,
+        "missedIssuePolicy": missed_policy,
     }
 
 
@@ -237,6 +291,9 @@ def config_row_to_dict(row: Any) -> dict[str, Any]:
         "columns": parse_columns(row["columns_json"]) if "columns_json" in keys else [],
         "targetReadingMinutes": int(row["target_reading_minutes"]) if "target_reading_minutes" in keys else 0,
         "clusterEnabled": bool(row["cluster_enabled"]) if "cluster_enabled" in keys else False,
+        # N179：缺刊处理策略与跳过/并入记录（cap 30）。
+        "missedIssuePolicy": parse_missed_issue_policy(row["missed_issue_policy"]) if "missed_issue_policy" in keys else "backfill",
+        "skipLog": parse_skip_log(row["skip_log_json"]) if "skip_log_json" in keys else [],
         "lastIssueKey": row["last_issue_key"],
         "lastError": row["last_error"],
         "createdAt": str(row["created_at"] or ""),
@@ -251,6 +308,7 @@ class GptDigestConfigStore:
         "per_source_cap, lookback_days, feed_url_allow, source_kind, slots, "
         "days_json, weekend_hours, stage_models_json, columns_json, "
         "target_reading_minutes, cluster_enabled, "
+        "missed_issue_policy, skip_log_json, "
         "last_issue_key, last_error, created_at"
     )
 
@@ -277,7 +335,7 @@ class GptDigestConfigStore:
         name = str(values.get("name") or "").strip()[:_MAX_NAME] or "未命名日报"
         clamped = _clamp_config(values, {"hour": 8, "windowHours": 24, "limitCount": 12, "perSourceCap": 2, "lookbackDays": 7})
         await self._db.execute(
-            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, days_json, weekend_hours, stage_models_json, columns_json, target_reading_minutes, cluster_enabled, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO gpt_digest_configs (name, enabled, hour, timezone, window_hours, limit_count, per_source_cap, lookback_days, feed_url_allow, source_kind, slots, days_json, weekend_hours, stage_models_json, columns_json, target_reading_minutes, cluster_enabled, missed_issue_policy, created_at) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 name,
                 clamped["hour"],
@@ -295,6 +353,7 @@ class GptDigestConfigStore:
                 clamped["columns"],
                 clamped["targetReadingMinutes"],
                 clamped["clusterEnabled"],
+                clamped["missedIssuePolicy"],
                 utc_now(),
             ),
         )
@@ -313,7 +372,7 @@ class GptDigestConfigStore:
         name = str(values.get("name", current["name"])).strip()[:_MAX_NAME] or current["name"]
         clamped = _clamp_config(values, current)
         await self._db.execute(
-            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ?, days_json = ?, weekend_hours = ?, stage_models_json = ?, columns_json = ?, target_reading_minutes = ?, cluster_enabled = ? WHERE id = ?",
+            "UPDATE gpt_digest_configs SET name = ?, enabled = ?, hour = ?, timezone = ?, window_hours = ?, limit_count = ?, per_source_cap = ?, lookback_days = ?, feed_url_allow = ?, source_kind = ?, slots = ?, days_json = ?, weekend_hours = ?, stage_models_json = ?, columns_json = ?, target_reading_minutes = ?, cluster_enabled = ?, missed_issue_policy = ? WHERE id = ?",
             (
                 name,
                 1 if values.get("enabled", current["enabled"]) else 0,
@@ -332,10 +391,41 @@ class GptDigestConfigStore:
                 clamped["columns"],
                 clamped["targetReadingMinutes"],
                 clamped["clusterEnabled"],
+                clamped["missedIssuePolicy"],
                 config_id,
             ),
         )
         return await self.get_config(config_id)
+
+    async def append_config_skip_log(self, config_id: int, date: str, reason: str) -> bool:
+        """N179：往配置的 skip log 幂等追加一条 {date, reason}（cap 30）。
+
+        调度路径用：skip 策略记 policy_skip；merge_into_next 记
+        merged_into_next（兼作幂等标记——同一次缺刊不重复并入）。
+        配置不存在 → False。"""
+        current = await self.get_config(config_id)
+        if current is None:
+            return False
+        updated = append_skip_log(
+            list(current.get("skipLog") or []), date, reason
+        )
+        await self._db.execute(
+            "UPDATE gpt_digest_configs SET skip_log_json = ? WHERE id = ?",
+            (json.dumps(updated, ensure_ascii=False), config_id),
+        )
+        return True
+
+    async def skip_log_has(self, config_id: int, date: str, reason: str) -> bool:
+        """N179：该 (date, reason) 是否已在记录中（幂等判定的真实依据）。"""
+        current = await self.get_config(config_id)
+        if current is None:
+            return False
+        clean_date = str(date or "")[:_MAX_POLICY_NAME]
+        clean_reason = str(reason or "")[:40]
+        return any(
+            e.get("date") == clean_date and e.get("reason") == clean_reason
+            for e in (current.get("skipLog") or [])
+        )
 
     async def delete_config(self, config_id: int) -> bool:
         """删除配置并级联删除其期刊与素材池（id=1 默认配置不可删除）。"""

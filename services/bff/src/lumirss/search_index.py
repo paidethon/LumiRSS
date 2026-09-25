@@ -238,6 +238,24 @@ class SearchIndexService:
                 updated += 1
             if changed:
                 await self._replace_documents(changed)
+                # N036：对确有新交付的来源记 source_refresh_log ok 行
+                # （entry_count = 该源本次交付条数）。同步是全量扫描，
+                # 无法为「无变化」的来源诚实产出 per-feed 记录——不为
+                # 它们编造行（读取侧以「无记录」呈现）。error/stale→ok
+                # 跳变在此自动产生 N037 恢复窗口。旁路观测：失败绝不
+                # 阻断同步本身。
+                try:
+                    counts: dict[str, int] = {}
+                    for doc in changed:
+                        url = self._resolve_feed_url(doc)
+                        counts[url] = counts.get(url, 0) + 1
+                    from lumirss.refresh_log import SourceRefreshLogStore
+
+                    store = SourceRefreshLogStore(self._db)
+                    for feed_url, count in counts.items():
+                        await store.record(feed_url, "ok", entry_count=count)
+                except Exception:  # noqa: BLE001 — 旁路观测，绝不阻断同步
+                    pass
             if page.documents and not changed:
                 break
             continuation = page.upstreamContinuation

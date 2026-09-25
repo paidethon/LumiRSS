@@ -8,7 +8,7 @@ format. The entry-domain models (0003/0004) are built directly by the
 adapter and returned by the routes, so there is no second mapping layer.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -1119,6 +1119,8 @@ class AuthStatus(BaseModel):
     username: str | None = None
     role: Literal["owner", "admin", "member"] | None = None
     initialSources: list[ActivationSourceResult] | None = None
+    # N008：本次登录来自新设备（设备指纹首次出现）时为 True；仅登录路径携带。
+    newDevice: bool | None = None
 
 
 class ApiVersionInfo(BaseModel):
@@ -1329,6 +1331,42 @@ class TranslationSegmentsView(BaseModel):
     segments: list[TranslationSegmentState] = []
 
 
+class TranslationRevisionHistoryItem(BaseModel):
+    """N085：一条被替换下来的历史修订。"""
+
+    oldText: str
+    replacedAt: str
+
+
+class TranslationRevisionHistoryView(BaseModel):
+    """GET …/translation/segments/{index}/revision/history（N085）。"""
+
+    index: int
+    items: list[TranslationRevisionHistoryItem] = []
+
+
+class TranslationCompareSide(BaseModel):
+    """N084：一侧的对照译文（失败侧 text=None + failureType）。"""
+
+    label: str
+    provider: str
+    model: str
+    text: str | None = None
+    failureType: str | None = None
+
+
+class TranslationCompareView(BaseModel):
+    """POST /api/v1/entries/{ref}/translation-compare（N084，ephemeral）。
+
+    available=false 时 reason 说明拒绝原因（provider_not_configured /
+    browser_engine / providers_identical / empty_text）。"""
+
+    available: bool
+    reason: str | None = None
+    sides: list[TranslationCompareSide] = []
+    estimatedChars: int = 0
+
+
 class RestorePreviewFile(BaseModel):
     """One declared archive member (checksum declared by the manifest)."""
 
@@ -1339,8 +1377,19 @@ class RestorePreviewFile(BaseModel):
     sha256: str
 
 
+class RestoreConflictItem(BaseModel):
+    """N187：逐对象冲突清单条目（exists/differs 对比活动状态）。"""
+
+    path: str
+    component: str
+    exists: bool
+    differs: bool = False
+
+
 class RestorePreview(BaseModel):
-    """POST /api/v1/restore/preview (validate + session id, no writes)."""
+    """POST /api/v1/restore/preview (validate + session id, no writes).
+
+    N187：``conflicts`` 供恢复向导冲突步骤渲染（策略 skip|overwrite）。"""
 
     restoreSessionId: str
     fileName: str | None = None
@@ -1353,6 +1402,7 @@ class RestorePreview(BaseModel):
     files: list[RestorePreviewFile] = []
     excludedSecrets: list[str] = []
     secretConfigured: bool
+    conflicts: list[RestoreConflictItem] = []
 
 
 class RestoreHealth(BaseModel):
@@ -1361,14 +1411,26 @@ class RestoreHealth(BaseModel):
     sqlite: Literal["healthy", "unavailable"]
 
 
+class RestoreDecisionLog(BaseModel):
+    """N187：决策账本（restored/skipped/overwritten 计数 + 样本 ≤10）。"""
+
+    restored: int = 0
+    skipped: int = 0
+    overwritten: int = 0
+    samples: list[dict] = []
+
+
 class RestoreResult(BaseModel):
-    """POST /api/v1/restore (destructive, explicitly confirmed)."""
+    """POST /api/v1/restore (destructive, explicitly confirmed).
+
+    N187：``decisions`` 决策账本（缺省全 skip 时也如实记账）。"""
 
     lumiRestored: bool
     freshrss: Literal["not_included", "offline_restore_required"]
     safetyBackupId: str | None = None
     freshrssStagedAt: str | None = None
     health: RestoreHealth
+    decisions: RestoreDecisionLog | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1853,23 +1915,74 @@ class WorkspaceItemAddRequest(BaseModel):
     groupName: str | None = None
 
 
+class WorkspaceItemMoveRequest(BaseModel):
+    """N108：POST /api/v1/workspaces/{id}/items/{ref}/move 请求体。
+
+    keepInSource=false（默认）= 移动（源成员关系移除）；onDuplicate:
+    'skip'（默认，幂等收敛）| 'conflict'（目标已有 → 409）。"""
+
+    model_config = {"extra": "forbid"}
+
+    targetWorkspaceId: str = Field(min_length=1, max_length=128)
+    keepInSource: bool = False
+    onDuplicate: Literal["skip", "conflict"] = "skip"
+
+
+class WorkspaceItemMoveResult(BaseModel):
+    """N108：移动结果（duplicate=true 表示目标本已有该条目，未重复创建）。"""
+
+    itemRef: str
+    sourceWorkspaceId: str
+    targetWorkspaceId: str
+    duplicate: bool = False
+    sourceRemoved: bool = True
+    targetPosition: int | None = None
+
+
 class WorkspaceItem(BaseModel):
     """One workspace member (ref + ordering; content resolves separately).
 
     N101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，
-    排序语义不变（position 升序）。"""
+    排序语义不变（position 升序）。
+
+    N047：``duplicateWarning`` 只在 add 响应中出现（canonical URL 撞车
+    提示，非阻断——条目已加入）；其余端点恒 None。"""
 
     itemRef: str
     position: int
     addedAt: str
     groupName: str | None = None
     pinned: bool = False
+    duplicateWarning: dict[str, Any] | None = None
 
 
 class WorkspaceItemsResponse(BaseModel):
     """Envelope for GET /api/v1/workspaces/{id}/items."""
 
     items: list[WorkspaceItem]
+
+
+class WorkspaceSearchHit(BaseModel):
+    """N109：工作区内检索的单条命中（成员范围严格限定）。"""
+
+    itemRef: str
+    domain: Literal["rss", "library"]
+    title: str
+    """命中摘要（≤160 字符；内容命中取匹配处上下文，仅标题命中取标题）。"""
+    excerpt: str = ""
+    matchedIn: Literal["title", "content", "title+content"] = "title"
+
+
+class WorkspaceSearchResponse(BaseModel):
+    """Envelope for GET /api/v1/workspaces/{id}/search?q=（N109）.
+
+    ``results`` 上限 200 条（``truncated`` 如实标记截断）；只包含该
+    工作区自己的成员——其他工作区的条目绝不出现。"""
+
+    workspaceId: str
+    query: str
+    truncated: bool = False
+    results: list[WorkspaceSearchHit]
 
 
 class WorkspaceGroup(BaseModel):
@@ -2588,6 +2701,8 @@ class GptDigestRef(BaseModel):
     url: str = ""
     feedTitle: str = ""
     publishedAt: str = ""
+    # N180：入选期号的条目引用（opaque entryRef；旧期号为空串）。
+    ref: str = ""
 
 
 class GptDigestColumn(BaseModel):
@@ -2641,6 +2756,9 @@ class GptDigestIssue(BaseModel):
     model: str = ""
     meta: dict[str, object] = {}
     sentenceMap: list[GptDigestSentence] = []
+    # N177：人工修订附注 + 可见订正标记（updated_at 晚于 published_at）。
+    note: str = ""
+    revised: bool = False
     createdAt: str = ""
     publishedAt: str = ""
     updatedAt: str = ""
@@ -2813,6 +2931,10 @@ class GptDigestConfig(BaseModel):
     targetReadingMinutes: int = 0
     # N176：同事件聚合（默认关）。
     clusterEnabled: bool = False
+    # N179：缺刊处理策略（backfill=补刊默认 / merge_into_next / skip）。
+    missedIssuePolicy: str = "backfill"
+    # N179：缺刊跳过/并入记录（cap 30，最旧先裁）。
+    skipLog: list[dict[str, str]] = []
     lastIssueKey: str | None = None
     lastError: str | None = None
     createdAt: str = ""
@@ -2841,6 +2963,7 @@ class GptDigestCreate(BaseModel):
     columns: list[GptDigestColumn] | None = None
     targetReadingMinutes: int | None = None
     clusterEnabled: bool | None = None
+    missedIssuePolicy: str | None = None
 
 
 class GptDigestConfigUpdate(BaseModel):
@@ -2863,6 +2986,7 @@ class GptDigestConfigUpdate(BaseModel):
     columns: list[GptDigestColumn] | None = None
     targetReadingMinutes: int | None = None
     clusterEnabled: bool | None = None
+    missedIssuePolicy: str | None = None
 
 
 class StorageUsage(BaseModel):
@@ -2915,6 +3039,8 @@ class SourceOverrideResult(BaseModel):
     language: str | None = None
     unreadAlertThreshold: int | None = None
     syncPriority: int | None = None
+    # N090：per-source 翻译策略（'local_only' = 只允许浏览器本机翻译）。
+    translationPolicy: str | None = None
     updatedAt: str = ""
 
 
@@ -2940,6 +3066,8 @@ class SourceOverrideUpdate(BaseModel):
     language: str | None = Field(default=None, pattern=r"^[a-z]{2}(-[A-Za-z]{2,4})?$")
     unreadAlertThreshold: int | None = Field(default=None, ge=1, le=100_000)
     syncPriority: int | None = Field(default=None, ge=0, le=2)
+    # N090：per-source 翻译策略（None=清除，缺席=不改；'local_only'）。
+    translationPolicy: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -3538,6 +3666,117 @@ class AnnotationColorLabelList(BaseModel):
     items: list[AnnotationColorLabelItem] = []
 
 
+# ---- N072 批注精选篮 ---------------------------------------------------------
+
+
+class AnnotationBasket(BaseModel):
+    """一个精选篮（itemCount = 成员行计数，含 broken——诚实口径）。"""
+
+    id: str
+    name: str
+    createdAt: str
+    itemCount: int = 0
+
+
+class AnnotationBasketList(BaseModel):
+    items: list[AnnotationBasket] = []
+
+
+class AnnotationBasketItem(BaseModel):
+    """篮内一项：批注本体 + broken 标注（批注已删 = annotation=null,
+    broken=true；锚点 stale 同样 broken=true——读取侧诚实，不假装健在）。"""
+
+    annotationId: str
+    addedAt: str
+    broken: bool = False
+    annotation: AnnotationView | None = None
+
+
+class AnnotationBasketItemsResponse(BaseModel):
+    items: list[AnnotationBasketItem] = []
+
+
+class AnnotationBasketItemsAdd(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    annotationIds: list[str] = Field(min_length=1, max_length=200)
+
+
+class AnnotationBasketItemsAddResult(BaseModel):
+    added: list[str] = []
+    skipped: list[dict[str, str]] = []
+
+
+# ---- N078 批注跨版本迁移 -----------------------------------------------------
+
+
+class AnnotationMigratePreviewRequest(BaseModel):
+    """POST /api/v1/annotations/migrate/preview body。
+
+    fromVersion/toVersion ∈ current | last_known_full（N032 版本词）；
+    二者必须不同（同版本迁移无意义）。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+
+
+class AnnotationMigrateCandidateItem(BaseModel):
+    """一条批注在目标版本中的最优候选（score 与 N071 同口径）。"""
+
+    annotationId: str
+    candidateBlockIndex: int = Field(ge=0)
+    score: float = Field(ge=0.0, le=1.0)
+    excerpt: str = Field(max_length=300)
+
+
+class AnnotationMigrateUnmatchedItem(BaseModel):
+    """未能给出候选的批注及原因（no_quote | no_match）——诚实列出，
+    绝不混入可确认列表。"""
+
+    annotationId: str
+    reason: str
+
+
+class AnnotationMigratePreviewResponse(BaseModel):
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+    matched: list[AnnotationMigrateCandidateItem] = []
+    unmatched: list[AnnotationMigrateUnmatchedItem] = []
+
+
+class AnnotationMigrateApplyItem(BaseModel):
+    """逐项确认：把某条批注重绑到目标版本的第 blockIndex 块。"""
+
+    model_config = {"extra": "forbid"}
+
+    annotationId: str
+    blockIndex: int = Field(ge=0)
+
+
+class AnnotationMigrateApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+    items: list[AnnotationMigrateApplyItem] = Field(min_length=1, max_length=200)
+
+
+class AnnotationMigrateApplyItemResult(BaseModel):
+    annotationId: str
+    ok: bool
+    reason: str | None = None  # 失败原因：target_conflict | low_score | not_found
+
+
+class AnnotationMigrateApplyResponse(BaseModel):
+    applied: list[AnnotationMigrateApplyItemResult] = []
+    failed: list[AnnotationMigrateApplyItemResult] = []
+
+
 # ---- N074 阅读问题清单 -------------------------------------------------------
 
 
@@ -3972,6 +4211,59 @@ class RagStatus(BaseModel):
     lastError: str | None = None
     fastembedAvailable: bool
     job: RagJobSummary | None = None
+    # N157：模型可配置化后的补充回显。
+    rowCounts: dict[str, int] = {}
+    configuredModel: str | None = None
+
+
+class RagIndexVersion(BaseModel):
+    """N157：GET /api/v1/rag/index-version — 当前索引版本。
+
+    modelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按
+    model_id 分列；configuredModel = 下一次 rebuild 将写入的模型。"""
+
+    modelId: str
+    dim: int
+    rowCounts: dict[str, int] = {}
+    configuredModel: str | None = None
+
+
+class RagIndexVersionSwitchRequest(BaseModel):
+    """N157：POST /api/v1/rag/index-version 请求体。"""
+
+    modelId: str = Field(min_length=1, max_length=200)
+
+
+class RagIndexVersionSwitch(BaseModel):
+    """N157：切换确认（settings 已持久化；索引未动，rebuild 后生效）。"""
+
+    modelId: str
+    dim: int
+    rebuildRequired: bool = True
+    note: str | None = None
+
+
+class RagAnswersToNoteRequest(BaseModel):
+    """N160：POST /api/v1/rag/answers-to-note 请求体。
+
+    selectedCitationIds = 会话内 assistant 消息 id（带引用的回答）；
+    title/workspaceId 可选（缺省标题取首条回答前 40 字）。"""
+
+    threadId: str = Field(min_length=1, max_length=128)
+    selectedCitationIds: list[str] = Field(min_length=1, max_length=20)
+    title: str | None = Field(default=None, max_length=500)
+    workspaceId: str | None = Field(default=None, max_length=128)
+
+
+class RagAnswersToNoteResult(BaseModel):
+    """N160：证据笔记创建结果（三段式结构 + provenance 台账起点）。"""
+
+    noteId: str
+    title: str
+    contentMd: str
+    excerptCount: int
+    revisionCount: int = 0
+    createdAt: str
 
 
 # ---------------------------------------------------------------------------
@@ -4919,6 +5211,9 @@ class SaveAsTemplateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(min_length=1, max_length=50)
+    # N117：true = 额外快照工作区结构（组顺序 + 分节大纲 + 看板状态列
+    # + 收集规则条件）；绝不包含条目内容。
+    includeStructure: bool = False
 
 
 class FromTemplateRequest(BaseModel):
@@ -4928,12 +5223,18 @@ class FromTemplateRequest(BaseModel):
     name: str
     includeExampleItems: bool = False
     exampleRefs: list[str] = Field(default_factory=list, max_length=5)
+    # N117：true = 模板携带 structure 快照时恢复空壳结构（分节/组序/
+    # 收集规则条件）；条目内容绝不复制。
+    includeStructure: bool = False
 
 
 class WorkspaceFromTemplateResult(BaseModel):
     workspace: Workspace
     addedExampleRefs: list[str] = []
     skippedExampleRefs: list[str] = []
+    # N117：结构恢复计数（sectionsCreated / groupOrderRestored /
+    # collectRulesCreated / boardColumns）；未请求结构时为 null。
+    structure: dict | None = None
 
 
 class WorkspacePatch(BaseModel):
@@ -5205,13 +5506,15 @@ class ClipDetailResponse(BaseModel):
 
 
 class LumiNoteCreate(BaseModel):
-    """F090 手动创建笔记（contentMd ≤100KB）。"""
+    """F090 手动创建笔记（contentMd ≤100KB）。N079：可选类型化分栏。"""
 
     model_config = {"extra": "forbid"}
 
     title: str = Field(min_length=1, max_length=500)
     contentMd: str = Field(max_length=100 * 1024)
     workspaceId: str | None = None
+    # N079：{facts/interpretation/toVerify: string[]}（三栏可独立缺省）。
+    sections: dict[str, object] | None = None
 
 
 class LumiNoteUpdate(BaseModel):
@@ -5220,6 +5523,8 @@ class LumiNoteUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     contentMd: str | None = Field(default=None, max_length=100 * 1024)
     baseUpdatedAt: str | None = None
+    # N079：None = 不修改；显式传空对象/空数组 = 清空对应栏。
+    sections: dict[str, object] | None = None
 
 
 class LumiNoteDetail(BaseModel):
@@ -5229,6 +5534,8 @@ class LumiNoteDetail(BaseModel):
     workspaceId: str | None = None
     createdAt: str
     updatedAt: str
+    # N079：三栏结构（facts / interpretation / toVerify）。
+    sections: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class RagExclusionItem(BaseModel):
@@ -5299,12 +5606,14 @@ class RagCoverage(BaseModel):
     """GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。
 
     indexable/indexed/stale 来自行与 content_hash，failed 来自最近
-    rag_jobs 作业的 skipped 记录。"""
+    rag_jobs 作业的 skipped 记录。N158：``staleRefs`` 是过期 ref 明细
+    （≤500，有界）——覆盖率卡片「重建所选」的输入。"""
 
     modelId: str
     indexable: int = 0
     indexed: int = 0
     stale: int = 0
+    staleRefs: list[str] = []
     failed: int = 0
     unsupported: RagCoverageUnsupported = Field(
         default_factory=RagCoverageUnsupported
@@ -5543,8 +5852,30 @@ class AgentApprovalPreviewChange(BaseModel):
     to: str | None = None
 
 
+class AgentResearchPresetRequest(BaseModel):
+    """N163：POST /api/v1/agent/presets/research 请求体（目标会话）。"""
+
+    model_config = {"extra": "forbid"}
+
+    threadId: str = Field(min_length=1, max_length=128)
+
+
+class AgentApprovalBatchPreview(BaseModel):
+    """N162：批量写入预演聚合卡（一次批准覆盖整批）。
+
+    perObjectDeltas 最多 10 个样本（perObjectTruncated 如实标注截断）；
+    uncertainCount > 0 = 整批含不确定项（UI 必须整批提示）。"""
+
+    objectCount: int
+    perObjectDeltas: list[dict] = []
+    perObjectTruncated: int = 0
+    uncertainCount: int = 0
+
+
 class AgentApprovalPreview(BaseModel):
-    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。"""
+    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。
+
+    N162：批量写入（itemRefs 列表形态的 args）时 batch 聚合卡非空。"""
 
     approvalId: str
     tool: str
@@ -5552,6 +5883,7 @@ class AgentApprovalPreview(BaseModel):
     changes: list[AgentApprovalPreviewChange] = []
     uncertain: list[str] = []
     note: str
+    batch: AgentApprovalBatchPreview | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -5652,3 +5984,259 @@ class AgentRecipeRunResult(BaseModel):
     recipeId: str
     thread: AgentThread
     status: Literal["processing"]
+
+
+# ===== N115 快照差异视图 ======================================================
+
+class WorkspaceSnapshotDiffMove(BaseModel):
+    """两快照都存在、但位置发生变化的 ref。"""
+
+    ref: str
+    fromPos: int
+    toPos: int
+
+
+class WorkspaceSnapshotDiffGroupChange(BaseModel):
+    """两快照都存在、但分组归属发生变化的 ref（None = 未分组）。
+
+    ``from`` 是 Python 关键字：字段名 ``from_group`` + wire alias ``from``
+    （FastAPI 响应默认按 alias 序列化）。"""
+
+    ref: str
+    from_group: str | None = Field(default=None, alias="from")
+    to: str | None = None
+
+
+class WorkspaceSnapshotDiff(BaseModel):
+    """N115 GET .../snapshots/{a}/diff/{b} — 只读差异（ref 全部可经
+    既有 views/resolve 端点定位；本端点绝不解析内容）。"""
+
+    snapshotA: str
+    snapshotB: str
+    added: list[str] = []
+    removed: list[str] = []
+    moved: list[WorkspaceSnapshotDiffMove] = []
+    groupChanges: list[WorkspaceSnapshotDiffGroupChange] = []
+
+
+# ===== N116 汇编只读分享包 ====================================================
+
+class SharePackageRequest(BaseModel):
+    """N116 POST .../share-package — 只读静态 HTML 分享包。
+
+    ``includeNotes`` 固定 false（Literal[False]）：私人摘录笔记绝不进
+    分享包——传 true 是客户端错误（422），不是静默忽略。"""
+
+    model_config = {"extra": "forbid"}
+
+    sectionIds: list[str] | None = Field(default=None, max_length=100)
+    includeNotes: Literal[False] = False
+
+
+# ===== N118 工作区自动收集规则 ================================================
+
+class WorkspaceCollectRuleCreate(BaseModel):
+    """N118 规则创建：三种来源条件（feedUrl | tag | keyword）必须恰好
+    给出一种；maxItems 是本规则累计收集上限（≤100，硬顶）。"""
+
+    model_config = {"extra": "forbid"}
+
+    feedUrl: str | None = Field(default=None, max_length=2000)
+    tag: str | None = Field(default=None, max_length=100)
+    keyword: str | None = Field(default=None, max_length=100)
+    maxItems: int = Field(default=100, ge=1, le=100)
+    enabled: bool = True
+
+
+class WorkspaceCollectRuleEnabledPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    enabled: bool
+
+
+class WorkspaceCollectRule(BaseModel):
+    id: str
+    workspaceId: str
+    feedUrl: str | None = None
+    tag: str | None = None
+    keyword: str | None = None
+    enabled: bool = True
+    maxItems: int = 100
+    addedCount: int = 0
+    createdAt: str
+    updatedAt: str
+
+
+class WorkspaceCollectRuleList(BaseModel):
+    items: list[WorkspaceCollectRule] = []
+
+
+class WorkspaceCollectPreviewItem(BaseModel):
+    itemRef: str
+    title: str | None = None
+    feedTitle: str | None = None
+    publishedAt: str | None = None
+    alreadyMember: bool = False
+
+
+class WorkspaceCollectPreview(BaseModel):
+    """N118 预演（dry-run）：投影命中清单（有界 50），绝不写库。"""
+
+    ruleId: str
+    matches: list[WorkspaceCollectPreviewItem] = []
+    matchCount: int = 0
+    bounded: bool = False
+    alreadyMemberCount: int = 0
+    remainingCap: int = 0
+
+
+class WorkspaceCollectApplyResult(BaseModel):
+    """N118 应用：命中条目以 ref 引用进工作区（幂等）。
+
+    ``skippedDisabled``=true 表示规则处于暂停态、本次调用没有生效
+    （诚实回显而非静默成功）。"""
+
+    ruleId: str
+    enabled: bool = True
+    added: list[str] = []
+    addedCount: int = 0
+    skippedExisting: int = 0
+    capReached: bool = False
+    ruleAddedCount: int = 0
+
+
+# ===== N119 归档摘要卡 ========================================================
+
+class WorkspaceArchiveSummary(BaseModel):
+    """N119 单个归档工作区的摘要（归档列表卡片渲染的输入）。
+
+    ``daysActive`` = created_at → archived_at 的整天数（同日归档为 0，
+    诚实下限）；``goalProgress`` 为 null = 无目标。"""
+
+    itemCount: int
+    doneCount: int
+    goalProgress: dict | None = None
+    archivedAt: str | None = None
+    daysActive: int = 0
+
+
+class WorkspaceArchiveEntry(BaseModel):
+    id: str
+    name: str
+    position: int
+    itemCount: int
+    reserved: bool = False
+    description: str = ""
+    archived: bool = True
+    archivedAt: str | None = None
+    revision: int = 1
+    summary: WorkspaceArchiveSummary
+
+
+# ===== N156 资料冲突对照 ======================================================
+
+class QaConflictEvidence(BaseModel):
+    """冲突句的证据定位：ref + 块序号（rag_chunks.ord；无分块时为
+    正文句序号）。"""
+
+    ref: str
+    blockIndex: int | None = None
+
+
+class QaConflictItem(BaseModel):
+    aRef: str
+    bRef: str
+    aQuote: str
+    bQuote: str
+    diffKind: Literal["number", "date", "other"]
+    aEvidence: QaConflictEvidence
+    bEvidence: QaConflictEvidence
+    overlap: float
+
+
+class QaConflictResponse(BaseModel):
+    """N156 POST /api/v1/qa/conflicts — 纯词法对照（零模型调用）。
+
+    ``basis`` 恒为 ``lexical``；``note`` 是给 UI 的诚实口径：基于文本
+    比对，非语义裁决——差异不必然是错误，判断留给读者。"""
+
+    basis: Literal["lexical"] = "lexical"
+    note: str = "基于文本比对，非语义裁决"
+    pairsCompared: int = 0
+    conflicts: list[QaConflictItem] = []
+
+
+class QaConflictRequest(BaseModel):
+    """refs ≤5、≥2，全部必须在本人投影范围内（不存在 → 422）。"""
+
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] = Field(min_length=2, max_length=5)
+
+
+# ===== N158 局部索引重建 ======================================================
+
+class RagRebuildSubsetRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    refs: list[str] = Field(min_length=1, max_length=50)
+
+
+class RagRebuildSubsetResult(BaseModel):
+    jobId: str
+    status: str
+    total: int = 0
+    updated: int = 0
+    chunks: int = 0
+    missing: list[str] = []
+
+
+class RagSubsetJobView(BaseModel):
+    """N158 作业进度轮询视图（done/total + skipped 明细）。"""
+
+    jobId: str
+    kind: str
+    status: str
+    done: int = 0
+    total: int = 0
+    chunks: int = 0
+    missing: list[str] = []
+    pending: list[str] = []
+    updatedAt: str | None = None
+
+
+# ===== N159 检索质量收藏 ======================================================
+
+class RagEvalSampleCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    query: str = Field(min_length=1, max_length=500)
+    expectedRefs: list[str] = Field(default_factory=list, max_length=50)
+    kind: str | None = Field(default=None, max_length=64)
+
+
+class RagEvalSample(BaseModel):
+    id: str
+    query: str
+    expectedRefs: list[str] = []
+    actualRefs: list[str] = []
+    kind: str | None = None
+    createdAt: str
+
+
+class RagEvalSampleList(BaseModel):
+    items: list[RagEvalSample] = []
+    cap: int = 50
+
+
+class RagEvalRerunDiff(BaseModel):
+    """rerun 差分（三组引用列表；语义见 rag_eval.py 模块注释）。"""
+
+    sampleId: str
+    query: str
+    storedActualRefs: list[str] = []
+    nowActualRefs: list[str] = []
+    hitExpected: list[str] = []
+    missed: list[str] = []
+    newHits: list[str] = []
+    ranAt: str

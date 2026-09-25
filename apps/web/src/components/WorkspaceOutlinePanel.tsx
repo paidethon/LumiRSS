@@ -7,6 +7,10 @@
  * 汇编预览（N114）：按大纲汇编草稿（纯预览不落库）——每节标题 + 条目
  * （标题/摘录≤200/引文/笔记），缺失引用诚实排除并计数；「下载 Markdown」
  * 出口（研究包 ZIP 导出不带分节过滤，故按规格走 Markdown 下载）。
+ * 分享包（N116）：「导出分享包」——自包含静态 HTML（无脚本/凭据/本地
+ * 路径；私人笔记绝不进包，includeNotes 固定 false）。
+ * 冲突对照（N156）：「资料冲突对照」——选 2–5 份材料做纯词法句级比对
+ * （零模型调用；基于文本比对，非语义裁决）。
  * 清理预演（N120）：只读报告（逐项带原因）→ 勾选可执行类目 → 应用
  * （服务端快照先行）→ 撤销（恢复被移除的行）。绝不触碰 FreshRSS 数据；
  * library 引用受保护（服务端强制；UI 只提供可执行类目的勾选）。
@@ -27,14 +31,18 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Share2,
   Trash2,
   Undo2,
+  Scale,
 } from 'lucide-react'
 import {
   applyWorkspaceCleanup,
   CLEANUP_CATEGORY_LABELS,
   compileWorkspace,
   compileWorkspaceMarkdown,
+  exportSharePackage,
+  qaConflicts,
   createWorkspaceSection,
   deleteWorkspaceSection,
   getWorkspaceCleanupPreview,
@@ -47,6 +55,7 @@ import {
   type WorkspaceSectionView,
 } from '../api/client'
 import { Button } from './ui/Button'
+import { Dialog } from './ui/Dialog'
 import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
 import { Skeleton } from './ui/Skeleton'
@@ -92,6 +101,15 @@ function CompileDraftView({
       setDownloadError(err instanceof Error ? err.message : '下载失败，请稍后重试。')
     },
   })
+  // N116：导出只读分享包（自包含 HTML；私人笔记绝不进包）。
+  const share = useMutation({
+    mutationFn: () => exportSharePackage(workspaceId),
+    onError: (err) => {
+      setDownloadError(err instanceof Error ? err.message : '分享包导出失败，请稍后重试。')
+    },
+  })
+  // N156：资料冲突对照入口（可选材料 = 本草稿条目）。
+  const [conflictsOpen, setConflictsOpen] = useState(false)
 
   return (
     <div
@@ -118,6 +136,19 @@ function CompileDraftView({
             )}
             下载 Markdown
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={draft.data === undefined || share.isPending}
+            onClick={() => share.mutate()}
+          >
+            {share.isPending ? (
+              <Loader2 aria-hidden className="size-3.5 animate-spin" />
+            ) : (
+              <Share2 aria-hidden className="size-3.5" />
+            )}
+            导出分享包
+          </Button>
           <Button variant="ghost" size="sm" onClick={onDone}>
             关闭
           </Button>
@@ -127,6 +158,32 @@ function CompileDraftView({
         <p role="alert" className="mt-2 text-xs text-[var(--lumi-danger)]">
           {downloadError}
         </p>
+      )}
+      {draft.data !== undefined && (
+        <div className="mt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={conflictsOpen}
+            onClick={() => setConflictsOpen((v) => !v)}
+          >
+            <Scale aria-hidden className="size-3.5" />
+            资料冲突对照
+          </Button>
+        </div>
+      )}
+      {conflictsOpen && draft.data !== undefined && (
+        <QaConflictsDialog
+          materials={draft.data.sections.flatMap((section) =>
+            section.items.map((item) => ({
+              ref: item.itemRef.startsWith('rss:')
+                ? item.itemRef.slice('rss:'.length)
+                : item.itemRef,
+              title: item.title,
+            })),
+          )}
+          onClose={() => setConflictsOpen(false)}
+        />
       )}
       {draft.isPending && <Skeleton className="mt-2 h-32 w-full" />}
       {draft.isError && (
@@ -710,5 +767,121 @@ export function WorkspaceOutlinePanel({
         </div>
       )}
     </div>
+  )
+}
+
+/** N156：资料冲突对照 Dialog —— 纯词法比对（零模型调用）。
+ * 选择 2–5 份材料 → POST /qa/conflicts → 冲突句并列展示
+ * （数字/日期/其他）。诚实口径：基于文本比对，非语义裁决——差异
+ * 不必然是错误，判断留给读者。 */
+function QaConflictsDialog({
+  materials,
+  onClose,
+}: {
+  materials: { ref: string; title: string }[]
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [result, setResult] = useState<Awaited<ReturnType<typeof qaConflicts>> | null>(null)
+  const run = useMutation({
+    mutationFn: () => qaConflicts([...selected]),
+    onSuccess: setResult,
+  })
+  const toggle = (ref: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref)
+      else if (prev.size < 5) next.add(ref)
+      return next
+    })
+  }
+
+  return (
+    <Dialog open onClose={onClose} title="资料冲突对照" panelClassName="max-w-xl">
+      <div className="flex flex-col gap-2" data-testid="qa-conflicts">
+        <p className="text-[11px] text-[var(--lumi-text-tertiary)]">
+          纯文本比对（零模型调用）：找出高度相似但数字/日期不同的句子对。
+          基于文本比对，非语义裁决——差异不必然是错误。
+        </p>
+        {materials.length < 2 ? (
+          <p className="text-xs text-[var(--lumi-text-tertiary)]">
+            本草稿的可对照材料不足 2 条，无法对照。
+          </p>
+        ) : (
+          <fieldset className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs">
+            <legend className="px-1 text-[var(--lumi-text-secondary)]">
+              选择材料（2–5 份）
+            </legend>
+            {materials.map((material) => (
+              <label key={material.ref} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selected.has(material.ref)}
+                  onChange={() => toggle(material.ref)}
+                  aria-label={`选择材料：${material.title}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-[var(--lumi-text-primary)]">
+                  {material.title}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <div>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selected.size < 2 || run.isPending}
+            onClick={() => run.mutate()}
+          >
+            {run.isPending ? '比对中…' : `比对所选（${selected.size}）`}
+          </Button>
+        </div>
+        {run.isError && (
+          <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+            {run.error instanceof Error ? run.error.message : '比对失败，请稍后重试。'}
+          </p>
+        )}
+        {result !== null && (
+          <div className="flex flex-col gap-1.5" data-conflicts-result="">
+            {result.conflicts.length === 0 && (
+              <p role="status" className="text-xs text-[var(--lumi-text-secondary)]">
+                未检出高重叠的句级差异。
+              </p>
+            )}
+            {result.conflicts.map((conflict, index) => (
+              <div
+                key={`${conflict.aRef}-${conflict.bRef}-${index}`}
+                data-conflict-kind={conflict.diffKind}
+                className="rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-2 text-xs"
+              >
+                <p className="flex items-center gap-1.5">
+                  <span className="rounded-full bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-secondary)]">
+                    {conflict.diffKind === 'number'
+                      ? '数字差异'
+                      : conflict.diffKind === 'date'
+                        ? '日期差异'
+                        : '其他差异'}
+                  </span>
+                  <span className="text-[var(--lumi-text-tertiary)]">
+                    重叠 {Math.round(conflict.overlap * 100)}%
+                  </span>
+                </p>
+                <p className="mt-1 text-[var(--lumi-text-secondary)]">
+                  甲：{conflict.aQuote}
+                </p>
+                <p className="mt-0.5 text-[var(--lumi-text-secondary)]">
+                  乙：{conflict.bQuote}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--lumi-text-tertiary)]">
+                  证据：{conflict.aRef}#{conflict.aEvidence.blockIndex ?? '—'} ·{' '}
+                  {conflict.bRef}#{conflict.bEvidence.blockIndex ?? '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Dialog>
   )
 }

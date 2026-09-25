@@ -63,6 +63,8 @@ const InstallHint = lazy(() => import('./components/InstallHint'))
 // 重子件（翻译/TTS/批注/语音）已各自懒加载——本体也按既有「一级页
 // lazy」契约分包，登录态首屏只拉时间线所需代码（bundle guard）。
 const Reader = lazy(() => import('./components/Reader'))
+// E1: N045 阅读中断便签（Reader 外层挂载）
+const ReadingInterruptionNote = lazy(() => import('./components/ReadingInterruptionNote'))
 import Sidebar from './components/Sidebar'
 import { PaneSeparator } from './components/ui/PaneSeparator'
 import { Skeleton } from './components/ui/Skeleton'
@@ -552,6 +554,11 @@ export default function App() {
           )}
           <Suspense fallback={<Skeleton className="h-full w-full" data-testid="reader-lazy-loading" />}>
             <Reader />
+          </Suspense>
+          {/* E1: N045 阅读中断便签（离开长文提示 + 重开回显；Reader 外层
+              挂载以观察 关闭/切换 跳变） */}
+          <Suspense fallback={null}>
+            <ReadingInterruptionNote />
           </Suspense>
         </section>
         )}

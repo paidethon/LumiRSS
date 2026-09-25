@@ -23,6 +23,7 @@ AI 配置复用 summary purpose 的 profile 映射（日报本质是摘要类任
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -1163,6 +1164,9 @@ def build_refs(material: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
             "url": str(doc.get("url") or ""),
             "feedTitle": _clip(doc.get("feedTitle") or "", 200),
             "publishedAt": str(doc.get("publishedAt") or ""),
+            # N180：条目引用（opaque entryRef，若有）——日报材料使用追踪
+            # 的反查依据。旧期号没有该键 → 使用查询诚实回退为空。
+            "ref": str(doc.get("entryRef") or ""),
         }
     return refs
 
@@ -1174,6 +1178,33 @@ def _safe_href(url: str) -> str | None:
     if lower.startswith("http://") or lower.startswith("https://"):
         return clean
     return None
+
+
+def is_revised_issue(updated_at: Any, published_at: Any) -> bool:
+    """N177：期号是否被修订过（updated_at 晚于 published_at）。
+
+    两侧都按 RFC3339 解析成时刻比较（格式不同也能比）；任一缺失或
+    解析失败 → 诚实 False（宁可不标注，不凭空标注）。"""
+    updated = _canonical_utc(updated_at if isinstance(updated_at, str) else str(updated_at or ""))
+    published = _canonical_utc(published_at if isinstance(published_at, str) else str(published_at or ""))
+    if updated is None or published is None:
+        return False
+    return updated > published
+
+
+def revision_banner_html(note: Any, updated_at: Any, published_at: Any) -> str:
+    """N177：可见订正块——修订过的期号在正文（与 Atom content）顶端
+    渲染「【已订正 <时间>】+ note」。未修订 → 空串（负向语义：绝不
+    给未修订的期号加标记）。内容全部转义；note 为空只显示订正时间。"""
+    if not is_revised_issue(updated_at, published_at):
+        return ""
+    updated = _canonical_utc(str(updated_at)) or ""
+    note_text = str(note or "").strip()
+    body = f"已订正 {updated}" + (f"：{note_text}" if note_text else "")
+    return (
+        '<div class="lumi-digest-revision" data-lumi-revised="true">'
+        f"<strong>【{_esc(body)}】</strong></div>"
+    )
 
 
 def render_issue_html(output: dict[str, Any], refs: dict[str, dict[str, str]]) -> str:
@@ -1748,6 +1779,122 @@ def plan_run(
     )
 
 
+def plan_missed(
+    config: dict[str, Any],
+    now: datetime,
+    *,
+    catchup_minutes: int | None = 65,
+) -> RunPlan | None:
+    """N179：最近一个「已错过」（超出补刊窗口）的到期时点。
+
+    plan_run 对超出 ``catchup_minutes`` 的时点诚实返回 None（不追溯）；
+    本函数把该时点显式找出来，交给缺刊处理策略裁决：backfill 补生成、
+    skip 记录后放弃、merge_into_next 把窗口材料并入下一期。仍在补刊
+    窗口内的时点不算缺刊（那是 plan_run 的领地）。期号存在与否由调用
+    方（scheduler）查库判定——这里只做纯时钟/配置计算。"""
+    from lumirss.gpt_digest_configs import parse_days
+
+    slots = parse_slots(config.get("slots") or [])
+    tz = config.get("timezone") or ""
+    try:
+        local = now.astimezone(ZoneInfo(tz)) if tz else now.astimezone()
+    except Exception:  # noqa: BLE001 — 非法时区在保存时已拦；运行时兜底本地
+        local = now.astimezone()
+
+    days = parse_days(config.get("days") or [])
+    if days and local.weekday() not in days:
+        return None  # 今天本就不是发布日——没有「缺刊」可言
+    weekend_hours = parse_slots(config.get("weekendHours") or [])
+    if local.weekday() >= 5 and weekend_hours:
+        slots = list(weekend_hours)
+
+    if not slots:
+        boundary = local.replace(
+            hour=int(config["hour"]), minute=0, second=0, microsecond=0
+        )
+    else:
+        boundaries = [
+            local.replace(hour=h, minute=0, second=0, microsecond=0) for h in slots
+        ]
+        passed = [b for b in boundaries if b <= local]
+        if not passed:
+            return None  # 今天尚无到期时点
+        boundary = passed[-1]
+    if catchup_minutes is not None and (local - boundary) <= timedelta(
+        minutes=catchup_minutes
+    ):
+        return None  # 仍在补刊窗口内——plan_run 的领地
+    if slots:
+        key = boundary.strftime("%Y-%m-%d") + f"-{boundary.hour:02d}"
+        idx = slots.index(boundary.hour)
+        if idx > 0:
+            prev = boundary.replace(hour=slots[idx - 1])
+        else:
+            yesterday = boundary - timedelta(days=1)
+            prev = yesterday.replace(hour=slots[-1])
+    else:
+        key = issue_key_for(boundary, tz)
+        start, _ = window_bounds(boundary, tz, int(config["windowHours"]))
+        if start:
+            parsed = _canonical_utc(start)
+            if parsed is not None:
+                prev = datetime.fromisoformat(parsed.replace("Z", "+00:00"))
+            else:
+                prev = boundary
+        else:
+            prev = boundary
+    return RunPlan(
+        issue_key=key,
+        window_start=_canonical_utc(prev.isoformat()),
+        window_end=_canonical_utc(boundary.isoformat()),
+    )
+
+
+async def capture_missed_window_into_pool(
+    adapter: Any,
+    pool: Any,
+    config_id: int,
+    plan: RunPlan,
+    *,
+    limit: int = 20,
+) -> int:
+    """N179 merge_into_next：把错过的窗口材料经素材池并入下一期。
+
+    素材池本就支持「待用条目在下次生成时并入候选」（F102）——这里只是
+    把错过窗口内的条目显式灌进池子（flag-through），下一期生成自然
+    消费。窗口过滤按 publishedAt（canonical UTC，与 classify_material
+    同口径）；重复加入与失效引用逐条跳过，绝不阻断。返回成功入池数。"""
+    from lumirss.gpt_digest_pool import DigestPoolDuplicate
+
+    start = _canonical_utc(plan.window_start)
+    end = _canonical_utc(plan.window_end)
+    if start is None or end is None:
+        return 0
+    try:
+        page = await adapter.list_entry_documents(limit=_HARVEST_LIMIT)
+    except Exception:  # noqa: BLE001 — 上游失败 → 并入 0 条（诚实）
+        return 0
+    added = 0
+    for doc in page.documents:
+        if added >= limit:
+            break
+        payload = doc.model_dump() if hasattr(doc, "model_dump") else dict(doc)
+        published = _canonical_utc(payload.get("publishedAt"))
+        if published is None or not (start <= published < end):
+            continue
+        ref = str(payload.get("entryRef") or "")
+        if not ref.startswith("e1."):
+            continue
+        try:
+            await pool.add_entry(config_id, ref)
+            added += 1
+        except (DigestPoolDuplicate, ValueError):
+            continue
+        except Exception:  # noqa: BLE001 — 单条失败不拖垮并入
+            continue
+    return added
+
+
 class GptDigestScheduler:
     """Hour-boundary check in the BFF's shared background loop.
 
@@ -1780,19 +1927,52 @@ class GptDigestScheduler:
         config: dict[str, Any],
         issues: GptDigestIssuesStore,
         now: datetime | None = None,
+        *,
+        merge_fn: Any = None,
     ) -> dict[str, Any] | None:
         """到期则生成；返回 issue 行或 None（未到期/已生成/禁用/忙碌）。
 
         F02 去重规则：目标期号 (config_id, issue_key) 已存在 = 已发布，
-        调度绝不重写（修订只能显式触发）；错过超过补刊窗口的时点诚实
-        跳过（不追溯生成过期内容）。"""
+        调度绝不重写（修订只能显式触发）。
+        N179 缺刊处理策略（``missedIssuePolicy``）：超出补刊窗口且期号
+        不存在的时点——backfill（默认）补生成该期；skip 记录
+        {date, reason: policy_skip} 后放弃；merge_into_next 把错过窗口
+        的材料经素材池并入下一期（``merge_fn``，幂等标记 reason=
+        merged_into_next）。期号已存在时策略绝不重跑（幂等双跑安全）。"""
         if self._busy or not config["enabled"]:
             return None
         now = now or self._now(config["timezone"])
         plan = plan_run(config, now)
         if plan is None:
-            return None
-        if await issues.get_issue(int(config["id"]), plan.issue_key) is not None:
+            plan = plan_missed(config, now)
+            if plan is None:
+                return None
+            if await issues.get_issue(int(config["id"]), plan.issue_key) is not None:
+                return None  # 已补过/已生成——策略不重写既有期号
+            policy = str(config.get("missedIssuePolicy") or "backfill")
+            config_id = int(config["id"])
+            if policy == "skip":
+                from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+                await GptDigestConfigStore(self._db).append_config_skip_log(
+                    config_id, plan.issue_key, "policy_skip"
+                )
+                return None
+            if policy == "merge_into_next":
+                from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+                configs = GptDigestConfigStore(self._db)
+                if await configs.skip_log_has(config_id, plan.issue_key, "merged_into_next"):
+                    return None  # 同一次缺刊只并入一次（幂等双跑）
+                await configs.append_config_skip_log(
+                    config_id, plan.issue_key, "merged_into_next"
+                )
+                if merge_fn is not None:
+                    with contextlib.suppress(Exception):
+                        await merge_fn(plan)  # 并入失败不阻断调度
+                return None
+            # backfill（默认）：按原期号/原窗口补生成。
+        elif await issues.get_issue(int(config["id"]), plan.issue_key) is not None:
             return None
         self._busy = True
         try:
@@ -1876,6 +2056,34 @@ async def _scheduled_generate(
     )
 
 
+async def _merge_missed_into_pool(
+    app_state: Any, config: dict[str, Any], plan: RunPlan
+) -> int:
+    """N179 merge_into_next 的调度侧桥：解析适配器与素材池后灌入错过
+    窗口的材料（flag-through 经 F102 素材池；适配器不可用 → 0 条）。"""
+    from lumirss.gpt_digest_pool import DigestMaterialPoolStore
+    from lumirss.user_scope import current_user_id
+
+    uid = current_user_id()
+    adapter = None
+    if uid:
+        adapter = app_state.user_services.get((uid, "bg_freshrss_adapter"))
+        if adapter is None:
+            from lumirss.control_resources import user_freshrss_adapter
+
+            adapter = await user_freshrss_adapter(app_state, uid)
+            if adapter is not None:
+                app_state.user_services[(uid, "bg_freshrss_adapter")] = adapter
+    if adapter is None:
+        return 0
+    return await capture_missed_window_into_pool(
+        adapter,
+        DigestMaterialPoolStore(app_state.db),
+        int(config["id"]),
+        plan,
+    )
+
+
 async def gpt_digest_scheduler_loop(app_state: Any) -> None:
     """Background loop, per user (0067/O163); failures are isolated per
     user and logged, never fatal.
@@ -1891,9 +2099,12 @@ async def gpt_digest_scheduler_loop(app_state: Any) -> None:
         issues = GptDigestIssuesStore(app_state.db)
         for config in await configs.list_configs():
             await scheduler.maybe_generate_config(
-                lambda cfg=config, plan=None: _scheduled_generate(app_state, cfg, plan),
+                lambda plan, cfg=config: _scheduled_generate(app_state, cfg, plan),
                 config,
                 issues,
+                merge_fn=lambda plan, cfg=config: _merge_missed_into_pool(
+                    app_state, cfg, plan
+                ),
             )
 
     while True:

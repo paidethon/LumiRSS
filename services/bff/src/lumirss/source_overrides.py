@@ -70,6 +70,14 @@ ENCODING_OVERRIDES = ("utf-8", "declared", "detected")
 ATTENTION_LEVELS = ("must_read", "normal", "low")
 ATTENTION_FILTER_MODES = ("must_read", "excl_low")
 
+# N038：按来源保留天数（只驱动派生投影裁剪；见 source_retention.py）。
+RETENTION_DAYS_MIN = 7
+RETENTION_DAYS_MAX = 3650
+
+
+def retention_days_valid(value: Any) -> bool:
+    return isinstance(value, int) and RETENTION_DAYS_MIN <= value <= RETENTION_DAYS_MAX
+
 
 class AttentionLevelInvalid(ValueError):
     """N020：非法关注级别（must_read | normal | low 之外）——422 稳定错误。"""
@@ -156,6 +164,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 
     attention_level = _column("attention_level")
     refresh_advisory = _column("refresh_advisory")
+    retention_days = _column("retention_days")
     return {
         "feedUrl": str(row["feed_url"]),
         "hiddenUntil": row["hidden_until"],
@@ -173,6 +182,12 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "language": _column("language"),
         "unreadAlertThreshold": _column("unread_alert_threshold"),
         "syncPriority": _column("sync_priority"),
+        # N038：按来源保留天数（NULL = 未启用；只驱动派生投影裁剪）。
+        "retentionDays": retention_days if retention_days_valid(retention_days) else None,
+        # N090：per-source 翻译策略（NULL = 跟随全局；'local_only'）。
+        "translationPolicy": _column("translation_policy")
+        if _column("translation_policy") in ("local_only",)
+        else None,
         "updatedAt": str(row["updated_at"] or ""),
     }
 
@@ -191,14 +206,14 @@ class SourceOverrideStore:
     async def list_overrides(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL OR language IS NOT NULL OR unread_alert_threshold IS NOT NULL OR sync_priority IS NOT NULL ORDER BY updated_at DESC"
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, translation_policy, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL OR language IS NOT NULL OR unread_alert_threshold IS NOT NULL OR sync_priority IS NOT NULL OR retention_days IS NOT NULL OR translation_policy IS NOT NULL ORDER BY updated_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
     async def get_override(self, feed_url: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, updated_at FROM source_overrides WHERE feed_url = ?",
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days, translation_policy, updated_at FROM source_overrides WHERE feed_url = ?",
             (feed_url,),
         )
         if row is None:
@@ -221,6 +236,8 @@ class SourceOverrideStore:
             and result["language"] is None
             and result["unreadAlertThreshold"] is None
             and result["syncPriority"] is None
+            and result["retentionDays"] is None
+            and result["translationPolicy"] is None
         ):
             return None
         return result
@@ -282,7 +299,7 @@ class SourceOverrideStore:
             # N020 attention_level/N014 refresh_advisory 等其它维度仍有
             # 值时保留）。
             row = await self._db.fetch_one(
-                "SELECT ai_disabled, extract_policy, reader_style_json, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority FROM source_overrides WHERE feed_url = ?",
+                "SELECT ai_disabled, extract_policy, reader_style_json, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, retention_days FROM source_overrides WHERE feed_url = ?",
                 (feed_url,),
             )
             keep = (
@@ -298,6 +315,7 @@ class SourceOverrideStore:
                     or row["language"] is not None
                     or row["unread_alert_threshold"] is not None
                     or row["sync_priority"] is not None
+                    or row["retention_days"] is not None
                 )
             )
             if not keep:
@@ -533,6 +551,47 @@ class SourceOverrideStore:
             "SELECT feed_url, stale_alert_hours FROM source_overrides WHERE stale_alert_hours IS NOT NULL"
         )
         return {str(row["feed_url"]): int(row["stale_alert_hours"]) for row in rows}
+
+    async def get_retention_days(self, feed_url: str) -> int | None:
+        """N038：已存储的保留天数（None = 未启用）。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT retention_days FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None or row["retention_days"] is None:
+            return None
+        value = int(row["retention_days"])
+        return value if retention_days_valid(value) else None
+
+    async def set_retention_days(self, feed_url: str, days: int | None) -> None:
+        """N038：存储/清除按来源保留天数（None = 清除）。
+
+        只驱动 Lumi 派生投影裁剪（source_retention.prune_projection）；
+        FreshRSS 零调用——诚实边界见迁移 0131。"""
+        if days is not None and not retention_days_valid(days):
+            raise ValueError(
+                f"retention days must be an integer in [{RETENTION_DAYS_MIN}, {RETENTION_DAYS_MAX}]."
+            )
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT retention_days FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        if row is None:
+            if days is None:
+                return
+            await self._db.execute(
+                "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, retention_days, updated_at) VALUES (?, NULL, NULL, NULL, 'rss', ?, ?)",
+                (feed_url, days, utc_now()),
+            )
+            return
+        if row["retention_days"] == days:
+            return
+        await self._db.execute(
+            "UPDATE source_overrides SET retention_days = ?, updated_at = ? WHERE feed_url = ?",
+            (days, utc_now(), feed_url),
+        )
 
     async def active_hidden_feed_urls(self, now_iso: str | None = None) -> list[str]:
         """当前处于隐藏期的 feed_url 列表（hidden_until > now）。"""

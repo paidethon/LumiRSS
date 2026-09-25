@@ -32,6 +32,8 @@ from lumirss.models import (
     EntrySummaryVersions,
     EntryTranslation,
     TitleTranslationView,
+    TranslationCompareView,
+    TranslationRevisionHistoryView,
     TranslationSegmentsView,
     TranslationVerificationView,
 )
@@ -127,6 +129,11 @@ async def generate_translation_segments(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
+    # N090：来源翻译策略 local_only → 403（服务端执行点判定；本端点是
+    # 唯一允许调用远程 provider 的翻译入口，判在这里 = 远程请求 0 次）。
+    local_only_denial = await _local_only_policy_denial(request, entry_ref)
+    if local_only_denial is not None:
+        return local_only_denial
     # F064：配额事前拦截。
     from lumirss.ai_quota import quota_denial
 
@@ -258,6 +265,169 @@ async def delete_translation_segment_revision(
             content={"error": {"type": "segment_not_found", "message": str(exc)}},
         )
     return Response(status_code=204)
+
+
+# -- N085：修订历史（恢复上一版） ----------------------------------------------
+
+
+@router.get(
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/history",
+    response_model=TranslationRevisionHistoryView,
+)
+async def get_translation_segment_revision_history(
+    entry_ref: str, block_index: int, request: Request
+) -> TranslationRevisionHistoryView:
+    """N085：一段的修订历史（最新在前；每段上限 5 条）。无缓存行 → 404。"""
+    from lumirss.ai_translation_revisions import (
+        SegmentRevisionNotFound,
+        revision_history,
+    )
+
+    decode_entry_ref(entry_ref)
+    if not 0 <= block_index <= 63:
+        return TranslationRevisionHistoryView(index=block_index, items=[])
+    try:
+        entries = await revision_history(request.app.state.db, entry_ref, block_index)
+    except SegmentRevisionNotFound:
+        return TranslationRevisionHistoryView(index=block_index, items=[])
+    return TranslationRevisionHistoryView(
+        index=block_index,
+        items=[
+            {"oldText": e.old_text, "replacedAt": e.replaced_at} for e in entries
+        ],
+    )
+
+
+@router.post(
+    "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/restore",
+    response_model=SegmentRevisionResult,
+)
+async def restore_translation_segment_revision(
+    entry_ref: str, block_index: int, request: Request
+) -> SegmentRevisionResult | JSONResponse:
+    """N085：恢复上一版修订——弹出最新历史条目作为当前修订（当前文本
+    不回推历史；逐次点击逐版回退）。无历史 / 无缓存行 → 404。"""
+    from lumirss.ai_translation_revisions import (
+        SegmentRevisionNotFound,
+        restore_revision,
+    )
+
+    decode_entry_ref(entry_ref)
+    if not 0 <= block_index <= 63:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_segment_index",
+                    "message": "block_index 必须在 0..63 之间。",
+                }
+            },
+        )
+    try:
+        revision = await restore_revision(request.app.state.db, entry_ref, block_index)
+    except SegmentRevisionNotFound as exc:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"type": "revision_history_empty", "message": str(exc)}},
+        )
+    return SegmentRevisionResult(
+        index=revision.index,
+        userRevision=revision.text,
+        revisedAt=revision.revised_at,
+        revisionStale=False,
+    )
+
+
+# -- N084：翻译提供方对照（ephemeral，绝不写缓存） ------------------------------
+
+
+class TranslationCompareBody(BaseModel):
+    """POST …/translation-compare body（N084）。"""
+
+    blockIndex: int = Field(ge=0, le=63)
+    text: str = Field(min_length=1, max_length=20000)
+
+
+@router.post(
+    "/api/v1/entries/{entry_ref}/translation-compare",
+    response_model=TranslationCompareView,
+)
+async def compare_translation_block(
+    entry_ref: str, body: TranslationCompareBody, request: Request
+) -> TranslationCompareView | JSONResponse:
+    """N084：同一块正文经两个已配置提供方对照翻译（翻译引擎 vs chat
+    用途 AI Profile）。EPHEMERAL：不写任何缓存行；成本口径 chars×2。
+    只配置了一个提供方 / 引擎为 browser / 两侧同一配置 → 诚实
+    available=false + reason。"""
+    import time as _time
+
+    from lumirss.translation_compare import TranslationCompareService
+
+    decode_entry_ref(entry_ref)
+    disabled_denial = await _ai_disabled_denial(request, entry_ref)
+    if disabled_denial is not None:
+        return disabled_denial
+    from lumirss.ai_quota import quota_denial
+
+    denial = await quota_denial(request)
+    if denial is not None:
+        return denial
+
+    service = TranslationCompareService(
+        settings_store=_get_ai_settings_store(request),
+        profile_store=_get_ai_profile_store(request),
+        translation_provider_factory=_provider_factory_for(request, "translation"),
+        chat_provider_factory=_provider_factory_for(request, "chat"),
+        secrets=request.app.state.secrets_store,
+    )
+    started = _time.monotonic()
+    try:
+        outcome = await service.compare(body.text)
+    except Exception as exc:
+        await _record_ai_task(
+            request,
+            kind="translation_compare",
+            entry_ref=entry_ref,
+            status="failed",
+            duration_ms=int((_time.monotonic() - started) * 1000),
+            error_type=type(exc).__name__,
+        )
+        raise
+    if outcome.available:
+        await _record_ai_task(
+            request,
+            kind="translation_compare",
+            entry_ref=entry_ref,
+            status="done",
+            duration_ms=int((_time.monotonic() - started) * 1000),
+            input_chars=outcome.estimated_chars,
+        )
+    else:
+        await _record_ai_task(
+            request,
+            kind="translation_compare",
+            entry_ref=entry_ref,
+            status="failed",
+            duration_ms=int((_time.monotonic() - started) * 1000),
+            error_type=outcome.reason or "unavailable",
+        )
+    from lumirss.models import TranslationCompareSide
+
+    return TranslationCompareView(
+        available=outcome.available,
+        reason=outcome.reason,
+        sides=[
+            TranslationCompareSide(
+                label=side.label,
+                provider=side.provider,
+                model=side.model,
+                text=side.text,
+                failureType=side.failure_type,
+            )
+            for side in outcome.sides
+        ],
+        estimatedChars=outcome.estimated_chars,
+    )
 
 
 # -- N086：不翻译片段标记 ------------------------------------------------------
@@ -433,6 +603,27 @@ def _summary_json(state, versions=None) -> dict[str, object]:
         "activeVersionId": None,
     }
     return payload
+
+
+async def _local_only_policy_denial(request: Request, entry_ref: str):
+    """N090：entry 所属来源 translation_policy=local_only → 403
+    local_only_policy（正文只允许浏览器本机翻译；在 provider 调用前
+    拦截 = 不产生任何 httpx 外呼）。投影缺失该条目 → fail-open。"""
+    from lumirss.source_ai_gate import feed_url_for_entry
+    from lumirss.translation_policy import is_local_only
+
+    feed_url = await feed_url_for_entry(request.app.state.db, entry_ref)
+    if await is_local_only(request.app.state.db, feed_url):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": {
+                    "type": "local_only_policy",
+                    "message": "该来源已设置为仅本机翻译（local_only）：正文不会被发往任何远程翻译服务。",
+                }
+            },
+        )
+    return None
 
 
 async def _ai_disabled_denial(request: Request, entry_ref: str):

@@ -411,7 +411,9 @@ snapshot_for_rollback() {
   # 供 BFF GET /admin/rollback-readiness 只读透传（无秘密；写失败仅
   # 告警，绝不影响部署/回滚本身）。
   if [[ -n "${LUMIRSS_ROLLBACK_MANIFEST_FILE:-}" ]]; then
-    ROLLBACK_MANIFEST_PATH="$LUMIRSS_ROLLBACK_MANIFEST_FILE"     ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}"     python3 - <<-'PY' || warn "could not write rollback manifest (readiness check will report absent)"
+    ROLLBACK_MANIFEST_PATH="$LUMIRSS_ROLLBACK_MANIFEST_FILE" \
+    ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}" \
+    python3 - <<-'PY' || warn "could not write rollback manifest (readiness check will report absent)"
 import json, os, tempfile
 path = os.environ["ROLLBACK_MANIFEST_PATH"]
 document = {

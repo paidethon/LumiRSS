@@ -11,7 +11,7 @@
   queue_item_done / queue_snapshot_not_found / queue_snapshot_limit）。
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
@@ -31,6 +31,18 @@ def _store(request: Request) -> ReadingQueueStore:
 
 
 # ---- 请求/响应模型（OpenAPI 契约真源） ----
+
+
+class QueueClientItem(BaseModel):
+    """N046：客户端本地视图行（冲突差异提示 + 按项合并的 keep-mine 源）。"""
+
+    model_config = {"extra": "forbid"}
+
+    id: str
+    itemRef: str
+    status: Literal["pending", "done", "removed"] = "pending"
+    segment: str | None = None
+    position: int | None = None
 
 
 class QueueGenerateRequest(BaseModel):
@@ -56,7 +68,7 @@ class QueueItemView(BaseModel):
     addedAt: str
     position: int
     queueDate: str
-    source: Literal["manual", "budget", "level"]
+    source: Literal["manual", "budget", "level", "recovery"]
     status: Literal["pending", "done", "removed"]
     segment: str | None
     title: str | None = None
@@ -78,6 +90,17 @@ class QueueTodayResponse(BaseModel):
     segments: list[QueueSegmentView]
     segmentOrder: list[str]
     totalEstimateMinutes: int
+    revision: int = 0
+    """N046：队列修订号（任何变更 +1；变更请求携带 expectedRevision
+    做乐观并发守卫，落后 → 409 queue_revision_conflict）。"""
+
+
+def _client_items(payload: Any) -> list[dict[str, Any]] | None:
+    """pydantic clientItems → store 层 dict 列表（未传 → None）。"""
+    items = getattr(payload, "clientItems", None)
+    if items is None:
+        return None
+    return [item.model_dump() for item in items]
 
 
 class QueueGenerateResponse(QueueTodayResponse):
@@ -97,6 +120,19 @@ class QueueAddRequest(BaseModel):
 
     itemRef: str
     segment: str | None = None
+    expectedRevision: int | None = None
+    """N046：乐观并发守卫（给定且落后 → 409 queue_revision_conflict）。"""
+    clientItems: list[QueueClientItem] = Field(default_factory=list, max_length=200)
+    """N046：客户端本地视图（冲突差异提示 yourItem 的来源；空 = 不带）。"""
+
+
+class QueueAddResponse(QueueItemView):
+    """加入响应 = 队列行 + N047 撞车提示（非阻断：条目已加入）。"""
+
+    outcome: Literal["created", "duplicate", "resurrected"] = "created"
+    duplicateWarning: dict[str, Any] | None = None
+    """N047：canonical URL 撞车提示 {duplicateOf: {ref, scope, title?}}；
+    null = 未撞车。只比 canonical URL，绝无标题相似度合并。"""
 
 
 class QueueItemDoneRequest(BaseModel):
@@ -105,6 +141,8 @@ class QueueItemDoneRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     done: bool
+    expectedRevision: int | None = None
+    clientItems: list[QueueClientItem] = Field(default_factory=list, max_length=200)
 
 
 class QueueReorderRequest(BaseModel):
@@ -114,6 +152,8 @@ class QueueReorderRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     order: list[str] = Field(max_length=200)
+    expectedRevision: int | None = None
+    clientItems: list[QueueClientItem] = Field(default_factory=list, max_length=200)
 
 
 class QueueSegmentMoveRequest(BaseModel):
@@ -122,6 +162,34 @@ class QueueSegmentMoveRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     segment: str | None = None
+    expectedRevision: int | None = None
+    clientItems: list[QueueClientItem] = Field(default_factory=list, max_length=200)
+
+
+class QueueMergeResolution(BaseModel):
+    """N046：单个冲突 ref 的显式裁决。"""
+
+    model_config = {"extra": "forbid"}
+
+    itemRef: str
+    action: Literal["keep-mine", "keep-theirs"]
+    clientItem: QueueClientItem | None = None
+    """action=keep-mine 时必填（应用其 status/segment）。"""
+
+
+class QueueMergeRequest(BaseModel):
+    """POST /api/v1/queue/today/merge-conflicts body。"""
+
+    model_config = {"extra": "forbid"}
+
+    expectedRevision: int
+    resolutions: list[QueueMergeResolution] = Field(min_length=1, max_length=200)
+
+
+class QueueMergeResponse(QueueTodayResponse):
+    """合并后的今日视图 + 合并元数据。"""
+
+    merge: dict[str, Any]
 
 
 class QueueSegmentOrderRequest(BaseModel):
@@ -225,23 +293,46 @@ async def get_today_queue(request: Request) -> QueueTodayResponse:
 
 @router.post(
     "/api/v1/queue/today/items",
-    response_model=QueueItemView,
-    responses={200: {"model": QueueItemView}, 201: {"model": QueueItemView}},
+    response_model=QueueAddResponse,
+    responses={200: {"model": QueueAddResponse}, 201: {"model": QueueAddResponse}},
 )
 async def add_queue_item(
     payload: QueueAddRequest, request: Request, response: Response
-) -> QueueItemView:
+) -> QueueAddResponse:
     """手动加入（新 201；重复 pending 幂等 200；removed 复活 200；
-    今天已完成 → 409 queue_item_done）。"""
-    row, outcome = await _store(request).add_item(payload.itemRef, payload.segment)
+    今天已完成 → 409 queue_item_done）。
+
+    N046：expectedRevision 落后 → 409 queue_revision_conflict（写入前
+    发生，冲突绝不半途落库）。N047：加入成功后做 canonical URL 撞车
+    检查——warning 附在成功响应里（非阻断，绝不因撞车拒绝写入）。"""
+    row, outcome = await _store(request).add_item(
+        payload.itemRef,
+        payload.segment,
+        expected_revision=payload.expectedRevision,
+        client_items=_client_items(payload),
+    )
+    duplicate_warning = None
+    if outcome == "created":
+        from lumirss.link_dedupe import find_duplicate_for_ref
+
+        duplicate_warning = await find_duplicate_for_ref(
+            request.app.state.db, payload.itemRef
+        )
     response.status_code = 201 if outcome == "created" else 200
-    return QueueItemView(**row)
+    return QueueAddResponse(**row, outcome=outcome, duplicateWarning=duplicate_warning)
 
 
 @router.delete("/api/v1/queue/today/items/{item_id}", status_code=204)
-async def remove_queue_item(item_id: str, request: Request) -> Response:
-    """移除（status=removed，行保留；再移除同一行 → 404）。"""
-    await _store(request).remove_item(item_id)
+async def remove_queue_item(
+    item_id: str,
+    request: Request,
+    expectedRevision: int | None = None,
+) -> Response:
+    """移除（status=removed，行保留；再移除 → 404）。
+
+    N046：expectedRevision 落后 → 409（DELETE 无 body，clientItems 不
+    随行——冲突体的 yourItem 为 null，客户端以本地面板状态补全）。"""
+    await _store(request).remove_item(item_id, expected_revision=expectedRevision)
     return Response(status_code=204)
 
 
@@ -250,8 +341,14 @@ async def set_queue_item_done(
     item_id: str, payload: QueueItemDoneRequest, request: Request
 ) -> QueueItemView:
     """完成状态（set 语义：done=true/false，不是 toggle；完成按条目
-    身份记账，绝不隐式改写上游已读状态）。"""
-    row = await _store(request).set_item_done(item_id, payload.done)
+    身份记账，绝不隐式改写上游已读状态）。N046：expectedRevision
+    落后 → 409。"""
+    row = await _store(request).set_item_done(
+        item_id,
+        payload.done,
+        expected_revision=payload.expectedRevision,
+        client_items=_client_items(payload),
+    )
     return QueueItemView(**row)
 
 
@@ -259,8 +356,13 @@ async def set_queue_item_done(
 async def reorder_today_queue(
     payload: QueueReorderRequest, request: Request
 ) -> QueueTodayResponse:
-    """持久化重排（跨设备可见；done 行位置同样可排）。"""
-    await _store(request).reorder(payload.order)
+    """持久化重排（跨设备可见；done 行位置同样可排）。N046：
+    expectedRevision 落后 → 409。"""
+    await _store(request).reorder(
+        payload.order,
+        expected_revision=payload.expectedRevision,
+        client_items=_client_items(payload),
+    )
     view = await _store(request).today_view()
     return QueueTodayResponse(**view)
 
@@ -274,9 +376,38 @@ async def reorder_today_queue(
 async def move_queue_item_segment(
     item_id: str, payload: QueueSegmentMoveRequest, request: Request
 ) -> QueueItemView:
-    """行菜单移动分段（segment=null = 移回未分组）。"""
-    row = await _store(request).set_item_segment(item_id, payload.segment)
+    """行菜单移动分段（segment=null = 移回未分组）。N046：
+    expectedRevision 落后 → 409。"""
+    row = await _store(request).set_item_segment(
+        item_id,
+        payload.segment,
+        expected_revision=payload.expectedRevision,
+        client_items=_client_items(payload),
+    )
     return QueueItemView(**row)
+
+
+# ---- N046 按项合并 ----
+
+
+@router.post(
+    "/api/v1/queue/today/merge-conflicts", response_model=QueueMergeResponse
+)
+async def merge_queue_conflicts(
+    payload: QueueMergeRequest, request: Request
+) -> QueueMergeResponse:
+    """按项合并：对 409 冲突体里的每个 ref 显式选择 keep-mine（应用
+    clientItem 的 status/segment）或 keep-theirs（保持服务端现状）。
+
+    - 修订号必须仍与 current 一致（期间又被改 → 再 409，重新取差异）；
+    - 合并整体 bump 一次修订号；未提及的行原样保留（unmodified
+      items survive——负向契约）；
+    - keep-theirs 语义 = 放弃本地该行的变更，不是删除服务端行。"""
+    view = await _store(request).merge_conflicts(
+        payload.expectedRevision,
+        [resolution.model_dump() for resolution in payload.resolutions],
+    )
+    return QueueMergeResponse(**view)
 
 
 @router.put("/api/v1/queue/today/segments", response_model=QueueTodayResponse)

@@ -362,7 +362,12 @@ def test_restore_execute_reconciles_ledger_after_swap(tmp_path, monkeypatch):
         session_id = preview.json()["restoreSessionId"]
         response = client.post(
             "/api/v1/restore",
-            json={"restoreSessionId": session_id, "confirmation": "RESTORE"},
+            json={
+                "restoreSessionId": session_id,
+                "confirmation": "RESTORE",
+                # N187：整库对象需显式 overwrite（缺省 skip = 保留现状）。
+                "decisions": {"lumi.sqlite": "overwrite"},
+            },
         )
         assert response.status_code == 200
         assert response.json()["lumiRestored"] is True

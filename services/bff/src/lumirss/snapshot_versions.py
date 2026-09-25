@@ -68,6 +68,102 @@ def parse_resources(raw: str | None) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+# ---- N124：快照资源预算（storage accounting）与选择性清理 --------------------
+#
+# monolith 单文件化把子资源内联为 base64 data: URI，磁盘上只有一个
+# HTML 文件（library_assets.bytes 即其物理大小）。因此：
+# - 预算 = 真实文件大小 + 按内联 data: URI 的 MIME 分类（图片/样式/
+#   附件）算术拆分（base64 解码长度是纯计算，绝不整包解码）；
+# - 清理 = 把选中类别的 data: URI 从文件中移除（条目本体/标题/文本
+#   不动），并以「资源完整性清单」（resources 列）里对应 URL 标记为
+#   missing 呈现——删除后这些资源就是缺失，如实回显。
+
+_DATA_URI_RE = re.compile(
+    r"data:([a-zA-Z0-9.+-]+/[a-zA-Z0-9.+-]+)[;,]base64,([A-Za-z0-9+/=]+)"
+)
+_IMAGE_EXTS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico",
+)
+_CLEANUP_KINDS = ("images", "styles", "attachments")
+
+
+def classify_inline_mime(mime: str) -> str | None:
+    """内联 MIME → 预算/清理类别；页面本体（text/html）不属于可清理资源。"""
+    mime = mime.partition(";")[0].strip().lower()
+    if mime.startswith("image/"):
+        return "images"
+    if mime == "text/css":
+        return "styles"
+    if mime == "text/html":
+        return None
+    return "attachments"
+
+
+def _base64_decoded_len(payload: str) -> int:
+    """base64 载荷的解码后字节数（纯算术；不做实际解码）。"""
+    stripped = payload.rstrip("=")
+    return len(stripped) * 3 // 4
+
+
+def _url_kind(url: str) -> str | None:
+    """资源 URL → 类别（仅用于把清单条目与清理类别对应；page 本身不匹配）。"""
+    path = str(url or "").split("?", 1)[0].split("#", 1)[0].lower()
+    if path.endswith(".css"):
+        return "styles"
+    if path.endswith(_IMAGE_EXTS):
+        return "images"
+    if path.endswith((".html", ".htm", ".xhtml", "/")):
+        return None
+    return "attachments"
+
+
+def storage_breakdown(html: str) -> dict[str, Any]:
+    """按内联 data: URI 类别统计字节（images 带计数；styles/attachments 计字节）。"""
+    counts: dict[str, dict[str, int]] = {
+        "images": {"count": 0, "bytes": 0},
+        "styles": {"count": 0, "bytes": 0},
+        "attachments": {"count": 0, "bytes": 0},
+    }
+    for match in _DATA_URI_RE.finditer(html or ""):
+        kind = classify_inline_mime(match.group(1))
+        if kind is None:
+            continue
+        counts[kind]["count"] += 1
+        counts[kind]["bytes"] += _base64_decoded_len(match.group(2))
+    return counts
+
+
+def strip_inline_resources(html: str, kinds: tuple[str, ...]) -> tuple[str, dict[str, int]]:
+    """把选中类别的内联 data: URI 从 HTML 移除。返回 (新 HTML, 每类移除数)。"""
+    removed: dict[str, int] = {kind: 0 for kind in _CLEANUP_KINDS}
+
+    def _repl(match: re.Match[str]) -> str:
+        kind = classify_inline_mime(match.group(1))
+        if kind is not None and kind in kinds:
+            removed[kind] += 1
+            return ""
+        return match.group(0)
+
+    return _DATA_URI_RE.sub(_repl, html or ""), removed
+
+
+def mark_resources_missing(
+    resources: list[dict[str, Any]], kinds: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """清单中选中类别的子资源（skipped）标记为 missing；页面行不动。"""
+    updated: list[dict[str, Any]] = []
+    for item in resources:
+        if (
+            isinstance(item, dict)
+            and item.get("status") == "skipped"
+            and _url_kind(str(item.get("url", ""))) in kinds
+        ):
+            updated.append({**item, "status": "missing"})
+        else:
+            updated.append(item)
+    return updated
+
+
 def text_diff(text_a: str, text_b: str) -> str:
     """逐行 unified 文本差异（stdlib difflib；纯文本输出）。"""
     return "\n".join(

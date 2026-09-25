@@ -29,6 +29,7 @@ const AddSourceDialog = lazy(() => import('./AddSourceDialog'))
 import SidebarHeader from './SidebarHeader'
 import { cx } from './ui/cx'
 import RecentReadsInline from './RecentReadsInline'
+const RecentWorkspacesCard = lazy(() => import('./RecentWorkspacesCard'))
 import ContinueReadingCard from './ContinueReadingCard'
 import AccountMenu from './AccountMenu'
 
@@ -440,6 +441,12 @@ function Sidebar({
       {isDesktop && <ContinueReadingCard />}
       {/* F057 最近打开（桌面折叠区；与移动端 RecentReads 共用真源） */}
       {isDesktop && <RecentReadsInline />}
+      {/* N110 最近工作区（home 入口卡；device-local per-user 键） */}
+      {isDesktop && (
+        <Suspense fallback={null}>
+          <RecentWorkspacesCard />
+        </Suspense>
+      )}
 
       {/* ===== 信息来源 ===== */}
       <div className="flex flex-col gap-0.5" role="group" aria-label="信息来源">

@@ -146,6 +146,28 @@ class SearchSnapshotStore:
         )
         return [self._row(row, include_refs=False) for row in rows]
 
+    async def count_before(self, cutoff: str) -> int:
+        """N189 活动清除预览：早于 cutoff（ISO 文本比较口径）的快照数。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM search_snapshots WHERE created_at < ?",
+            (cutoff,),
+        )
+        return int(row["n"]) if row else 0
+
+    async def purge_before(self, cutoff: str) -> int:
+        """N189 活动清除：删除早于 cutoff 的搜索快照，返回删除数。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM search_snapshots WHERE created_at < ?",
+            (cutoff,),
+        )
+        await self._db.execute(
+            "DELETE FROM search_snapshots WHERE created_at < ?",
+            (cutoff,),
+        )
+        return int(row["n"]) if row else 0
+
     async def get(self, snapshot_id: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(

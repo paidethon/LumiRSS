@@ -17,7 +17,7 @@
 
 from typing import Any
 
-from lumirss.rag import MODEL_ID, doc_content_hash
+from lumirss.rag import doc_content_hash
 
 # 有界盘点：超大库只统计前 N 行（诚实有界，不做全表 Python 循环）。
 _MAX_SWEEP_ROWS = 2000
@@ -30,6 +30,10 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
     """对每个用户库做一次语料 vs 索引的覆盖盘点（纯只读）。"""
     db = service._db  # noqa: SLF001 — 同模块族协作
     await db.migrate()
+    # N157：分块口径按 LIVE 模型（indexed/stale 都对当前索引负责）。
+    from lumirss.rag import DEFAULT_MODEL_ID, live_model_id
+
+    model_id = await live_model_id(db, DEFAULT_MODEL_ID)
 
     from lumirss.rag_exclusions import rag_excluded_feed_set
     from lumirss.source_ai_gate import ai_disabled_feed_set
@@ -57,7 +61,7 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
 
     chunk_rows = await db.fetch_all(
         "SELECT ref, MIN(content_hash) AS stored_hash FROM rag_chunks WHERE model_id = ? GROUP BY ref",
-        (MODEL_ID,),
+        (model_id,),
     )
     indexed_hashes = {
         str(row["ref"]): (str(row["stored_hash"]) if row["stored_hash"] else None)
@@ -68,6 +72,8 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
     unsupported_kinds: dict[str, int] = {}
     stale = 0
     indexed = 0
+    # N158：过期 ref 明细（有界）——覆盖率卡片「重建所选」的输入。
+    stale_refs: list[str] = []
     for ref, (kind, text) in corpus.items():
         if not text.strip():
             # 空正文：不可索引（unsupported），已不在 indexed 口径内。
@@ -80,13 +86,16 @@ async def scan_coverage(service: Any) -> dict[str, Any]:
         indexed += 1
         if stored != doc_content_hash(text):
             stale += 1
+            if len(stale_refs) < _MAX_STALE_REFS:
+                stale_refs.append(ref)
 
     failed_refs = await _latest_job_skipped_refs(db)
     return {
-        "modelId": MODEL_ID,
+        "modelId": model_id,
         "indexable": indexable,
         "indexed": indexed,
         "stale": stale,
+        "staleRefs": stale_refs,
         "failed": len(failed_refs),
         "unsupported": {
             "count": sum(unsupported_kinds.values()),

@@ -64,6 +64,8 @@ interface FakeTranslatorConstructor {
       ) => void
     }) => void
   }) => Promise<FakeTranslatorInstance>
+  /** N088：本机模型清除接口（规范未发布；存在才可调用，UI 必须诚实）。 */
+  deleteAll?: () => Promise<void>
 }
 
 interface FakeLanguageDetectorInstance {
@@ -93,6 +95,32 @@ function detectorCtor(): FakeLanguageDetectorConstructor | null {
 
 export function localTranslatorAvailable(): boolean {
   return translatorCtor() !== null
+}
+
+// ---- N088：本机翻译模型的存储与清除 ----
+
+/** 浏览器 Translator API 是否公开了本机模型删除接口（deleteAll）。
+ * 截至当前规范 Chrome 并未发布该方法——缺失时设置页必须诚实给出
+ * 「无清除接口 + 浏览器设置指引」，绝不假装清除成功。 */
+export function translatorModelDeletionAvailable(): boolean {
+  const ctor = translatorCtor()
+  return ctor !== null && typeof ctor.deleteAll === 'function'
+}
+
+/** 调用浏览器的本机翻译模型删除（接口存在才真正调用）。
+ * 返回 false = 接口不存在或调用失败——调用方必须如实呈现，
+ * 不得把「没清成」说成「已清除」。 */
+export async function deleteLocalTranslatorModels(): Promise<boolean> {
+  const ctor = translatorCtor()
+  if (ctor === null || typeof ctor.deleteAll !== 'function') {
+    return false
+  }
+  try {
+    await ctor.deleteAll()
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function availability(

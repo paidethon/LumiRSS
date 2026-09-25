@@ -15,6 +15,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from lumirss.models import DataFlowItem, DataFlowsResponse
 
@@ -152,3 +154,136 @@ async def get_data_flows(request: Request) -> DataFlowsResponse:
         imap_config,
     )
     return DataFlowsResponse(flows=flows)
+
+
+# -- N189 个人活动记录清除 -----------------------------------------------------
+
+_RETAINED_NOTES = [
+    "已读/收藏/笔记等业务状态不受影响（它们不是活动记录）",
+    "阅读路径不存储在服务端（设备本地，N050 口径）——无服务端记录可清除",
+    "语音书签保存在设备本地——本端点触达不到，也不冒充已清除",
+]
+
+_ACTIVITY_BUCKETS = ("loginEvents", "aiTaskLogs", "searchSnapshots")
+
+
+def _cutoff_iso(before: str) -> str | None:
+    """「YYYY-MM-DD」（或带时间的 ISO 日期）→ 当日时刻的 utc_now() 同形
+    文本（ISO 文本比较口径，与各表 created_at 存储形态一致）。
+    非法 → None（调用方回 400，不猜）。"""
+    from datetime import UTC, datetime
+
+    text = str(before or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _iso_to_epoch(iso_text: str) -> int:
+    from datetime import UTC, datetime
+
+    parsed = datetime.fromisoformat(iso_text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(parsed.timestamp())
+
+
+async def _require_user(request: Request) -> str | None:
+    """session 模式下解析服务端身份；basic 模式没有账户会话语义 → None。"""
+    from lumirss.config import LumiSettings
+    from lumirss.routers.auth import _current_user_id
+
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return None
+    return await _current_user_id(request)
+
+
+def _reject(status: int, err_type: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={"error": {"type": err_type, "message": message}},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _activity_counts(request: Request, user_id: str, cutoff: str) -> dict[str, int]:
+    from lumirss.ai_task_log import AiTaskLogStore
+    from lumirss.auth_store import AuthStore
+    from lumirss.search_snapshot_store import SearchSnapshotStore
+
+    return {
+        "loginEvents": await AuthStore(
+            request.app.state.control_db
+        ).count_login_events_before(user_id, _iso_to_epoch(cutoff)),
+        "aiTaskLogs": await AiTaskLogStore(request.app.state.db).count_before(cutoff),
+        "searchSnapshots": await SearchSnapshotStore(
+            request.app.state.db
+        ).count_before(cutoff),
+    }
+
+
+class ActivityPurgeBody(BaseModel):
+    """POST /me/activity-purge — 清除某日期之前的服务端活动记录。"""
+
+    before: str = Field(min_length=4, max_length=32)
+    include: dict[str, bool] = Field(default_factory=dict)
+
+
+@router.get("/api/v1/me/activity-purge/preview", response_model=None)
+async def activity_purge_preview(request: Request, before: str) -> JSONResponse:
+    """预览各活动桶在 before 之前的记录数（只读，不清除）。"""
+    user_id = await _require_user(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Login required.")
+    cutoff = _cutoff_iso(before)
+    if cutoff is None:
+        return _reject(400, "invalid_request", "before 必须是 ISO 日期（如 2026-01-01）。")
+    counts = await _activity_counts(request, user_id, cutoff)
+    return JSONResponse(
+        content={"before": cutoff, "counts": counts, "retained": _RETAINED_NOTES},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/v1/me/activity-purge", response_model=None)
+async def activity_purge(body: ActivityPurgeBody, request: Request) -> JSONResponse:
+    """N189：清除 before 之前的服务端活动记录（登录事件 / AI 任务日志 /
+    搜索快照；按 include 选择，缺省全清）。响应如实列出各桶删除数与
+    保留说明；绝不触碰已读/收藏/笔记等业务状态。已删除的记录不会因
+    缓存复活（这些表没有任何缓存写入路径）。"""
+    from lumirss.ai_task_log import AiTaskLogStore
+    from lumirss.auth_store import AuthStore
+    from lumirss.search_snapshot_store import SearchSnapshotStore
+
+    user_id = await _require_user(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Login required.")
+    cutoff = _cutoff_iso(body.before)
+    if cutoff is None:
+        return _reject(400, "invalid_request", "before 必须是 ISO 日期（如 2026-01-01）。")
+    include = {str(k): bool(v) for k, v in body.include.items()}
+
+    def wants(bucket: str) -> bool:
+        return include.get(bucket, True)  # 缺省 = 清除
+
+    deleted: dict[str, int] = {bucket: 0 for bucket in _ACTIVITY_BUCKETS}
+    if wants("loginEvents"):
+        deleted["loginEvents"] = await AuthStore(
+            request.app.state.control_db
+        ).purge_login_events_before(user_id, _iso_to_epoch(cutoff))
+    if wants("aiTaskLogs"):
+        deleted["aiTaskLogs"] = await AiTaskLogStore(request.app.state.db).purge_before(cutoff)
+    if wants("searchSnapshots"):
+        deleted["searchSnapshots"] = await SearchSnapshotStore(
+            request.app.state.db
+        ).purge_before(cutoff)
+    return JSONResponse(
+        content={"before": cutoff, "deleted": deleted, "retained": _RETAINED_NOTES},
+        headers={"Cache-Control": "no-store"},
+    )

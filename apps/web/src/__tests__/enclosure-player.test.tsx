@@ -49,12 +49,13 @@ describe('F011 EnclosurePlayer', () => {
     expect(screen.getByRole('button', { name: '1.5x' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('F011: 加载失败 → 错误态 + 重试恢复播放器', () => {
+  it('F011/N100: 加载失败 → 网络失败分型 + 有界手动重试（一次）', () => {
     renderPlayer()
     fireEvent.click(screen.getByRole('button', { name: /播放附件/ }))
     const media = screen.getByTestId('enclosure-media')
+    Object.defineProperty(media, 'error', { value: { code: 2 }, configurable: true })
     fireEvent.error(media)
-    expect(screen.getByText(/附件加载失败/)).toBeInTheDocument()
+    expect(screen.getByText(/网络失败/)).toBeInTheDocument()
     expect(screen.queryByTestId('enclosure-media')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /重试/ }))
     expect(screen.getByTestId('enclosure-media')).toBeInTheDocument()

@@ -28,7 +28,7 @@
  * - 诚实状态：加载 Skeleton / 空态 / 错误重试，与书签页一致。
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -39,6 +39,7 @@ import {
   Eye,
   FolderOpen,
   History,
+  GitCompareArrows,
   LayoutDashboard,
   ListTree,
   Loader2,
@@ -47,6 +48,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react'
 import { MarkdownImportPanel } from '../MarkdownImportPanel'
@@ -63,6 +65,7 @@ import {
   useWorkspaceContents,
   useWorkspaceGroups,
   useWorkspaceResume,
+  useWorkspaceSearch,
   useWorkspaces,
 } from '../../api/queries'
 import { ApiError, exportResearchPackMd, patchWorkspaceArchive } from '../../api/client'
@@ -73,6 +76,8 @@ import {
 } from '../../api/client'
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
+const WorkspaceCompare = lazy(() => import('../WorkspaceCompare'))
+const WorkspaceMoveDialog = lazy(() => import('../WorkspaceMoveDialog'))
 import {
   ArchivedBar,
   ResearchPackExportDialog,
@@ -80,6 +85,7 @@ import {
   TemplatesDialog,
 } from '../WorkspaceExtras'
 import { WorkspaceSnapshotsPanel } from '../WorkspaceSnapshotsPanel'
+import { WorkspaceCollectRulesPanel } from '../WorkspaceCollectRulesPanel'
 import {
   PreviewDraftActions,
   PreviewDraftNotice,
@@ -87,6 +93,8 @@ import {
 } from '../WorkspacePreviewPane'
 import type { PreviewTarget } from '../WorkspacePreviewPane'
 import { isOpenable, openResolvedItem } from '../../lib/open-item'
+import { recordRecentWorkspace } from '../../lib/recent-workspaces'
+import { useAuthStore } from '../../store/auth'
 import {
   clearRecentlyClosed,
   discardPreviewDraft,
@@ -101,6 +109,7 @@ import {
 import type { RecentClosedItem } from '../../lib/workspace-tabs'
 import type { ResolvedItem } from '../../api/types'
 import type { Workspace, WorkspaceGroupsResponse } from '../../api/types'
+import type { WorkspaceSearchHit } from '../../api/client'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { EmptyState } from '../ui/EmptyState'
@@ -111,6 +120,84 @@ import UnifiedContentCard from '../UnifiedContentCard'
 import { staleState } from '../../lib/stale-label'
 import { DOCS_LINKS } from '../../lib/docs-links'
 import { cx } from '../ui/cx'
+
+/** N109：本工作区检索结果（命中 = 成员范围严格限定；打开 = 复用预览窗格）。 */
+const MATCHED_IN_TEXT: Record<WorkspaceSearchHit['matchedIn'], string> = {
+  title: '标题',
+  content: '全文',
+  'title+content': '标题+全文',
+}
+
+function WorkspaceSearchResults({
+  search,
+  query,
+  onOpen,
+}: {
+  search: { isPending: boolean; isError: boolean; refetch: () => void; data?: { truncated: boolean; results: WorkspaceSearchHit[] } | undefined }
+  query: string
+  onOpen: (hit: WorkspaceSearchHit) => void
+}) {
+  if (search.isPending) {
+    return (
+      <div className="flex flex-col gap-2" aria-label="搜索中">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    )
+  }
+  if (search.isError) {
+    return (
+      <div role="alert" className="flex flex-col gap-2">
+        <p className="text-xs text-[var(--lumi-danger)]">搜索失败，请稍后重试。</p>
+        <div>
+          <Button size="sm" variant="secondary" onClick={() => search.refetch()}>
+            重试
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  const results = search.data?.results ?? []
+  if (results.length === 0) {
+    return (
+      <p className="text-xs text-[var(--lumi-text-tertiary)]" data-testid="workspace-search-empty">
+        没有匹配「{query}」的条目。
+      </p>
+    )
+  }
+  return (
+    <>
+      <ul className="flex flex-col gap-1.5" data-testid="workspace-search-results" aria-label="本工作区搜索结果">
+        {results.map((hit) => (
+          <li
+            key={hit.itemRef}
+            className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2"
+          >
+            <div className="flex min-h-7 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-[var(--lumi-text-primary)]">
+                {hit.title !== '' ? hit.title : hit.itemRef}
+              </span>
+              <span className="shrink-0 rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-1.5 py-0.5 text-[10px] text-[var(--lumi-text-secondary)]">
+                {MATCHED_IN_TEXT[hit.matchedIn]}
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => onOpen(hit)}>
+                打开
+              </Button>
+            </div>
+            {hit.excerpt !== '' && (
+              <p className="line-clamp-2 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+                {hit.excerpt}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {search.data?.truncated && (
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">结果较多，仅显示前 200 条。</p>
+      )}
+    </>
+  )
+}
 
 /** 新建工作区 Dialog（条件挂载；创建成功后选中新工作区）。 */
 function CreateWorkspaceDialog({
@@ -907,6 +994,31 @@ export default function WorkspacesPage() {
 
   const wsItems = workspaces.data?.items ?? []
   const effectiveSelectedId = selectedId ?? wsItems[0]?.id ?? null
+  const userId = useAuthStore((s) => s.identity?.userId ?? '')
+
+  // N110：打开工作区即记录到「最近工作区」（device-local，per-user 键）。
+  // 记录是增强数据：失败静默，绝不影响打开动作本身。
+  const recordedWorkspaceRef = useRef<string | null>(null)
+  const wsItemsRef = useRef(wsItems)
+  wsItemsRef.current = wsItems
+  useEffect(() => {
+    if (effectiveSelectedId === null) return
+    if (recordedWorkspaceRef.current === effectiveSelectedId) return
+    recordedWorkspaceRef.current = effectiveSelectedId
+    const name = wsItemsRef.current.find((w) => w.id === effectiveSelectedId)?.name ?? null
+    recordRecentWorkspace(userId, { workspaceId: effectiveSelectedId, name })
+  }, [effectiveSelectedId, userId])
+
+  // N110：最近工作区卡片的一键打开（custom event → 选中该工作区）。
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail
+      if (typeof id === 'string' && id !== '') setSelectedId(id)
+    }
+    document.addEventListener('lumi:open-workspace', onOpen)
+    return () => document.removeEventListener('lumi:open-workspace', onOpen)
+  }, [])
+
   // F25：选中工作区的说明（空 = 不渲染说明区）
   const selectedDescription = wsItems.find((w) => w.id === effectiveSelectedId)?.description
   const selectedWorkspace = wsItems.find((w) => w.id === effectiveSelectedId) ?? null
@@ -924,6 +1036,10 @@ export default function WorkspacesPage() {
 
   // ---- N101：分组折叠状态（仅本机 localStorage；换工作区重载） ----
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  // N106：工作区双栏对读（挑 2 条 → CompareRead + 手动锚点同步）。
+  const [compareOpen, setCompareOpen] = useState(false)
+  // N108：跨工作区移动（预览条目 → 选择目标工作区）。
+  const [moveTarget, setMoveTarget] = useState<PreviewTarget | null>(null)
   // ---- N103：临时预览（同刻至多一个）+ 本机笔记草稿 + 拦截提示 ----
   const [preview, setPreview] = useState<PreviewTarget | null>(null)
   const [previewDraft, setPreviewDraft] = useState('')
@@ -938,6 +1054,10 @@ export default function WorkspacesPage() {
   const [moveGroupTarget, setMoveGroupTarget] = useState<ResolvedItem | null>(null)
   // N113：移动到分节 Dialog 目标。
   const [moveSectionTarget, setMoveSectionTarget] = useState<ResolvedItem | null>(null)
+  // N109：本工作区内检索（严格限定成员范围；空 = 不搜，不发请求）。
+  const [searchText, setSearchText] = useState('')
+  const search = useWorkspaceSearch(effectiveSelectedId, searchText)
+  const searchActive = searchText.trim() !== ''
 
   // 换工作区：重载本机折叠状态 + 关闭预览（预览属于原工作区上下文）。
   const workspaceKey = effectiveSelectedId ?? ''
@@ -952,6 +1072,7 @@ export default function WorkspacesPage() {
     setPreviewBlocked(false)
     setMoveGroupTarget(null)
     setMoveSectionTarget(null)
+    setSearchText('')
   }
 
   // ---- P15：续读指针 + 跨设备并发诚实提示 ----
@@ -1060,6 +1181,17 @@ export default function WorkspacesPage() {
     discardPreviewDraft(effectiveSelectedId, preview.ref)
     setPreviewDraft('')
     setPreviewBlocked(false)
+  }
+
+  // N109：搜索结果「打开」——优先复用当前列表里的完整 ResolvedItem
+  //（保留 stale 标记等），不在当前解析页里时回退为最小预览目标。
+  const openSearchHit = (hit: WorkspaceSearchHit) => {
+    const resolved = resolvedItems.find((item) => item.ref === hit.itemRef)
+    if (resolved !== undefined) {
+      openPreview(resolved)
+      return
+    }
+    openPreview({ ref: hit.itemRef, title: hit.title, excerpt: hit.excerpt })
   }
 
   const restoreRecentlyClosed = (entry: RecentClosedItem) => {
@@ -1227,6 +1359,15 @@ export default function WorkspacesPage() {
               >
                 <ListTree aria-hidden className="size-4" />
                 大纲
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="workspace-compare-open"
+                onClick={() => setCompareOpen(true)}
+              >
+                <GitCompareArrows aria-hidden className="size-4" />
+                双栏对读
               </Button>
             </>
           )}
@@ -1418,9 +1559,43 @@ export default function WorkspacesPage() {
             />
           </div>
         )}
+        {/* N106：工作区双栏对读（挑 2 条 → CompareRead 双栏 + 锚点同步；
+            窄屏沿用 CompareRead 既有 A/B 无障碍切换）。 */}
+        {compareOpen && (
+          <div className="mt-3 h-[70vh]">
+            <Suspense fallback={<Skeleton className="h-full w-full" />}>
+              <WorkspaceCompare
+                items={resolvedItems.map((item) => ({ ref: item.ref, title: item.title }))}
+                onClose={() => setCompareOpen(false)}
+              />
+            </Suspense>
+          </div>
+        )}
+        {/* N108：跨工作区移动对话框（同一 ItemRef，对象绝不复制）。 */}
+        {moveTarget !== null && effectiveSelectedId !== null && (
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <WorkspaceMoveDialog
+              workspaceId={effectiveSelectedId}
+              itemRef={moveTarget.ref}
+              itemTitle={moveTarget.title}
+              onClose={() => setMoveTarget(null)}
+              onMoved={() => setMoveTarget(null)}
+            />
+          </Suspense>
+        )}
         {/* N103：预览窗格（同刻至多一个；打开另一个 = 整体替换）。 */}
         {preview !== null && effectiveSelectedId !== null && (
           <div className="mt-3" data-workspace-preview-slot>
+            <div className="mb-1.5 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="workspace-move-open"
+                onClick={() => setMoveTarget(preview)}
+              >
+                移动到其他工作区…
+              </Button>
+            </div>
             <WorkspacePreviewPane
               target={preview}
               draftText={previewDraft}
@@ -1476,6 +1651,34 @@ export default function WorkspacesPage() {
             </ul>
           </section>
         )}
+        {/* N109：本工作区检索（列表视图；搜索时以结果列表取代内容列表） */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
+          <div className="mt-3 flex flex-col gap-2" data-testid="workspace-search">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lumi-text-tertiary)]"
+              />
+              <input
+                type="search"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="搜索本工作区（标题与全文）"
+                aria-label="搜索本工作区"
+                data-testid="workspace-search-input"
+                className={cx(
+                  'w-full rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+                  'py-2.5 pl-9 pr-3 text-sm text-[var(--lumi-text-primary)]',
+                  'placeholder:text-[var(--lumi-text-tertiary)]',
+                  'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+                )}
+              />
+            </div>
+            {searchActive && (
+              <WorkspaceSearchResults search={search} query={searchText.trim()} onOpen={openSearchHit} />
+            )}
+          </div>
+        )}
         {/* 选中工作区的内容：看板（F085/F086）或列表；大纲（N113-N120） */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'outline' ? (
           <WorkspaceOutlinePanel
@@ -1484,7 +1687,7 @@ export default function WorkspacesPage() {
           />
         ) : effectiveSelectedId !== null && !workspaces.isError && view === 'board' ? (
           <WorkspaceBoardView workspaceId={effectiveSelectedId} />
-        ) : effectiveSelectedId !== null && !workspaces.isError && (
+        ) : effectiveSelectedId !== null && !workspaces.isError && !searchActive && (
           contents.isPending ? (
             <ul className="mt-3 flex flex-col gap-2" aria-label="工作区内容加载中">
               {Array.from({ length: 3 }, (_, i) => (
@@ -1594,9 +1797,13 @@ export default function WorkspacesPage() {
             </ul>
           )
         )}
-        {/* N105：会话快照区（保存 / 恢复 / 删除）。 */}
+        {/* N105：会话快照区（保存 / 恢复 / 删除 / N115 对比）。 */}
         {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
           <WorkspaceSnapshotsPanel workspaceId={effectiveSelectedId} />
+        )}
+        {/* N118：收集规则区（手动触发：预演 → 收进工作区）。 */}
+        {effectiveSelectedId !== null && !workspaces.isError && view === 'list' && (
+          <WorkspaceCollectRulesPanel workspaceId={effectiveSelectedId} />
         )}
       </div>
       {createOpen && (

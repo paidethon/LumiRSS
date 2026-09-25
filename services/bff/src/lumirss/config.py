@@ -182,6 +182,13 @@ class LumiSettings(BaseSettings):
     # N196 升级进度页：./lumirss update 写入阶段 JSON 的绝对路径（BFF
     # 与脚本共享的挂载文件）。空串 = 未配置 → 端点如实 available:false。
     LUMIRSS_DEPLOY_STATUS_FILE: str = ""
+    # N197 回滚就绪检查：./lumirss snapshot_for_rollback 写入回滚快照
+    # 清单（manifest JSON）的绝对路径（与 deploy-status 同一挂载思路）。
+    # 空串 = 未配置 → previousImage 如实 absent。
+    LUMIRSS_ROLLBACK_MANIFEST_FILE: str = ""
+    # N197：备份目录（./lumirss 的 LUMIRSS_BACKUP_DIR 同名语义）——
+    # 就绪检查在其中找最新 *.backup 并做 N186 只读校验。
+    LUMIRSS_BACKUP_DIR: str = ""
     # N198 版本功能导览：release-notes.json 的显式路径覆盖；空串 = 按包内
     # / 仓库相对位置发现（dev checkout 直接命中 docs/release-notes.json）。
     LUMIRSS_RELEASE_NOTES: str = ""
@@ -245,6 +252,17 @@ class LumiSettings(BaseSettings):
     # resolves, validates and pins the address — only the public-IP
     # rejection is skipped for these names.
     LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: str = ""
+
+    # N190：账户停用宽限期（天）。到期后的物理删除没有自动作业——由
+    # 运营者手动执行（界面如实说明）；宽限期内运营者 resume 即恢复。
+    LUMIRSS_DEACTIVATION_GRACE_DAYS: int = 14
+
+    @field_validator("LUMIRSS_DEACTIVATION_GRACE_DAYS")
+    @classmethod
+    def _sane_deactivation_grace(cls, value: int) -> int:
+        if not 1 <= value <= 365:
+            raise ValueError("deactivation grace period must be 1..365 days")
+        return value
 
     @field_validator("LUMIRSS_OBSIDIAN_SCAN_INTERVAL")
     @classmethod

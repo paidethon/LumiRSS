@@ -57,7 +57,33 @@ class RestorePreviewRequired(Exception):
 
 
 class RestoreFailed(Exception):
-    """The restore failed; a recovery path exists (browser-safe message)."""
+    """The restore failed; a recovery path exists (browser-safe message).
+
+    N187：失败时携带已发生的逐对象决策账本（decisions），回滚到安全
+    备份后账本原样呈现——绝不静默丢弃「做到哪一步」的证据。"""
+
+    def __init__(self, message: str, decisions: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.decisions = decisions
+
+
+class RestoreInvalidDecision(Exception):
+    """N187：决策载荷非法（未知路径 / 非法策略值）。"""
+
+
+def _validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
+    """N187：决策清洗——只接受 {'skip','overwrite'}；未知值拒绝（400）。"""
+    if not decisions:
+        return {}
+    clean: dict[str, str] = {}
+    for path, strategy in decisions.items():
+        value = str(strategy).strip().lower()
+        if value not in ("skip", "overwrite"):
+            raise RestoreInvalidDecision(
+                f"Invalid strategy for {str(path)[:100]}: {value[:40]}"
+            )
+        clean[str(path)] = value
+    return clean
 
 
 def _current_db_schema(db: Database) -> int:
@@ -465,7 +491,11 @@ class RestoreService:
         return manifest
 
     async def preview(self, zip_path: Path) -> dict[str, Any]:
-        """Validate a backup package and return a preview + session id."""
+        """Validate a backup package and return a preview + session id.
+
+        N187：preview 附带逐对象冲突清单（components 预览）——每个可
+        恢复对象与活动状态比对 exists/differs，Web 恢复向导的冲突步骤
+        由此渲染（策略 skip|overwrite，缺省 skip = 保留现状）。"""
         self._prune_staging()
         session_id = uuid.uuid4().hex
         stage = self._stage_dir(session_id)
@@ -492,6 +522,10 @@ class RestoreService:
                 "This backup has a newer database schema than this server."
             )
 
+        files = manifest.get("files", [])
+        conflicts = await asyncio.to_thread(
+            self._conflict_inventory, files
+        )
         preview = {
             "restoreSessionId": session_id,
             "createdAt": manifest.get("createdAt"),
@@ -500,18 +534,96 @@ class RestoreService:
             "currentDbSchemaVersion": current_schema,
             "compatible": db_version <= current_schema,
             "components": manifest.get("components", []),
-            "files": manifest.get("files", []),
+            "files": files,
             "excludedSecrets": manifest.get("secretPolicy", {}).get(
                 "excludedSecrets", []
             ),
             "secretConfigured": manifest.get("secretPolicy", {}).get(
                 "configured", False
             ),
+            # N187：逐对象冲突清单（[{path, component, exists, differs}]）。
+            "conflicts": conflicts,
         }
         return preview
 
-    async def execute(self, session_id: str, confirmation: str) -> dict[str, Any]:
-        """Run the destructive restore (already previewed + explicitly confirmed)."""
+    def _conflict_inventory(self, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """N187：备份成员 vs 活动状态的存在/内容差异清单（纯只读）。
+
+        - lumi.sqlite 整库对象与活动库文件比对（大小/存在性）；
+        - library-assets/ 与 freshrss-data/ 成员逐个比对同相对路径。"""
+        entries: list[dict[str, Any]] = []
+        live_db = Path(str(self._settings.LUMIRSS_DB_PATH)).expanduser()
+        for entry in files:
+            path = entry.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            component = (
+                "lumi"
+                if path == "lumi.sqlite"
+                else (
+                    "library-assets"
+                    if path.startswith("library-assets/")
+                    else "freshrss" if path.startswith("freshrss-data/") else "other"
+                )
+            )
+            if component == "lumi":
+                live = live_db
+            elif component == "library-assets":
+                live = (
+                    Path(self._settings.data_dir)
+                    / "library"
+                    / "assets"
+                    / Path(path).relative_to("library-assets")
+                )
+            elif component == "freshrss":
+                live = (
+                    self._settings.restore_staging_dir
+                    / "restore-ready"
+                    / "freshrss"
+                    / Path(path).relative_to("freshrss-data")
+                )
+            else:
+                continue
+            exists = live.is_file()
+            differs = False
+            if exists:
+                expected_size = entry.get("size")
+                if isinstance(expected_size, int) and expected_size != live.stat().st_size:
+                    differs = True
+                else:
+                    expected_sha = entry.get("sha256")
+                    if isinstance(expected_sha, str) and exists:
+                        try:
+                            differs = _sha256_file(live) != expected_sha
+                        except OSError:
+                            differs = True
+            entries.append(
+                {
+                    "path": path,
+                    "component": component,
+                    "exists": exists,
+                    "differs": exists and differs,
+                }
+            )
+        return entries
+
+    async def execute(
+        self,
+        session_id: str,
+        confirmation: str,
+        decisions: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Run the destructive restore (already previewed + explicitly confirmed).
+
+        N187：``decisions`` 逐对象策略（path → 'skip'|'overwrite'；缺省
+        skip = 保留活动现状）。对象级语义：
+
+        - lumi.sqlite：overwrite → 整库在线恢复；skip → 活动库原封不动；
+        - library-assets/*：overwrite → 逐文件复制覆盖；skip → 不动该文件；
+        - freshrss-data/*：overwrite → 暂存离线恢复；skip → 不暂存。
+
+        会话记录决策账本（restored/skipped/overwritten 计数 + 样本）；
+        失败 → 安全备份保留（既有）且账本随 RestoreFailed.decisions 呈现。"""
         if confirmation.strip() != "RESTORE":
             raise RestoreConfirmationRequired(
                 'Type "RESTORE" to confirm the destructive restore.'
@@ -519,11 +631,20 @@ class RestoreService:
         session = self._sessions.get(session_id)
         if session is None:
             raise RestorePreviewRequired("Run a restore preview first.")
+        clean_decisions = _validate_decisions(decisions)
         zip_path = session["zip"]
         stage = session["stage"]
         if not zip_path.is_file():
             raise BackupNotFound("The backup file is no longer available.")
 
+        ledger: dict[str, Any] = {
+            "restored": 0,
+            "skipped": 0,
+            "overwritten": 0,
+            "samples": [],
+            "decisions": dict(clean_decisions),
+        }
+        session["decisions"] = ledger
         safety_job = None
         try:
             # 1. Re-verify (tamper check between preview and execute), then
@@ -540,7 +661,9 @@ class RestoreService:
                 entry["path"]: extract_dir / entry["path"] for entry in manifest["files"]
             }
 
-            # 4. Restore lumi.sqlite in place (online backup API).
+            # 4. Restore lumi.sqlite in place (online backup API) — only when
+            # the operator chose overwrite for the whole-db object (N187:
+            # default skip keeps the live database untouched).
             result: dict[str, Any] = {
                 "lumiRestored": False,
                 "freshrss": "not_included",
@@ -548,8 +671,14 @@ class RestoreService:
                 "safetyBackupId": safety_job["id"] if safety_job else None,
             }
             if "lumi.sqlite" in extracted:
-                await self._restore_lumi(extracted["lumi.sqlite"])
-                result["lumiRestored"] = True
+                if clean_decisions.get("lumi.sqlite", "skip") == "overwrite":
+                    await self._restore_lumi(extracted["lumi.sqlite"])
+                    result["lumiRestored"] = True
+                    ledger["overwritten"] += 1
+                    ledger["samples"].append({"path": "lumi.sqlite", "outcome": "overwritten"})
+                else:
+                    ledger["skipped"] += 1
+                    ledger["samples"].append({"path": "lumi.sqlite", "outcome": "skipped"})
 
             # 4b. Library assets are Lumi-owned bytes (ADR 0004): restore
             # them in place — unlike FreshRSS data they need no offline
@@ -557,36 +686,53 @@ class RestoreService:
             assets_files = [p for p in extracted if p.startswith("library-assets/")]
             if assets_files:
                 assets_target = Path(self._settings.data_dir) / "library" / "assets"
-                await asyncio.to_thread(
-                    self._restore_library_assets, assets_files, extracted, assets_target
+                restored_assets, skipped_assets = await asyncio.to_thread(
+                    self._restore_library_assets,
+                    assets_files,
+                    extracted,
+                    assets_target,
+                    clean_decisions,
+                    ledger,
                 )
-                result["libraryAssets"] = len(assets_files)
+                result["libraryAssets"] = restored_assets
 
             # 5. FreshRSS: stage for offline restore (never write live).
             freshrss_files = [p for p in extracted if p.startswith("freshrss-data/")]
-            if freshrss_files:
+            if freshrss_files and clean_decisions.get("freshrss-data/", "overwrite") == "overwrite":
                 ready_dir = self._settings.restore_staging_dir / "restore-ready" / "freshrss"
                 await asyncio.to_thread(
                     self._stage_freshrss_offline, freshrss_files, extracted, ready_dir
                 )
                 result["freshrss"] = "offline_restore_required"
                 result["freshrssStagedAt"] = str(ready_dir)
+            elif freshrss_files:
+                ledger["skipped"] += len(freshrss_files)
+                ledger["samples"].append(
+                    {"path": "freshrss-data/", "outcome": "skipped"}
+                )
 
             shutil.rmtree(extract_dir, ignore_errors=True)
             result["health"] = await self._health_after_restore()
+            result["decisions"] = {
+                "restored": ledger["restored"],
+                "skipped": ledger["skipped"],
+                "overwritten": ledger["overwritten"],
+                "samples": ledger["samples"][:10],
+            }
             self._sessions.pop(session_id, None)
             return result
-        except RestoreFailed:
+        except RestoreFailed as exc:
             self._sessions.pop(session_id, None)
-            raise
+            raise RestoreFailed(str(exc), decisions=ledger) from exc
         except Exception as exc:
             # Keep the safety backup and the original backup; no stacktrace,
             # no credentials. Every unexpected failure becomes a safe,
-            # recoverable RestoreFailed.
+            # recoverable RestoreFailed — with the decision ledger intact.
             self._sessions.pop(session_id, None)
             raise RestoreFailed(
                 "Restore failed. The current state was backed up and the "
-                "original backup was kept; review the backup history."
+                "original backup was kept; review the backup history.",
+                decisions=ledger,
             ) from exc
 
     @staticmethod
@@ -594,15 +740,41 @@ class RestoreService:
         assets_files: list[str],
         extracted: dict[str, Path],
         target_root: Path,
-    ) -> None:
+        decisions: dict[str, str] | None = None,
+        ledger: dict[str, Any] | None = None,
+    ) -> tuple[int, int]:
         """Copy archived asset bytes back into the live assets directory
         (runs in a thread). Existing files with the same relative path
-        are replaced; the manifest sha256 was verified during extraction."""
+        are replaced; the manifest sha256 was verified during extraction.
+
+        N187：逐文件策略（skip = 保留活动文件不动；overwrite/缺省决策
+        仅当显式 overwrite 才覆盖）。返回 (restored, skipped)。"""
+        restored = 0
+        skipped = 0
         for rel in assets_files:
+            strategy = (decisions or {}).get(rel, "skip")
+            if strategy != "overwrite":
+                skipped += 1
+                if ledger is not None:
+                    ledger["skipped"] += 1
+                    ledger["samples"].append({"path": rel, "outcome": "skipped"})
+                continue
             source = extracted[rel]
             target = target_root / Path(rel).relative_to("library-assets")
             target.parent.mkdir(parents=True, exist_ok=True)
+            exists_before = target.is_file()
             shutil.copy2(source, target)
+            restored += 1
+            if ledger is not None:
+                if exists_before:
+                    ledger["overwritten"] += 1
+                    ledger["samples"].append(
+                        {"path": rel, "outcome": "overwritten"}
+                    )
+                else:
+                    ledger["restored"] += 1
+                    ledger["samples"].append({"path": rel, "outcome": "restored"})
+        return restored, skipped
 
     @staticmethod
     def _stage_freshrss_offline(

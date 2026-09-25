@@ -73,6 +73,78 @@
     "title": "ActivationSourceResult",
     "type": "object"
    },
+   "ActivityPurgeBody": {
+    "description": "POST /me/activity-purge — 清除某日期之前的服务端活动记录。",
+    "properties": {
+     "before": {
+      "maxLength": 32,
+      "minLength": 4,
+      "title": "Before",
+      "type": "string"
+     },
+     "include": {
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "title": "Include",
+      "type": "object"
+     }
+    },
+    "required": [
+     "before"
+    ],
+    "title": "ActivityPurgeBody",
+    "type": "object"
+   },
+   "AdminStepUpRequest": {
+    "description": "POST /admin/step-up（N009）——管理员本会话内重新证明自己。",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "AdminStepUpRequest",
+    "type": "object"
+   },
+   "AgentApprovalBatchPreview": {
+    "description": "N162：批量写入预演聚合卡（一次批准覆盖整批）。\n\nperObjectDeltas 最多 10 个样本（perObjectTruncated 如实标注截断）；\nuncertainCount > 0 = 整批含不确定项（UI 必须整批提示）。",
+    "properties": {
+     "objectCount": {
+      "title": "Objectcount",
+      "type": "integer"
+     },
+     "perObjectDeltas": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Perobjectdeltas",
+      "type": "array"
+     },
+     "perObjectTruncated": {
+      "default": 0,
+      "title": "Perobjecttruncated",
+      "type": "integer"
+     },
+     "uncertainCount": {
+      "default": 0,
+      "title": "Uncertaincount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "objectCount"
+    ],
+    "title": "AgentApprovalBatchPreview",
+    "type": "object"
+   },
    "AgentApprovalContent": {
     "additionalProperties": false,
     "description": "role=approval message body (server-minted by create_approval).",
@@ -157,11 +229,21 @@
     "type": "object"
    },
    "AgentApprovalPreview": {
-    "description": "F097 POST .../approvals/{id}/preview — 预演不执行业务写入。",
+    "description": "F097 POST .../approvals/{id}/preview — 预演不执行业务写入。\n\nN162：批量写入（itemRefs 列表形态的 args）时 batch 聚合卡非空。",
     "properties": {
      "approvalId": {
       "title": "Approvalid",
       "type": "string"
+     },
+     "batch": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentApprovalBatchPreview"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "changes": {
       "default": [],
@@ -925,6 +1007,23 @@
      "status"
     ],
     "title": "AgentRecipeRunResult",
+    "type": "object"
+   },
+   "AgentResearchPresetRequest": {
+    "additionalProperties": false,
+    "description": "N163：POST /api/v1/agent/presets/research 请求体（目标会话）。",
+    "properties": {
+     "threadId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Threadid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "threadId"
+    ],
+    "title": "AgentResearchPresetRequest",
     "type": "object"
    },
    "AgentResumeResult": {
@@ -2396,8 +2495,19 @@
    },
    "AnnotationExportRequest": {
     "additionalProperties": false,
-    "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选）。",
+    "description": "POST /api/v1/annotations/export body（范围：全部 / 当前筛选 /\nN072 精选篮）。basketId 与 entryRefs/q 互斥（篮是独立导出维度）。",
     "properties": {
+     "basketId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Basketid"
+     },
      "citeBibliography": {
       "default": false,
       "title": "Citebibliography",
@@ -2430,6 +2540,228 @@
      }
     },
     "title": "AnnotationExportRequest",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyItem": {
+    "additionalProperties": false,
+    "description": "逐项确认：把某条批注重绑到目标版本的第 blockIndex 块。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "blockIndex": {
+      "minimum": 0.0,
+      "title": "Blockindex",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "annotationId",
+     "blockIndex"
+    ],
+    "title": "AnnotationMigrateApplyItem",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyItemResult": {
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     }
+    },
+    "required": [
+     "annotationId",
+     "ok"
+    ],
+    "title": "AnnotationMigrateApplyItemResult",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItem"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion",
+     "items"
+    ],
+    "title": "AnnotationMigrateApplyRequest",
+    "type": "object"
+   },
+   "AnnotationMigrateApplyResponse": {
+    "properties": {
+     "applied": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItemResult"
+      },
+      "title": "Applied",
+      "type": "array"
+     },
+     "failed": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateApplyItemResult"
+      },
+      "title": "Failed",
+      "type": "array"
+     }
+    },
+    "title": "AnnotationMigrateApplyResponse",
+    "type": "object"
+   },
+   "AnnotationMigrateCandidateItem": {
+    "description": "一条批注在目标版本中的最优候选（score 与 N071 同口径）。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "candidateBlockIndex": {
+      "minimum": 0.0,
+      "title": "Candidateblockindex",
+      "type": "integer"
+     },
+     "excerpt": {
+      "maxLength": 300,
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+     }
+    },
+    "required": [
+     "annotationId",
+     "candidateBlockIndex",
+     "score",
+     "excerpt"
+    ],
+    "title": "AnnotationMigrateCandidateItem",
+    "type": "object"
+   },
+   "AnnotationMigratePreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/annotations/migrate/preview body。\n\nfromVersion/toVersion ∈ current | last_known_full（N032 版本词）；\n二者必须不同（同版本迁移无意义）。",
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion"
+    ],
+    "title": "AnnotationMigratePreviewRequest",
+    "type": "object"
+   },
+   "AnnotationMigratePreviewResponse": {
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "fromVersion": {
+      "title": "Fromversion",
+      "type": "string"
+     },
+     "matched": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateCandidateItem"
+      },
+      "title": "Matched",
+      "type": "array"
+     },
+     "toVersion": {
+      "title": "Toversion",
+      "type": "string"
+     },
+     "unmatched": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AnnotationMigrateUnmatchedItem"
+      },
+      "title": "Unmatched",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entryRef",
+     "fromVersion",
+     "toVersion"
+    ],
+    "title": "AnnotationMigratePreviewResponse",
+    "type": "object"
+   },
+   "AnnotationMigrateUnmatchedItem": {
+    "description": "未能给出候选的批注及原因（no_quote | no_match）——诚实列出，\n绝不混入可确认列表。",
+    "properties": {
+     "annotationId": {
+      "title": "Annotationid",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "annotationId",
+     "reason"
+    ],
+    "title": "AnnotationMigrateUnmatchedItem",
     "type": "object"
    },
    "AnnotationRepairCandidate": {
@@ -3395,6 +3727,14 @@
       "title": "Readerparagraphspacing",
       "type": "number"
      },
+     "readerPresets": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ReaderPresetSync"
+      },
+      "title": "Readerpresets",
+      "type": "array"
+     },
      "readerShowReadingProgress": {
       "default": true,
       "title": "Readershowreadingprogress",
@@ -3639,6 +3979,17 @@
       ],
       "title": "Mode",
       "type": "string"
+     },
+     "newDevice": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Newdevice"
      },
      "role": {
       "anyOf": [
@@ -3911,6 +4262,328 @@
      "effectiveExclusions"
     ],
     "title": "BacklogApplyResponse",
+    "type": "object"
+   },
+   "BacklogBatchApplyRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/backlog/batch-apply body（两段式第二步）。",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "confirmPreviewToken": {
+      "minLength": 1,
+      "title": "Confirmpreviewtoken",
+      "type": "string"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "groupBy": {
+      "enum": [
+       "source",
+       "age"
+      ],
+      "title": "Groupby",
+      "type": "string"
+     },
+     "key": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+     },
+     "olderThanDays": {
+      "maximum": 3650.0,
+      "minimum": 1.0,
+      "title": "Olderthandays",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "groupBy",
+     "key",
+     "olderThanDays",
+     "confirmPreviewToken"
+    ],
+    "title": "BacklogBatchApplyRequest",
+    "type": "object"
+   },
+   "BacklogBatchApplyResponse": {
+    "properties": {
+     "applied": {
+      "title": "Applied",
+      "type": "integer"
+     },
+     "batchLogId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Batchlogid"
+     },
+     "effectiveExclusions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Effectiveexclusions",
+      "type": "array"
+     },
+     "failed": {
+      "items": {
+       "$ref": "#/components/schemas/BacklogSampleItem"
+      },
+      "title": "Failed",
+      "type": "array"
+     },
+     "undoAvailable": {
+      "title": "Undoavailable",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "applied",
+     "failed",
+     "effectiveExclusions",
+     "undoAvailable"
+    ],
+    "title": "BacklogBatchApplyResponse",
+    "type": "object"
+   },
+   "BacklogBatchLogListResponse": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/BacklogBatchLogView"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "BacklogBatchLogListResponse",
+    "type": "object"
+   },
+   "BacklogBatchLogView": {
+    "description": "撤销台账行（undone=false 的批次可撤销；cap 5）。",
+    "properties": {
+     "appliedCount": {
+      "title": "Appliedcount",
+      "type": "integer"
+     },
+     "batchKey": {
+      "title": "Batchkey",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "groupBy": {
+      "title": "Groupby",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "refCount": {
+      "title": "Refcount",
+      "type": "integer"
+     },
+     "undone": {
+      "title": "Undone",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "createdAt",
+     "groupBy",
+     "batchKey",
+     "refCount",
+     "appliedCount",
+     "undone"
+    ],
+    "title": "BacklogBatchLogView",
+    "type": "object"
+   },
+   "BacklogBatchPreviewRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/backlog/batch-preview body（两段式第一步）。",
+    "properties": {
+     "categoryId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Categoryid"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "groupBy": {
+      "enum": [
+       "source",
+       "age"
+      ],
+      "title": "Groupby",
+      "type": "string"
+     },
+     "key": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+     },
+     "olderThanDays": {
+      "maximum": 3650.0,
+      "minimum": 1.0,
+      "title": "Olderthandays",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "groupBy",
+     "key",
+     "olderThanDays"
+    ],
+    "title": "BacklogBatchPreviewRequest",
+    "type": "object"
+   },
+   "BacklogBatchPreviewResponse": {
+    "properties": {
+     "batchKey": {
+      "title": "Batchkey",
+      "type": "string"
+     },
+     "confirmPreviewToken": {
+      "title": "Confirmpreviewtoken",
+      "type": "string"
+     },
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "effectiveExclusions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Effectiveexclusions",
+      "type": "array"
+     },
+     "groupBy": {
+      "enum": [
+       "source",
+       "age"
+      ],
+      "title": "Groupby",
+      "type": "string"
+     },
+     "sample": {
+      "items": {
+       "$ref": "#/components/schemas/BacklogSampleItem"
+      },
+      "title": "Sample",
+      "type": "array"
+     }
+    },
+    "required": [
+     "batchKey",
+     "groupBy",
+     "count",
+     "sample",
+     "effectiveExclusions",
+     "confirmPreviewToken"
+    ],
+    "title": "BacklogBatchPreviewResponse",
+    "type": "object"
+   },
+   "BacklogBatchView": {
+    "description": "分批视图（count = 服务端真实全量计数；refs ≤100 诚实有界）。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "entryRefs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Entryrefs",
+      "type": "array"
+     },
+     "key": {
+      "title": "Key",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "count",
+     "entryRefs"
+    ],
+    "title": "BacklogBatchView",
+    "type": "object"
+   },
+   "BacklogBatchesResponse": {
+    "properties": {
+     "batches": {
+      "items": {
+       "$ref": "#/components/schemas/BacklogBatchView"
+      },
+      "title": "Batches",
+      "type": "array"
+     },
+     "groupBy": {
+      "enum": [
+       "source",
+       "age"
+      ],
+      "title": "Groupby",
+      "type": "string"
+     }
+    },
+    "required": [
+     "groupBy",
+     "batches"
+    ],
+    "title": "BacklogBatchesResponse",
     "type": "object"
    },
    "BacklogPreviewRequest": {
@@ -4546,6 +5219,56 @@
      "issues"
     ],
     "title": "BackupVerifyReport",
+    "type": "object"
+   },
+   "BasketCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "BasketCreate",
+    "type": "object"
+   },
+   "BasketItemsAdd": {
+    "additionalProperties": false,
+    "properties": {
+     "annotationIds": {
+      "items": {
+       "type": "string"
+      },
+      "minItems": 1,
+      "title": "Annotationids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "annotationIds"
+    ],
+    "title": "BasketItemsAdd",
+    "type": "object"
+   },
+   "BasketRename": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "BasketRename",
     "type": "object"
    },
    "BatchEditApplyItem": {
@@ -6773,6 +7496,23 @@
     "title": "DataFlowsResponse",
     "type": "object"
    },
+   "DeactivationRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/me/deactivation-request body（密码复核）。",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "DeactivationRequest",
+    "type": "object"
+   },
    "DigestPreview": {
     "description": "GET /api/v1/digest/preview — 无副作用预览（不发送、不记录错误）.",
     "properties": {
@@ -8829,6 +9569,11 @@
       "title": "Includeexampleitems",
       "type": "boolean"
      },
+     "includeStructure": {
+      "default": false,
+      "title": "Includestructure",
+      "type": "boolean"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -9167,6 +9912,11 @@
       "title": "Lookbackdays",
       "type": "integer"
      },
+     "missedIssuePolicy": {
+      "default": "backfill",
+      "title": "Missedissuepolicy",
+      "type": "string"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -9175,6 +9925,17 @@
       "default": 2,
       "title": "Persourcecap",
       "type": "integer"
+     },
+     "skipLog": {
+      "default": [],
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Skiplog",
+      "type": "array"
      },
      "slots": {
       "default": [],
@@ -9340,6 +10101,17 @@
        }
       ],
       "title": "Lookbackdays"
+     },
+     "missedIssuePolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Missedissuepolicy"
      },
      "name": {
       "anyOf": [
@@ -9539,6 +10311,17 @@
       ],
       "title": "Lookbackdays"
      },
+     "missedIssuePolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Missedissuepolicy"
+     },
      "name": {
       "title": "Name",
       "type": "string"
@@ -9713,6 +10496,11 @@
       "title": "Model",
       "type": "string"
      },
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
      "publishedAt": {
       "default": "",
       "title": "Publishedat",
@@ -9725,6 +10513,11 @@
       "default": {},
       "title": "Refs",
       "type": "object"
+     },
+     "revised": {
+      "default": false,
+      "title": "Revised",
+      "type": "boolean"
      },
      "sections": {
       "default": [],
@@ -10051,6 +10844,11 @@
      "publishedAt": {
       "default": "",
       "title": "Publishedat",
+      "type": "string"
+     },
+     "ref": {
+      "default": "",
+      "title": "Ref",
       "type": "string"
      },
      "title": {
@@ -10576,6 +11374,32 @@
      "status"
     ],
     "title": "HealthStatus",
+    "type": "object"
+   },
+   "ImportApplyBody": {
+    "description": "POST /import/lumi-data/apply — 选择要合并的组件。",
+    "properties": {
+     "components": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Components",
+      "type": "array"
+     },
+     "importId": {
+      "maxLength": 64,
+      "minLength": 4,
+      "title": "Importid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "importId",
+     "components"
+    ],
+    "title": "ImportApplyBody",
     "type": "object"
    },
    "InboxIngestItem": {
@@ -11463,6 +12287,28 @@
     "title": "LoginChallenge",
     "type": "object"
    },
+   "LoginEventsSeenBody": {
+    "description": "POST /auth/login-events/seen — 批量标记已读（省略 ids = 全部）。",
+    "properties": {
+     "ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ids"
+     }
+    },
+    "title": "LoginEventsSeenBody",
+    "type": "object"
+   },
    "LoginRequest": {
     "description": "POST /api/v1/auth/login — username + password (multi-account);\nlegacy single-user mode sends password only.",
     "properties": {
@@ -11494,12 +12340,24 @@
    },
    "LumiNoteCreate": {
     "additionalProperties": false,
-    "description": "F090 手动创建笔记（contentMd ≤100KB）。",
+    "description": "F090 手动创建笔记（contentMd ≤100KB）。N079：可选类型化分栏。",
     "properties": {
      "contentMd": {
       "maxLength": 102400,
       "title": "Contentmd",
       "type": "string"
+     },
+     "sections": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sections"
      },
      "title": {
       "maxLength": 500,
@@ -11535,6 +12393,16 @@
      "createdAt": {
       "title": "Createdat",
       "type": "string"
+     },
+     "sections": {
+      "additionalProperties": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "title": "Sections",
+      "type": "object"
      },
      "title": {
       "title": "Title",
@@ -11609,6 +12477,18 @@
        }
       ],
       "title": "Contentmd"
+     },
+     "sections": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sections"
      },
      "title": {
       "anyOf": [
@@ -12022,6 +12902,103 @@
      "status"
     ],
     "title": "MailIngestResult",
+    "type": "object"
+   },
+   "MediaFailureItem": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/{entry_ref}/media-failures body 单项。",
+    "properties": {
+     "kind": {
+      "enum": [
+       "image",
+       "media",
+       "other"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "src": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "title": "Src",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "src"
+    ],
+    "title": "MediaFailureItem",
+    "type": "object"
+   },
+   "MediaFailureListResponse": {
+    "properties": {
+     "failures": {
+      "items": {
+       "$ref": "#/components/schemas/MediaFailureView"
+      },
+      "title": "Failures",
+      "type": "array"
+     }
+    },
+    "required": [
+     "failures"
+    ],
+    "title": "MediaFailureListResponse",
+    "type": "object"
+   },
+   "MediaFailureReport": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/entries/{entry_ref}/media-failures body（≤20 条/次）。",
+    "properties": {
+     "failures": {
+      "items": {
+       "$ref": "#/components/schemas/MediaFailureItem"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Failures",
+      "type": "array"
+     }
+    },
+    "required": [
+     "failures"
+    ],
+    "title": "MediaFailureReport",
+    "type": "object"
+   },
+   "MediaFailureView": {
+    "description": "失效附件记录（src 原样保存；重载的 cache-bust 只在读取侧）。",
+    "properties": {
+     "firstSeenAt": {
+      "title": "Firstseenat",
+      "type": "string"
+     },
+     "hitCount": {
+      "title": "Hitcount",
+      "type": "integer"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "lastSeenAt": {
+      "title": "Lastseenat",
+      "type": "string"
+     },
+     "src": {
+      "title": "Src",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "src",
+     "firstSeenAt",
+     "lastSeenAt",
+     "hitCount"
+    ],
+    "title": "MediaFailureView",
     "type": "object"
    },
    "MergeFieldCompare": {
@@ -14326,6 +15303,133 @@
     "title": "PoolReorderBody",
     "type": "object"
    },
+   "QaConflictEvidence": {
+    "description": "冲突句的证据定位：ref + 块序号（rag_chunks.ord；无分块时为\n正文句序号）。",
+    "properties": {
+     "blockIndex": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Blockindex"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "QaConflictEvidence",
+    "type": "object"
+   },
+   "QaConflictItem": {
+    "properties": {
+     "aEvidence": {
+      "$ref": "#/components/schemas/QaConflictEvidence"
+     },
+     "aQuote": {
+      "title": "Aquote",
+      "type": "string"
+     },
+     "aRef": {
+      "title": "Aref",
+      "type": "string"
+     },
+     "bEvidence": {
+      "$ref": "#/components/schemas/QaConflictEvidence"
+     },
+     "bQuote": {
+      "title": "Bquote",
+      "type": "string"
+     },
+     "bRef": {
+      "title": "Bref",
+      "type": "string"
+     },
+     "diffKind": {
+      "enum": [
+       "number",
+       "date",
+       "other"
+      ],
+      "title": "Diffkind",
+      "type": "string"
+     },
+     "overlap": {
+      "title": "Overlap",
+      "type": "number"
+     }
+    },
+    "required": [
+     "aRef",
+     "bRef",
+     "aQuote",
+     "bQuote",
+     "diffKind",
+     "aEvidence",
+     "bEvidence",
+     "overlap"
+    ],
+    "title": "QaConflictItem",
+    "type": "object"
+   },
+   "QaConflictRequest": {
+    "additionalProperties": false,
+    "description": "refs ≤5、≥2，全部必须在本人投影范围内（不存在 → 422）。",
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 2,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "QaConflictRequest",
+    "type": "object"
+   },
+   "QaConflictResponse": {
+    "description": "N156 POST /api/v1/qa/conflicts — 纯词法对照（零模型调用）。\n\n``basis`` 恒为 ``lexical``；``note`` 是给 UI 的诚实口径：基于文本\n比对，非语义裁决——差异不必然是错误，判断留给读者。",
+    "properties": {
+     "basis": {
+      "const": "lexical",
+      "default": "lexical",
+      "title": "Basis",
+      "type": "string"
+     },
+     "conflicts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/QaConflictItem"
+      },
+      "title": "Conflicts",
+      "type": "array"
+     },
+     "note": {
+      "default": "基于文本比对，非语义裁决",
+      "title": "Note",
+      "type": "string"
+     },
+     "pairsCompared": {
+      "default": 0,
+      "title": "Pairscompared",
+      "type": "integer"
+     }
+    },
+    "title": "QaConflictResponse",
+    "type": "object"
+   },
    "QaTemplate": {
     "properties": {
      "createdAt": {
@@ -14433,6 +15537,25 @@
     "additionalProperties": false,
     "description": "POST /api/v1/queue/today/items body。",
     "properties": {
+     "clientItems": {
+      "items": {
+       "$ref": "#/components/schemas/QueueClientItem"
+      },
+      "maxItems": 200,
+      "title": "Clientitems",
+      "type": "array"
+     },
+     "expectedRevision": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expectedrevision"
+     },
      "itemRef": {
       "title": "Itemref",
       "type": "string"
@@ -14453,6 +15576,169 @@
      "itemRef"
     ],
     "title": "QueueAddRequest",
+    "type": "object"
+   },
+   "QueueAddResponse": {
+    "description": "加入响应 = 队列行 + N047 撞车提示（非阻断：条目已加入）。",
+    "properties": {
+     "addedAt": {
+      "title": "Addedat",
+      "type": "string"
+     },
+     "duplicateWarning": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duplicatewarning"
+     },
+     "estimateMinutes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Estimateminutes"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "outcome": {
+      "default": "created",
+      "enum": [
+       "created",
+       "duplicate",
+       "resurrected"
+      ],
+      "title": "Outcome",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     },
+     "source": {
+      "enum": [
+       "manual",
+       "budget",
+       "level",
+       "recovery"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "done",
+       "removed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "id",
+     "itemRef",
+     "addedAt",
+     "position",
+     "queueDate",
+     "source",
+     "status",
+     "segment"
+    ],
+    "title": "QueueAddResponse",
+    "type": "object"
+   },
+   "QueueClientItem": {
+    "additionalProperties": false,
+    "description": "N046：客户端本地视图行（冲突差异提示 + 按项合并的 keep-mine 源）。",
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "position": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Position"
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     },
+     "status": {
+      "default": "pending",
+      "enum": [
+       "pending",
+       "done",
+       "removed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "itemRef"
+    ],
+    "title": "QueueClientItem",
     "type": "object"
    },
    "QueueFreezeRequest": {
@@ -14556,6 +15842,11 @@
       "title": "Queuedate",
       "type": "string"
      },
+     "revision": {
+      "default": 0,
+      "title": "Revision",
+      "type": "integer"
+     },
      "segmentOrder": {
       "items": {
        "type": "string"
@@ -14592,9 +15883,28 @@
     "additionalProperties": false,
     "description": "POST /api/v1/queue/today/items/{id}/done body（set 语义）。",
     "properties": {
+     "clientItems": {
+      "items": {
+       "$ref": "#/components/schemas/QueueClientItem"
+      },
+      "maxItems": 200,
+      "title": "Clientitems",
+      "type": "array"
+     },
      "done": {
       "title": "Done",
       "type": "boolean"
+     },
+     "expectedRevision": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expectedrevision"
      }
     },
     "required": [
@@ -14652,7 +15962,8 @@
       "enum": [
        "manual",
        "budget",
-       "level"
+       "level",
+       "recovery"
       ],
       "title": "Source",
       "type": "string"
@@ -14691,10 +16002,142 @@
     "title": "QueueItemView",
     "type": "object"
    },
+   "QueueMergeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/queue/today/merge-conflicts body。",
+    "properties": {
+     "expectedRevision": {
+      "title": "Expectedrevision",
+      "type": "integer"
+     },
+     "resolutions": {
+      "items": {
+       "$ref": "#/components/schemas/QueueMergeResolution"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Resolutions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "expectedRevision",
+     "resolutions"
+    ],
+    "title": "QueueMergeRequest",
+    "type": "object"
+   },
+   "QueueMergeResolution": {
+    "additionalProperties": false,
+    "description": "N046：单个冲突 ref 的显式裁决。",
+    "properties": {
+     "action": {
+      "enum": [
+       "keep-mine",
+       "keep-theirs"
+      ],
+      "title": "Action",
+      "type": "string"
+     },
+     "clientItem": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/QueueClientItem"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "action"
+    ],
+    "title": "QueueMergeResolution",
+    "type": "object"
+   },
+   "QueueMergeResponse": {
+    "description": "合并后的今日视图 + 合并元数据。",
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "merge": {
+      "additionalProperties": true,
+      "title": "Merge",
+      "type": "object"
+     },
+     "queueDate": {
+      "title": "Queuedate",
+      "type": "string"
+     },
+     "revision": {
+      "default": 0,
+      "title": "Revision",
+      "type": "integer"
+     },
+     "segmentOrder": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Segmentorder",
+      "type": "array"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/QueueSegmentView"
+      },
+      "title": "Segments",
+      "type": "array"
+     },
+     "totalEstimateMinutes": {
+      "title": "Totalestimateminutes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queueDate",
+     "items",
+     "segments",
+     "segmentOrder",
+     "totalEstimateMinutes",
+     "merge"
+    ],
+    "title": "QueueMergeResponse",
+    "type": "object"
+   },
    "QueueReorderRequest": {
     "additionalProperties": false,
     "description": "PUT /api/v1/queue/today/order body：给定的 id 按序列排前，\n未提及行保持相对顺序垫后（语义同工作区 reorder）。",
     "properties": {
+     "clientItems": {
+      "items": {
+       "$ref": "#/components/schemas/QueueClientItem"
+      },
+      "maxItems": 200,
+      "title": "Clientitems",
+      "type": "array"
+     },
+     "expectedRevision": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expectedrevision"
+     },
      "order": {
       "items": {
        "type": "string"
@@ -14714,6 +16157,25 @@
     "additionalProperties": false,
     "description": "PATCH /api/v1/queue/today/items/{id}/segment body。",
     "properties": {
+     "clientItems": {
+      "items": {
+       "$ref": "#/components/schemas/QueueClientItem"
+      },
+      "maxItems": 200,
+      "title": "Clientitems",
+      "type": "array"
+     },
+     "expectedRevision": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expectedrevision"
+     },
      "segment": {
       "anyOf": [
        {
@@ -14914,6 +16376,11 @@
       "title": "Queuedate",
       "type": "string"
      },
+     "revision": {
+      "default": 0,
+      "title": "Revision",
+      "type": "integer"
+     },
      "segmentOrder": {
       "items": {
        "type": "string"
@@ -14941,6 +16408,54 @@
      "totalEstimateMinutes"
     ],
     "title": "QueueTodayResponse",
+    "type": "object"
+   },
+   "QuickActionCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/QuickActionStep"
+      },
+      "maxItems": 3,
+      "minItems": 2,
+      "title": "Steps",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "steps"
+    ],
+    "title": "QuickActionCreate",
+    "type": "object"
+   },
+   "QuickActionStep": {
+    "additionalProperties": false,
+    "description": "一步：白名单动作 + 允许键的 params（形状校验在 store 层）。",
+    "properties": {
+     "action": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "Action",
+      "type": "string"
+     },
+     "params": {
+      "additionalProperties": true,
+      "title": "Params",
+      "type": "object"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "title": "QuickActionStep",
     "type": "object"
    },
    "QuizGenerateBody": {
@@ -15097,6 +16612,95 @@
      "entryRef"
     ],
     "title": "QuizSessionView",
+    "type": "object"
+   },
+   "RagAnswersToNoteRequest": {
+    "description": "N160：POST /api/v1/rag/answers-to-note 请求体。\n\nselectedCitationIds = 会话内 assistant 消息 id（带引用的回答）；\ntitle/workspaceId 可选（缺省标题取首条回答前 40 字）。",
+    "properties": {
+     "selectedCitationIds": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Selectedcitationids",
+      "type": "array"
+     },
+     "threadId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Threadid",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "required": [
+     "threadId",
+     "selectedCitationIds"
+    ],
+    "title": "RagAnswersToNoteRequest",
+    "type": "object"
+   },
+   "RagAnswersToNoteResult": {
+    "description": "N160：证据笔记创建结果（三段式结构 + provenance 台账起点）。",
+    "properties": {
+     "contentMd": {
+      "title": "Contentmd",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "excerptCount": {
+      "title": "Excerptcount",
+      "type": "integer"
+     },
+     "noteId": {
+      "title": "Noteid",
+      "type": "string"
+     },
+     "revisionCount": {
+      "default": 0,
+      "title": "Revisioncount",
+      "type": "integer"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "noteId",
+     "title",
+     "contentMd",
+     "excerptCount",
+     "createdAt"
+    ],
+    "title": "RagAnswersToNoteResult",
     "type": "object"
    },
    "RagAskCitation": {
@@ -15404,7 +17008,7 @@
     "type": "object"
    },
    "RagCoverage": {
-    "description": "GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。\n\nindexable/indexed/stale 来自行与 content_hash，failed 来自最近\nrag_jobs 作业的 skipped 记录。",
+    "description": "GET /api/v1/rag/coverage —— 语料 ↔ 索引的真实分桶（N152）。\n\nindexable/indexed/stale 来自行与 content_hash，failed 来自最近\nrag_jobs 作业的 skipped 记录。N158：``staleRefs`` 是过期 ref 明细\n（≤500，有界）——覆盖率卡片「重建所选」的输入。",
     "properties": {
      "failed": {
       "default": 0,
@@ -15429,6 +17033,14 @@
       "default": 0,
       "title": "Stale",
       "type": "integer"
+     },
+     "staleRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Stalerefs",
+      "type": "array"
      },
      "unsupported": {
       "$ref": "#/components/schemas/RagCoverageUnsupported"
@@ -15521,6 +17133,175 @@
      "enabled"
     ],
     "title": "RagEnableResult",
+    "type": "object"
+   },
+   "RagEvalRerunDiff": {
+    "description": "rerun 差分（三组引用列表；语义见 rag_eval.py 模块注释）。",
+    "properties": {
+     "hitExpected": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Hitexpected",
+      "type": "array"
+     },
+     "missed": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missed",
+      "type": "array"
+     },
+     "newHits": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Newhits",
+      "type": "array"
+     },
+     "nowActualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Nowactualrefs",
+      "type": "array"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "ranAt": {
+      "title": "Ranat",
+      "type": "string"
+     },
+     "sampleId": {
+      "title": "Sampleid",
+      "type": "string"
+     },
+     "storedActualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Storedactualrefs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "sampleId",
+     "query",
+     "ranAt"
+    ],
+    "title": "RagEvalRerunDiff",
+    "type": "object"
+   },
+   "RagEvalSample": {
+    "properties": {
+     "actualRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Actualrefs",
+      "type": "array"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "expectedRefs": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Expectedrefs",
+      "type": "array"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "query": {
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "query",
+     "createdAt"
+    ],
+    "title": "RagEvalSample",
+    "type": "object"
+   },
+   "RagEvalSampleCreate": {
+    "additionalProperties": false,
+    "properties": {
+     "expectedRefs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Expectedrefs",
+      "type": "array"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "maxLength": 64,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "query": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "RagEvalSampleCreate",
+    "type": "object"
+   },
+   "RagEvalSampleList": {
+    "properties": {
+     "cap": {
+      "default": 50,
+      "title": "Cap",
+      "type": "integer"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RagEvalSample"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "RagEvalSampleList",
     "type": "object"
    },
    "RagExclusionItem": {
@@ -15645,6 +17426,95 @@
      "modelId"
     ],
     "title": "RagInconsistencyList",
+    "type": "object"
+   },
+   "RagIndexVersion": {
+    "description": "N157：GET /api/v1/rag/index-version — 当前索引版本。\n\nmodelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按\nmodel_id 分列；configuredModel = 下一次 rebuild 将写入的模型。",
+    "properties": {
+     "configuredModel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configuredmodel"
+     },
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "rowCounts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Rowcounts",
+      "type": "object"
+     }
+    },
+    "required": [
+     "modelId",
+     "dim"
+    ],
+    "title": "RagIndexVersion",
+    "type": "object"
+   },
+   "RagIndexVersionSwitch": {
+    "description": "N157：切换确认（settings 已持久化；索引未动，rebuild 后生效）。",
+    "properties": {
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "rebuildRequired": {
+      "default": true,
+      "title": "Rebuildrequired",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "modelId",
+     "dim"
+    ],
+    "title": "RagIndexVersionSwitch",
+    "type": "object"
+   },
+   "RagIndexVersionSwitchRequest": {
+    "description": "N157：POST /api/v1/rag/index-version 请求体。",
+    "properties": {
+     "modelId": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Modelid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "modelId"
+    ],
+    "title": "RagIndexVersionSwitchRequest",
     "type": "object"
    },
    "RagJobSummary": {
@@ -15778,6 +17648,66 @@
      "elapsedMs"
     ],
     "title": "RagRebuildResult",
+    "type": "object"
+   },
+   "RagRebuildSubsetRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "refs": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Refs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "refs"
+    ],
+    "title": "RagRebuildSubsetRequest",
+    "type": "object"
+   },
+   "RagRebuildSubsetResult": {
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "jobId": {
+      "title": "Jobid",
+      "type": "string"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     },
+     "updated": {
+      "default": 0,
+      "title": "Updated",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "jobId",
+     "status"
+    ],
+    "title": "RagRebuildSubsetResult",
     "type": "object"
    },
    "RagRepairRequest": {
@@ -15916,6 +17846,17 @@
       "title": "Chunks",
       "type": "integer"
      },
+     "configuredModel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configuredmodel"
+     },
      "dim": {
       "title": "Dim",
       "type": "integer"
@@ -15968,6 +17909,14 @@
       "title": "Modelloaded",
       "type": "boolean"
      },
+     "rowCounts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Rowcounts",
+      "type": "object"
+     },
      "vecRows": {
       "title": "Vecrows",
       "type": "integer"
@@ -15988,6 +17937,72 @@
      "fastembedAvailable"
     ],
     "title": "RagStatus",
+    "type": "object"
+   },
+   "RagSubsetJobView": {
+    "description": "N158 作业进度轮询视图（done/total + skipped 明细）。",
+    "properties": {
+     "chunks": {
+      "default": 0,
+      "title": "Chunks",
+      "type": "integer"
+     },
+     "done": {
+      "default": 0,
+      "title": "Done",
+      "type": "integer"
+     },
+     "jobId": {
+      "title": "Jobid",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "pending": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Pending",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     },
+     "updatedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updatedat"
+     }
+    },
+    "required": [
+     "jobId",
+     "kind",
+     "status"
+    ],
+    "title": "RagSubsetJobView",
     "type": "object"
    },
    "ReadLaterItem": {
@@ -16110,6 +18125,55 @@
     "title": "ReadLaterTimelineResponse",
     "type": "object"
    },
+   "ReaderPresetSync": {
+    "additionalProperties": false,
+    "description": "N058：portable 同步的单个阅读预设（版本标签 + 有界 vars）。",
+    "properties": {
+     "id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "schemaVersion": {
+      "maximum": 9.0,
+      "minimum": 1.0,
+      "title": "Schemaversion",
+      "type": "integer"
+     },
+     "vars": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "string"
+        },
+        {
+         "type": "boolean"
+        }
+       ]
+      },
+      "maxProperties": 12,
+      "title": "Vars",
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "schemaVersion"
+    ],
+    "title": "ReaderPresetSync",
+    "type": "object"
+   },
    "ReadinessComponentDetail": {
     "description": "One probed component in the readiness payload.\n\nSuperset of the two real shapes (the full status entry with\nlatency/error, or the compact healthy SQLite entry with\nschemaVersion) — every optional key stays optional so both shapes\nvalidate.",
     "properties": {
@@ -16228,6 +18292,69 @@
      "components"
     ],
     "title": "ReadinessResponse",
+    "type": "object"
+   },
+   "ReadingNotePut": {
+    "additionalProperties": false,
+    "description": "PUT /api/v1/entries/{entry_ref}/note body（N045）。",
+    "properties": {
+     "note": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Note",
+      "type": "string"
+     },
+     "paraId": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Paraid"
+     }
+    },
+    "required": [
+     "note"
+    ],
+    "title": "ReadingNotePut",
+    "type": "object"
+   },
+   "ReadingNoteView": {
+    "properties": {
+     "entryRef": {
+      "title": "Entryref",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "paraId": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Paraid"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "entryRef",
+     "note",
+     "updatedAt"
+    ],
+    "title": "ReadingNoteView",
     "type": "object"
    },
    "ReadingProgressPut": {
@@ -16450,6 +18577,25 @@
      "newPassword"
     ],
     "title": "RecoverPasswordRequest",
+    "type": "object"
+   },
+   "RecoveryToQueueRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/recoveries/{id}/to-queue body（N037）。",
+    "properties": {
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     }
+    },
+    "title": "RecoveryToQueueRequest",
     "type": "object"
    },
    "RedirectHop": {
@@ -16923,12 +19069,86 @@
     "title": "ResolvedRefView",
     "type": "object"
    },
+   "RestoreConflictItem": {
+    "description": "N187：逐对象冲突清单条目（exists/differs 对比活动状态）。",
+    "properties": {
+     "component": {
+      "title": "Component",
+      "type": "string"
+     },
+     "differs": {
+      "default": false,
+      "title": "Differs",
+      "type": "boolean"
+     },
+     "exists": {
+      "title": "Exists",
+      "type": "boolean"
+     },
+     "path": {
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path",
+     "component",
+     "exists"
+    ],
+    "title": "RestoreConflictItem",
+    "type": "object"
+   },
+   "RestoreDecisionLog": {
+    "description": "N187：决策账本（restored/skipped/overwritten 计数 + 样本 ≤10）。",
+    "properties": {
+     "overwritten": {
+      "default": 0,
+      "title": "Overwritten",
+      "type": "integer"
+     },
+     "restored": {
+      "default": 0,
+      "title": "Restored",
+      "type": "integer"
+     },
+     "samples": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Samples",
+      "type": "array"
+     },
+     "skipped": {
+      "default": 0,
+      "title": "Skipped",
+      "type": "integer"
+     }
+    },
+    "title": "RestoreDecisionLog",
+    "type": "object"
+   },
    "RestoreExecuteBody": {
     "properties": {
      "confirmation": {
       "minLength": 1,
       "title": "Confirmation",
       "type": "string"
+     },
+     "decisions": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decisions"
      },
      "restoreSessionId": {
       "minLength": 1,
@@ -16962,7 +19182,7 @@
     "type": "object"
    },
    "RestorePreview": {
-    "description": "POST /api/v1/restore/preview (validate + session id, no writes).",
+    "description": "POST /api/v1/restore/preview (validate + session id, no writes).\n\nN187：``conflicts`` 供恢复向导冲突步骤渲染（策略 skip|overwrite）。",
     "properties": {
      "compatible": {
       "title": "Compatible",
@@ -16974,6 +19194,14 @@
        "type": "string"
       },
       "title": "Components",
+      "type": "array"
+     },
+     "conflicts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RestoreConflictItem"
+      },
+      "title": "Conflicts",
       "type": "array"
      },
      "createdAt": {
@@ -17117,8 +19345,18 @@
     "type": "object"
    },
    "RestoreResult": {
-    "description": "POST /api/v1/restore (destructive, explicitly confirmed).",
+    "description": "POST /api/v1/restore (destructive, explicitly confirmed).\n\nN187：``decisions`` 决策账本（缺省全 skip 时也如实记账）。",
     "properties": {
+     "decisions": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RestoreDecisionLog"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "freshrss": {
       "enum": [
        "not_included",
@@ -17163,6 +19401,40 @@
      "health"
     ],
     "title": "RestoreResult",
+    "type": "object"
+   },
+   "RetentionApplyRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/sources/retention-apply body（N038）。",
+    "properties": {
+     "days": {
+      "anyOf": [
+       {
+        "maximum": 3650.0,
+        "minimum": 7.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Days"
+     },
+     "feedUrl": {
+      "minLength": 1,
+      "title": "Feedurl",
+      "type": "string"
+     },
+     "prune": {
+      "default": false,
+      "title": "Prune",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "feedUrl"
+    ],
+    "title": "RetentionApplyRequest",
     "type": "object"
    },
    "RetentionNotice": {
@@ -18786,6 +21058,11 @@
    "SaveAsTemplateRequest": {
     "additionalProperties": false,
     "properties": {
+     "includeStructure": {
+      "default": false,
+      "title": "Includestructure",
+      "type": "boolean"
+     },
      "name": {
       "maxLength": 50,
       "minLength": 1,
@@ -20481,6 +22758,59 @@
     "title": "SettingsRevertResult",
     "type": "object"
    },
+   "SharePackageRequest": {
+    "additionalProperties": false,
+    "description": "N116 POST .../share-package — 只读静态 HTML 分享包。\n\n``includeNotes`` 固定 false（Literal[False]）：私人摘录笔记绝不进\n分享包——传 true 是客户端错误（422），不是静默忽略。",
+    "properties": {
+     "includeNotes": {
+      "const": false,
+      "default": false,
+      "title": "Includenotes",
+      "type": "boolean"
+     },
+     "sectionIds": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sectionids"
+     }
+    },
+    "title": "SharePackageRequest",
+    "type": "object"
+   },
+   "SnapshotCleanupRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/library/snapshots/{id}/cleanup body.\n\n``kinds`` 非空、白名单（images/styles/attachments）；条目本体\n（页面 HTML 文本 / 标题 / library 行）永不参与清理。",
+    "properties": {
+     "kinds": {
+      "items": {
+       "enum": [
+        "images",
+        "styles",
+        "attachments"
+       ],
+       "type": "string"
+      },
+      "minItems": 1,
+      "title": "Kinds",
+      "type": "array"
+     }
+    },
+    "required": [
+     "kinds"
+    ],
+    "title": "SnapshotCleanupRequest",
+    "type": "object"
+   },
    "SnapshotCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/library/snapshots.",
@@ -21120,6 +23450,17 @@
       ],
       "title": "Syncpriority"
      },
+     "translationPolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationpolicy"
+     },
      "unreadAlertThreshold": {
       "anyOf": [
        {
@@ -21269,6 +23610,17 @@
        }
       ],
       "title": "Syncpriority"
+     },
+     "translationPolicy": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Translationpolicy"
      },
      "unreadAlertThreshold": {
       "anyOf": [
@@ -22516,6 +24868,154 @@
     "title": "TotpVerifyRequest",
     "type": "object"
    },
+   "TranslationCompareBody": {
+    "description": "POST …/translation-compare body（N084）。",
+    "properties": {
+     "blockIndex": {
+      "maximum": 63.0,
+      "minimum": 0.0,
+      "title": "Blockindex",
+      "type": "integer"
+     },
+     "text": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "blockIndex",
+     "text"
+    ],
+    "title": "TranslationCompareBody",
+    "type": "object"
+   },
+   "TranslationCompareSide": {
+    "description": "N084：一侧的对照译文（失败侧 text=None + failureType）。",
+    "properties": {
+     "failureType": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failuretype"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "provider": {
+      "title": "Provider",
+      "type": "string"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     }
+    },
+    "required": [
+     "label",
+     "provider",
+     "model"
+    ],
+    "title": "TranslationCompareSide",
+    "type": "object"
+   },
+   "TranslationCompareView": {
+    "description": "POST /api/v1/entries/{ref}/translation-compare（N084，ephemeral）。\n\navailable=false 时 reason 说明拒绝原因（provider_not_configured /\nbrowser_engine / providers_identical / empty_text）。",
+    "properties": {
+     "available": {
+      "title": "Available",
+      "type": "boolean"
+     },
+     "estimatedChars": {
+      "default": 0,
+      "title": "Estimatedchars",
+      "type": "integer"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "sides": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationCompareSide"
+      },
+      "title": "Sides",
+      "type": "array"
+     }
+    },
+    "required": [
+     "available"
+    ],
+    "title": "TranslationCompareView",
+    "type": "object"
+   },
+   "TranslationRevisionHistoryItem": {
+    "description": "N085：一条被替换下来的历史修订。",
+    "properties": {
+     "oldText": {
+      "title": "Oldtext",
+      "type": "string"
+     },
+     "replacedAt": {
+      "title": "Replacedat",
+      "type": "string"
+     }
+    },
+    "required": [
+     "oldText",
+     "replacedAt"
+    ],
+    "title": "TranslationRevisionHistoryItem",
+    "type": "object"
+   },
+   "TranslationRevisionHistoryView": {
+    "description": "GET …/translation/segments/{index}/revision/history（N085）。",
+    "properties": {
+     "index": {
+      "title": "Index",
+      "type": "integer"
+     },
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TranslationRevisionHistoryItem"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "index"
+    ],
+    "title": "TranslationRevisionHistoryView",
+    "type": "object"
+   },
    "TranslationSegmentBlockIn": {
     "description": "One client-segmented content block.",
     "properties": {
@@ -22842,6 +25342,29 @@
      }
     },
     "title": "TrashList",
+    "type": "object"
+   },
+   "TtsSynthesizeRequest": {
+    "additionalProperties": false,
+    "description": "POST /api/v1/tts/synthesize body。",
+    "properties": {
+     "text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     },
+     "voice": {
+      "default": "alloy",
+      "maxLength": 100,
+      "title": "Voice",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "TtsSynthesizeRequest",
     "type": "object"
    },
    "UserQuotaPutRequest": {
@@ -23227,6 +25750,116 @@
     "title": "Workspace",
     "type": "object"
    },
+   "WorkspaceArchiveEntry": {
+    "properties": {
+     "archived": {
+      "default": true,
+      "title": "Archived",
+      "type": "boolean"
+     },
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
+     "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "reserved": {
+      "default": false,
+      "title": "Reserved",
+      "type": "boolean"
+     },
+     "revision": {
+      "default": 1,
+      "title": "Revision",
+      "type": "integer"
+     },
+     "summary": {
+      "$ref": "#/components/schemas/WorkspaceArchiveSummary"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "position",
+     "itemCount",
+     "summary"
+    ],
+    "title": "WorkspaceArchiveEntry",
+    "type": "object"
+   },
+   "WorkspaceArchiveSummary": {
+    "description": "N119 单个归档工作区的摘要（归档列表卡片渲染的输入）。\n\n``daysActive`` = created_at → archived_at 的整天数（同日归档为 0，\n诚实下限）；``goalProgress`` 为 null = 无目标。",
+    "properties": {
+     "archivedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archivedat"
+     },
+     "daysActive": {
+      "default": 0,
+      "title": "Daysactive",
+      "type": "integer"
+     },
+     "doneCount": {
+      "title": "Donecount",
+      "type": "integer"
+     },
+     "goalProgress": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Goalprogress"
+     },
+     "itemCount": {
+      "title": "Itemcount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "itemCount",
+     "doneCount"
+    ],
+    "title": "WorkspaceArchiveSummary",
+    "type": "object"
+   },
    "WorkspaceBoardResponse": {
     "properties": {
      "columns": {
@@ -23401,6 +26034,306 @@
     "title": "WorkspaceCleanupUndoResult",
     "type": "object"
    },
+   "WorkspaceCollectApplyResult": {
+    "description": "N118 应用：命中条目以 ref 引用进工作区（幂等）。\n\n``skippedDisabled``=true 表示规则处于暂停态、本次调用没有生效\n（诚实回显而非静默成功）。",
+    "properties": {
+     "added": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Added",
+      "type": "array"
+     },
+     "addedCount": {
+      "default": 0,
+      "title": "Addedcount",
+      "type": "integer"
+     },
+     "capReached": {
+      "default": false,
+      "title": "Capreached",
+      "type": "boolean"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "ruleAddedCount": {
+      "default": 0,
+      "title": "Ruleaddedcount",
+      "type": "integer"
+     },
+     "ruleId": {
+      "title": "Ruleid",
+      "type": "string"
+     },
+     "skippedExisting": {
+      "default": 0,
+      "title": "Skippedexisting",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ruleId"
+    ],
+    "title": "WorkspaceCollectApplyResult",
+    "type": "object"
+   },
+   "WorkspaceCollectPreview": {
+    "description": "N118 预演（dry-run）：投影命中清单（有界 50），绝不写库。",
+    "properties": {
+     "alreadyMemberCount": {
+      "default": 0,
+      "title": "Alreadymembercount",
+      "type": "integer"
+     },
+     "bounded": {
+      "default": false,
+      "title": "Bounded",
+      "type": "boolean"
+     },
+     "matchCount": {
+      "default": 0,
+      "title": "Matchcount",
+      "type": "integer"
+     },
+     "matches": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceCollectPreviewItem"
+      },
+      "title": "Matches",
+      "type": "array"
+     },
+     "remainingCap": {
+      "default": 0,
+      "title": "Remainingcap",
+      "type": "integer"
+     },
+     "ruleId": {
+      "title": "Ruleid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ruleId"
+    ],
+    "title": "WorkspaceCollectPreview",
+    "type": "object"
+   },
+   "WorkspaceCollectPreviewItem": {
+    "properties": {
+     "alreadyMember": {
+      "default": false,
+      "title": "Alreadymember",
+      "type": "boolean"
+     },
+     "feedTitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedtitle"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "publishedAt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publishedat"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     }
+    },
+    "required": [
+     "itemRef"
+    ],
+    "title": "WorkspaceCollectPreviewItem",
+    "type": "object"
+   },
+   "WorkspaceCollectRule": {
+    "properties": {
+     "addedCount": {
+      "default": 0,
+      "title": "Addedcount",
+      "type": "integer"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "maxItems": {
+      "default": 100,
+      "title": "Maxitems",
+      "type": "integer"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     },
+     "updatedAt": {
+      "title": "Updatedat",
+      "type": "string"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "workspaceId",
+     "createdAt",
+     "updatedAt"
+    ],
+    "title": "WorkspaceCollectRule",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleCreate": {
+    "additionalProperties": false,
+    "description": "N118 规则创建：三种来源条件（feedUrl | tag | keyword）必须恰好\n给出一种；maxItems 是本规则累计收集上限（≤100，硬顶）。",
+    "properties": {
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "feedUrl": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Feedurl"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "maxLength": 100,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "maxItems": {
+      "default": 100,
+      "maximum": 100.0,
+      "minimum": 1.0,
+      "title": "Maxitems",
+      "type": "integer"
+     },
+     "tag": {
+      "anyOf": [
+       {
+        "maxLength": 100,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag"
+     }
+    },
+    "title": "WorkspaceCollectRuleCreate",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleEnabledPatch": {
+    "additionalProperties": false,
+    "properties": {
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled"
+    ],
+    "title": "WorkspaceCollectRuleEnabledPatch",
+    "type": "object"
+   },
+   "WorkspaceCollectRuleList": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceCollectRule"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "title": "WorkspaceCollectRuleList",
+    "type": "object"
+   },
    "WorkspaceCreate": {
     "additionalProperties": false,
     "description": "POST /api/v1/workspaces.",
@@ -23444,6 +26377,18 @@
       },
       "title": "Skippedexamplerefs",
       "type": "array"
+     },
+     "structure": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Structure"
      },
      "workspace": {
       "$ref": "#/components/schemas/Workspace"
@@ -23599,11 +26544,23 @@
     "type": "object"
    },
    "WorkspaceItem": {
-    "description": "One workspace member (ref + ordering; content resolves separately).\n\nN101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，\n排序语义不变（position 升序）。",
+    "description": "One workspace member (ref + ordering; content resolves separately).\n\nN101/N102：``groupName``（null = 未分组）与 ``pinned`` 为增量元数据，\n排序语义不变（position 升序）。\n\nN047：``duplicateWarning`` 只在 add 响应中出现（canonical URL 撞车\n提示，非阻断——条目已加入）；其余端点恒 None。",
     "properties": {
      "addedAt": {
       "title": "Addedat",
       "type": "string"
+     },
+     "duplicateWarning": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Duplicatewarning"
      },
      "groupName": {
       "anyOf": [
@@ -23681,6 +26638,82 @@
      }
     },
     "title": "WorkspaceItemGroupMoveRequest",
+    "type": "object"
+   },
+   "WorkspaceItemMoveRequest": {
+    "additionalProperties": false,
+    "description": "N108：POST /api/v1/workspaces/{id}/items/{ref}/move 请求体。\n\nkeepInSource=false（默认）= 移动（源成员关系移除）；onDuplicate:\n'skip'（默认，幂等收敛）| 'conflict'（目标已有 → 409）。",
+    "properties": {
+     "keepInSource": {
+      "default": false,
+      "title": "Keepinsource",
+      "type": "boolean"
+     },
+     "onDuplicate": {
+      "default": "skip",
+      "enum": [
+       "skip",
+       "conflict"
+      ],
+      "title": "Onduplicate",
+      "type": "string"
+     },
+     "targetWorkspaceId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Targetworkspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "targetWorkspaceId"
+    ],
+    "title": "WorkspaceItemMoveRequest",
+    "type": "object"
+   },
+   "WorkspaceItemMoveResult": {
+    "description": "N108：移动结果（duplicate=true 表示目标本已有该条目，未重复创建）。",
+    "properties": {
+     "duplicate": {
+      "default": false,
+      "title": "Duplicate",
+      "type": "boolean"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "sourceRemoved": {
+      "default": true,
+      "title": "Sourceremoved",
+      "type": "boolean"
+     },
+     "sourceWorkspaceId": {
+      "title": "Sourceworkspaceid",
+      "type": "string"
+     },
+     "targetPosition": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetposition"
+     },
+     "targetWorkspaceId": {
+      "title": "Targetworkspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "sourceWorkspaceId",
+     "targetWorkspaceId"
+    ],
+    "title": "WorkspaceItemMoveResult",
     "type": "object"
    },
    "WorkspaceItemPinRequest": {
@@ -23886,6 +26919,81 @@
      "workspaceId"
     ],
     "title": "WorkspaceResumeResponse",
+    "type": "object"
+   },
+   "WorkspaceSearchHit": {
+    "description": "N109：工作区内检索的单条命中（成员范围严格限定）。",
+    "properties": {
+     "domain": {
+      "enum": [
+       "rss",
+       "library"
+      ],
+      "title": "Domain",
+      "type": "string"
+     },
+     "excerpt": {
+      "default": "",
+      "title": "Excerpt",
+      "type": "string"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "matchedIn": {
+      "default": "title",
+      "enum": [
+       "title",
+       "content",
+       "title+content"
+      ],
+      "title": "Matchedin",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "domain",
+     "title"
+    ],
+    "title": "WorkspaceSearchHit",
+    "type": "object"
+   },
+   "WorkspaceSearchResponse": {
+    "description": "Envelope for GET /api/v1/workspaces/{id}/search?q=（N109）.\n\n``results`` 上限 200 条（``truncated`` 如实标记截断）；只包含该\n工作区自己的成员——其他工作区的条目绝不出现。",
+    "properties": {
+     "query": {
+      "title": "Query",
+      "type": "string"
+     },
+     "results": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSearchHit"
+      },
+      "title": "Results",
+      "type": "array"
+     },
+     "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+     },
+     "workspaceId": {
+      "title": "Workspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workspaceId",
+     "query",
+     "results"
+    ],
+    "title": "WorkspaceSearchResponse",
     "type": "object"
    },
    "WorkspaceSectionCreate": {
@@ -24103,6 +27211,117 @@
      "name"
     ],
     "title": "WorkspaceSnapshotCreate",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiff": {
+    "description": "N115 GET .../snapshots/{a}/diff/{b} — 只读差异（ref 全部可经\n既有 views/resolve 端点定位；本端点绝不解析内容）。",
+    "properties": {
+     "added": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Added",
+      "type": "array"
+     },
+     "groupChanges": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshotDiffGroupChange"
+      },
+      "title": "Groupchanges",
+      "type": "array"
+     },
+     "moved": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceSnapshotDiffMove"
+      },
+      "title": "Moved",
+      "type": "array"
+     },
+     "removed": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Removed",
+      "type": "array"
+     },
+     "snapshotA": {
+      "title": "Snapshota",
+      "type": "string"
+     },
+     "snapshotB": {
+      "title": "Snapshotb",
+      "type": "string"
+     }
+    },
+    "required": [
+     "snapshotA",
+     "snapshotB"
+    ],
+    "title": "WorkspaceSnapshotDiff",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiffGroupChange": {
+    "description": "两快照都存在、但分组归属发生变化的 ref（None = 未分组）。\n\n``from`` 是 Python 关键字：字段名 ``from_group`` + wire alias ``from``\n（FastAPI 响应默认按 alias 序列化）。",
+    "properties": {
+     "from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "required": [
+     "ref"
+    ],
+    "title": "WorkspaceSnapshotDiffGroupChange",
+    "type": "object"
+   },
+   "WorkspaceSnapshotDiffMove": {
+    "description": "两快照都存在、但位置发生变化的 ref。",
+    "properties": {
+     "fromPos": {
+      "title": "Frompos",
+      "type": "integer"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     },
+     "toPos": {
+      "title": "Topos",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ref",
+     "fromPos",
+     "toPos"
+    ],
+    "title": "WorkspaceSnapshotDiffMove",
     "type": "object"
    },
    "WorkspaceSnapshotList": {
@@ -24721,6 +27940,23 @@
     "summary": "Set Registration Policy"
    }
   },
+  "/api/v1/admin/rollback-readiness": {
+   "get": {
+    "description": "N197：回滚就绪检查（admin-gated，只读要素清单）。\n\n- previousImage：读 ./lumirss snapshot_for_rollback 写下的回滚快照\n  清单（LUMIRSS_ROLLBACK_MANIFEST_FILE）——BFF 没有 Docker 访问权，\n  镜像存在性只来自脚本侧的诚实记录；\n- backup：LUMIRSS_BACKUP_DIR 里最新 *.backup + N186 只读完整性校验；\n- dbDowngrade：诚实限制说明（SQLite 迁移只向前，无法降级）；\n- canRollback = 前镜像在 AND 备份可校验 AND schema 与备份一致。\n\n本端点只给清单，永远不给一键回滚按钮——回滚只由运维侧\n./lumirss rollback 触发。",
+    "operationId": "admin_rollback_readiness_api_v1_admin_rollback_readiness_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Admin Rollback Readiness"
+   }
+  },
   "/api/v1/admin/rsshub/routes/{route_key}/usage": {
    "get": {
     "description": "N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。\n\n隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他\n用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的\nfeed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。\nmember 403；遍历每用户库（邀请制小规模部署，行数有界）。",
@@ -24815,6 +28051,43 @@
      }
     },
     "summary": "Run Rsshub Upgrade Check"
+   }
+  },
+  "/api/v1/admin/step-up": {
+   "post": {
+    "description": "N009：铸造短时提权令牌（5 分钟，散列入库，单次使用）。\n\n- 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；\n- 校验的是当前管理员自己的密码（不是目标用户的）；\n- 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。",
+    "operationId": "admin_step_up_api_v1_admin_step_up_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AdminStepUpRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Admin Step Up"
    }
   },
   "/api/v1/admin/system": {
@@ -25108,7 +28381,7 @@
   },
   "/api/v1/admin/users/{user_id}/reset-password": {
    "post": {
-    "description": "Install an unguessable password (nobody knows it) and revoke all\nthe user's sessions, then return a one-time recovery invite the\noperator hands to the member (O150 — honest, no email pretending).",
+    "description": "Install an unguessable password (nobody knows it) and revoke all\nthe user's sessions, then return a one-time recovery invite the\noperator hands to the member (O150 — honest, no email pretending).\nN009：需要临时提权令牌（X-Lumi-Step-Up）。",
     "operationId": "reset_user_password_api_v1_admin_users__user_id__reset_password_post",
     "parameters": [
      {
@@ -25220,7 +28493,7 @@
   },
   "/api/v1/admin/users/{user_id}/role": {
    "post": {
-    "description": "Owner-only role provisioning (0067).\n\nActivation admits everyone as ``member``; ONLY the owner can grant or\nrevoke the ``admin`` role afterwards. Rules, all stable-shaped:\n- admins get 403 (an admin can never mint or demote another admin);\n- the owner account is untargetable (403) — no demotion, no re-role;\n- demoting the last active admin is refused (403) so a delegation\n  mistake can never lock the operator out of admin surfaces;\n- unknown user → 404, unknown role → 422 (body validation);\n- every accepted change is audited (no credentials involved).",
+    "description": "Owner-only role provisioning (0067).\n\nActivation admits everyone as ``member``; ONLY the owner can grant or\nrevoke the ``admin`` role afterwards. Rules, all stable-shaped:\n- admins get 403 (an admin can never mint or demote another admin);\n- the owner account is untargetable (403) — no demotion, no re-role;\n- demoting the last active admin is refused (403) so a delegation\n  mistake can never lock the operator out of admin surfaces;\n- unknown user → 404, unknown role → 422 (body validation);\n- every accepted change is audited (no credentials involved).\n- N009：需要临时提权令牌（X-Lumi-Step-Up），否则 403 step_up_required。",
     "operationId": "set_user_role_api_v1_admin_users__user_id__role_post",
     "parameters": [
      {
@@ -25264,6 +28537,45 @@
      }
     },
     "summary": "Set User Role"
+   }
+  },
+  "/api/v1/agent/presets/research": {
+   "post": {
+    "description": "N163：一键研究模式——readonly + 保留当前 scope + read-tool 白名单\n+ 回合数上限，一次 PATCH 落库（下轮生效）。\n\n- scope 刻意不动（「当前范围」由用户另行设置，预设绝不放大授权）；\n- 白名单 = 注册表里的全部只读工具（服务端 evaluate_policy 强制：\n  readonly 模式下写工具一律 403 readonly_mode）；\n- 回合上限固定 N163_PRESET_MAX_TURNS，防长跑。",
+    "operationId": "apply_research_preset_api_v1_agent_presets_research_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentResearchPresetRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Research Preset"
    }
   },
   "/api/v1/agent/recipes": {
@@ -26332,6 +29644,256 @@
     "summary": "Retry Ai Task"
    }
   },
+  "/api/v1/annotation-baskets": {
+   "get": {
+    "operationId": "list_baskets_api_v1_annotation_baskets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Baskets"
+   },
+   "post": {
+    "operationId": "create_basket_api_v1_annotation_baskets_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Basket"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}": {
+   "delete": {
+    "operationId": "delete_basket_api_v1_annotation_baskets__basket_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Basket"
+   },
+   "patch": {
+    "operationId": "rename_basket_api_v1_annotation_baskets__basket_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketRename"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Basket"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}/items": {
+   "get": {
+    "operationId": "list_basket_items_api_v1_annotation_baskets__basket_id__items_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Basket Items"
+   },
+   "post": {
+    "operationId": "add_basket_items_api_v1_annotation_baskets__basket_id__items_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BasketItemsAdd"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Basket Items"
+   }
+  },
+  "/api/v1/annotation-baskets/{basket_id}/items/{annotation_id}": {
+   "delete": {
+    "operationId": "remove_basket_item_api_v1_annotation_baskets__basket_id__items__annotation_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "basket_id",
+      "required": true,
+      "schema": {
+       "title": "Basket Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "annotation_id",
+      "required": true,
+      "schema": {
+       "title": "Annotation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Remove Basket Item"
+   }
+  },
   "/api/v1/annotations": {
    "get": {
     "description": "跨篇检索/单篇列表；N073：可选 color= 过滤（调色板原始色名）。",
@@ -26517,7 +30079,7 @@
   },
   "/api/v1/annotations/export": {
    "post": {
-    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：\nciteBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。",
+    "description": "F052：批注汇编导出（Markdown 下载）。空选择 → 422。N075：\nciteBibliography=true 时每篇文章追加引用格式行（缺失项「不详」）。\nN072：basketId 给出时按精选篮成员过滤（复用同一导出路径/格式）。",
     "operationId": "export_annotations_api_v1_annotations_export_post",
     "requestBody": {
      "content": {
@@ -26636,6 +30198,84 @@
      }
     },
     "summary": "Mark Annotations Exported"
+   }
+  },
+  "/api/v1/annotations/migrate/apply": {
+   "post": {
+    "description": "N078 应用（逐项确认）：选中项走与 N071 repair 完全相同的 rebind\n（旧锚点进 annotation_repair_log —— 撤销由该历史承载）。目标块与\n引文相似度不足 / 修复后锚点与他条冲突 → 该项 failed（reason），绝不\n覆盖既有目标批注，绝不整批中断。",
+    "operationId": "migrate_annotations_apply_api_v1_annotations_migrate_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationMigrateApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationMigrateApplyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Migrate Annotations Apply"
+   }
+  },
+  "/api/v1/annotations/migrate/preview": {
+   "post": {
+    "description": "N078 预览（零写入）：该文章全部批注对目标版本逐条重检（N071\n同一匹配口径）。找不到候选的批注进 unmatched（no_quote/no_match），\n绝不混入可确认列表。from/to 同版本 → 422；目标版本不可达 → 422。",
+    "operationId": "migrate_annotations_preview_api_v1_annotations_migrate_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnnotationMigratePreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnnotationMigratePreviewResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Migrate Annotations Preview"
    }
   },
   "/api/v1/annotations/{annotation_id}": {
@@ -27304,6 +30944,89 @@
      }
     },
     "summary": "Login"
+   }
+  },
+  "/api/v1/auth/login-events": {
+   "get": {
+    "description": "本人最近登录事件（cap 20；kind=new_device 未读即「待确认的新设备」）。\n\n响应绝不含设备指纹哈希或任何 token 材料；每条都带 Cache-Control:\nno-store。basic 模式没有账户会话语义 → 401。",
+    "operationId": "list_login_events_api_v1_auth_login_events_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Login Events"
+   }
+  },
+  "/api/v1/auth/login-events/seen": {
+   "post": {
+    "description": "批量标记已读（信任确认）：body 缺省/ids 缺省 = 全部未读事件。",
+    "operationId": "mark_login_events_seen_api_v1_auth_login_events_seen_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/LoginEventsSeenBody"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Mark Login Events Seen"
    }
   },
   "/api/v1/auth/logout": {
@@ -28916,6 +32639,232 @@
     "summary": "Backlog Preview"
    }
   },
+  "/api/v1/entries/backlog/batch-apply": {
+   "post": {
+    "description": "N049：单批确认执行（token 校验失败/条件漂移 → 409）。\n\n逐条走既有 set-read 管线；实际置读成功的 refs 写入撤销台账\n（backlog_batch_log，cap 5）——撤销以此为准，失败项绝不进台账。",
+    "operationId": "backlog_batch_apply_api_v1_entries_backlog_batch_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BacklogBatchApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BacklogBatchApplyResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Backlog Batch Apply"
+   }
+  },
+  "/api/v1/entries/backlog/batch-preview": {
+   "post": {
+    "description": "N049：单批预览（真实 count + 前 20 样本 + 一次性 token）。零写入。",
+    "operationId": "backlog_batch_preview_api_v1_entries_backlog_batch_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BacklogBatchPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BacklogBatchPreviewResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Backlog Batch Preview"
+   }
+  },
+  "/api/v1/entries/backlog/batches": {
+   "get": {
+    "description": "N049：积压分批视图（与 F024 同一候选口径：未读 + 未加星 +\n不在稍后读工作区 + 早于截止时间）。\n\n- groupBy=source：每来源一批（key = feed_url）；\n- groupBy=age：固定账龄桶（7-30/30-90/90-365/365+ 天）；\n- count 是服务端真实全量计数；entryRefs 最多 100 条（诚实有界，\n  超出部分仍会被该批确认执行覆盖）。",
+    "operationId": "backlog_batches_view_api_v1_entries_backlog_batches_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "groupBy",
+      "required": false,
+      "schema": {
+       "default": "source",
+       "enum": [
+        "source",
+        "age"
+       ],
+       "title": "Groupby",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "olderThanDays",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 3650,
+       "minimum": 1,
+       "title": "Olderthandays",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feedurl"
+      }
+     },
+     {
+      "in": "query",
+      "name": "categoryId",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Categoryid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BacklogBatchesResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Backlog Batches View"
+   }
+  },
+  "/api/v1/entries/backlog/batches/log": {
+   "get": {
+    "description": "N049：撤销台账（新→旧；cap 5；undone=false 可撤销）。",
+    "operationId": "backlog_batch_logs_api_v1_entries_backlog_batches_log_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BacklogBatchLogListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Backlog Batch Logs"
+   }
+  },
+  "/api/v1/entries/backlog/batches/{log_id}/undo": {
+   "post": {
+    "description": "N049：按批撤销——台账 refs 逐条恢复 read=0（适配器 + 投影镜像，\nset 语义）。撤销一次性（重复撤销 → 409 backlog_batch_already_undone）。",
+    "operationId": "undo_backlog_batch_api_v1_entries_backlog_batches__log_id__undo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "log_id",
+      "required": true,
+      "schema": {
+       "title": "Log Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BacklogBatchLogView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Undo Backlog Batch"
+   }
+  },
   "/api/v1/entries/compare": {
    "post": {
     "description": "多文观点对照（F067）：材料=去重后 2..4 篇；模型要求输出结构化\nJSON；解析/schema 失败 → 502 comparison_invalid（诚实报错，不造\n结构）；evidence quote 与条目正文比对，不匹配 → verified:false。\n单篇缺失诚实 skipped；可用材料 <2 → 422 material_insufficient。",
@@ -29095,6 +33044,44 @@
     "summary": "Send Conversation Message"
    }
   },
+  "/api/v1/entries/{entry_ref}/digest-usage": {
+   "get": {
+    "description": "N180 日报材料使用追踪：这条材料被我的哪些日报配置/期刊/栏目引用。\n\n反查只发生在当前用户的库上（refs_json 的 entryRef 反向索引）——\n其他用户的期刊天然不可见；非法引用 → 400；没有引用 → items=[]\n（诚实空，不虚构）。citationAnchor 供 Web 跳转定位到具体引用。",
+    "operationId": "entry_digest_usage_api_v1_entries__entry_ref__digest_usage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Entry Digest Usage"
+   }
+  },
   "/api/v1/entries/{entry_ref}/glossary-hits": {
    "post": {
     "description": "现役 glossary 在本文正文的命中（预览与生成 prompt 同一函数产出）。\n\nN083：请求带 blocks 时逐块定位 —— 每个命中附带 blockIndexes\n（客户端块索引，UI 可点击跳转）。",
@@ -29252,6 +33239,213 @@
      }
     },
     "summary": "Save Knowledge Cards"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/media-failures": {
+   "get": {
+    "description": "N039：该条目的失效附件列表（每条目 cap 50，按 lastSeenAt 新→旧）。",
+    "operationId": "list_media_failures_api_v1_entries__entry_ref__media_failures_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MediaFailureListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Media Failures"
+   },
+   "post": {
+    "description": "N039：上报失效附件（≤20 条/次；（kind, src) 幂等 upsert——重复\n上报只刷新 lastSeenAt 与 hitCount，绝不翻倍）。\n\n纯记录：本端点没有任何抓取/重试路径；「单项重新加载」的 cache-bust\n由 Web 读取侧对 src 追加一次性参数完成，服务端绝不改写 src。",
+    "operationId": "report_media_failures_api_v1_entries__entry_ref__media_failures_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MediaFailureReport"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MediaFailureListResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Report Media Failures"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/note": {
+   "delete": {
+    "description": "N045：删除便签（幂等：不存在也是 204）。",
+    "operationId": "delete_reading_note_api_v1_entries__entry_ref__note_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Reading Note"
+   },
+   "get": {
+    "description": "N045：取便签（无 → 404 reading_note_not_found）。",
+    "operationId": "get_reading_note_api_v1_entries__entry_ref__note_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingNoteView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Reading Note"
+   },
+   "put": {
+    "description": "N045：upsert 阅读中断便签（latest-wins，无冲突分支）。",
+    "operationId": "put_reading_note_api_v1_entries__entry_ref__note_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReadingNotePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingNoteView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Reading Note"
    }
   },
   "/api/v1/entries/{entry_ref}/quiz": {
@@ -29659,6 +33853,56 @@
     "summary": "Generate Entry Translation"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation-compare": {
+   "post": {
+    "description": "N084：同一块正文经两个已配置提供方对照翻译（翻译引擎 vs chat\n用途 AI Profile）。EPHEMERAL：不写任何缓存行；成本口径 chars×2。\n只配置了一个提供方 / 引擎为 browser / 两侧同一配置 → 诚实\navailable=false + reason。",
+    "operationId": "compare_translation_block_api_v1_entries__entry_ref__translation_compare_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TranslationCompareBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationCompareView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Compare Translation Block"
+   }
+  },
   "/api/v1/entries/{entry_ref}/translation-verification": {
    "get": {
     "description": "N082：当前译文的逐块数字校验（纯只读；绝不调用 provider）。\n\n只比较可见数字 token（整数/小数/千分位/%；CJK 数字不在范围），\n基于可见差异而非语义判断。手工修订块是人类定稿 —— 原样列出、\n不产生 findings；无源段文本的旧行诚实标记 source_text_unavailable。",
@@ -29996,6 +34240,104 @@
     "summary": "Put Translation Segment Revision"
    }
   },
+  "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/history": {
+   "get": {
+    "description": "N085：一段的修订历史（最新在前；每段上限 5 条）。无缓存行 → 404。",
+    "operationId": "get_translation_segment_revision_history_api_v1_entries__entry_ref__translation_segments__block_index__revision_history_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TranslationRevisionHistoryView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Translation Segment Revision History"
+   }
+  },
+  "/api/v1/entries/{entry_ref}/translation/segments/{block_index}/revision/restore": {
+   "post": {
+    "description": "N085：恢复上一版修订——弹出最新历史条目作为当前修订（当前文本\n不回推历史；逐次点击逐版回退）。无历史 / 无缓存行 → 404。",
+    "operationId": "restore_translation_segment_revision_api_v1_entries__entry_ref__translation_segments__block_index__revision_restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_ref",
+      "required": true,
+      "schema": {
+       "title": "Entry Ref",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "block_index",
+      "required": true,
+      "schema": {
+       "title": "Block Index",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SegmentRevisionResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Translation Segment Revision"
+   }
+  },
   "/api/v1/export/lumi-data": {
    "get": {
     "description": "可携带导出：工作区/标签/书签笔记/日报配置与期刊（版本化 JSON）。\n\n与运维备份（全量归档）和 FreshRSS OPML 导出用途分开；不包含服务\n密钥、订阅 token、Agent 会话/审批与 Vault 内容。",
@@ -30011,6 +34353,40 @@
      }
     },
     "summary": "Export Lumi Data"
+   }
+  },
+  "/api/v1/export/lumi-data.zip": {
+   "get": {
+    "description": "zip 交付（manifest.json + 每组件一个 JSON；无任何秘密）。",
+    "operationId": "export_lumi_data_zip_api_v1_export_lumi_data_zip_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Lumi Data Zip"
+   }
+  },
+  "/api/v1/export/lumi-data/scope": {
+   "get": {
+    "description": "导出前先看范围：每个组件的条数（来源/已读收藏需要 RSS 绑定，\n不可用时如实 available:false——绝不冒充空集是完整范围）。",
+    "operationId": "export_lumi_data_scope_api_v1_export_lumi_data_scope_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Export Lumi Data Scope"
    }
   },
   "/api/v1/favorites": {
@@ -31971,6 +36347,60 @@
      }
     },
     "summary": "Delete Graph View"
+   }
+  },
+  "/api/v1/import/lumi-data/apply": {
+   "post": {
+    "description": "按 preview 给出的 importId 选择组件合并（跳过已存在、只加新的；\nreadingState 只对当前账号已存在的引用生效）。",
+    "operationId": "import_lumi_data_apply_api_v1_import_lumi_data_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ImportApplyBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Import Lumi Data Apply"
+   }
+  },
+  "/api/v1/import/lumi-data/preview": {
+   "post": {
+    "description": "上传导出 zip → 各组件计数 + 冲突（已存在将被跳过）+ importId。",
+    "operationId": "import_lumi_data_preview_api_v1_import_lumi_data_preview_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Import Lumi Data Preview"
    }
   },
   "/api/v1/inbox/events/{event_id}/replay": {
@@ -34242,7 +38672,7 @@
     "summary": "List Notes"
    },
    "post": {
-    "description": "手动创建笔记（contentMd ≤100KB；同步入搜索投影）。",
+    "description": "手动创建笔记（contentMd ≤100KB；同步入搜索投影）。\nN079：可选类型化分栏（facts/interpretation/toVerify）。",
     "operationId": "create_note_api_v1_library_notes_post",
     "requestBody": {
      "content": {
@@ -34602,6 +39032,58 @@
     "summary": "Snapshot Detail"
    }
   },
+  "/api/v1/library/snapshots/{asset_uuid}/cleanup": {
+   "post": {
+    "description": "N124：只删除选中类别的内联资源；条目本体与 library 行保留。\n\n- 共享文件（sha256 去重让多行引用同一物理文件）→ 本行改写为\n  自己的私有新文件，旧文件留给其他引用行，绝不改写他人内容；\n- 独占文件 → 原子改写（tmp + move；崩溃至多留下 reconcile()\n  可清扫的孤儿 tmp）；\n- 被清理的子资源在既有完整性清单（resources 列）中如实标记\n  missing——随后的快照诊断端点按缺失回显；\n- 内容变化 → RAG 标记 stale（与删除快照同一诚实语义）。",
+    "operationId": "cleanup_snapshot_resources_api_v1_library_snapshots__asset_uuid__cleanup_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SnapshotCleanupRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Cleanup Snapshot Resources Api V1 Library Snapshots  Asset Uuid  Cleanup Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cleanup Snapshot Resources"
+   }
+  },
   "/api/v1/library/snapshots/{asset_uuid}/retry-failed": {
    "post": {
     "description": "仅对 failed 资源重采（走既有 SSRF 防护采集层，私网/元数据地址\n在 validate 层拒绝）；无失败 → no-op 返回 0（幂等）。",
@@ -34642,6 +39124,48 @@
      }
     },
     "summary": "Retry Failed Resources"
+   }
+  },
+  "/api/v1/library/snapshots/{asset_uuid}/storage": {
+   "get": {
+    "description": "N124：单个快照的资源预算。\n\n``totalBytes`` = 磁盘文件的真实大小（monolith 单文件化，子资源内联\n为 base64 data: URI）；``breakdown`` 按 data: URI 的 MIME 类别算术\n拆分（images 带内联数量；styles/attachments 计解码后字节）——纯\n长度计算，绝不整包解码。",
+    "operationId": "snapshot_storage_api_v1_library_snapshots__asset_uuid__storage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "asset_uuid",
+      "required": true,
+      "schema": {
+       "title": "Asset Uuid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Snapshot Storage Api V1 Library Snapshots  Asset Uuid  Storage Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Snapshot Storage"
    }
   },
   "/api/v1/library/snapshots/{asset_uuid}/versions": {
@@ -35594,6 +40118,133 @@
      }
     },
     "summary": "Move Mail Rule"
+   }
+  },
+  "/api/v1/me/activity-purge": {
+   "post": {
+    "description": "N189：清除 before 之前的服务端活动记录（登录事件 / AI 任务日志 /\n搜索快照；按 include 选择，缺省全清）。响应如实列出各桶删除数与\n保留说明；绝不触碰已读/收藏/笔记等业务状态。已删除的记录不会因\n缓存复活（这些表没有任何缓存写入路径）。",
+    "operationId": "activity_purge_api_v1_me_activity_purge_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActivityPurgeBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activity Purge"
+   }
+  },
+  "/api/v1/me/activity-purge/preview": {
+   "get": {
+    "description": "预览各活动桶在 before 之前的记录数（只读，不清除）。",
+    "operationId": "activity_purge_preview_api_v1_me_activity_purge_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "before",
+      "required": true,
+      "schema": {
+       "title": "Before",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Activity Purge Preview"
+   }
+  },
+  "/api/v1/me/deactivation-request": {
+   "get": {
+    "description": "本人停用请求状态（无请求 → {requested: false}）。仅 session 模式。",
+    "operationId": "get_deactivation_request_api_v1_me_deactivation_request_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Deactivation Request"
+   },
+   "post": {
+    "description": "发起停用：密码复核 → status=paused + 待删除标记，会话立即吊销。\n\n宽限期（默认 14 天）内运营者经管理台恢复；到期后的物理删除没有\n自动作业——由运营者手动执行（诚实口径，返回体说明）。",
+    "operationId": "request_deactivation_api_v1_me_deactivation_request_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeactivationRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Request Deactivation"
    }
   },
   "/api/v1/obsidian/block-refs": {
@@ -36786,6 +41437,45 @@
     "summary": "Update Qa Template"
    }
   },
+  "/api/v1/qa/conflicts": {
+   "post": {
+    "description": "N156：资料冲突对照（≤5 refs、本人范围、纯词法）。\n\n- refs 去重后需 ≥2 且全部存在于本用户投影（不存在 → 422\n  citation_invalid——与 ask 同一捏造引用拦截口径）；\n- 文本收集复用 N154 rag_evidence（rag_chunks 优先，投影回退）；\n- 两两组合做句级词法比对；证据块定位 = quote 所在 rag_chunks.ord\n  （无分块回退为正文句序号）；\n- 零模型调用：本端点不 import 任何 provider 设施。",
+    "operationId": "qa_conflicts_api_v1_qa_conflicts_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QaConflictRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QaConflictResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Qa Conflicts"
+   }
+  },
   "/api/v1/queue/snapshots": {
    "get": {
     "description": "快照列表（新→旧）。",
@@ -36997,7 +41687,7 @@
   },
   "/api/v1/queue/today/items": {
    "post": {
-    "description": "手动加入（新 201；重复 pending 幂等 200；removed 复活 200；\n今天已完成 → 409 queue_item_done）。",
+    "description": "手动加入（新 201；重复 pending 幂等 200；removed 复活 200；\n今天已完成 → 409 queue_item_done）。\n\nN046：expectedRevision 落后 → 409 queue_revision_conflict（写入前\n发生，冲突绝不半途落库）。N047：加入成功后做 canonical URL 撞车\n检查——warning 附在成功响应里（非阻断，绝不因撞车拒绝写入）。",
     "operationId": "add_queue_item_api_v1_queue_today_items_post",
     "requestBody": {
      "content": {
@@ -37014,7 +41704,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/QueueItemView"
+         "$ref": "#/components/schemas/QueueAddResponse"
         }
        }
       },
@@ -37024,7 +41714,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/QueueItemView"
+         "$ref": "#/components/schemas/QueueAddResponse"
         }
        }
       },
@@ -37046,7 +41736,7 @@
   },
   "/api/v1/queue/today/items/{item_id}": {
    "delete": {
-    "description": "移除（status=removed，行保留；再移除同一行 → 404）。",
+    "description": "移除（status=removed，行保留；再移除 → 404）。\n\nN046：expectedRevision 落后 → 409（DELETE 无 body，clientItems 不\n随行——冲突体的 yourItem 为 null，客户端以本地面板状态补全）。",
     "operationId": "remove_queue_item_api_v1_queue_today_items__item_id__delete",
     "parameters": [
      {
@@ -37056,6 +41746,22 @@
       "schema": {
        "title": "Item Id",
        "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "expectedRevision",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Expectedrevision"
       }
      }
     ],
@@ -37079,7 +41785,7 @@
   },
   "/api/v1/queue/today/items/{item_id}/done": {
    "post": {
-    "description": "完成状态（set 语义：done=true/false，不是 toggle；完成按条目\n身份记账，绝不隐式改写上游已读状态）。",
+    "description": "完成状态（set 语义：done=true/false，不是 toggle；完成按条目\n身份记账，绝不隐式改写上游已读状态）。N046：expectedRevision\n落后 → 409。",
     "operationId": "set_queue_item_done_api_v1_queue_today_items__item_id__done_post",
     "parameters": [
      {
@@ -37129,7 +41835,7 @@
   },
   "/api/v1/queue/today/items/{item_id}/segment": {
    "patch": {
-    "description": "行菜单移动分段（segment=null = 移回未分组）。",
+    "description": "行菜单移动分段（segment=null = 移回未分组）。N046：\nexpectedRevision 落后 → 409。",
     "operationId": "move_queue_item_segment_api_v1_queue_today_items__item_id__segment_patch",
     "parameters": [
      {
@@ -37177,9 +41883,48 @@
     "summary": "Move Queue Item Segment"
    }
   },
+  "/api/v1/queue/today/merge-conflicts": {
+   "post": {
+    "description": "按项合并：对 409 冲突体里的每个 ref 显式选择 keep-mine（应用\nclientItem 的 status/segment）或 keep-theirs（保持服务端现状）。\n\n- 修订号必须仍与 current 一致（期间又被改 → 再 409，重新取差异）；\n- 合并整体 bump 一次修订号；未提及的行原样保留（unmodified\n  items survive——负向契约）；\n- keep-theirs 语义 = 放弃本地该行的变更，不是删除服务端行。",
+    "operationId": "merge_queue_conflicts_api_v1_queue_today_merge_conflicts_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueMergeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueMergeResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Merge Queue Conflicts"
+   }
+  },
   "/api/v1/queue/today/order": {
    "put": {
-    "description": "持久化重排（跨设备可见；done 行位置同样可排）。",
+    "description": "持久化重排（跨设备可见；done 行位置同样可排）。N046：\nexpectedRevision 落后 → 409。",
     "operationId": "reorder_today_queue_api_v1_queue_today_order_put",
     "requestBody": {
      "content": {
@@ -37255,6 +42000,88 @@
     "summary": "Set Queue Segment Order"
    }
   },
+  "/api/v1/quick-actions": {
+   "get": {
+    "operationId": "list_quick_actions_api_v1_quick_actions_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Quick Actions"
+   },
+   "post": {
+    "operationId": "create_quick_action_api_v1_quick_actions_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QuickActionCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Quick Action"
+   }
+  },
+  "/api/v1/quick-actions/{action_id}": {
+   "delete": {
+    "operationId": "delete_quick_action_api_v1_quick_actions__action_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "action_id",
+      "required": true,
+      "schema": {
+       "title": "Action Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Quick Action"
+   }
+  },
   "/api/v1/quiz/{quiz_id}/grade": {
    "post": {
     "operationId": "grade_quiz_api_v1_quiz__quiz_id__grade_post",
@@ -37302,6 +42129,45 @@
      }
     },
     "summary": "Grade Quiz"
+   }
+  },
+  "/api/v1/rag/answers-to-note": {
+   "post": {
+    "description": "N160：从答案生成证据笔记。\n\n- ``selectedCitationIds`` 是该会话里 assistant 消息 id（带引用）；\n  非 assistant / 不属于该会话 → 422 citation_invalid（诚实拒绝，\n  绝不静默截断）；\n- 摘录段取 rag_chunks 里 LIVE 模型的精确分块文本（引用 ref +\n  原文 span），生成内容段显式标注「AI 生成」，人工修改段留空；\n- 笔记 source='ai_answer'：后续每次编辑先把上一版推入\n  lumi_note_revisions（provenance 保留，0131）。",
+    "operationId": "rag_answers_to_note_api_v1_rag_answers_to_note_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagAnswersToNoteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagAnswersToNoteResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Answers To Note"
    }
   },
   "/api/v1/rag/ask": {
@@ -37439,6 +42305,134 @@
     "summary": "Rag Enable"
    }
   },
+  "/api/v1/rag/eval-samples": {
+   "get": {
+    "description": "N159：样例列表（新→旧；cap=50 由存储层诚实强制）。",
+    "operationId": "list_rag_eval_samples_api_v1_rag_eval_samples_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalSampleList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Rag Eval Samples"
+   },
+   "post": {
+    "description": "N159：保存评测样例——服务端【立即】执行一次真实检索并捕获\n实际命中（不是裸期望）。私有：只进本用户库，绝不进入任何导出/\n分享包/备份组件（local-only，见 rag_eval.py 模块注释）。",
+    "operationId": "create_rag_eval_sample_api_v1_rag_eval_samples_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagEvalSampleCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalSample"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Rag Eval Sample"
+   }
+  },
+  "/api/v1/rag/eval-samples/{sample_id}": {
+   "delete": {
+    "operationId": "delete_rag_eval_sample_api_v1_rag_eval_samples__sample_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "sample_id",
+      "required": true,
+      "schema": {
+       "title": "Sample Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Rag Eval Sample"
+   }
+  },
+  "/api/v1/rag/eval-samples/{sample_id}/rerun": {
+   "post": {
+    "description": "N159：重放查询并与存档差分（hitExpected / missed / newHits；\nstored/now 两份命中原样回显——绝不只给结论不给证据）。",
+    "operationId": "rerun_rag_eval_sample_api_v1_rag_eval_samples__sample_id__rerun_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "sample_id",
+      "required": true,
+      "schema": {
+       "title": "Sample Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagEvalRerunDiff"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rerun Rag Eval Sample"
+   }
+  },
   "/api/v1/rag/exclusions": {
    "get": {
     "description": "F091：来源列表 + 排除状态 + 受影响分块计数预览。",
@@ -37514,6 +42508,62 @@
     "summary": "Rag Inconsistencies"
    }
   },
+  "/api/v1/rag/index-version": {
+   "get": {
+    "description": "N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。\n\nmodelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程\n可读可查），swap 完成后自然切到新模型。configuredModel 单独回显\n下一次 rebuild 将写入的模型。",
+    "operationId": "rag_index_version_api_v1_rag_index_version_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexVersion"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Version"
+   },
+   "post": {
+    "description": "N157：切换目标模型（settings 持久化；下一次 rebuild 生效）。\n\n切换本身零写入现有索引；目录外模型诚实 400 unknown_model。",
+    "operationId": "rag_index_version_switch_api_v1_rag_index_version_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagIndexVersionSwitchRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexVersionSwitch"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Index Version Switch"
+   }
+  },
   "/api/v1/rag/rebuild": {
    "post": {
     "operationId": "rag_rebuild_api_v1_rag_rebuild_post",
@@ -37549,6 +42599,165 @@
      }
     },
     "summary": "Rag Rebuild Pause"
+   }
+  },
+  "/api/v1/rag/rebuild/refs": {
+   "post": {
+    "description": "N158：局部重建——只重嵌给定 refs（≤50，本用户库范围）。\n\n- 复用增量管线（只替换这些 ref 的行），绝不触碰其他分块\n  （无全量 wipe）；投影中不存在的 ref 诚实进 ``missing``；\n- 进度持久化在 rag_jobs（kind=rebuild_subset，{done, total}），\n  轮询 GET .../refs/{jobId}；取消 = 现有暂停。",
+    "operationId": "rag_rebuild_subset_api_v1_rag_rebuild_refs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagRebuildSubsetRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildSubsetResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}": {
+   "get": {
+    "description": "N158：子集作业进度轮询（done/total + pending + missing 明细）。",
+    "operationId": "rag_rebuild_subset_status_api_v1_rag_rebuild_refs__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagSubsetJobView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Status"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}/pause": {
+   "post": {
+    "description": "N158：取消 = 暂停（批间安全点生效；游标持久化，可续）。",
+    "operationId": "rag_rebuild_subset_pause_api_v1_rag_rebuild_refs__job_id__pause_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildPauseResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Pause"
+   }
+  },
+  "/api/v1/rag/rebuild/refs/{job_id}/resume": {
+   "post": {
+    "description": "N158：从持久化游标继续 paused 的子集作业（幂等）。",
+    "operationId": "rag_rebuild_subset_resume_api_v1_rag_rebuild_refs__job_id__resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagRebuildSubsetResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Rebuild Subset Resume"
    }
   },
   "/api/v1/rag/rebuild/resume": {
@@ -41964,6 +47173,122 @@
     "summary": "Set Source Override"
    }
   },
+  "/api/v1/sources/recoveries": {
+   "get": {
+    "description": "N037：断更恢复窗口列表（error/stale → ok 跳变时由刷新记录路径\n自动创建；consumed=true 表示已加入过补读队列）。",
+    "operationId": "sources_recoveries_api_v1_sources_recoveries_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "includeConsumed",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Includeconsumed",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Sources Recoveries Api V1 Sources Recoveries Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sources Recoveries"
+   }
+  },
+  "/api/v1/sources/recoveries/{recovery_id}/to-queue": {
+   "post": {
+    "description": "N037：把恢复窗口内的条目加入今日必读队列（source=recovery）。\n\n- 一次性消费：consumed=1 原子置位；重复调用 409\n  recovery_already_consumed；\n- 逐条走队列既有 add 管线（dedup by ref：同日同条目幂等返回\n  existing 行，绝不重复入队/重排）；\n- 条目解析失败的 ref（已删除/退订）诚实跳过并计数（绝不复活）。",
+    "operationId": "recovery_to_queue_api_v1_sources_recoveries__recovery_id__to_queue_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "recovery_id",
+      "required": true,
+      "schema": {
+       "title": "Recovery Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RecoveryToQueueRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Recovery To Queue Api V1 Sources Recoveries  Recovery Id  To Queue Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Recovery To Queue"
+   }
+  },
+  "/api/v1/sources/refresh-status": {
+   "get": {
+    "description": "N036：每来源最近刷新状态（lastChecked/lastResult/pending + 最近\n5 条检查记录）。\n\n数据只来自两条写入路径（F050 手动探测 + 投影增量同步的有效交付）；\n没有任何调度器在背后跑（负向契约）。「立即检查」= 复用既有 F050\n探测（POST /api/v1/subscriptions/health-check），不另设端点。",
+    "operationId": "sources_refresh_status_api_v1_sources_refresh_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Sources Refresh Status Api V1 Sources Refresh Status Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Sources Refresh Status"
+   }
+  },
   "/api/v1/sources/replacement-preview": {
    "get": {
     "description": "F14：失效来源替换预览——基于既有发现能力，只读。\n\n从站点 URL 出发找候选 feed（排除当前 feed 自身）；不自动改订阅、\n不判断\"失效\"（那由 FreshRSS 的 feed error 状态承载）。",
@@ -42004,6 +47329,102 @@
      }
     },
     "summary": "Replacement Preview"
+   }
+  },
+  "/api/v1/sources/retention-apply": {
+   "post": {
+    "description": "N038：应用保留策略——落库 source_overrides.retention_days，\n可选立即裁剪本地投影（starred 恒排除）。\n\n**FreshRSS 零调用**（负向契约，测试以适配器 mock 断言）：本端点\n任何一个代码路径都不触上游；retention_days 只驱动派生投影的本地\n裁剪，投影可在下次同步再生（诚实行为，非上游删除替代品）。",
+    "operationId": "sources_retention_apply_api_v1_sources_retention_apply_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RetentionApplyRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Sources Retention Apply Api V1 Sources Retention Apply Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sources Retention Apply"
+   }
+  },
+  "/api/v1/sources/retention-preview": {
+   "get": {
+    "description": "N038：按来源保留策略预演（只读，投影口径估算）。\n\n响应以 note 诚实标注：「预估值基于 Lumi 投影，实际删除需在\nFreshRSS 原生界面执行」；freshrssNativeUrl 为 P09 委托入口坐标\n（未绑定 → null）。starred 恒排除并单独计数（绝不进删除路径）。",
+    "operationId": "sources_retention_preview_api_v1_sources_retention_preview_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "feedUrl",
+      "required": true,
+      "schema": {
+       "minLength": 1,
+       "title": "Feedurl",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 3650,
+       "minimum": 7,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Sources Retention Preview Api V1 Sources Retention Preview Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sources Retention Preview"
    }
   },
   "/api/v1/sources/staging": {
@@ -43439,6 +48860,108 @@
     "summary": "Recent Tasks"
    }
   },
+  "/api/v1/tts/cache": {
+   "delete": {
+    "description": "清空本人全部 TTS 缓存（返回真实删除数）。",
+    "operationId": "tts_cache_clear_api_v1_tts_cache_delete",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Tts Cache Clear"
+   },
+   "get": {
+    "description": "缓存清单（size/date；总量与 50MB 上限如实给出）。",
+    "operationId": "tts_cache_list_api_v1_tts_cache_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Tts Cache List"
+   }
+  },
+  "/api/v1/tts/cache/{entry_id}": {
+   "delete": {
+    "description": "删除一条缓存（own only：per-user 库中只存在本人的行，他人 id\n天然 404）。",
+    "operationId": "tts_cache_delete_api_v1_tts_cache__entry_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "entry_id",
+      "required": true,
+      "schema": {
+       "title": "Entry Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tts Cache Delete"
+   }
+  },
+  "/api/v1/tts/synthesize": {
+   "post": {
+    "description": "合成语音（缓存优先）。X-Cache: hit | miss 诚实区分来源。",
+    "operationId": "tts_synthesize_api_v1_tts_synthesize_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TtsSynthesizeRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Tts Synthesize"
+   }
+  },
   "/api/v1/version": {
    "get": {
     "description": "Build provenance for Web/BFF skew diagnosis.\n\nDeliberately minimal: no env dump, no paths, no secrets — just the\nrunning BFF's version/commit so a stale deployment is diagnosable\nfrom the browser (see also the web build commit on the About page).",
@@ -43509,14 +49032,16 @@
   },
   "/api/v1/workspace-archive": {
    "get": {
-    "description": "F084 归档列表入口（默认导航隐藏，这里显式可见）。",
+    "description": "F084 归档列表入口（默认导航隐藏，这里显式可见）。\n\nN119：每个归档工作区附摘要卡（itemCount / doneCount / goalProgress\n/ archivedAt / daysActive）——全部从真实行派生，绝不估算。",
     "operationId": "list_archived_workspaces_api_v1_workspace_archive_get",
     "responses": {
      "200": {
       "content": {
        "application/json": {
         "schema": {
-         "items": {},
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceArchiveEntry"
+         },
          "title": "Response List Archived Workspaces Api V1 Workspace Archive Get",
          "type": "array"
         }
@@ -44266,6 +49791,290 @@
     "summary": "Workspace Cleanup Undo"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/collect-rules": {
+   "get": {
+    "description": "N118：规则列表（created_at 升序）。未知工作区 → 404。",
+    "operationId": "list_collect_rules_api_v1_workspaces__workspace_id__collect_rules_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRuleList"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Collect Rules"
+   },
+   "post": {
+    "description": "N118：创建规则（feedUrl | tag | keyword 恰好其一；maxItems ≤100）。\n\n规则只是条件 + 上限 + 开关，绝不后台执行——收集只由显式 apply\n触发（手动按钮语义，见模块注释）。",
+    "operationId": "create_collect_rule_api_v1_workspaces__workspace_id__collect_rules_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCollectRuleCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRule"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}": {
+   "delete": {
+    "operationId": "delete_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Collect Rule"
+   },
+   "patch": {
+    "description": "N118：暂停/恢复（enabled set 语义；不触碰 added_count）。",
+    "operationId": "patch_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceCollectRuleEnabledPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectRule"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/apply": {
+   "post": {
+    "description": "N118：手动应用——命中条目以 ref 引用进工作区（幂等；受规则\n``maxItems`` 累计上限约束；暂停规则零新增并诚实回显 enabled）。",
+    "operationId": "apply_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__apply_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectApplyResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Collect Rule"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/preview": {
+   "post": {
+    "description": "N118：预演（dry-run，有界 50）——投影实时匹配，绝不写库、\n绝不触发上游抓取。",
+    "operationId": "preview_collect_rule_api_v1_workspaces__workspace_id__collect_rules__rule_id__preview_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "rule_id",
+      "required": true,
+      "schema": {
+       "title": "Rule Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceCollectPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Collect Rule"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/compile": {
    "post": {
     "description": "N114：按大纲汇编草稿（纯预览，绝不落库）。\n\n- 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；\n- 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；\n- 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），\n  绝不冒充内容。",
@@ -44880,6 +50689,65 @@
     "summary": "Move Workspace Item Group"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/move": {
+   "post": {
+    "description": "N108：跨工作区移动成员（同一 ItemRef——底层对象绝不复制）。\n\n- 幂等：目标已有该条目默认 skip（结果 duplicate=true，绝不产生\n  第二份内容）；``onDuplicate='conflict'`` 显式选择 409；\n- ``keepInSource=true`` 保留源成员关系（双工作区同持）；\n- 预览侧（Web 移动对话框）用既有列表 API 展示重复/关系影响。",
+    "operationId": "move_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__move_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemMoveResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Move Workspace Item"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
    "put": {
     "description": "N102：设置固定标记（set 语义非 toggle；幂等重放不 bump）。\n\n固定条目在分组视图中排所有组之前；移除需 DELETE ?force=1。",
@@ -45186,6 +51054,57 @@
      }
     },
     "summary": "Save As Template"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/search": {
+   "get": {
+    "description": "N109：在「当前工作区自己的条目」内做标题 + 全文检索。\n\n范围严格限定工作区成员关系：先把 workspace_items 的 ref 全部取出，\n再按域查各自的派生投影（rss → search_entries.content_text；library\n→ search_library.body）。其他工作区的条目即使内容命中也绝不返回；\n投影缺失（ref 已失效/未同步）的成员诚实跳过。命中 ≤200 条，每条\n摘要 ≤160 字符。",
+    "operationId": "search_workspace_api_v1_workspaces__workspace_id__search_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 1,
+       "title": "Q",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSearchResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Workspace"
    }
   },
   "/api/v1/workspaces/{workspace_id}/sections": {
@@ -45591,6 +51510,54 @@
     "summary": "Remove Workspace Section Item"
    }
   },
+  "/api/v1/workspaces/{workspace_id}/share-package": {
+   "post": {
+    "description": "N116：汇编只读分享包（自包含静态 HTML 下载）。\n\n- 与 N114 同一大纲/解析口径；私人笔记绝不进入（includeNotes\n  固定 false——传 true 是 422 契约错误，不是静默忽略）；\n- 引文链接策略：绝对 http(s) → 真链接；应用内路由 → 仅当配置\n  ``LUMIRSS_PUBLIC_URL`` 时拼公开绝对链接，否则纯文本诚实省略；\n- 每条附来源标注，文末隐私提示；包内绝无 cookie/token/凭据/\n  绝对本地路径（测试断言）。",
+    "operationId": "export_share_package_api_v1_workspaces__workspace_id__share_package_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SharePackageRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Share Package"
+   }
+  },
   "/api/v1/workspaces/{workspace_id}/snapshots": {
    "get": {
     "description": "快照列表（新→旧）。未知工作区 → 404（诚实报错）。",
@@ -45677,6 +51644,64 @@
      }
     },
     "summary": "Capture Workspace Snapshot"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id_a}/diff/{snapshot_id_b}": {
+   "get": {
+    "description": "N115：两快照差异（纯只读）。\n\n- ``added`` / ``removed``：B 相对 A 的成员增减（ref 列表）；\n- ``moved``：两者都有但位置变化（fromPos → toPos）；\n- ``groupChanges``：两者都有但分组归属变化（null = 未分组）；\n- ref 的内容定位走既有 views/resolve 端点（本端点绝不解析内容，\n  绝不触碰工作区成员行）。",
+    "operationId": "diff_workspace_snapshots_api_v1_workspaces__workspace_id__snapshots__snapshot_id_a__diff__snapshot_id_b__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id_a",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id A",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "snapshot_id_b",
+      "required": true,
+      "schema": {
+       "title": "Snapshot Id B",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceSnapshotDiff"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Diff Workspace Snapshots"
    }
   },
   "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id}": {

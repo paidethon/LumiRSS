@@ -74,6 +74,9 @@ import { GptDigestSection } from './GptDigestSection'
 import { AccountSecuritySection } from './AccountSecuritySection'
 // P13：快捷键分配 UI（捕获 / 冲突覆盖 / 导入导出；引擎 lib/custom-shortcuts）
 import { ShortcutsSettingsSection } from './ShortcutsSettingsSection'
+import { ScenarioWizardSection } from './ScenarioWizardSection'
+import { QuickActionsSection } from './QuickActionsSection'
+import { TtsCacheSection } from './TtsCacheSection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
 import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
@@ -101,6 +104,8 @@ import { SettingsHistorySection } from './SettingsHistorySection'
 import { OfflineQuotaSection } from './OfflineQuotaSection'
 // N181：逐来源数据外发清单（来自真实配置，只读）
 import { PrivacyDataFlowsSection } from './PrivacyDataFlowsSection'
+import { DataWizardSection } from './DataWizardSection'
+import { ActivityPurgeSection } from './ActivityPurgeSection'
 // R03：来源显示别名（设备本地 Map<feedTitle, alias>，仅展示层替换）
 import { SourceAliasSettings } from '../SourceAliasSettings'
 // N067：触控操作练习区（手势重映射的安全练习台账）
@@ -401,6 +406,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
     case 'general':
       return [
         { type: 'title', value: '应用程序' },
+        // N200：功能组合场景向导（diff 预览 + 可整体撤销的批量应用）
+        { type: 'custom', node: <ScenarioWizardSection /> },
         {
           type: 'custom',
           node: (
@@ -528,10 +535,16 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
     case 'shortcuts':
       // P13：快捷键分配 UI（捕获 / 冲突覆盖 / 清除 / 恢复默认 / 导入导出）。
       // 单一真源仍为 SHORTCUT_ACTIONS + effectiveShortcuts（帮助弹窗同源）。
+      // N199：多步快捷操作（定义在服务端；执行走各动作 NORMAL 端点）。
       return [
         {
           type: 'custom',
           node: <ShortcutsSettingsSection />,
+        },
+        { type: 'title', value: '多步快捷操作' },
+        {
+          type: 'custom',
+          node: <QuickActionsSection />,
         },
       ]
     case 'translation':
@@ -596,6 +609,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         // N183：离线资料设备配额（枚举/用量/清理预览/应用；只删本设备缓存条目）
         { type: 'custom', node: <OfflineQuotaSection /> },
+        // N098：服务端 TTS 缓存（size/date + 单条/全部删除；50MB LRU）
+        { type: 'title', value: '音频生成缓存' },
+        { type: 'custom', node: <TtsCacheSection /> },
         { type: 'title', value: '设置' },
         {
           type: 'action',
@@ -621,6 +637,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
             void exportLumiData()
           },
         },
+        // N010：个人数据迁出/迁入向导（选择范围 + zip 导出 + 导入合并）
+        { type: 'custom', node: <DataWizardSection /> },
         // F36：存储用量（口径明确，只读统计 + 预算提醒展示）
         { type: 'custom', node: <StorageUsageSection /> },
         // F114：派生数据保留策略（默认关；预览 → 应用；N188 到期提醒横幅）
@@ -629,6 +647,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         { type: 'title', value: '隐私' },
         // N181：逐来源数据外发清单（未配置 = 不发送）
         { type: 'custom', node: <PrivacyDataFlowsSection /> },
+        // N189：清除活动记录（登录事件 / AI 任务日志 / 搜索快照；预览 → 确认）
+        { type: 'custom', node: <ActivityPurgeSection /> },
       ]
     case 'services':
       // 0018 Gate 9：账户与服务 —— 会话账户安全（session 模式）+ 真实

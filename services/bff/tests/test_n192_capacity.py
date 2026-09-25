@@ -146,7 +146,14 @@ def test_capacity_numbers_equal_raw_queries(capacity_env):
     # bob 暂停 → users.paused = 1。
     users = env["client"].get("/api/v1/admin/users", headers=env["owner"]).json()
     bob_id = next(row["id"] for row in users if row["username"] == B_USER)
-    assert env["client"].post(f"/api/v1/admin/users/{bob_id}/pause", headers=env["owner"]).status_code == 200
+    step_up = env["client"].post(
+        "/api/v1/admin/step-up",
+        json={"password": PASSWORD},
+        headers=env["owner"],
+    )
+    assert step_up.status_code == 200, step_up.text
+    pause_headers = {**env["owner"], "X-Lumi-Step-Up": step_up.json()["token"]}
+    assert env["client"].post(f"/api/v1/admin/users/{bob_id}/pause", headers=pause_headers).status_code == 200
 
     response = env["client"].get("/api/v1/admin/capacity", headers=env["owner"])
     assert response.status_code == 200, response.text

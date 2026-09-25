@@ -36,7 +36,10 @@ function withProviders(ui: React.ReactNode) {
 }
 
 async function openCategory(name: string) {
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(name) }))
+  // 精确匹配左侧导航分类按钮（N200 场景按钮等正文内容可能同名子串）
+  fireEvent.click(
+    screen.getByRole('button', { name: new RegExp(`^${name}$`) })
+  )
   // 等分类内容挂载（sources 分类含异步区块）
   await waitFor(() => {
     expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument()

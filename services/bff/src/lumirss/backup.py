@@ -838,13 +838,24 @@ class BackupEngine:
         self._tasks.discard(task)
         self._busy = False
 
-    async def run_restore(self, service: Any, session_id: str, confirmation: str) -> Any:
-        """Serialize a destructive restore against backup submissions."""
+    async def run_restore(
+        self,
+        service: Any,
+        session_id: str,
+        confirmation: str,
+        decisions: dict[str, str] | None = None,
+    ) -> Any:
+        """Serialize a destructive restore against backup submissions.
+
+        N187：``decisions``（路径 → 'skip' | 'overwrite'，缺省 skip）
+        透传给 RestoreService.execute，逐对象冲突决策在恢复会话里记账。"""
         if self._busy:
             raise BackupBusy("A backup or restore is already running.")
         self._busy = True
         try:
-            return await service.execute(session_id, confirmation)
+            return await service.execute(
+                session_id, confirmation, decisions=decisions
+            )
         finally:
             self._busy = False
 

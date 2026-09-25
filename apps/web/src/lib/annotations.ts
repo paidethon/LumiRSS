@@ -331,6 +331,8 @@ export async function syncAnnotationsWithServer(): Promise<void> {
 
 /** 新增 / 更新一条批注：本地缓存立即生效 + 服务端异步写入。 */
 export function saveAnnotation(annotation: Annotation): void {
+  const existing = readAllAnnotations().find((a) => a.id === annotation.id)
+  const isNew = existing === undefined // N080：只有新建才计「阅读成果」
   const rest = readAllAnnotations().filter((a) => a.id !== annotation.id)
   writeAll([...rest, annotation])
   void (async () => {
@@ -341,6 +343,11 @@ export function saveAnnotation(annotation: Annotation): void {
         a.id === annotation.id ? { ...a, id: saved.id } : a,
       )
       writeAll(withServerId)
+      if (isNew) {
+        // N080：实际创建成功才记录（更新/失败不计）。
+        const { recordRecapEvent } = await import('./session-recap')
+        recordRecapEvent('annotation', annotation.entryRef)
+      }
     } catch {
       // 离线：本地缓存仍有效，服务端同步待下次 sync 补偿
     }

@@ -11,6 +11,8 @@
  * 「从视口顶部段落开始」的文本收集算法（几何输入由调用方注入）。
  * 平台能力缺失 = 按钮诚实禁用，不假装派发。 */
 
+import { classifySpeechError } from './playback-diagnostics'
+
 /** 与 Reader 的 ANCHOR_SELECTOR 同源的朗读块选择器（正文段落级元素）。 */
 export const SPEECH_BLOCK_SELECTOR = [
   '.lumi-reader-article p',
@@ -112,6 +114,35 @@ export type SpeechRate = (typeof SPEECH_RATES)[number]
  * 只在块边界检查——暂停期间没有块边界，恢复后才停，实际停止可能晚于
  * 设定（诚实语义，面板有说明文案）。 */
 export const SPEECH_SLEEP_TIMER_MINUTES = [0, 5, 10, 15, 30] as const
+
+// ---- NF1 N093：按语言自动选声（块级 CJK/拉丁启发式） ----
+
+/** 块级语言判定：统计 CJK 统一表意字符与拉丁字母个数，多者赢。
+ * 混排（如中文段落里的个别英文词）天然落在占比高的一侧；两类都没有
+ * （空/纯标点）→ 'zh'（默认朗读语言的保守回退）。只做中/英两档粗粒度
+ * 近似——与按语言选声设置的两档（中/英）一一对应，不做更细的假装。 */
+export function detectSpeechLanguage(text: string): 'zh' | 'en' {
+  const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) ?? []).length
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length
+  if (cjk === 0 && latin === 0) return 'zh'
+  return cjk >= latin ? 'zh' : 'en'
+}
+
+// ---- NF1 N096：朗读结束模式（到本篇 / 到本队列） ----
+
+export const SPEECH_STOP_MODES = [
+  { key: 'article', label: '到本篇' },
+  { key: 'queue', label: '到本队列' },
+] as const
+
+export type SpeechStopMode = (typeof SPEECH_STOP_MODES)[number]['key']
+
+/** 结束模式归一化：非法值回退 'article'（既有语义）。 */
+export function normalizeSpeechStopMode(value: unknown): SpeechStopMode {
+  return SPEECH_STOP_MODES.some((m) => m.key === value)
+    ? (value as SpeechStopMode)
+    : 'article'
+}
 
 /** 能力检测：speechSynthesis 可用性（jsdom/极老浏览器 → false）。 */
 export function speechSynthesisAvailable(): boolean {
@@ -455,12 +486,24 @@ export function capSpeechBlocks(
 
 export interface SpeechEngineConfig {
   rate: SpeechRate
-  /** 首选声音 voiceURI；null / '' = 自动（pickVoice：zh 优先）。 */
+  /** 首选声音 voiceURI；null / '' = 自动（pickVoice：zh 优先）。
+   * N093：非空 = 手动覆盖，优先于按语言自动选声。 */
   voiceURI: string | null
   /** 声音挑选的语言前缀（默认中文场景 'zh'）。 */
   langPrefix: string
   /** NF1 N097：原文 → 译文间隔毫秒数（仅译文条目前插入；0 = 无间隔）。 */
   interPairGapMs?: number
+  /** NF1 N093：按语言自动选声（块级 CJK/拉丁判定；仅 voiceURI 为空时
+   * 生效——手动覆盖恒赢）。 */
+  perLanguageVoices?: boolean
+  /** NF1 N093：中文块首选声音 voiceURI（null / '' = pickVoice 自动链）。 */
+  voiceURIZh?: string | null
+  /** NF1 N093：英文/拉丁块首选声音 voiceURI（null / '' = 自动链）。 */
+  voiceURIEn?: string | null
+  /** NF1 N096：朗读结束模式——'article' 本篇读完即结束（onEnd）；
+   * 'queue' 队列耗尽时向队列续读源要下一批条目，拿到则继续朗读
+   * （阅读队列流驱动），拿不到则诚实按本篇结束（无队列流 = no-op）。 */
+  stopMode?: SpeechStopMode
 }
 
 export interface SpeechBlockInfo {
@@ -496,6 +539,9 @@ export class ReaderSpeechEngine {
   private sleepDeadline: number | null = null
   /** NF1 N097：原文 → 译文间隔定时器（stop/finish 清除；代次比对兜底）。 */
   private gapTimer: ReturnType<typeof setTimeout> | null = null
+  /** NF1 N096：阅读队列续读源（返回下一批队列条目；null = 无队列流）。
+   * 仅 stopMode='queue' 且队列耗尽时询问一次。 */
+  private queueContinuation: (() => SpeechQueueItem[] | null) | null = null
 
   constructor(
     config: SpeechEngineConfig,
@@ -520,6 +566,24 @@ export class ReaderSpeechEngine {
   get progress(): { position: number; total: number } | null {
     if (this.stopped) return null
     return { position: this.queuePos + 1, total: this.queue.length }
+  }
+
+  /** NF1 N096：剩余未读块数（含当前块之后全部条目；无会话 → null）。
+   * 面板用于「剩余 N 段」展示。 */
+  get remainingBlocks(): number | null {
+    if (this.stopped) return null
+    return Math.max(0, this.queue.length - this.queuePos)
+  }
+
+  /** NF1 N096：注册/清除队列续读源（阅读队列流驱动时由调用方注入；
+   * null = 无队列流，stopMode='queue' 诚实退化为本篇结束）。 */
+  setQueueContinuation(provider: (() => SpeechQueueItem[] | null) | null): void {
+    this.queueContinuation = provider
+  }
+
+  /** NF1 N096：改结束模式。不重读当前块——模式只在队列耗尽的边界生效。 */
+  setStopMode(mode: SpeechStopMode): void {
+    this.config = { ...this.config, stopMode: mode }
   }
 
   /** 从 startBlockIndex 块开始逐块朗读（空块跳过，原始下标保留给高亮；
@@ -641,27 +705,45 @@ export class ReaderSpeechEngine {
     utterance.rate = this.config.rate
     // 每块出声前重取 getVoices()——voices 异步加载的浏览器在会话中途
     // 也能拿到晚到的声音（下一块即生效）。
-    const voice = pickVoice(
-      synthesis.getVoices(),
-      this.config.langPrefix,
-      this.config.voiceURI,
-    )
+    const voices = synthesis.getVoices()
+    let blockLang: 'zh' | 'en' = 'zh'
+    let voice: SpeechSynthesisVoice | null
+    if (
+      this.config.perLanguageVoices === true &&
+      (this.config.voiceURI ?? '') === ''
+    ) {
+      // NF1 N093：块级语言判定选该语言的配置声音；无手动覆盖时生效。
+      blockLang = detectSpeechLanguage(entry.text)
+      const preferred =
+        blockLang === 'zh'
+          ? (this.config.voiceURIZh ?? null)
+          : (this.config.voiceURIEn ?? null)
+      voice = pickVoice(voices, blockLang, preferred)
+    } else {
+      voice = pickVoice(voices, this.config.langPrefix, this.config.voiceURI)
+    }
     if (voice !== null) {
       utterance.voice = voice
       utterance.lang = voice.lang
     } else {
-      utterance.lang = 'zh-CN'
+      // 诚实降级：没有可用声音时至少把 lang 标成块的实际语言（系统
+      // 默认引擎按 lang 挑音），不假装拿到了声音。
+      utterance.lang = blockLang === 'en' ? 'en-US' : 'zh-CN'
     }
     utterance.onend = () => {
       if (gen !== this.generation) return
       this.queuePos += 1
       this.speakNext()
     }
-    utterance.onerror = () => {
+    utterance.onerror = (event: Event) => {
       if (gen !== this.generation) return
+      // N100：错误分型（network / decode / missing / unauthorized）。
+      // 引擎侧从不自动重试——stop 即停机，处置交给用户（有界）。
+      const errorCode = (event as { error?: string } | null)?.error ?? null
+      const failure = classifySpeechError(errorCode, voices.length)
       const onError = this.callbacks.onError
       this.stop()
-      onError?.('朗读失败，请重试。')
+      onError?.(`${failure.message}${failure.hint}`)
     }
     synthesis.speak(utterance)
     this.callbacks.onBlockChange?.({
@@ -672,6 +754,24 @@ export class ReaderSpeechEngine {
   }
 
   private finish(): void {
+    // NF1 N096：队列结束模式——阅读队列流驱动时向续读源要下一批条目，
+    // 拿到则接续朗读（同一会话，不触发 onEnd）；没有队列流 / 续读源
+    // 返回空 → 诚实按本篇结束（no-op），照常触发 onEnd。
+    if (this.config.stopMode === 'queue' && this.queueContinuation !== null) {
+      const next = this.queueContinuation()
+      if (next !== null && next.length > 0) {
+        const trimmed = next
+          .map((item) => ({ ...item, text: item.text.trim() }))
+          .filter((item) => item.text !== '')
+        const capped = capQueue(trimmed, SPEECH_MAX_CHARS)
+        if (capped.length > 0) {
+          this.queue = capped
+          this.queuePos = 0
+          this.speakNext()
+          return
+        }
+      }
+    }
     this.generation += 1
     this.stopped = true
     this.queue = []

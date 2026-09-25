@@ -8,10 +8,16 @@ goes through the Source Registry (:mod:`lumirss.sources`). The reserved
 import asyncio
 import logging
 from datetime import UTC
+from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
-from lumirss.itemref import InvalidItemRef
+from lumirss.itemref import (
+    LIBRARY_DOMAIN,
+    RSS_DOMAIN,
+    InvalidItemRef,
+    parse_item_ref,
+)
 from lumirss.models import (
     CompileExcluded,
     CompileItem,
@@ -27,6 +33,7 @@ from lumirss.models import (
     ResearchPackRequest,
     ResolvedItem,
     ResolveRequest,
+    SharePackageRequest,
     Workspace,
     WorkspaceCleanupApplyRequest,
     WorkspaceCleanupApplyResult,
@@ -41,6 +48,8 @@ from lumirss.models import (
     WorkspaceItem,
     WorkspaceItemAddRequest,
     WorkspaceItemGroupMoveRequest,
+    WorkspaceItemMoveRequest,
+    WorkspaceItemMoveResult,
     WorkspaceItemPinRequest,
     WorkspaceItemsResolvedResponse,
     WorkspaceItemsResponse,
@@ -50,6 +59,8 @@ from lumirss.models import (
     WorkspaceResumePointer,
     WorkspaceResumePutRequest,
     WorkspaceResumeResponse,
+    WorkspaceSearchHit,
+    WorkspaceSearchResponse,
     WorkspaceSectionCreate,
     WorkspaceSectionItem,
     WorkspaceSectionItemAddRequest,
@@ -60,6 +71,7 @@ from lumirss.models import (
     WorkspaceSectionView,
     WorkspaceSnapshot,
     WorkspaceSnapshotCreate,
+    WorkspaceSnapshotDiff,
     WorkspaceSnapshotList,
     WorkspaceSnapshotRestoreRequest,
     WorkspaceSnapshotRestoreResult,
@@ -74,6 +86,7 @@ from lumirss.util import utc_now
 from lumirss.workspaces import (
     RESERVED_WORKSPACE_ID,
     WorkspaceInvalid,
+    WorkspaceItemDuplicate,
     WorkspaceNotFound,
     WorkspaceStore,
 )
@@ -274,7 +287,26 @@ async def add_workspace_item(
         raise WorkspaceInvalid("引用的内容不存在，无法加入工作区。") from exc
     store: WorkspaceStore = _get_workspace_store(request)
     item = await store.add_item(workspace_id, payload.itemRef, payload.groupName)
-    return _item_model(item)
+    # N047：canonical URL 撞车检查（非阻断——条目已加入；warning 附在
+    # 响应里，客户端提供 定位/仍要加入）。比较范围 = 队列 pending 行 +
+    # 队列冻结快照 + 本工作区其他成员。解析不出 URL 的条目不提示。
+    duplicate_warning = None
+    try:
+        from lumirss.link_dedupe import find_duplicate_for_ref
+
+        same_ws = [
+            (other.item_ref, "workspace")  # ItemRef 同构：rss:<entryRef>
+            for other in await store.list_items(workspace_id, limit=200)
+            if other.item_ref != payload.itemRef
+        ]
+        duplicate_warning = await find_duplicate_for_ref(
+            request.app.state.db, payload.itemRef, extra_refs=same_ws
+        )
+    except Exception:  # noqa: BLE001 — 提示是尽力而为，绝不阻断加入
+        duplicate_warning = None
+    model = _item_model(item)
+    model.duplicateWarning = duplicate_warning
+    return model
 
 
 @router.get(
@@ -324,6 +356,58 @@ async def remove_workspace_item(
     if not removed:
         raise WorkspaceInvalid("Item is not a member of this workspace.")
     return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/move",
+    response_model=WorkspaceItemMoveResult,
+)
+async def move_workspace_item(
+    workspace_id: str,
+    item_ref: str,
+    payload: WorkspaceItemMoveRequest,
+    request: Request,
+) -> Any:
+    """N108：跨工作区移动成员（同一 ItemRef——底层对象绝不复制）。
+
+    - 幂等：目标已有该条目默认 skip（结果 duplicate=true，绝不产生
+      第二份内容）；``onDuplicate='conflict'`` 显式选择 409；
+    - ``keepInSource=true`` 保留源成员关系（双工作区同持）；
+    - 预览侧（Web 移动对话框）用既有列表 API 展示重复/关系影响。"""
+    from fastapi.responses import JSONResponse
+
+    if payload.targetWorkspaceId == workspace_id:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "invalid_workspace",
+                    "message": "目标工作区不能与源工作区相同。",
+                }
+            },
+        )
+    store: WorkspaceStore = _get_workspace_store(request)
+    try:
+        result = await store.move_item(
+            workspace_id,
+            item_ref,
+            payload.targetWorkspaceId,
+            keep_in_source=payload.keepInSource,
+            on_duplicate=payload.onDuplicate,
+        )
+    except WorkspaceItemDuplicate:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "workspace_item_duplicate",
+                    "message": "目标工作区已存在该条目（onDuplicate=conflict）。",
+                }
+            },
+        )
+    if result is None:
+        raise WorkspaceInvalid("Item is not a member of this workspace.")
+    return WorkspaceItemMoveResult(**result)
 
 
 @router.get(
@@ -476,6 +560,32 @@ async def restore_workspace_snapshot(
     )
 
 
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/snapshots/{snapshot_id_a}/diff/{snapshot_id_b}",
+    response_model=WorkspaceSnapshotDiff,
+)
+async def diff_workspace_snapshots(
+    workspace_id: str,
+    snapshot_id_a: str,
+    snapshot_id_b: str,
+    request: Request,
+) -> WorkspaceSnapshotDiff:
+    """N115：两快照差异（纯只读）。
+
+    - ``added`` / ``removed``：B 相对 A 的成员增减（ref 列表）；
+    - ``moved``：两者都有但位置变化（fromPos → toPos）；
+    - ``groupChanges``：两者都有但分组归属变化（null = 未分组）；
+    - ref 的内容定位走既有 views/resolve 端点（本端点绝不解析内容，
+      绝不触碰工作区成员行）。"""
+    ws_store: WorkspaceStore = _get_workspace_store(request)
+    if await ws_store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    result = await _snapshot_store(request).diff(
+        workspace_id, snapshot_id_a, snapshot_id_b
+    )
+    return WorkspaceSnapshotDiff(**result)
+
+
 @router.put(
     "/api/v1/workspaces/{workspace_id}/resume",
     response_model=WorkspaceResumeResponse,
@@ -550,6 +660,138 @@ async def workspace_contents(
         )
     )
     return WorkspaceItemsResolvedResponse(items=_resolved_models(resolved))
+
+
+# ---- N109：工作区标签全文检索 ------------------------------------------------
+
+_WORKSPACE_SEARCH_MAX_HITS = 200
+_WORKSPACE_SEARCH_EXCERPT = 160
+# SQLite 变量数上限远大于此；分块只为了让超大工作区（≤500 成员）的
+# IN 查询保持有界。
+_SEARCH_IN_CHUNK = 100
+
+
+def _search_excerpt(text: str, needle_lower: str, limit: int) -> str:
+    """命中处上下文摘要（≤limit 字符；截断侧加 …）。仅标题命中 → 标题。"""
+    text = str(text or "")
+    idx = text.lower().find(needle_lower)
+    if idx < 0:
+        return text[:limit]
+    start = max(0, idx - limit // 4)
+    chunk = text[start : start + limit]
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if start + limit < len(text) else ""
+    return f"{prefix}{chunk}{suffix}"
+
+
+async def _fetch_projection_rows(
+    db, table: str, key_col: str, keys: list[str], fields: tuple[str, ...]
+) -> dict[str, dict]:
+    """按主键分块拉取搜索投影行（表/列名均为代码内常量，值全部绑定）。"""
+    out: dict[str, dict] = {}
+    for start in range(0, len(keys), _SEARCH_IN_CHUNK):
+        chunk = keys[start : start + _SEARCH_IN_CHUNK]
+        placeholders = ",".join("?" for _ in chunk)
+        rows = await db.fetch_all(
+            f"SELECT {key_col} AS _key, {', '.join(fields)} FROM {table} WHERE {key_col} IN ({placeholders})",
+            tuple(chunk),
+        )
+        for row in rows:
+            out[str(row["_key"])] = dict(row)
+    return out
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/search",
+    response_model=WorkspaceSearchResponse,
+)
+async def search_workspace(
+    workspace_id: str,
+    request: Request,
+    q: str = Query(min_length=1, max_length=200),
+) -> WorkspaceSearchResponse:
+    """N109：在「当前工作区自己的条目」内做标题 + 全文检索。
+
+    范围严格限定工作区成员关系：先把 workspace_items 的 ref 全部取出，
+    再按域查各自的派生投影（rss → search_entries.content_text；library
+    → search_library.body）。其他工作区的条目即使内容命中也绝不返回；
+    投影缺失（ref 已失效/未同步）的成员诚实跳过。命中 ≤200 条，每条
+    摘要 ≤160 字符。"""
+    needle = q.strip().lower()
+    store: WorkspaceStore = _get_workspace_store(request)
+    if await store.get_workspace(workspace_id) is None:
+        raise WorkspaceNotFound(workspace_id)
+    if needle == "":
+        return WorkspaceSearchResponse(workspaceId=workspace_id, query=q, results=[])
+    members = await store.list_items(workspace_id, limit=_MAX_ITEM_LIMIT)
+
+    rss_keys: list[str] = []
+    library_keys: list[str] = []
+    for item in members:
+        try:
+            ref = parse_item_ref(item.item_ref)
+        except InvalidItemRef:
+            continue  # 损坏的 ref 不参与匹配（成员列表自身会把它显示为失效）
+        if ref.domain == RSS_DOMAIN:
+            rss_keys.append(ref.key)
+        elif ref.domain == LIBRARY_DOMAIN:
+            # search_library.ref 存完整 itemRef 形态（library:<uuid>）。
+            library_keys.append(item.item_ref)
+    rss_rows = await _fetch_projection_rows(
+        request.app.state.db, "search_entries", "entry_ref", rss_keys, ("title", "content_text")
+    )
+    library_rows = await _fetch_projection_rows(
+        request.app.state.db, "search_library", "ref", library_keys, ("title", "body")
+    )
+
+    results: list[WorkspaceSearchHit] = []
+    truncated = False
+    for item in members:
+        try:
+            ref = parse_item_ref(item.item_ref)
+        except InvalidItemRef:
+            continue
+        if ref.domain == RSS_DOMAIN:
+            row = rss_rows.get(ref.key)
+            body = str(row.get("content_text", "")) if row else ""
+        elif ref.domain == LIBRARY_DOMAIN:
+            row = library_rows.get(item.item_ref)
+            body = str(row.get("body", "")) if row else ""
+        else:
+            continue
+        if row is None:
+            continue  # 投影缺失 → 无标题也无内容可匹配，诚实跳过
+        title = str(row.get("title", "") or "")
+        in_title = needle in title.lower()
+        in_content = needle in body.lower()
+        if not in_title and not in_content:
+            continue
+        if len(results) >= _WORKSPACE_SEARCH_MAX_HITS:
+            truncated = True
+            break
+        if in_title and in_content:
+            matched_in = "title+content"
+        elif in_title:
+            matched_in = "title"
+        else:
+            matched_in = "content"
+        excerpt = (
+            _search_excerpt(body, needle, _WORKSPACE_SEARCH_EXCERPT)
+            if in_content
+            else title[:_WORKSPACE_SEARCH_EXCERPT]
+        )
+        results.append(
+            WorkspaceSearchHit(
+                itemRef=item.item_ref,
+                domain=ref.domain,
+                title=title,
+                excerpt=excerpt,
+                matchedIn=matched_in,
+            )
+        )
+    return WorkspaceSearchResponse(
+        workspaceId=workspace_id, query=q, truncated=truncated, results=results
+    )
 
 
 @router.post(
@@ -931,19 +1173,13 @@ async def _compile_notes(
     return notes
 
 
-@router.post(
-    "/api/v1/workspaces/{workspace_id}/compile",
-    response_model=CompileResponse,
-)
-async def compile_workspace(
+async def _compile_workspace_internal(
     workspace_id: str, payload: CompileRequest, request: Request
-) -> CompileResponse:
-    """N114：按大纲汇编草稿（纯预览，绝不落库）。
+) -> tuple[CompileResponse, dict[str, ResolvedItem], Any]:
+    """N114 汇编草稿构建（compile / markdown / N116 分享包共用）。
 
-    - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
-    - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
-    - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
-      绝不冒充内容。"""
+    返回 (draft, resolved_by_ref, workspace_summary)：分享包需要解析
+    视图做来源标注，草稿本体不含 source/datetime 字段。"""
     store = _get_workspace_store(request)
     summary = await store.get_workspace(workspace_id)
     if summary is None:
@@ -1020,7 +1256,7 @@ async def compile_workspace(
                 sectionId=section["id"], title=section["title"], items=items
             )
         )
-    return CompileResponse(
+    draft = CompileResponse(
         workspaceId=workspace_id,
         workspaceName=summary.name,
         generatedAt=utc_now(),
@@ -1029,6 +1265,26 @@ async def compile_workspace(
         excludedMissing=len(excluded),
         excluded=excluded,
     )
+    return draft, resolved, summary
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/compile",
+    response_model=CompileResponse,
+)
+async def compile_workspace(
+    workspace_id: str, payload: CompileRequest, request: Request
+) -> CompileResponse:
+    """N114：按大纲汇编草稿（纯预览，绝不落库）。
+
+    - 每个分节：标题 + 成员（标题 / 摘录 ≤200 / 引文链接 / 自有笔记）；
+    - 无分节（或全部为空大纲）→ 单一隐式节（工作区名，平铺全部成员）；
+    - 已消失 / 未授权的引用诚实排除并计数（excluded + excludedMissing），
+      绝不冒充内容。"""
+    draft, _resolved, _summary = await _compile_workspace_internal(
+        workspace_id, payload, request
+    )
+    return draft
 
 
 def _compile_markdown(draft: CompileResponse) -> str:
@@ -1076,6 +1332,44 @@ async def compile_workspace_markdown(
         content=text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'inline; filename="compile-{workspace_id}.md"'},
+    )
+
+
+@router.post("/api/v1/workspaces/{workspace_id}/share-package")
+async def export_share_package(
+    workspace_id: str, payload: SharePackageRequest, request: Request
+) -> Response:
+    """N116：汇编只读分享包（自包含静态 HTML 下载）。
+
+    - 与 N114 同一大纲/解析口径；私人笔记绝不进入（includeNotes
+      固定 false——传 true 是 422 契约错误，不是静默忽略）；
+    - 引文链接策略：绝对 http(s) → 真链接；应用内路由 → 仅当配置
+      ``LUMIRSS_PUBLIC_URL`` 时拼公开绝对链接，否则纯文本诚实省略；
+    - 每条附来源标注，文末隐私提示；包内绝无 cookie/token/凭据/
+      绝对本地路径（测试断言）。"""
+    from urllib.parse import quote
+
+    from lumirss.config import LumiSettings
+    from lumirss.workspace_share import render_share_package_html
+
+    draft, resolved, _summary = await _compile_workspace_internal(
+        workspace_id,
+        CompileRequest(sectionIds=payload.sectionIds),
+        request,
+    )
+    html_text = render_share_package_html(
+        draft,
+        resolved,
+        public_base_url=LumiSettings().LUMIRSS_PUBLIC_URL,
+    )
+    filename = f"share-package-{workspace_id}.html"
+    quoted = quote(filename)
+    return Response(
+        content=html_text,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted}"
+        },
     )
 
 

@@ -238,14 +238,33 @@ def test_paused_member_loses_access_immediately(env):
     client = env["client"]
     users = client.get("/api/v1/admin/users", headers={"cookie": env["owner"]["cookie"]})
     a_id = next(row["id"] for row in users.json() if row["username"] == A_USER)
+    step_up = client.post(
+        "/api/v1/admin/step-up",
+        json={"password": PASSWORD},
+        headers={"cookie": env["owner"]["cookie"]},
+    )
+    assert step_up.status_code == 200, step_up.text
     paused = client.post(
-        f"/api/v1/admin/users/{a_id}/pause", headers={"cookie": env["owner"]["cookie"]}
+        f"/api/v1/admin/users/{a_id}/pause",
+        headers={
+            "cookie": env["owner"]["cookie"],
+            "X-Lumi-Step-Up": step_up.json()["token"],
+        },
     )
     assert paused.status_code == 200
     assert _get(env, A_USER, "/api/v1/search/views").status_code == 401
     assert _get(env, B_USER, "/api/v1/search/views").status_code == 200
+    step_up = client.post(
+        "/api/v1/admin/step-up",
+        json={"password": PASSWORD},
+        headers={"cookie": env["owner"]["cookie"]},
+    )
     resumed = client.post(
-        f"/api/v1/admin/users/{a_id}/resume", headers={"cookie": env["owner"]["cookie"]}
+        f"/api/v1/admin/users/{a_id}/resume",
+        headers={
+            "cookie": env["owner"]["cookie"],
+            "X-Lumi-Step-Up": step_up.json()["token"],
+        },
     )
     assert resumed.status_code == 200
     # A's old cookie was revoked with the pause; re-login works.

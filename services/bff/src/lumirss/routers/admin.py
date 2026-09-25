@@ -32,6 +32,11 @@ from lumirss.accounts_store import (
     hash_password,
 )
 from lumirss.auth_store import AuthStore
+from lumirss.step_up import (
+    STEP_UP_TTL_MINUTES,
+    mint_step_up_token,
+    require_step_up,
+)
 from lumirss.user_scope import principal_of
 
 router = APIRouter(prefix="/api/v1/admin")
@@ -148,6 +153,56 @@ class UserRoleRequest(BaseModel):
     validation error (422)."""
 
     role: str = Field(pattern="^(member|admin)$")
+
+
+class AdminStepUpRequest(BaseModel):
+    """POST /admin/step-up（N009）——管理员本会话内重新证明自己。"""
+
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/step-up", response_model=None, response_model_exclude_none=True)
+async def admin_step_up(body: AdminStepUpRequest, request: Request) -> JSONResponse:
+    """N009：铸造短时提权令牌（5 分钟，散列入库，单次使用）。
+
+    - 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；
+    - 校验的是当前管理员自己的密码（不是目标用户的）；
+    - 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。"""
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    minted = await mint_step_up_token(
+        request.app.state.control_db, principal["user_id"], body.password
+    )
+    if minted is None:
+        await accounts.audit(
+            actor=principal["user_id"],
+            action="admin_step_up_mint_failed",
+            object_type="step_up",
+            object_id=principal["user_id"],
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "invalid_credentials",
+                    "message": "密码不正确。",
+                }
+            },
+            headers=_NO_STORE,
+        )
+    await accounts.audit(
+        actor=principal["user_id"],
+        action="admin_step_up_mint",
+        object_type="step_up",
+        object_id=principal["user_id"],
+    )
+    return {
+        "token": minted["token"],
+        "expiresInMinutes": STEP_UP_TTL_MINUTES,
+        "header": "X-Lumi-Step-Up",
+    }
 
 
 @router.get("/users", response_model=None, response_model_exclude_none=True)
@@ -471,7 +526,8 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
     - demoting the last active admin is refused (403) so a delegation
       mistake can never lock the operator out of admin surfaces;
     - unknown user → 404, unknown role → 422 (body validation);
-    - every accepted change is audited (no credentials involved)."""
+    - every accepted change is audited (no credentials involved).
+    - N009：需要临时提权令牌（X-Lumi-Step-Up），否则 403 step_up_required。"""
     principal = _require_owner(request)
     if principal is None:
         return _forbid("Owner role required.")
@@ -483,6 +539,10 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
+    denial = await require_step_up(request, principal, "user_role_change")
+    if denial is not None:
+        return denial
     if user["role"] == "owner":
         return _forbid("The owner account role cannot be changed.")
     if user["role"] == "admin" and body.role == "member" and user["status"] == "active":
@@ -502,7 +562,8 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
 
 async def _set_member_status(user_id: str, request: Request, status: str) -> JSONResponse:
     """Pause/resume with the two hard guards (O152): the owner account
-    can never be targeted, and the last active admin cannot be paused."""
+    can never be targeted, and the last active admin cannot be paused.
+    N009：需要临时提权令牌（X-Lumi-Step-Up）。"""
     principal = await _require_admin(request)
     if principal is None:
         return _forbid()
@@ -514,6 +575,10 @@ async def _set_member_status(user_id: str, request: Request, status: str) -> JSO
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
+    denial = await require_step_up(request, principal, f"user_{status}")
+    if denial is not None:
+        return denial
     if user["role"] == "owner":
         return _forbid("The owner account cannot be paused or resumed here.")
     if status == "paused" and user["role"] == "admin" and user["status"] == "active":
@@ -554,7 +619,8 @@ async def revoke_user_sessions(user_id: str, request: Request) -> JSONResponse:
 async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
     """Install an unguessable password (nobody knows it) and revoke all
     the user's sessions, then return a one-time recovery invite the
-    operator hands to the member (O150 — honest, no email pretending)."""
+    operator hands to the member (O150 — honest, no email pretending).
+    N009：需要临时提权令牌（X-Lumi-Step-Up）。"""
     principal = await _require_admin(request)
     if principal is None:
         return _forbid()
@@ -566,6 +632,9 @@ async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    denial = await require_step_up(request, principal, "user_password_reset")
+    if denial is not None:
+        return denial
     import secrets as _secrets
 
     await accounts.set_password_hash(user_id, hash_password(_secrets.token_urlsafe(24)))
@@ -688,6 +757,47 @@ def _task_state(task: object) -> str:
     return "failed" if task.exception() is not None else "completed"
 
 
+# N194：探针时效 — checkedAt 早于该阈值的探针在管理台标注「过期」。
+# 服务端在响应序列化前即时计算（探针本身每次请求现跑，正常恒为
+# fresh；UI 若持有超过 5 分钟的旧响应也能据此诚实降级展示）。
+_PROBE_STALE_AFTER_S = 300.0
+
+
+def _probe_freshness(
+    checked_at: str | None, now_epoch: float | None = None
+) -> tuple[str | None, bool]:
+    """(checkedAt, stale) — server-side probe age computation.
+
+    ``checked_at`` is the server timestamp at which the probe ran
+    (operations.py already stamps ``lastCheckedAt``). ``None`` means the
+    probe ran during THIS response (presence-only services, or a probe
+    that does not stamp its own time) — the server clock at computation
+    time is then the honest checkedAt. ``stale`` is True exactly when
+    the probe is older than 5 minutes; an unparseable timestamp
+    degrades the same way: we never claim staleness we cannot prove."""
+    import time as _time
+    from datetime import datetime
+
+    if now_epoch is None:
+        now_epoch = _time.time()
+    if not checked_at:
+        return (
+            _time.strftime("%Y-%m-%dT%H:%M:%S+00:00", _time.gmtime()),
+            False,
+        )
+    try:
+        parsed = datetime.fromisoformat(str(checked_at))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        age_s = now_epoch - parsed.timestamp()
+    except ValueError:
+        return (
+            _time.strftime("%Y-%m-%dT%H:%M:%S+00:00", _time.gmtime()),
+            False,
+        )
+    return str(checked_at), age_s > _PROBE_STALE_AFTER_S
+
+
 def _uptime_seconds() -> int | None:
     """Process uptime from /proc (starttime vs /proc/uptime); honest null
     where /proc does not exist — clock-monotonic-since-boot is NOT uptime."""
@@ -800,11 +910,11 @@ async def system_status(request: Request) -> dict[str, object]:
         service.sqlite_status(), service.freshrss_status(), service.rsshub_status()
     )
 
-    def _presence(status: str) -> tuple[bool, str]:
-        return status != "unconfigured", status
+    def _presence(status: str) -> bool:
+        return status != "unconfigured"
 
-    freshrss_configured, freshrss_state = _presence(str(freshrss_st.get("status", "unknown")))
-    rsshub_configured, rsshub_state = _presence(str(rsshub_st.get("status", "unknown")))
+    freshrss_configured = _presence(str(freshrss_st.get("status", "unknown")))
+    rsshub_configured = _presence(str(rsshub_st.get("status", "unknown")))
 
     obsidian = False
     try:
@@ -832,32 +942,43 @@ async def system_status(request: Request) -> dict[str, object]:
         imap_present = False
 
     def _bool_service(name: str, configured: bool) -> dict[str, object]:
+        checked_at, stale = _probe_freshness(None, time.time())
         return {
             "name": name,
             "configured": configured,
             "status": "configured" if configured else "unconfigured",
             "latencyMs": None,
+            # N194：presence-only 服务没有真实探针——checkedAt 取响应
+            # 构建时刻（服务端时钟），stale 恒 False。
+            "checkedAt": checked_at,
+            "stale": stale,
+        }
+
+    def _probed_service(
+        name: str, configured: bool, probe: dict, default_status: str
+    ) -> dict[str, object]:
+        checked_at, stale = _probe_freshness(
+            probe.get("lastCheckedAt") if isinstance(probe, dict) else None,
+            time.time(),
+        )
+        return {
+            "name": name,
+            "configured": configured,
+            "status": (
+                str(probe.get("status", default_status))
+                if isinstance(probe, dict)
+                else default_status
+            ),
+            "latencyMs": probe.get("latencyMs") if isinstance(probe, dict) else None,
+            # N194：探针完成的服务端时刻 + 5 分钟时效标志。
+            "checkedAt": checked_at,
+            "stale": stale,
         }
 
     services = [
-        {
-            "name": "sqlite",
-            "configured": True,
-            "status": str(sqlite_st.get("status", "unknown")),
-            "latencyMs": None,
-        },
-        {
-            "name": "freshrss",
-            "configured": freshrss_configured,
-            "status": freshrss_state,
-            "latencyMs": freshrss_st.get("latencyMs"),
-        },
-        {
-            "name": "rsshub",
-            "configured": rsshub_configured,
-            "status": rsshub_state,
-            "latencyMs": rsshub_st.get("latencyMs"),
-        },
+        _probed_service("sqlite", True, sqlite_st, "unknown"),
+        _probed_service("freshrss", freshrss_configured, freshrss_st, "unknown"),
+        _probed_service("rsshub", rsshub_configured, rsshub_st, "unknown"),
         _bool_service("obsidian", obsidian),
         _bool_service("webdav", webdav_configured),
         _bool_service("ai", ai_key_present),
@@ -1046,6 +1167,10 @@ async def set_user_quota(user_id: str, body: UserQuotaPutRequest, request: Reque
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何写入之前。
+    denial = await require_step_up(request, principal, "user_quota_set")
+    if denial is not None:
+        return denial
     from lumirss.user_quotas import UserQuotaStore
 
     caps = {key: value for key, value in body.model_dump().items() if value is not None}
@@ -1080,6 +1205,10 @@ async def clear_user_quota(user_id: str, request: Request) -> JSONResponse:
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何写入之前。
+    denial = await require_step_up(request, principal, "user_quota_set")
+    if denial is not None:
+        return denial
     from lumirss.user_quotas import UserQuotaStore
 
     cleared = await UserQuotaStore(request.app.state.control_db).clear_caps(
@@ -1198,4 +1327,57 @@ async def admin_deploy_status(request: Request) -> JSONResponse:
     from lumirss.deploy_status import read_deploy_status
 
     result = read_deploy_status(LumiSettings().LUMIRSS_DEPLOY_STATUS_FILE)
+    return JSONResponse(content=result, headers=_NO_STORE)
+
+
+@router.get("/rollback-readiness", response_model=None, response_model_exclude_none=True)
+async def admin_rollback_readiness(request: Request) -> JSONResponse:
+    """N197：回滚就绪检查（admin-gated，只读要素清单）。
+
+    - previousImage：读 ./lumirss snapshot_for_rollback 写下的回滚快照
+      清单（LUMIRSS_ROLLBACK_MANIFEST_FILE）——BFF 没有 Docker 访问权，
+      镜像存在性只来自脚本侧的诚实记录；
+    - backup：LUMIRSS_BACKUP_DIR 里最新 *.backup + N186 只读完整性校验；
+    - dbDowngrade：诚实限制说明（SQLite 迁移只向前，无法降级）；
+    - canRollback = 前镜像在 AND 备份可校验 AND schema 与备份一致。
+
+    本端点只给清单，永远不给一键回滚按钮——回滚只由运维侧
+    ./lumirss rollback 触发。"""
+    if await _require_admin(request) is None:
+        return _forbid()
+    import asyncio
+
+    from lumirss.config import LumiSettings
+    from lumirss.migrations import schema_version
+    from lumirss.restore import verify_backup_findings
+    from lumirss.rollback_readiness import (
+        build_rollback_readiness,
+        latest_backup_path,
+        read_rollback_manifest,
+    )
+
+    settings = LumiSettings()
+    manifest = read_rollback_manifest(settings.LUMIRSS_ROLLBACK_MANIFEST_FILE)
+    latest = latest_backup_path(settings.LUMIRSS_BACKUP_DIR)
+    if latest is not None:
+        report = await asyncio.to_thread(
+            verify_backup_findings, latest, request.app.state.control_db
+        )
+        backup_schema = None
+        manifest_block = report.get("manifest") if isinstance(report, dict) else None
+        if isinstance(manifest_block, dict):
+            value = manifest_block.get("lumiDbSchemaVersion")
+            backup_schema = int(value) if isinstance(value, int) else None
+    else:
+        report = None
+        backup_schema = None
+    current_schema = await asyncio.to_thread(schema_version, request.app.state.control_db)
+    result = build_rollback_readiness(
+        manifest=manifest,
+        backup_report=report,
+        backup_name=latest.name if latest is not None else None,
+        current_schema_version=current_schema,
+        backup_schema_version=backup_schema,
+        backup_dir_configured=bool(settings.LUMIRSS_BACKUP_DIR.strip()),
+    )
     return JSONResponse(content=result, headers=_NO_STORE)

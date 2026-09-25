@@ -19,7 +19,7 @@
  * 复制按钮，并诚实标注「只显示这一次」。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -40,6 +40,7 @@ import {
   generateInvitesFromScheme,
   getAdminCapacity,
   getAdminDeployStatus,
+  getAdminRollbackReadiness,
   getAdminSystem,
   getAdminUpgradePreview,
   getAdminUserQuota,
@@ -67,6 +68,11 @@ import {
 } from '../../api/client'
 import { useAuthStore } from '../../store/auth'
 import { navigateAppRoute } from '../../lib/app-route'
+import {
+  mintAdminStepUp,
+  notifyStepUpRequired,
+  onStepUpRequired,
+} from '../../lib/step-up'
 import { formatListTime, formatRelativeTime } from '../../lib/date-format'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -97,10 +103,83 @@ function inviteState(invite: AdminInvite): { label: string; actionable: boolean 
 function adminActionError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.type === 'network_error') return '网络不可用 —— 请检查网络连接后重试。'
+    // N009：敏感操作需要临时提权——通知管理台弹出密码对话框。
+    if (error.type === 'step_up_required') {
+      notifyStepUpRequired()
+      return '该操作需要临时提权验证（输入管理员密码后再试一次）。'
+    }
     if (error.status === 403) return '需要管理员权限，操作被服务端拒绝。'
     if (error.message !== '') return error.message
   }
   return '操作失败，请稍后重试。'
+}
+
+/** N009：临时提权密码对话框（铸造一次性令牌后关闭；下一次敏感操作
+ * 自动携带 X-Lumi-Step-Up 头）。 */
+function StepUpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  if (!open) return null
+  const submit = async () => {
+    setPending(true)
+    setError(null)
+    try {
+      await mintAdminStepUp(password)
+      setPassword('')
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '验证失败，请重试。')
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <div
+      role="dialog"
+      aria-label="临时提权验证"
+      data-testid="step-up-dialog"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div className="w-full max-w-sm rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+        <h2 className="text-sm font-semibold text-[var(--lumi-text-primary)]">
+          敏感操作验证
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--lumi-text-secondary)]">
+          请输入你的管理员密码完成临时提权（5 分钟内有效，单次使用）。
+        </p>
+        <form
+          className="mt-3 flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit()
+          }}
+        >
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-label="管理员密码"
+            autoComplete="current-password"
+            className="min-h-9 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-2.5 text-sm text-[var(--lumi-text-primary)]"
+          />
+          {error !== null && (
+            <p role="alert" className="text-xs text-[var(--lumi-danger)]">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" type="button" onClick={onClose}>
+              取消
+            </Button>
+            <Button variant="primary" size="sm" type="submit" disabled={pending || password === ''}>
+              {pending ? '验证中…' : '验证'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
 }
 
 /** 一次性链接展示 + 复制（token 只出现一次的诚实 UI）。 */
@@ -1655,6 +1734,124 @@ function DeployStatusSection() {
   )
 }
 
+// ===== 回滚就绪检查（N197）==================================================
+//
+// GET /admin/rollback-readiness 只读要素清单：前一镜像（./lumirss 写下的
+// 回滚快照清单）、最新备份（N186 只读校验）、schema 一致性与诚实的
+// SQLite 不能降级说明。本卡片只有清单——没有、也永远不会有「一键回滚」
+// 执行控件（负向测试断言卡内零按钮）；回滚只由运维侧 ./lumirss rollback
+// 触发。
+
+function RollbackReadinessSection() {
+  const readiness = useQuery({
+    queryKey: ['admin', 'rollback-readiness'],
+    queryFn: ({ signal }) => getAdminRollbackReadiness(signal),
+    staleTime: 10_000,
+  })
+
+  const ELEMENT_LABELS: Record<string, string> = {
+    previousImage: '前一镜像',
+    backup: '最新备份',
+    schema: '数据库 schema',
+  }
+  const STATE_LABELS: Record<string, string> = {
+    present: '存在',
+    absent: '不存在',
+    verified: '校验通过',
+    unverified: '校验未通过',
+  }
+
+  return (
+    <section aria-label="回滚就绪" data-testid="admin-rollback-readiness">
+      <SectionHeading title="回滚就绪" hint="只读要素清单；回滚只能由服务器上的 ./lumirss rollback 执行，这里没有任何执行按钮。" />
+      {readiness.isPending ? (
+        <div aria-busy="true">
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : readiness.isError ? (
+        // 注意：不用 role="alert"——与既有 admin 测试的表单内联报错
+        // （findByRole('alert')）互不干扰；错误仍如实可见。
+        <p className="text-sm leading-relaxed text-[var(--lumi-danger)]" data-testid="rollback-readiness-error">
+          {adminActionError(readiness.error)}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5" data-testid="rollback-readiness-body">
+          <ul className="flex flex-col divide-y divide-[var(--lumi-separator)]" data-testid="rollback-readiness-elements">
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-previous-image">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.previousImage}</span>
+              <span className="flex items-center gap-2">
+                {readiness.data.previousImage.tag !== null && (
+                  <span className="text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.previousImage.tag}</span>
+                )}
+                <span
+                  className={stateBadge(
+                    STATE_LABELS[readiness.data.previousImage.state] ?? readiness.data.previousImage.state,
+                    readiness.data.previousImage.state === 'present' ? 'ok' : 'muted',
+                  )}
+                >
+                  {STATE_LABELS[readiness.data.previousImage.state] ?? readiness.data.previousImage.state}
+                </span>
+              </span>
+              {readiness.data.previousImage.reason !== null && (
+                <span className="w-full text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.previousImage.reason}</span>
+              )}
+            </li>
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-backup">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.backup}</span>
+              <span className="flex items-center gap-2">
+                {readiness.data.backup.name !== null && (
+                  <span className="text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.backup.name}</span>
+                )}
+                <span
+                  className={stateBadge(
+                    STATE_LABELS[readiness.data.backup.state] ?? readiness.data.backup.state,
+                    readiness.data.backup.state === 'verified' ? 'ok' : readiness.data.backup.state === 'absent' ? 'muted' : 'warn',
+                  )}
+                >
+                  {STATE_LABELS[readiness.data.backup.state] ?? readiness.data.backup.state}
+                </span>
+              </span>
+              {readiness.data.backup.reason !== null && (
+                <span className="w-full text-xs text-[var(--lumi-text-tertiary)]">{readiness.data.backup.reason}</span>
+              )}
+            </li>
+            <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 py-1.5" data-testid="rollback-element-schema">
+              <span className="text-sm text-[var(--lumi-text-primary)]">{ELEMENT_LABELS.schema}</span>
+              <span className="flex items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+                备份 {readiness.data.schema.backup ?? '—'} / 当前 {readiness.data.schema.current ?? '—'}
+                <span
+                  className={stateBadge(
+                    readiness.data.schema.unchanged ? '一致' : '不一致',
+                    readiness.data.schema.unchanged ? 'ok' : 'warn',
+                  )}
+                >
+                  {readiness.data.schema.unchanged ? '一致' : '不一致'}
+                </span>
+              </span>
+            </li>
+          </ul>
+          <p className="text-xs leading-relaxed text-[var(--lumi-text-secondary)]" data-testid="rollback-db-downgrade">
+            数据库降级：{readiness.data.dbDowngrade}
+          </p>
+          <p
+            className={
+              readiness.data.canRollback
+                ? 'text-xs text-[var(--lumi-accent-text)]'
+                : 'text-xs text-[var(--lumi-text-secondary)]'
+            }
+            data-testid="rollback-verdict"
+          >
+            {readiness.data.canRollback
+              ? '要素齐全：可以回滚（由运维侧执行）。'
+              : '要素不全：当前不可回滚（见上方清单）。'}
+          </p>
+          <p className="text-[11px] text-[var(--lumi-text-tertiary)]">{readiness.data.note}</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ===== 系统面板（P11）=======================================================
 //
 // 数据全部来自 GET /admin/system（admin-only、服务端派生：版本/运行时/
@@ -1770,6 +1967,18 @@ function serviceTone(status: string): 'ok' | 'warn' | 'muted' {
   return 'muted'
 }
 
+/** N194：探针时刻 → 「X 前」相对时间；无法解析时诚实回退为原始串。 */
+function probeAgeText(checkedAt: string | null): string {
+  if (checkedAt === null || checkedAt === '') return '未知时刻'
+  const at = Date.parse(checkedAt)
+  if (Number.isNaN(at)) return checkedAt
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (seconds < 60) return `${seconds} 秒前`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`
+  return `${Math.floor(seconds / 86_400)} 天前`
+}
+
 function SystemSection() {
   const system = useQuery({
     queryKey: ['admin', 'system'],
@@ -1855,9 +2064,25 @@ function SystemSection() {
                     {service.latencyMs !== null && (
                       <span className="text-xs text-[var(--lumi-text-tertiary)]">{service.latencyMs} ms</span>
                     )}
-                    <span className={stateBadge(SERVICE_STATE_LABELS[service.status] ?? service.status, serviceTone(service.status))}>
-                      {SERVICE_STATE_LABELS[service.status] ?? service.status}
-                    </span>
+                    {/* N194：探针时间 + 过期态（检测早于 5 分钟 → 可能过期，
+                        取代正常徽标；不再把旧探测结果伪装成「正常」）。 */}
+                    {service.stale ? (
+                      <span
+                        className={stateBadge('检测于 ' + probeAgeText(service.checkedAt) + '（可能过期）', 'warn')}
+                        data-testid={`admin-service-stale-${service.name}`}
+                      >
+                        检测于 {probeAgeText(service.checkedAt)}（可能过期）
+                      </span>
+                    ) : (
+                      <span className={stateBadge(SERVICE_STATE_LABELS[service.status] ?? service.status, serviceTone(service.status))}>
+                        {SERVICE_STATE_LABELS[service.status] ?? service.status}
+                      </span>
+                    )}
+                    {!service.stale && service.checkedAt !== null && (
+                      <span className="text-xs text-[var(--lumi-text-tertiary)]">
+                        检测于 {probeAgeText(service.checkedAt)}
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
@@ -1925,6 +2150,11 @@ export default function AdminScreen() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [confirmPending, setConfirmPending] = useState(false)
+  // N009：敏感操作 403 step_up_required → 弹出临时提权密码对话框。
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+  useEffect(() => {
+    return onStepUpRequired(() => setStepUpOpen(true))
+  }, [])
 
   const forbidden =
     identity === null
@@ -1935,6 +2165,7 @@ export default function AdminScreen() {
 
   return (
     <div className="min-h-dvh overflow-y-auto bg-[var(--lumi-canvas)]" data-testid="admin-screen">
+      <StepUpDialog open={stepUpOpen} onClose={() => setStepUpOpen(false)} />
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <div className="mb-5 flex items-center gap-3">
           <Button
@@ -1999,6 +2230,9 @@ export default function AdminScreen() {
               <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
                 <DeployStatusSection />
               </div>
+            </div>
+            <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
+              <RollbackReadinessSection />
             </div>
             <div className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] p-4">
               <SystemSection />

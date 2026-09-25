@@ -52,11 +52,13 @@ def _expected_default_body():
             "summary": "default",
             "translation": "default",
             "chat": "default",
+            "tts": "default",  # N098：TTS 作为第四用途，默认同 default profile
         },
         "purposeStatus": {
             "summary": dict(_PURPOSE_DEFAULTS),
             "translation": dict(_PURPOSE_DEFAULTS),
             "chat": dict(_PURPOSE_DEFAULTS),
+            "tts": dict(_PURPOSE_DEFAULTS),
         },
         "quotaWindow": "",
         "quotaMaxCalls": 0,

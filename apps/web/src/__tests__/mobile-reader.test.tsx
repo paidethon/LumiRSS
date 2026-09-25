@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type { EntryListResponse } from '../api/types'
+import { useAppSettings } from '../store/app-settings'
 import { useReaderUi } from '../store/reader-ui'
 
 /** 0007 Test E/F/G — Mobile Reader Flow。
@@ -172,6 +173,9 @@ describe('Test F — Reader back', () => {
 
 describe('Test G — Mobile Reader 业务回归', () => {
   it('手机布局中 Reader 仍加载 Detail、安全渲染、Read/Star 发出 set 语义 PATCH', async () => {
+    // 本用例验证手工 set 语义——jsdom 零高度会让「读到底自动已读」在
+    // 打开瞬间就触发并与手工点击竞态，这里显式关闭该辅助行为。
+    useAppSettings.getState().update({ readerAutoMarkRead: false })
     const { fetchMock, patchBodies } = mockApi()
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
@@ -184,18 +188,24 @@ describe('Test G — Mobile Reader 业务回归', () => {
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((c) => /\/api\/v1\/entries\/e1\.a$/.test(String(c[0])))).toBe(true)
     })
+    import('../components/ReaderHeader').then(() => console.log('DBG header chunk resolved')).catch((e) => console.log('DBG header chunk FAIL:', String(e)))
 
     // 安全正文渲染：富文本显示，script 载荷被 DOMPurify 移除
     expect(await screen.findByText('富文本')).toBeInTheDocument()
     expect(document.body.querySelector('.article-content script')).toBeNull()
 
     // Read：未读 → 「标记为已读」→ PATCH {"read": true}（set 语义）
+    const btnNames = within(reader).queryAllByRole('button').map((b) => b.getAttribute('aria-label') || b.textContent)
+    console.log('DBG reader buttons:', JSON.stringify(btnNames))
     fireEvent.click(screen.getByRole('button', { name: '标记为已读' }))
     await waitFor(() => expect(patchBodies).toContain('{"read":true}'))
 
     // Star：未收藏 → 「收藏」→ PATCH {"starred": true}
     //（0011：限定 Reader 内——底部导航岛与侧栏也有同名「收藏」控件）
-    fireEvent.click(within(reader).getByRole('button', { name: '收藏' }))
+    const starBtnsInReader = within(reader).queryAllByRole('button', { name: '收藏' })
+    console.log('DBG star buttons in reader:', starBtnsInReader.length)
+    console.log('DBG disabled:', starBtnsInReader.map((b) => (b as HTMLButtonElement).disabled))
+    fireEvent.click(starBtnsInReader[0]!)
     await waitFor(() => expect(patchBodies).toContain('{"starred":true}'))
   })
 })

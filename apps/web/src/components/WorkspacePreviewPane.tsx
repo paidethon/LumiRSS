@@ -12,8 +12,12 @@
  *   写入「最近关闭」。
  */
 
-import { BookmarkPlus, ExternalLink, Loader2, Save, Trash2, X } from 'lucide-react'
+import { BookmarkPlus, ExternalLink, Loader2, Save, Trash2, X, Zap } from 'lucide-react'
 import type { ReactNode } from 'react'
+import {
+  PANE_HIBERNATE_IDLE_MS,
+  usePaneHibernate,
+} from '../lib/pane-hibernate'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { cx } from './ui/cx'
@@ -38,6 +42,7 @@ export function WorkspacePreviewPane({
   promotePending,
   onPromote,
   onClose,
+  idleMs = PANE_HIBERNATE_IDLE_MS,
 }: {
   target: PreviewTarget
   /** 当前笔记草稿文本（父级持有，未保存拦截在父级判定）。 */
@@ -48,13 +53,19 @@ export function WorkspacePreviewPane({
   promotePending: boolean
   onPromote: () => void
   onClose: () => void
+  /** N107：空闲休眠阈值（测试注入小值；默认 10 分钟）。 */
+  idleMs?: number
 }) {
   const safeUrl =
     typeof target.url === 'string' && /^https?:\/\//i.test(target.url)
       ? target.url
       : null
+  // N107：预览窗格空闲休眠——释放摘录/草稿编辑区 DOM（元数据与草稿
+  // 状态在内存，草稿父级持有永不丢），交互/聚焦唤醒。
+  const { hibernated, containerRef, wake } = usePaneHibernate({ idleMs })
   return (
     <section
+      ref={containerRef}
       data-workspace-preview
       aria-label="内容预览"
       className={cx(
@@ -80,68 +91,86 @@ export function WorkspacePreviewPane({
           onClick={onClose}
         />
       </div>
-      {target.excerpt ? (
-        <p className="mt-2 line-clamp-4 text-xs text-[var(--lumi-text-secondary)]">
-          {target.excerpt}
-        </p>
-      ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {safeUrl !== null && (
-          <a
-            href={safeUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className={cx(
-              'inline-flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 text-xs',
-              'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
-            )}
-          >
-            <ExternalLink aria-hidden className="size-3.5" />
-            原文链接
-          </a>
-        )}
-        {!isMember && (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={promotePending}
-            onClick={onPromote}
-          >
-            {promotePending ? (
-              <Loader2 aria-hidden className="size-4 animate-spin" />
-            ) : (
-              <BookmarkPlus aria-hidden className="size-4" />
-            )}
-            添加到工作区
-          </Button>
-        )}
-        {isMember && (
-          <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]">
-            已在工作区
-          </span>
-        )}
-      </div>
-      <label className="mt-3 flex flex-col gap-1">
-        <span className="text-xs text-[var(--lumi-text-secondary)]">
-          预览笔记（仅本机草稿）
-        </span>
-        <textarea
-          value={draftText}
-          onChange={(e) => onDraftChange(e.target.value)}
-          rows={3}
-          aria-label="预览笔记草稿"
-          placeholder="随手记一点；替换/关闭预览前请先保存或放弃草稿。"
+      {hibernated ? (
+        <button
+          type="button"
+          data-testid="workspace-preview-hibernate"
+          onClick={wake}
+          onFocus={wake}
           className={cx(
-            'w-full resize-y rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
-            'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
-            'placeholder:text-[var(--lumi-text-tertiary)]',
-            'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+            'mt-2 flex w-full flex-col items-center justify-center gap-1 rounded-[var(--lumi-radius-lg)]',
+            'border border-dashed border-[var(--lumi-border)] py-6 text-xs text-[var(--lumi-text-tertiary)]',
           )}
-        />
-      </label>
-      <p className="mt-1 text-[11px] text-[var(--lumi-text-tertiary)]">
-        草稿只保存在本机浏览器，不会同步到其他设备。
-      </p>
+        >
+          <Zap aria-hidden className="size-4" />
+          预览已休眠（内容已释放；点击唤醒）
+        </button>
+      ) : (
+        <>
+          {target.excerpt ? (
+            <p className="mt-2 line-clamp-4 text-xs text-[var(--lumi-text-secondary)]">
+              {target.excerpt}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {safeUrl !== null && (
+              <a
+                href={safeUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className={cx(
+                  'inline-flex min-h-7 items-center gap-1 rounded-[var(--lumi-radius-full)] border border-[var(--lumi-border)] px-2.5 text-xs',
+                  'text-[var(--lumi-text-secondary)] transition-colors duration-[var(--lumi-motion-fast)] hover:bg-[var(--lumi-surface-hover)]',
+                )}
+              >
+                <ExternalLink aria-hidden className="size-3.5" />
+                原文链接
+              </a>
+            )}
+            {!isMember && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={promotePending}
+                onClick={onPromote}
+              >
+                {promotePending ? (
+                  <Loader2 aria-hidden className="size-4 animate-spin" />
+                ) : (
+                  <BookmarkPlus aria-hidden className="size-4" />
+                )}
+                添加到工作区
+              </Button>
+            )}
+            {isMember && (
+              <span className="rounded-[var(--lumi-radius-full)] bg-[var(--lumi-surface-selected)] px-2 py-0.5 text-[11px] text-[var(--lumi-text-secondary)]">
+                已在工作区
+              </span>
+            )}
+          </div>
+          <label className="mt-3 flex flex-col gap-1">
+            <span className="text-xs text-[var(--lumi-text-secondary)]">
+              预览笔记（仅本机草稿）
+            </span>
+            <textarea
+              value={draftText}
+              onChange={(e) => onDraftChange(e.target.value)}
+              rows={3}
+              aria-label="预览笔记草稿"
+              placeholder="随手记一点；替换/关闭预览前请先保存或放弃草稿。"
+              className={cx(
+                'w-full resize-y rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)]',
+                'px-3 py-2 text-sm text-[var(--lumi-text-primary)]',
+                'placeholder:text-[var(--lumi-text-tertiary)]',
+                'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--lumi-focus-ring)]',
+              )}
+            />
+          </label>
+          <p className="mt-1 text-[11px] text-[var(--lumi-text-tertiary)]">
+            草稿只保存在本机浏览器，不会同步到其他设备。
+          </p>
+        </>
+      )}
     </section>
   )
 }

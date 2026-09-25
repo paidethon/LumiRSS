@@ -649,7 +649,8 @@ describe('F19 — 朗读', () => {
     fireEvent.click(screen.getByRole('button', { name: '朗读' }))
     const utterance = speech.speak.mock.calls[0]![0] as MockUtterance
     utterance.onerror?.()
-    expect(await screen.findByText('朗读失败，请重试。')).toBeInTheDocument()
+    // N100 分型后错误信息带处置提示（不再是固定文案）——按前缀匹配。
+expect(await screen.findByText(/朗读失败/)).toBeInTheDocument()
     // 复位为 idle：再次出现「朗读」入口
     expect(screen.getByRole('button', { name: '朗读' })).toBeInTheDocument()
   })

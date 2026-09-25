@@ -1,4 +1,5 @@
-"""W5 workspace routes — F083 模板 / F084 归档 / F085 看板 / F086 目标.
+"""W5 workspace routes — F083 模板 / F084 归档 / F085 看板 / F086 目标
++ N117 模板结构承载 + N118 收集规则 + N119 归档摘要卡.
 
 归档工作区：默认列表隐藏（archived 参数显式拉取）；深链接可打开；
 research-pack / 看板写入 / 目标写入入口对归档工作区诚实禁用（409
@@ -12,7 +13,16 @@ from lumirss.models import (
     BoardUpdateRequest,
     FromTemplateRequest,
     SaveAsTemplateRequest,
+    WorkspaceArchiveEntry,
+    WorkspaceArchiveSummary,
     WorkspaceBoardResponse,
+    WorkspaceCollectApplyResult,
+    WorkspaceCollectPreview,
+    WorkspaceCollectPreviewItem,
+    WorkspaceCollectRule,
+    WorkspaceCollectRuleCreate,
+    WorkspaceCollectRuleEnabledPatch,
+    WorkspaceCollectRuleList,
     WorkspaceFromTemplateResult,
     WorkspaceGoalPut,
     WorkspaceGoalView,
@@ -22,6 +32,10 @@ from lumirss.models import (
 )
 from lumirss.workspace_archive import ArchivedWorkspace, WorkspaceArchiveStore
 from lumirss.workspace_board import WorkspaceBoardStore
+from lumirss.workspace_collect_rules import (
+    CollectRuleNotFound,
+    WorkspaceCollectRuleStore,
+)
 from lumirss.workspace_goals import WorkspaceGoalStore
 from lumirss.workspace_templates import WorkspaceTemplateStore
 from lumirss.workspaces import (
@@ -36,6 +50,12 @@ router = APIRouter()
 
 def _template_store(request: Request) -> WorkspaceTemplateStore:
     return WorkspaceTemplateStore(
+        request.app.state.db, _get_workspace_store(request)
+    )
+
+
+def _collect_store(request: Request) -> WorkspaceCollectRuleStore:
+    return WorkspaceCollectRuleStore(
         request.app.state.db, _get_workspace_store(request)
     )
 
@@ -81,7 +101,9 @@ async def save_as_template(
 ) -> WorkspaceTemplate:
     await _require_active(request, workspace_id)
     template = await _template_store(request).save_as_template(
-        workspace_id, payload.name
+        workspace_id,
+        payload.name,
+        include_structure=payload.includeStructure,
     )
     return WorkspaceTemplate(**template)
 
@@ -114,6 +136,7 @@ async def create_from_template(
         name=payload.name,
         include_example_items=payload.includeExampleItems,
         example_refs=resolvable,
+        include_structure=payload.includeStructure,
     )
     workspace = result["workspace"]
     skipped = skipped + [
@@ -123,6 +146,7 @@ async def create_from_template(
         workspace=_workspace_model(workspace),
         addedExampleRefs=result["addedExampleRefs"],
         skippedExampleRefs=skipped,
+        structure=result.get("structure"),
     )
 
 
@@ -181,13 +205,67 @@ async def patch_workspace_archive(
         raise WorkspaceNotFound(workspace_id) from exc
 
 
-@router.get("/api/v1/workspace-archive", response_model=list)
+@router.get("/api/v1/workspace-archive", response_model=list[WorkspaceArchiveEntry])
 async def list_archived_workspaces(request: Request) -> list:
-    """F084 归档列表入口（默认导航隐藏，这里显式可见）。"""
+    """F084 归档列表入口（默认导航隐藏，这里显式可见）。
+
+    N119：每个归档工作区附摘要卡（itemCount / doneCount / goalProgress
+    / archivedAt / daysActive）——全部从真实行派生，绝不估算。"""
     summaries = await _get_workspace_store(request).list_workspaces(
         include_archived=True
     )
-    return [_workspace_model(s).model_dump() for s in summaries if s.archived]
+    entries: list[WorkspaceArchiveEntry] = []
+    for summary in summaries:
+        if not summary.archived:
+            continue
+        model = _workspace_model(summary)
+        entries.append(
+            WorkspaceArchiveEntry(
+                **model.model_dump(),
+                summary=await _archive_summary(request, summary),
+            )
+        )
+    return entries
+
+
+async def _archive_summary(request: Request, summary) -> WorkspaceArchiveSummary:
+    """N119 摘要：成员数 / 看板 done / 目标进度 / 存续天数。"""
+    from datetime import datetime
+
+    db = request.app.state.db
+    await db.migrate()
+    item_row = await db.fetch_one(
+        "SELECT COUNT(*) AS n FROM workspace_items WHERE workspace_id = ?",
+        (summary.id,),
+    )
+    done = await _board_store(request).done_count(summary.id)
+    goal = await _goal_store(request).get_goal(summary.id)
+    days_active = 0
+    created_row = await db.fetch_one(
+        "SELECT created_at FROM workspaces WHERE id = ?", (summary.id,)
+    )
+    if summary.archived_at and created_row is not None:
+        try:
+            start = datetime.fromisoformat(
+                str(created_row["created_at"]).replace("Z", "+00:00")
+            )
+            end = datetime.fromisoformat(
+                str(summary.archived_at).replace("Z", "+00:00")
+            )
+            days_active = max((end - start).days, 0)
+        except ValueError:
+            days_active = 0  # 损坏时间戳诚实归零，绝不 500
+    return WorkspaceArchiveSummary(
+        itemCount=int(item_row["n"]) if item_row is not None else 0,
+        doneCount=done,
+        goalProgress=(
+            {"targetCount": int(goal["targetCount"]), "doneCount": done}
+            if goal is not None
+            else None
+        ),
+        archivedAt=summary.archived_at,
+        daysActive=days_active,
+    )
 
 
 # -- F085 看板 ----------------------------------------------------------------
@@ -256,3 +334,128 @@ async def delete_goal(workspace_id: str, request: Request) -> Response:
         raise WorkspaceNotFound(workspace_id)
     await _goal_store(request).delete_goal(workspace_id)
     return Response(status_code=204)
+
+
+# -- N118 工作区自动收集规则 ---------------------------------------------------
+
+
+def _rule_model(rule: dict) -> WorkspaceCollectRule:
+    return WorkspaceCollectRule(
+        id=rule["id"],
+        workspaceId=rule["workspaceId"],
+        feedUrl=rule["feedUrl"],
+        tag=rule["tag"],
+        keyword=rule["keyword"],
+        enabled=rule["enabled"],
+        maxItems=rule["maxItems"],
+        addedCount=rule["addedCount"],
+        createdAt=rule["createdAt"],
+        updatedAt=rule["updatedAt"],
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/collect-rules",
+    response_model=WorkspaceCollectRuleList,
+)
+async def list_collect_rules(
+    workspace_id: str, request: Request
+) -> WorkspaceCollectRuleList:
+    """N118：规则列表（created_at 升序）。未知工作区 → 404。"""
+    rules = await _collect_store(request).list_rules(workspace_id)
+    return WorkspaceCollectRuleList(items=[_rule_model(r) for r in rules])
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/collect-rules",
+    response_model=WorkspaceCollectRule,
+    status_code=201,
+)
+async def create_collect_rule(
+    workspace_id: str, payload: WorkspaceCollectRuleCreate, request: Request
+) -> WorkspaceCollectRule:
+    """N118：创建规则（feedUrl | tag | keyword 恰好其一；maxItems ≤100）。
+
+    规则只是条件 + 上限 + 开关，绝不后台执行——收集只由显式 apply
+    触发（手动按钮语义，见模块注释）。"""
+    rule = await _collect_store(request).create_rule(
+        workspace_id,
+        feed_url=payload.feedUrl,
+        tag=payload.tag,
+        keyword=payload.keyword,
+        max_items=payload.maxItems,
+        enabled=payload.enabled,
+    )
+    return _rule_model(rule)
+
+
+@router.patch(
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}",
+    response_model=WorkspaceCollectRule,
+)
+async def patch_collect_rule(
+    workspace_id: str,
+    rule_id: str,
+    payload: WorkspaceCollectRuleEnabledPatch,
+    request: Request,
+) -> WorkspaceCollectRule:
+    """N118：暂停/恢复（enabled set 语义；不触碰 added_count）。"""
+    rule = await _collect_store(request).set_enabled(
+        workspace_id, rule_id, payload.enabled
+    )
+    return _rule_model(rule)
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}", status_code=204
+)
+async def delete_collect_rule(
+    workspace_id: str, rule_id: str, request: Request
+) -> Response:
+    deleted = await _collect_store(request).delete_rule(workspace_id, rule_id)
+    if not deleted:
+        raise CollectRuleNotFound(rule_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/preview",
+    response_model=WorkspaceCollectPreview,
+)
+async def preview_collect_rule(
+    workspace_id: str, rule_id: str, request: Request
+) -> WorkspaceCollectPreview:
+    """N118：预演（dry-run，有界 50）——投影实时匹配，绝不写库、
+    绝不触发上游抓取。"""
+    store = _collect_store(request)
+    preview = await store.preview(workspace_id, rule_id)
+    return WorkspaceCollectPreview(
+        ruleId=preview["ruleId"],
+        matches=[
+            WorkspaceCollectPreviewItem(
+                itemRef=match["itemRef"],
+                title=match["title"],
+                feedTitle=match["feedTitle"],
+                publishedAt=match["publishedAt"],
+                alreadyMember=match["alreadyMember"],
+            )
+            for match in preview["matches"]
+        ],
+        matchCount=preview["matchCount"],
+        bounded=preview["bounded"],
+        alreadyMemberCount=preview["alreadyMemberCount"],
+        remainingCap=preview["remainingCap"],
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/collect-rules/{rule_id}/apply",
+    response_model=WorkspaceCollectApplyResult,
+)
+async def apply_collect_rule(
+    workspace_id: str, rule_id: str, request: Request
+) -> WorkspaceCollectApplyResult:
+    """N118：手动应用——命中条目以 ref 引用进工作区（幂等；受规则
+    ``maxItems`` 累计上限约束；暂停规则零新增并诚实回显 enabled）。"""
+    result = await _collect_store(request).apply(workspace_id, rule_id)
+    return WorkspaceCollectApplyResult(**result)

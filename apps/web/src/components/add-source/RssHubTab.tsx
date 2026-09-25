@@ -45,6 +45,7 @@ import { IconButton } from '../ui/IconButton'
 import { Skeleton } from '../ui/Skeleton'
 import { cx } from '../ui/cx'
 import { RssHubRequiresChips } from '../rsshub-requires-chips'
+import { RsshubRouteHealthCard } from '../rsshub-route-health-card'
 import { PreviewStage } from './PreviewStage'
 import type { AddSourceTabProps } from './DirectFeedTab'
 
@@ -74,6 +75,8 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
   const [subscribed, setSubscribed] = useState(false)
   // N025：服务端派生的 route_key（预览成功后可用于时间线/刷新）
   const [routeKey, setRouteKey] = useState<string | null>(null)
+  // N022：一键自检卡用同一组参数现跑预览（与刚预览的参数一致）。
+  const [previewParams, setPreviewParams] = useState<Record<string, string>>({})
 
   const busy =
     previewMutation.isPending || subscribeMutation.isPending || subscribed
@@ -174,6 +177,7 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
       {
         onSuccess: (metadata) => {
           setPreview(metadata)
+          setPreviewParams(values)
           // N025：服务端派生 routeKey → 时间线可用；N021：成功 preview
           // 已在服务端 upsert 最近使用——拉新列表
           setRouteKey(metadata.routeKey ?? null)
@@ -479,6 +483,14 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
             onSubscribed={() => setSubscribed(true)}
             onBack={backToRoutes}
           />
+          {/* N022：路由一键自检卡（并行聚合预览/最近运行/缓存/依赖）。 */}
+          {selectedRoute !== null && (
+            <RsshubRouteHealthCard
+              routeId={selectedRoute.id}
+              params={previewParams}
+              routeKey={routeKey}
+            />
+          )}
           <RouteRunTimeline routeKey={routeKey} />
           <RouteMySourcesSection routeKey={routeKey} onClose={onClose} />
         </div>
@@ -757,7 +769,11 @@ function RouteRunTimeline({ routeKey }: { routeKey: string | null }) {
     )
   }
   return (
-    <section aria-label="最近运行" className="flex flex-col gap-1.5">
+    <section
+      id="rsshub-route-runs"
+      aria-label="最近运行"
+      className="flex flex-col gap-1.5"
+    >
       {header}
       <ul className="flex flex-col gap-1">
         {runs.map((run) => (

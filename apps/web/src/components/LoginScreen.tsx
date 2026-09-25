@@ -62,6 +62,14 @@ type LoginFeedback =
   | { kind: 'none' }
   | { kind: 'error'; message: string }
   | { kind: 'offline'; message: string }
+  /** N190：账户已停用 —— 诚实状态页（计划删除时间 + 恢复/迁出指引）。 */
+  | { kind: 'deactivated'; message: string; scheduledDeletionAt: string | null }
+  /** N190：账户已停用 —— 诚实的状态页（含计划删除时间与恢复途径）。 */
+  | {
+      kind: 'deactivated'
+      message: string
+      scheduledDeletionAt: string | null
+    }
 
 /** invalid_credentials 的统一文案——错误身份不透露哪个字段错了。 */
 const INVALID_CREDENTIALS_TEXT = '用户名或密码不正确。'
@@ -244,6 +252,14 @@ export default function LoginScreen() {
           kind: 'offline',
           message: '网络不可用 —— 请检查网络连接后重试。',
         })
+      } else if (error instanceof ApiError && error.type === 'account_deactivated') {
+        // N190：凭密码正确的停用账户 → 诚实状态页（非通用 401）。
+        setFeedback({
+          kind: 'deactivated',
+          message: error.message,
+          scheduledDeletionAt:
+            error.extra !== null ? (error.extra.scheduledDeletionAt ?? null) : null,
+        })
       } else if (error instanceof ApiError && error.type === 'invalid_credentials') {
         // 统一文案：不区分用户不存在/密码错误（无账号枚举）。
         setFeedback({ kind: 'error', message: INVALID_CREDENTIALS_TEXT })
@@ -344,18 +360,31 @@ export default function LoginScreen() {
             </div>
 
             {feedback.kind !== 'none' && (
-              <p
+              <div
                 id="login-feedback"
                 role="alert"
                 aria-live="polite"
+                data-testid={
+                  feedback.kind === 'deactivated' ? 'login-deactivated' : undefined
+                }
                 className={
                   feedback.kind === 'offline'
                     ? 'text-xs leading-relaxed text-[var(--lumi-text-secondary)]'
-                    : 'text-xs leading-relaxed text-[var(--lumi-danger)]'
+                    : feedback.kind === 'deactivated'
+                      ? 'rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3 text-xs leading-relaxed text-[var(--lumi-text-secondary)]'
+                      : 'text-xs leading-relaxed text-[var(--lumi-danger)]'
                 }
               >
-                {feedback.message}
-              </p>
+                {feedback.kind === 'deactivated' ? (
+                  <>
+                    <p className="font-medium text-[var(--lumi-text-primary)]">账户已停用</p>
+                    <p className="mt-1">{feedback.message}</p>
+                    <p className="mt-1">恢复请联系运营者（宽限期内管理台「恢复」即撤销停用）；数据迁出见登录页下方说明。</p>
+                  </>
+                ) : (
+                  feedback.message
+                )}
+              </div>
             )}
 
             <Button

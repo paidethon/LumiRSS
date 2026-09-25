@@ -6,10 +6,12 @@ coverage 覆盖分桶、chunk-preview 分块可视预览、ask 同步问答（�
 强弱 + 引用缺失拦截 + 摘录模式）。
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from lumirss.models import (
+    RagAnswersToNoteRequest,
+    RagAnswersToNoteResult,
     RagAskCitation,
     RagAskExcerpt,
     RagAskRequest,
@@ -21,21 +23,36 @@ from lumirss.models import (
     RagCoverage,
     RagEffectiveScope,
     RagEnableResult,
+    RagEvalRerunDiff,
+    RagEvalSample,
+    RagEvalSampleCreate,
+    RagEvalSampleList,
     RagExclusionItem,
     RagExclusionList,
     RagExclusionPut,
     RagInconsistencyItem,
     RagInconsistencyList,
+    RagIndexVersion,
+    RagIndexVersionSwitch,
+    RagIndexVersionSwitchRequest,
     RagRebuildPauseResult,
     RagRebuildResult,
+    RagRebuildSubsetRequest,
+    RagRebuildSubsetResult,
     RagRepairRequest,
     RagRepairResult,
     RagSearchItem,
     RagSearchResponse,
     RagStatus,
+    RagSubsetJobView,
 )
-from lumirss.rag import MODEL_ID as MODEL_ID_EXPORT
-from lumirss.rag import RagService, chunk_scheme, chunk_text_with_spans
+from lumirss.rag import (
+    RagJobNotFound,
+    RagModelUnknown,
+    RagService,
+    chunk_scheme,
+    chunk_text_with_spans,
+)
 
 from ..deps import _get_rag_service
 
@@ -48,6 +65,54 @@ async def rag_status(request: Request) -> RagStatus:
     info, resource state, last error."""
     service: RagService = _get_rag_service(request)
     return RagStatus(**await service.status())
+
+
+# ---------------------------------------------------------------------------
+# N157 索引版本切换（模型可配置；rebuild 写新 model_id 后原子 swap）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/v1/rag/index-version", response_model=RagIndexVersion)
+async def rag_index_version(request: Request) -> RagIndexVersion:
+    """N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。
+
+    modelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程
+    可读可查），swap 完成后自然切到新模型。configuredModel 单独回显
+    下一次 rebuild 将写入的模型。"""
+    service: RagService = _get_rag_service(request)
+    return RagIndexVersion(**await service.index_version())
+
+
+@router.post(
+    "/api/v1/rag/index-version", response_model=RagIndexVersionSwitch
+)
+async def rag_index_version_switch(
+    payload: RagIndexVersionSwitchRequest, request: Request
+) -> RagIndexVersionSwitch:
+    """N157：切换目标模型（settings 持久化；下一次 rebuild 生效）。
+
+    切换本身零写入现有索引；目录外模型诚实 400 unknown_model。"""
+    from fastapi.responses import JSONResponse
+
+    service: RagService = _get_rag_service(request)
+    try:
+        result = await service.set_model(payload.modelId)
+    except RagModelUnknown as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "unknown_model",
+                    "message": str(exc),
+                }
+            },
+        )
+    return RagIndexVersionSwitch(
+        modelId=result["modelId"],
+        dim=result["dim"],
+        rebuildRequired=True,
+        note="已保存目标模型；执行 rebuild 后写入新 model_id 并原子交换。",
+    )
 
 
 @router.post("/api/v1/rag/enable", response_model=RagEnableResult)
@@ -74,6 +139,155 @@ async def rag_rebuild(request: Request) -> RagRebuildResult:
     service: RagService = _get_rag_service(request)
     result = await service.rebuild()
     return RagRebuildResult(**result)
+
+
+# ---------------------------------------------------------------------------
+# N158 局部索引重建 / N159 检索质量收藏
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/v1/rag/rebuild/refs", response_model=RagRebuildSubsetResult)
+async def rag_rebuild_subset(
+    payload: RagRebuildSubsetRequest, request: Request
+) -> RagRebuildSubsetResult:
+    """N158：局部重建——只重嵌给定 refs（≤50，本用户库范围）。
+
+    - 复用增量管线（只替换这些 ref 的行），绝不触碰其他分块
+      （无全量 wipe）；投影中不存在的 ref 诚实进 ``missing``；
+    - 进度持久化在 rag_jobs（kind=rebuild_subset，{done, total}），
+      轮询 GET .../refs/{jobId}；取消 = 现有暂停。"""
+    service: RagService = _get_rag_service(request)
+    result = await service.rebuild_subset(payload.refs)
+    return RagRebuildSubsetResult(**result)
+
+
+@router.get(
+    "/api/v1/rag/rebuild/refs/{job_id}", response_model=RagSubsetJobView
+)
+async def rag_rebuild_subset_status(
+    job_id: str, request: Request
+) -> RagSubsetJobView:
+    """N158：子集作业进度轮询（done/total + pending + missing 明细）。"""
+    service: RagService = _get_rag_service(request)
+    job = await service.job_get(job_id)
+    if job is None:
+        raise RagJobNotFound(job_id)
+    stats = job.get("stats") or {}
+    cursor = job.get("cursor") or {}
+    return RagSubsetJobView(
+        jobId=job["jobId"],
+        kind=job["kind"],
+        status=job["status"],
+        done=int(stats.get("done", 0)),
+        total=int(stats.get("total", 0)),
+        chunks=int(stats.get("chunks", 0)),
+        missing=[str(r) for r in stats.get("missing", [])],
+        pending=[str(r) for r in cursor.get("pending", []) or []],
+        updatedAt=job["updatedAt"],
+    )
+
+
+@router.post(
+    "/api/v1/rag/rebuild/refs/{job_id}/pause",
+    response_model=RagRebuildPauseResult,
+)
+async def rag_rebuild_subset_pause(
+    job_id: str, request: Request
+) -> RagRebuildPauseResult:
+    """N158：取消 = 暂停（批间安全点生效；游标持久化，可续）。"""
+    service: RagService = _get_rag_service(request)
+    job = await service.job_get(job_id)
+    if job is None:
+        raise RagJobNotFound(job_id)
+    paused = await service._job_pause_request(job_id)  # noqa: SLF001 — 同域路由
+    if not paused:
+        return RagRebuildPauseResult(paused=False, jobId=job_id, status=job["status"])
+    return RagRebuildPauseResult(paused=True, jobId=job_id, status="pausing")
+
+
+@router.post(
+    "/api/v1/rag/rebuild/refs/{job_id}/resume",
+    response_model=RagRebuildSubsetResult,
+)
+async def rag_rebuild_subset_resume(
+    job_id: str, request: Request
+) -> RagRebuildSubsetResult:
+    """N158：从持久化游标继续 paused 的子集作业（幂等）。"""
+    service: RagService = _get_rag_service(request)
+    result = await service.resume_subset(job_id)
+    if result.get("status") == "idle":
+        raise RagJobNotFound(job_id)
+    job = await service.job_get(job_id)
+    stats = (job or {}).get("stats") or {}
+    return RagRebuildSubsetResult(
+        jobId=job_id,
+        status=str(result.get("status", "done")),
+        total=int(stats.get("total", 0)),
+        updated=int(stats.get("done", 0)),
+        chunks=int(stats.get("chunks", 0)),
+        missing=[str(r) for r in stats.get("missing", [])],
+    )
+
+
+@router.post(
+    "/api/v1/rag/eval-samples",
+    response_model=RagEvalSample,
+    status_code=201,
+)
+async def create_rag_eval_sample(
+    payload: RagEvalSampleCreate, request: Request
+) -> RagEvalSample:
+    """N159：保存评测样例——服务端【立即】执行一次真实检索并捕获
+    实际命中（不是裸期望）。私有：只进本用户库，绝不进入任何导出/
+    分享包/备份组件（local-only，见 rag_eval.py 模块注释）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    sample = await store.save(
+        query=payload.query,
+        expected_refs=payload.expectedRefs,
+        kind=payload.kind,
+    )
+    return RagEvalSample(**sample)
+
+
+@router.get("/api/v1/rag/eval-samples", response_model=RagEvalSampleList)
+async def list_rag_eval_samples(request: Request) -> RagEvalSampleList:
+    """N159：样例列表（新→旧；cap=50 由存储层诚实强制）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    samples = await store.list_samples()
+    return RagEvalSampleList(items=[RagEvalSample(**s) for s in samples])
+
+
+@router.delete("/api/v1/rag/eval-samples/{sample_id}", status_code=204)
+async def delete_rag_eval_sample(
+    sample_id: str, request: Request
+) -> Response:
+    from lumirss.rag_eval import EvalSampleNotFound, RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    deleted = await store.delete(sample_id)
+    if not deleted:
+        raise EvalSampleNotFound(sample_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/v1/rag/eval-samples/{sample_id}/rerun",
+    response_model=RagEvalRerunDiff,
+)
+async def rerun_rag_eval_sample(
+    sample_id: str, request: Request
+) -> RagEvalRerunDiff:
+    """N159：重放查询并与存档差分（hitExpected / missed / newHits；
+    stored/now 两份命中原样回显——绝不只给结论不给证据）。"""
+    from lumirss.rag_eval import RagEvalSampleStore
+
+    store = RagEvalSampleStore(request.app.state.db, _get_rag_service(request))
+    diff = await store.rerun(sample_id)
+    return RagEvalRerunDiff(**diff)
 
 
 @router.get("/api/v1/rag/search", response_model=RagSearchResponse)
@@ -133,7 +347,7 @@ async def rag_search(
                 text=item["text"][:400],
                 score=round(float(item["score"]), 4),
                 title=item.get("title") or None,
-                modelId=MODEL_ID_EXPORT,
+                modelId=result.get("modelId"),
             )
             for item in items
         ],
@@ -318,6 +532,146 @@ async def rag_chunk_preview(
     )
 
 
+@router.post(
+    "/api/v1/rag/answers-to-note", response_model=RagAnswersToNoteResult
+)
+async def rag_answers_to_note(
+    payload: RagAnswersToNoteRequest, request: Request
+):
+    """N160：从答案生成证据笔记。
+
+    - ``selectedCitationIds`` 是该会话里 assistant 消息 id（带引用）；
+      非 assistant / 不属于该会话 → 422 citation_invalid（诚实拒绝，
+      绝不静默截断）；
+    - 摘录段取 rag_chunks 里 LIVE 模型的精确分块文本（引用 ref +
+      原文 span），生成内容段显式标注「AI 生成」，人工修改段留空；
+    - 笔记 source='ai_answer'：后续每次编辑先把上一版推入
+      lumi_note_revisions（provenance 保留，0131）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    from ..deps import _get_agent_store
+
+    db = request.app.state.db
+    await db.migrate()
+    thread_id = payload.threadId
+    agent_store = _get_agent_store(request)
+    if await agent_store.get_thread(thread_id) is None:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {"type": "thread_not_found", "message": "会话不存在。"}
+            },
+        )
+
+    answers: list[dict] = []
+    missing: list[str] = []
+    for message_id in payload.selectedCitationIds[:20]:
+        message = await agent_store.get_message(thread_id, message_id)
+        if message is None or message["role"] != "assistant":
+            missing.append(message_id)
+            continue
+        answers.append(message)
+    if missing:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "citation_invalid",
+                    "message": "所选答案不存在或不携带引用："
+                    + ", ".join(missing[:5]),
+                }
+            },
+        )
+    if not answers:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "type": "citation_invalid",
+                    "message": "至少选择一条带引用的回答。",
+                }
+            },
+        )
+
+    model_id = await _live_model_id(db, _DEFAULT_MODEL)
+    excerpts: list[dict[str, str]] = []
+    seen_refs: set[str] = set()
+    for message in answers:
+        for ref in list(message.get("citations") or [])[:8]:
+            if ref in seen_refs:
+                continue
+            seen_refs.add(ref)
+            title_row = await db.fetch_one(
+                "SELECT title FROM search_entries WHERE entry_ref = ?", (ref,)
+            )
+            if title_row is None:
+                title_row = await db.fetch_one(
+                    "SELECT title FROM search_library WHERE ref = ?", (ref,)
+                )
+            title = str(title_row["title"]) if title_row else ""
+            chunk_rows = await db.fetch_all(
+                "SELECT text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 2",
+                (ref, model_id),
+            )
+            span = ""
+            if chunk_rows:
+                span = "\n".join(str(r["text"] or "") for r in chunk_rows)
+            else:
+                body_row = await db.fetch_one(
+                    "SELECT content_text FROM search_entries WHERE entry_ref = ?",
+                    (ref,),
+                )
+                if body_row is None:
+                    body_row = await db.fetch_one(
+                        "SELECT body FROM search_library WHERE ref = ?", (ref,)
+                    )
+                if body_row is not None:
+                    keys = body_row.keys()
+                    raw = (
+                        body_row["content_text"]
+                        if "content_text" in keys
+                        else body_row["body"]
+                    )
+                    span = str(raw or "")
+            if span.strip():
+                excerpts.append(
+                    {"ref": ref, "title": title, "text": span.strip()[:400]}
+                )
+
+    answer_text = "\n\n".join(
+        str((m.get("content") or {}).get("text") or "").strip()
+        for m in answers
+        if str((m.get("content") or {}).get("text") or "").strip()
+    )
+    title = (payload.title or "").strip()
+    if not title:
+        first_text = str(
+            (answers[0].get("content") or {}).get("text") or ""
+        ).strip()
+        title = first_text[:40] or "答案证据笔记"
+
+    from lumirss.lumi_notes_lifecycle import NoteLifecycleStore
+
+    note = await NoteLifecycleStore(db).create_answer_note(
+        title=title,
+        question="",
+        answer=answer_text,
+        excerpts=excerpts,
+        workspace_id=payload.workspaceId,
+    )
+    return RagAnswersToNoteResult(
+        noteId=note["uuid"],
+        title=note["title"],
+        contentMd=note["contentMd"],
+        excerptCount=len(excerpts),
+        revisionCount=0,
+        createdAt=note["createdAt"],
+    )
+
+
 @router.post("/api/v1/rag/ask", response_model=RagAskResponse)
 async def rag_ask(payload: RagAskRequest, request: Request):
     """同步 RAG 问答（N151/N154/N155）。
@@ -399,6 +753,11 @@ async def rag_ask(payload: RagAskRequest, request: Request):
                 },
             )
 
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    ask_model_id = await _live_model_id(db, _DEFAULT_MODEL)
+
     async def _excerpts_for(refs: list[str]) -> list[RagAskExcerpt]:
         """refs → 原文片段（rag_chunks 优先，投影回退；每 ref 有界）。"""
         excerpts: list[RagAskExcerpt] = []
@@ -406,7 +765,7 @@ async def rag_ask(payload: RagAskRequest, request: Request):
             title = await _ref_title(db, ref)
             rows = await db.fetch_all(
                 "SELECT ord, text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 3",
-                (ref, MODEL_ID_EXPORT),
+                (ref, ask_model_id),
             )
             if rows:
                 for row in rows:
@@ -489,7 +848,7 @@ async def rag_ask(payload: RagAskRequest, request: Request):
         body = await _ref_body(db, ref) or ""
         chunk_rows = await db.fetch_all(
             "SELECT text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT 4",
-            (ref, MODEL_ID_EXPORT),
+            (ref, ask_model_id),
         )
         if chunk_rows:
             body = "\n".join(str(r["text"] or "") for r in chunk_rows)
@@ -625,10 +984,14 @@ async def _ref_body(db, ref: str) -> str | None:
 
 async def _refs_indexed(db, refs: list[str]) -> bool:
     """refs 是否已有当前模型的分块（语义可用性如实回显用）。"""
+    from lumirss.rag import DEFAULT_MODEL_ID as _DEFAULT_MODEL
+    from lumirss.rag import live_model_id as _live_model_id
+
+    model_id = await _live_model_id(db, _DEFAULT_MODEL)
     for ref in refs[:8]:
         row = await db.fetch_one(
             "SELECT 1 FROM rag_chunks WHERE ref = ? AND model_id = ? LIMIT 1",
-            (ref, MODEL_ID_EXPORT),
+            (ref, model_id),
         )
         if row is not None:
             return True

@@ -177,6 +177,20 @@ class AnnotationStore:
             next_cursor = f"{last['updatedAt']}|{last['id']}"
         return items, next_cursor
 
+    async def list_all_bounded(
+        self, limit: int = 500
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """N010 导出：本人全部批注（新→旧），硬上限 limit；超出上限 →
+        (前 limit 条, False) 诚实截断。annotations 表在 per-user 库中，
+        只可能是本人批注。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id, entry_ref, anchor_json, anchor_hash, excerpt, note, color, created_at, updated_at FROM annotations ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (max(1, limit) + 1,),
+        )
+        complete = len(rows) <= limit
+        return [_row_to_dict(row) for row in rows[:limit]], complete
+
     async def search_bounded(
         self, q: str, *, limit: int = 10
     ) -> tuple[list[dict[str, Any]], bool]:

@@ -34,6 +34,7 @@ import {
   SPEECH_LEXICON_CAP,
   SPEECH_RATES,
   SPEECH_SLEEP_TIMER_MINUTES,
+  SPEECH_STOP_MODES,
   bilingualGapMs,
   buildSpeechQueue,
   listVoices,
@@ -43,6 +44,7 @@ import {
   type SpeechBilingualGap,
   type SpeechCollection,
   type SpeechRate,
+  type SpeechStopMode,
 } from '../lib/reader-speech'
 import {
   getSpeechBookmark,
@@ -177,7 +179,12 @@ function useSpeechControl(
   )
   const speechRate = useAppSettings((s) => s.settings.speechRate)
   const speechVoiceURI = useAppSettings((s) => s.settings.speechVoiceURI)
+  // NF1 N093：按语言自动选声（块级 CJK/拉丁判定；手动 voiceURI 恒赢）。
+  const speechVoiceURIZh = useAppSettings((s) => s.settings.speechVoiceURIZh)
+  const speechVoiceURIEn = useAppSettings((s) => s.settings.speechVoiceURIEn)
   const speechSleepMinutes = useAppSettings((s) => s.settings.speechSleepTimerMinutes)
+  // NF1 N096：朗读结束模式（到本篇 / 到本队列）。
+  const speechStopMode = useAppSettings((s) => s.settings.speechStopMode)
   const updateSettings = useAppSettings((s) => s.update)
   const engineRef = useRef<ReaderSpeechEngine | null>(null)
   /** 当前会话的块 id → 出声文本（面板预览用；译文条目与原块共享 id，
@@ -211,6 +218,10 @@ function useSpeechControl(
           interPairGapMs: bilingualGapMs(
             useAppSettings.getState().settings.speechBilingualGap,
           ),
+          perLanguageVoices: true,
+          voiceURIZh: speechVoiceURIZh === '' ? null : speechVoiceURIZh,
+          voiceURIEn: speechVoiceURIEn === '' ? null : speechVoiceURIEn,
+          stopMode: speechStopMode,
         },
         {
           onBlockChange: (info) => {
@@ -259,6 +270,9 @@ function useSpeechControl(
     engine.setConfig({
       rate: s.speechRate,
       voiceURI: s.speechVoiceURI === '' ? null : s.speechVoiceURI,
+      voiceURIZh: s.speechVoiceURIZh === '' ? null : s.speechVoiceURIZh,
+      voiceURIEn: s.speechVoiceURIEn === '' ? null : s.speechVoiceURIEn,
+      stopMode: s.speechStopMode,
       interPairGapMs: bilingualGapMs(s.speechBilingualGap),
     })
     engine.armSleepTimer(s.speechSleepTimerMinutes > 0 ? s.speechSleepTimerMinutes : null)
@@ -327,6 +341,26 @@ function useSpeechControl(
     }
   }
 
+  /** NF1 N093：按语言声音改动。朗读中 → 按新声音重读当前段（与手动
+   * 声音同语义；手动 voiceURI 非空时改动不生效——手动恒赢）。 */
+  const changeVoiceForLang = (lang: 'zh' | 'en', uri: string) => {
+    if (lang === 'zh') updateSettings({ speechVoiceURIZh: uri })
+    else updateSettings({ speechVoiceURIEn: uri })
+    if (engineRef.current !== null && stateRef.current === 'speaking') {
+      engineRef.current.setConfig(
+        lang === 'zh'
+          ? { voiceURIZh: uri === '' ? null : uri }
+          : { voiceURIEn: uri === '' ? null : uri },
+      )
+    }
+  }
+
+  /** NF1 N096：结束模式改动（不重读当前块——模式只在队列耗尽边界生效）。 */
+  const changeStopMode = (mode: SpeechStopMode) => {
+    updateSettings({ speechStopMode: mode })
+    engineRef.current?.setStopMode(mode)
+  }
+
   const changeSleepMinutes = (minutes: number) => {
     updateSettings({ speechSleepTimerMinutes: minutes })
     // 会话中改设定：deadline 即刻按新档位重新锚定（关 = 解除）。
@@ -343,11 +377,16 @@ function useSpeechControl(
     block,
     rate: speechRate,
     voiceURI: speechVoiceURI,
+    voiceURIZh: speechVoiceURIZh,
+    voiceURIEn: speechVoiceURIEn,
+    stopMode: speechStopMode,
     sleepMinutes: speechSleepMinutes,
     toggle,
     stop,
     changeRate,
     changeVoice,
+    changeVoiceForLang,
+    changeStopMode,
     changeSleepMinutes,
     speakFromBlock,
   }
@@ -427,6 +466,11 @@ function SpeechPanelControls({
       ),
     ]
   }, [])
+  // NF1 N093：按语言选声下拉（同一名单；「自动」= 该语言走自动链）。
+  const perLangVoiceOptions = useMemo(
+    () => [{ value: '', label: '自动' }, ...voiceOptions.slice(1)],
+    [voiceOptions],
+  )
   // 订阅听读偏好：试听文本随开关/词典/交替设置即时重算（收集回调在
   // 调用时刻读 store 快照——这里订阅保证重渲染时机）。
   const skipCode = useAppSettings((s) => s.settings.speechSkipCode)
@@ -499,15 +543,16 @@ function SpeechPanelControls({
       role="group"
       aria-label="朗读设置"
     >
-      {/* 状态行：当前段落进度 + 首行预览；睡眠定时停止 = 诚实提示 */}
+      {/* 状态行：当前段落进度 + 剩余段数 + 首行预览；睡眠定时停止 = 诚实提示 */}
       {speech.sleepStopped ? (
         <p aria-live="polite" className="text-sm text-[var(--lumi-text-secondary)]">
           已停止（睡眠定时）
         </p>
       ) : speech.block !== null ? (
         <div aria-live="polite" className="min-w-0">
-          <p className="text-xs text-[var(--lumi-text-tertiary)]">
-            正在朗读 第 {speech.block.position} / {speech.block.total} 段
+          <p className="text-xs text-[var(--lumi-text-tertiary)]" data-lumi-speech-progress="">
+            正在朗读 第 {speech.block.position} / {speech.block.total} 段 · 剩余{' '}
+            {speech.block.total - speech.block.position} 段
             {speech.state === 'paused' ? '（已暂停）' : ''}
           </p>
           <p className="mt-0.5 truncate text-sm text-[var(--lumi-text-primary)]">
@@ -566,6 +611,32 @@ function SpeechPanelControls({
           />
         </div>
 
+        {/* NF1 N093：按语言自动选声（混合语言文章逐块切声）。手动声音
+            非空时整体覆盖——诚实标注优先级。 */}
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">中文声音</span>
+          <Select
+            aria-label="中文块朗读声音"
+            value={speech.voiceURIZh}
+            onChange={(e) => speech.changeVoiceForLang('zh', e.target.value)}
+            options={perLangVoiceOptions}
+            className="max-w-[11.5rem]"
+          />
+        </div>
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">英文声音</span>
+          <Select
+            aria-label="英文块朗读声音"
+            value={speech.voiceURIEn}
+            onChange={(e) => speech.changeVoiceForLang('en', e.target.value)}
+            options={perLangVoiceOptions}
+            className="max-w-[11.5rem]"
+          />
+        </div>
+        <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
+          混合语言文章按段自动切声（「自动」= 中文优先挑声）；上方手动声音非空时优先生效。
+        </p>
+
         <div className={PANEL_ROW}>
           <span className="text-sm text-[var(--lumi-text-primary)]">语速</span>
           <div role="group" aria-label="朗读语速" className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5">
@@ -617,6 +688,39 @@ function SpeechPanelControls({
         {/* 睡眠定时语义的诚实说明：块边界检查 + 暂停可能推迟实际停止 */}
         <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
           定时在段落边界检查；暂停期间不推进段落，实际停止可能晚于设定。
+        </p>
+
+        {/* NF1 N096：朗读结束模式（到本篇 / 到本队列）。当前阅读页没有
+            活动的阅读队列流，「到本队列」诚实退化为与到本篇相同。 */}
+        <div className={PANEL_ROW}>
+          <span className="text-sm text-[var(--lumi-text-primary)]">结束于</span>
+          <div
+            role="group"
+            aria-label="朗读结束模式"
+            className="inline-flex gap-0.5 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] p-0.5"
+          >
+            {SPEECH_STOP_MODES.map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                aria-pressed={speech.stopMode === mode.key}
+                onClick={() => speech.changeStopMode(mode.key)}
+                className={cx(
+                  'min-h-7 rounded-[var(--lumi-radius-sm)] px-1.5 text-xs transition-colors duration-[var(--lumi-motion-fast)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--lumi-focus-ring)]',
+                  speech.stopMode === mode.key
+                    ? 'bg-[var(--lumi-surface-selected)] text-[var(--lumi-text-primary)]'
+                    : 'text-[var(--lumi-text-secondary)] hover:text-[var(--lumi-text-primary)]',
+                )}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs leading-5 text-[var(--lumi-text-tertiary)]">
+          {speech.stopMode === 'queue'
+            ? '到本队列：从阅读队列连读时读完整队列；当前无队列流时与到本篇相同。'
+            : '到本篇：读完本文即停。'}
         </p>
       </PanelSection>
 

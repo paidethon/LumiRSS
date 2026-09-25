@@ -91,6 +91,31 @@ class AiTaskLogStore:
         )
         return _row(row) if row is not None else None
 
+    async def count_before(self, cutoff: str) -> int:
+        """N189 活动清除预览：早于 cutoff（ISO 文本比较口径）的条数。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM ai_task_log WHERE created_at < ?",
+            (cutoff,),
+        )
+        return int(row["n"]) if row else 0
+
+    async def purge_before(self, cutoff: str) -> int:
+        """N189 活动清除：删除早于 cutoff 的任务记录，返回删除数。
+
+        只动 ai_task_log（诊断埋点）——业务状态（已读/收藏/笔记）不在
+        本表，天然不受影响。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT COUNT(*) AS n FROM ai_task_log WHERE created_at < ?",
+            (cutoff,),
+        )
+        await self._db.execute(
+            "DELETE FROM ai_task_log WHERE created_at < ?",
+            (cutoff,),
+        )
+        return int(row["n"]) if row else 0
+
 
 def _row(row: Any) -> dict[str, Any]:
     return {

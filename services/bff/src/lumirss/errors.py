@@ -69,6 +69,8 @@ from lumirss.ai_summary_versions import SummaryVersionNotFound
 from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
+from lumirss.annotation_baskets import BasketInvalid
+from lumirss.annotation_migration import UnknownVersion
 from lumirss.api_sources import (
     ApiSourceBudgetExhausted,
     ApiSourceExpressionError,
@@ -87,7 +89,11 @@ from lumirss.auth_store import (
     WeakPassword,
 )
 from lumirss.author_aggregates import AuthorAliasInvalid, AuthorAliasNotFound
-from lumirss.backlog import BacklogConflict
+from lumirss.backlog import (
+    BacklogConflict,
+    BatchAlreadyUndone,
+    BatchLogNotFound,
+)
 from lumirss.backup import (
     BackupBusy,
     BackupChecksumMismatch,
@@ -148,8 +154,10 @@ from lumirss.mail_digest import (
     SmtpSendFailed,
 )
 from lumirss.mail_imap import ImapNotConfigured
+from lumirss.media_failures import MediaFailureInvalid
 from lumirss.middleware import RequestBodyTooLarge
 from lumirss.mute_windows import MuteWindowsInvalid
+from lumirss.note_sections import NoteSectionsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
     VaultPermissionDenied,
@@ -171,15 +179,26 @@ from lumirss.opml_import_log import (
     OpmlImportLogNotFound,
     OpmlImportLogUndone,
 )
+from lumirss.qa_conflicts import QaConflictInvalid
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
-from lumirss.rag import RagModelUnavailable, RagRebuildBusy
+from lumirss.quick_actions import QuickActionInvalid
+from lumirss.rag import (
+    RagJobNotFound,
+    RagModelUnavailable,
+    RagModelUnknown,
+    RagRebuildBusy,
+)
+from lumirss.rag_eval import EvalSampleInvalid, EvalSampleLimit, EvalSampleNotFound
+from lumirss.reading_notes import ReadingNoteInvalid, ReadingNoteNotFound
 from lumirss.reading_queue import (
     QueueInvalid,
     QueueItemDone,
     QueueItemNotFound,
+    QueueRevisionConflict,
     QueueSnapshotLimit,
     QueueSnapshotNotFound,
 )
+from lumirss.refresh_log import RecoveryAlreadyConsumed, RecoveryNotFound
 from lumirss.research_pack_zip import ZipInvalid, ZipTooLarge
 from lumirss.restore import (
     RestoreConfirmationRequired,
@@ -241,6 +260,7 @@ from lumirss.tags import (
     TagMergeUndoNotFound,
     TagNotFound,
 )
+from lumirss.translation_policy import TranslationPolicyInvalid
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 from lumirss.workspace_archive import (
     ArchivedWorkspace,
@@ -248,6 +268,10 @@ from lumirss.workspace_archive import (
 )
 from lumirss.workspace_board import BoardInvalid, BoardItemNotFound
 from lumirss.workspace_cleanup import CleanupInvalid, CleanupLogNotFound
+from lumirss.workspace_collect_rules import (
+    CollectRuleInvalid,
+    CollectRuleNotFound,
+)
 from lumirss.workspace_goals import GoalInvalid
 from lumirss.workspace_sections import (
     SectionInvalid,
@@ -263,6 +287,7 @@ from lumirss.workspace_templates import (
 from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
+    WorkspaceItemDuplicate,
     WorkspaceItemPinned,
     WorkspaceNotFound,
     WorkspaceRevisionConflict,
@@ -372,6 +397,8 @@ _ERROR_RESPONSES = {
     WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
     # N102：固定条目拒绝静默移除（force=1 才放行）
     WorkspaceItemPinned: (409, "workspace_item_pinned"),
+    # N108 跨工作区移动（onDuplicate=conflict）
+    WorkspaceItemDuplicate: (409, "workspace_item_duplicate"),
     # N105：快照不存在（不跨工作区取快照）
     WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
     # N113 分节大纲
@@ -381,12 +408,25 @@ _ERROR_RESPONSES = {
     # N120 清理预演
     CleanupInvalid: (422, "invalid_workspace_cleanup"),
     CleanupLogNotFound: (404, "workspace_cleanup_log_not_found"),
+    # N118 工作区收集规则
+    CollectRuleInvalid: (422, "invalid_collect_rule"),
+    CollectRuleNotFound: (404, "collect_rule_not_found"),
     # N041/N042/N043：今日必读队列（稳定错误信封）
     QueueInvalid: (400, "invalid_queue"),
     QueueItemNotFound: (404, "queue_item_not_found"),
     QueueItemDone: (409, "queue_item_done"),
     QueueSnapshotNotFound: (404, "queue_snapshot_not_found"),
     QueueSnapshotLimit: (400, "queue_snapshot_limit"),
+    # E1: N036/N037 刷新日志 + 恢复窗口
+    RecoveryNotFound: (404, "recovery_not_found"),
+    RecoveryAlreadyConsumed: (409, "recovery_already_consumed"),
+    # E1: N039 附件失效检测 / N045 阅读中断便签
+    MediaFailureInvalid: (422, "invalid_media_failures"),
+    ReadingNoteInvalid: (422, "invalid_reading_note"),
+    ReadingNoteNotFound: (404, "reading_note_not_found"),
+    # E1: N049 分批撤销台账
+    BatchLogNotFound: (404, "backlog_batch_log_not_found"),
+    BatchAlreadyUndone: (409, "backlog_batch_already_undone"),
     # phase2 M2 clips + snapshots
     ClipFetchError: (502, "clip_fetch_failed"),
     ClipForbidden: (400, "clip_fetch_forbidden"),
@@ -436,6 +476,16 @@ _ERROR_RESPONSES = {
     # phase2 G7 rag + agent
     RagModelUnavailable: (503, "model_unavailable"),
     RagRebuildBusy: (409, "rebuild_in_progress"),
+    # N158 局部重建作业
+    RagJobNotFound: (404, "rag_job_not_found"),
+    # N157 索引版本切换
+    RagModelUnknown: (400, "unknown_model"),
+    # N159 检索质量收藏
+    EvalSampleInvalid: (422, "invalid_eval_sample"),
+    EvalSampleLimit: (409, "eval_sample_limit"),
+    EvalSampleNotFound: (404, "eval_sample_not_found"),
+    # N156 资料冲突对照（纯词法，零模型）
+    QaConflictInvalid: (422, "invalid_qa_conflicts"),
     AgentProviderUnavailable: (503, "provider_unavailable"),
     ToolDenied: (403, "tool_denied"),
     ApprovalInvalid: (409, "approval_invalid"),
@@ -522,6 +572,12 @@ _ERROR_RESPONSES = {
     OpmlImportLogNotFound: (404, "opml_import_log_not_found"),
     OpmlImportLogUndone: (409, "opml_import_already_undone"),
     AttentionLevelInvalid: (422, "invalid_attention_level"),
+    # N090 per-source 翻译策略 / N072 精选篮 / N079 笔记分栏 / N078 版本迁移
+    TranslationPolicyInvalid: (422, "invalid_translation_policy"),
+    BasketInvalid: (422, "invalid_basket"),
+    NoteSectionsInvalid: (422, "invalid_note_sections"),
+    UnknownVersion: (422, "unknown_annotation_version"),
+    QuickActionInvalid: (422, "invalid_quick_action"),
 }
 
 
@@ -706,27 +762,69 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ZipInvalid)
     @app.exception_handler(ZipTooLarge)
     @app.exception_handler(WorkspaceItemPinned)
+    @app.exception_handler(WorkspaceItemDuplicate)
     @app.exception_handler(WorkspaceSnapshotNotFound)
     @app.exception_handler(SectionInvalid)
     @app.exception_handler(SectionNotFound)
     @app.exception_handler(SectionItemNotFound)
     @app.exception_handler(CleanupInvalid)
     @app.exception_handler(CleanupLogNotFound)
+    # N115-N119 工作区补位 / N156 / N158 / N159
+    @app.exception_handler(CollectRuleInvalid)
+    @app.exception_handler(CollectRuleNotFound)
+    @app.exception_handler(RagJobNotFound)
+    @app.exception_handler(RagModelUnknown)
+    @app.exception_handler(EvalSampleInvalid)
+    @app.exception_handler(EvalSampleLimit)
+    @app.exception_handler(EvalSampleNotFound)
+    @app.exception_handler(QaConflictInvalid)
     @app.exception_handler(QueueInvalid)
     @app.exception_handler(QueueItemNotFound)
     @app.exception_handler(QueueItemDone)
     @app.exception_handler(QueueSnapshotNotFound)
     @app.exception_handler(QueueSnapshotLimit)
+    @app.exception_handler(RecoveryNotFound)
+    @app.exception_handler(RecoveryAlreadyConsumed)
+    @app.exception_handler(MediaFailureInvalid)
+    @app.exception_handler(ReadingNoteInvalid)
+    @app.exception_handler(ReadingNoteNotFound)
+    @app.exception_handler(BatchLogNotFound)
+    @app.exception_handler(BatchAlreadyUndone)
+    @app.exception_handler(QueueRevisionConflict)
     # N019 来源接入说明卡 / N018 撤销台账 / N020 关注级别
     @app.exception_handler(AccessCardInvalid)
     @app.exception_handler(OpmlImportLogNotFound)
     @app.exception_handler(OpmlImportLogUndone)
     @app.exception_handler(AttentionLevelInvalid)
+    @app.exception_handler(TranslationPolicyInvalid)
+    @app.exception_handler(BasketInvalid)
+    @app.exception_handler(NoteSectionsInvalid)
+    @app.exception_handler(UnknownVersion)
+    @app.exception_handler(QuickActionInvalid)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(
             status_code=status,
             content={"error": {"type": error_type, "message": str(exc)}},
+        )
+
+    @app.exception_handler(QueueRevisionConflict)
+    async def queue_revision_conflict_handler(
+        request: Request, exc: QueueRevisionConflict
+    ) -> JSONResponse:
+        """N046：409 冲突体额外携带 currentRevision + 逐 ref 差异提示
+        （conflicts: [{ref, serverItem, yourItem}]）——客户端「按项合并」
+        直接以此为裁决清单；不解析的客户端仍可整页重取。"""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "type": "queue_revision_conflict",
+                    "message": str(exc),
+                    "currentRevision": exc.current_revision,
+                    "conflicts": exc.conflicts,
+                }
+            },
         )
 
     @app.exception_handler(WorkspaceRevisionConflict)

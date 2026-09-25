@@ -1,18 +1,23 @@
 /** SnapshotDiagnosticsPanel — F033 资源诊断 + F034 版本（SnapshotsPage 行内展开）。
  *
- * 资源状态列表（ok/failed/skipped 如实）+「重试失败项」（无失败 no-op）；
- * 版本下拉（时间+hash 前 8）+「对比」视图（unified diff 行标色）。
+ * 资源状态列表（ok/failed/skipped/missing 如实）+「重试失败项」（无失败
+ * no-op）；版本下拉（时间+hash 前 8）+「对比」视图（unified diff 行标色）。
+ * N124：资源预算（真实文件大小 + 内联 data: URI 分类拆分）与按类选择性
+ * 清理（只删选中类别；条目本体保留，被清资源随后在清单中标 missing）。
  */
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, GitCompare, Loader2, RotateCcw } from 'lucide-react'
+import { Activity, GitCompare, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import {
+  cleanupSnapshotResources,
   createSnapshotVersion,
   diffSnapshotVersions,
   getSnapshotDetail,
+  getSnapshotStorage,
   listSnapshotVersions,
   retryFailedSnapshotResources,
+  type SnapshotCleanupKind,
 } from '../api/client'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
@@ -21,7 +26,22 @@ const RESOURCE_STATUS_TEXT: Record<string, string> = {
   ok: '正常',
   failed: '失败',
   skipped: '内联',
+  missing: '缺失',
 }
+
+const CLEANUP_KIND_TEXT: Record<SnapshotCleanupKind, string> = {
+  images: '图片',
+  styles: '样式',
+  attachments: '附件',
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const CLEANUP_KINDS: SnapshotCleanupKind[] = ['images', 'styles', 'attachments']
 
 export default function SnapshotDiagnosticsPanel({ uuid }: { uuid: string }) {
   const detail = useQuery({
@@ -32,8 +52,14 @@ export default function SnapshotDiagnosticsPanel({ uuid }: { uuid: string }) {
     queryKey: ['snapshot-versions', uuid],
     queryFn: ({ signal }) => listSnapshotVersions(uuid, signal),
   })
+  // N124：资源预算（真实文件大小 + 内联资源分类）。
+  const storage = useQuery({
+    queryKey: ['snapshot-storage', uuid],
+    queryFn: ({ signal }) => getSnapshotStorage(uuid, signal),
+  })
   const [retrying, setRetrying] = useState(false)
   const [capturing, setCapturing] = useState(false)
+  const [cleaningKind, setCleaningKind] = useState<SnapshotCleanupKind | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [compareWith, setCompareWith] = useState<number | null>(null)
 
@@ -52,6 +78,25 @@ export default function SnapshotDiagnosticsPanel({ uuid }: { uuid: string }) {
       setNotice('重试失败。')
     } finally {
       setRetrying(false)
+    }
+  }
+
+  async function runCleanup(kind: SnapshotCleanupKind) {
+    setCleaningKind(kind)
+    setNotice(null)
+    try {
+      const result = await cleanupSnapshotResources(uuid, [kind])
+      const removed = result.cleaned[kind] ?? 0
+      setNotice(
+        removed > 0
+          ? `已清理${CLEANUP_KIND_TEXT[kind]} ${removed} 项，现占 ${formatBytes(result.storage.totalBytes)}。`
+          : `没有可清理的内联${CLEANUP_KIND_TEXT[kind]}。`,
+      )
+      await Promise.all([detail.refetch(), storage.refetch()])
+    } catch {
+      setNotice('清理失败。')
+    } finally {
+      setCleaningKind(null)
     }
   }
 
@@ -93,6 +138,49 @@ export default function SnapshotDiagnosticsPanel({ uuid }: { uuid: string }) {
         资源诊断（{resources.length}
         {detail.data.resourcesTruncated ? '+' : ''}）
       </p>
+      {/* N124：资源预算 + 按类清理（只删选中类别；条目本体不受影响）。 */}
+      {storage.isPending ? (
+        <p className="mt-1 text-[11px] text-[var(--lumi-text-tertiary)]">资源预算计算中…</p>
+      ) : storage.isError ? (
+        <p role="alert" className="mt-1 text-[11px] text-[var(--lumi-text-tertiary)]">
+          资源预算加载失败。
+          <button type="button" className="ml-1 underline" onClick={() => void storage.refetch()}>
+            重试
+          </button>
+        </p>
+      ) : (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--lumi-text-secondary)]" data-lumi-snapshot-storage="">
+          <span>
+            共 {formatBytes(storage.data.totalBytes)}
+          </span>
+          <span aria-hidden>·</span>
+          <span>图片 {storage.data.breakdown.images.count} 项（{formatBytes(storage.data.breakdown.images.bytes)}）</span>
+          <span aria-hidden>·</span>
+          <span>样式 {formatBytes(storage.data.breakdown.styles.bytes)}</span>
+          <span aria-hidden>·</span>
+          <span>附件 {formatBytes(storage.data.breakdown.attachments.bytes)}</span>
+          {CLEANUP_KINDS.map((kind) => {
+            const bucket = storage.data.breakdown[kind]
+            if (bucket.bytes <= 0) return null
+            return (
+              <Button
+                key={kind}
+                size="sm"
+                variant="ghost"
+                disabled={cleaningKind !== null}
+                onClick={() => void runCleanup(kind)}
+              >
+                {cleaningKind === kind ? (
+                  <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                ) : (
+                  <Trash2 aria-hidden className="size-3.5" />
+                )}
+                清理{CLEANUP_KIND_TEXT[kind]}
+              </Button>
+            )
+          })}
+        </div>
+      )}
       <ul className="mt-1 max-h-24 overflow-y-auto">
         {resources.map((resource, index) => (
           <li key={`${resource.url}-${index}`} className="flex items-baseline gap-2">
@@ -100,6 +188,7 @@ export default function SnapshotDiagnosticsPanel({ uuid }: { uuid: string }) {
               className={cx(
                 resource.status === 'failed' && 'text-[var(--lumi-danger)]',
                 resource.status === 'ok' && 'text-[var(--lumi-success)]',
+                resource.status === 'missing' && 'text-[var(--lumi-danger)]',
                 resource.status === 'skipped' && 'text-[var(--lumi-text-tertiary)]',
               )}
             >
