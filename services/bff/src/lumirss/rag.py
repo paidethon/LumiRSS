@@ -43,6 +43,7 @@ import hashlib
 import importlib.util
 import json
 import logging
+import os
 import sqlite3
 import struct
 import time
@@ -59,8 +60,50 @@ from lumirss.util import utc_now
 
 _logger = logging.getLogger("lumirss.rag")
 
-MODEL_ID = "BAAI/bge-small-zh-v1.5"
-MODEL_DIM = 512
+# N157：模型可配置化。历史常量保留为默认值/兼容别名；实际生效的模型
+# 按「settings > 环境变量 > 默认」解析（RagService 构造时读环境变量，
+# settings 在首个异步点惰性读取）。目录表允许的模型维度是硬编码的
+# allow-list——任意 HuggingFace 模型被拒绝，而不是静默下载一个维度
+# 不匹配的嵌入空间。
+DEFAULT_MODEL_ID = "BAAI/bge-small-zh-v1.5"
+DEFAULT_MODEL_DIM = 512
+MODEL_ID = DEFAULT_MODEL_ID  # 兼容别名（旧导入点）
+MODEL_DIM = DEFAULT_MODEL_DIM  # 兼容别名（旧导入点）
+
+MODEL_CATALOG: dict[str, int] = {
+    "BAAI/bge-small-zh-v1.5": 512,
+    "BAAI/bge-small-en-v1.5": 384,
+    "intfloat/multilingual-e5-small": 384,
+}
+ENV_MODEL_ID = "LUMI_RAG_MODEL_ID"
+ENV_MODEL_DIM = "LUMI_RAG_MODEL_DIM"
+# settings 键（每用户库；N157 切换端点写入，rebuild/swap 消费）。
+SETTING_MODEL_ID = "rag_model_id"
+SETTING_VEC_DIM = "rag_vec_dim"
+
+
+def model_dim_for(model_id: str) -> int | None:
+    """目录内的模型 → 声明维度；目录外 → None（诚实拒绝）。"""
+    return MODEL_CATALOG.get(model_id)
+
+
+def configured_env_model() -> tuple[str, int]:
+    """N157：构造时读取的环境变量覆盖（env > 默认）。
+
+    维度优先取目录表；目录外的 env 模型要求 LUMI_RAG_MODEL_DIM 显式
+    给出（部署级自行负责维度正确性），否则回落默认——绝不猜。"""
+    model_id = os.environ.get(ENV_MODEL_ID, "").strip() or DEFAULT_MODEL_ID
+    dim = MODEL_CATALOG.get(model_id)
+    if dim is None:
+        raw = os.environ.get(ENV_MODEL_DIM, "").strip()
+        try:
+            dim = int(raw)
+        except ValueError:
+            dim = 0
+        if dim <= 0:
+            model_id, dim = DEFAULT_MODEL_ID, DEFAULT_MODEL_DIM
+    return model_id, dim
+
 _CHUNK_MIN = 200
 _CHUNK_MAX = 800
 _MAX_CHUNKS_PER_REF = 40
@@ -109,9 +152,27 @@ class RagJobNotFound(Exception):
     """N158：作业不存在（映射 404，不跨用户库泄露）。"""
 
 
+class RagModelUnknown(Exception):
+    """N157：请求切换的模型不在目录表内（映射 400）。"""
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        super().__init__(f"未知模型：{model_id}")
+
+
 def doc_content_hash(text: str) -> str:
     """F100：语料文档正文 hash（分块行的 content_hash 列存同一值）。"""
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+async def live_model_id(db: Database, fallback: str = DEFAULT_MODEL_ID) -> str:
+    """N157：某用户库当前索引的 LIVE 模型 id（helper 模块共用）。
+
+    rag_chunks 里只会有一个模型的行（swap 全量替换）；空索引 → fallback。"""
+    row = await db.fetch_one(
+        "SELECT model_id FROM rag_chunks ORDER BY chunk_id LIMIT 1"
+    )
+    return str(row["model_id"]) if row is not None else fallback
 
 
 def vec_extension_available() -> bool:
@@ -223,15 +284,18 @@ def chunk_text_with_spans(
 
 
 class EmbeddingService:
-    """Lazy fastembed singleton with idle unload and a load lock.
+    """Lazy fastembed holder with idle unload and a load lock.
 
     The constructor kwarg is ``model_name`` — fastembed 0.8 silently
     loads its DEFAULT model when the older ``model=`` alias is used, so
     the resolved identity is verified at load and the dimension is
-    measured from the loaded model.
+    measured from the loaded model. N157：模型身份按实例配置（每个
+    RagService 解析出自己的 active 模型）；身份变化时上层负责换实例。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, model_id: str = DEFAULT_MODEL_ID, model_dim: int = DEFAULT_MODEL_DIM) -> None:
+        self.model_id = model_id
+        self._expected_dim = model_dim
         self._model = None
         self._dim: int | None = None
         self._lock = asyncio.Lock()
@@ -243,8 +307,8 @@ class EmbeddingService:
 
     @property
     def dim(self) -> int:
-        """Dimension of the loaded model (declared MODEL_DIM before load)."""
-        return self._dim if self._dim is not None else MODEL_DIM
+        """Dimension of the loaded model (declared dim before load)."""
+        return self._dim if self._dim is not None else self._expected_dim
 
     def idle_expired(self) -> bool:
         return (
@@ -270,19 +334,19 @@ class EmbeddingService:
 
                 def _load():
                     model = TextEmbedding(
-                        model_name=MODEL_ID, providers=["CPUExecutionProvider"]
+                        model_name=self.model_id, providers=["CPUExecutionProvider"]
                     )
-                    resolved = str(getattr(model, "model_name", MODEL_ID))
-                    if resolved != MODEL_ID:
+                    resolved = str(getattr(model, "model_name", self.model_id))
+                    if resolved != self.model_id:
                         raise RagModelUnavailable(
                             "embedding 模型身份不符：请求 "
-                            f"{MODEL_ID}，实际加载 {resolved}。"
+                            f"{self.model_id}，实际加载 {resolved}。"
                         )
                     probe = [
                         [float(x) for x in vec]
                         for vec in model.embed(["维度探测"])
                     ]
-                    if not probe or len(probe[0]) != MODEL_DIM:
+                    if not probe or len(probe[0]) != self._expected_dim:
                         raise RagModelUnavailable(
                             "embedding 模型维度与索引不符。"
                         )
@@ -333,12 +397,68 @@ class RagService:
         # service inside the owning user's context, so the pinned path
         # is that owner's file for the instance's whole life.
         self._db_path: Path | None = Path(db_path) if db_path is not None else None
-        self._embedder = EmbeddingService()
+        # N157：环境覆盖在构造时读取（settings 在首个异步点惰性解析）。
+        self._env_model_id, self._env_model_dim = configured_env_model()
+        self._embedders: dict[str, EmbeddingService] = {}
         self._rebuild_lock = asyncio.Lock()
         self._vec_ready = False
         self._vec_conn: sqlite3.Connection | None = None
         # F093：测试可注入的批间暂停点（None = 生产无额外钩子）。
         self._pause_hook: Any = None
+
+    # -- N157 模型身份解析 -----------------------------------------------------
+
+    def _embedder_for(self, model_id: str, model_dim: int) -> EmbeddingService:
+        """当前模型的 embedder（按 model_id 缓存，≤2 个驻留）。
+
+        rebuild 换模型期间查询仍走旧模型——两个槽位让 query/build 各用
+        各的实例，互不卸载；第三个身份出现时淘汰最久未用的。"""
+        existing = self._embedders.get(model_id)
+        if existing is None:
+            existing = EmbeddingService(model_id, model_dim)
+            self._embedders[model_id] = existing
+            while len(self._embedders) > 2:
+                oldest = next(k for k in self._embedders if k != model_id)
+                self._embedders.pop(oldest).unload()
+        return existing
+
+    @property
+    def _embedder(self) -> EmbeddingService:
+        """兼容旧引用点：env 解析模型的 embedder（idle 卸载循环用）。"""
+        return self._embedder_for(self._env_model_id, self._env_model_dim)
+
+    async def configured_model(self) -> tuple[str, int]:
+        """下一次 rebuild 将写入的模型（settings > env > 默认）。
+
+        settings 值必须能解析出维度（目录表内，或与 env 模型一致）；
+        无法解析的值诚实回落 env/默认——绝不带着未知模型重建。"""
+        stored = await self._setting(SETTING_MODEL_ID)
+        if stored:
+            dim = MODEL_CATALOG.get(stored)
+            if dim is not None:
+                return stored, dim
+            if stored == self._env_model_id:
+                return stored, self._env_model_dim
+        return self._env_model_id, self._env_model_dim
+
+    async def live_model(self) -> tuple[str, int]:
+        """当前可查询索引的模型（查询/增量都以它为准）。
+
+        rag_chunks 里只会有一个模型的行（swap 全量替换）——取现有行的
+        model_id；索引为空时回落 configured。这样 rebuild 期间旧索引
+        依然完全可查（staging 是独立表），swap 后查询自然切换到新模型，
+        且任何时刻都不可能混出两种维度的结果。"""
+        row = await self._db.fetch_one(
+            "SELECT model_id FROM rag_chunks ORDER BY chunk_id LIMIT 1"
+        )
+        if row is not None:
+            stored = str(row["model_id"])
+            dim = MODEL_CATALOG.get(stored)
+            if dim is not None:
+                return stored, dim
+            if stored == self._env_model_id:
+                return stored, self._env_model_dim
+        return await self.configured_model()
 
     # -- vec connection (loaded once; extensions are per-connection) --------
 
@@ -381,13 +501,44 @@ class RagService:
         try:
             connection = self._vec_connection()
             connection.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS rag_vec USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[512])"
+                "CREATE TABLE IF NOT EXISTS rag_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
+            # N157：vec 表维度取「已建表时的记录值」；从未建过表时用
+            # 环境解析出的模型维度（异步 settings 不进同步路径——swap
+            # 时若目标维度不同会重建表）。
+            row = connection.execute(
+                "SELECT value FROM rag_meta WHERE key = 'vec_dim'"
+            ).fetchone()
+            dim = int(row["value"]) if row is not None else self._env_model_dim
+            connection.execute(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS rag_vec USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{dim}])"
+            )
+            if row is None:
+                connection.execute(
+                    "INSERT INTO rag_meta (key, value) VALUES ('vec_dim', ?)",
+                    (str(dim),),
+                )
             self._vec_ready = True
         except Exception:  # noqa: BLE001 — degrade to lexical-only mode
             _logger.info("sqlite-vec unavailable; semantic leg disabled")
             self._vec_ready = False
         return self._vec_ready
+
+    def _stored_vec_dim(self) -> int | None:
+        """rag_vec 建表时的维度（rag_meta 记录；未建表 → None）。"""
+        if not vec_extension_available():
+            return None
+        try:
+            connection = self._vec_connection()
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS rag_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            row = connection.execute(
+                "SELECT value FROM rag_meta WHERE key = 'vec_dim'"
+            ).fetchone()
+            return int(row["value"]) if row is not None else None
+        except Exception:  # noqa: BLE001 — 元数据读不到按未建表处理
+            return None
 
     # -- settings helpers ---------------------------------------------------
 
@@ -432,26 +583,64 @@ class RagService:
 
     async def status(self) -> dict[str, Any]:
         await self._db.migrate()
+        model_id, dim = await self.live_model()
         row = await self._db.fetch_one(
             "SELECT COUNT(*) AS n FROM rag_chunks WHERE model_id = ?",
-            (MODEL_ID,),
+            (model_id,),
         )
         chunks = int(row["n"]) if row is not None else 0
+        configured_id, _configured_dim = await self.configured_model()
         job_section = await self._job_summary()
         return {
             "enabled": (await self._setting("rag_enabled")) == "1",
             "chunks": chunks,
-            "model": MODEL_ID,
-            "dim": MODEL_DIM,
+            "model": model_id,
+            "dim": dim,
+            "rowCounts": await self.row_counts(),
+            "configuredModel": configured_id,
             "vecTable": self._ensure_vec_table(),
             "vecRows": await asyncio.to_thread(self._vec_count_sync),
-            "modelLoaded": self._embedder.loaded,
+            "modelLoaded": any(e.loaded for e in self._embedders.values()),
             "lastRebuildAt": await self._setting("rag_last_rebuild"),
             "lastError": await self._setting("rag_last_error"),
             "fastembedAvailable": _FASTEMBED_AVAILABLE,
             # F093：最近一次重建作业（stage/done/remaining）。
             "job": job_section,
         }
+
+    async def row_counts(self) -> dict[str, int]:
+        """N157：按 model_id 的分块行数（index-version/status 回显）。"""
+        rows = await self._db.fetch_all(
+            "SELECT model_id, COUNT(*) AS n FROM rag_chunks GROUP BY model_id"
+        )
+        return {str(r["model_id"]): int(r["n"]) for r in rows}
+
+    async def index_version(self) -> dict[str, Any]:
+        """N157：GET index-version 载荷——当前可查询模型 + 各模型行数。
+
+        modelId/dim 是 LIVE 口径（rebuild 期间仍指旧模型，swap 后自然
+        切到新模型）；configuredModel 单独回显下一次重建将写入的模型。"""
+        model_id, dim = await self.live_model()
+        configured_id, _ = await self.configured_model()
+        return {
+            "modelId": model_id,
+            "dim": dim,
+            "rowCounts": await self.row_counts(),
+            "configuredModel": configured_id,
+        }
+
+    async def set_model(self, model_id: str) -> dict[str, Any]:
+        """N157：切换目标模型（下一次 rebuild 生效）。
+
+        settings 必须落在目录表内（或与 env 模型一致）——未知模型诚实
+        400，绝不静默接受一个下载不下来/维度未知的模型。切换本身不改
+        现有索引（live 模型不变，旧索引继续可查可搜）。"""
+        stored = str(model_id or "").strip()
+        dim = MODEL_CATALOG.get(stored)
+        if dim is None and stored != self._env_model_id:
+            raise RagModelUnknown(stored)
+        await self._set_setting(SETTING_MODEL_ID, stored)
+        return {"modelId": stored, "dim": dim if dim is not None else self._env_model_dim}
 
     async def _job_summary(self) -> dict[str, Any] | None:
         """F093 status job 段：最近作业的进度（stage/done/remaining）。
@@ -496,16 +685,19 @@ class RagService:
         """Explicit user authorization to download/load the model.
 
         Warmup FIRST (failures surface before any state changes);
-        ``rag_enabled=1`` is only persisted after success."""
+        ``rag_enabled=1`` is only persisted after success. N157：预热用
+        configured 模型（与下一次 rebuild 一致）。"""
         if not _FASTEMBED_AVAILABLE:
             await self._set_setting(
                 "rag_last_error", "fastembed 未安装，无法启用语义索引。"
             )
             raise RagModelUnavailable("fastembed 未安装，无法启用语义索引。")
+        model_id, dim = await self.configured_model()
+        embedder = self._embedder_for(model_id, dim)
         try:
-            await self._embedder.embed(["warmup"])  # downloads/loads now
+            await embedder.embed(["warmup"])  # downloads/loads now
         except Exception as exc:
-            self._embedder.unload()
+            embedder.unload()
             await self._set_setting("rag_last_error", str(exc)[:500])
             raise
         await self._set_setting("rag_enabled", "1")
@@ -515,17 +707,25 @@ class RagService:
     async def disable(self) -> bool:
         """Turn the semantic leg off and free the model."""
         await self._set_setting("rag_enabled", "0")
-        return self._embedder.unload()
+        was = False
+        for embedder in self._embedders.values():
+            was = embedder.unload() or was
+        return was
 
     async def unload_model(self) -> bool:
-        return self._embedder.unload()
+        was = False
+        for embedder in self._embedders.values():
+            was = embedder.unload() or was
+        return was
 
     def unload_if_idle(self) -> bool:
         """Idle lifecycle (P0-07d): called periodically by the lifespan
         task; true when an idle model was actually released."""
-        if self._embedder.idle_expired():
-            return self._embedder.unload()
-        return False
+        was = False
+        for embedder in list(self._embedders.values()):
+            if embedder.idle_expired():
+                was = embedder.unload() or was
+        return was
 
     # -- indexing -----------------------------------------------------------
 
@@ -561,8 +761,10 @@ class RagService:
         }
 
     async def _job_latest(self) -> dict[str, Any] | None:
+        # N157：优先非终态作业（running/paused）——秒级 updated_at 并列
+        # 时 uuid 决胜负会指到旧的 done 作业上，resume 就成了空操作。
         row = await self._db.fetch_one(
-            "SELECT id FROM rag_jobs ORDER BY updated_at DESC, id DESC LIMIT 1"
+            "SELECT id FROM rag_jobs ORDER BY (status IN ('running', 'paused')) DESC, updated_at DESC, id DESC LIMIT 1"
         )
         if row is None:
             return None
@@ -628,7 +830,15 @@ class RagService:
             job_id = await self._job_create()
             try:
                 await self._db.migrate()
-                chunks = await self._rebuild_streaming(job_id)
+                # N157：目标模型在 rebuild 开始时解析并写入游标——rebuild
+                # 期间 live 模型（旧索引）继续可查可搜，swap 完成后查询
+                # 自然切到新模型。
+                target_model, target_dim = await self.configured_model()
+                chunks = await self._rebuild_streaming(
+                    job_id,
+                    target_model=target_model,
+                    target_dim=target_dim,
+                )
                 await self._set_setting("rag_last_rebuild", started)
                 await self._clear_setting("rag_last_error")
                 return {
@@ -636,6 +846,7 @@ class RagService:
                     "elapsedMs": _elapsed_ms(started),
                     "jobId": job_id,
                     "status": "done",
+                    "modelId": target_model,
                 }
             except RagJobPaused:
                 job = await self._job_get(job_id)
@@ -648,7 +859,8 @@ class RagService:
             except Exception as exc:
                 await self._job_write(job_id, status="failed", stats={"error": str(exc)[:300]})
                 await self._set_setting("rag_last_error", str(exc)[:500])
-                self._embedder.unload()  # never keep a half-broken model
+                for embedder in self._embedders.values():
+                    embedder.unload()  # never keep a half-broken model
                 raise
 
     async def resume_rebuild(self) -> dict[str, Any]:
@@ -681,7 +893,16 @@ class RagService:
                 return {"chunks": 0, "jobId": None, "status": "idle", "resumed": False}
             await self._job_write(job["jobId"], status="running")
             try:
-                chunks = await self._rebuild_streaming(job["jobId"])
+                cursor = job.get("cursor") or {}
+                target_model = str(cursor.get("model") or "") or (await self.configured_model())[0]
+                target_dim = MODEL_CATALOG.get(target_model)
+                if target_dim is None:
+                    target_dim = self._env_model_dim if target_model == self._env_model_id else DEFAULT_MODEL_DIM
+                chunks = await self._rebuild_streaming(
+                    job["jobId"],
+                    target_model=target_model,
+                    target_dim=target_dim,
+                )
                 await self._set_setting("rag_last_rebuild", started)
                 await self._clear_setting("rag_last_error")
                 return {
@@ -690,6 +911,7 @@ class RagService:
                     "jobId": job["jobId"],
                     "status": "done",
                     "resumed": True,
+                    "modelId": target_model,
                 }
             except RagJobPaused:
                 return {
@@ -921,26 +1143,37 @@ class RagService:
                 skipped.append(doc["ref"])
         return present, skipped
 
-    async def _rebuild_streaming(self, job_id: str | None = None) -> int:
+    async def _rebuild_streaming(
+        self,
+        job_id: str | None = None,
+        *,
+        target_model: str = DEFAULT_MODEL_ID,
+        target_dim: int = DEFAULT_MODEL_DIM,
+    ) -> int:
         """Stream the corpus in document pages: chunk → embed → stage.
 
         Embeddings never accumulate (one ``_EMBED_BATCH`` of float
         vectors at a time) and the staged rows swap into the live index
         in ONE short transaction, so a failure leaves the previous index
         intact (Q-P0-01). F093：带 rag_jobs 游标——批间安全点检查暂停，
-        暂停/失败后续建从游标继续，已完成的批绝不重复 embed。"""
+        暂停/失败后续建从游标继续，已完成的批绝不重复 embed。
+        N157：staged 行带目标 model_id（可与 live 不同）；维度校验按
+        目标模型声明维度。"""
         cursor: dict[str, Any] = {
             "stage": "rss",
             "after": 0,
             "chunks": 0,
             "docs": 0,
             "ord": {},
+            "model": target_model,
         }
+        embedder = self._embedder_for(target_model, target_dim)
         stats: dict[str, Any] = {"chunks": 0, "docs": 0, "skipped": []}
         if job_id is not None:
             job = await self._job_get(job_id)
             if job is not None and job["cursor"] is not None:
                 cursor = job["cursor"]
+                cursor.setdefault("model", target_model)
                 stats = {
                     "chunks": cursor.get("chunks", 0),
                     "docs": cursor.get("docs", 0),
@@ -980,15 +1213,15 @@ class RagService:
                         )
                 for start in range(0, len(jobs), _EMBED_BATCH):
                     batch = jobs[start : start + _EMBED_BATCH]
-                    vectors = await self._embedder.embed(
+                    vectors = await embedder.embed(
                         [chunk for _ref, _kind, _title, chunk, _h in batch]
                     )
-                    if any(len(vector) != MODEL_DIM for vector in vectors):
+                    if any(len(vector) != target_dim for vector in vectors):
                         raise RagModelUnavailable(
                             "embedding 模型维度与索引不符。"
                         )
                     await asyncio.to_thread(
-                        _stage_rows, self, batch, vectors, ord_state
+                        _stage_rows, self, batch, vectors, ord_state, target_model
                     )
                     stats["chunks"] = int(stats.get("chunks", 0)) + len(batch)
                     cursor["chunks"] = stats["chunks"]
@@ -1001,7 +1234,9 @@ class RagService:
                 if job_id is not None:
                     await self._job_write(job_id, cursor=cursor, stats=stats)
                     await self._check_pause(job_id, cursor, stats)
-            await asyncio.to_thread(_swap_staged_index, self)
+            await asyncio.to_thread(
+                _swap_staged_index, self, target_model, target_dim
+            )
             if job_id is not None:
                 await self._job_write(
                     job_id, status="done", cursor=None, stats=stats
@@ -1148,15 +1383,24 @@ class RagService:
             doc_hash = doc_content_hash(doc["text"])
             for chunk in chunk_text(doc["text"], heading=doc["title"] or None):
                 chunk_jobs.append((doc["ref"], doc["kind"], doc["title"], chunk, doc_hash))
+        # N157：增量写入按 LIVE 模型（换模型后由全量 rebuild 统一切换；
+        # 增量路径绝不写入与现有索引不同的模型，杜绝混维度）。
+        live_model_id, live_dim = await self.live_model()
         vectors: list[list[float]] = []
         if chunk_jobs:
-            vectors = await self._embedder.embed(
+            embedder = self._embedder_for(live_model_id, live_dim)
+            vectors = await embedder.embed(
                 [chunk for _ref, _kind, _title, chunk, _h in chunk_jobs]
             )
-            if any(len(vector) != MODEL_DIM for vector in vectors):
+            if any(len(vector) != live_dim for vector in vectors):
                 raise RagModelUnavailable("embedding 模型维度与索引不符。")
         written = await asyncio.to_thread(
-            _write_index_sync, self, chunk_jobs, vectors, list(found)
+            _write_index_sync,
+            self,
+            chunk_jobs,
+            vectors,
+            list(found),
+            live_model_id,
         )
         return {
             "updated": len(found),
@@ -1169,12 +1413,17 @@ class RagService:
     async def search(
         self, query: str, *, k: int = 8, kind: str | None = None
     ) -> dict[str, Any]:
-        """Hybrid semantic ⊕ lexical with RRF; honest lexical fallback."""
+        """Hybrid semantic ⊕ lexical with RRF; honest lexical fallback.
+
+        N157：两条腿都只取 LIVE 模型的行，查询向量按 LIVE 模型的声明
+        维度校验——维度不匹配（配置漂移/切换中途）时语义腿诚实降级，
+        绝不混出两种模型的混合结果。"""
         await self._db.migrate()
+        live_model_id, live_dim = await self.live_model()
         lexical_rows = await self._db.fetch_all(
             "SELECT chunk_id, ref, kind, title, text FROM rag_chunks WHERE model_id = ? AND (? IS NULL OR kind = ?) AND (text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\') LIMIT ?",
             (
-                MODEL_ID,
+                live_model_id,
                 kind,
                 kind,
                 f"%{_escape_like(query)}%",
@@ -1189,6 +1438,7 @@ class RagService:
                 "kind": str(row["kind"]),
                 "title": str(row["title"]),
                 "text": str(row["text"]),
+                "model_id": live_model_id,
             }
             for row in lexical_rows
         ]
@@ -1199,10 +1449,17 @@ class RagService:
                 raise RagModelUnavailable("语义索引未启用。")
             if not self._ensure_vec_table():
                 raise RagModelUnavailable("sqlite-vec 扩展不可用。")
-            vectors = await self._embedder.embed([query])
+            embedder = self._embedder_for(live_model_id, live_dim)
+            vectors = await embedder.embed([query])
+            if len(vectors[0]) != live_dim:
+                raise RagModelUnavailable(
+                    "查询向量维度与活动索引不符（模型切换进行中）。"
+                )
             semantic = await asyncio.to_thread(
-                self._vec_search_sync, vectors[0], kind
+                self._vec_search_sync, vectors[0], kind, live_model_id
             )
+            for item in semantic:
+                item["model_id"] = live_model_id
         except RagModelUnavailable as exc:
             semantic_error = str(exc)
         except Exception as exc:  # noqa: BLE001 — degrade, never fail search
@@ -1211,17 +1468,18 @@ class RagService:
             "items": rrf_fuse(semantic, lexical, k=k),
             "semanticUsed": semantic_error is None,
             "semanticError": semantic_error,
+            "modelId": live_model_id,
         }
 
     def _vec_search_sync(
-        self, query_vec: list[float], kind: str | None
+        self, query_vec: list[float], kind: str | None, model_id: str
     ) -> list[dict[str, Any]]:
         """KNN over rag_vec (extension already loaded on the cached
         connection); joined back to chunks for text + model filter."""
         connection = self._vec_connection()
         rows = connection.execute(
             "SELECT c.chunk_id, c.ref, c.kind, c.title, c.text, v.distance FROM rag_vec v JOIN rag_chunks c ON c.chunk_id = v.chunk_id WHERE c.model_id = ? AND v.embedding MATCH ? AND k = ? ORDER BY v.distance",
-            (MODEL_ID, serialize_vector(query_vec), _LEXICAL_CANDIDATES),
+            (model_id, serialize_vector(query_vec), _LEXICAL_CANDIDATES),
         ).fetchall()
         results = [
             {
@@ -1243,6 +1501,7 @@ def _write_index_sync(
     chunk_jobs: list[tuple[str, str, str, str, str]],
     vectors: list[list[float]],
     only_refs: list[str] | None = None,
+    model_id: str = DEFAULT_MODEL_ID,
 ) -> dict[str, Any]:
     """Atomically (re)write the index on the vec connection.
 
@@ -1250,7 +1509,8 @@ def _write_index_sync(
     (``only_refs``): replace rows of exactly those refs. Chunks AND
     vectors commit together or not at all — a failure leaves the
     previous index intact. Module-level so tests can wrap it to prove
-    the rollback. F100：每行记录其源文档正文 hash（content_hash）。"""
+    the rollback. F100：每行记录其源文档正文 hash（content_hash）。
+    N157：写入的 model_id 由调用方按 LIVE 模型显式传入。"""
     if not service._ensure_vec_table():
         raise RagModelUnavailable("sqlite-vec 扩展不可用。")
     connection = service._vec_connection()
@@ -1260,7 +1520,7 @@ def _write_index_sync(
         if only_refs is None:
             connection.execute("DELETE FROM rag_vec")
             connection.execute(
-                "DELETE FROM rag_chunks WHERE model_id = ?", (MODEL_ID,)
+                "DELETE FROM rag_chunks WHERE model_id = ?", (model_id,)
             )
         else:
             for ref in only_refs:
@@ -1287,7 +1547,7 @@ def _write_index_sync(
                         chunk_id,
                         ref,
                         offset - 1,
-                        MODEL_ID,
+                        model_id,
                         kind,
                         title,
                         chunk,
@@ -1324,11 +1584,24 @@ def _stage_reset(service: "RagService") -> None:
 
 def _stage_ensure(service: "RagService") -> None:
     """Create the staging table when absent (resume after a failure that
-    already discarded it — F093 keeps staged rows across pauses)."""
+    already discarded it — F093 keeps staged rows across pauses).
+
+    N157：staging 行携带 model_id（可与 live 不同）；旧 schema（无
+    model_id 列）的遗留 staging 原样丢弃重建——升级点上的 paused 重建
+    由 resume 从游标重新 stage，诚实而非半兼容。"""
     connection = service._vec_connection()
     connection.execute(
         "CREATE TABLE IF NOT EXISTS rag_rebuild_stage (ref TEXT NOT NULL, ord INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL, content_hash TEXT)"
     )
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(rag_rebuild_stage)").fetchall()
+    }
+    if "model_id" not in columns:
+        connection.execute("DROP TABLE rag_rebuild_stage")
+        connection.execute(
+            "CREATE TABLE rag_rebuild_stage (ref TEXT NOT NULL, ord INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL, content_hash TEXT, model_id TEXT NOT NULL DEFAULT '')"
+        )
 
 
 def _stage_discard(service: "RagService") -> None:
@@ -1342,26 +1615,32 @@ def _stage_rows(
     batch: list[tuple[str, str, str, str, str]],
     vectors: list[list[float]],
     ord_state: dict[str, int],
+    model_id: str = DEFAULT_MODEL_ID,
 ) -> None:
     """Persist one embedded batch as compact blobs (auto-commit staging).
 
     ``ord_state`` carries each ref's next chunk ordinal ACROSS batches —
     a per-batch reset produced duplicate (ref, ord) pairs that blew up
     the unique index at swap time for any corpus bigger than one batch
-    (found by the Round-1 fresh-eyes re-audit)."""
+    (found by the Round-1 fresh-eyes re-audit). N157：行带目标
+    model_id，swap 时原样带入 rag_chunks。"""
     connection = service._vec_connection()
     rows = []
     for (ref, kind, title, chunk, doc_hash), vector in zip(batch, vectors, strict=True):
         ord_ = ord_state.get(ref, 0)
         ord_state[ref] = ord_ + 1
-        rows.append((ref, ord_, kind, title, chunk, serialize_vector(vector), doc_hash))
+        rows.append((ref, ord_, kind, title, chunk, serialize_vector(vector), doc_hash, model_id))
     connection.executemany(
-        "INSERT INTO rag_rebuild_stage (ref, ord, kind, title, text, embedding, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO rag_rebuild_stage (ref, ord, kind, title, text, embedding, content_hash, model_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
 
 
-def _swap_staged_index(service: "RagService") -> None:
+def _swap_staged_index(
+    service: "RagService",
+    model_id: str = DEFAULT_MODEL_ID,
+    model_dim: int = DEFAULT_MODEL_DIM,
+) -> None:
     """Swap the staged index into place in ONE short transaction.
 
     chunk_id is reassigned by AUTOINCREMENT; rag_vec rows follow. A
@@ -1370,20 +1649,38 @@ def _swap_staged_index(service: "RagService") -> None:
     P20 residual hardening: staged rows whose source row is ALREADY
     gone (deleted after their page was staged, before this swap) are
     excluded — the swap must never resurrect deleted content as ghost
-    hits; the F093 pre-stage recheck alone could not cover this window."""
+    hits; the F093 pre-stage recheck alone could not cover this window.
+
+    N157：swap 换模型——staged 行以目标 model_id 落入 rag_chunks；
+    目标维度与现有 rag_vec 不同时，vec 表在同一事务内重建为
+    float[target_dim]（rag_meta.vec_dim 同步更新）。旧索引在 swap
+    前始终完整可查；swap 后查询按 live 模型解析自然切到新维度。"""
     if not service._ensure_vec_table():
         raise RagModelUnavailable("sqlite-vec 扩展不可用。")
     connection = service._vec_connection()
     now = utc_now()
     try:
         connection.execute("BEGIN")
+        stored_dim_row = connection.execute(
+            "SELECT value FROM rag_meta WHERE key = 'vec_dim'"
+        ).fetchone()
+        stored_dim = int(stored_dim_row["value"]) if stored_dim_row is not None else model_dim
+        if stored_dim != model_dim:
+            connection.execute("DROP TABLE rag_vec")
+            connection.execute(
+                f"CREATE VIRTUAL TABLE rag_vec USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{model_dim}])"
+            )
+            connection.execute(
+                "UPDATE rag_meta SET value = ? WHERE key = 'vec_dim'",
+                (str(model_dim),),
+            )
         connection.execute("DELETE FROM rag_vec")
-        connection.execute("DELETE FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
+        connection.execute("DELETE FROM rag_chunks")
         connection.execute(
-            "INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) SELECT s.ref, s.ord, ?, s.kind, s.title, s.text, s.embedding, ?, s.content_hash FROM rag_rebuild_stage s WHERE EXISTS (SELECT 1 FROM search_entries e WHERE e.entry_ref = s.ref) OR EXISTS (SELECT 1 FROM search_library l WHERE l.ref = s.ref)",
-            (MODEL_ID, now),
+            "INSERT INTO rag_chunks (ref, ord, model_id, kind, title, text, embedding, created_at, content_hash) SELECT s.ref, s.ord, s.model_id, s.kind, s.title, s.text, s.embedding, ?, s.content_hash FROM rag_rebuild_stage s WHERE s.model_id = ? AND (EXISTS (SELECT 1 FROM search_entries e WHERE e.entry_ref = s.ref) OR EXISTS (SELECT 1 FROM search_library l WHERE l.ref = s.ref))",
+            (now, model_id),
         )
-        connection.execute("INSERT INTO rag_vec (chunk_id, embedding) SELECT chunk_id, embedding FROM rag_chunks WHERE model_id = ?", (MODEL_ID,))
+        connection.execute("INSERT INTO rag_vec (chunk_id, embedding) SELECT chunk_id, embedding FROM rag_chunks WHERE model_id = ?", (model_id,))
         connection.execute("DROP TABLE rag_rebuild_stage")
         connection.commit()
     except BaseException:
@@ -1407,11 +1704,12 @@ async def rag_index_pass(service: "RagService") -> dict[str, Any]:
     await service._db.migrate()
     if (await service._setting("rag_enabled")) != "1":
         return {"indexed": 0, "swept": 0, "skipped": "disabled"}
+    live_model_id, _live_dim = await service.live_model()
     orphan_rows = await service._db.fetch_all("SELECT DISTINCT c.ref FROM rag_chunks c WHERE c.ref NOT IN (SELECT entry_ref FROM search_entries) AND c.ref NOT IN (SELECT ref FROM search_library) LIMIT ?", (_MAX_INDEX_REFS,))
     orphans = [str(row["ref"]) for row in orphan_rows]
     swept = await service.mark_stale(orphans) if orphans else 0
 
-    missing_rows = await service._db.fetch_all("SELECT entry_ref AS ref FROM search_entries WHERE entry_ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(content_text) <> '' UNION ALL SELECT ref FROM search_library WHERE ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(body) <> '' ORDER BY ref LIMIT ?", (MODEL_ID, MODEL_ID, _MAX_INDEX_REFS))
+    missing_rows = await service._db.fetch_all("SELECT entry_ref AS ref FROM search_entries WHERE entry_ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(content_text) <> '' UNION ALL SELECT ref FROM search_library WHERE ref NOT IN (SELECT ref FROM rag_chunks WHERE model_id = ?) AND TRIM(body) <> '' ORDER BY ref LIMIT ?", (live_model_id, live_model_id, _MAX_INDEX_REFS))
     missing = [str(row["ref"]) for row in missing_rows]
     result = (
         await service.index_refs(missing)

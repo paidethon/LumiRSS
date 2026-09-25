@@ -112,7 +112,7 @@ class NoteLifecycleStore:
     async def get_note(self, note_id: str, *, include_deleted: bool = False) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT uuid, title, content_md, workspace_id, created_at, updated_at, deleted_at FROM lumi_notes WHERE uuid = ?",
+            "SELECT uuid, title, content_md, workspace_id, source, created_at, updated_at, deleted_at FROM lumi_notes WHERE uuid = ?",
             (note_id,),
         )
         if row is None:
@@ -124,6 +124,7 @@ class NoteLifecycleStore:
             "title": str(row["title"]),
             "contentMd": str(row["content_md"]),
             "workspaceId": row["workspace_id"],
+            "source": str(row["source"] or "manual"),
             "createdAt": str(row["created_at"]),
             "updatedAt": str(row["updated_at"]),
             "deletedAt": row["deleted_at"],
@@ -156,6 +157,14 @@ class NoteLifecycleStore:
         now = utc_now()
 
         def _tx(conn: sqlite3.Connection) -> None:
+            # N160：AI 答案证据笔记在覆盖前先把上一版推入修订台账
+            # （provenance 保留：三段结构 + 人工修改的演进可回溯）。
+            # 普通导入/手写笔记不入台账。
+            if current.get("source") == "ai_answer":
+                conn.execute(
+                    "INSERT INTO lumi_note_revisions (note_id, title, content_md, origin, edited_at) VALUES (?, ?, ?, 'edit', ?)",
+                    (note_id, current["title"], current["contentMd"], now),
+                )
             conn.execute(
                 "UPDATE lumi_notes SET title = ?, content_md = ?, content_hash = ?, updated_at = ? WHERE uuid = ?",
                 (
@@ -179,6 +188,106 @@ class NoteLifecycleStore:
             "createdAt": current["createdAt"],
             "updatedAt": now,
         }
+
+    # -- N160 从答案生成证据笔记 ---------------------------------------------
+
+    @staticmethod
+    def build_answer_note_markdown(
+        *,
+        question: str,
+        answer: str,
+        excerpts: list[dict[str, str]],
+    ) -> str:
+        """三段式证据笔记正文：摘录（精确原文 + 引用）/ 生成内容
+        （显式标注 AI 生成）/ 人工修改（空，编辑时由修订台账续记）。"""
+        lines = ["## 摘录", ""]
+        for excerpt in excerpts:
+            ref = str(excerpt.get("ref") or "")
+            title = str(excerpt.get("title") or "")
+            text = str(excerpt.get("text") or "").strip()
+            label = f"{title}（{ref}）" if title else ref
+            lines.append(f"- 「{text}」 —— {label}")
+        if len(lines) == 2:
+            lines.append("-（无可用摘录）")
+        lines.extend(
+            [
+                "",
+                "## 生成内容",
+                "",
+                "> 以下内容由 AI 生成（基于上述摘录），未经人工核验。",
+                "",
+                answer.strip(),
+                "",
+                "## 人工修改",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    async def create_answer_note(
+        self,
+        *,
+        title: str,
+        question: str,
+        answer: str,
+        excerpts: list[dict[str, str]],
+        workspace_id: str | None,
+    ) -> dict[str, Any]:
+        """N160：把一次回答落成证据笔记（source='ai_answer'）。"""
+        content_md = self.build_answer_note_markdown(
+            question=question, answer=answer, excerpts=excerpts
+        )
+        clean_title = self._validate_title(title)
+        self._validate_content(content_md)
+        await self._db.migrate()
+        note_id = new_library_uuid()
+        now = utc_now()
+
+        def _tx(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT INTO lumi_notes (uuid, title, content_md, workspace_id, content_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'ai_answer', ?, ?)",
+                (
+                    note_id,
+                    clean_title,
+                    content_md,
+                    workspace_id,
+                    content_hash_of(content_md),
+                    now,
+                    now,
+                ),
+            )
+            self._index(
+                conn, note_id=note_id, title=clean_title, content=content_md, now=now
+            )
+
+        await transaction(self._db, _tx)
+        return {
+            "uuid": note_id,
+            "title": clean_title,
+            "contentMd": content_md,
+            "workspaceId": workspace_id,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+
+    async def list_note_revisions(self, note_id: str) -> list[dict[str, Any]]:
+        """N160：证据笔记的修订台账（新→旧；provenance 演进链）。"""
+        await self._db.migrate()
+        rows = await self._db.fetch_all(
+            "SELECT id, note_id, title, content_md, origin, edited_at FROM lumi_note_revisions WHERE note_id = ? ORDER BY edited_at DESC, id DESC LIMIT 100",
+            (note_id,),
+        )
+        return [
+            {
+                "id": int(row["id"]),
+                "noteId": str(row["note_id"]),
+                "title": str(row["title"]),
+                "contentMd": str(row["content_md"]),
+                "origin": str(row["origin"]),
+                "editedAt": str(row["edited_at"]),
+            }
+            for row in rows
+        ]
 
     async def soft_delete_note(self, note_id: str) -> bool:
         """软删（回收站 kind=note）+ 移除搜索投影。"""

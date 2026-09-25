@@ -20,6 +20,7 @@ import {
   previewAgentRecipe,
   previewAgentScope,
   searchAgentThreads,
+  applyAgentResearchPreset,
   updateAgentThreadSettings,
   type AgentScopeSummary,
   type AgentThreadSearchHit,
@@ -184,6 +185,11 @@ export function ThreadSettingsButton({ threadId }: { threadId: string }) {
     onSuccess: () => setSaved('已保存（下一轮对话生效）。'),
   })
 
+  // N163：一键研究模式预设（readonly + 当前范围 + read 白名单 + 回合上限）。
+  const research = useMutation({
+    mutationFn: () => applyAgentResearchPreset(threadId),
+  })
+
   // N151 授权范围摘要卡：选择变化 → 服务端解析 kind × refCount × toolCount
   // （refCount 服务端查询时解析，前端绝不伪造计数）。
   const scopePreview = useMutation({
@@ -226,6 +232,22 @@ export function ThreadSettingsButton({ threadId }: { threadId: string }) {
           footer={
             <div className="flex w-full justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>关闭</Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="research-preset-btn"
+                disabled={research.isPending}
+                onClick={() =>
+                  research.mutate(undefined, {
+                    onSuccess: () => {
+                      setSaved('已应用研究模式（只读 + 当前范围 + 回合上限），下一轮生效。')
+                      setOpen(false)
+                    },
+                  })
+                }
+              >
+                {research.isPending ? '应用中…' : '研究模式'}
+              </Button>
               <Button variant="primary" size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
                 {save.isPending ? '保存中…' : '保存'}
               </Button>

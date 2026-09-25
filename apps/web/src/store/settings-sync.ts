@@ -54,10 +54,19 @@ export interface SettingsSyncOptions {
   debounceMs?: number
 }
 
+/** N058：预设列表按内容比较（normalizeSettings 每次产出新数组引用，
+ * 引用比较会把无关变更误标为 dirty → 无谓 PATCH 循环）。 */
+function samePortableValue(key: string, prev: unknown, next: unknown): boolean {
+  if (key === 'readerPresets') {
+    return JSON.stringify(prev) === JSON.stringify(next)
+  }
+  return prev === next
+}
+
 function changedPortableKeys(prev: AppSettings, next: AppSettings): string[] {
   const keys: string[] = []
   for (const key of PORTABLE_KEYS) {
-    if (prev[key] !== next[key]) keys.push(key)
+    if (!samePortableValue(key, prev[key], next[key])) keys.push(key)
   }
   return keys
 }

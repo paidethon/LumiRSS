@@ -17,17 +17,19 @@ _MAX_REFS = 12
 
 async def collect_evidence_texts(db: Any, refs: list[str]) -> dict[str, str]:
     """cited refs → {ref: 拼接后的分块/正文文本}（有界）。"""
-    from lumirss.rag import MODEL_ID
+    from lumirss.rag import DEFAULT_MODEL_ID, live_model_id
 
     cleaned = list(dict.fromkeys(str(r) for r in refs if r))[:_MAX_REFS]
     if not cleaned:
         return {}
     await db.migrate()
+    # N157：分块按 LIVE 模型读取（换模型后 swap 前仍是旧模型的行）。
+    model_id = await live_model_id(db, DEFAULT_MODEL_ID)
     texts: dict[str, str] = {}
     for ref in cleaned:
         rows = await db.fetch_all(
             "SELECT text FROM rag_chunks WHERE ref = ? AND model_id = ? ORDER BY ord ASC LIMIT ?",
-            (ref, MODEL_ID, 40),
+            (ref, model_id, 40),
         )
         if rows:
             joined = "\n".join(str(row["text"] or "") for row in rows)

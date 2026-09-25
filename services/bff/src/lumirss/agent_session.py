@@ -130,15 +130,19 @@ def validate_tool_policy(policy: Any) -> dict | None:
 
 
 def evaluate_policy(policy: dict | None, tool: str, *, is_write: bool) -> str | None:
-    """返回拒绝原因（tool_denied 的 reason），None = 允许。"""
+    """返回拒绝原因（tool_denied 的 reason），None = 允许。
+
+    N163：readonly 优先于白名单——研究模式预设（readonly + 只读白名单）
+    下，任何写工具都拒绝为 readonly_mode，绝不因白名单未列出而降级成
+    语义较弱的 tool_not_allowed（写拦截的安全语义必须显式）。"""
     if not policy:
         return None
     mode = policy.get("mode") or "all"
+    if is_write and mode == "readonly":
+        return "readonly_mode"
     allowed = policy.get("allowedTools")
     if allowed is not None and tool not in allowed:
         return "tool_not_allowed"
-    if is_write and mode == "readonly":
-        return "readonly_mode"
     return None
 
 

@@ -32,11 +32,12 @@ async def qa_conflicts(
     - 两两组合做句级词法比对；证据块定位 = quote 所在 rag_chunks.ord
       （无分块回退为正文句序号）；
     - 零模型调用：本端点不 import 任何 provider 设施。"""
-    from lumirss.rag import MODEL_ID
+    from lumirss.rag import DEFAULT_MODEL_ID, live_model_id
     from lumirss.rag_evidence import collect_evidence_texts
 
     db = request.app.state.db
     await db.migrate()
+    model_id = await live_model_id(db, DEFAULT_MODEL_ID)  # N157 LIVE 口径
     refs = list(dict.fromkeys(payload.refs))
     if len(refs) < 2:
         raise QaConflictInvalid("对照至少需要 2 个引用。")
@@ -65,8 +66,8 @@ async def qa_conflicts(
             aQuote=item["aQuote"],
             bQuote=item["bQuote"],
             diffKind=item["diffKind"],
-            aEvidence=await _evidence_for(db, item["aRef"], item["aQuote"], MODEL_ID),
-            bEvidence=await _evidence_for(db, item["bRef"], item["bQuote"], MODEL_ID),
+            aEvidence=await _evidence_for(db, item["aRef"], item["aQuote"], model_id),
+            bEvidence=await _evidence_for(db, item["bRef"], item["bQuote"], model_id),
             overlap=item["overlap"],
         )
         for item in conflicts

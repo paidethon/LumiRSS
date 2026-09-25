@@ -1377,8 +1377,19 @@ class RestorePreviewFile(BaseModel):
     sha256: str
 
 
+class RestoreConflictItem(BaseModel):
+    """N187：逐对象冲突清单条目（exists/differs 对比活动状态）。"""
+
+    path: str
+    component: str
+    exists: bool
+    differs: bool = False
+
+
 class RestorePreview(BaseModel):
-    """POST /api/v1/restore/preview (validate + session id, no writes)."""
+    """POST /api/v1/restore/preview (validate + session id, no writes).
+
+    N187：``conflicts`` 供恢复向导冲突步骤渲染（策略 skip|overwrite）。"""
 
     restoreSessionId: str
     fileName: str | None = None
@@ -1391,6 +1402,7 @@ class RestorePreview(BaseModel):
     files: list[RestorePreviewFile] = []
     excludedSecrets: list[str] = []
     secretConfigured: bool
+    conflicts: list[RestoreConflictItem] = []
 
 
 class RestoreHealth(BaseModel):
@@ -1399,14 +1411,26 @@ class RestoreHealth(BaseModel):
     sqlite: Literal["healthy", "unavailable"]
 
 
+class RestoreDecisionLog(BaseModel):
+    """N187：决策账本（restored/skipped/overwritten 计数 + 样本 ≤10）。"""
+
+    restored: int = 0
+    skipped: int = 0
+    overwritten: int = 0
+    samples: list[dict] = []
+
+
 class RestoreResult(BaseModel):
-    """POST /api/v1/restore (destructive, explicitly confirmed)."""
+    """POST /api/v1/restore (destructive, explicitly confirmed).
+
+    N187：``decisions`` 决策账本（缺省全 skip 时也如实记账）。"""
 
     lumiRestored: bool
     freshrss: Literal["not_included", "offline_restore_required"]
     safetyBackupId: str | None = None
     freshrssStagedAt: str | None = None
     health: RestoreHealth
+    decisions: RestoreDecisionLog | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1889,6 +1913,30 @@ class WorkspaceItemAddRequest(BaseModel):
 
     itemRef: str
     groupName: str | None = None
+
+
+class WorkspaceItemMoveRequest(BaseModel):
+    """N108：POST /api/v1/workspaces/{id}/items/{ref}/move 请求体。
+
+    keepInSource=false（默认）= 移动（源成员关系移除）；onDuplicate:
+    'skip'（默认，幂等收敛）| 'conflict'（目标已有 → 409）。"""
+
+    model_config = {"extra": "forbid"}
+
+    targetWorkspaceId: str = Field(min_length=1, max_length=128)
+    keepInSource: bool = False
+    onDuplicate: Literal["skip", "conflict"] = "skip"
+
+
+class WorkspaceItemMoveResult(BaseModel):
+    """N108：移动结果（duplicate=true 表示目标本已有该条目，未重复创建）。"""
+
+    itemRef: str
+    sourceWorkspaceId: str
+    targetWorkspaceId: str
+    duplicate: bool = False
+    sourceRemoved: bool = True
+    targetPosition: int | None = None
 
 
 class WorkspaceItem(BaseModel):
@@ -4025,6 +4073,59 @@ class RagStatus(BaseModel):
     lastError: str | None = None
     fastembedAvailable: bool
     job: RagJobSummary | None = None
+    # N157：模型可配置化后的补充回显。
+    rowCounts: dict[str, int] = {}
+    configuredModel: str | None = None
+
+
+class RagIndexVersion(BaseModel):
+    """N157：GET /api/v1/rag/index-version — 当前索引版本。
+
+    modelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按
+    model_id 分列；configuredModel = 下一次 rebuild 将写入的模型。"""
+
+    modelId: str
+    dim: int
+    rowCounts: dict[str, int] = {}
+    configuredModel: str | None = None
+
+
+class RagIndexVersionSwitchRequest(BaseModel):
+    """N157：POST /api/v1/rag/index-version 请求体。"""
+
+    modelId: str = Field(min_length=1, max_length=200)
+
+
+class RagIndexVersionSwitch(BaseModel):
+    """N157：切换确认（settings 已持久化；索引未动，rebuild 后生效）。"""
+
+    modelId: str
+    dim: int
+    rebuildRequired: bool = True
+    note: str | None = None
+
+
+class RagAnswersToNoteRequest(BaseModel):
+    """N160：POST /api/v1/rag/answers-to-note 请求体。
+
+    selectedCitationIds = 会话内 assistant 消息 id（带引用的回答）；
+    title/workspaceId 可选（缺省标题取首条回答前 40 字）。"""
+
+    threadId: str = Field(min_length=1, max_length=128)
+    selectedCitationIds: list[str] = Field(min_length=1, max_length=20)
+    title: str | None = Field(default=None, max_length=500)
+    workspaceId: str | None = Field(default=None, max_length=128)
+
+
+class RagAnswersToNoteResult(BaseModel):
+    """N160：证据笔记创建结果（三段式结构 + provenance 台账起点）。"""
+
+    noteId: str
+    title: str
+    contentMd: str
+    excerptCount: int
+    revisionCount: int = 0
+    createdAt: str
 
 
 # ---------------------------------------------------------------------------
@@ -5607,8 +5708,30 @@ class AgentApprovalPreviewChange(BaseModel):
     to: str | None = None
 
 
+class AgentResearchPresetRequest(BaseModel):
+    """N163：POST /api/v1/agent/presets/research 请求体（目标会话）。"""
+
+    model_config = {"extra": "forbid"}
+
+    threadId: str = Field(min_length=1, max_length=128)
+
+
+class AgentApprovalBatchPreview(BaseModel):
+    """N162：批量写入预演聚合卡（一次批准覆盖整批）。
+
+    perObjectDeltas 最多 10 个样本（perObjectTruncated 如实标注截断）；
+    uncertainCount > 0 = 整批含不确定项（UI 必须整批提示）。"""
+
+    objectCount: int
+    perObjectDeltas: list[dict] = []
+    perObjectTruncated: int = 0
+    uncertainCount: int = 0
+
+
 class AgentApprovalPreview(BaseModel):
-    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。"""
+    """F097 POST .../approvals/{id}/preview — 预演不执行业务写入。
+
+    N162：批量写入（itemRefs 列表形态的 args）时 batch 聚合卡非空。"""
 
     approvalId: str
     tool: str
@@ -5616,6 +5739,7 @@ class AgentApprovalPreview(BaseModel):
     changes: list[AgentApprovalPreviewChange] = []
     uncertain: list[str] = []
     note: str
+    batch: AgentApprovalBatchPreview | None = None
 
 
 # ---------------------------------------------------------------------------

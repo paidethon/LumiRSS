@@ -1,6 +1,7 @@
 /** LumiRSS API client — 只访问相对 /api/v1/*，所有 BFF HTTP 调用集中在此。
  * 读：getFeeds / getEntries / getEntry；写：setEntryState（set 语义）。 */
 
+import { takeStepUpHeaders } from '../lib/step-up'
 import { sessionExpired } from '../store/auth'
 import type {
   AiProfile,
@@ -205,6 +206,7 @@ async function rawRequest(
     method?: string
     body?: BodyInit
     contentType?: string
+    headers?: Record<string, string>
     signal?: AbortSignal
   },
 ): Promise<Response> {
@@ -216,10 +218,12 @@ async function rawRequest(
     response = await fetch(path, {
       method: init?.method,
       body: init?.body,
-      headers:
-        init?.contentType !== undefined
+      headers: {
+        ...(init?.contentType !== undefined
           ? { 'Content-Type': init.contentType }
-          : undefined,
+          : {}),
+        ...(init?.headers ?? {}),
+      },
       signal: init?.signal,
     })
   } catch (error) {
@@ -712,6 +716,27 @@ export async function updateRegistrationPolicy(
 
 // ---- 管理台（role=owner|admin；403 = 后端判定的越界，UI 不自行放行） ----
 
+// N009：敏感管理操作自动附带一次性提权令牌（lib/step-up.ts 持有；
+// mint 由管理台的密码对话框触发；单次使用——发出即清除）。
+
+/** N009：铸造管理员临时提权令牌（POST /admin/step-up；密码错 →
+ * 400 invalid_credentials；member 调用 → 403 forbidden）。 */
+export async function mintAdminStepUpToken(
+  password: string,
+): Promise<{ token: string; expiresInMinutes: number; header: string }> {
+  const response = await rawRequest(`${API_BASE}/admin/step-up`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    token: string
+    expiresInMinutes: number
+    header: string
+  }
+}
+
 /** 成员目录（不含密码哈希；owner→member 全量）。 */
 export async function listAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
   const rows = await request<unknown[]>(`${API_BASE}/admin/users`, signal)
@@ -924,12 +949,14 @@ export async function getInviteFunnel(signal?: AbortSignal, schemeId?: string | 
 export async function pauseAdminUser(userId: string): Promise<void> {
   await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/pause`, {
     method: 'POST',
+    headers: takeStepUpHeaders(),
   })
 }
 
 /** 恢复成员。 */
 export async function resumeAdminUser(userId: string): Promise<void> {
   await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/resume`, {
+    headers: takeStepUpHeaders(),
     method: 'POST',
   })
 }
@@ -952,7 +979,7 @@ export interface AdminPasswordReset {
 export async function resetAdminUserPassword(userId: string): Promise<AdminPasswordReset> {
   const response = await rawRequest(
     `${API_BASE}/admin/users/${encodeURIComponent(userId)}/reset-password`,
-    { method: 'POST' },
+    { method: 'POST', headers: takeStepUpHeaders() },
   )
   const body = (await response.json()) as { recoveryToken?: unknown; invite?: unknown }
   return {
@@ -1174,6 +1201,7 @@ export async function setAdminUserQuota(
 ): Promise<AdminUserQuota> {
   const response = await rawRequest(`${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`, {
     method: 'PUT',
+    headers: takeStepUpHeaders(),
     body: JSON.stringify({
       ...(caps.maxSources !== null ? { maxSources: caps.maxSources } : {}),
       ...(caps.aiQuotaPerDay !== null ? { aiQuotaPerDay: caps.aiQuotaPerDay } : {}),
@@ -1188,7 +1216,7 @@ export async function setAdminUserQuota(
 export async function clearAdminUserQuota(userId: string): Promise<AdminUserQuota> {
   const response = await rawRequest(
     `${API_BASE}/admin/users/${encodeURIComponent(userId)}/quota`,
-    { method: 'DELETE' },
+    { method: 'DELETE', headers: takeStepUpHeaders() },
   )
   const body = (await response.json()) as Record<string, unknown>
   return normalizeUserQuota(body, userId)
@@ -1975,7 +2003,8 @@ export async function getServerSettings(signal?: AbortSignal): Promise<ServerSet
 /** 0017：部分更新 portable 设置（服务端严格校验；失败抛 ApiError）。
  * 刻意不接 AbortSignal——与其它 mutation 语义一致，发出后允许完成。 */
 export async function patchServerSettings(
-  patch: Record<string, string | number | boolean>,
+  // N058：readerPresets 进 portable 同步——PATCH 体允许对象数组。
+  patch: Record<string, string | number | boolean | object[]>,
 ): Promise<ServerSettings> {
   const response = await rawRequest(`${API_BASE}/settings`, {
     method: 'PATCH',
@@ -2463,10 +2492,15 @@ export async function previewRestore(source: {
   return (await response.json()) as RestorePreview
 }
 
-export async function executeRestore(restoreSessionId: string, confirmation: string): Promise<RestoreResult> {
+export async function executeRestore(
+  restoreSessionId: string,
+  confirmation: string,
+  // N187：逐对象冲突策略（path → 'skip'|'overwrite'；缺省 skip）。
+  decisions?: Record<string, 'skip' | 'overwrite'>,
+): Promise<RestoreResult> {
   const response = await rawRequest(`${API_BASE}/restore`, {
     method: 'POST',
-    body: JSON.stringify({ restoreSessionId, confirmation }),
+    body: JSON.stringify({ restoreSessionId, confirmation, decisions }),
     contentType: 'application/json',
   })
   return (await response.json()) as RestoreResult
@@ -2485,6 +2519,48 @@ export async function listWorkspaceItems(
     { method: 'GET', signal },
   )
   return (await response.json()) as WorkspaceItemsResponse
+}
+
+/** N108：跨工作区移动成员（同一 ItemRef，底层对象绝不复制）。
+ * keepInSource=true 双工作区同持；onDuplicate='skip'（默认，幂等收敛）|
+ * 'conflict'（目标已有 → 409 workspace_item_duplicate）。 */
+export async function moveWorkspaceItem(
+  workspaceId: string,
+  itemRef: string,
+  body: {
+    targetWorkspaceId: string
+    keepInSource?: boolean
+    onDuplicate?: 'skip' | 'conflict'
+  },
+): Promise<{
+  itemRef: string
+  sourceWorkspaceId: string
+  targetWorkspaceId: string
+  duplicate: boolean
+  sourceRemoved: boolean
+  targetPosition: number | null
+}> {
+  const response = await rawRequest(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/items/${encodeURIComponent(itemRef)}/move`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        targetWorkspaceId: body.targetWorkspaceId,
+        keepInSource: body.keepInSource ?? false,
+        onDuplicate: body.onDuplicate ?? 'skip',
+      }),
+      contentType: 'application/json',
+    },
+  )
+  if (!response.ok) throw await toApiError(response)
+  return (await response.json()) as {
+    itemRef: string
+    sourceWorkspaceId: string
+    targetWorkspaceId: string
+    duplicate: boolean
+    sourceRemoved: boolean
+    targetPosition: number | null
+  }
 }
 
 export async function addWorkspaceItem(workspaceId: string, itemRef: string): Promise<WorkspaceItem> {
@@ -7501,6 +7577,17 @@ export interface AgentThreadSettingsPatch {
   /** N165：线程级任务预算（键皆可缺省；null + clearBudget = 清除）。 */
   budget?: { maxToolCalls?: number; maxTurns?: number } | null
   clearBudget?: boolean
+}
+
+/** N163：一键研究模式预设（readonly + read-tool 白名单 + 回合上限，
+ * scope 保留当前值）。 */
+export async function applyAgentResearchPreset(threadId: string): Promise<void> {
+  const response = await rawRequest(`${API_BASE}/agent/presets/research`, {
+    method: 'POST',
+    body: JSON.stringify({ threadId }),
+    contentType: 'application/json',
+  })
+  if (!response.ok) throw await toApiError(response)
 }
 
 export async function updateAgentThreadSettings(

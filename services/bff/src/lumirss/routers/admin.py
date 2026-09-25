@@ -32,6 +32,11 @@ from lumirss.accounts_store import (
     hash_password,
 )
 from lumirss.auth_store import AuthStore
+from lumirss.step_up import (
+    STEP_UP_TTL_MINUTES,
+    mint_step_up_token,
+    require_step_up,
+)
 from lumirss.user_scope import principal_of
 
 router = APIRouter(prefix="/api/v1/admin")
@@ -148,6 +153,56 @@ class UserRoleRequest(BaseModel):
     validation error (422)."""
 
     role: str = Field(pattern="^(member|admin)$")
+
+
+class AdminStepUpRequest(BaseModel):
+    """POST /admin/step-up（N009）——管理员本会话内重新证明自己。"""
+
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/step-up", response_model=None, response_model_exclude_none=True)
+async def admin_step_up(body: AdminStepUpRequest, request: Request) -> JSONResponse:
+    """N009：铸造短时提权令牌（5 分钟，散列入库，单次使用）。
+
+    - 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；
+    - 校验的是当前管理员自己的密码（不是目标用户的）；
+    - 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。"""
+    principal = await _require_admin(request)
+    if principal is None:
+        return _forbid()
+    accounts = _accounts(request)
+    minted = await mint_step_up_token(
+        request.app.state.control_db, principal["user_id"], body.password
+    )
+    if minted is None:
+        await accounts.audit(
+            actor=principal["user_id"],
+            action="admin_step_up_mint_failed",
+            object_type="step_up",
+            object_id=principal["user_id"],
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "type": "invalid_credentials",
+                    "message": "密码不正确。",
+                }
+            },
+            headers=_NO_STORE,
+        )
+    await accounts.audit(
+        actor=principal["user_id"],
+        action="admin_step_up_mint",
+        object_type="step_up",
+        object_id=principal["user_id"],
+    )
+    return {
+        "token": minted["token"],
+        "expiresInMinutes": STEP_UP_TTL_MINUTES,
+        "header": "X-Lumi-Step-Up",
+    }
 
 
 @router.get("/users", response_model=None, response_model_exclude_none=True)
@@ -471,7 +526,8 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
     - demoting the last active admin is refused (403) so a delegation
       mistake can never lock the operator out of admin surfaces;
     - unknown user → 404, unknown role → 422 (body validation);
-    - every accepted change is audited (no credentials involved)."""
+    - every accepted change is audited (no credentials involved).
+    - N009：需要临时提权令牌（X-Lumi-Step-Up），否则 403 step_up_required。"""
     principal = _require_owner(request)
     if principal is None:
         return _forbid("Owner role required.")
@@ -483,6 +539,10 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
+    denial = await require_step_up(request, principal, "user_role_change")
+    if denial is not None:
+        return denial
     if user["role"] == "owner":
         return _forbid("The owner account role cannot be changed.")
     if user["role"] == "admin" and body.role == "member" and user["status"] == "active":
@@ -502,7 +562,8 @@ async def set_user_role(user_id: str, body: UserRoleRequest, request: Request) -
 
 async def _set_member_status(user_id: str, request: Request, status: str) -> JSONResponse:
     """Pause/resume with the two hard guards (O152): the owner account
-    can never be targeted, and the last active admin cannot be paused."""
+    can never be targeted, and the last active admin cannot be paused.
+    N009：需要临时提权令牌（X-Lumi-Step-Up）。"""
     principal = await _require_admin(request)
     if principal is None:
         return _forbid()
@@ -514,6 +575,10 @@ async def _set_member_status(user_id: str, request: Request, status: str) -> JSO
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何状态变更之前（404 语义不变）。
+    denial = await require_step_up(request, principal, f"user_{status}")
+    if denial is not None:
+        return denial
     if user["role"] == "owner":
         return _forbid("The owner account cannot be paused or resumed here.")
     if status == "paused" and user["role"] == "admin" and user["status"] == "active":
@@ -554,7 +619,8 @@ async def revoke_user_sessions(user_id: str, request: Request) -> JSONResponse:
 async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
     """Install an unguessable password (nobody knows it) and revoke all
     the user's sessions, then return a one-time recovery invite the
-    operator hands to the member (O150 — honest, no email pretending)."""
+    operator hands to the member (O150 — honest, no email pretending).
+    N009：需要临时提权令牌（X-Lumi-Step-Up）。"""
     principal = await _require_admin(request)
     if principal is None:
         return _forbid()
@@ -566,6 +632,9 @@ async def reset_user_password(user_id: str, request: Request) -> JSONResponse:
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    denial = await require_step_up(request, principal, "user_password_reset")
+    if denial is not None:
+        return denial
     import secrets as _secrets
 
     await accounts.set_password_hash(user_id, hash_password(_secrets.token_urlsafe(24)))
@@ -1046,6 +1115,10 @@ async def set_user_quota(user_id: str, body: UserQuotaPutRequest, request: Reque
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何写入之前。
+    denial = await require_step_up(request, principal, "user_quota_set")
+    if denial is not None:
+        return denial
     from lumirss.user_quotas import UserQuotaStore
 
     caps = {key: value for key, value in body.model_dump().items() if value is not None}
@@ -1080,6 +1153,10 @@ async def clear_user_quota(user_id: str, request: Request) -> JSONResponse:
             content={"error": {"type": "user_not_found", "message": "No such member."}},
             headers=_NO_STORE,
         )
+    # N009：临时提权在 404 之后、任何写入之前。
+    denial = await require_step_up(request, principal, "user_quota_set")
+    if denial is not None:
+        return denial
     from lumirss.user_quotas import UserQuotaStore
 
     cleared = await UserQuotaStore(request.app.state.control_db).clear_caps(

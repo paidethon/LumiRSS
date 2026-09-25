@@ -28,7 +28,7 @@
  * - 诚实状态：加载 Skeleton / 空态 / 错误重试，与书签页一致。
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -39,6 +39,7 @@ import {
   Eye,
   FolderOpen,
   History,
+  GitCompareArrows,
   LayoutDashboard,
   ListTree,
   Loader2,
@@ -73,6 +74,8 @@ import {
 } from '../../api/client'
 import { WorkspaceBoardView } from '../WorkspaceBoard'
 import { WorkspaceOutlinePanel } from '../WorkspaceOutlinePanel'
+const WorkspaceCompare = lazy(() => import('../WorkspaceCompare'))
+const WorkspaceMoveDialog = lazy(() => import('../WorkspaceMoveDialog'))
 import {
   ArchivedBar,
   ResearchPackExportDialog,
@@ -925,6 +928,10 @@ export default function WorkspacesPage() {
 
   // ---- N101：分组折叠状态（仅本机 localStorage；换工作区重载） ----
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  // N106：工作区双栏对读（挑 2 条 → CompareRead + 手动锚点同步）。
+  const [compareOpen, setCompareOpen] = useState(false)
+  // N108：跨工作区移动（预览条目 → 选择目标工作区）。
+  const [moveTarget, setMoveTarget] = useState<PreviewTarget | null>(null)
   // ---- N103：临时预览（同刻至多一个）+ 本机笔记草稿 + 拦截提示 ----
   const [preview, setPreview] = useState<PreviewTarget | null>(null)
   const [previewDraft, setPreviewDraft] = useState('')
@@ -1229,6 +1236,15 @@ export default function WorkspacesPage() {
                 <ListTree aria-hidden className="size-4" />
                 大纲
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="workspace-compare-open"
+                onClick={() => setCompareOpen(true)}
+              >
+                <GitCompareArrows aria-hidden className="size-4" />
+                双栏对读
+              </Button>
             </>
           )}
           {selectedWorkspace !== null && !selectedWorkspace.reserved && (
@@ -1419,9 +1435,43 @@ export default function WorkspacesPage() {
             />
           </div>
         )}
+        {/* N106：工作区双栏对读（挑 2 条 → CompareRead 双栏 + 锚点同步；
+            窄屏沿用 CompareRead 既有 A/B 无障碍切换）。 */}
+        {compareOpen && (
+          <div className="mt-3 h-[70vh]">
+            <Suspense fallback={<Skeleton className="h-full w-full" />}>
+              <WorkspaceCompare
+                items={resolvedItems.map((item) => ({ ref: item.ref, title: item.title }))}
+                onClose={() => setCompareOpen(false)}
+              />
+            </Suspense>
+          </div>
+        )}
+        {/* N108：跨工作区移动对话框（同一 ItemRef，对象绝不复制）。 */}
+        {moveTarget !== null && effectiveSelectedId !== null && (
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <WorkspaceMoveDialog
+              workspaceId={effectiveSelectedId}
+              itemRef={moveTarget.ref}
+              itemTitle={moveTarget.title}
+              onClose={() => setMoveTarget(null)}
+              onMoved={() => setMoveTarget(null)}
+            />
+          </Suspense>
+        )}
         {/* N103：预览窗格（同刻至多一个；打开另一个 = 整体替换）。 */}
         {preview !== null && effectiveSelectedId !== null && (
           <div className="mt-3" data-workspace-preview-slot>
+            <div className="mb-1.5 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="workspace-move-open"
+                onClick={() => setMoveTarget(preview)}
+              >
+                移动到其他工作区…
+              </Button>
+            </div>
             <WorkspacePreviewPane
               target={preview}
               draftText={previewDraft}

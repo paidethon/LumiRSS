@@ -19,7 +19,7 @@ Design constraints:
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lumirss.storage import Database
 from lumirss.util import utc_now as _utc_now
@@ -69,6 +69,64 @@ _NUMERIC_RANGES: dict[str, tuple[float, float, float]] = {
 }
 
 _HEX_COLOR_RE = r"^#[0-9a-fA-F]{6}$"
+
+# N058：预设 vars 允许的键（与 Web ReaderPreset['vars'] 同一口径）；
+# 数值有界，未知键拒绝（extra=forbid）——任意 JSON 绝不入库。
+_PRESET_VAR_NUMERIC: dict[str, tuple[float, float]] = {
+    "readerFontSize": (12.0, 28.0),
+    "readerLineHeight": (1.2, 2.4),
+    "readerParagraphSpacing": (0.0, 2.0),
+    "readerContentWidth": (560.0, 1080.0),
+    "readerColumns": (1.0, 3.0),
+}
+_PRESET_VAR_ENUMS: dict[str, tuple[str, ...]] = {
+    "readerFontFamily": ("system", "sans", "serif", "mono"),
+    "readerBackground": ("follow", "sepia", "warm", "paper", "mint", "custom"),
+    "deviceScope": ("all", "desktop"),
+}
+_MAX_PRESETS = 50
+_PRESET_VARS_MAX = 12
+
+
+class ReaderPresetSync(BaseModel):
+    """N058：portable 同步的单个阅读预设（版本标签 + 有界 vars）。"""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=64)
+    schemaVersion: int = Field(ge=1, le=9)
+    vars: dict[str, float | str | bool] = Field(
+        default_factory=dict, max_length=_PRESET_VARS_MAX
+    )
+
+    @field_validator("vars")
+    @classmethod
+    def _bounded_vars(
+        cls, value: dict[str, float | str | bool]
+    ) -> dict[str, float | str | bool]:
+        clean: dict[str, float | str | bool] = {}
+        for key, raw in value.items():
+            if key in _PRESET_VAR_NUMERIC:
+                if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                    raise ValueError(f"{key} must be a number")
+                minimum, maximum = _PRESET_VAR_NUMERIC[key]
+                number = float(raw)
+                if number != number or number in (float("inf"), float("-inf")):
+                    raise ValueError(f"{key} must be finite")
+                clean[key] = round(min(maximum, max(minimum, number)), 3)
+            elif key == "readerJustify":
+                if not isinstance(raw, bool):
+                    raise ValueError("readerJustify must be a boolean")
+                clean[key] = raw
+            elif key in _PRESET_VAR_ENUMS:
+                text = str(raw)
+                if text not in _PRESET_VAR_ENUMS[key]:
+                    raise ValueError(f"{key} has an invalid value")
+                clean[key] = text
+            else:
+                raise ValueError(f"unknown preset var: {key}")
+        return clean
 
 
 class InvalidAppSettings(Exception):
@@ -139,6 +197,13 @@ class PortableSettings(BaseModel):
     readerCodeWrap: bool = False
     readerPagedMode: bool = False
     searchHighlightMatches: bool = True
+
+    # ---- N058 阅读样式预设进 portable 同步 ----
+    # 用户派生预设（内置预设不存）。每个预设自带 schemaVersion（版本
+    # 标签，与前端 reader-preset-device.ts 的 PRESET_SCHEMA_VERSION 对
+    # 齐）；deviceScope 属设备适用性声明，随预设同步、在应用侧守卫
+    # 设备专属参数（mobile 应用 desktop-only 预设忽略宽度/栏数）。
+    readerPresets: list[ReaderPresetSync] = []
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod
@@ -221,6 +286,9 @@ class PortableSettingsPatch(BaseModel):
     readerCodeWrap: bool | None = None
     readerPagedMode: bool | None = None
     searchHighlightMatches: bool | None = None
+
+    # N058：预设列表整体替换（幂等 upsert 语义由客户端以 id 归并后发送）。
+    readerPresets: list[ReaderPresetSync] | None = Field(default=None, max_length=_MAX_PRESETS)
 
     @field_validator("accentColor", "readerBackgroundCustom")
     @classmethod

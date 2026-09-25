@@ -366,6 +366,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/step-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Step Up
+         * @description N009：铸造短时提权令牌（5 分钟，散列入库，单次使用）。
+         *
+         *     - 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；
+         *     - 校验的是当前管理员自己的密码（不是目标用户的）；
+         *     - 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。
+         */
+        post: operations["admin_step_up_api_v1_admin_step_up_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/system": {
         parameters: {
             query?: never;
@@ -520,6 +544,7 @@ export interface paths {
          * @description Install an unguessable password (nobody knows it) and revoke all
          *     the user's sessions, then return a one-time recovery invite the
          *     operator hands to the member (O150 — honest, no email pretending).
+         *     N009：需要临时提权令牌（X-Lumi-Step-Up）。
          */
         post: operations["reset_user_password_api_v1_admin_users__user_id__reset_password_post"];
         delete?: never;
@@ -583,8 +608,35 @@ export interface paths {
          *       mistake can never lock the operator out of admin surfaces;
          *     - unknown user → 404, unknown role → 422 (body validation);
          *     - every accepted change is audited (no credentials involved).
+         *     - N009：需要临时提权令牌（X-Lumi-Step-Up），否则 403 step_up_required。
          */
         post: operations["set_user_role_api_v1_admin_users__user_id__role_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/presets/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Research Preset
+         * @description N163：一键研究模式——readonly + 保留当前 scope + read-tool 白名单
+         *     + 回合数上限，一次 PATCH 落库（下轮生效）。
+         *
+         *     - scope 刻意不动（「当前范围」由用户另行设置，预设绝不放大授权）；
+         *     - 白名单 = 注册表里的全部只读工具（服务端 evaluate_policy 强制：
+         *       readonly 模式下写工具一律 403 readonly_mode）；
+         *     - 回合上限固定 N163_PRESET_MAX_TURNS，防长跑。
+         */
+        post: operations["apply_research_preset_api_v1_agent_presets_research_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6578,6 +6630,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rag/answers-to-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rag Answers To Note
+         * @description N160：从答案生成证据笔记。
+         *
+         *     - ``selectedCitationIds`` 是该会话里 assistant 消息 id（带引用）；
+         *       非 assistant / 不属于该会话 → 422 citation_invalid（诚实拒绝，
+         *       绝不静默截断）；
+         *     - 摘录段取 rag_chunks 里 LIVE 模型的精确分块文本（引用 ref +
+         *       原文 span），生成内容段显式标注「AI 生成」，人工修改段留空；
+         *     - 笔记 source='ai_answer'：后续每次编辑先把上一版推入
+         *       lumi_note_revisions（provenance 保留，0131）。
+         */
+        post: operations["rag_answers_to_note_api_v1_rag_answers_to_note_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/ask": {
         parameters: {
             query?: never;
@@ -6794,6 +6874,36 @@ export interface paths {
         get: operations["rag_inconsistencies_api_v1_rag_inconsistencies_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rag/index-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rag Index Version
+         * @description N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。
+         *
+         *     modelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程
+         *     可读可查），swap 完成后自然切到新模型。configuredModel 单独回显
+         *     下一次 rebuild 将写入的模型。
+         */
+        get: operations["rag_index_version_api_v1_rag_index_version_get"];
+        put?: never;
+        /**
+         * Rag Index Version Switch
+         * @description N157：切换目标模型（settings 持久化；下一次 rebuild 生效）。
+         *
+         *     切换本身零写入现有索引；目录外模型诚实 400 unknown_model。
+         */
+        post: operations["rag_index_version_switch_api_v1_rag_index_version_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10413,6 +10523,31 @@ export interface paths {
         patch: operations["move_workspace_item_group_api_v1_workspaces__workspace_id__items__item_ref__group_patch"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/items/{item_ref}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Workspace Item
+         * @description N108：跨工作区移动成员（同一 ItemRef——底层对象绝不复制）。
+         *
+         *     - 幂等：目标已有该条目默认 skip（结果 duplicate=true，绝不产生
+         *       第二份内容）；``onDuplicate='conflict'`` 显式选择 409；
+         *     - ``keepInSource=true`` 保留源成员关系（双工作区同持）；
+         *     - 预览侧（Web 移动对话框）用既有列表 API 展示重复/关系影响。
+         */
+        post: operations["move_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
         parameters: {
             query?: never;
@@ -10962,6 +11097,42 @@ export interface components {
             };
         };
         /**
+         * AdminStepUpRequest
+         * @description POST /admin/step-up（N009）——管理员本会话内重新证明自己。
+         */
+        AdminStepUpRequest: {
+            /** Password */
+            password: string;
+        };
+        /**
+         * AgentApprovalBatchPreview
+         * @description N162：批量写入预演聚合卡（一次批准覆盖整批）。
+         *
+         *     perObjectDeltas 最多 10 个样本（perObjectTruncated 如实标注截断）；
+         *     uncertainCount > 0 = 整批含不确定项（UI 必须整批提示）。
+         */
+        AgentApprovalBatchPreview: {
+            /** Objectcount */
+            objectCount: number;
+            /**
+             * Perobjectdeltas
+             * @default []
+             */
+            perObjectDeltas: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Perobjecttruncated
+             * @default 0
+             */
+            perObjectTruncated: number;
+            /**
+             * Uncertaincount
+             * @default 0
+             */
+            uncertainCount: number;
+        };
+        /**
          * AgentApprovalContent
          * @description role=approval message body (server-minted by create_approval).
          */
@@ -10998,10 +11169,13 @@ export interface components {
         /**
          * AgentApprovalPreview
          * @description F097 POST .../approvals/{id}/preview — 预演不执行业务写入。
+         *
+         *     N162：批量写入（itemRefs 列表形态的 args）时 batch 聚合卡非空。
          */
         AgentApprovalPreview: {
             /** Approvalid */
             approvalId: string;
+            batch?: components["schemas"]["AgentApprovalBatchPreview"] | null;
             /**
              * Changes
              * @default []
@@ -11327,6 +11501,14 @@ export interface components {
              */
             status: "processing";
             thread: components["schemas"]["AgentThread"];
+        };
+        /**
+         * AgentResearchPresetRequest
+         * @description N163：POST /api/v1/agent/presets/research 请求体（目标会话）。
+         */
+        AgentResearchPresetRequest: {
+            /** Threadid */
+            threadId: string;
         };
         /**
          * AgentResumeResult
@@ -12457,6 +12639,11 @@ export interface components {
              * @default 0.85
              */
             readerParagraphSpacing: number;
+            /**
+             * Readerpresets
+             * @default []
+             */
+            readerPresets: components["schemas"]["ReaderPresetSync"][];
             /**
              * Readershowreadingprogress
              * @default true
@@ -18044,6 +18231,44 @@ export interface components {
             quizId: string;
         };
         /**
+         * RagAnswersToNoteRequest
+         * @description N160：POST /api/v1/rag/answers-to-note 请求体。
+         *
+         *     selectedCitationIds = 会话内 assistant 消息 id（带引用的回答）；
+         *     title/workspaceId 可选（缺省标题取首条回答前 40 字）。
+         */
+        RagAnswersToNoteRequest: {
+            /** Selectedcitationids */
+            selectedCitationIds: string[];
+            /** Threadid */
+            threadId: string;
+            /** Title */
+            title?: string | null;
+            /** Workspaceid */
+            workspaceId?: string | null;
+        };
+        /**
+         * RagAnswersToNoteResult
+         * @description N160：证据笔记创建结果（三段式结构 + provenance 台账起点）。
+         */
+        RagAnswersToNoteResult: {
+            /** Contentmd */
+            contentMd: string;
+            /** Createdat */
+            createdAt: string;
+            /** Excerptcount */
+            excerptCount: number;
+            /** Noteid */
+            noteId: string;
+            /**
+             * Revisioncount
+             * @default 0
+             */
+            revisionCount: number;
+            /** Title */
+            title: string;
+        };
+        /**
          * RagAskCitation
          * @description N155 一条有效引用：编号（1 起）+ ref。
          */
@@ -18416,6 +18641,53 @@ export interface components {
             modelId: string;
         };
         /**
+         * RagIndexVersion
+         * @description N157：GET /api/v1/rag/index-version — 当前索引版本。
+         *
+         *     modelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按
+         *     model_id 分列；configuredModel = 下一次 rebuild 将写入的模型。
+         */
+        RagIndexVersion: {
+            /** Configuredmodel */
+            configuredModel?: string | null;
+            /** Dim */
+            dim: number;
+            /** Modelid */
+            modelId: string;
+            /**
+             * Rowcounts
+             * @default {}
+             */
+            rowCounts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * RagIndexVersionSwitch
+         * @description N157：切换确认（settings 已持久化；索引未动，rebuild 后生效）。
+         */
+        RagIndexVersionSwitch: {
+            /** Dim */
+            dim: number;
+            /** Modelid */
+            modelId: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Rebuildrequired
+             * @default true
+             */
+            rebuildRequired: boolean;
+        };
+        /**
+         * RagIndexVersionSwitchRequest
+         * @description N157：POST /api/v1/rag/index-version 请求体。
+         */
+        RagIndexVersionSwitchRequest: {
+            /** Modelid */
+            modelId: string;
+        };
+        /**
          * RagJobSummary
          * @description F093 最近一次重建作业的进度段（stage/done/remaining）。
          */
@@ -18558,6 +18830,8 @@ export interface components {
         RagStatus: {
             /** Chunks */
             chunks: number;
+            /** Configuredmodel */
+            configuredModel?: string | null;
             /** Dim */
             dim: number;
             /** Enabled */
@@ -18573,6 +18847,13 @@ export interface components {
             model: string;
             /** Modelloaded */
             modelLoaded: boolean;
+            /**
+             * Rowcounts
+             * @default {}
+             */
+            rowCounts: {
+                [key: string]: number;
+            };
             /** Vecrows */
             vecRows: number;
             /** Vectable */
@@ -18678,6 +18959,22 @@ export interface components {
             items: components["schemas"]["ReadLaterItem"][];
             /** Nextcursor */
             nextCursor?: string | null;
+        };
+        /**
+         * ReaderPresetSync
+         * @description N058：portable 同步的单个阅读预设（版本标签 + 有界 vars）。
+         */
+        ReaderPresetSync: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Schemaversion */
+            schemaVersion: number;
+            /** Vars */
+            vars?: {
+                [key: string]: number | string | boolean;
+            };
         };
         /**
          * ReadinessComponentDetail
@@ -19047,10 +19344,59 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /**
+         * RestoreConflictItem
+         * @description N187：逐对象冲突清单条目（exists/differs 对比活动状态）。
+         */
+        RestoreConflictItem: {
+            /** Component */
+            component: string;
+            /**
+             * Differs
+             * @default false
+             */
+            differs: boolean;
+            /** Exists */
+            exists: boolean;
+            /** Path */
+            path: string;
+        };
+        /**
+         * RestoreDecisionLog
+         * @description N187：决策账本（restored/skipped/overwritten 计数 + 样本 ≤10）。
+         */
+        RestoreDecisionLog: {
+            /**
+             * Overwritten
+             * @default 0
+             */
+            overwritten: number;
+            /**
+             * Restored
+             * @default 0
+             */
+            restored: number;
+            /**
+             * Samples
+             * @default []
+             */
+            samples: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+        };
         /** RestoreExecuteBody */
         RestoreExecuteBody: {
             /** Confirmation */
             confirmation: string;
+            /** Decisions */
+            decisions?: {
+                [key: string]: string;
+            } | null;
             /** Restoresessionid */
             restoreSessionId: string;
         };
@@ -19068,6 +19414,8 @@ export interface components {
         /**
          * RestorePreview
          * @description POST /api/v1/restore/preview (validate + session id, no writes).
+         *
+         *     N187：``conflicts`` 供恢复向导冲突步骤渲染（策略 skip|overwrite）。
          */
         RestorePreview: {
             /** Compatible */
@@ -19077,6 +19425,11 @@ export interface components {
              * @default []
              */
             components: string[];
+            /**
+             * Conflicts
+             * @default []
+             */
+            conflicts: components["schemas"]["RestoreConflictItem"][];
             /** Createdat */
             createdAt?: string | null;
             /** Currentdbschemaversion */
@@ -19131,8 +19484,11 @@ export interface components {
         /**
          * RestoreResult
          * @description POST /api/v1/restore (destructive, explicitly confirmed).
+         *
+         *     N187：``decisions`` 决策账本（缺省全 skip 时也如实记账）。
          */
         RestoreResult: {
+            decisions?: components["schemas"]["RestoreDecisionLog"] | null;
             /**
              * Freshrss
              * @enum {string}
@@ -22381,6 +22737,52 @@ export interface components {
             groupName?: string | null;
         };
         /**
+         * WorkspaceItemMoveRequest
+         * @description N108：POST /api/v1/workspaces/{id}/items/{ref}/move 请求体。
+         *
+         *     keepInSource=false（默认）= 移动（源成员关系移除）；onDuplicate:
+         *     'skip'（默认，幂等收敛）| 'conflict'（目标已有 → 409）。
+         */
+        WorkspaceItemMoveRequest: {
+            /**
+             * Keepinsource
+             * @default false
+             */
+            keepInSource: boolean;
+            /**
+             * Onduplicate
+             * @default skip
+             * @enum {string}
+             */
+            onDuplicate: "skip" | "conflict";
+            /** Targetworkspaceid */
+            targetWorkspaceId: string;
+        };
+        /**
+         * WorkspaceItemMoveResult
+         * @description N108：移动结果（duplicate=true 表示目标本已有该条目，未重复创建）。
+         */
+        WorkspaceItemMoveResult: {
+            /**
+             * Duplicate
+             * @default false
+             */
+            duplicate: boolean;
+            /** Itemref */
+            itemRef: string;
+            /**
+             * Sourceremoved
+             * @default true
+             */
+            sourceRemoved: boolean;
+            /** Sourceworkspaceid */
+            sourceWorkspaceId: string;
+            /** Targetposition */
+            targetPosition?: number | null;
+            /** Targetworkspaceid */
+            targetWorkspaceId: string;
+        };
+        /**
          * WorkspaceItemPinRequest
          * @description PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。
          */
@@ -23246,6 +23648,39 @@ export interface operations {
             };
         };
     };
+    admin_step_up_api_v1_admin_step_up_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminStepUpRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_status_api_v1_admin_system_get: {
         parameters: {
             query?: never;
@@ -23615,6 +24050,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_research_preset_api_v1_agent_presets_research_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentResearchPresetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentThreadSettings"];
                 };
             };
             /** @description Validation Error */
@@ -33860,6 +34328,39 @@ export interface operations {
             };
         };
     };
+    rag_answers_to_note_api_v1_rag_answers_to_note_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagAnswersToNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagAnswersToNoteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rag_ask_api_v1_rag_ask_post: {
         parameters: {
             query?: never;
@@ -34168,6 +34669,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagInconsistencyList"];
+                };
+            };
+        };
+    };
+    rag_index_version_api_v1_rag_index_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexVersion"];
+                };
+            };
+        };
+    };
+    rag_index_version_switch_api_v1_rag_index_version_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagIndexVersionSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagIndexVersionSwitch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -40284,6 +40838,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                item_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceItemMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceItemMoveResult"];
                 };
             };
             /** @description Validation Error */

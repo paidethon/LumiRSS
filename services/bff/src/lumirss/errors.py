@@ -178,7 +178,12 @@ from lumirss.opml_import_log import (
 )
 from lumirss.qa_conflicts import QaConflictInvalid
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
-from lumirss.rag import RagJobNotFound, RagModelUnavailable, RagRebuildBusy
+from lumirss.rag import (
+    RagJobNotFound,
+    RagModelUnavailable,
+    RagModelUnknown,
+    RagRebuildBusy,
+)
 from lumirss.rag_eval import EvalSampleInvalid, EvalSampleLimit, EvalSampleNotFound
 from lumirss.reading_notes import ReadingNoteInvalid, ReadingNoteNotFound
 from lumirss.reading_queue import (
@@ -277,6 +282,7 @@ from lumirss.workspace_templates import (
 from lumirss.workspaces import (
     ReservedWorkspaceError,
     WorkspaceInvalid,
+    WorkspaceItemDuplicate,
     WorkspaceItemPinned,
     WorkspaceNotFound,
     WorkspaceRevisionConflict,
@@ -386,6 +392,8 @@ _ERROR_RESPONSES = {
     WorkspaceRevisionConflict: (409, "workspace_revision_conflict"),
     # N102：固定条目拒绝静默移除（force=1 才放行）
     WorkspaceItemPinned: (409, "workspace_item_pinned"),
+    # N108 跨工作区移动（onDuplicate=conflict）
+    WorkspaceItemDuplicate: (409, "workspace_item_duplicate"),
     # N105：快照不存在（不跨工作区取快照）
     WorkspaceSnapshotNotFound: (404, "workspace_snapshot_not_found"),
     # N113 分节大纲
@@ -465,6 +473,8 @@ _ERROR_RESPONSES = {
     RagRebuildBusy: (409, "rebuild_in_progress"),
     # N158 局部重建作业
     RagJobNotFound: (404, "rag_job_not_found"),
+    # N157 索引版本切换
+    RagModelUnknown: (400, "unknown_model"),
     # N159 检索质量收藏
     EvalSampleInvalid: (422, "invalid_eval_sample"),
     EvalSampleLimit: (409, "eval_sample_limit"),
@@ -741,6 +751,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ZipInvalid)
     @app.exception_handler(ZipTooLarge)
     @app.exception_handler(WorkspaceItemPinned)
+    @app.exception_handler(WorkspaceItemDuplicate)
     @app.exception_handler(WorkspaceSnapshotNotFound)
     @app.exception_handler(SectionInvalid)
     @app.exception_handler(SectionNotFound)
@@ -751,6 +762,7 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(CollectRuleInvalid)
     @app.exception_handler(CollectRuleNotFound)
     @app.exception_handler(RagJobNotFound)
+    @app.exception_handler(RagModelUnknown)
     @app.exception_handler(EvalSampleInvalid)
     @app.exception_handler(EvalSampleLimit)
     @app.exception_handler(EvalSampleNotFound)

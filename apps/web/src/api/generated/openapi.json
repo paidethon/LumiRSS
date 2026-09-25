@@ -96,6 +96,55 @@
     "title": "ActivityPurgeBody",
     "type": "object"
    },
+   "AdminStepUpRequest": {
+    "description": "POST /admin/step-up（N009）——管理员本会话内重新证明自己。",
+    "properties": {
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "password"
+    ],
+    "title": "AdminStepUpRequest",
+    "type": "object"
+   },
+   "AgentApprovalBatchPreview": {
+    "description": "N162：批量写入预演聚合卡（一次批准覆盖整批）。\n\nperObjectDeltas 最多 10 个样本（perObjectTruncated 如实标注截断）；\nuncertainCount > 0 = 整批含不确定项（UI 必须整批提示）。",
+    "properties": {
+     "objectCount": {
+      "title": "Objectcount",
+      "type": "integer"
+     },
+     "perObjectDeltas": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Perobjectdeltas",
+      "type": "array"
+     },
+     "perObjectTruncated": {
+      "default": 0,
+      "title": "Perobjecttruncated",
+      "type": "integer"
+     },
+     "uncertainCount": {
+      "default": 0,
+      "title": "Uncertaincount",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "objectCount"
+    ],
+    "title": "AgentApprovalBatchPreview",
+    "type": "object"
+   },
    "AgentApprovalContent": {
     "additionalProperties": false,
     "description": "role=approval message body (server-minted by create_approval).",
@@ -180,11 +229,21 @@
     "type": "object"
    },
    "AgentApprovalPreview": {
-    "description": "F097 POST .../approvals/{id}/preview — 预演不执行业务写入。",
+    "description": "F097 POST .../approvals/{id}/preview — 预演不执行业务写入。\n\nN162：批量写入（itemRefs 列表形态的 args）时 batch 聚合卡非空。",
     "properties": {
      "approvalId": {
       "title": "Approvalid",
       "type": "string"
+     },
+     "batch": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AgentApprovalBatchPreview"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "changes": {
       "default": [],
@@ -948,6 +1007,23 @@
      "status"
     ],
     "title": "AgentRecipeRunResult",
+    "type": "object"
+   },
+   "AgentResearchPresetRequest": {
+    "additionalProperties": false,
+    "description": "N163：POST /api/v1/agent/presets/research 请求体（目标会话）。",
+    "properties": {
+     "threadId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Threadid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "threadId"
+    ],
+    "title": "AgentResearchPresetRequest",
     "type": "object"
    },
    "AgentResumeResult": {
@@ -3417,6 +3493,14 @@
       "default": 0.85,
       "title": "Readerparagraphspacing",
       "type": "number"
+     },
+     "readerPresets": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ReaderPresetSync"
+      },
+      "title": "Readerpresets",
+      "type": "array"
      },
      "readerShowReadingProgress": {
       "default": true,
@@ -16148,6 +16232,95 @@
     "title": "QuizSessionView",
     "type": "object"
    },
+   "RagAnswersToNoteRequest": {
+    "description": "N160：POST /api/v1/rag/answers-to-note 请求体。\n\nselectedCitationIds = 会话内 assistant 消息 id（带引用的回答）；\ntitle/workspaceId 可选（缺省标题取首条回答前 40 字）。",
+    "properties": {
+     "selectedCitationIds": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Selectedcitationids",
+      "type": "array"
+     },
+     "threadId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Threadid",
+      "type": "string"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "workspaceId": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspaceid"
+     }
+    },
+    "required": [
+     "threadId",
+     "selectedCitationIds"
+    ],
+    "title": "RagAnswersToNoteRequest",
+    "type": "object"
+   },
+   "RagAnswersToNoteResult": {
+    "description": "N160：证据笔记创建结果（三段式结构 + provenance 台账起点）。",
+    "properties": {
+     "contentMd": {
+      "title": "Contentmd",
+      "type": "string"
+     },
+     "createdAt": {
+      "title": "Createdat",
+      "type": "string"
+     },
+     "excerptCount": {
+      "title": "Excerptcount",
+      "type": "integer"
+     },
+     "noteId": {
+      "title": "Noteid",
+      "type": "string"
+     },
+     "revisionCount": {
+      "default": 0,
+      "title": "Revisioncount",
+      "type": "integer"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "noteId",
+     "title",
+     "contentMd",
+     "excerptCount",
+     "createdAt"
+    ],
+    "title": "RagAnswersToNoteResult",
+    "type": "object"
+   },
    "RagAskCitation": {
     "description": "N155 一条有效引用：编号（1 起）+ ref。",
     "properties": {
@@ -16873,6 +17046,95 @@
     "title": "RagInconsistencyList",
     "type": "object"
    },
+   "RagIndexVersion": {
+    "description": "N157：GET /api/v1/rag/index-version — 当前索引版本。\n\nmodelId/dim 为 LIVE 口径（rebuild 期间仍指旧模型）；rowCounts 按\nmodel_id 分列；configuredModel = 下一次 rebuild 将写入的模型。",
+    "properties": {
+     "configuredModel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configuredmodel"
+     },
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "rowCounts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Rowcounts",
+      "type": "object"
+     }
+    },
+    "required": [
+     "modelId",
+     "dim"
+    ],
+    "title": "RagIndexVersion",
+    "type": "object"
+   },
+   "RagIndexVersionSwitch": {
+    "description": "N157：切换确认（settings 已持久化；索引未动，rebuild 后生效）。",
+    "properties": {
+     "dim": {
+      "title": "Dim",
+      "type": "integer"
+     },
+     "modelId": {
+      "title": "Modelid",
+      "type": "string"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "rebuildRequired": {
+      "default": true,
+      "title": "Rebuildrequired",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "modelId",
+     "dim"
+    ],
+    "title": "RagIndexVersionSwitch",
+    "type": "object"
+   },
+   "RagIndexVersionSwitchRequest": {
+    "description": "N157：POST /api/v1/rag/index-version 请求体。",
+    "properties": {
+     "modelId": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Modelid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "modelId"
+    ],
+    "title": "RagIndexVersionSwitchRequest",
+    "type": "object"
+   },
    "RagJobSummary": {
     "description": "F093 最近一次重建作业的进度段（stage/done/remaining）。",
     "properties": {
@@ -17202,6 +17464,17 @@
       "title": "Chunks",
       "type": "integer"
      },
+     "configuredModel": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Configuredmodel"
+     },
      "dim": {
       "title": "Dim",
       "type": "integer"
@@ -17253,6 +17526,14 @@
      "modelLoaded": {
       "title": "Modelloaded",
       "type": "boolean"
+     },
+     "rowCounts": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Rowcounts",
+      "type": "object"
      },
      "vecRows": {
       "title": "Vecrows",
@@ -17460,6 +17741,55 @@
      "items"
     ],
     "title": "ReadLaterTimelineResponse",
+    "type": "object"
+   },
+   "ReaderPresetSync": {
+    "additionalProperties": false,
+    "description": "N058：portable 同步的单个阅读预设（版本标签 + 有界 vars）。",
+    "properties": {
+     "id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+     },
+     "schemaVersion": {
+      "maximum": 9.0,
+      "minimum": 1.0,
+      "title": "Schemaversion",
+      "type": "integer"
+     },
+     "vars": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "type": "string"
+        },
+        {
+         "type": "boolean"
+        }
+       ]
+      },
+      "maxProperties": 12,
+      "title": "Vars",
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "schemaVersion"
+    ],
+    "title": "ReaderPresetSync",
     "type": "object"
    },
    "ReadinessComponentDetail": {
@@ -18357,12 +18687,86 @@
     "title": "ResolvedRefView",
     "type": "object"
    },
+   "RestoreConflictItem": {
+    "description": "N187：逐对象冲突清单条目（exists/differs 对比活动状态）。",
+    "properties": {
+     "component": {
+      "title": "Component",
+      "type": "string"
+     },
+     "differs": {
+      "default": false,
+      "title": "Differs",
+      "type": "boolean"
+     },
+     "exists": {
+      "title": "Exists",
+      "type": "boolean"
+     },
+     "path": {
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path",
+     "component",
+     "exists"
+    ],
+    "title": "RestoreConflictItem",
+    "type": "object"
+   },
+   "RestoreDecisionLog": {
+    "description": "N187：决策账本（restored/skipped/overwritten 计数 + 样本 ≤10）。",
+    "properties": {
+     "overwritten": {
+      "default": 0,
+      "title": "Overwritten",
+      "type": "integer"
+     },
+     "restored": {
+      "default": 0,
+      "title": "Restored",
+      "type": "integer"
+     },
+     "samples": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Samples",
+      "type": "array"
+     },
+     "skipped": {
+      "default": 0,
+      "title": "Skipped",
+      "type": "integer"
+     }
+    },
+    "title": "RestoreDecisionLog",
+    "type": "object"
+   },
    "RestoreExecuteBody": {
     "properties": {
      "confirmation": {
       "minLength": 1,
       "title": "Confirmation",
       "type": "string"
+     },
+     "decisions": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decisions"
      },
      "restoreSessionId": {
       "minLength": 1,
@@ -18396,7 +18800,7 @@
     "type": "object"
    },
    "RestorePreview": {
-    "description": "POST /api/v1/restore/preview (validate + session id, no writes).",
+    "description": "POST /api/v1/restore/preview (validate + session id, no writes).\n\nN187：``conflicts`` 供恢复向导冲突步骤渲染（策略 skip|overwrite）。",
     "properties": {
      "compatible": {
       "title": "Compatible",
@@ -18408,6 +18812,14 @@
        "type": "string"
       },
       "title": "Components",
+      "type": "array"
+     },
+     "conflicts": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/RestoreConflictItem"
+      },
+      "title": "Conflicts",
       "type": "array"
      },
      "createdAt": {
@@ -18551,8 +18963,18 @@
     "type": "object"
    },
    "RestoreResult": {
-    "description": "POST /api/v1/restore (destructive, explicitly confirmed).",
+    "description": "POST /api/v1/restore (destructive, explicitly confirmed).\n\nN187：``decisions`` 决策账本（缺省全 skip 时也如实记账）。",
     "properties": {
+     "decisions": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RestoreDecisionLog"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "freshrss": {
       "enum": [
        "not_included",
@@ -25767,6 +26189,82 @@
     "title": "WorkspaceItemGroupMoveRequest",
     "type": "object"
    },
+   "WorkspaceItemMoveRequest": {
+    "additionalProperties": false,
+    "description": "N108：POST /api/v1/workspaces/{id}/items/{ref}/move 请求体。\n\nkeepInSource=false（默认）= 移动（源成员关系移除）；onDuplicate:\n'skip'（默认，幂等收敛）| 'conflict'（目标已有 → 409）。",
+    "properties": {
+     "keepInSource": {
+      "default": false,
+      "title": "Keepinsource",
+      "type": "boolean"
+     },
+     "onDuplicate": {
+      "default": "skip",
+      "enum": [
+       "skip",
+       "conflict"
+      ],
+      "title": "Onduplicate",
+      "type": "string"
+     },
+     "targetWorkspaceId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Targetworkspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "targetWorkspaceId"
+    ],
+    "title": "WorkspaceItemMoveRequest",
+    "type": "object"
+   },
+   "WorkspaceItemMoveResult": {
+    "description": "N108：移动结果（duplicate=true 表示目标本已有该条目，未重复创建）。",
+    "properties": {
+     "duplicate": {
+      "default": false,
+      "title": "Duplicate",
+      "type": "boolean"
+     },
+     "itemRef": {
+      "title": "Itemref",
+      "type": "string"
+     },
+     "sourceRemoved": {
+      "default": true,
+      "title": "Sourceremoved",
+      "type": "boolean"
+     },
+     "sourceWorkspaceId": {
+      "title": "Sourceworkspaceid",
+      "type": "string"
+     },
+     "targetPosition": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Targetposition"
+     },
+     "targetWorkspaceId": {
+      "title": "Targetworkspaceid",
+      "type": "string"
+     }
+    },
+    "required": [
+     "itemRef",
+     "sourceWorkspaceId",
+     "targetWorkspaceId"
+    ],
+    "title": "WorkspaceItemMoveResult",
+    "type": "object"
+   },
    "WorkspaceItemPinRequest": {
     "additionalProperties": false,
     "description": "PUT /api/v1/workspaces/{id}/items/{ref}/pin — set 语义固定标记。",
@@ -27029,6 +27527,43 @@
     "summary": "Run Rsshub Upgrade Check"
    }
   },
+  "/api/v1/admin/step-up": {
+   "post": {
+    "description": "N009：铸造短时提权令牌（5 分钟，散列入库，单次使用）。\n\n- 仅 owner/admin 可铸造（member 永远 403，无法伪造提权）；\n- 校验的是当前管理员自己的密码（不是目标用户的）；\n- 审计只记 mint 动作 + 用户 id——令牌与密码绝不入日志/审计。",
+    "operationId": "admin_step_up_api_v1_admin_step_up_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AdminStepUpRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Admin Step Up"
+   }
+  },
   "/api/v1/admin/system": {
    "get": {
     "description": "Admin-only deployment diagnostics (P11). See the block comment above\nfor the non-secret guarantee and the deliberate scoping: cross-user /\nsystem-wide facts live ONLY behind this gate; the per-user\n/api/v1/operations/* endpoints stay own-scope by design.",
@@ -27320,7 +27855,7 @@
   },
   "/api/v1/admin/users/{user_id}/reset-password": {
    "post": {
-    "description": "Install an unguessable password (nobody knows it) and revoke all\nthe user's sessions, then return a one-time recovery invite the\noperator hands to the member (O150 — honest, no email pretending).",
+    "description": "Install an unguessable password (nobody knows it) and revoke all\nthe user's sessions, then return a one-time recovery invite the\noperator hands to the member (O150 — honest, no email pretending).\nN009：需要临时提权令牌（X-Lumi-Step-Up）。",
     "operationId": "reset_user_password_api_v1_admin_users__user_id__reset_password_post",
     "parameters": [
      {
@@ -27432,7 +27967,7 @@
   },
   "/api/v1/admin/users/{user_id}/role": {
    "post": {
-    "description": "Owner-only role provisioning (0067).\n\nActivation admits everyone as ``member``; ONLY the owner can grant or\nrevoke the ``admin`` role afterwards. Rules, all stable-shaped:\n- admins get 403 (an admin can never mint or demote another admin);\n- the owner account is untargetable (403) — no demotion, no re-role;\n- demoting the last active admin is refused (403) so a delegation\n  mistake can never lock the operator out of admin surfaces;\n- unknown user → 404, unknown role → 422 (body validation);\n- every accepted change is audited (no credentials involved).",
+    "description": "Owner-only role provisioning (0067).\n\nActivation admits everyone as ``member``; ONLY the owner can grant or\nrevoke the ``admin`` role afterwards. Rules, all stable-shaped:\n- admins get 403 (an admin can never mint or demote another admin);\n- the owner account is untargetable (403) — no demotion, no re-role;\n- demoting the last active admin is refused (403) so a delegation\n  mistake can never lock the operator out of admin surfaces;\n- unknown user → 404, unknown role → 422 (body validation);\n- every accepted change is audited (no credentials involved).\n- N009：需要临时提权令牌（X-Lumi-Step-Up），否则 403 step_up_required。",
     "operationId": "set_user_role_api_v1_admin_users__user_id__role_post",
     "parameters": [
      {
@@ -27476,6 +28011,45 @@
      }
     },
     "summary": "Set User Role"
+   }
+  },
+  "/api/v1/agent/presets/research": {
+   "post": {
+    "description": "N163：一键研究模式——readonly + 保留当前 scope + read-tool 白名单\n+ 回合数上限，一次 PATCH 落库（下轮生效）。\n\n- scope 刻意不动（「当前范围」由用户另行设置，预设绝不放大授权）；\n- 白名单 = 注册表里的全部只读工具（服务端 evaluate_policy 强制：\n  readonly 模式下写工具一律 403 readonly_mode）；\n- 回合上限固定 N163_PRESET_MAX_TURNS，防长跑。",
+    "operationId": "apply_research_preset_api_v1_agent_presets_research_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AgentResearchPresetRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AgentThreadSettings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Apply Research Preset"
    }
   },
   "/api/v1/agent/recipes": {
@@ -40475,6 +41049,45 @@
     "summary": "Grade Quiz"
    }
   },
+  "/api/v1/rag/answers-to-note": {
+   "post": {
+    "description": "N160：从答案生成证据笔记。\n\n- ``selectedCitationIds`` 是该会话里 assistant 消息 id（带引用）；\n  非 assistant / 不属于该会话 → 422 citation_invalid（诚实拒绝，\n  绝不静默截断）；\n- 摘录段取 rag_chunks 里 LIVE 模型的精确分块文本（引用 ref +\n  原文 span），生成内容段显式标注「AI 生成」，人工修改段留空；\n- 笔记 source='ai_answer'：后续每次编辑先把上一版推入\n  lumi_note_revisions（provenance 保留，0131）。",
+    "operationId": "rag_answers_to_note_api_v1_rag_answers_to_note_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagAnswersToNoteRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagAnswersToNoteResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Answers To Note"
+   }
+  },
   "/api/v1/rag/ask": {
    "post": {
     "description": "同步 RAG 问答（N151/N154/N155）。\n\n- 范围：threadId 提供时继承该会话 F094 范围（服务端解析；\n  effectiveScope 回显）；refs 越界 → 403 out_of_scope；\n- refs 不存在于任何投影 → 422 citation_invalid（捏造引用拦截）；\n- mode=excerpt：零 provider 调用，只回原文片段（摘录 ≠ 回答）；\n- mode=answer：一次有界 provider 调用；回答主张 vs 引用文本重叠\n  分级（direct/partial/none）；有文档事实主张但零有效引用 →\n  unverifiable:true reason no_valid_citations（诚实呈现，绝不假通过）。",
@@ -40811,6 +41424,62 @@
      }
     },
     "summary": "Rag Inconsistencies"
+   }
+  },
+  "/api/v1/rag/index-version": {
+   "get": {
+    "description": "N157：当前索引版本——live 模型 + 维度 + 按 model_id 的行数。\n\nmodelId/dim 是 LIVE 口径：rebuild 进行中仍指向旧模型（旧索引全程\n可读可查），swap 完成后自然切到新模型。configuredModel 单独回显\n下一次 rebuild 将写入的模型。",
+    "operationId": "rag_index_version_api_v1_rag_index_version_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexVersion"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rag Index Version"
+   },
+   "post": {
+    "description": "N157：切换目标模型（settings 持久化；下一次 rebuild 生效）。\n\n切换本身零写入现有索引；目录外模型诚实 400 unknown_model。",
+    "operationId": "rag_index_version_switch_api_v1_rag_index_version_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RagIndexVersionSwitchRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RagIndexVersionSwitch"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rag Index Version Switch"
    }
   },
   "/api/v1/rag/rebuild": {
@@ -48834,6 +49503,65 @@
      }
     },
     "summary": "Move Workspace Item Group"
+   }
+  },
+  "/api/v1/workspaces/{workspace_id}/items/{item_ref}/move": {
+   "post": {
+    "description": "N108：跨工作区移动成员（同一 ItemRef——底层对象绝不复制）。\n\n- 幂等：目标已有该条目默认 skip（结果 duplicate=true，绝不产生\n  第二份内容）；``onDuplicate='conflict'`` 显式选择 409；\n- ``keepInSource=true`` 保留源成员关系（双工作区同持）；\n- 预览侧（Web 移动对话框）用既有列表 API 展示重复/关系影响。",
+    "operationId": "move_workspace_item_api_v1_workspaces__workspace_id__items__item_ref__move_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "workspace_id",
+      "required": true,
+      "schema": {
+       "title": "Workspace Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "item_ref",
+      "required": true,
+      "schema": {
+       "title": "Item Ref",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceItemMoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceItemMoveResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Move Workspace Item"
    }
   },
   "/api/v1/workspaces/{workspace_id}/items/{item_ref}/pin": {
