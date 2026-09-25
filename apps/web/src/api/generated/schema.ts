@@ -47,6 +47,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Capacity
+         * @description N192：池 {ready, held, assigned} + 邀请 {pending, held} + 用户
+         *     {active, paused} 的真实行聚合。lowCapacity（ready+held < pending）
+         *     是唯一服务端定义——可交付的 FreshRSS 名额追不上待激活邀请时为真，
+         *     管理台据它亮出「容量不足」警示。只读计数，绝无邀请码。
+         */
+        get: operations["admin_capacity_api_v1_admin_capacity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/deploy-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Deploy Status
+         * @description N196：./lumirss update 写入的阶段 JSON 只读透传（admin-gated）。
+         *
+         *     未配置/尚无记录/坏文件都是诚实 available:false + 原因；内容本身
+         *     由脚本写入（阶段名/状态/时间戳/imageTag，绝无秘密）。本端点没有
+         *     也永远不会有执行控件——升级只由运维侧 ./lumirss update 触发。
+         */
+        get: operations["admin_deploy_status_api_v1_admin_deploy_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invite-funnel": {
         parameters: {
             query?: never;
@@ -255,6 +302,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/upgrade-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Upgrade Preview
+         * @description N195：发布清单 × 当前版本 × 迁移差异的只读推演。
+         *
+         *     LUMIRSS_RELEASE_MANIFEST 未配置/文件不可读时如实 available:false；
+         *     不兼容（同版本/降级/库超前于目标）→ blocked:true + 原因。绝不
+         *     触发任何升级动作——这是预览，执行权只在 ./lumirss update。
+         */
+        get: operations["admin_upgrade_preview_api_v1_admin_upgrade_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -266,6 +337,46 @@ export interface paths {
         get: operations["list_users_api_v1_admin_users_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/background-pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Background Pause User
+         * @description N193：暂停单个成员的重型后台任务（登录/阅读不受影响）。
+         *
+         *     与整账户暂停（O152）同源的两条硬边界：owner 不可定位；这里刻意
+         *     不撤销任何会话——被暂停成员的会话与阅读必须继续有效。
+         */
+        post: operations["background_pause_user_api_v1_admin_users__user_id__background_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/background-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Background Resume User */
+        post: operations["background_resume_user_api_v1_admin_users__user_id__background_resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -284,6 +395,25 @@ export interface paths {
         /** Pause User */
         post: operations["pause_user_api_v1_admin_users__user_id__pause_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Quota */
+        get: operations["get_user_quota_api_v1_admin_users__user_id__quota_get"];
+        /** Set User Quota */
+        put: operations["set_user_quota_api_v1_admin_users__user_id__quota_put"];
+        post?: never;
+        /** Clear User Quota */
+        delete: operations["clear_user_quota_api_v1_admin_users__user_id__quota_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7196,6 +7326,9 @@ export interface paths {
         /**
          * Get Ai Quota
          * @description F064：当前用量限制配置 + 本窗口已用/剩余/重置时间（本地时区）。
+         *
+         *     N191：上限是管理员策略包与成员自设配置的合成结果（更低者生效，
+         *     成员未配置时管理员日上限单独生效）——这里如实反映有效口径。
          */
         get: operations["get_ai_quota_api_v1_settings_ai_quota_get"];
         put?: never;
@@ -7839,6 +7972,11 @@ export interface paths {
          *     409 when already subscribed (checked before any write); 400 feed_rejected
          *     when FreshRSS cannot add the feed. The write is attempted exactly once
          *     (no retry on timeout — clients re-read and reconcile).
+         *
+         *     N191：管理员策略包（user_quotas.maxSources）在此事前拦截——按当前
+         *     用户投影 search_feeds 计数，第 N+1 个来源直接 429 quota_exceeded，
+         *     FreshRSS 侧零请求；成员没有任何路径可以提升该上限（设置端点是
+         *     admin-only，且本路由执行不读任何客户端提供的上限）。
          */
         post: operations["create_subscription_api_v1_subscriptions_post"];
         delete?: never;
@@ -8310,6 +8448,23 @@ export interface paths {
          *     from the browser (see also the web build commit on the About page).
          */
         get: operations["version_api_v1_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/whats-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whats New */
+        get: operations["whats_new_api_v1_whats_new_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10760,6 +10915,15 @@ export interface components {
             author: string;
             /** Count */
             count: number;
+        };
+        /**
+         * BackgroundPauseRequest
+         * @description POST /admin/users/{id}/background-pause body。原因必填——
+         *     「为什么他的后台任务停了」必须留下人读答案（同步落 audit_log）。
+         */
+        BackgroundPauseRequest: {
+            /** Reason */
+            reason: string;
         };
         /**
          * BacklogApplyRequest
@@ -18473,6 +18637,17 @@ export interface components {
             items: components["schemas"]["TrashItem"][];
         };
         /**
+         * UserQuotaPutRequest
+         * @description PUT /admin/users/{id}/quota body。缺省键 = 清除该上限；
+         *     正整数（1..上限界）才是有效设置。未知键 → 422。
+         */
+        UserQuotaPutRequest: {
+            /** Aiquotaperday */
+            aiQuotaPerDay?: number | null;
+            /** Maxsources */
+            maxSources?: number | null;
+        };
+        /**
          * UserRoleRequest
          * @description POST /admin/users/{id}/role — owner-only provisioning body.
          *
@@ -19179,6 +19354,46 @@ export interface operations {
             };
         };
     };
+    admin_capacity_api_v1_admin_capacity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_deploy_status_api_v1_admin_deploy_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     invite_funnel_api_v1_admin_invite_funnel_get: {
         parameters: {
             query?: {
@@ -19539,6 +19754,26 @@ export interface operations {
             };
         };
     };
+    admin_upgrade_preview_api_v1_admin_upgrade_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: never;
@@ -19559,7 +19794,170 @@ export interface operations {
             };
         };
     };
+    background_pause_user_api_v1_admin_users__user_id__background_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackgroundPauseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    background_resume_user_api_v1_admin_users__user_id__background_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pause_user_api_v1_admin_users__user_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_quota_api_v1_admin_users__user_id__quota_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_quota_api_v1_admin_users__user_id__quota_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserQuotaPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_user_quota_api_v1_admin_users__user_id__quota_delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -33271,6 +33669,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiVersionInfo"];
+                };
+            };
+        };
+    };
+    whats_new_api_v1_whats_new_get: {
+        parameters: {
+            query?: {
+                sinceVersion?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

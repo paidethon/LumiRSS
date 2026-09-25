@@ -57,6 +57,7 @@ const ShortcutsHelpDialog = lazy(() => import('./components/ShortcutsHelpDialog'
 const UndoSnackbar = lazy(() => import('./components/UndoSnackbar'))
 const SettingsConflictDialog = lazy(() => import('./components/SettingsConflictDialog'))
 const VersionUpdateToast = lazy(() => import('./components/VersionUpdateToast'))
+const WhatsNewTour = lazy(() => import('./components/WhatsNewTour'))
 const InstallHint = lazy(() => import('./components/InstallHint'))
 import Reader from './components/Reader'
 import Sidebar from './components/Sidebar'
@@ -598,6 +599,11 @@ export default function App() {
           newVersion={newVersion}
           onDismiss={() => setNewVersion(null)}
         />
+      </Suspense>
+
+      {/* N198：版本差异功能导览（设备本地已读/关闭；无清单或已看过零渲染） */}
+      <Suspense fallback={null}>
+        <WhatsNewTour />
       </Suspense>
     </div>
   )
