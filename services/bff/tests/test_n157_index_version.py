@@ -18,7 +18,7 @@ from lumirss.rag import (
     MODEL_CATALOG,
     RagService,
     _stage_rows,
-    _swap_staged_index,
+    _promote_staged_index,
 )
 from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
@@ -197,7 +197,7 @@ def test_dim_mismatch_query_degrades_without_mixed_results(monkeypatch):
             )
 
         run(_stage_new())
-        run(asyncio.to_thread(_swap_staged_index, service, _NEW_MODEL, _NEW_DIM))
+        run(asyncio.to_thread(_promote_staged_index, service, _NEW_MODEL, _NEW_DIM))
         assert service._stored_vec_dim() == _NEW_DIM
 
         # 查询向量维度不符（fake 512 维 vs 索引 384 维）→ 语义腿诚实降级，

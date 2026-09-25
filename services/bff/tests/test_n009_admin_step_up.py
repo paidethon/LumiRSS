@@ -200,7 +200,7 @@ def test_wrong_password_and_masked_audit(stepup_env):
     client = stepup_env["client"]
     owner = stepup_env["owner"]
 
-    wrong = _mint(client, owner, password="totally-wrong-password")
+    wrong = _mint(client, owner, password="wrong-" + secrets.token_urlsafe(8))
     assert wrong.status_code == 400
     assert wrong.json()["error"]["type"] == "invalid_credentials"
 

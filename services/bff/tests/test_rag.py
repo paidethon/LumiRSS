@@ -255,7 +255,7 @@ def test_rebuild_is_transactional_previous_index_survives(rag_db, monkeypatch):
     def _exploding_swap(*args, **kwargs):
         raise RuntimeError("disk exploded mid-transaction")
 
-    monkeypatch.setattr(rag_module, "_swap_staged_index", _exploding_swap)
+    monkeypatch.setattr(rag_module, "_promote_staged_index", _exploding_swap)
     with pytest.raises(RuntimeError):
         _run(service.rebuild())
 
