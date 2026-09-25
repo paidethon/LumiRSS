@@ -20566,6 +20566,17 @@
       ],
       "title": "Hiddenuntil"
      },
+     "language": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Language"
+     },
      "muteWindows": {
       "anyOf": [
        {
@@ -20625,6 +20636,28 @@
        }
       ],
       "title": "Stalealerthours"
+     },
+     "syncPriority": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Syncpriority"
+     },
+     "unreadAlertThreshold": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unreadalertthreshold"
      },
      "updatedAt": {
       "default": "",
@@ -20689,6 +20722,18 @@
       ],
       "title": "Hiddenuntil"
      },
+     "language": {
+      "anyOf": [
+       {
+        "pattern": "^[a-z]{2}(-[A-Za-z]{2,4})?$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Language"
+     },
      "muteWindows": {
       "anyOf": [
        {
@@ -20739,6 +20784,32 @@
        }
       ],
       "title": "Stalealerthours"
+     },
+     "syncPriority": {
+      "anyOf": [
+       {
+        "maximum": 2.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Syncpriority"
+     },
+     "unreadAlertThreshold": {
+      "anyOf": [
+       {
+        "maximum": 100000.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unreadalertthreshold"
      }
     },
     "required": [
@@ -21293,6 +21364,20 @@
        }
       ]
      },
+     "daily": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/VolumeDailyBucket"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Daily"
+     },
      "feedUrl": {
       "title": "Feedurl",
       "type": "string"
@@ -21333,6 +21418,17 @@
      "title": {
       "title": "Title",
       "type": "string"
+     },
+     "unreadProjected": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unreadprojected"
      }
     },
     "required": [
@@ -22443,6 +22539,25 @@
      "atomPath"
     ],
     "title": "ViewFeedTokenResult",
+    "type": "object"
+   },
+   "VolumeDailyBucket": {
+    "description": "F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。",
+    "properties": {
+     "count": {
+      "title": "Count",
+      "type": "integer"
+     },
+     "date": {
+      "title": "Date",
+      "type": "string"
+     }
+    },
+    "required": [
+     "date",
+     "count"
+    ],
+    "title": "VolumeDailyBucket",
     "type": "object"
    },
    "WebDavSettingsPut": {
@@ -41342,6 +41457,16 @@
        "default": 7,
        "title": "Days",
        "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "daily",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Daily",
+       "type": "boolean"
       }
      }
     ],

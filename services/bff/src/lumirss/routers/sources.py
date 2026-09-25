@@ -41,6 +41,7 @@ from lumirss.models import (
     StaleSourcesResponse,
     SubscriptionVolumeItem,
     SubscriptionVolumeResponse,
+    VolumeDailyBucket,
 )
 from lumirss.util import utc_now
 
@@ -307,6 +308,16 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
         await set_ai_disabled(request.app.state.db, payload.feedUrl, bool(payload.aiDisabled))
         if payload.aiDisabled:
             await _drop_feed_from_rag(request, payload.feedUrl)
+    # F032/F034/F031：语言 / 未读警戒阈值 / 同步优先级。
+    if "language" in fields or "unreadAlertThreshold" in fields or "syncPriority" in fields:
+        metadata_kwargs: dict[str, object] = {}
+        if "language" in fields:
+            metadata_kwargs["language"] = payload.language
+        if "unreadAlertThreshold" in fields:
+            metadata_kwargs["unread_alert_threshold"] = payload.unreadAlertThreshold
+        if "syncPriority" in fields:
+            metadata_kwargs["sync_priority"] = payload.syncPriority
+        await store.set_source_metadata(payload.feedUrl, **metadata_kwargs)
     result = await store.get_override(payload.feedUrl)
     if result is None:
         result = {
@@ -455,7 +466,9 @@ async def replacement_preview(feedUrl: str, request: Request) -> dict[str, objec
     }
 
 @router.get("/api/v1/sources/volume", response_model=SubscriptionVolumeResponse)
-async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVolumeResponse:
+async def subscription_volume(
+    request: Request, days: int = 7, daily: bool = False
+) -> SubscriptionVolumeResponse:
     """F12 订阅收件量概览（派生投影聚合，只读，不复制 RSS 全文）。
 
     口径（显式区分，未知为 null 不冒充零）：
@@ -489,13 +502,40 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
         sync_rows = await db.fetch_all(
             "SELECT feed_url, MAX(published_at) AS overall_published, MAX(crawled_at) AS overall_crawled, MAX(fetched_at) AS latest_fetched FROM search_entries GROUP BY feed_url"
         )
+        # F034：投影口径的每源未读数（search_entries.read=0，派生可重建；
+        # 未覆盖 → None，不冒充零）。
+        unread_rows = await db.fetch_all(
+            "SELECT feed_url, COUNT(*) AS n FROM search_entries WHERE read = 0 GROUP BY feed_url"
+        )
+        unread_counts = {str(row["feed_url"]): int(row["n"]) for row in unread_rows}
     except Exception:  # noqa: BLE001 — 投影不可用时全部诚实降级为 null
         window_rows = []
         sync_rows = []
+        unread_counts = {}
     counts = {
         str(row["feed_url"]): (int(row["n"]), str(row["latest_published"]))
         for row in window_rows
     }
+    # F024/F025/F035：daily=true 时附每源按天分桶（发布时间口径，同
+    # publishedCount 的派生投影；投影未覆盖的源该值为 None）。日期为
+    # UTC 日（published_at 原文即 UTC ISO），窗口内无条目的日期不出现在
+    # 数组里——稀疏数组由前端补零渲染。
+    daily_buckets: dict[str, list[VolumeDailyBucket]] = {}
+    if daily:
+        daily_rows = await db.fetch_all(
+            "SELECT feed_url, substr(published_at, 1, 10) AS day, COUNT(*) AS n FROM search_entries WHERE published_at >= ? GROUP BY feed_url, substr(published_at, 1, 10)",
+            (since,),
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for row in daily_rows:
+            grouped.setdefault(str(row["feed_url"]), {})[str(row["day"])] = int(row["n"])
+        daily_buckets = {
+            feed_url: [
+                VolumeDailyBucket(date=day, count=count)
+                for day, count in sorted(days_map.items())
+            ]
+            for feed_url, days_map in grouped.items()
+        }
     timings: dict[str, dict[str, object]] = {}
     for row in sync_rows:
         crawled = row["overall_crawled"]
@@ -531,6 +571,12 @@ async def subscription_volume(request: Request, days: int = 7) -> SubscriptionVo
                 collectionTiming=(
                     CollectionTiming(**timing) if timing else None
                 ),
+                daily=(
+                    daily_buckets.get(subscription.feed_url)
+                    if daily
+                    else None
+                ),
+                unreadProjected=unread_counts.get(subscription.feed_url),
             )
         )
     return SubscriptionVolumeResponse(

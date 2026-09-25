@@ -169,6 +169,10 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         # N020/N014：NULL = normal / 无已记录决定。
         "attentionLevel": attention_level if attention_level in ATTENTION_LEVELS else "normal",
         "refreshAdvisory": refresh_advisory if refresh_advisory == REFRESH_ADVISORY_ACCEPTED else None,
+        # 0094：语言 / 未读警戒阈值 / 同步优先级（NULL=未设置）。
+        "language": _column("language"),
+        "unreadAlertThreshold": _column("unread_alert_threshold"),
+        "syncPriority": _column("sync_priority"),
         "updatedAt": str(row["updated_at"] or ""),
     }
 
@@ -187,14 +191,14 @@ class SourceOverrideStore:
     async def list_overrides(self) -> list[dict[str, Any]]:
         await self._db.migrate()
         rows = await self._db.fetch_all(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL ORDER BY updated_at DESC"
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, updated_at FROM source_overrides WHERE hidden_until IS NOT NULL OR show_from IS NOT NULL OR stale_alert_hours IS NOT NULL OR mute_windows_json IS NOT NULL OR encoding_override IS NOT NULL OR attention_level IS NOT NULL OR refresh_advisory IS NOT NULL OR language IS NOT NULL OR unread_alert_threshold IS NOT NULL OR sync_priority IS NOT NULL ORDER BY updated_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
     async def get_override(self, feed_url: str) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, updated_at FROM source_overrides WHERE feed_url = ?",
+            "SELECT feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, reader_style_json, ai_disabled, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority, updated_at FROM source_overrides WHERE feed_url = ?",
             (feed_url,),
         )
         if row is None:
@@ -214,6 +218,9 @@ class SourceOverrideStore:
             and result["encodingOverride"] is None
             and result["attentionLevel"] in (None, "normal")
             and result["refreshAdvisory"] is None
+            and result["language"] is None
+            and result["unreadAlertThreshold"] is None
+            and result["syncPriority"] is None
         ):
             return None
         return result
@@ -255,17 +262,27 @@ class SourceOverrideStore:
         policy_value = (
             current["extract_policy"] if current is not None else "rss"
         )
-        await self._db.execute(
-            "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(feed_url) DO UPDATE SET hidden_until = excluded.hidden_until, show_from = excluded.show_from, stale_alert_hours = excluded.stale_alert_hours, extract_policy = excluded.extract_policy, updated_at = excluded.updated_at",
-            (feed_url, hidden_value, show_value, stale_value, policy_value or "rss", utc_now()),
-        )
+        if current is not None:
+            # UPDATE 只写本方法拥有的维度——INSERT OR REPLACE 会先 DELETE
+            # 再 INSERT，把同行其它维度（reader_style_json/ai_disabled/
+            # mute_windows_json/encoding_override/language/…）悄悄清空
+            # （真实数据丢失 bug，本处修复）。
+            await self._db.execute(
+                "UPDATE source_overrides SET hidden_until = ?, show_from = ?, stale_alert_hours = ?, extract_policy = ?, updated_at = ? WHERE feed_url = ?",
+                (hidden_value, show_value, stale_value, policy_value or "rss", utc_now(), feed_url),
+            )
+        else:
+            await self._db.execute(
+                "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (feed_url, hidden_value, show_value, stale_value, policy_value or "rss", utc_now()),
+            )
         if hidden_value is None and show_value is None and stale_value is None:
             # 所有时间维度都空 → 清理行，保持表紧凑（F066：ai_disabled/
             # extract_policy/reader_style/mute_windows/encoding_override/
             # N020 attention_level/N014 refresh_advisory 等其它维度仍有
             # 值时保留）。
             row = await self._db.fetch_one(
-                "SELECT ai_disabled, extract_policy, reader_style_json, mute_windows_json, encoding_override, attention_level, refresh_advisory FROM source_overrides WHERE feed_url = ?",
+                "SELECT ai_disabled, extract_policy, reader_style_json, mute_windows_json, encoding_override, attention_level, refresh_advisory, language, unread_alert_threshold, sync_priority FROM source_overrides WHERE feed_url = ?",
                 (feed_url,),
             )
             keep = (
@@ -278,6 +295,9 @@ class SourceOverrideStore:
                     or row["encoding_override"] in ENCODING_OVERRIDES
                     or row["attention_level"] in ATTENTION_LEVELS
                     or row["refresh_advisory"] == REFRESH_ADVISORY_ACCEPTED
+                    or row["language"] is not None
+                    or row["unread_alert_threshold"] is not None
+                    or row["sync_priority"] is not None
                 )
             )
             if not keep:
@@ -295,6 +315,45 @@ class SourceOverrideStore:
             "staleAlertHours": None,
             "updatedAt": utc_now(),
         }
+
+    async def set_source_metadata(
+        self,
+        feed_url: str,
+        *,
+        language: Any = _UNSET,
+        unread_alert_threshold: Any = _UNSET,
+        sync_priority: Any = _UNSET,
+    ) -> None:
+        """F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级。
+
+        与 set_fields 同 sentinel 语义（_UNSET=不改，None=清除）。
+        三个维度同列一表，写前读现值合并，避免相互覆盖。"""
+        await self._db.migrate()
+        row = await self._db.fetch_one(
+            "SELECT language, unread_alert_threshold, sync_priority FROM source_overrides WHERE feed_url = ?",
+            (feed_url,),
+        )
+        current_language = row["language"] if row is not None else None
+        current_threshold = row["unread_alert_threshold"] if row is not None else None
+        current_priority = row["sync_priority"] if row is not None else None
+
+        def _keep(value: Any, current_value: Any) -> Any:
+            return current_value if value is _UNSET else value
+
+        next_language = _keep(language, current_language)
+        next_threshold = _keep(unread_alert_threshold, current_threshold)
+        next_priority = _keep(sync_priority, current_priority)
+
+        if row is None:
+            await self._db.execute(
+                "INSERT INTO source_overrides (feed_url, hidden_until, show_from, stale_alert_hours, extract_policy, language, unread_alert_threshold, sync_priority, updated_at) VALUES (?, NULL, NULL, NULL, 'rss', ?, ?, ?, ?)",
+                (feed_url, next_language, next_threshold, next_priority, utc_now()),
+            )
+        else:
+            await self._db.execute(
+                "UPDATE source_overrides SET language = ?, unread_alert_threshold = ?, sync_priority = ?, updated_at = ? WHERE feed_url = ?",
+                (next_language, next_threshold, next_priority, utc_now(), feed_url),
+            )
 
     async def set_extract_policy(self, feed_url: str, policy: str) -> None:
         """F048：设置 per-source 正文提取策略（'rss' | 'web'）。"""

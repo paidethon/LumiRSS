@@ -2782,11 +2782,18 @@ class SourceOverrideResult(BaseModel):
     aiDisabled: bool = False
     # N015：分时静音窗口（每周循环；[]/None = 未启用）。
     muteWindows: list[dict[str, object]] | None = None
+<<<<<<< HEAD
     # N020：关注级别（must_read | normal | low；normal = 默认）。
     attentionLevel: str = "normal"
     # N014：已接受的低频建议（'accepted' 或 None）。纯记录——不改变
     # 抓取行为（FreshRSS 调度粒度由实例 CRON_MIN 决定）。
     refreshAdvisory: str | None = None
+=======
+    # F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级（NULL=未设置）。
+    language: str | None = None
+    unreadAlertThreshold: int | None = None
+    syncPriority: int | None = None
+>>>>>>> feat/r5-f-source
     updatedAt: str = ""
 
 
@@ -2806,6 +2813,7 @@ class SourceOverrideUpdate(BaseModel):
     aiDisabled: bool | None = None  # F066：per-source AI 禁用
     # N015：分时静音（每周循环窗口；None=清除，缺席=不改）。
     muteWindows: list[dict[str, object]] | None = None
+<<<<<<< HEAD
     # N020：关注级别（None=恢复 normal，缺席=不改）。
     attentionLevel: str | None = None
 
@@ -2883,6 +2891,12 @@ class SourceAccessCardUpdate(BaseModel):
     limits: str | None = None
     credentialOwnership: str | None = None
     maintenance: str | None = None
+=======
+    # F032/F034/F031：来源元数据（None=清除，缺席=不改）。
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2}(-[A-Za-z]{2,4})?$")
+    unreadAlertThreshold: int | None = Field(default=None, ge=1, le=100_000)
+    syncPriority: int | None = Field(default=None, ge=0, le=2)
+>>>>>>> feat/r5-f-source
 
 
 class SourceAliasView(BaseModel):
@@ -2988,6 +3002,13 @@ class CollectionTiming(BaseModel):
     latencyHint: str | None = None
 
 
+class VolumeDailyBucket(BaseModel):
+    """F024：单日发布量（UTC 日，窗口内无条目的日期不出现——稀疏）。"""
+
+    date: str
+    count: int
+
+
 class SubscriptionVolumeItem(BaseModel):
     """F12：单个订阅的收件量（投影未覆盖 → publishedCount=null）。"""
 
@@ -2998,6 +3019,10 @@ class SubscriptionVolumeItem(BaseModel):
     lastSyncedAt: str | None = None
     # N040：三时点采集延迟块（投影未覆盖 → None）。
     collectionTiming: CollectionTiming | None = None
+    # F024：daily=true 时的按天分桶（投影未覆盖 → None）。
+    daily: list[VolumeDailyBucket] | None = None
+    # F034：投影口径未读数（未覆盖 → None，不冒充零）。
+    unreadProjected: int | None = None
 
 
 class SubscriptionVolumeResponse(BaseModel):

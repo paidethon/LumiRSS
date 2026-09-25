@@ -3456,8 +3456,15 @@ export async function setSourceOverride(patch: {
   aiDisabled?: boolean
   /** N015：分时静音窗口（每周循环；null=清除，缺席=不改）。 */
   muteWindows?: { days: number[]; start: string; end: string }[] | null
+<<<<<<< HEAD
   /** N020：关注级别（null=恢复 normal，缺席=不改）。 */
   attentionLevel?: 'must_read' | 'normal' | 'low' | null
+=======
+  /** F032/F034/F031：语言标注 / 未读警戒阈值 / 同步优先级。 */
+  language?: string | null
+  unreadAlertThreshold?: number | null
+  syncPriority?: number | null
+>>>>>>> feat/r5-f-source
 }): Promise<SourceOverrideResult> {
   const response = await rawRequest(`${API_BASE}/sources/overrides`, {
     method: 'PUT',
@@ -3828,13 +3835,15 @@ export async function getStorageUsage(signal?: AbortSignal): Promise<StorageUsag
   return request<StorageUsage>(`${API_BASE}/storage/usage`, signal)
 }
 
-/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。 */
+/** F12：订阅收件量概览（口径 = 发布时间窗口；投影未覆盖 → null）。
+ * F024：daily=true 时附每源按天分桶（稀疏，UTC 日）。 */
 export async function getSubscriptionVolume(
   signal?: AbortSignal,
   days = 7,
+  daily = false,
 ): Promise<SubscriptionVolumeResponse> {
   return request<SubscriptionVolumeResponse>(
-    `${API_BASE}/sources/volume?days=${days}`,
+    `${API_BASE}/sources/volume?days=${days}${daily ? '&daily=true' : ''}`,
     signal,
   )
 }
