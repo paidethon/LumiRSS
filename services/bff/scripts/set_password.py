@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "src"))
 
-from lumirss.auth_store import AuthStore  # noqa: E402
+from lumirss.accounts_store import AccountsStore, hash_password  # noqa: E402
 from lumirss.config import LumiSettings  # noqa: E402
 from lumirss.storage import Database  # noqa: E402
 
@@ -42,7 +42,18 @@ async def main() -> int:
     settings = LumiSettings()
     database = Database(settings.LUMIRSS_DB_PATH)
     await database.migrate()
-    await AuthStore(database).set_password(password)
+    # 0067 多账户：登录校验的是 users.password_hash（AccountsStore），
+    # 旧 auth_password 表已不再喂登录——写 owner 行并落 password_updated_at。
+    store = AccountsStore(database)
+    owner = None
+    for row in await store.list_users(limit=500):
+        if row.get("role") == "owner":
+            owner = row
+            break
+    if owner is None:
+        raise SystemExit("owner account not found — migration did not run?")
+    # set_password_hash 同时落 password_updated_at（store 内部 invariant）。
+    await store.set_password_hash(str(owner["id"]), hash_password(password))
     print("password hash installed; all previous sessions revoked")
     return 0
 
