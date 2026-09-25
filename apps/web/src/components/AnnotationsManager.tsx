@@ -11,7 +11,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type CSSProperties } from 'react'
-import { BookOpen, Check, Download, Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react'
+import { BookOpen, Check, Download, Eye, EyeOff, GitBranch, RotateCcw, Trash2 } from 'lucide-react'
 import {
   completeReviewQueueItem,
   deleteAnnotation,
@@ -27,6 +27,8 @@ import {
 } from '../api/client'
 import type { Annotation, ReadingQuestion, ReviewQueueItem } from '../api/client'
 import { dateTimeFormatter } from '../lib/date-format'
+import { AnnotationBasketsPanel } from './AnnotationBasketsPanel'
+import { AnnotationMigrateDialog } from './AnnotationMigrateDialog'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
 import { Skeleton } from './ui/Skeleton'
@@ -45,6 +47,18 @@ export function AnnotationsManager() {
   const [cursor, setCursor] = useState<string | null>(null)
   const [pages, setPages] = useState<Annotation[][]>([])
   const [exportInfo, setExportInfo] = useState<string | null>(null)
+  // N072：多选（精选篮加入）；N078：跨版本迁移对话框开关。
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [migrateOpen, setMigrateOpen] = useState(false)
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const listQuery = useQuery({
     queryKey: ['annotations-manager', keyword, colorFilter],
@@ -162,6 +176,15 @@ export function AnnotationsManager() {
             <Button
               size="sm"
               variant="secondary"
+              disabled={items.length === 0}
+              onClick={() => setMigrateOpen(true)}
+            >
+              <GitBranch aria-hidden className="size-3.5" />
+              跨版本迁移
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               disabled={exportMutation.isPending || items.length === 0}
               onClick={() => exportMutation.mutate()}
             >
@@ -177,6 +200,8 @@ export function AnnotationsManager() {
 
       {tab === 'all' && (
         <>
+          {/* N072：精选篮（创建/选择/加入/导出；成员可回跳原文） */}
+          <AnnotationBasketsPanel selectedIds={selectedIds} />
           <input
             type="search"
             value={keyword}
@@ -247,6 +272,14 @@ export function AnnotationsManager() {
             {items.map((item) => (
               <li key={item.id} className="rounded-[var(--lumi-radius-lg)] border border-[var(--lumi-border)] p-3">
                 <div className="flex items-center gap-2 text-xs text-[var(--lumi-text-tertiary)]">
+                  {/* N072：多选勾选（配合精选篮「加入所选」） */}
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    aria-label="选择此批注（加入精选篮）"
+                    className="size-3.5"
+                  />
                   <span className="truncate">{entryHost(item.entryRef)}</span>
                   <span>·</span>
                   <span>{dateTimeFormatter.format(Date.parse(item.updatedAt))}</span>
@@ -319,6 +352,16 @@ export function AnnotationsManager() {
       )}
 
       {tab === 'questions' && <QuestionsPanel query={questionsQuery} />}
+      {/* N078：批注跨版本迁移（预览 + 逐项确认；走 N071 repair 机制） */}
+      {migrateOpen && (
+        <AnnotationMigrateDialog
+          annotations={allItems}
+          onClose={() => {
+            setMigrateOpen(false)
+            setSelectedIds(new Set())
+          }}
+        />
+      )}
     </div>
   )
 }

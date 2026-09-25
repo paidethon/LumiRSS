@@ -29,8 +29,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Languages, Loader2, RefreshCw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, Languages, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import type { EntryDetail, TranslationSegmentState } from '../api/types'
+import { listSourceOverrides } from '../api/client'
 import GlossaryHitsPanel from './GlossaryHitsPanel'
 import TranslationRevisionPanel from './TranslationRevisionPanel'
 import { BilingualExportSection } from './BilingualExportSection'
@@ -152,9 +154,24 @@ export default function ReaderTranslation({
   const [scope, setScope] = useState<TranslationScope>('all')
 
   const settings = useAiSettings()
-  const engine = settings.data?.translationEngine ?? 'ai'
+  const settingsEngine = settings.data?.translationEngine ?? 'ai'
   const targetLanguage = settings.data?.translationLanguage ?? 'zh-CN'
   const active = viewMode !== 'original'
+  // N090：来源翻译策略 local_only → 强制本机引擎（跟随浏览器引擎语义；
+  // 服务端 generate 端点同样会拒绝 —— 双保险，服务端才是真边界）。
+  const feedUrl = detail.feedUrl ?? null
+  const localOnlyPolicy = useQuery({
+    queryKey: ['source-translation-policy', feedUrl],
+    queryFn: () => listSourceOverrides(),
+    enabled: feedUrl !== null,
+    select: (data: { items: { feedUrl: string; translationPolicy?: string | null }[] }) =>
+      data.items.some(
+        (item) => item.feedUrl === feedUrl && item.translationPolicy === 'local_only',
+      ),
+    staleTime: 60_000,
+  })
+  const localOnly = localOnlyPolicy.data === true
+  const engine = localOnly ? 'browser' : settingsEngine
   const serverEngine = engine !== 'browser'
 
   // 正文 DOM 观察管线的产物（contentHtml 是异步管线输出）稳定后，按文档
@@ -487,6 +504,15 @@ export default function ReaderTranslation({
         />
       )}
 
+      {active && localOnly && (
+        <p
+          data-testid="local-only-badge"
+          className="flex items-center gap-1 text-xs text-[var(--lumi-text-secondary)]"
+        >
+          <ShieldCheck aria-hidden className="size-3.5" />
+          仅本机：该来源的翻译只在此浏览器内完成，正文不会发往任何远程服务。
+        </p>
+      )}
       {active && (
         <TranslationStatusBar
           engine={engine}

@@ -74,6 +74,9 @@ import { GptDigestSection } from './GptDigestSection'
 import { AccountSecuritySection } from './AccountSecuritySection'
 // P13：快捷键分配 UI（捕获 / 冲突覆盖 / 导入导出；引擎 lib/custom-shortcuts）
 import { ShortcutsSettingsSection } from './ShortcutsSettingsSection'
+import { ScenarioWizardSection } from './ScenarioWizardSection'
+import { QuickActionsSection } from './QuickActionsSection'
+import { TtsCacheSection } from './TtsCacheSection'
 // 0012：深度阅读设置（字体管理 / 中文排版 / 代码高亮 / 主题包）
 import { ReaderFontManager } from './reader/ReaderFontManager'
 import {
@@ -403,6 +406,8 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
     case 'general':
       return [
         { type: 'title', value: '应用程序' },
+        // N200：功能组合场景向导（diff 预览 + 可整体撤销的批量应用）
+        { type: 'custom', node: <ScenarioWizardSection /> },
         {
           type: 'custom',
           node: (
@@ -530,10 +535,16 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
     case 'shortcuts':
       // P13：快捷键分配 UI（捕获 / 冲突覆盖 / 清除 / 恢复默认 / 导入导出）。
       // 单一真源仍为 SHORTCUT_ACTIONS + effectiveShortcuts（帮助弹窗同源）。
+      // N199：多步快捷操作（定义在服务端；执行走各动作 NORMAL 端点）。
       return [
         {
           type: 'custom',
           node: <ShortcutsSettingsSection />,
+        },
+        { type: 'title', value: '多步快捷操作' },
+        {
+          type: 'custom',
+          node: <QuickActionsSection />,
         },
       ]
     case 'translation':
@@ -598,6 +609,9 @@ export function useCategoryItems(id: CategoryId): SettingItemDef[] {
         },
         // N183：离线资料设备配额（枚举/用量/清理预览/应用；只删本设备缓存条目）
         { type: 'custom', node: <OfflineQuotaSection /> },
+        // N098：服务端 TTS 缓存（size/date + 单条/全部删除；50MB LRU）
+        { type: 'title', value: '音频生成缓存' },
+        { type: 'custom', node: <TtsCacheSection /> },
         { type: 'title', value: '设置' },
         {
           type: 'action',

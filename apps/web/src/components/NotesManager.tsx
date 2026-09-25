@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   createLumiNote,
   deleteLumiNote,
@@ -17,6 +17,18 @@ import {
   type LumiNoteDetail,
 } from '../api/client'
 import { formatTimestamp } from '../lib/date-format'
+import {
+  SECTION_HINTS,
+  SECTION_LABELS,
+  SECTION_KEYS,
+  emptySections,
+  exportNoteMarkdown,
+  normalizeSections,
+  parseSectionText,
+  sectionTextOf,
+  type NoteSectionKey,
+  type NoteSections,
+} from '../lib/note-sections'
 import { mdPreviewHtml } from '../lib/md-preview'
 import { DraftRestoreBar } from './DraftRestoreBar'
 import { clearDraft, loadDraftIfNewer, saveDraft, type DraftRecord } from '../lib/draft-store'
@@ -37,6 +49,10 @@ function NoteFormDialog({ note, onClose }: { note: LumiNoteDetail | null; onClos
   const [title, setTitle] = useState(note?.title ?? '')
   const [contentMd, setContentMd] = useState(note?.contentMd ?? '')
   const [previewOn, setPreviewOn] = useState(false)
+  // N079：类型化分栏三栏编辑（facts / interpretation / toVerify）。
+  const [sections, setSections] = useState<NoteSections>(() =>
+    normalizeSections(note?.sections ?? emptySections()),
+  )
   const queryClient = useQueryClient()
   // F119：本机草稿（白名单 'note-editor'）——挂载时看是否有比已保存
   // 版本更新的草稿；编辑中 debounce 2s 自动保存；提交成功清除。
@@ -53,10 +69,11 @@ function NoteFormDialog({ note, onClose }: { note: LumiNoteDetail | null; onClos
   const save = useMutation({
     mutationFn: () =>
       note === null
-        ? createLumiNote({ title: title.trim(), contentMd })
+        ? createLumiNote({ title: title.trim(), contentMd, sections })
         : updateLumiNote(note.uuid, {
             title: title.trim(),
             contentMd,
+            sections,
             baseUpdatedAt: note.updatedAt,
           }),
     onSuccess: async () => {
@@ -84,6 +101,23 @@ function NoteFormDialog({ note, onClose }: { note: LumiNoteDetail | null; onClos
             预览
           </button>
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // N079：导出保持类型——分栏以 [事实]/[个人解读]/[待核实]
+                // 标签随 .md 下载（AI/后续消费不会丢失「谁说的」）。
+                const markdown = exportNoteMarkdown(title.trim() || '未命名笔记', contentMd, sections)
+                const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }))
+                const anchor = document.createElement('a')
+                anchor.href = url
+                anchor.download = `${title.trim() || 'note'}.md`
+                anchor.click()
+                URL.revokeObjectURL(url)
+              }}
+            >
+              <Download aria-hidden className="size-3.5" /> 导出 .md
+            </Button>
             <Button variant="ghost" size="sm" onClick={onClose} disabled={save.isPending}>
               取消
             </Button>
@@ -132,6 +166,30 @@ function NoteFormDialog({ note, onClose }: { note: LumiNoteDetail | null; onClos
             className={cx(inputCls, 'resize-y font-mono')}
           />
         </label>
+        {/* N079：笔记与事实分栏 —— 三栏并排（原文事实 / 个人解读 / 待核实）。
+            每栏一行一条；保存随笔记走，导出与 AI 消费面都带类型标签。 */}
+        <div data-note-sections="" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {SECTION_KEYS.map((key: NoteSectionKey) => (
+            <label key={key} className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-[var(--lumi-text-secondary)]">
+                {SECTION_LABELS[key]}
+                <span className="ml-1 font-normal text-[var(--lumi-text-tertiary)]">
+                  {SECTION_HINTS[key]}
+                </span>
+              </span>
+              <textarea
+                value={sectionTextOf(sections[key])}
+                onChange={(e) =>
+                  setSections((prev) => ({ ...prev, [key]: parseSectionText(e.target.value) }))
+                }
+                rows={4}
+                aria-label={`${SECTION_LABELS[key]}栏（每行一条）`}
+                data-section={key}
+                className={cx(inputCls, 'resize-y text-xs')}
+              />
+            </label>
+          ))}
+        </div>
         {previewOn && (
           <div
             data-note-preview=""

@@ -364,7 +364,13 @@ export function AnnotationsLayer({ entryRef, containerRef, contentVersion }: Ann
     const text = question !== '' ? question : `摘录：${annotation.anchor.exact}`
     setPopover(null)
     createReadingQuestion({ question: text, entryRef, annotationId: annotation.id })
-      .then(() => setQuestionMarkedId(annotation.id))
+      .then(() => {
+        setQuestionMarkedId(annotation.id)
+        // N080：实际创建成功才计入阅读成果。
+        void import('../lib/session-recap').then(({ recordRecapEvent }) =>
+          recordRecapEvent('question', entryRef),
+        )
+      })
       .catch(() => setQuestionMarkedId(null))
   }
 
