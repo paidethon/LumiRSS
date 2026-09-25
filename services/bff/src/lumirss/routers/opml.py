@@ -2,6 +2,7 @@
 
 
 
+import contextlib
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response
@@ -10,14 +11,19 @@ from fastapi.responses import JSONResponse
 from lumirss.deps import _get_control_adapter
 from lumirss.import_batch_store import ImportBatchStore
 from lumirss.models import (
+    OpmlImportLogList,
     OpmlImportPreview,
     OpmlImportResult,
+    OpmlTreeApplyResult,
+    OpmlTreePlan,
+    OpmlUndoResult,
 )
 from lumirss.opml import (
     MAX_OPML_BYTES,
     OpmlService,
     OpmlTooLarge,
 )
+from lumirss.opml_import_log import OpmlImportLogStore
 
 router = APIRouter()
 
@@ -149,3 +155,77 @@ async def opml_import(
     return result
 
 
+
+
+# ---- N018 树对照导入（plan → apply → undo） ---------------------------------
+
+
+@router.post(
+    "/api/v1/opml/import/tree-preview",
+    response_model=OpmlTreePlan,
+)
+async def opml_tree_preview(request: Request) -> dict[str, object]:
+    """N018：OPML 分类树对照预览——严格只读。
+
+    解析上传 OPML 的分类结构，对照当前 FreshRSS 分类，产出计划：
+    createCategories / reuseCategories / moveFeeds / duplicateFeeds
+    （skip|update 策略见 OpmlService._build_tree_plan 的确定性规则）。
+    不订阅、不移动、不建类；应用走 tree-apply。"""
+    data = await _read_bounded_opml(request)
+    service = OpmlService(_get_control_adapter(request))
+    return await service.tree_preview(data)
+
+
+@router.post(
+    "/api/v1/opml/import/tree-apply",
+    response_model=OpmlTreeApplyResult,
+)
+async def opml_tree_apply(request: Request) -> dict[str, object]:
+    """N018：应用树对照计划（订阅新 feed → 建类/移动随行）。
+
+    以执行时刻的服务器状态为准（预览是建议，不是陈旧契约）。每次
+    执行写一行撤销台账（opml_import_log，cap 5），撤销走
+    POST /api/v1/opml/import/{id}/undo。"""
+    data = await _read_bounded_opml(request)
+    service = OpmlService(_get_control_adapter(request), request.app.state.db)
+    result = await service.tree_apply(data)
+    # F049 复用：树对照执行同样留导入批次计数（成功/跳过/失败）。
+    with contextlib.suppress(Exception):
+        await ImportBatchStore(request.app.state.db).record(
+            kind="opml",
+            counts={
+                "imported": len(result.get("added") or []),
+                "skipped": len(result.get("skipped") or []),
+                "failed": len(result.get("failed") or []),
+            },
+            errors=[
+                {"url": item.get("feedUrl"), "reason": item.get("error")}
+                for item in result.get("failed", [])
+                if isinstance(item, dict)
+            ],
+            retry_payload=[
+                {"url": item.get("feedUrl"), "title": None}
+                for item in result.get("failed", [])
+                if isinstance(item, dict) and item.get("kind") == "subscribe"
+            ],
+        )
+    return result
+
+
+@router.post("/api/v1/opml/import/{log_id}/undo", response_model=OpmlUndoResult)
+async def opml_import_undo(log_id: int, request: Request) -> dict[str, object]:
+    """N018：撤销一次树对照导入（feed 移回原分类）。
+
+    每行至多撤销一次；被移动 feed 的原分类已消失 / feed 已退订时逐项
+    如实汇报原因。新建分类无法经 greader API 删除（无该端点，诚实
+    边界）——响应 categoriesNotDeleted 如实列出，可在 FreshRSS 原生
+    界面清理。"""
+    service = OpmlService(_get_control_adapter(request), request.app.state.db)
+    return await service.undo_import(log_id)
+
+
+@router.get("/api/v1/opml/import/log", response_model=OpmlImportLogList)
+async def opml_import_log_list(request: Request) -> dict[str, object]:
+    """N018：最近撤销台账（≤5 行，新→旧；undoneAt 非 null = 已撤销）。"""
+    items = await OpmlImportLogStore(request.app.state.db).list_recent()
+    return {"items": items}

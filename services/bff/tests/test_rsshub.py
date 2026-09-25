@@ -411,6 +411,7 @@ async def test_route_routes_catalog():
     first = payload["routes"][0]
     assert set(first) == {
         "id", "title", "description", "pathTemplate", "parameters",
+        "requires",  # N023：路由依赖元数据（curated；未标注 → null）
     }
     assert set(first["parameters"][0] if first["parameters"] else {}) <= {
         "key", "label", "required", "pattern", "example", "help",

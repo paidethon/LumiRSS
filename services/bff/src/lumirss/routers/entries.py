@@ -57,6 +57,7 @@ async def entries(
     cursor: str | None = None,
     includeHidden: bool = False,
     sort: Literal["received"] | None = None,
+    attention: Literal["must_read", "excl_low"] | None = None,
 ) -> EntryListResponse:
     """One filtered page of entries — list fields only, never bodies.
 
@@ -114,6 +115,13 @@ async def entries(
         from lumirss.source_overrides import filter_timeline_items
 
         items = await filter_timeline_items(request.app.state.db, list(page.items))
+        # N020：关注级别过滤（同样只作用于通用时间线；服务端执行，
+        # 读 source_overrides.attention_level）。must_read = 只留必读
+        # 来源；excl_low = 剔除低优先来源（口径见 filter_by_attention）。
+        if attention is not None:
+            from lumirss.source_overrides import filter_by_attention
+
+            items = await filter_by_attention(request.app.state.db, list(items), attention)
     # F045：服务端屏蔽规则（per-feed）。默认把命中项从结果中剔除并在
     # filteredCount 如实计数；includeHidden=true 临时包含（附带
     # hiddenByRule 标记）。规则不触碰 FreshRSS 侧任何状态。

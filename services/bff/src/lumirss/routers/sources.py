@@ -18,10 +18,16 @@ from datetime import UTC
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from lumirss.config import RssHubSettings
 from lumirss.models import (
     CollectionTiming,
+    FreshnessAdvisoryApplyResult,
+    FreshnessSuggestionsResponse,
+    SourceAccessCardList,
+    SourceAccessCardUpdate,
+    SourceAccessCardView,
     SourceAliasHistoryItem,
     SourceAliasHistoryList,
     SourceAliasList,
@@ -280,6 +286,20 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
     # N015：分时静音窗口（子集校验，非法 → 422 稳定错误）。
     if "muteWindows" in fields:
         await set_mute_windows(request.app.state.db, payload.feedUrl, payload.muteWindows)
+    # N020：关注级别（非法值 → 422 稳定错误；None = 恢复 normal）。
+    if "attentionLevel" in fields:
+        from lumirss.source_overrides import (
+            AttentionLevelInvalid,
+            attention_level_valid,
+        )
+
+        if payload.attentionLevel is not None and not attention_level_valid(
+            payload.attentionLevel
+        ):
+            raise AttentionLevelInvalid(
+                "attentionLevel 必须是 'must_read'、'normal' 或 'low'。"
+            )
+        await store.set_attention_level(payload.feedUrl, payload.attentionLevel)
     # F066：per-source AI 禁用（服务端执行点统一判定，非仅 UI 隐藏）。
     if "aiDisabled" in fields:
         from lumirss.source_ai_gate import set_ai_disabled
@@ -298,6 +318,8 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
             "readerStyle": None,
             "aiDisabled": False,
             "muteWindows": None,
+            "attentionLevel": "normal",
+            "refreshAdvisory": None,
             "updatedAt": utc_now(),
         }
     return SourceOverrideResult(**result)
@@ -557,3 +579,184 @@ def _latency_hint(published, crawled, projected_epoch) -> str | None:
     if seconds < 3600:
         return f"{label} ≈{int(seconds // 60)} 分钟"
     return f"{label} ≈{seconds / 3600:.1f} 小时"
+
+
+# ---- N014 自适应低活跃建议 ---------------------------------------------------
+
+
+class FreshnessAdvisoryApplyBody(BaseModel):
+    """POST /api/v1/sources/freshness-suggestions/apply body。"""
+
+    feedUrl: str
+
+
+@router.get(
+    "/api/v1/sources/freshness-suggestions",
+    response_model=FreshnessSuggestionsResponse,
+)
+async def freshness_suggestions(request: Request) -> dict[str, object]:
+    """N014：低活跃来源建议（只读；依据 = 派生投影 trailing 8 周画像）。
+
+    对每个订阅计算条目/周（yield）与相邻发布间隔中位数（medianGapDays），
+    yield < 0.5 且 gap > 14 天 → 建议「降低刷新频率」。诚实边界：FreshRSS
+    greader API 不暴露 per-feed 刷新频率（调度粒度由实例 CRON_MIN 决定），
+    因此本端点只产出建议；「应用」= 记录 refreshAdvisory=accepted 决定，
+    逐源频率需在 FreshRSS 原生界面调整（/api/v1/freshrss/native-url）。"""
+    from datetime import datetime, timedelta
+
+    from lumirss.models import FreshnessSuggestionItem
+    from lumirss.source_freshness import (
+        SCHEDULING_NOTE,
+        TRAILING_WEEKS,
+        compute_suggestions,
+    )
+    from lumirss.source_overrides import SourceOverrideStore
+
+    db = request.app.state.db
+    await db.migrate()
+    now = datetime.now(UTC)
+    cutoff = (now - timedelta(weeks=TRAILING_WEEKS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        window_rows = await db.fetch_all(
+            "SELECT feed_url, published_at FROM search_entries WHERE published_at >= ?",
+            (cutoff,),
+        )
+        pre_rows = await db.fetch_all(
+            "SELECT feed_url, MAX(published_at) AS published_at FROM search_entries WHERE published_at < ? GROUP BY feed_url",
+            (cutoff,),
+        )
+    except Exception:  # noqa: BLE001 — 投影不可用 → 诚实空建议
+        window_rows = []
+        pre_rows = []
+    suggestions = compute_suggestions(list(window_rows) + list(pre_rows), now=now)
+    if not suggestions:
+        return {
+            "items": [],
+            "schedulingNote": SCHEDULING_NOTE,
+            "basis": "search_entries 派生投影（published_at，trailing 8 周）",
+            "generatedAt": utc_now(),
+        }
+
+    feed_urls = {item["feedUrl"] for item in suggestions}
+    advisory_map: dict[str, str | None] = {}
+    for override in await SourceOverrideStore(db).list_overrides():
+        if override["feedUrl"] in feed_urls:
+            advisory_map[override["feedUrl"]] = override.get("refreshAdvisory")
+    by_url = {
+        subscription.feed_url: subscription
+        for subscription in await _get_adapter(request).list_subscriptions()
+    }
+    items: list[FreshnessSuggestionItem] = []
+    for item in suggestions:
+        subscription = by_url.get(item["feedUrl"])
+        if subscription is None:
+            continue  # 订阅已退订：建议失效（投影落后是暂态）
+        basis = item["basis"]
+        items.append(
+            FreshnessSuggestionItem(
+                feedUrl=item["feedUrl"],
+                subscriptionRef=subscription.subscription_ref,
+                title=subscription.title,
+                currentPattern=item["currentPattern"],
+                suggested=item["suggested"],
+                basis={
+                    "weeks": basis["weeks"],
+                    "yield": basis["yield"],
+                    "medianGapDays": basis["medianGapDays"],
+                },
+                refreshAdvisory=advisory_map.get(item["feedUrl"]),
+            )
+        )
+    return {
+        "items": items,
+        "schedulingNote": SCHEDULING_NOTE,
+        "basis": "search_entries 派生投影（published_at，trailing 8 周）",
+        "generatedAt": utc_now(),
+    }
+
+
+@router.post(
+    "/api/v1/sources/freshness-suggestions/apply",
+    response_model=FreshnessAdvisoryApplyResult,
+)
+async def apply_freshness_advisory(
+    body: FreshnessAdvisoryApplyBody, request: Request
+) -> dict[str, object]:
+    """N014：接受一条低活跃建议 = 在 Lumi 侧记录该决定。
+
+    诚实语义：**不改变任何抓取行为**——FreshRSS greader API 无 per-feed
+    ttl/timing 能力，调度粒度由实例 CRON_MIN 决定。记录结果在来源详情
+    呈现为「已接受低频建议」；重复接受是幂等的（同值 no-op）。未订阅的
+    feed → 404（不为不存在的来源记决定）。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.source_freshness import SCHEDULING_NOTE
+    from lumirss.source_overrides import (
+        REFRESH_ADVISORY_ACCEPTED,
+        SourceOverrideStore,
+    )
+
+    subscribed = any(
+        subscription.feed_url == body.feedUrl
+        for subscription in await _get_adapter(request).list_subscriptions()
+    )
+    if not subscribed:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "type": "subscription_not_found",
+                    "message": "该来源不在当前账户的订阅中。",
+                }
+            },
+        )
+    store = SourceOverrideStore(request.app.state.db)
+    await store.set_refresh_advisory(body.feedUrl, REFRESH_ADVISORY_ACCEPTED)
+    return {
+        "feedUrl": body.feedUrl,
+        "refreshAdvisory": REFRESH_ADVISORY_ACCEPTED,
+        "schedulingNote": SCHEDULING_NOTE,
+    }
+
+
+# ---- N019 来源接入说明卡 -----------------------------------------------------
+
+
+@router.get("/api/v1/sources/access-card", response_model=SourceAccessCardView)
+async def get_source_access_card(
+    request: Request, feedUrl: str = Query(min_length=1, max_length=2048)
+) -> dict[str, object]:
+    """N019：单个来源的接入说明卡（无卡 → 全 null）。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    return await SourceAccessCardStore(request.app.state.db).get_card(feedUrl)
+
+
+@router.get("/api/v1/sources/access-cards", response_model=SourceAccessCardList)
+async def list_source_access_cards(request: Request) -> dict[str, object]:
+    """N019：当前账户全部接入说明卡（per-user 库隔离，只见自己的）。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    items = await SourceAccessCardStore(request.app.state.db).list_cards()
+    return {"items": items}
+
+
+@router.put("/api/v1/sources/access-card", response_model=SourceAccessCardView)
+async def put_source_access_card(
+    payload: SourceAccessCardUpdate, request: Request
+) -> dict[str, object]:
+    """N019：整卡 upsert（缺席字段 = 清空该字段）。
+
+    credentialOwnership 只接受归属标签 self/shared/none——**卡里没有
+    凭据值字段**（契约上不存在，schema 亦无 secret 列）；未知字段 → 422
+    invalid_access_card。"""
+    from lumirss.source_access_cards import SourceAccessCardStore
+
+    fields = {
+        key: getattr(payload, key)
+        for key in ("acquisition", "limits", "credentialOwnership", "maintenance")
+        if key in payload.model_fields_set
+    }
+    return await SourceAccessCardStore(request.app.state.db).put_card(
+        payload.feedUrl, fields
+    )

@@ -41,8 +41,9 @@ class QueueGenerateRequest(BaseModel):
     timeBudgetMinutes: int | None = Field(default=None, ge=5, le=480)
     """预算上限（分钟）；缺省 30。候选装填依据（服务端粗估）。"""
     levels: list[str] = Field(default_factory=list, max_length=20)
-    """预留：N020 关注级别在本仓库尚未实现——当前被忽略（响应 notes
-    诚实标注），绝不伪装成已生效的过滤。"""
+    """N020 关注级别（must_read|normal|low，normal = 未设置级别）：
+    非空时候选池限定到指定级别；候选排序恒为 must_read → normal → low
+    （同级内按近期）。非法级别值忽略（诚实有界，不 500）。"""
     workspaceId: str | None = None
     """提供时候选限定为该工作区成员。"""
 
@@ -200,12 +201,16 @@ async def generate_today_queue(
         budget_minutes=payload.timeBudgetMinutes,
         workspace_id=payload.workspaceId,
         force=force,
+        levels=payload.levels,
     )
-    if payload.levels:
-        view["notes"] = [
-            "levels 参数已忽略：N020 关注级别尚未实现，候选只按"
-            " 未读 + 近期 挑选；估读为服务端粗估（400 字符/分钟）。"
-        ]
+    if not payload.levels:
+        view.setdefault(
+            "notes",
+            [
+                "候选排序：N020 关注级别（must_read 优先，normal 次之，low 垫后）"
+                "+ 近期；估读为服务端粗估（400 字符/分钟）。"
+            ],
+        )
     result = QueueGenerateResponse(**view)
     response.status_code = 201 if result.generated else 200
     return result
