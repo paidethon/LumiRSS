@@ -26,6 +26,7 @@ subscribing is ``POST /api/v1/subscriptions`` (Gate 1).
 
 import asyncio
 import ipaddress
+import re
 import socket
 import urllib.parse
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ __all__ = [
     "InvalidFeedUrl",
     "NotAFeedError",
     "UnsafeFeedUrl",
+    "mask_query_url",
     "parse_feed_document",
     "read_bounded_body",
     "safe_fetch",
@@ -88,6 +90,43 @@ _CGNAT_PREFIX = ipaddress.ip_network("100.64.0.0/10")
 
 _HEADERS = {"User-Agent": "LumiRSS/0.1 (+self-hosted feed preview)"}
 
+# N035 重定向链展示：query 里的凭据类参数值必须打码后才进预览响应/
+# 错误体——与 F047 / rsshub_route_store.SENSITIVE_PARAM 同一规则
+# （单一服务端定义；rsshub.py 反向依赖本模块，故从 route_store 引入）。
+_SENSITIVE_QUERY_RE = re.compile(
+    "token|key|secret|sign|code|password", re.IGNORECASE
+)
+
+
+def mask_query_url(url: str) -> str:
+    """N035：URL 的 query 值按敏感键规则打码（非凭据参数原样保留）。
+
+    路径与主机照原样返回（重定向链本来就是给用户看的路由诊断）；
+    只有 query 值可能携带凭据，逐键判定：命中敏感键 → '***' 哨兵。
+    解析失败的输入原样返回（不让诊断代码抛新异常）。
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        if not parts.query:
+            return url
+        pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        masked = "&".join(
+            f"{urllib.parse.quote(key, safe='')}="
+            f"{'***' if _SENSITIVE_QUERY_RE.search(key) else urllib.parse.quote(value, safe='')}"
+            for key, value in pairs
+        )
+        return urllib.parse.urlunsplit(
+            (
+                parts.scheme,
+                parts.netloc,
+                parts.path,
+                masked,
+                parts.fragment,
+            )
+        )
+    except ValueError:
+        return url
+
 
 @dataclass(frozen=True)
 class FeedPreview:
@@ -104,6 +143,13 @@ class FeedPreview:
     entry_count: int | None = None
     # N033：有界响应体的编码检查（声明/检测/乱码风险 + 掩码样本）。
     encoding_info: dict | None = None
+    # N035：重定向链（每跳 {url(掩码query), status, final}；query 里
+    # 的凭据值已打码）。无重定向时是单跳链（首跳即 final）。
+    redirect_chain: tuple[dict, ...] = ()
+
+    def chain_json(self) -> list[dict] | None:
+        """Browser-safe chain view（空链 → None，响应形状保持稳定）。"""
+        return [dict(hop) for hop in self.redirect_chain] or None
 
 
 @dataclass(frozen=True)
@@ -113,6 +159,8 @@ class FetchedDocument:
     body: bytes
     final_url: str
     content_type: str | None
+    # N035：本次抓取实际经过的每一跳（含首跳；query 已掩码）。
+    redirect_chain: tuple[dict, ...] = ()
 
 
 async def _default_resolver(host: str, port: int) -> list[str]:
@@ -318,6 +366,9 @@ class FeedPreviewService:
             format=feed_format,
             already_subscribed=already_subscribed,
             encoding_info=inspection,
+            # N035：预览附带真实重定向链（query 已掩码；供 F044 迁移
+            # 向导展示「重定向链 + 最终域名」）。
+            redirect_chain=document.redirect_chain,
         )
 
     async def reparse(
@@ -367,6 +418,22 @@ class FeedPreviewService:
             )
         return document, inspection, choices
 
+def _chain_snapshot(
+    hops: list[dict], *, final: bool
+) -> tuple[dict, ...]:
+    """N035：冻结当前链快照（final=True 只在抓取真正完成时打在末跳）。"""
+    snapshot = [dict(hop) for hop in hops]
+    if final and snapshot:
+        snapshot[-1]["final"] = True
+    return tuple(snapshot)
+
+
+def _attach_chain(exc: AdapterError, hops: list[dict]) -> AdapterError:
+    """把失败时的重定向链挂到异常上（错误 handler 有则透出）。"""
+    exc.redirect_chain = _chain_snapshot(hops, final=False)  # type: ignore[attr-defined]
+    return exc
+
+
 async def safe_fetch(
     url: str,
     *,
@@ -386,6 +453,11 @@ async def safe_fetch(
     transport closes it exactly like clip/api-source fetches.
     ``pin_factory`` lets tests stub the underlying transport (same seam
     as clip_fetch).
+
+    N035：每一跳（含首跳与被拒绝的失败跳）都记入重定向链——URL 的
+    query 按敏感键规则掩码后随 FetchedDocument 返回；边界拒绝
+    （loop / private-net / too-many / no-location）时链挂在异常的
+    ``redirect_chain`` 上供错误响应透出失败跳。
     """
     if pin_factory is None:
         # Imported here (not at module top): ssrf_transport imports this
@@ -394,15 +466,31 @@ async def safe_fetch(
 
         pin_factory = PinnedAddressTransport
 
-    async def validate_hop(hop_url: str) -> None:
+    hops: list[dict] = []
+
+    async def validate_and_record(hop_url: str) -> None:
+        # 先记录再校验：校验失败（私网/畸形/不可解析）时失败跳已可见
+        # （status=None 诚实表示「请求从未发出」）。
+        hops.append(
+            {"url": mask_query_url(hop_url), "status": None, "final": False}
+        )
         await _require_dialable(resolver, validate_feed_url(hop_url))
+
+    async def send_and_record(hop_url: str) -> httpx.Response:
+        response = await _send(client, hop_url)
+        if hops:
+            hops[-1]["status"] = response.status_code
+        return response
 
     def fail(event: str) -> Exception:
         if event == "no_location":
-            return FeedFetchError(
-                "Feed URL redirected without a target location."
+            return _attach_chain(
+                FeedFetchError("Feed URL redirected without a target location."),
+                hops,
             )
-        return FeedFetchError("Feed URL redirected too many times.")
+        return _attach_chain(
+            FeedFetchError("Feed URL redirected too many times."), hops
+        )
 
     transport = pin_factory(resolver=resolver, ensure_public=ensure_public)
     async with httpx.AsyncClient(
@@ -414,22 +502,32 @@ async def safe_fetch(
         # turned slow feeds into 502s (fresh-eyes P2).
         timeout=httpx.Timeout(10.0, connect=5.0),
     ) as client:
-        response, final_url = await follow_redirects(
-            url,
-            send=lambda hop_url: _send(client, hop_url),
-            validate_hop=validate_hop,
-            fail=fail,
-            max_redirects=max_redirects,
-        )
+        try:
+            response, final_url = await follow_redirects(
+                url,
+                send=send_and_record,
+                validate_hop=validate_and_record,
+                fail=fail,
+                max_redirects=max_redirects,
+            )
+        except AdapterError as exc:
+            # 校验/回环/超限/拨号失败：链随异常透出（N035 失败跳展示）。
+            if getattr(exc, "redirect_chain", None) is None:
+                _attach_chain(exc, hops)
+            raise
         try:
             if response.status_code != 200:
-                raise FeedFetchError(
-                    f"The feed URL answered HTTP {response.status_code}."
+                raise _attach_chain(
+                    FeedFetchError(
+                        f"The feed URL answered HTTP {response.status_code}."
+                    ),
+                    hops,
                 )
             return FetchedDocument(
                 body=await read_bounded_body(response),
                 final_url=final_url,
                 content_type=response.headers.get("content-type"),
+                redirect_chain=_chain_snapshot(hops, final=True),
             )
         finally:
             await response.aclose()

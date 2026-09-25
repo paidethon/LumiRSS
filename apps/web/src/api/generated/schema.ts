@@ -279,6 +279,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/rsshub/routes/{route_key}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route Usage Admin
+         * @description N029 管理员聚合：一个路由模板在**全体活跃用户**中的使用计数。
+         *
+         *     隐私边界（结构保证，非靠 UI 隐藏）：响应只含计数——绝不返回其他
+         *     用户的订阅标题 / feed URL / 用户名。跨用户读取仅限派生投影的
+         *     feed_url 匹配与条目计数（投影本就是可重建的本地派生数据）。
+         *     member 403；遍历每用户库（邀请制小规模部署，行数有界）。
+         */
+        get: operations["rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/rsshub/upgrade-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Upgrade Checks
+         * @description N028 最近检查报告（新→旧，≤3；admin-gated，存本人用户库）。
+         */
+        get: operations["list_rsshub_upgrade_checks_api_v1_admin_rsshub_upgrade_check_get"];
+        put?: never;
+        /**
+         * Run Rsshub Upgrade Check
+         * @description N028 预升级路由兼容基线（admin-gated；只读探测 + 报告落库）。
+         *
+         *     诚实范围（测试固定）：
+         *     - 探测对象 = **管理员本人**用户库可见的路由键（订阅 URL 反推 +
+         *       本人收藏/最近使用），每次最多 12 条真实 preview（其余 skipped）；
+         *     - 只对**当前运行实例**探测——targetImage 恒记 pending（Lumi 无
+         *       Docker 视角，绝不臆造「新镜像已生效」）；逐路由状态锚定到
+         *       checkedImage（目录快照的固定镜像 sha）；
+         *     - keep-old = 默认：本端点零镜像/容器操作，只写报告（keep-last-3）。
+         */
+        post: operations["run_rsshub_upgrade_check_api_v1_admin_rsshub_upgrade_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/system": {
         parameters: {
             query?: never;
@@ -6708,6 +6765,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rsshub/param-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rsshub Param Presets
+         * @description N030 我的方案（每用户私有；敏感值只以 '***' 哨兵出现）。
+         */
+        get: operations["list_rsshub_param_presets_api_v1_rsshub_param_presets_get"];
+        put?: never;
+        /**
+         * Create Rsshub Param Preset
+         * @description 保存当前参数组合为方案（cap 20/用户；敏感值入库前哨兵化）。
+         *
+         *     校验在**真实值**上做（与 preview 同 pattern 规则），存储一律
+         *     mask_params——DB 与响应里都查不到敏感原文。
+         */
+        post: operations["create_rsshub_param_preset_api_v1_rsshub_param_presets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/param-presets/{preset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Rsshub Param Preset
+         * @description 删除一个方案；404 当该用户没有此方案（跨用户即 404）。
+         */
+        delete: operations["delete_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/param-presets/{preset_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Rsshub Param Preset
+         * @description N030 应用方案 → 参数表单回填数据（create-draft；纯只读）。
+         *
+         *     hasSensitive 方案要求敏感键重新输入（requiresRebind=true +
+         *     sensitiveKeys）——服务端从未存过真实值，哨兵回填本就会被 preview
+         *     的 pattern 校验拒绝；这里把契约显式化，UI 据此标「需重新绑定」。
+         */
+        post: operations["apply_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rsshub/params-diff": {
         parameters: {
             query?: never;
@@ -6911,6 +7039,29 @@ export interface paths {
          *     or subscribe (failed attempts never record).
          */
         get: operations["list_rsshub_recent_api_v1_rsshub_routes_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rsshub/routes/{route_key}/my-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rsshub Route My Sources
+         * @description N029：该路由模板生成的**本人**订阅（路由 → 来源关系图）。
+         *
+         *     仅当前用户作用域：control 适配器的订阅列表 + search_entries 投影
+         *     都按请求身份路由，其他账户的数据在这里结构上不可达。
+         */
+        get: operations["rsshub_route_my_sources_api_v1_rsshub_routes__route_key__my_sources_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -13501,6 +13652,8 @@ export interface components {
              * @enum {string}
              */
             format: "rss" | "atom";
+            /** Redirectchain */
+            redirectChain?: components["schemas"]["RedirectHop"][] | null;
             /** Siteurl */
             siteUrl?: string | null;
             /** Title */
@@ -17141,6 +17294,21 @@ export interface components {
             token: string;
         };
         /**
+         * RedirectHop
+         * @description N035 重定向链的一跳（url 的 query 凭据值已由服务端掩码）。
+         */
+        RedirectHop: {
+            /**
+             * Final
+             * @default false
+             */
+            final: boolean;
+            /** Status */
+            status?: number | null;
+            /** Url */
+            url: string;
+        };
+        /**
          * RegisterRequest
          * @description POST /auth/register (P0 public registration).
          */
@@ -17702,6 +17870,70 @@ export interface components {
             routeId: string;
         };
         /**
+         * RssHubParamPresetApply
+         * @description POST .../param-presets/{id}/apply — 回填数据（不抓取、不订阅）。
+         *
+         *     requiresRebind=True 时 sensitiveKeys 里的参数必须重新输入后才能
+         *     预览（服务端从不存储敏感值，哨兵回填会被 pattern 校验拒绝）。
+         */
+        RssHubParamPresetApply: {
+            /** Hassensitive */
+            hasSensitive: boolean;
+            /** Id */
+            id: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Requiresrebind */
+            requiresRebind: boolean;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Sensitivekeys
+             * @default []
+             */
+            sensitiveKeys: string[];
+            /** Templateid */
+            templateId: string;
+        };
+        /**
+         * RssHubParamPresetCreate
+         * @description POST /api/v1/rsshub/param-presets body（方案名 + 参数组合）。
+         */
+        RssHubParamPresetCreate: {
+            /** Name */
+            name: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Routeid */
+            routeId: string;
+        };
+        /**
+         * RssHubParamPresetItem
+         * @description 一个参数方案（params 里的敏感值在服务端已替换为 '***' 哨兵）。
+         */
+        RssHubParamPresetItem: {
+            /** Createdat */
+            createdAt: string;
+            /** Hassensitive */
+            hasSensitive: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Params */
+            params: {
+                [key: string]: string;
+            };
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
          * RssHubParameter
          * @description One RSSHub route parameter descriptor (form-renderable).
          */
@@ -17815,6 +18047,8 @@ export interface components {
              * @enum {string}
              */
             format: "rss" | "atom";
+            /** Redirectchain */
+            redirectChain?: components["schemas"]["RedirectHop"][] | null;
             requires?: components["schemas"]["RssHubRequires"] | null;
             /** Routekey */
             routeKey: string;
@@ -17904,6 +18138,21 @@ export interface components {
             title: string;
         };
         /**
+         * RssHubRouteMySources
+         * @description GET /api/v1/rsshub/routes/{routeKey}/my-sources — 仅本人作用域。
+         */
+        RssHubRouteMySources: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RssHubRouteSourceItem"][];
+            /** Routekey */
+            routeKey: string;
+            /** Templateid */
+            templateId: string;
+        };
+        /**
          * RssHubRouteRun
          * @description One N025 route health timeline row (no secrets — route keys are
          *     masked server-side before storage).
@@ -17934,6 +18183,127 @@ export interface components {
         RssHubRouteRuns: {
             /** Items */
             items: components["schemas"]["RssHubRouteRun"][];
+        };
+        /**
+         * RssHubRouteSourceEntry
+         * @description 该路由下某来源的最近条目（派生投影；≤5 条，只读）。
+         */
+        RssHubRouteSourceEntry: {
+            /** Published */
+            published: string;
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * RssHubRouteSourceItem
+         * @description N029 我的来源：由该路由模板 + 参数生成的本账户订阅。
+         */
+        RssHubRouteSourceItem: {
+            /** Feedurl */
+            feedUrl: string;
+            /**
+             * Recententries
+             * @default []
+             */
+            recentEntries: components["schemas"]["RssHubRouteSourceEntry"][];
+            /** Title */
+            title: string;
+            /** Unreadcount */
+            unreadCount: number;
+        };
+        /**
+         * RssHubRouteUsage
+         * @description GET /api/v1/admin/rsshub/routes/{routeKey}/usage — 跨用户聚合，
+         *     只有计数：绝不返回其他用户的标题 / 名称 / URL。
+         */
+        RssHubRouteUsage: {
+            /** Basis */
+            basis: string;
+            /** Routekey */
+            routeKey: string;
+            /** Sourcecount */
+            sourceCount: number;
+            /** Templateid */
+            templateId: string;
+            /** Totalentries */
+            totalEntries: number;
+            /** Usercount */
+            userCount: number;
+        };
+        /**
+         * RssHubUpgradeCheckReport
+         * @description 一次升级兼容检查报告（keep-last-3）。
+         *
+         *     checkedImage = 目录快照（rsshub_routes.generated.json）生成时所在
+         *     的固定镜像——逐路由状态锚定到这个已知的镜像证据；targetImage 是
+         *     运营者声明的目标镜像，targetStatus 恒为 'pending'：检查只对当前
+         *     运行实例探测，新镜像生效与否由运维侧确认（Lumi 无 Docker 视角，
+         *     绝不臆造「已生效」）。
+         */
+        RssHubUpgradeCheckReport: {
+            /** Checkedimage */
+            checkedImage?: string | null;
+            /** Failedcount */
+            failedCount: number;
+            /** Id */
+            id: number;
+            /** Okcount */
+            okCount: number;
+            /** Ranat */
+            ranAt: string;
+            /** Routecount */
+            routeCount: number;
+            /**
+             * Routes
+             * @default []
+             */
+            routes: components["schemas"]["RssHubUpgradeCheckRoute"][];
+            /** Skippedcount */
+            skippedCount: number;
+            /** Targetimage */
+            targetImage?: string | null;
+            /** Targetstatus */
+            targetStatus?: string | null;
+        };
+        /**
+         * RssHubUpgradeCheckRequest
+         * @description POST /api/v1/admin/rsshub/upgrade-check body。
+         */
+        RssHubUpgradeCheckRequest: {
+            /** Targetimage */
+            targetImage?: string | null;
+        };
+        /**
+         * RssHubUpgradeCheckRoute
+         * @description 单路由探测结果（params 已脱敏；routeKey 即存储键）。
+         */
+        RssHubUpgradeCheckRoute: {
+            /** Entrycount */
+            entryCount?: number | null;
+            /** Failureclass */
+            failureClass?: string | null;
+            /** Origin */
+            origin: string;
+            /** Routekey */
+            routeKey: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+        };
+        /**
+         * RssHubUpgradeChecks
+         * @description GET /api/v1/admin/rsshub/upgrade-check — 最近报告（新→旧，≤3）。
+         */
+        RssHubUpgradeChecks: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["RssHubUpgradeCheckReport"][];
         };
         /** SaveAsTemplateRequest */
         SaveAsTemplateRequest: {
@@ -20814,6 +21184,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegistrationPolicyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rsshub_route_usage_admin_api_v1_admin_rsshub_routes__route_key__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteUsage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rsshub_upgrade_checks_api_v1_admin_rsshub_upgrade_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubUpgradeChecks"];
+                };
+            };
+        };
+    };
+    run_rsshub_upgrade_check_api_v1_admin_rsshub_upgrade_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubUpgradeCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubUpgradeCheckReport"];
                 };
             };
             /** @description Validation Error */
@@ -31952,6 +32406,119 @@ export interface operations {
             };
         };
     };
+    list_rsshub_param_presets_api_v1_rsshub_param_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetItem"][];
+                };
+            };
+        };
+    };
+    create_rsshub_param_preset_api_v1_rsshub_param_presets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RssHubParamPresetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_rsshub_param_preset_api_v1_rsshub_param_presets__preset_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubParamPresetApply"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rsshub_params_diff_api_v1_rsshub_params_diff_post: {
         parameters: {
             query?: never;
@@ -32201,6 +32768,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RssHubRecentItem"][];
+                };
+            };
+        };
+    };
+    rsshub_route_my_sources_api_v1_rsshub_routes__route_key__my_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RssHubRouteMySources"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

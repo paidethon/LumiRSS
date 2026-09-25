@@ -24,14 +24,17 @@ import {
   useRssHubRecent,
   useRssHubRefreshMutation,
   useRssHubRouteHistory,
+  useRssHubRouteMySources,
   useRssHubRoutes,
   useSubscribeMutation,
 } from '../../api/queries'
+import { useReaderUi } from '../../store/reader-ui'
 import type {
   FeedPreviewMetadata,
   RssHubRequires,
   RssHubRoute,
   RssHubRouteRun,
+  RssHubRouteSourceItem,
 } from '../../api/types'
 import { formatRelativeTime } from '../../lib/date-format'
 import { managementErrorText } from '../../lib/management-errors'
@@ -477,6 +480,7 @@ export function RssHubTab({ onClose, registerGuard }: AddSourceTabProps) {
             onBack={backToRoutes}
           />
           <RouteRunTimeline routeKey={routeKey} />
+          <RouteMySourcesSection routeKey={routeKey} onClose={onClose} />
         </div>
       )}
 
@@ -574,6 +578,117 @@ function RouteEntrySection({
         )
       })}
     </section>
+  )
+}
+
+/** N029：我的来源 — 该路由（模板 + 参数）生成的本人订阅 + 跳转。
+ *
+ * 仅本人作用域（服务端按请求身份路由）；未读数与最近条目来自
+ * search_entries 派生投影——投影为空是「投影没有该来源的数据」，
+ * 不表述成「确认没有未读」。跳转 = 切到首页并选中该 feed 作用域。 */
+function RouteMySourcesSection({
+  routeKey,
+  onClose,
+}: {
+  routeKey: string | null
+  onClose: () => void
+}) {
+  const sourcesQuery = useRssHubRouteMySources(routeKey, routeKey !== null)
+  const selectSection = useReaderUi((state) => state.selectSection)
+  const selectScope = useReaderUi((state) => state.selectScope)
+  const selectView = useReaderUi((state) => state.selectView)
+  if (routeKey === null) return null
+
+  function jumpToFeed(feedUrl: string) {
+    selectSection('home')
+    selectView('all')
+    selectScope({ kind: 'rss-feed', feedUrl })
+    onClose()
+  }
+
+  const items = sourcesQuery.data?.items ?? []
+  const header = (
+    <p className="text-xs font-medium text-[var(--lumi-text-secondary)]">我的来源</p>
+  )
+  if (sourcesQuery.isPending) {
+    return (
+      <section aria-label="我的来源" className="flex flex-col gap-1.5">
+        {header}
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-2/3" />
+      </section>
+    )
+  }
+  if (sourcesQuery.isError) {
+    return (
+      <section aria-label="我的来源" className="flex flex-col gap-1.5">
+        {header}
+        <p role="alert" className="flex items-start gap-1.5 text-xs text-[var(--lumi-danger)]">
+          <AlertCircle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          来源列表加载失败，请稍后重试。
+        </p>
+      </section>
+    )
+  }
+  if (items.length === 0) {
+    return (
+      <section aria-label="我的来源" className="flex flex-col gap-1.5">
+        {header}
+        <p className="text-xs text-[var(--lumi-text-tertiary)]">
+          该路由还没有你的订阅——订阅后可在这里直接跳转查看。
+        </p>
+      </section>
+    )
+  }
+  return (
+    <section aria-label="我的来源" className="flex flex-col gap-1.5">
+      {header}
+      <ul className="flex flex-col gap-1.5">
+        {items.map((item) => (
+          <SourceRow key={item.feedUrl} item={item} onJump={() => jumpToFeed(item.feedUrl)} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** N029 单个来源行：标题 + 未读数 + 最近条目 ≤5 + 前往查看跳转。 */
+function SourceRow({
+  item,
+  onJump,
+}: {
+  item: RssHubRouteSourceItem
+  onJump: () => void
+}) {
+  return (
+    <li className="flex flex-col gap-1 rounded-[var(--lumi-radius-md)] border border-[var(--lumi-border)] bg-[var(--lumi-surface)] px-3 py-2">
+      <div className="flex min-h-8 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm text-[var(--lumi-text-primary)]">
+          {item.title}
+        </span>
+        <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">
+          未读 {item.unreadCount}
+        </span>
+        <Button size="sm" variant="ghost" onClick={onJump}>
+          前往查看
+        </Button>
+      </div>
+      {item.recentEntries.length > 0 && (
+        <ul className="flex flex-col gap-0.5 border-t border-[var(--lumi-border)] pt-1">
+          {item.recentEntries.map((entry) => (
+            <li
+              key={entry.ref}
+              className="flex min-w-0 items-center gap-2 text-xs text-[var(--lumi-text-secondary)]"
+            >
+              <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+              <span className="shrink-0 text-[11px] text-[var(--lumi-text-tertiary)]">
+                {formatRelativeTime(entry.published)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   )
 }
 

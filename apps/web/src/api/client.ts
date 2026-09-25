@@ -48,8 +48,12 @@ import type {
   RssHubPreviewMetadata,
   RssHubRecentItem,
   RssHubRefreshResult,
+  RssHubParamPresetApply,
+  RssHubParamPresetItem,
+  RssHubRouteMySources,
   RssHubRouteRuns,
   RssHubRoutesResponse,
+  RedirectHop,
   SearchResponse,
   ServerSettings,
   SnapshotListResponse,
@@ -99,6 +103,10 @@ export class ApiError extends Error {
   /** 稳定错误族附带的额外标量（如 invite_not_active 的 serverTime /
    * notBefore）；服务端没给就是 null。UI 绝不从这里读秘密材料。 */
   readonly extra: Record<string, string> | null
+  /** N035：feed 抓取边界拒绝时随错误体透出的重定向链（每跳 url 的
+   * query 凭据值服务端已掩码；末跳 status=null 表示请求未发出）。
+   * 单跳普通失败服务端不附链 → null。 */
+  readonly redirectChain: RedirectHop[] | null
 
   constructor(
     status: number,
@@ -106,6 +114,7 @@ export class ApiError extends Error {
     message: string,
     retryAfterSeconds: number | null = null,
     extra: Record<string, string> | null = null,
+    redirectChain: RedirectHop[] | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -113,6 +122,7 @@ export class ApiError extends Error {
     this.type = type
     this.retryAfterSeconds = retryAfterSeconds
     this.extra = extra
+    this.redirectChain = redirectChain
   }
 }
 
@@ -130,6 +140,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   let type = 'http_error'
   let message = `请求失败（HTTP ${response.status}），请稍后重试。`
   let extra: Record<string, string> | null = null
+  let redirectChain: RedirectHop[] | null = null
   try {
     const body: unknown = await response.json()
     if (
@@ -155,6 +166,23 @@ async function toApiError(response: Response): Promise<ApiError> {
       if (Object.keys(extras).length > 0) {
         extra = extras
       }
+      // N035：重定向链（形状由服务端 RedirectHop 固定；逐跳校验后再
+      // 采用，畸形载荷静默丢弃——诊断数据绝不引入新错误路径）。
+      const rawChain = (err as Record<string, unknown>).redirectChain
+      if (Array.isArray(rawChain)) {
+        const hops: RedirectHop[] = []
+        for (const hop of rawChain) {
+          if (typeof hop !== 'object' || hop === null) continue
+          const row = hop as Record<string, unknown>
+          if (typeof row.url !== 'string') continue
+          hops.push({
+            url: row.url,
+            status: typeof row.status === 'number' ? row.status : null,
+            final: row.final === true,
+          })
+        }
+        if (hops.length > 0) redirectChain = hops
+      }
     }
   } catch {
     // 非 JSON（如 HTML 错误页 / 422 detail 数组）→ 使用安全 fallback。
@@ -165,7 +193,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   if (retryAfterRaw !== null && /^\d+$/.test(retryAfterRaw.trim())) {
     retryAfterSeconds = Number.parseInt(retryAfterRaw.trim(), 10)
   }
-  return new ApiError(response.status, type, message, retryAfterSeconds, extra)
+  return new ApiError(response.status, type, message, retryAfterSeconds, extra, redirectChain)
 }
 
 /** 发起请求并把非 2xx / 网络失败转成 ApiError；返回原始 Response，
@@ -1746,6 +1774,58 @@ export async function refreshRssHubRoute(routeKey: string): Promise<RssHubRefres
     contentType: 'application/json',
   })
   return (await response.json()) as RssHubRefreshResult
+}
+
+// ---- N029 路由与来源关系图（我的来源；仅本人作用域） ----
+
+/** N029：由该 routeKey（模板 + 脱敏参数签名）生成的**本人**订阅，
+ * 附每来源未读数与最近条目 ≤5（search_entries 派生投影）。 */
+export async function getRssHubRouteMySources(
+  routeKey: string,
+  signal?: AbortSignal,
+): Promise<RssHubRouteMySources> {
+  return request<RssHubRouteMySources>(
+    `${API_BASE}/rsshub/routes/${encodeURIComponent(routeKey)}/my-sources`,
+    signal,
+  )
+}
+
+// ---- N030 路由可复用参数方案（每用户私有；敏感值只存 '***' 哨兵） ----
+
+/** N030：我的方案列表（cap 20/用户；created_at 新→旧）。 */
+export async function getRssHubParamPresets(signal?: AbortSignal): Promise<RssHubParamPresetItem[]> {
+  return request<RssHubParamPresetItem[]>(`${API_BASE}/rsshub/param-presets`, signal)
+}
+
+/** N030：把当前参数组合保存为方案（服务端 pattern 校验后哨兵化存储）。 */
+export async function createRssHubParamPreset(input: {
+  routeId: string
+  params: Record<string, string>
+  name: string
+}): Promise<RssHubParamPresetItem> {
+  const response = await rawRequest(`${API_BASE}/rsshub/param-presets`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+    contentType: 'application/json',
+  })
+  return (await response.json()) as RssHubParamPresetItem
+}
+
+/** N030：删除方案（该用户没有此方案 → 404）。 */
+export async function deleteRssHubParamPreset(presetId: string): Promise<void> {
+  await rawRequest(`${API_BASE}/rsshub/param-presets/${encodeURIComponent(presetId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** N030：应用方案 → 回填数据（纯只读；requiresRebind=true 时
+ * sensitiveKeys 必须重新输入后才能预览——服务端从不存真实值）。 */
+export async function applyRssHubParamPreset(presetId: string): Promise<RssHubParamPresetApply> {
+  const response = await rawRequest(
+    `${API_BASE}/rsshub/param-presets/${encodeURIComponent(presetId)}/apply`,
+    { method: 'POST' },
+  )
+  return (await response.json()) as RssHubParamPresetApply
 }
 
 /** 0015：AI 设置（浏览器安全视图；configured 只报告 key 存在与否）。 */
