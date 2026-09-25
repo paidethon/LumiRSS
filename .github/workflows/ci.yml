@@ -18,7 +18,9 @@ jobs:
   bff-tests:
     name: BFF tests (Python 3.12)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 套件增长到 ~16.5 min（r5 轮 2000+ 用例）；15 min 上限会在 80%
+    # 处超时取消（真实发生过），放宽到 25。
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
