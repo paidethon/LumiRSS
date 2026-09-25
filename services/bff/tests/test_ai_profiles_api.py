@@ -130,12 +130,14 @@ def test_purpose_mapping_round_trip_and_validation(tmp_path):
         _use_temp_state(tmp_path)
         profile = _create_profile(client)
 
+        # N098：purpose=tts 加入同一映射（第四用途，默认 default）
         empty = client.get("/api/v1/settings/ai/purposes")
         assert empty.status_code == 200
         assert empty.json() == {
             "summary": "default",
             "translation": "default",
             "chat": "default",
+            "tts": "default",
         }
 
         saved = client.put(
@@ -147,6 +149,7 @@ def test_purpose_mapping_round_trip_and_validation(tmp_path):
             "summary": "default",
             "translation": profile["id"],
             "chat": "default",
+            "tts": "default",
         }
 
         unknown = client.put(
@@ -191,6 +194,7 @@ def test_delete_profile_resets_purpose_mapping_and_secret(tmp_path):
             "summary": "default",
             "translation": "default",
             "chat": "default",
+            "tts": "default",  # N098：第四用途同映射
         }
 
 

@@ -180,6 +180,30 @@ async def login(
         return _reject(400, "invalid_request", "Username is required.")
     user = await _control(request).verify_login(username, body.password)
     if user is None:
+        # N190：凭密码正确、但处于 pending_deletion → 诚实的停用状态页
+        # （403 + 计划删除时间 + 恢复途径），不混入通用 401。
+        identity = await _control(request).verify_credentials_only(username, body.password)
+        if identity is not None:
+            deactivation = await _control(request).get_deactivation(str(identity["id"]))
+            if deactivation is not None:
+                register_login_failure(request.scope)
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": {
+                            "type": "account_deactivated",
+                            "message": (
+                                "账户已停用，数据将于 "
+                                f"{_iso(int(deactivation['scheduledDeletionAt']))} "
+                                "后由运营者手动删除；宽限期内可联系运营者恢复。"
+                            ),
+                            "requestedAt": _iso(int(deactivation["requestedAt"])),
+                            "scheduledDeletionAt": _iso(int(deactivation["scheduledDeletionAt"])),
+                            "exportHint": "数据迁出请使用 设置 → 数据控制 的迁出向导。",
+                        }
+                    },
+                    headers=_NO_STORE,
+                )
         register_login_failure(request.scope)
         return _reject(401, "invalid_credentials", "Incorrect username or password.")
     user_id = str(user["id"])
@@ -607,3 +631,79 @@ async def mark_login_events_seen(
     ids = body.ids if body is not None else None
     marked = await _sessions(request).mark_login_events_seen(user_id=user_id, event_ids=ids)
     return JSONResponse(content={"marked": marked}, headers=_NO_STORE)
+
+
+# ---- N190 账户停用前迁出 -----------------------------------------------------
+
+
+class DeactivationRequest(BaseModel):
+    """POST /api/v1/me/deactivation-request body（密码复核）。"""
+
+    model_config = {"extra": "forbid"}
+
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.get("/api/v1/me/deactivation-request", response_model=None)
+async def get_deactivation_request(request: Request) -> JSONResponse:
+    """本人停用请求状态（无请求 → {requested: false}）。仅 session 模式。"""
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return _reject(400, "invalid_request", "Basic mode has no account lifecycle.")
+    user_id = await _current_user_id(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Sign in required.")
+    accounts = _control(request)
+    deactivation = await accounts.get_deactivation(user_id)
+    if deactivation is None:
+        return JSONResponse({"requested": False}, headers=_NO_STORE)
+    return JSONResponse(
+        {
+            "requested": True,
+            "requestedAt": _iso(int(deactivation["requestedAt"])),
+            "scheduledDeletionAt": _iso(int(deactivation["scheduledDeletionAt"])),
+            "graceDays": int(deactivation["graceDays"]),
+            "restoreHint": "宽限期内联系运营者（管理台「恢复」）即可撤销停用。",
+            "exportHint": "数据迁出请使用 设置 → 数据控制 的迁出向导。",
+        },
+        headers=_NO_STORE,
+    )
+
+
+@router.post("/api/v1/me/deactivation-request", response_model=None)
+async def request_deactivation(body: DeactivationRequest, request: Request, response: Response) -> JSONResponse:
+    """发起停用：密码复核 → status=paused + 待删除标记，会话立即吊销。
+
+    宽限期（默认 14 天）内运营者经管理台恢复；到期后的物理删除没有
+    自动作业——由运营者手动执行（诚实口径，返回体说明）。"""
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return _reject(400, "invalid_request", "Basic mode has no account lifecycle.")
+    user_id = await _current_user_id(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Sign in required.")
+    accounts = _control(request)
+    user = await accounts.get_user(user_id)
+    if user is None:
+        return _reject(401, "session_required", "Sign in required.")
+    if user.get("role") == "owner":
+        return _reject(403, "owner_undeactivatable", "owner 账户不支持自助停用。")
+    result = await accounts.request_deactivation(user_id, body.password)
+    if result is None:
+        return _reject(401, "invalid_credentials", "Incorrect password.")
+    # 会话立即吊销（本请求的 cookie 一并失效）。
+    await _sessions(request).revoke_all_sessions(user_id=user_id)
+    await accounts.audit(
+        actor=user_id, action="deactivation_requested", object_type="user", object_id=user_id
+    )
+    response.headers["Set-Cookie"] = clear_session_cookie()
+    return JSONResponse(
+        {
+            "requested": True,
+            "requestedAt": _iso(int(result["requestedAt"])),
+            "scheduledDeletionAt": _iso(int(result["scheduledDeletionAt"])),
+            "graceDays": LumiSettings().LUMIRSS_DEACTIVATION_GRACE_DAYS,
+            "restoreHint": "宽限期内联系运营者（管理台「恢复」）即可撤销停用。",
+            "exportHint": "数据迁出请使用 设置 → 数据控制 的迁出向导。",
+            "note": "到期后没有自动删除作业；物理删除由运营者手动执行。",
+        },
+        headers=_NO_STORE,
+    )

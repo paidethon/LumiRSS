@@ -129,6 +129,11 @@ async def generate_translation_segments(
     disabled_denial = await _ai_disabled_denial(request, entry_ref)
     if disabled_denial is not None:
         return disabled_denial
+    # N090：来源翻译策略 local_only → 403（服务端执行点判定；本端点是
+    # 唯一允许调用远程 provider 的翻译入口，判在这里 = 远程请求 0 次）。
+    local_only_denial = await _local_only_policy_denial(request, entry_ref)
+    if local_only_denial is not None:
+        return local_only_denial
     # F064：配额事前拦截。
     from lumirss.ai_quota import quota_denial
 
@@ -598,6 +603,27 @@ def _summary_json(state, versions=None) -> dict[str, object]:
         "activeVersionId": None,
     }
     return payload
+
+
+async def _local_only_policy_denial(request: Request, entry_ref: str):
+    """N090：entry 所属来源 translation_policy=local_only → 403
+    local_only_policy（正文只允许浏览器本机翻译；在 provider 调用前
+    拦截 = 不产生任何 httpx 外呼）。投影缺失该条目 → fail-open。"""
+    from lumirss.source_ai_gate import feed_url_for_entry
+    from lumirss.translation_policy import is_local_only
+
+    feed_url = await feed_url_for_entry(request.app.state.db, entry_ref)
+    if await is_local_only(request.app.state.db, feed_url):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": {
+                    "type": "local_only_policy",
+                    "message": "该来源已设置为仅本机翻译（local_only）：正文不会被发往任何远程翻译服务。",
+                }
+            },
+        )
+    return None
 
 
 async def _ai_disabled_denial(request: Request, entry_ref: str):

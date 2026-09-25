@@ -69,6 +69,8 @@ from lumirss.ai_summary_versions import SummaryVersionNotFound
 from lumirss.ai_translation_segments import (
     SegmentTranslationUnavailable,
 )
+from lumirss.annotation_baskets import BasketInvalid
+from lumirss.annotation_migration import UnknownVersion
 from lumirss.api_sources import (
     ApiSourceBudgetExhausted,
     ApiSourceExpressionError,
@@ -150,6 +152,7 @@ from lumirss.mail_digest import (
 from lumirss.mail_imap import ImapNotConfigured
 from lumirss.middleware import RequestBodyTooLarge
 from lumirss.mute_windows import MuteWindowsInvalid
+from lumirss.note_sections import NoteSectionsInvalid
 from lumirss.obsidian import (
     NoteNotFound,
     VaultPermissionDenied,
@@ -173,6 +176,7 @@ from lumirss.opml_import_log import (
 )
 from lumirss.qa_conflicts import QaConflictInvalid
 from lumirss.qa_templates import QaTemplateInvalid, QaTemplateNotFound
+from lumirss.quick_actions import QuickActionInvalid
 from lumirss.rag import RagJobNotFound, RagModelUnavailable, RagRebuildBusy
 from lumirss.rag_eval import EvalSampleInvalid, EvalSampleLimit, EvalSampleNotFound
 from lumirss.reading_queue import (
@@ -243,6 +247,7 @@ from lumirss.tags import (
     TagMergeUndoNotFound,
     TagNotFound,
 )
+from lumirss.translation_policy import TranslationPolicyInvalid
 from lumirss.webdav import WebDavError, WebDavInvalidSettings, WebDavNotConfigured
 from lumirss.workspace_archive import (
     ArchivedWorkspace,
@@ -539,6 +544,12 @@ _ERROR_RESPONSES = {
     OpmlImportLogNotFound: (404, "opml_import_log_not_found"),
     OpmlImportLogUndone: (409, "opml_import_already_undone"),
     AttentionLevelInvalid: (422, "invalid_attention_level"),
+    # N090 per-source 翻译策略 / N072 精选篮 / N079 笔记分栏 / N078 版本迁移
+    TranslationPolicyInvalid: (422, "invalid_translation_policy"),
+    BasketInvalid: (422, "invalid_basket"),
+    NoteSectionsInvalid: (422, "invalid_note_sections"),
+    UnknownVersion: (422, "unknown_annotation_version"),
+    QuickActionInvalid: (422, "invalid_quick_action"),
 }
 
 
@@ -747,6 +758,11 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(OpmlImportLogNotFound)
     @app.exception_handler(OpmlImportLogUndone)
     @app.exception_handler(AttentionLevelInvalid)
+    @app.exception_handler(TranslationPolicyInvalid)
+    @app.exception_handler(BasketInvalid)
+    @app.exception_handler(NoteSectionsInvalid)
+    @app.exception_handler(UnknownVersion)
+    @app.exception_handler(QuickActionInvalid)
     async def adapter_error_handler(request: Request, exc: Exception) -> JSONResponse:
         status, error_type = _ERROR_RESPONSES[type(exc)]
         return JSONResponse(

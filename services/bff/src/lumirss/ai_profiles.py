@@ -42,8 +42,11 @@ from lumirss.secrets_store import SecretsStore
 from lumirss.storage import Database
 from lumirss.util import utc_now as _utc_now
 
-PURPOSES = ("summary", "translation", "chat")
-Purpose = Literal["summary", "translation", "chat"]
+# N098：purpose=tts（OpenAI 兼容 /audio/speech）作为第四用途加入同一
+# profile 映射；未映射时回落 default（与其它用途一致——届时以全局
+# base_url/model + default key 解析，缺 key 则 honest 未配置）。
+PURPOSES = ("summary", "translation", "chat", "tts")
+Purpose = Literal["summary", "translation", "chat", "tts"]
 
 DEFAULT_PROFILE_ID = "default"
 PROFILES_KV_KEY = "ai.purposes"

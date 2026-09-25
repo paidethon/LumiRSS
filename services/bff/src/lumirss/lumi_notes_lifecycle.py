@@ -6,6 +6,8 @@
 - 软删进回收站（lumi_notes.deleted_at；trash 端点扩展 kind=note）；
 - 笔记绝不写入 Obsidian Vault（本模块零文件 IO——负向断言依赖）。
 
+N079 笔记与事实分栏：sections_json 三栏（facts/interpretation/toVerify），搜索投影 body 以「[事实]/[个人解读]/[待核实]」标签渲染（AI 面类型标签）。
+
 本文件直接写站点 4 处（INSERT / UPDATE / 软删 / 恢复）。
 """
 
@@ -15,6 +17,11 @@ from typing import Any
 from lumirss.db_tx import transaction
 from lumirss.itemref import new_library_uuid
 from lumirss.lumi_notes import content_hash_of
+from lumirss.note_sections import (
+    parse_sections,
+    render_typed_sections,
+    validate_sections,
+)
 from lumirss.search_library import LibrarySearchWriter
 from lumirss.storage import Database
 from lumirss.util import utc_now
@@ -33,6 +40,16 @@ class NoteConflict(Exception):
 
 class NoteNotFound(Exception):
     """笔记不存在（或已软删），映射 404。"""
+
+
+def _dump_sections(sections: dict[str, list[str]]) -> str:
+    import json as _json
+
+    return _json.dumps(sections, ensure_ascii=False, separators=(",", ":"))
+
+
+def _sections_empty(sections: dict[str, list[str]]) -> bool:
+    return all(len(items) == 0 for items in sections.values())
 
 
 class NoteLifecycleStore:
@@ -57,46 +74,77 @@ class NoteLifecycleStore:
             raise NoteInvalid("contentMd 超过 100KB 上限。")
         return content_md
 
-    def _index(self, conn: sqlite3.Connection, *, note_id: str, title: str, content: str, now: str) -> None:
-        """事务内同步投影（同 upsert_search_row 惯例）。"""
+    def _index(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        note_id: str,
+        title: str,
+        content: str,
+        now: str,
+        sections_rendered: str = "",
+    ) -> None:
+        """事务内同步投影（同 upsert_search_row 惯例）。
+
+        N079：类型化分栏以「[事实]/[个人解读]/[待核实]」标签渲染进
+        body —— AI 消费面（RAG/检索）读到的每条都带类型标签，绝不把
+        个人判断表述为原文事实。"""
+        body = content[:4000]
+        if sections_rendered:
+            body = f"{body}\n\n{sections_rendered}"[:5000]
         row = conn.execute(
             "SELECT ref FROM search_library WHERE ref = ?", (f"note:{note_id}",)
         ).fetchone()
         if row is None:
             conn.execute(
                 "INSERT INTO search_library (ref, kind, title, body, url, updated_at) VALUES (?, 'note', ?, ?, NULL, ?)",
-                (f"note:{note_id}", title, content[:4000], now),
+                (f"note:{note_id}", title, body, now),
             )
         else:
             conn.execute(
                 "UPDATE search_library SET kind = 'note', title = ?, body = ?, updated_at = ? WHERE ref = ?",
-                (title, content[:4000], now, f"note:{note_id}"),
+                (title, body, now, f"note:{note_id}"),
             )
 
     async def create_note(
-        self, *, title: str, content_md: str, workspace_id: str | None
+        self,
+        *,
+        title: str,
+        content_md: str,
+        workspace_id: str | None,
+        sections: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         clean_title = self._validate_title(title)
         clean_content = self._validate_content(content_md)
+        clean_sections = validate_sections(sections)
+        sections_json = (
+            _dump_sections(clean_sections) if not _sections_empty(clean_sections) else None
+        )
         await self._db.migrate()
         note_id = new_library_uuid()
         now = utc_now()
 
         def _tx(conn: sqlite3.Connection) -> None:
             conn.execute(
-                "INSERT INTO lumi_notes (uuid, title, content_md, workspace_id, content_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'manual', ?, ?)",
+                "INSERT INTO lumi_notes (uuid, title, content_md, workspace_id, sections_json, content_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
                 (
                     note_id,
                     clean_title,
                     clean_content,
                     workspace_id,
+                    sections_json,
                     content_hash_of(clean_content),
                     now,
                     now,
                 ),
             )
             self._index(
-                conn, note_id=note_id, title=clean_title, content=clean_content, now=now
+                conn,
+                note_id=note_id,
+                title=clean_title,
+                content=clean_content,
+                now=now,
+                sections_rendered=render_typed_sections(clean_sections),
             )
 
         await transaction(self._db, _tx)
@@ -105,6 +153,7 @@ class NoteLifecycleStore:
             "title": clean_title,
             "contentMd": clean_content,
             "workspaceId": workspace_id,
+            "sections": clean_sections,
             "createdAt": now,
             "updatedAt": now,
         }
@@ -112,7 +161,7 @@ class NoteLifecycleStore:
     async def get_note(self, note_id: str, *, include_deleted: bool = False) -> dict[str, Any] | None:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT uuid, title, content_md, workspace_id, created_at, updated_at, deleted_at FROM lumi_notes WHERE uuid = ?",
+            "SELECT uuid, title, content_md, workspace_id, sections_json, created_at, updated_at, deleted_at FROM lumi_notes WHERE uuid = ?",
             (note_id,),
         )
         if row is None:
@@ -124,6 +173,8 @@ class NoteLifecycleStore:
             "title": str(row["title"]),
             "contentMd": str(row["content_md"]),
             "workspaceId": row["workspace_id"],
+            # N079：分栏（NULL/损坏 → 三空数组，诚实兼容旧数据）。
+            "sections": parse_sections(row["sections_json"]),
             "createdAt": str(row["created_at"]),
             "updatedAt": str(row["updated_at"]),
             "deletedAt": row["deleted_at"],
@@ -136,6 +187,8 @@ class NoteLifecycleStore:
         title: str | None,
         content_md: str | None,
         base_updated_at: str | None,
+        sections: dict[str, Any] | None = None,
+        sections_given: bool = False,
     ) -> dict[str, Any]:
         current = await self.get_note(note_id)
         if current is None:
@@ -153,21 +206,35 @@ class NoteLifecycleStore:
             if content_md is not None
             else current["contentMd"]
         )
+        # N079：sentinel 语义——调用方未给键 = 不修改；给了 = 全量替换
+        # （显式空对象/空栏 = 清空）。非法形状 → NoteSectionsInvalid（422）。
+        clean_sections = (
+            validate_sections(sections) if sections_given else current["sections"]
+        )
+        sections_json = (
+            _dump_sections(clean_sections) if not _sections_empty(clean_sections) else None
+        )
         now = utc_now()
 
         def _tx(conn: sqlite3.Connection) -> None:
             conn.execute(
-                "UPDATE lumi_notes SET title = ?, content_md = ?, content_hash = ?, updated_at = ? WHERE uuid = ?",
+                "UPDATE lumi_notes SET title = ?, content_md = ?, sections_json = ?, content_hash = ?, updated_at = ? WHERE uuid = ?",
                 (
                     clean_title,
                     clean_content,
+                    sections_json,
                     content_hash_of(clean_content),
                     now,
                     note_id,
                 ),
             )
             self._index(
-                conn, note_id=note_id, title=clean_title, content=clean_content, now=now
+                conn,
+                note_id=note_id,
+                title=clean_title,
+                content=clean_content,
+                now=now,
+                sections_rendered=render_typed_sections(clean_sections),
             )
 
         await transaction(self._db, _tx)
@@ -176,6 +243,7 @@ class NoteLifecycleStore:
             "title": clean_title,
             "contentMd": clean_content,
             "workspaceId": current["workspaceId"],
+            "sections": clean_sections,
             "createdAt": current["createdAt"],
             "updatedAt": now,
         }
@@ -216,6 +284,7 @@ class NoteLifecycleStore:
                     title=current["title"],
                     content=current["contentMd"],
                     now=utc_now(),
+                    sections_rendered=render_typed_sections(current["sections"]),
                 )
             return cursor.rowcount
 

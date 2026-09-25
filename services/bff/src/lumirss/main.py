@@ -34,6 +34,7 @@ from lumirss.routers import (
     agent,
     ai_settings,
     ai_tasks,
+    annotation_baskets,
     annotations,
     api_sources,
     auth,
@@ -66,6 +67,7 @@ from lumirss.routers import (
     privacy,
     qa,
     qa_templates,
+    quick_actions,
     quiz,
     rag,
     reading_extras,
@@ -83,6 +85,7 @@ from lumirss.routers import (
     tags,
     task_records,
     totp,
+    tts,
     view_feed,
     whats_new,
     workspace_w5,
@@ -379,6 +382,10 @@ app.include_router(feeds.router)
 app.include_router(entries.router)
 app.include_router(feed_filters.router)
 app.include_router(annotations.router)
+# N072 批注精选篮 / N098 服务端 TTS 缓存 / N199 多步快捷操作
+app.include_router(annotation_baskets.router)
+app.include_router(tts.router)
+app.include_router(quick_actions.router)
 app.include_router(reading_extras.router)
 app.include_router(reading_questions.router)
 app.include_router(reading_queue.router)

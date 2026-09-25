@@ -2964,6 +2964,8 @@ class SourceOverrideResult(BaseModel):
     language: str | None = None
     unreadAlertThreshold: int | None = None
     syncPriority: int | None = None
+    # N090：per-source 翻译策略（'local_only' = 只允许浏览器本机翻译）。
+    translationPolicy: str | None = None
     updatedAt: str = ""
 
 
@@ -2989,6 +2991,8 @@ class SourceOverrideUpdate(BaseModel):
     language: str | None = Field(default=None, pattern=r"^[a-z]{2}(-[A-Za-z]{2,4})?$")
     unreadAlertThreshold: int | None = Field(default=None, ge=1, le=100_000)
     syncPriority: int | None = Field(default=None, ge=0, le=2)
+    # N090：per-source 翻译策略（None=清除，缺席=不改；'local_only'）。
+    translationPolicy: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -3585,6 +3589,117 @@ class AnnotationColorLabelList(BaseModel):
     """GET /api/v1/annotations/color-labels 响应（全调色板稳定顺序）。"""
 
     items: list[AnnotationColorLabelItem] = []
+
+
+# ---- N072 批注精选篮 ---------------------------------------------------------
+
+
+class AnnotationBasket(BaseModel):
+    """一个精选篮（itemCount = 成员行计数，含 broken——诚实口径）。"""
+
+    id: str
+    name: str
+    createdAt: str
+    itemCount: int = 0
+
+
+class AnnotationBasketList(BaseModel):
+    items: list[AnnotationBasket] = []
+
+
+class AnnotationBasketItem(BaseModel):
+    """篮内一项：批注本体 + broken 标注（批注已删 = annotation=null,
+    broken=true；锚点 stale 同样 broken=true——读取侧诚实，不假装健在）。"""
+
+    annotationId: str
+    addedAt: str
+    broken: bool = False
+    annotation: AnnotationView | None = None
+
+
+class AnnotationBasketItemsResponse(BaseModel):
+    items: list[AnnotationBasketItem] = []
+
+
+class AnnotationBasketItemsAdd(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    annotationIds: list[str] = Field(min_length=1, max_length=200)
+
+
+class AnnotationBasketItemsAddResult(BaseModel):
+    added: list[str] = []
+    skipped: list[dict[str, str]] = []
+
+
+# ---- N078 批注跨版本迁移 -----------------------------------------------------
+
+
+class AnnotationMigratePreviewRequest(BaseModel):
+    """POST /api/v1/annotations/migrate/preview body。
+
+    fromVersion/toVersion ∈ current | last_known_full（N032 版本词）；
+    二者必须不同（同版本迁移无意义）。"""
+
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+
+
+class AnnotationMigrateCandidateItem(BaseModel):
+    """一条批注在目标版本中的最优候选（score 与 N071 同口径）。"""
+
+    annotationId: str
+    candidateBlockIndex: int = Field(ge=0)
+    score: float = Field(ge=0.0, le=1.0)
+    excerpt: str = Field(max_length=300)
+
+
+class AnnotationMigrateUnmatchedItem(BaseModel):
+    """未能给出候选的批注及原因（no_quote | no_match）——诚实列出，
+    绝不混入可确认列表。"""
+
+    annotationId: str
+    reason: str
+
+
+class AnnotationMigratePreviewResponse(BaseModel):
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+    matched: list[AnnotationMigrateCandidateItem] = []
+    unmatched: list[AnnotationMigrateUnmatchedItem] = []
+
+
+class AnnotationMigrateApplyItem(BaseModel):
+    """逐项确认：把某条批注重绑到目标版本的第 blockIndex 块。"""
+
+    model_config = {"extra": "forbid"}
+
+    annotationId: str
+    blockIndex: int = Field(ge=0)
+
+
+class AnnotationMigrateApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    entryRef: str
+    fromVersion: str
+    toVersion: str
+    items: list[AnnotationMigrateApplyItem] = Field(min_length=1, max_length=200)
+
+
+class AnnotationMigrateApplyItemResult(BaseModel):
+    annotationId: str
+    ok: bool
+    reason: str | None = None  # 失败原因：target_conflict | low_score | not_found
+
+
+class AnnotationMigrateApplyResponse(BaseModel):
+    applied: list[AnnotationMigrateApplyItemResult] = []
+    failed: list[AnnotationMigrateApplyItemResult] = []
 
 
 # ---- N074 阅读问题清单 -------------------------------------------------------
@@ -5263,13 +5378,15 @@ class ClipDetailResponse(BaseModel):
 
 
 class LumiNoteCreate(BaseModel):
-    """F090 手动创建笔记（contentMd ≤100KB）。"""
+    """F090 手动创建笔记（contentMd ≤100KB）。N079：可选类型化分栏。"""
 
     model_config = {"extra": "forbid"}
 
     title: str = Field(min_length=1, max_length=500)
     contentMd: str = Field(max_length=100 * 1024)
     workspaceId: str | None = None
+    # N079：{facts/interpretation/toVerify: string[]}（三栏可独立缺省）。
+    sections: dict[str, object] | None = None
 
 
 class LumiNoteUpdate(BaseModel):
@@ -5278,6 +5395,8 @@ class LumiNoteUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     contentMd: str | None = Field(default=None, max_length=100 * 1024)
     baseUpdatedAt: str | None = None
+    # N079：None = 不修改；显式传空对象/空数组 = 清空对应栏。
+    sections: dict[str, object] | None = None
 
 
 class LumiNoteDetail(BaseModel):
@@ -5287,6 +5406,8 @@ class LumiNoteDetail(BaseModel):
     workspaceId: str | None = None
     createdAt: str
     updatedAt: str
+    # N079：三栏结构（facts / interpretation / toVerify）。
+    sections: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class RagExclusionItem(BaseModel):

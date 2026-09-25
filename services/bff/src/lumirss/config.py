@@ -253,6 +253,17 @@ class LumiSettings(BaseSettings):
     # rejection is skipped for these names.
     LUMIRSS_FETCH_ALLOW_PRIVATE_HOSTS: str = ""
 
+    # N190：账户停用宽限期（天）。到期后的物理删除没有自动作业——由
+    # 运营者手动执行（界面如实说明）；宽限期内运营者 resume 即恢复。
+    LUMIRSS_DEACTIVATION_GRACE_DAYS: int = 14
+
+    @field_validator("LUMIRSS_DEACTIVATION_GRACE_DAYS")
+    @classmethod
+    def _sane_deactivation_grace(cls, value: int) -> int:
+        if not 1 <= value <= 365:
+            raise ValueError("deactivation grace period must be 1..365 days")
+        return value
+
     @field_validator("LUMIRSS_OBSIDIAN_SCAN_INTERVAL")
     @classmethod
     def _sane_obsidian_interval(cls, value: float) -> float:

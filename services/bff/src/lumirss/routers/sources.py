@@ -308,6 +308,13 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
         await set_ai_disabled(request.app.state.db, payload.feedUrl, bool(payload.aiDisabled))
         if payload.aiDisabled:
             await _drop_feed_from_rag(request, payload.feedUrl)
+    # N090：per-source 翻译策略（'local_only' | null 清除；缺席=不改）。
+    if "translationPolicy" in fields:
+        from lumirss.translation_policy import set_translation_policy
+
+        await set_translation_policy(
+            request.app.state.db, payload.feedUrl, payload.translationPolicy
+        )
     # F032/F034/F031：语言 / 未读警戒阈值 / 同步优先级。
     if "language" in fields or "unreadAlertThreshold" in fields or "syncPriority" in fields:
         metadata_kwargs: dict[str, object] = {}
@@ -331,6 +338,7 @@ async def set_source_override(payload: SourceOverrideUpdate, request: Request) -
             "muteWindows": None,
             "attentionLevel": "normal",
             "refreshAdvisory": None,
+            "translationPolicy": None,
             "updatedAt": utc_now(),
         }
     return SourceOverrideResult(**result)
