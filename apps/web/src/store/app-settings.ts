@@ -103,6 +103,18 @@ export type ReaderBackground = 'follow' | 'sepia' | 'warm' | 'paper' | 'mint' | 
 export type ReaderFontFamily = 'system' | 'sans' | 'serif' | 'mono'
 export type ReaderParagraphSpacing = number
 export type ReaderImageMode = 'all' | 'grayscale' | 'hidden'
+// ---- R5 阅读器域批1：排版扩展（全部设备本，不进 PORTABLE_KEYS） ----
+
+/** F068：正文字重离散档（300 细 – 700 粗；CSS var 注入，设备本排版偏好）。 */
+export type ReaderFontWeight = 300 | 400 | 500 | 600 | 700
+/** F069：正文图片最大宽度档位（约束文章内容 img；设备本）。 */
+export type ReaderImageMaxWidth = '100%' | '75%' | '60%'
+/** F071：figure caption（figcaption）显示模式：显示 / 悬停显示 / 隐藏。 */
+export type ReaderCaptionMode = 'show' | 'hidden' | 'hover'
+/** F072：代码块等宽字号档位（S/M/L，相对正文 em；设备本）。 */
+export type ReaderCodeFontSize = 's' | 'm' | 'l'
+/** F065：正文宽度模式：固定 px（0017 连续档）/ 跟随窗口百分比。 */
+export type ReaderContentWidthMode = 'fixed' | 'viewport'
 /** UI 字体四档（同源 OrigRead 栈） */
 export type UiFontStack = 'default' | 'sans' | 'serif' | 'mono'
 export type UiFontSize = 15 | 16 | 18 | 20
@@ -219,6 +231,28 @@ export interface AppSettings {
   readerParagraphSpacing: ReaderParagraphSpacing
   readerJustify: boolean
   readerImageMode: ReaderImageMode
+  /** F068：正文字重档位（设备本；CSS var --lumi-reader-font-weight）。 */
+  readerFontWeight: ReaderFontWeight
+  /** F069：图片最大宽度档位（设备本；CSS var --lumi-reader-image-max-width）。 */
+  readerImageMaxWidth: ReaderImageMaxWidth
+  /** F070：首图破格满宽（设备本；管线给首图打 data 标记 + CSS 消费）。 */
+  readerFirstImageFullBleed: boolean
+  /** F071：figure caption 显示模式（设备本；show/hidden/hover）。 */
+  readerCaptionMode: ReaderCaptionMode
+  /** F064：纸张质感纹理（设备本；纯 CSS 噪点叠在 paper 背景档上）。 */
+  readerPaperTexture: boolean
+  /** F072：代码块等宽字号档位（设备本；s/m/l）。 */
+  readerCodeFontSize: ReaderCodeFontSize
+  /** F073：代码块行号（设备本；管线按行包 span + CSS counter）。 */
+  readerCodeLineNumbers: boolean
+  /** F063：连续阅读护眼提醒间隔（分钟；0 = 关；设备本计时，不上传）。 */
+  readerBreakReminderMinutes: number
+  /** F065：正文宽度模式（fixed = 连续 px 档；viewport = 跟随窗口百分比）。 */
+  readerContentWidthMode: ReaderContentWidthMode
+  /** F065：跟随窗口模式下的视口宽度百分比（50–100，步进 5）。 */
+  readerContentWidthViewport: number
+  /** F079：清理 position:fixed/sticky 的非内容元素（管线 transform 层）。 */
+  readerStripFixedMedia: boolean
   /** 阅读样式 P1（0010a F7） */
   readerPresetId: string // 'default' 或用户预设 id
   readerPresets: ReaderPreset[] // 用户派生预设（内置不存）
@@ -344,6 +378,21 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   readerIndentLists: false,
   readerIndentQuotes: false,
   readerLineBreakStrict: false,
+  // R5 批1：排版扩展（设备本；默认值全部维持既有观感）
+  readerFontWeight: 400,
+  readerImageMaxWidth: '100%',
+  readerFirstImageFullBleed: false,
+  readerCaptionMode: 'show',
+  readerPaperTexture: false,
+  // R5 批2：代码块排版（设备本；默认与既有观感一致：中档字号、无行号）
+  readerCodeFontSize: 'm',
+  readerCodeLineNumbers: false,
+  // R5 批3：连续阅读护眼提醒（设备本；默认 45 分钟，0 = 关）
+  readerBreakReminderMinutes: 45,
+  // R5 批4：宽度模式（默认固定 px = 既有观感）；fixed 媒体清理默认开
+  readerContentWidthMode: 'fixed',
+  readerContentWidthViewport: 92,
+  readerStripFixedMedia: true,
   // N052/N053：阅读模式与点按翻页区（设备本地交互偏好）
   readerReadingMode: 'scroll',
   readerTapZoneAxis: 'horizontal',
@@ -398,6 +447,16 @@ const CARD_SWIPE_ACTIONS = SETTING_ENUMS.cardSwipeAction
 // N052/N053：阅读模式与点按翻页区（设备本地，值域本地定义）
 const READER_TAP_ZONE_AXES: readonly ReaderTapZoneAxis[] = ['horizontal', 'vertical']
 const READER_TAP_ZONE_SIZES: readonly ReaderTapZoneSize[] = ['off', 'small', 'large']
+// R5 批1：排版扩展枚举（设备本，值域本地定义）
+const READER_FONT_WEIGHTS: readonly ReaderFontWeight[] = [300, 400, 500, 600, 700]
+const READER_IMAGE_MAX_WIDTHS: readonly ReaderImageMaxWidth[] = ['100%', '75%', '60%']
+const READER_CAPTION_MODES: readonly ReaderCaptionMode[] = ['show', 'hidden', 'hover']
+// R5 批2：代码块排版枚举（设备本）
+const READER_CODE_FONT_SIZES: readonly ReaderCodeFontSize[] = ['s', 'm', 'l']
+/** F063：护眼提醒间隔档位（0 = 关；设备本计时用）。 */
+const READER_BREAK_REMINDER_MINUTES: readonly number[] = [0, 20, 30, 45, 60, 90]
+// R5 批4：宽度模式枚举（设备本）
+const READER_CONTENT_WIDTH_MODES: readonly ReaderContentWidthMode[] = ['fixed', 'viewport']
 
 const HEX_COLOR_RE = new RegExp(HEX_COLOR_PATTERN, 'i')
 
@@ -591,6 +650,61 @@ export function normalizeSettings(raw: unknown): AppSettings {
     readerParagraphSpacing: pickReaderNumber('readerParagraphSpacing', source.readerParagraphSpacing),
     readerJustify: pickBoolean(source.readerJustify, DEFAULT_APP_SETTINGS.readerJustify),
     readerImageMode: pickString(source.readerImageMode, IMAGE_MODES, DEFAULT_APP_SETTINGS.readerImageMode),
+    // R5 批1：排版扩展（逐字段校验，非法值回退默认）
+    readerFontWeight: pickNumber(
+      source.readerFontWeight,
+      READER_FONT_WEIGHTS,
+      DEFAULT_APP_SETTINGS.readerFontWeight,
+    ),
+    readerImageMaxWidth: pickString(
+      source.readerImageMaxWidth,
+      READER_IMAGE_MAX_WIDTHS,
+      DEFAULT_APP_SETTINGS.readerImageMaxWidth,
+    ),
+    readerFirstImageFullBleed: pickBoolean(
+      source.readerFirstImageFullBleed,
+      DEFAULT_APP_SETTINGS.readerFirstImageFullBleed,
+    ),
+    readerCaptionMode: pickString(
+      source.readerCaptionMode,
+      READER_CAPTION_MODES,
+      DEFAULT_APP_SETTINGS.readerCaptionMode,
+    ),
+    readerPaperTexture: pickBoolean(source.readerPaperTexture, DEFAULT_APP_SETTINGS.readerPaperTexture),
+    readerCodeFontSize: pickString(
+      source.readerCodeFontSize,
+      READER_CODE_FONT_SIZES,
+      DEFAULT_APP_SETTINGS.readerCodeFontSize,
+    ),
+    readerCodeLineNumbers: pickBoolean(
+      source.readerCodeLineNumbers,
+      DEFAULT_APP_SETTINGS.readerCodeLineNumbers,
+    ),
+    // F063：间隔档位外的值回退默认（45 分钟）
+    readerBreakReminderMinutes: ((): number => {
+      const raw = source.readerBreakReminderMinutes
+      return typeof raw === 'number' &&
+        READER_BREAK_REMINDER_MINUTES.includes(raw)
+        ? raw
+        : DEFAULT_APP_SETTINGS.readerBreakReminderMinutes
+    })(),
+    // R5 批4：宽度模式（百分比钳制 50–100）与 fixed 媒体清理开关
+    readerContentWidthMode: pickString(
+      source.readerContentWidthMode,
+      READER_CONTENT_WIDTH_MODES,
+      DEFAULT_APP_SETTINGS.readerContentWidthMode,
+    ),
+    readerContentWidthViewport: clamp(
+      typeof source.readerContentWidthViewport === 'number'
+        ? source.readerContentWidthViewport
+        : DEFAULT_APP_SETTINGS.readerContentWidthViewport,
+      50,
+      100,
+    ),
+    readerStripFixedMedia: pickBoolean(
+      source.readerStripFixedMedia,
+      DEFAULT_APP_SETTINGS.readerStripFixedMedia,
+    ),
     readerPresetId:
       typeof source.readerPresetId === 'string' &&
       (source.readerPresetId === 'default' ||
@@ -861,7 +975,11 @@ export function readerTypographyVars(settings: AppSettings): Record<string, stri
   const vars: Record<string, string> = {
     '--lumi-reader-font-size': `${settings.readerFontSize}px`,
     '--lumi-reader-line-height': String(settings.readerLineHeight),
-    '--lumi-reader-content-width': `${settings.readerContentWidth}px`,
+    // F065：正文宽度模式——固定 px 档或跟随窗口百分比（min 上限防溢出）
+    '--lumi-reader-content-width':
+      settings.readerContentWidthMode === 'viewport'
+        ? `min(${settings.readerContentWidthViewport}vw, 100%)`
+        : `${settings.readerContentWidth}px`,
     '--lumi-reader-font-family':
       customFamily !== null ? `"${customFamily}", ${baseStack}` : baseStack,
     '--lumi-reader-paragraph-spacing': `${settings.readerParagraphSpacing}em`,
@@ -869,6 +987,9 @@ export function readerTypographyVars(settings: AppSettings): Record<string, stri
     '--lumi-reader-text-align': settings.readerJustify ? 'justify' : 'start',
     // 0012 Gate 4：中文首行缩进相对单位（标点悬挂走 data 属性，见下）
     '--lumi-reader-text-indent': settings.readerTextIndent === '2em' ? '2em' : '0',
+    // F068：正文字重；F069：图片最大宽度（档位值即 CSS 值）
+    '--lumi-reader-font-weight': String(settings.readerFontWeight),
+    '--lumi-reader-image-max-width': settings.readerImageMaxWidth,
   }
 
   // 预设驱动的 custom 背景（AMOLED/高对比等内置预设携带的背景）
@@ -915,6 +1036,18 @@ export function applyReaderTypography(settings: AppSettings): void {
 
   // 0017：图片模式：灰度/隐藏由 .article-content img 消费
   root.dataset.readerImages = settings.readerImageMode
+
+  // R5 批1：排版扩展 data 标记（CSS 规则在 index.css）
+  root.dataset.readerImageMaxWidth = settings.readerImageMaxWidth
+  root.dataset.readerFirstImageFullBleed = settings.readerFirstImageFullBleed ? 'true' : 'false'
+  root.dataset.readerCaptionMode = settings.readerCaptionMode
+  root.dataset.readerPaperTexture = settings.readerPaperTexture ? 'true' : 'false'
+  // F064：纹理只叠在 paper 背景档上（其余背景档时纹理规则自然失效）
+  root.dataset.readerBgPreset = settings.readerBackground
+
+  // R5 批2：代码块排版（字号档位 CSS 消费；行号标记供 e2e/测试探针）
+  root.dataset.readerCodeFontSize = settings.readerCodeFontSize
+  root.dataset.readerCodeLineNumbers = settings.readerCodeLineNumbers ? 'true' : 'false'
 
   // 0012 Gate 4：标点悬挂 progressive enhancement —— CSS 侧用
   // @supports 包裹；简繁转换标记（展示层 transform，ArticleContent 消费）
@@ -1071,6 +1204,33 @@ const RESET_READER_KEYS: readonly (keyof AppSettings)[] = [
   'readLaterSort',
 ]
 
+/** F066：「恢复默认排版」只触及的排版字段（比 resetReader 更窄——
+ * 不碰背景/图片模式/简繁/代码高亮/列表排序等非排版阅读设置）。 */
+const READER_TYPOGRAPHY_KEYS: readonly (keyof AppSettings)[] = [
+  'readerFontFamily',
+  'readerFontSize',
+  'readerLineHeight',
+  'readerParagraphSpacing',
+  'readerContentWidth',
+  'readerPageMargin',
+  'readerContentWidthMode',
+  'readerContentWidthViewport',
+  'readerJustify',
+  'readerTextIndent',
+  'readerIndentLists',
+  'readerIndentQuotes',
+  'readerLineBreakStrict',
+  'readerHangingPunctuation',
+  // R5 批1/批2：排版扩展（字重/图片宽度/首图破格/caption/纸张纹理/代码排版）
+  'readerFontWeight',
+  'readerImageMaxWidth',
+  'readerFirstImageFullBleed',
+  'readerCaptionMode',
+  'readerPaperTexture',
+  'readerCodeFontSize',
+  'readerCodeLineNumbers',
+]
+
 interface AppSettingsState {
   settings: AppSettings
   /** 局部更新（借鉴 OrigRead Patch 模式）：合并 + 归一化 + 持久化 +
@@ -1080,6 +1240,9 @@ interface AppSettingsState {
   reset: () => void
   /** 0017：只重置 Reader 相关设置为默认（阅读设置页「恢复默认」）。 */
   resetReader: () => void
+  /** F066：只重置排版字段为默认（排版设置区「恢复默认排版」；
+   * 不碰背景/图片模式/简繁/代码高亮等非排版阅读设置）。 */
+  resetReaderTypography: () => void
 }
 
 function storage(): Storage | null {
@@ -1111,6 +1274,18 @@ export const useAppSettings = create<AppSettingsState>((set) => ({
   resetReader: () => {
     const patch: Partial<AppSettings> = {}
     for (const key of RESET_READER_KEYS) {
+      ;(patch as Record<string, unknown>)[key] = DEFAULT_APP_SETTINGS[key]
+    }
+    const next = normalizeSettings({ ...useAppSettings.getState().settings, ...patch })
+    persistSettings(storage(), next)
+    applySideEffects(next)
+    set({ settings: next })
+  },
+  // F066：仅排版字段（READER_TYPOGRAPHY_KEYS）回到默认——与既有
+  // resetReader（更宽的「阅读设置」复位）并存，二者互不包含对方专属键。
+  resetReaderTypography: () => {
+    const patch: Partial<AppSettings> = {}
+    for (const key of READER_TYPOGRAPHY_KEYS) {
       ;(patch as Record<string, unknown>)[key] = DEFAULT_APP_SETTINGS[key]
     }
     const next = normalizeSettings({ ...useAppSettings.getState().settings, ...patch })

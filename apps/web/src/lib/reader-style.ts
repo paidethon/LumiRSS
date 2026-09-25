@@ -113,6 +113,34 @@ export const UI_FONT_STACKS: Record<UiFontStack, string> = {
 
 // ---- 段距（0017：连续 em 数值，范围见 app-settings READER_NUMERIC_RANGES） ----
 
+// ---- F067：字号+行高联动预设（小/中/大；与单项滑杆并存） ----
+
+export interface ReaderSizePreset {
+  id: 'small' | 'medium' | 'large'
+  label: string
+  fontSize: number
+  lineHeight: number
+}
+
+/** 三档联动预设（一键同时设置字号与行高；值域在 READER_NUMERIC_RANGES 内）。 */
+export const READER_SIZE_PRESETS: readonly ReaderSizePreset[] = [
+  { id: 'small', label: '小', fontSize: 15, lineHeight: 1.7 },
+  { id: 'medium', label: '中', fontSize: 17, lineHeight: 1.85 },
+  { id: 'large', label: '大', fontSize: 20, lineHeight: 2.05 },
+]
+
+/** 纯函数：当前字号/行距命中的联动预设（未命中任意档返回 null——
+ * 滑杆单项微调后预设不再高亮，诚实反映「非预设值」状态）。 */
+export function matchReaderSizePreset(
+  fontSize: number,
+  lineHeight: number,
+): ReaderSizePreset | null {
+  for (const preset of READER_SIZE_PRESETS) {
+    if (preset.fontSize === fontSize && preset.lineHeight === lineHeight) return preset
+  }
+  return null
+}
+
 // ---- 内置排版预设（F7；AC20：每套至少差异化 3 项） ----
 
 export const BUILTIN_READER_PRESETS: ReaderPreset[] = [

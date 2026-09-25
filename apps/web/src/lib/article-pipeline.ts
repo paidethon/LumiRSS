@@ -211,6 +211,81 @@ function applyBionic(root: Node): void {
   }
 }
 
+// ---- F070：首图破格标记 ----
+
+/** 给正文第一张 img 打破格标记（属性级 transform：唯一修改是 data-*，
+ * DOMPurify 默认 ALLOW_DATA_ATTR 下存活；最终输出仍整体过 sanitize）。
+ * 破格满宽本身由 CSS（index.css [data-lumi-first-image]）消费。 */
+function markFirstImage(doc: Document): void {
+  const img = doc.body.querySelector('img')
+  if (img !== null) img.setAttribute('data-lumi-first-image', 'true')
+}
+
+// ---- F073：代码块行号 ----
+
+/** 把 code 的子节点按「顶层文本 \n」折叠成行（元素节点原样归属所在行；
+ * 文本节点内的 \n 逐段切分）。返回的节点从原 DOM 摘出，由调用方回填。 */
+function splitCodeLines(code: Element): Node[][] {
+  const doc = code.ownerDocument
+  const lines: Node[][] = [[]]
+  for (const node of Array.from(code.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parts = (node.nodeValue ?? '').split('\n')
+      parts.forEach((part, index) => {
+        if (index > 0) lines.push([])
+        if (part !== '') lines[lines.length - 1]!.push(doc.createTextNode(part))
+      })
+    } else {
+      lines[lines.length - 1]!.push(node)
+    }
+  }
+  return lines
+}
+
+/** 给每个 pre>code 按行包 .lumi-code-line span（行间保留 '\n' 文本节点，
+ * textContent 与原代码逐字一致 → 复制按钮无行号污染）。行号视觉由
+ * CSS counter（index.css [data-lumi-line-numbers]）渲染，DOM 内不写
+ * 任何数字。幂等：已标记的 code 跳过。 */
+function applyCodeLineNumbers(body: HTMLElement): void {
+  const doc = body.ownerDocument
+  for (const code of body.querySelectorAll('pre > code')) {
+    if (code.hasAttribute('data-lumi-line-numbers')) continue
+    const lines = splitCodeLines(code)
+    if (lines.length === 0) continue
+    code.textContent = ''
+    lines.forEach((nodes, index) => {
+      if (index > 0) code.append('\n')
+      const line = doc.createElement('span')
+      line.className = 'lumi-code-line'
+      for (const node of nodes) line.append(node)
+      code.append(line)
+    })
+    code.setAttribute('data-lumi-line-numbers', 'true')
+  }
+}
+
+// ---- F079：隐藏 fixed/sticky 干扰媒体 ----
+
+/** inline style 的 position 是否 fixed/sticky（正则读原始 style 属性——
+ * 不依赖 CSSOM，jsdom/浏览器行为一致）。 */
+const FIXED_POSITION_RE = /position\s*:\s*(?:fixed|sticky)(?:\s|;|!|$)/i
+
+/** 非内容元素判定：不含任何块级正文内容（段落/标题/列表/引用/表格）
+ * 的元素视作悬浮装饰（分享条/置顶横幅/悬浮按钮等），整体摘除；
+ * 含正文内容的容器（如包裹全文的 sticky 容器，罕见）保守保留。 */
+const BLOCK_CONTENT_SELECTOR =
+  'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, table, figcaption, article'
+
+function stripFixedStickyMedia(body: HTMLElement): void {
+  const candidates = body.querySelectorAll('div, section, aside, header, footer, nav, figure, span')
+  for (const el of candidates) {
+    const style = el.getAttribute('style')
+    if (style === null || !FIXED_POSITION_RE.test(style)) continue
+    if (el.querySelector(BLOCK_CONTENT_SELECTOR) !== null) continue
+    el.remove()
+  }
+}
+
 // ---- 管线入口 ----
 
 export interface ArticlePipelineOptions {
@@ -222,6 +297,15 @@ export interface ArticlePipelineOptions {
   footnotes?: boolean
   /** F060：数学公式渲染（KaTeX 动态加载）。默认开。 */
   math?: boolean
+  /** F070：首图破格（给正文第一张 img 打 data-lumi-first-image 标记，
+   * 满宽由 CSS 消费）。默认关。 */
+  firstImageFullBleed?: boolean
+  /** F073：代码块行号（管线按行包 .lumi-code-line span + CSS counter）。
+   * 与代码高亮/换行共存：textContent 不变（复制无行号污染）。默认关。 */
+  codeLineNumbers?: boolean
+  /** F079：清理 position:fixed/sticky 的非内容元素（网页抓取正文常见的
+   * 悬浮分享条/置顶横幅等干扰媒体）。默认关。 */
+  stripFixedMedia?: boolean
 }
 
 /** raw RSS HTML → inert DOM → transforms → DOMPurify 终点。
@@ -238,15 +322,30 @@ export async function renderArticleHtml(
     options.codeTheme !== null && containsCodeBlock(rawHtml)
   const needsFootnotes = options.footnotes !== false
   const needsMath = options.math !== false && containsMathMarkerSafe(rawHtml)
-  if (!needsConversion && !needsBionic && !needsHighlight && !needsFootnotes && !needsMath) {
+  const needsFirstImageMark = options.firstImageFullBleed === true
+  const needsCodeLines = options.codeLineNumbers === true && containsCodeBlock(rawHtml)
+  const needsStripFixed = options.stripFixedMedia === true
+  if (
+    !needsConversion &&
+    !needsBionic &&
+    !needsHighlight &&
+    !needsFootnotes &&
+    !needsMath &&
+    !needsFirstImageMark &&
+    !needsCodeLines &&
+    !needsStripFixed
+  ) {
     return sanitizeArticleHtml(rawHtml)
   }
 
   // DOMParser 产出 inert document：不执行 script、不加载资源
   const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
 
+  // F079：最先执行——被摘除的元素不参与后续 transform
+  if (needsStripFixed) stripFixedStickyMedia(doc.body)
   if (needsFootnotes) transformFootnotes(doc)
   if (needsMath) await renderMathInDom(doc.body)
+  if (needsFirstImageMark) markFirstImage(doc)
   if (needsConversion) {
     const converter = await getConverter(options.conversion)
     if (converter !== null) convertTextNodes(doc.body, converter)
@@ -255,6 +354,9 @@ export async function renderArticleHtml(
   if (needsHighlight) {
     await highlightCodeBlocks(doc.body, options.codeTheme as string)
   }
+  // 行号在高亮之后：splitCodeLines 按顶层 '\n' 折行，shiki 输出（每行
+  // 末尾 '\n' 文本节点）同样适用——高亮 token 行也拿到行号。
+  if (needsCodeLines) applyCodeLineNumbers(doc.body)
 
   // 最终安全边界：transform 后的整个 DOM serialize → DOMPurify。
   // transforms 可能引入的任何意外标记在这里被统一清洗。

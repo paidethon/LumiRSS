@@ -22,6 +22,8 @@ import {
 import { attachExternalLinkMenu, CleanLinkPreviewDialog } from './CleanLinkCopy'
 import { WideTablePanel } from './WideTablePanel'
 import { CodeReaderPanel } from './CodeReaderPanel'
+import { Dialog } from './ui/Dialog'
+import { safeExternalHttpUrl } from '../lib/safe-external-http-url'
 import {
   buildParaLink,
   paraStableId,
@@ -281,6 +283,13 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     }
     setMediaPolicyState(mode)
   }
+  // F070：首图破格（管线给首图打 data 标记，CSS 消费满宽）
+  const firstImageFullBleed = useAppSettings((s) => s.settings.readerFirstImageFullBleed)
+  // F073：代码块行号（管线按行包 span + CSS counter；与高亮/换行共存）
+  const codeLineNumbers = useAppSettings((s) => s.settings.readerCodeLineNumbers)
+  // F079：清理 position:fixed/sticky 非内容元素（transform 层；DOMPurify
+  // 仍是最终边界——本 transform 只删除元素，不引入任何新标记）
+  const stripFixedMedia = useAppSettings((s) => s.settings.readerStripFixedMedia)
   const [imagesAllowed, setImagesAllowed] = useState(false)
   useEffect(() => {
     setImagesAllowed(false)
@@ -359,6 +368,17 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
   const extractOnceMutation = useMutation({
     mutationFn: () => getEntryExtractPreview(detail.entryRef),
   })
+  // F078：重新抓取原文快照并排对比（复用既有 extractOnce 安全抓取通道；
+  // 独立 mutation，不污染 F048 试读状态）。
+  const compareExtractMutation = useMutation({
+    mutationFn: () => getEntryExtractPreview(detail.entryRef),
+  })
+  const [compareOpen, setCompareOpen] = useState(false)
+  const compareAvailable = safeExternalHttpUrl(detail.url) !== null
+  const openCompare = () => {
+    setCompareOpen(true)
+    compareExtractMutation.mutate()
+  }
   const showExtractBadge = detail.extractionFailed === true
   // N032：last_known_full 只在该版本真实保留时出现（BFF 诚实缺席）。
   const lastFullVariant =
@@ -404,6 +424,9 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
       codeTheme: resolvedCodeTheme,
       footnotes: true,
       math: true,
+      firstImageFullBleed,
+      codeLineNumbers,
+      stripFixedMedia,
     }).then((out) => {
       if (!cancelled) setHtml(out)
     })
@@ -417,6 +440,9 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
     conversion,
     bionic,
     resolvedCodeTheme,
+    firstImageFullBleed,
+    codeLineNumbers,
+    stripFixedMedia,
   ])
 
   // 目录提取（pool #03）：在 DOMPurify 输出之上给 h2–h4 注入确定性 id
@@ -974,6 +1000,21 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
             </button>
           </div>
         ) : null}
+        {/* F078：重新抓取原文快照并排对比入口（url 可信才提供；
+            抓取走服务端既有 SSRF 安全通道，此处只展示结果） */}
+        {compareAvailable && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="extract-compare-open"
+              disabled={compareExtractMutation.isPending}
+              onClick={openCompare}
+            >
+              {compareExtractMutation.isPending ? '抓取原文中…' : '与重抓原文对比'}
+            </Button>
+          </div>
+        )}
         <div
           {...(showExtractBadge ? { 'data-extract-failed': 'true' } : {})}
           ref={contentRef}
@@ -1063,6 +1104,54 @@ export default function ArticleContent({ detail }: { detail: EntryDetail }) {
           url={cleanDialogUrl}
           onClose={() => setCleanDialogUrl(null)}
         />
+        {/* F078：并排对比对话框（左=当前正文，右=重抓原文快照；
+            窄屏退化为上下堆叠；两列内容都是 DOMPurify 输出） */}
+        <Dialog
+          open={compareOpen}
+          onClose={() => setCompareOpen(false)}
+          title="正文 vs 重抓原文"
+          footer={
+            <Button variant="secondary" onClick={() => setCompareOpen(false)}>
+              关闭
+            </Button>
+          }
+        >
+          <div className="grid max-h-[70vh] gap-3 overflow-y-auto md:grid-cols-2">
+            <section data-testid="extract-compare-current" className="min-w-0">
+              <h3 className="mb-1.5 text-xs font-medium text-[var(--lumi-text-secondary)]">
+                当前正文
+              </h3>
+              <div className="article-content text-sm" dangerouslySetInnerHTML={htmlProp} />
+            </section>
+            <section data-testid="extract-compare-refetch" className="min-w-0">
+              <h3 className="mb-1.5 text-xs font-medium text-[var(--lumi-text-secondary)]">
+                重抓原文
+              </h3>
+              {compareExtractMutation.isPending ? (
+                <p className="text-sm text-[var(--lumi-text-secondary)]">抓取中…</p>
+              ) : compareExtractMutation.isError ? (
+                <p role="alert" className="text-sm text-[var(--lumi-danger)]">
+                  重新抓取失败：{compareExtractMutation.error instanceof Error ? compareExtractMutation.error.message : '请稍后重试。'}
+                </p>
+              ) : compareExtractMutation.data?.extractionFailed === true ? (
+                <p role="alert" className="text-sm text-[var(--lumi-danger)]">
+                  原文抓取失败，无法对比。
+                </p>
+              ) : compareExtractMutation.data?.contentHtml ? (
+                <div
+                  className="article-content text-sm"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeArticleHtmlCached(compareExtractMutation.data.contentHtml),
+                  }}
+                />
+              ) : (
+                <p className="text-sm text-[var(--lumi-text-secondary)]">
+                  原文没有可显示的正文。
+                </p>
+              )}
+            </section>
+          </div>
+        </Dialog>
         {/* F14：图片灯箱（portal；焦点归还与滚动还原由本组件负责）。
             F16：表格展开面板（同一灯箱遮罩，内容模式）。lazy+Suspense：
             打开瞬间未加载完时渲染 null，随后自动出现。

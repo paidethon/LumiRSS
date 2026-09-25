@@ -106,3 +106,20 @@ export function fallbackShareUrl(): string {
     return href
   }
 }
+
+// ---- F080 当前会话阅读时长 ----
+
+/** 纯函数：会话时长格式化（< 1 小时 `mm:ss`，≥ 1 小时 `h:mm:ss`；
+ * 负数/非有限输入按 0 处理）。显示在阅读样式（Aa）面板底部。 */
+export function formatSessionDuration(elapsedMs: number): string {
+  const totalSeconds = Number.isFinite(elapsedMs) && elapsedMs > 0
+    ? Math.floor(elapsedMs / 1000)
+    : 0
+  const seconds = totalSeconds % 60
+  const minutes = Math.floor(totalSeconds / 60) % 60
+  const hours = Math.floor(totalSeconds / 3600)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return hours > 0
+    ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+    : `${pad(minutes)}:${pad(seconds)}`
+}
