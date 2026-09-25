@@ -30,6 +30,11 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMIRSS_INTERNAL_TOKEN", "")
     monkeypatch.setenv("LUMIRSS_SEARCH_SYNC_INTERVAL", "0")
     monkeypatch.setenv("LUMIRSS_DB_PATH", str(tmp_path / "lumi.sqlite"))
+    # 无绑定时适配器不得回退到开发者 .env 的 FreshRSS（本机可能恰有
+    # 可达实例）——无绑定必须诚实 unavailable。
+    monkeypatch.setenv("FRESHRSS_BASE_URL", "")
+    monkeypatch.setenv("FRESHRSS_USERNAME", "")
+    monkeypatch.setenv("FRESHRSS_API_PASSWORD", "")
     import lumirss.middleware as middleware
 
     middleware._rate_windows.clear()

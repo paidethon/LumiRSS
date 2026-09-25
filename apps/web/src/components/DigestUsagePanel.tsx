@@ -12,7 +12,8 @@ import { requestOpenSettings } from './settings/settings-bridge'
 export default function DigestUsagePanel({ entryRef }: { entryRef: string }) {
   const usage = useEntryDigestUsage(entryRef)
   if (usage.isPending || usage.isError) return null
-  const items = usage.data.items
+  // 加载/错误态（mock 404 等）下 data 未定——面板整体诚实降级为空列表。
+  const items = usage.data?.items ?? []
 
   return (
     <section

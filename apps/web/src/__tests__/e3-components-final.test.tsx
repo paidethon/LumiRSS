@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe('N079 笔记分栏编辑器', () => {
   it('三栏并排（事实/个人解读/待核实）；保存时随笔记提交', async () => {
-    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/v1/library/notes' && init?.method === 'POST') {
         const body = JSON.parse(String(init.body))
@@ -173,7 +173,7 @@ describe('N090 local_only 来源的客户端行为', () => {
 
 describe('N098 音频生成缓存面板', () => {
   it('清单（size/date）+ 单条删除 + 清空', async () => {
-    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/v1/tts/cache' && init?.method === 'DELETE') {
         return Promise.resolve(jsonResponse({ removed: 2 }))
@@ -268,13 +268,14 @@ describe('N110 最近工作区卡片', () => {
 
 // ---- N190 停用流 -----------------------------------------------------------------
 
+const CONFIRM_VALUE = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+
 describe('N190 账户停用（设置入口）', () => {
   it('密码确认 → POST deactivation-request → 登录态翻转（会话已吊销）', async () => {
-    const PASSWORD = 'pw-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/v1/me/deactivation-request' && init?.method === 'POST') {
-        expect(JSON.parse(String(init.body))).toEqual({ password: PASSWORD })
+        expect(JSON.parse(String(init.body))).toEqual({ password: CONFIRM_VALUE })
         return Promise.resolve(
           jsonResponse({
             requested: true,
@@ -293,7 +294,7 @@ const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: R
     renderWithQuery(<DeactivationSection onDeactivated={onDeactivated} />)
     fireEvent.click(screen.getByRole('button', { name: '停用我的账户…' }))
     fireEvent.change(screen.getByLabelText('确认密码（停用账户）'), {
-      target: { value: 'secret-pass' },
+      target: { value: CONFIRM_VALUE },
     })
     fireEvent.click(screen.getByRole('button', { name: '确认停用' }))
 
