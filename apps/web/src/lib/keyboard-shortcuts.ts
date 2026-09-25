@@ -32,7 +32,9 @@ export function shouldIgnoreKeyEvent(e: {
   return e.isComposing === true || e.keyCode === 229
 }
 
-function isEditable(target: EventTarget | null): boolean {
+/** 可编辑元素聚焦判定（N070 起导出共享：纯键盘阅读定位等文章域键位
+ * 使用同一守卫，避免各模块漂移）。 */
+export function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName.toLowerCase()
   return (
@@ -44,8 +46,9 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /** AUDIT-014：是否存在打开的真实模态（Dialog/Sheet/Drawer）。
- * 仓库内所有模态原语都携 aria-modal="true"，因此这是可靠的信号。 */
-function isModalOpen(): boolean {
+ * 仓库内所有模态原语都携 aria-modal="true"，因此这是可靠的信号。
+ * N070 起导出共享：文章域键位在模态打开时不得操纵其下方内容。 */
+export function isModalOpen(): boolean {
   return document.querySelector('[aria-modal="true"]') !== null
 }
 

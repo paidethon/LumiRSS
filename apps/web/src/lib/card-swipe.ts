@@ -46,3 +46,11 @@ export function swipeShouldCommit(dx: number, dy: number): boolean {
 export function swipePreviewOpacity(previewDx: number): number {
   return Math.min(1, Math.abs(previewDx) / CARD_SWIPE_COMMIT_PX)
 }
+
+/** 动作 id → 展示标签（EntryCard/EntryRow 背景层与 N067 练习区共用词表）。 */
+export const SWIPE_ACTION_LABELS: Record<string, string> = {
+  none: '无动作',
+  read: '标为已读',
+  readLater: '加入稍后读',
+  star: '收藏',
+}
