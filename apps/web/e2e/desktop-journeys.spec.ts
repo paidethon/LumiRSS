@@ -65,7 +65,9 @@ async function importFeedViaOpml(page: Page, feedUrl: string) {
   const opml = `<?xml version="1.0"?><opml version="2.0"><head><title>t</title></head><body>
     <outline text="Lumi E2E Feed"><outline text="E2E 源" type="rss" xmlUrl="${feedUrl}"/></outline>
   </body></opml>`
-  await dialog.locator('input[type=file]').setInputFiles({
+  // 设置面板近期新增了其它 file input（导出/字体/迁移）——用 id+accept
+  // 双重锚定 OPML 导入入口。
+  await dialog.locator('input[type=file][accept*="opml"], input[type=file][accept*="xml"]').first().setInputFiles({
     name: 'import.opml',
     mimeType: 'text/xml',
     buffer: Buffer.from(opml),

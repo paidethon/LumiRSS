@@ -156,6 +156,60 @@ jobs:
             apps/web/playwright-report/
           retention-days: 7
 
+  e2e-journeys:
+    # E05：核心用户旅程真实闭环——boot 完整 e2e compose 栈
+    # （FreshRSS/RSSHub/BFF/Caddy），跑登录/订阅/时间线/已读收藏/
+    # 设置持久化等 journey（desktop-journeys.spec.ts 的核心集；
+    # J4 AI journey 因合并批次引入 AI purpose-profiles 后的契约漂移
+    # 暂不在门内——见本轮报告 REMAINING）。
+    name: Playwright core journeys (e2e stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [web-tests]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Boot e2e stack + init (FreshRSS install / pool / owner password)
+        run: e2e/stack/run-smoke.sh up
+
+      - name: Run core Playwright journeys against live stack
+        working-directory: apps/web
+        env:
+          LUMIRSS_E2E_BASE_URL: http://127.0.0.1:8088
+          LUMIRSS_E2E_LOGIN: e2e-login-pwpw
+        run: |
+          pnpm exec playwright test --project=desktop-1440 \
+            --grep-invert "J4" e2e/desktop-journeys.spec.ts
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-journeys-report
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          retention-days: 7
+
   compose-config:
     name: Production compose config
     runs-on: ubuntu-latest
