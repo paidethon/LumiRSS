@@ -94,6 +94,91 @@ def recompute_sentence_map(
     return sentence_map
 
 
+_MAX_USAGE_RESULTS = 20
+
+
+def _normalize_usage_ref(value: Any) -> str:
+    """N180：refs 里的条目引用归一（剥 rss: 前缀；仅接受 opaque e1.*）。"""
+    text = str(value or "").strip()
+    if text.startswith("rss:"):
+        text = text[len("rss:"):]
+    return text if text.startswith("e1.") else ""
+
+
+async def digest_usage_for_entry(
+    db: Database, entry_ref: str, *, limit: int = _MAX_USAGE_RESULTS
+) -> list[dict[str, Any]]:
+    """N180 日报材料使用追踪：在我的配置/期刊里反查某条目的引用位置。
+
+    数据源是期刊行的 refs_json（s1..sN → {…, ref: entryRef}，生成时
+    写入；旧期号没有 ref → 查不到 = 诚实空）。查询只发生在当前请求
+    用户的库上——其他用户的期刊天然不可见（隔离由每用户数据库保证）。
+    返回 [{configId, configName, issueKey, issueDate, section, sourceId,
+    citationAnchor, publishedAt}]，citationAnchor 供 Web 跳转定位。"""
+    await db.migrate()
+    target = _normalize_usage_ref(entry_ref)
+    if not target:
+        return []
+    from lumirss.gpt_digest_configs import GptDigestConfigStore
+
+    configs = await GptDigestConfigStore(db).list_configs()
+    usage: list[dict[str, Any]] = []
+    cap = max(1, min(limit, _MAX_USAGE_RESULTS))
+    for config in configs:
+        if len(usage) >= cap:
+            break
+        rows = await db.fetch_all(
+            "SELECT issue_key, published_at, sections_json, refs_json FROM gpt_digest_issues WHERE config_id = ? AND status = 'published' ORDER BY issue_key DESC LIMIT 90",
+            (int(config["id"]),),
+        )
+        for row in rows:
+            if len(usage) >= cap:
+                break
+            try:
+                refs = json.loads(str(row["refs_json"] or "{}"))
+            except ValueError:
+                continue
+            try:
+                sections = json.loads(str(row["sections_json"] or "[]"))
+            except ValueError:
+                sections = []
+            if isinstance(sections, dict):
+                sections = sections.get("sections") or []
+            issue_key = str(row["issue_key"])
+            for sid, ref in refs.items() if isinstance(refs, dict) else []:
+                if not isinstance(ref, dict):
+                    continue
+                if _normalize_usage_ref(ref.get("ref")) != target:
+                    continue
+                heading = ""
+                if isinstance(sections, list):
+                    for section in sections:
+                        if not isinstance(section, dict):
+                            continue
+                        items = section.get("items") or []
+                        if any(
+                            isinstance(item, dict) and sid in (item.get("sourceIds") or [])
+                            for item in items
+                        ):
+                            heading = str(section.get("heading") or "")
+                            break
+                usage.append(
+                    {
+                        "configId": int(config["id"]),
+                        "configName": str(config["name"]),
+                        "issueKey": issue_key,
+                        "issueDate": issue_key[:10],
+                        "section": heading,
+                        "sourceId": str(sid),
+                        "citationAnchor": f"{issue_key}:{sid}",
+                        "publishedAt": str(row["published_at"] or ""),
+                    }
+                )
+                if len(usage) >= cap:
+                    break
+    return usage
+
+
 def parse_issue_meta(row: dict[str, Any]) -> dict[str, Any]:
     """期号 meta_json → dict（损坏/缺失诚实回退空对象）。"""
     try:
@@ -258,6 +343,10 @@ class GptDigestIssuesStore:
         sentence_map = meta.get("sentenceMap")
         if not isinstance(sentence_map, list):
             sentence_map = build_sentence_map(sections)
+        # N177：可见订正标记——updated_at 晚于 published_at 即修订过；
+        # Web 端在期号顶部渲染订正块（与 Atom 注入口径一致）。
+        from lumirss.gpt_digest import is_revised_issue
+
         return {
             "issueKey": str(row.get("issue_key") or ""),
             "status": str(row.get("status") or ""),
@@ -267,6 +356,8 @@ class GptDigestIssuesStore:
             "model": str(row.get("model") or ""),
             "meta": meta,
             "sentenceMap": sentence_map,
+            "note": str(row.get("note") or ""),
+            "revised": is_revised_issue(row.get("updated_at"), row.get("published_at")),
             "createdAt": str(row.get("created_at") or ""),
             "publishedAt": str(row.get("published_at") or ""),
             "updatedAt": str(row.get("updated_at") or ""),

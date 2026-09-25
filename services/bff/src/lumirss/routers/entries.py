@@ -253,6 +253,29 @@ async def entry_detail(
     return JSONResponse(detail.model_dump())
 
 
+@router.get("/api/v1/entries/{entry_ref}/digest-usage", response_model=None)
+async def entry_digest_usage(entry_ref: str, request: Request) -> Response:
+    """N180 日报材料使用追踪：这条材料被我的哪些日报配置/期刊/栏目引用。
+
+    反查只发生在当前用户的库上（refs_json 的 entryRef 反向索引）——
+    其他用户的期刊天然不可见；非法引用 → 400；没有引用 → items=[]
+    （诚实空，不虚构）。citationAnchor 供 Web 跳转定位到具体引用。"""
+    from fastapi.responses import JSONResponse
+
+    from lumirss.entryref import InvalidEntryReference as _IER
+    from lumirss.gpt_digest_issues import digest_usage_for_entry
+
+    try:
+        decode_entry_ref(entry_ref.removeprefix("rss:"))
+    except _IER:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"type": "invalid_entry_ref", "message": "Invalid entry reference."}},
+        )
+    items = await digest_usage_for_entry(request.app.state.db, entry_ref)
+    return JSONResponse(content={"items": items})
+
+
 @router.patch("/api/v1/entries/{entry_ref}/state", status_code=204)
 async def entry_state(entry_ref: str, update: EntryStateUpdate, request: Request) -> Response:
     """Set the read/starred state of one entry (set semantics, not toggle).

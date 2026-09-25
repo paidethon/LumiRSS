@@ -406,6 +406,36 @@ snapshot_for_rollback() {
   mkdir -p "$BACKUP_DIR"
   cp -f "$ENV_FILE" "$BACKUP_DIR/.env.prod.previous"
   echo "${IMAGE_TAG:-latest}" > "$BACKUP_DIR/.image-tag.previous"
+  # N197 回滚就绪检查：与 N196 deploy-status 同一挂载思路——设置
+  # LUMIRSS_ROLLBACK_MANIFEST_FILE 时把前一镜像标签写成 JSON 清单，
+  # 供 BFF GET /admin/rollback-readiness 只读透传（无秘密；写失败仅
+  # 告警，绝不影响部署/回滚本身）。
+  if [[ -n "${LUMIRSS_ROLLBACK_MANIFEST_FILE:-}" ]]; then
+    ROLLBACK_MANIFEST_PATH="$LUMIRSS_ROLLBACK_MANIFEST_FILE" \
+    ROLLBACK_MANIFEST_TAG="${IMAGE_TAG:-latest}" \
+    python3 - <<-'PY' || warn "could not write rollback manifest (readiness check will report absent)"
+import json, os, tempfile
+path = os.environ["ROLLBACK_MANIFEST_PATH"]
+document = {
+    "schema": "lumirss-rollback-manifest/v1",
+    "previousImageTag": os.environ["ROLLBACK_MANIFEST_TAG"],
+    "writtenAt": __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    ).isoformat(timespec="seconds"),
+}
+parent = os.path.dirname(path) or "."
+os.makedirs(parent, exist_ok=True)
+fd, tmp = tempfile.mkstemp(prefix=".rollback-manifest-", dir=parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(document, fh, ensure_ascii=False, indent=1, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, path)
+finally:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+PY
+  fi
 }
 
 # ---------------------------------------------------------------------------

@@ -106,15 +106,37 @@ def _reject(status: int, err_type: str, message: str) -> JSONResponse:
     )
 
 
-async def _mint_session(request: Request, response: Response, user_id: str) -> AuthStatus:
+async def _mint_session(
+    request: Request,
+    response: Response,
+    user_id: str,
+    *,
+    login_event: bool = True,
+) -> AuthStatus:
+    """Mint a session cookie for a verified identity.
+
+    N008: credential-bearing login paths also record a login event — the
+    first sighting of a device fingerprint (UA family + platform) becomes
+    a ``new_device`` event the 安全页 surfaces; known devices only get a
+    ``login`` event (no re-notify). ``login_event=False`` is for session
+    mints that are NOT logins (password change keeps the user's device).
+    """
+    user_agent = request.headers.get("user-agent")
     raw_token, expires_at = await _sessions(request).create_session(
         LumiSettings().LUMIRSS_SESSION_MAX_AGE_DAYS,
-        user_agent=request.headers.get("user-agent"),
+        user_agent=user_agent,
         user_id=user_id,
     )
     response.headers["Set-Cookie"] = build_session_cookie(raw_token, _max_age_seconds())
     response.headers["Cache-Control"] = "no-store"
-    return AuthStatus(authenticated=True, expiresAt=_iso(expires_at))
+    status = AuthStatus(authenticated=True, expiresAt=_iso(expires_at))
+    if login_event:
+        kind = await _sessions(request).record_login_event(
+            user_id=user_id, user_agent=user_agent
+        )
+        if kind == "new_device":
+            status.newDevice = True
+    return status
 
 
 async def _current_user_id(request: Request) -> str | None:
@@ -267,7 +289,8 @@ async def change_password(
     await _control(request).set_password_hash(user_id, hash_password(body.newPassword))
     await _sessions(request).revoke_all_sessions(user_id=user_id)
     await _control(request).audit(actor=user_id, action="password_change", object_type="user", object_id=user_id)
-    return await _mint_session(request, response, user_id)
+    # N008: 换密后的会话换发不是一次「登录」——不记登录事件。
+    return await _mint_session(request, response, user_id, login_event=False)
 
 
 @router.get("/api/v1/auth/activation-preview", response_model_exclude_none=True)
@@ -543,3 +566,44 @@ async def revoke_auth_session(session_id: str, request: Request) -> Response:
         # 撤销的是当前会话：等价登出，把 cookie 一并作废。
         headers["Set-Cookie"] = clear_session_cookie()
     return Response(status_code=204, headers=headers)
+
+
+# -- N008 登录事件（最近登录 / 新设备提醒） ------------------------------------
+
+
+class LoginEventsSeenBody(BaseModel):
+    """POST /auth/login-events/seen — 批量标记已读（省略 ids = 全部）。"""
+
+    ids: list[int] | None = Field(default=None, max_length=100)
+
+
+@router.get("/api/v1/auth/login-events", response_model=None, response_model_exclude_none=True)
+async def list_login_events(request: Request, limit: int = 20) -> list[dict[str, object]] | JSONResponse:
+    """本人最近登录事件（cap 20；kind=new_device 未读即「待确认的新设备」）。
+
+    响应绝不含设备指纹哈希或任何 token 材料；每条都带 Cache-Control:
+    no-store。basic 模式没有账户会话语义 → 401。"""
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return _reject(401, "session_required", "Login required.")
+    user_id = await _current_user_id(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Login required.")
+    return JSONResponse(
+        content={"items": await _sessions(request).list_login_events(user_id=user_id, limit=limit)},
+        headers=_NO_STORE,
+    )
+
+
+@router.post("/api/v1/auth/login-events/seen", response_model=None)
+async def mark_login_events_seen(
+    request: Request, body: LoginEventsSeenBody | None = None
+) -> JSONResponse:
+    """批量标记已读（信任确认）：body 缺省/ids 缺省 = 全部未读事件。"""
+    if LumiSettings().LUMIRSS_AUTH_MODE != "session":
+        return _reject(401, "session_required", "Login required.")
+    user_id = await _current_user_id(request)
+    if user_id is None:
+        return _reject(401, "session_required", "Login required.")
+    ids = body.ids if body is not None else None
+    marked = await _sessions(request).mark_login_events_seen(user_id=user_id, event_ids=ids)
+    return JSONResponse(content={"marked": marked}, headers=_NO_STORE)
