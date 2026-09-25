@@ -30,6 +30,7 @@ from lumirss.adapters.freshrss_control import (
 )
 from lumirss.agent import AgentProviderUnavailable
 from lumirss.agent_export import ExportInvalid
+from lumirss.agent_recipes import RecipeInvalid, RecipeNameConflict, RecipeNotFound
 from lumirss.agent_session import (
     BranchInvalid,
     SearchInvalid,
@@ -37,10 +38,15 @@ from lumirss.agent_session import (
 )
 from lumirss.agent_store import (
     ApprovalInvalid,
+    ApprovalSuperseded,
     NoActiveRun,
+    NotPaused,
     PendingApprovalBlocked,
+    StepNotFound,
     ThreadNotFound,
     ToolDenied,
+    UndoConflict,
+    UndoUnsupported,
 )
 from lumirss.agent_tools import DryRunUnsupported
 from lumirss.ai_profiles import (
@@ -439,6 +445,15 @@ _ERROR_RESPONSES = {
     ThreadNotFound: (404, "thread_not_found"),
     PendingApprovalBlocked: (409, "pending_approval"),
     NoActiveRun: (409, "no_active_run"),
+    # N164–N170 agent ops wave
+    NotPaused: (409, "not_paused"),
+    ApprovalSuperseded: (410, "approval_superseded"),
+    StepNotFound: (404, "step_not_found"),
+    UndoUnsupported: (422, "undo_unsupported"),
+    UndoConflict: (409, "undo_conflict"),
+    RecipeInvalid: (422, "invalid_recipe"),
+    RecipeNotFound: (404, "recipe_not_found"),
+    RecipeNameConflict: (409, "recipe_name_conflict"),
     # 0021 inbox push sources
     InvalidInboxPayload: (400, "invalid_inbox_payload"),
     InboxSourceNotFound: (404, "inbox_source_not_found"),
@@ -621,6 +636,14 @@ def register_error_handlers(app) -> None:
     @app.exception_handler(ThreadNotFound)
     @app.exception_handler(PendingApprovalBlocked)
     @app.exception_handler(NoActiveRun)
+    @app.exception_handler(NotPaused)
+    @app.exception_handler(ApprovalSuperseded)
+    @app.exception_handler(StepNotFound)
+    @app.exception_handler(UndoUnsupported)
+    @app.exception_handler(UndoConflict)
+    @app.exception_handler(RecipeInvalid)
+    @app.exception_handler(RecipeNotFound)
+    @app.exception_handler(RecipeNameConflict)
     @app.exception_handler(InvalidInboxPayload)
     @app.exception_handler(InboxSourceNotFound)
     @app.exception_handler(InboxItemNotFound)

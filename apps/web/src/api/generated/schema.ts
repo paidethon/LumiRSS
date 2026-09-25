@@ -374,6 +374,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recipes */
+        get: operations["list_recipes_api_v1_agent_recipes_get"];
+        put?: never;
+        /**
+         * Create Recipe
+         * @description N170：保存配方（白名单校验：unknown → 422，绝不支持越权）。
+         */
+        post: operations["create_recipe_api_v1_agent_recipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Recipe */
+        delete: operations["delete_recipe_api_v1_agent_recipes__recipe_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Recipe
+         * @description N170：运行前预览（零写入）：将创建的会话设置 + 首条消息概要。
+         */
+        post: operations["preview_recipe_api_v1_agent_recipes__recipe_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Recipe
+         * @description N170：运行配方 = 创建新会话（scope + 白名单 toolPolicy 落库）
+         *     + 首条消息开启回合。白名单在服务端 evaluate_policy 强制执行。
+         */
+        post: operations["run_recipe_api_v1_agent_recipes__recipe_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/scope-preview": {
         parameters: {
             query?: never;
@@ -450,7 +529,7 @@ export interface paths {
         head?: never;
         /**
          * Update Thread Settings
-         * @description F094/F098：会话设置（scope / toolPolicy / 标题）。下轮生效。
+         * @description F094/F098/N165：会话设置（scope / toolPolicy / budget / 标题）。下轮生效。
          */
         patch: operations["update_thread_settings_api_v1_agent_threads__thread_id__patch"];
         trace?: never;
@@ -486,6 +565,27 @@ export interface paths {
          * @description F097：写操作预演（零业务写入；预演不改变审批流）。
          */
         post: operations["preview_approval_api_v1_agent_threads__thread_id__approvals__approval_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/approvals/{approval_id}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revise Approval
+         * @description N167：批准内容修改——修订产生 NEW 审批行（绑定新 args_hash），
+         *     旧行标记 superseded（take → 410）。
+         */
+        post: operations["revise_approval_api_v1_agent_threads__thread_id__approvals__approval_id__revise_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -598,6 +698,92 @@ export interface paths {
          *     the SSE stream (real deltas; replay on reconnect).
          */
         post: operations["post_message_api_v1_agent_threads__thread_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Turn
+         * @description N164：任务暂停。运行中的回合在下一个工具间检查点冻结为快照
+         *     （{completedSteps, pendingPlan}）；仅停留在批准上的回合同样可暂停
+         *     （批准 id 进入快照）。二者皆无 → 409 no_active_run。
+         */
+        post: operations["pause_turn_api_v1_agent_threads__thread_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Turn
+         * @description N164：任务续接。已执行的步骤绝不重复执行（transcript 结果复用）；
+         *     暂停期间过期的批准 → 重新确认（铸造新批准行，旧批准作废）。
+         */
+        post: operations["resume_turn_api_v1_agent_threads__thread_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Failed Steps
+         * @description N168：失败步骤单独重试——只重跑失败/未完成的步骤；已完成步骤
+         *     的结果从 transcript 复用；写工具经幂等台账（args_hash+turn）防止
+         *     重复副作用（需重新批准）。
+         */
+        post: operations["retry_failed_steps_api_v1_agent_threads__thread_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/threads/{thread_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Step
+         * @description N169：任务结果差异撤销——按写台账前后快照回滚；对象在写入后
+         *     又被修改过 → 冲突报告并跳过；不支持撤销的工具 → 422。
+         */
+        post: operations["undo_step_api_v1_agent_threads__thread_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9318,6 +9504,8 @@ export interface components {
             callId: string;
             /** Expiresinminutes */
             expiresInMinutes?: number | null;
+            /** Reconfirmof */
+            reconfirmOf?: string | null;
             /** Status */
             status: string;
             /** Threadid */
@@ -9387,6 +9575,25 @@ export interface components {
             status: "rejected" | "tool_denied" | "completed";
         };
         /**
+         * AgentApprovalReviseRequest
+         * @description N167 POST .../approvals/{id}/revise — 批准前的参数修订。
+         */
+        AgentApprovalReviseRequest: {
+            /** Newargs */
+            newArgs: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * AgentApprovalReviseResult
+         * @description N167 修订产生 NEW 审批行（绑定新 args_hash）；旧行 superseded。
+         */
+        AgentApprovalReviseResult: {
+            approval: components["schemas"]["AgentApprovalContent"];
+            /** Supersededapprovalid */
+            supersededApprovalId: string;
+        };
+        /**
          * AgentAssistantContent
          * @description role=assistant message body (streaming marker / cancel note /
          *     branch-truncation notice / toolCalls while the loop is mid-turn).
@@ -9394,10 +9601,16 @@ export interface components {
          *     N154/N155：evidenceStrength（direct|partial|none，引用文本 vs 主张
          *     重叠分级——绝不用「置信度」措辞）；unverifiable/unverifiableReason
          *     标记「有文档事实主张但零有效引用」的回答（no_valid_citations）。
+         *     N165：budgetExhausted = 预算耗尽的消耗摘要（tokens unknown 时为
+         *     null + tokensKnown=false，绝不谎报 0）。
          */
         AgentAssistantContent: {
             /** Branchtruncated */
             branchTruncated?: boolean | null;
+            /** Budgetexhausted */
+            budgetExhausted?: {
+                [key: string]: unknown;
+            } | null;
             /** Cancelled */
             cancelled?: boolean | null;
             /** Evidencestrength */
@@ -9542,6 +9755,154 @@ export interface components {
             items: components["schemas"]["AgentMessage"][];
         };
         /**
+         * AgentPauseResult
+         * @description N164 POST /api/v1/agent/threads/{id}/pause.
+         */
+        AgentPauseResult: {
+            /** Paused */
+            paused: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pausing" | "paused";
+        };
+        /**
+         * AgentRecipe
+         * @description N170 一条任务配方（whitelist ⊆ 注册表白名单）。
+         */
+        AgentRecipe: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * AgentRecipeCreate
+         * @description N170 POST /api/v1/agent/recipes。
+         */
+        AgentRecipeCreate: {
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+        };
+        /**
+         * AgentRecipeListResponse
+         * @description Envelope for GET /api/v1/agent/recipes.
+         */
+        AgentRecipeListResponse: {
+            /** Items */
+            items: components["schemas"]["AgentRecipe"][];
+        };
+        /**
+         * AgentRecipePreview
+         * @description N170 运行前预览：将创建的会话设置（白名单 → toolPolicy +
+         *     scope）与首条消息概要；unknownTools 非空 = 白名单越界（运行被拒）。
+         */
+        AgentRecipePreview: {
+            /** Input */
+            input: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Recipeid */
+            recipeId: string;
+            /** Scope */
+            scope?: {
+                [key: string]: unknown;
+            } | null;
+            /** Threadtitle */
+            threadTitle: string;
+            toolPolicy?: components["schemas"]["AgentToolPolicy"] | null;
+            /** Toolwhitelist */
+            toolWhitelist: string[];
+            /**
+             * Unknowntools
+             * @default []
+             */
+            unknownTools: string[];
+        };
+        /**
+         * AgentRecipeRunResult
+         * @description N170 POST .../run — 创建新会话并以配方 input 开启第一回合。
+         */
+        AgentRecipeRunResult: {
+            /** Recipeid */
+            recipeId: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "processing";
+            thread: components["schemas"]["AgentThread"];
+        };
+        /**
+         * AgentResumeResult
+         * @description N164 POST /api/v1/agent/threads/{id}/resume — honest variants:
+         *     resumed (loop continues), awaiting_approval (user decision needed,
+         *     possibly a RE-CONFIRM minted for an approval expired mid-pause).
+         */
+        AgentResumeResult: {
+            approval?: components["schemas"]["AgentApprovalContent"] | null;
+            message?: components["schemas"]["AgentMessage"] | null;
+            /**
+             * Reconfirmrequired
+             * @default false
+             */
+            reconfirmRequired: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "awaiting_approval";
+        };
+        /**
+         * AgentRetryResult
+         * @description N168 POST .../retry — 只重跑失败/未完成的步骤。
+         */
+        AgentRetryResult: {
+            approval?: components["schemas"]["AgentApprovalContent"] | null;
+            /**
+             * Retried
+             * @default []
+             */
+            retried: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "awaiting_approval";
+        };
+        /**
          * AgentScopePreviewRequest
          * @description N151 POST /api/v1/agent/scope-preview body（工作台范围选择器的
          *     授权范围摘要卡：kind × refCount × toolCount）。
@@ -9580,6 +9941,16 @@ export interface components {
             id: string;
             /** Title */
             title: string;
+        };
+        /**
+         * AgentThreadBudget
+         * @description N165 线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。
+         */
+        AgentThreadBudget: {
+            /** Maxtoolcalls */
+            maxToolCalls?: number | null;
+            /** Maxturns */
+            maxTurns?: number | null;
         };
         /**
          * AgentThreadListResponse
@@ -9622,6 +9993,7 @@ export interface components {
         AgentThreadSettings: {
             /** Branchof */
             branchOf?: string | null;
+            budget?: components["schemas"]["AgentThreadBudget"] | null;
             /** Id */
             id: string;
             /** Scope */
@@ -9632,11 +10004,19 @@ export interface components {
         };
         /**
          * AgentThreadUpdate
-         * @description F094/F098 会话设置（scope / toolPolicy；None = 清除/不修改按键）。
-         *
-         *     scope=None 显式清除范围锁定；键缺省 = 不修改。
+         * @description F094/F098 会话设置（scope / toolPolicy / N165 budget；None =
+         *     清除/不修改按键）。scope=None 显式清除范围锁定；键缺省 = 不修改。
          */
         AgentThreadUpdate: {
+            /** Budget */
+            budget?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Clearbudget
+             * @default false
+             */
+            clearBudget: boolean;
             /**
              * Clearscope
              * @default false
@@ -9677,6 +10057,11 @@ export interface components {
          *     ``result`` is the untrusted envelope (or a bare string in branched
          *     transcripts); ``callId`` is dropped when a branch copies the row as
          *     a non-executable transcript record.
+         *
+         *     N166 执行时间线：durationMs（真实执行耗时）、maskedArgsSummary
+         *     （≤80 字符、F097 _redact 脱敏——密钥形态值绝不出现）、resultType
+         *     （result|error）。N168：retried（重试步骤）/replayed（幂等缓存命
+         *     中）。N169：stepId（写台账行 id）+ undoable（可撤销）。
          */
         AgentToolContent: {
             /** Approved */
@@ -9685,12 +10070,26 @@ export interface components {
             branchTranscript?: boolean | null;
             /** Callid */
             callId?: string | null;
+            /** Durationms */
+            durationMs?: number | null;
             /** Error */
             error?: string | null;
+            /** Maskedargssummary */
+            maskedArgsSummary?: string | null;
             /** Name */
             name: string;
+            /** Replayed */
+            replayed?: boolean | null;
             /** Result */
             result?: components["schemas"]["AgentToolResult"] | string | null;
+            /** Resulttype */
+            resultType?: string | null;
+            /** Retried */
+            retried?: boolean | null;
+            /** Stepid */
+            stepId?: string | null;
+            /** Undoable */
+            undoable?: boolean | null;
         };
         /**
          * AgentToolPolicy
@@ -9726,6 +10125,32 @@ export interface components {
              * @constant
              */
             status: "processing";
+        };
+        /**
+         * AgentUndoRequest
+         * @description N169 POST .../undo — 按写台账 stepId 差异撤销。
+         */
+        AgentUndoRequest: {
+            /** Stepid */
+            stepId: string;
+        };
+        /**
+         * AgentUndoResult
+         * @description N169 撤销结果：undone=false 时 conflictReason 说明跳过原因。
+         */
+        AgentUndoResult: {
+            /** Conflictreason */
+            conflictReason?: string | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Stepid */
+            stepId: string;
+            /** Tool */
+            tool: string;
+            /** Undone */
+            undone: boolean;
         };
         /**
          * AgentUserContent
@@ -19718,6 +20143,150 @@ export interface operations {
             };
         };
     };
+    list_recipes_api_v1_agent_recipes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipeListResponse"];
+                };
+            };
+        };
+    };
+    create_recipe_api_v1_agent_recipes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRecipeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipe"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_recipe_api_v1_agent_recipes__recipe_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_recipe_api_v1_agent_recipes__recipe_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_recipe_api_v1_agent_recipes__recipe_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRecipeRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_scope_api_v1_agent_scope_preview_post: {
         parameters: {
             query?: never;
@@ -19953,6 +20522,42 @@ export interface operations {
             };
         };
     };
+    revise_approval_api_v1_agent_threads__thread_id__approvals__approval_id__revise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentApprovalReviseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApprovalReviseResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     branch_thread_api_v1_agent_threads__thread_id__branch_post: {
         parameters: {
             query?: never;
@@ -20141,6 +20746,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentTurnAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_turn_api_v1_agent_threads__thread_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPauseResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_turn_api_v1_agent_threads__thread_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentResumeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_steps_api_v1_agent_threads__thread_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRetryResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_step_api_v1_agent_threads__thread_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentUndoResult"];
                 };
             };
             /** @description Validation Error */

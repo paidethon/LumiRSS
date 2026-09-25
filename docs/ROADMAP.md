@@ -72,6 +72,18 @@
   赢、localStorage 只作离线回退）；来源分时静音（每周循环窗口
   `mute_windows`，与 hiddenUntil/showFrom 同消费点——只影响通用时间线，
   抓取/搜索/阅读不受影响）。
+- **Agent 任务运维批次（N164–N170，迁移 0112/0113/0114）**：任务暂停与
+  续接（工具间检查点冻结 {completedSteps, pendingPlan}，续接复用
+  transcript 已执行结果绝不重复副作用；暂停期间过期的批准在续接时要求
+  重新确认）；线程级任务预算 {maxToolCalls, maxTurns}（budget_exhausted
+  终态 + 消耗摘要，token 未上报时诚实显示 unknown）；工具执行时间线
+  （durationMs / ≤80 字脱敏参数摘要 / resultType）；批准内容修改
+  （修订 → 新批准行绑定新 args_hash，旧行 superseded、take → 410）；
+  失败步骤单独重试（写工具幂等键 args_hash+turn，成功写重放返回缓存
+  结果）；任务结果差异撤销（add_to_workspace / add_tag 前后快照，
+  对象被改动过 → 冲突报告跳过；不支持工具 → 422）；任务配方（名称/
+  输入/工具白名单/范围，白名单服务端强制执行，运行 = 新会话 + 首条
+  消息 + 运行前预览）。
 - 明确不做：WebDAV vault、Bergamot 本地翻译（无中文模型）、多租户形态、
   外部向量库服务（sqlite-vec 单文件已够）。
 

@@ -33,16 +33,21 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from lumirss.agent_export import redact_json
 from lumirss.agent_session import evaluate_policy
 from lumirss.agent_store import (
     CANCELLED_TEXT,
     AgentStore,
+    NoActiveRun,
+    NotPaused,
     SystemPromptProvider,
     ToolRegistry,
 )
+from lumirss.agent_tools import UNDOABLE_WRITE_TOOLS
 from lumirss.ai_provider import aggregate_stream
 from lumirss.quote_verify import claim_segments, evidence_strength
 
@@ -66,6 +71,8 @@ RETRIEVAL_TOOLS = frozenset(
 # Streaming text is flushed to SQLite in bounded steps (every flush
 # granularity chars) — per-token UPDATEs would open a connection each.
 _STREAM_FLUSH_CHARS = 48
+# N166: masked args summary cap in tool transcript rows.
+_TOOL_SUMMARY_LIMIT = 80
 
 
 class AgentProviderUnavailable(Exception):
@@ -74,6 +81,27 @@ class AgentProviderUnavailable(Exception):
 
 class TurnCancelled(Exception):
     """A cooperative cancel checkpoint fired."""
+
+
+class TurnPaused(Exception):
+    """N164: a cooperative pause checkpoint fired mid-turn."""
+
+
+def masked_args_summary(
+    args: dict[str, Any] | None,
+    arguments_text: str | None = None,
+    *,
+    limit: int = _TOOL_SUMMARY_LIMIT,
+) -> str:
+    """N166: ≤limit-char redacted args summary (F097 _redact reuse).
+
+    api-key-shaped values never survive — the summary goes into the
+    transcript timeline unencrypted-at-rest by design."""
+    value = args if args is not None else parse_tool_arguments(arguments_text or "")
+    text = redact_json(value)
+    if len(text) > limit:
+        text = text[: limit - 3] + "..."
+    return text
 
 
 def parse_tool_arguments(text: str) -> dict[str, Any]:
@@ -104,6 +132,33 @@ def _assistant_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
     return calls
 
 
+def _provider_usage(provider: Any) -> tuple[int, int] | None:
+    """N165: token usage from the provider's LAST response when it
+    reports one. Absent/unknown usage → None (the summary must say
+    ``unknown``, never fabricate 0)."""
+    usage = getattr(provider, "last_usage", None)
+    if not isinstance(usage, dict):
+        return None
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    if not isinstance(prompt, int) or not isinstance(completion, int):
+        return None
+    return prompt, completion
+
+
+def _budget_block_reason(
+    budget: dict[str, Any], used: dict[str, Any], *, new_turn: bool
+) -> str | None:
+    """N165: why the thread budget blocks this turn (None = allowed)."""
+    max_calls = int(budget.get("maxToolCalls") or 0)
+    max_turns = int(budget.get("maxTurns") or 0)
+    if max_calls and int(used.get("toolCalls") or 0) >= max_calls:
+        return "maxToolCalls"
+    if new_turn and max_turns and int(used.get("turns") or 0) >= max_turns:
+        return "maxTurns"
+    return None
+
+
 class AgentLoop:
     """One provider factory + tool registry + store per app."""
 
@@ -116,6 +171,7 @@ class AgentLoop:
         session_loader: Callable[[str], Awaitable[dict]] | None = None,
         evidence_lookup: Callable[[list[str]], Awaitable[dict[str, str]]]
         | None = None,
+        undo_service: Any | None = None,
     ) -> None:
         self._store = store
         self._registry = registry
@@ -124,9 +180,13 @@ class AgentLoop:
         self._session_loader = session_loader
         # N154：cited refs → 可核验原文文本（rag_chunks/投影回退）。
         self._evidence_lookup = evidence_lookup
+        # N169：写工具前后快照 + 差异撤销执行器（build_undo_support）。
+        self._undo_service = undo_service
         self._thread_locks: dict[str, asyncio.Lock] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._cancel_requested: set[str] = set()
+        # N164: cooperative pause requests (checked between tool calls).
+        self._pause_requested: set[str] = set()
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
 
     async def _thread_context(self, thread_id: str) -> dict[str, Any]:
@@ -163,6 +223,13 @@ class AgentLoop:
             task.cancel()
             return True
         return False
+
+    def pause_turn(self, thread_id: str) -> bool:
+        """N164: request a cooperative pause at the next between-tools
+        checkpoint; True when a live turn will observe it."""
+        self._pause_requested.add(thread_id)
+        task = self._tasks.get(thread_id)
+        return task is not None and not task.done()
 
     def is_turn_active(self, thread_id: str) -> bool:
         task = self._tasks.get(thread_id)
@@ -209,21 +276,51 @@ class AgentLoop:
         if thread_id in self._cancel_requested:
             raise TurnCancelled()
 
+    def _check_pause(self, thread_id: str) -> None:
+        """N164: cooperative pause checkpoint (between tool calls)."""
+        if thread_id in self._pause_requested:
+            raise TurnPaused()
+
     async def run_turn_managed(
         self, thread_id: str, user_text: str
     ) -> dict[str, Any]:
         """Full lifecycle around :meth:`run_turn`: per-thread mutual
         exclusion, run marker, honest terminal states (never stuck
-        ``processing``), cancel finalization."""
+        ``processing``), cancel finalization, N164 pause finalization."""
+        return await self._managed_turn(thread_id, lambda: self.run_turn(thread_id, user_text))
+
+    async def start_resume(self, thread_id: str) -> asyncio.Task:
+        """N164: resume a paused turn as a background task (same
+        serialization guarantees as a fresh turn)."""
+        return asyncio.create_task(self.run_resume_managed(thread_id))
+
+    async def run_resume_managed(self, thread_id: str) -> dict[str, Any]:
+        """N164: full lifecycle around :meth:`resume_turn`."""
+        return await self._managed_turn(thread_id, lambda: self.resume_turn(thread_id))
+
+    async def _managed_turn(
+        self, thread_id: str, turn_factory: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> dict[str, Any]:
         lock = self._thread_locks.setdefault(thread_id, asyncio.Lock())
         async with lock:
             started = False
             self._tasks[thread_id] = asyncio.current_task()
             self._cancel_requested.discard(thread_id)
+            self._pause_requested.discard(thread_id)
             try:
                 started = True
                 await self._store.mark_run_processing(thread_id)
-                result = await self.run_turn(thread_id, user_text)
+                result = await turn_factory()
+                # N164: a pause requested while the turn suspended on an
+                # approval freezes the WHOLE suspension (approval id in
+                # the snapshot) instead of ending the turn.
+                if (
+                    result.get("status") == "awaiting_approval"
+                    and thread_id in self._pause_requested
+                ):
+                    return await self._finalize_paused(
+                        thread_id, result.get("approval", {}).get("approvalId")
+                    )
                 await self._store.clear_run(thread_id)
                 self._publish(
                     thread_id,
@@ -245,6 +342,12 @@ class AgentLoop:
                         thread_id, {"type": "turn_done", "status": "cancelled"}
                     )
                     return {"status": "cancelled", "message": final}
+                raise
+            except TurnPaused:
+                # N164: frozen between tool calls — snapshot, honest
+                # terminal state, never a fake completed answer.
+                if started:
+                    return await self._finalize_paused(thread_id)
                 raise
             except AgentProviderUnavailable as exc:
                 final = await self._store.append_message(
@@ -269,16 +372,179 @@ class AgentLoop:
             finally:
                 self._tasks.pop(thread_id, None)
 
+    # -- N164 pause snapshot / finalization -----------------------------------
+
+    async def _build_pause_snapshot(
+        self, thread_id: str, pending_approval_id: str | None = None
+    ) -> dict[str, Any]:
+        """Freeze {completedSteps, pendingPlan} from the transcript:
+        completedSteps = executed tool calls (their recorded results are
+        reused on resume); pendingPlan = calls of the latest assistant
+        block without an executed result."""
+        messages = await self._store.messages_after(thread_id, 0)
+        completed: list[dict[str, str]] = []
+        succeeded: set[str] = set()
+        for message in messages:
+            if message["role"] != "tool":
+                continue
+            content = message["content"]
+            call_id = str(content.get("callId") or "")
+            if not call_id:
+                continue
+            if content.get("result") is not None:
+                succeeded.add(call_id)
+                completed.append(
+                    {"callId": call_id, "name": str(content.get("name") or "")}
+                )
+        pending_plan: list[dict[str, str]] = []
+        for message in reversed(messages):
+            if message["role"] != "assistant":
+                continue
+            calls = message["content"].get("toolCalls") or []
+            pending_plan = [
+                {
+                    "callId": str(call.get("callId") or ""),
+                    "name": str(call.get("name") or ""),
+                }
+                for call in calls
+                if str(call.get("callId") or "") not in succeeded
+            ]
+            break
+        from lumirss.util import utc_now
+
+        snapshot: dict[str, Any] = {
+            "pausedAt": utc_now(),
+            "completedSteps": completed,
+            "pendingPlan": pending_plan,
+        }
+        if pending_approval_id:
+            snapshot["pendingApprovalId"] = pending_approval_id
+        return snapshot
+
+    async def _finalize_paused(
+        self, thread_id: str, pending_approval_id: str | None = None
+    ) -> dict[str, Any]:
+        snapshot = await self._build_pause_snapshot(thread_id, pending_approval_id)
+        await self._store.save_pause_state(thread_id, snapshot)
+        await self._store.clear_run(thread_id)
+        self._pause_requested.discard(thread_id)
+        self._publish(thread_id, {"type": "turn_done", "status": "paused"})
+        return {"status": "paused", "snapshot": snapshot}
+
+    async def resume_prepare(self, thread_id: str) -> dict[str, Any]:
+        """N164 phase 1 (synchronous, fast): consume the pause snapshot
+        and decide what resume means.
+
+        - pending approval still valid → awaiting_approval (user decides
+          first; no provider round runs);
+        - approval EXPIRED while paused → re-confirm required: a fresh
+          approval row is minted for the same tool/args (the expired one
+          stays unusable) → awaiting_approval;
+        - otherwise → continue (the background continuation runs the
+          remaining rounds; completed steps are never re-executed)."""
+        snapshot = await self._store.load_pause_state(thread_id)
+        if snapshot is None:
+            raise NotPaused("会话没有可续接的暂停快照。")
+        await self._store.clear_pause_state(thread_id)
+        await self._store.expire_stale(thread_id)
+        approval_id = snapshot.get("pendingApprovalId")
+        if approval_id:
+            approval = await self._store.get_approval(thread_id, str(approval_id))
+            status = str(approval.get("status")) if approval else "missing"
+            if status == "pending":
+                return {
+                    "action": "awaiting_approval",
+                    "approval": approval,
+                    "reconfirm": False,
+                }
+            if status in ("expired", "missing"):
+                tool = str(approval.get("tool") or "") if approval else ""
+                if not tool:
+                    raise NotPaused("暂停快照引用的批准已不存在，无法续接。")
+                args = dict(approval.get("args") or {}) if approval else {}
+                fresh = await self._store.create_approval(
+                    thread_id, str(approval.get("callId") or ""), tool, args
+                )
+                fresh = {**fresh, "reconfirmOf": str(approval_id)}
+                await self._store.append_message(
+                    thread_id,
+                    role="approval",
+                    content=fresh,
+                )
+                return {
+                    "action": "awaiting_approval",
+                    "approval": fresh,
+                    "reconfirm": True,
+                }
+            # approved/rejected: the decision is in the transcript — continue.
+        return {"action": "continue"}
+
+    async def resume_turn(self, thread_id: str) -> dict[str, Any]:
+        """N164: continue a paused turn end-to-end (prepare + rounds).
+
+        Completed steps are NEVER re-executed — their results are reused
+        from the transcript (calls whose callId already has a recorded
+        tool result are skipped)."""
+        prepare = await self.resume_prepare(thread_id)
+        if prepare["action"] == "awaiting_approval":
+            return {
+                "status": "awaiting_approval",
+                "approval": prepare["approval"],
+                "reconfirmRequired": bool(prepare["reconfirm"]),
+                "resumed": False,
+            }
+        return await self.resume_continue(thread_id)
+
+    async def resume_continue(self, thread_id: str) -> dict[str, Any]:
+        """N164 phase 2: the remaining provider rounds of a resumed turn."""
+        context = await self._thread_context(thread_id)
+        policy: dict | None = context.get("policy")
+        self._registry.set_context(context)
+        tool_cap = self._effective_tool_cap(policy)
+        provider = await self._provider_factory()
+        if provider is None:
+            raise AgentProviderUnavailable("AI 未配置，无法继续。")
+        return await self._turn_rounds(
+            thread_id,
+            provider,
+            policy,
+            tool_cap,
+            skip_executed=True,
+        )
+
+    async def pause_suspended_on_approval(self, thread_id: str) -> dict[str, Any]:
+        """N164: pause a turn that is currently suspended on a pending
+        approval (no live task — the suspension IS the freeze point)."""
+        await self._store.expire_stale(thread_id)
+        pending_id = await self._store.get_pending_approval_id(thread_id)
+        if pending_id is None:
+            raise NoActiveRun("当前没有正在运行或等待批准的回合。")
+        snapshot = await self._build_pause_snapshot(thread_id, pending_id)
+        await self._store.save_pause_state(thread_id, snapshot)
+        self._publish(thread_id, {"type": "turn_done", "status": "paused"})
+        return snapshot
+
     # -- the turn itself ------------------------------------------------------
 
     async def run_turn(self, thread_id: str, user_text: str) -> dict[str, Any]:
         """Process one user message end-to-end (may suspend on approval)."""
+        # N164: starting a NEW turn abandons any pause snapshot — the
+        # frozen state stays in the transcript, but resume no longer
+        # points at a turn the user has moved past.
+        await self._store.clear_pause_state(thread_id)
         context = await self._thread_context(thread_id)
         policy: dict | None = context.get("policy")
         # F094：范围注入到 registry——search/rag_search 工具执行处服务端
         # 过滤（下一轮生效：本回合开始时读取的设置）。
         self._registry.set_context(context)
         tool_cap = self._effective_tool_cap(policy)
+        # N165: thread-level budget check BEFORE anything runs.
+        budget = await self._store.get_budget(thread_id)
+        if budget is not None:
+            used = await self._store.get_budget_used(thread_id)
+            reason = _budget_block_reason(budget, used, new_turn=True)
+            if reason is not None:
+                return await self._finalize_budget_exhausted(thread_id, budget, used, reason)
         user_row = await self._store.append_message(
             thread_id, role="user", content={"text": user_text}
         )
@@ -286,107 +552,221 @@ class AgentLoop:
         provider = await self._provider_factory()
         if provider is None:
             raise AgentProviderUnavailable("AI 未配置，无法运行助手。")
+        return await self._turn_rounds(thread_id, provider, policy, tool_cap)
+
+    async def _turn_rounds(
+        self,
+        thread_id: str,
+        provider: Any,
+        policy: dict | None,
+        tool_cap: int,
+        *,
+        skip_executed: bool = False,
+    ) -> dict[str, Any]:
+        """The provider round loop shared by run_turn / resume (N164).
+
+        N165: per-thread budget consumption is recorded at every exit;
+        the maxToolCalls budget stops the turn mid-flight with an honest
+        budget_exhausted terminal state."""
+        budget = await self._store.get_budget(thread_id)
+        used_start = await self._store.get_budget_used(thread_id)
         tool_calls_used = 0
+        tokens_known = True
+        tokens_total = 0
+
+        async def _record_exit() -> None:
+            if budget is None:
+                return
+            await self._store.set_budget_used(
+                thread_id,
+                {
+                    "toolCalls": int(used_start.get("toolCalls") or 0) + tool_calls_used,
+                    "turns": int(used_start.get("turns") or 0)
+                    + (0 if skip_executed else 1),
+                    "tokens": int(used_start.get("tokens") or 0) + tokens_total,
+                    "tokensKnown": bool(used_start.get("tokensKnown", True))
+                    and tokens_known,
+                },
+            )
+
         citations: list[str] = []
         retrieval_used = False
-        for _round in range(MAX_LOOP_ROUNDS):
-            self._check_cancel(thread_id)
-            history = await self._history_for_provider(thread_id)
-            message, streamed_message_id = await self._provider_round(
-                provider, thread_id, history, tools=self._registry.openai_tools()
-            )
-            calls = _assistant_tool_calls(message)
-            if not calls:
-                final = await self._finalize_assistant(
-                    thread_id,
-                    message,
-                    citations,
-                    streamed_message_id,
-                    retrieval_used=retrieval_used,
-                )
-                return {"status": "completed", "message": final}
-            content = {"text": str(message.get("content") or ""), "toolCalls": calls}
-            if streamed_message_id is not None:
-                await self._store.update_message_content(
-                    thread_id, streamed_message_id, content=content
-                )
-                assistant_row = await self._store.get_message(
-                    thread_id, streamed_message_id
-                )
-            else:
-                assistant_row = await self._store.append_message(
-                    thread_id, role="assistant", content=content
-                )
-            self._publish(thread_id, {"type": "message", "message": assistant_row})
-            for call in calls:
+        try:
+            for _round in range(MAX_LOOP_ROUNDS):
                 self._check_cancel(thread_id)
-                name = call["name"]
-                call_id = call["callId"]
-                if not self._registry.known(name):
-                    await self._append_tool_error(
-                        thread_id, call_id, name, "unknown_tool"
-                    )
-                    continue
-                # F098：工具权限在执行前服务端拒绝（非 UI 隐藏）。
-                denied_reason = evaluate_policy(
-                    policy, name, is_write=self._registry.is_write(name)
+                self._check_pause(thread_id)
+                history = await self._history_for_provider(thread_id)
+                message, streamed_message_id = await self._provider_round(
+                    provider, thread_id, history, tools=self._registry.openai_tools()
                 )
-                if denied_reason is not None:
-                    await self._append_tool_error(
-                        thread_id, call_id, name, "tool_denied"
-                    )
-                    continue
-                if tool_calls_used >= tool_cap:
-                    await self._append_tool_error(
-                        thread_id, call_id, name, "tool_budget_exhausted"
-                    )
-                    continue
-                tool_calls_used += 1
-                if self._registry.is_write(name):
-                    # Suspended turn: the real write happens only via the
-                    # approval endpoint (server-enforced, row-bound args).
-                    args = parse_tool_arguments(call["argumentsText"])
-                    approval = await self._store.create_approval(
-                        thread_id, call_id, name, args
-                    )
-                    approval_row = await self._store.append_message(
+                usage = _provider_usage(provider)
+                if usage is None:
+                    tokens_known = False
+                else:
+                    tokens_total += usage[0] + usage[1]
+                calls = _assistant_tool_calls(message)
+                if not calls:
+                    final = await self._finalize_assistant(
                         thread_id,
-                        role="approval",
-                        content=approval,
+                        message,
+                        citations,
+                        streamed_message_id,
+                        retrieval_used=retrieval_used,
                     )
-                    self._publish(
-                        thread_id, {"type": "message", "message": approval_row}
+                    return {"status": "completed", "message": final}
+                content = {"text": str(message.get("content") or ""), "toolCalls": calls}
+                if streamed_message_id is not None:
+                    await self._store.update_message_content(
+                        thread_id, streamed_message_id, content=content
                     )
-                    return {"status": "awaiting_approval", "approval": approval}
-                args = parse_tool_arguments(call["argumentsText"])
-                try:
-                    result = await self._registry.invoke_read(name, args)
-                except Exception as exc:  # noqa: BLE001 — tool errors are data
-                    result = {"error": str(exc)[:300]}
-                if name in RETRIEVAL_TOOLS:
-                    retrieval_used = True
-                refs = result.pop("citations", [])
-                for ref in refs:
-                    if ref not in citations:
-                        citations.append(ref)
-                tool_row = await self._store.append_message(
-                    thread_id,
-                    role="tool",
-                    content={
-                        "callId": call_id,
-                        "name": name,
-                        "result": _untrusted(result),
-                    },
-                )
-                self._publish(thread_id, {"type": "message", "message": tool_row})
+                    assistant_row = await self._store.get_message(
+                        thread_id, streamed_message_id
+                    )
+                else:
+                    assistant_row = await self._store.append_message(
+                        thread_id, role="assistant", content=content
+                    )
+                self._publish(thread_id, {"type": "message", "message": assistant_row})
+                for call in calls:
+                    self._check_cancel(thread_id)
+                    self._check_pause(thread_id)
+                    name = call["name"]
+                    call_id = call["callId"]
+                    # N164: a callId with a recorded result is a completed
+                    # step — reuse it, never re-execute the side effect.
+                    if skip_executed:
+                        recorded = await self._store.get_tool_result(thread_id, call_id)
+                        if recorded is not None:
+                            continue
+                    if not self._registry.known(name):
+                        await self._append_tool_error(
+                            thread_id, call_id, name, "unknown_tool"
+                        )
+                        continue
+                    # F098：工具权限在执行前服务端拒绝（非 UI 隐藏）。
+                    denied_reason = evaluate_policy(
+                        policy, name, is_write=self._registry.is_write(name)
+                    )
+                    if denied_reason is not None:
+                        await self._append_tool_error(
+                            thread_id, call_id, name, "tool_denied"
+                        )
+                        continue
+                    if tool_calls_used >= tool_cap:
+                        await self._append_tool_error(
+                            thread_id, call_id, name, "tool_budget_exhausted"
+                        )
+                        continue
+                    # N165: thread-level maxToolCalls stops the turn here.
+                    if budget is not None and int(
+                        used_start.get("toolCalls") or 0
+                    ) + tool_calls_used >= int(budget.get("maxToolCalls") or 0):
+                        return await self._finalize_budget_exhausted(
+                            thread_id,
+                            budget,
+                            {
+                                **used_start,
+                                "toolCalls": int(used_start.get("toolCalls") or 0)
+                                + tool_calls_used,
+                                "tokens": int(used_start.get("tokens") or 0)
+                                + tokens_total,
+                                "tokensKnown": bool(
+                                    used_start.get("tokensKnown", True)
+                                )
+                                and tokens_known,
+                            },
+                            "maxToolCalls",
+                        )
+                    tool_calls_used += 1
+                    if self._registry.is_write(name):
+                        # Suspended turn: the real write happens only via the
+                        # approval endpoint (server-enforced, row-bound args).
+                        args = parse_tool_arguments(call["argumentsText"])
+                        approval = await self._store.create_approval(
+                            thread_id, call_id, name, args
+                        )
+                        approval_row = await self._store.append_message(
+                            thread_id,
+                            role="approval",
+                            content=approval,
+                        )
+                        self._publish(
+                            thread_id, {"type": "message", "message": approval_row}
+                        )
+                        return {"status": "awaiting_approval", "approval": approval}
+                    args = parse_tool_arguments(call["argumentsText"])
+                    summary = masked_args_summary(args)
+                    started_at = time.perf_counter()
+                    try:
+                        result = await self._registry.invoke_read(name, args)
+                    except Exception as exc:  # noqa: BLE001 — tool errors are data
+                        result = {"error": str(exc)[:300]}
+                    duration_ms = int((time.perf_counter() - started_at) * 1000)
+                    if name in RETRIEVAL_TOOLS:
+                        retrieval_used = True
+                    refs = result.pop("citations", [])
+                    for ref in refs:
+                        if ref not in citations:
+                            citations.append(ref)
+                    tool_row = await self._store.append_message(
+                        thread_id,
+                        role="tool",
+                        content={
+                            "callId": call_id,
+                            "name": name,
+                            "result": _untrusted(result),
+                            "durationMs": duration_ms,
+                            "maskedArgsSummary": summary,
+                            "resultType": (
+                                "error" if isinstance(result, dict) and result.get("error") else "result"
+                            ),
+                        },
+                    )
+                    self._publish(thread_id, {"type": "message", "message": tool_row})
+            final = await self._store.append_message(
+                thread_id,
+                role="assistant",
+                content={"text": "本轮工具调用次数已达上限，请换一种问法。"},
+                citations=citations,
+            )
+            self._publish(thread_id, {"type": "message", "message": final})
+            return {"status": "completed", "message": final}
+        finally:
+            await _record_exit()
+
+    async def _finalize_budget_exhausted(
+        self,
+        thread_id: str,
+        budget: dict[str, Any],
+        used: dict[str, Any],
+        reason: str,
+    ) -> dict[str, Any]:
+        """N165 terminal state: honest consumption summary (tokens show
+        ``unknown`` when the provider did not report usage — never 0)."""
+        summary = {
+            "reason": reason,
+            "maxToolCalls": budget.get("maxToolCalls"),
+            "maxTurns": budget.get("maxTurns"),
+            "toolCalls": int(used.get("toolCalls") or 0),
+            "turns": int(used.get("turns") or 0),
+            "tokens": int(used.get("tokens") or 0)
+            if used.get("tokensKnown")
+            else None,
+            "tokensKnown": bool(used.get("tokensKnown")),
+        }
         final = await self._store.append_message(
             thread_id,
             role="assistant",
-            content={"text": "本轮工具调用次数已达上限，请换一种问法。"},
-            citations=citations,
+            content={
+                "text": "已达到本会话的任务预算上限，回合已停止。",
+                "budgetExhausted": summary,
+            },
         )
         self._publish(thread_id, {"type": "message", "message": final})
-        return {"status": "completed", "message": final}
+        self._publish(
+            thread_id, {"type": "budget_exhausted", "summary": summary}
+        )
+        return {"status": "budget_exhausted", "summary": summary, "message": final}
 
     # -- provider rounds ------------------------------------------------------
 
@@ -509,7 +889,12 @@ class AgentLoop:
     async def apply_approval(
         self, thread_id: str, approval_id: str, decision: str
     ) -> dict[str, Any]:
-        """Approve (run the real write + one summarizing round) or reject."""
+        """Approve (run the real write + one summarizing round) or reject.
+
+        N168: the write goes through the per-thread journal — a replayed
+        (tool, args_hash, turn) that already succeeded returns the CACHED
+        result and never executes a second time. N169: undoable tools
+        record a per-object before/after diff at execution time."""
         await self._store.expire_stale(thread_id)
         if decision == "reject":
             await self._store.reject_pending(thread_id, approval_id)
@@ -537,6 +922,8 @@ class AgentLoop:
                     "callId": taken["callId"],
                     "name": taken["tool"],
                     "error": "tool_denied",
+                    "resultType": "error",
+                    "maskedArgsSummary": masked_args_summary(taken.get("args")),
                 },
             )
             self._publish(thread_id, {"type": "message", "message": denied})
@@ -546,7 +933,53 @@ class AgentLoop:
                 content={"text": "该写入工具已被会话权限禁止，未执行。"},
             )
             return {"status": "tool_denied", "reason": denied_reason}
-        result = await self._registry.invoke_write(taken["tool"], taken["args"])
+        turn_key = await self._current_turn_key(thread_id)
+        replay = await self._store.find_replayed_write(
+            thread_id, taken["tool"], taken["args"], turn_key
+        )
+        replayed = replay is not None
+        undoable = False
+        if replayed:
+            # N168: same args already succeeded in this turn — cached
+            # result, zero duplicate side effect.
+            result = dict(replay["result"])
+            step_id = str(replay["id"])
+            duration_ms = 0
+            prior = await self._store.get_tool_write(thread_id, step_id)
+            undoable = bool(prior and prior["undoable"])
+        else:
+            before = None
+            after = None
+            # Honest undoability: declared only when the undo service is
+            # wired AND captures both snapshots (journal without a diff
+            # would 422 at undo time — never claim what cannot run).
+            undoable = (
+                taken["tool"] in UNDOABLE_WRITE_TOOLS
+                and self._undo_service is not None
+            )
+            if undoable:
+                before = await self._undo_service["capture"](
+                    taken["tool"], taken["args"], "before"
+                )
+            started_at = time.perf_counter()
+            result = await self._registry.invoke_write(taken["tool"], taken["args"])
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if undoable and self._undo_service is not None:
+                after = await self._undo_service["capture"](
+                    taken["tool"], taken["args"], "after"
+                )
+            recorded = await self._store.record_tool_write(
+                thread_id,
+                taken["callId"],
+                taken["tool"],
+                taken["args"],
+                turn_key,
+                result=result,
+                before=before,
+                after=after,
+                undoable=undoable,
+            )
+            step_id = recorded["id"]
         await self._store.append_message(
             thread_id,
             role="tool",
@@ -555,12 +988,138 @@ class AgentLoop:
                 "name": taken["tool"],
                 "result": _untrusted(result),
                 "approved": True,
+                "durationMs": duration_ms,
+                "maskedArgsSummary": masked_args_summary(taken.get("args")),
+                "resultType": "result",
+                "stepId": step_id,
+                "undoable": undoable,
+                "replayed": replayed,
             },
         )
         provider = await self._provider_factory()
         if provider is None:
             raise AgentProviderUnavailable("AI 未配置，无法继续。")
         return await self.run_turn_resume(thread_id)
+
+    async def _current_turn_key(self, thread_id: str) -> str:
+        """N168 idempotency scope: the seq of the user message that
+        opened the current (latest) turn."""
+        messages = await self._store.messages_after(thread_id, 0)
+        last_user_seq = 0
+        for message in messages:
+            if message["role"] == "user":
+                last_user_seq = int(message["seq"])
+        return f"turn:{last_user_seq}"
+
+    async def retry_failed_steps(self, thread_id: str) -> dict[str, Any]:
+        """N168: re-run ONLY the failed/unfinished tool steps of the
+        latest turn — completed tool results are reused from the
+        transcript (never re-executed).
+
+        - read tool failure → re-execute inline (new retried row);
+        - write tool that never executed → fresh approval (same row-bound
+          args); the user re-approves and the journal dedupes replays;
+        - policy-denied tools re-evaluate against the CURRENT policy;
+        - unknown tools stay failed (nothing to retry against)."""
+        messages = await self._store.messages_after(thread_id, 0)
+        last_user_index = 0
+        for index, message in enumerate(messages):
+            if message["role"] == "user":
+                last_user_index = index
+        turn_messages = messages[last_user_index + 1 :]
+        succeeded: set[str] = set()
+        failed: dict[str, dict[str, Any]] = {}
+        call_specs: dict[str, dict[str, Any]] = {}
+        for message in turn_messages:
+            content = message["content"]
+            if message["role"] == "assistant":
+                for call in content.get("toolCalls") or []:
+                    call_id = str(call.get("callId") or "")
+                    if call_id:
+                        call_specs[call_id] = call
+            elif message["role"] == "tool":
+                call_id = str(content.get("callId") or "")
+                if not call_id:
+                    continue
+                # A result row counts as completed only when the tool
+                # actually succeeded — payload-level errors (and explicit
+                # error rows) stay retryable.
+                result = content.get("result")
+                payload = result.get("payload") if isinstance(result, dict) else None
+                ok = (
+                    result is not None
+                    and content.get("resultType") != "error"
+                    and not (isinstance(payload, dict) and payload.get("error"))
+                )
+                if ok:
+                    succeeded.add(call_id)
+                else:
+                    failed[call_id] = {
+                        "error": str(content.get("error") or "tool_error")
+                    }
+        retried: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        approval: dict[str, Any] | None = None
+        context = await self._thread_context(thread_id)
+        policy = context.get("policy")
+        self._registry.set_context(context)
+        for call_id, spec in call_specs.items():
+            if call_id in succeeded:
+                continue  # completed — transcript result is authoritative
+            name = str(spec.get("name") or "")
+            if not self._registry.known(name):
+                skipped.append({"callId": call_id, "name": name, "reason": "unknown_tool"})
+                continue
+            if evaluate_policy(policy, name, is_write=self._registry.is_write(name)):
+                skipped.append({"callId": call_id, "name": name, "reason": "tool_denied"})
+                continue
+            if self._registry.is_write(name):
+                if approval is not None:
+                    skipped.append(
+                        {"callId": call_id, "name": name, "reason": "approval_pending"}
+                    )
+                    continue
+                args = parse_tool_arguments(str(spec.get("argumentsText") or ""))
+                approval = await self._store.create_approval(thread_id, call_id, name, args)
+                approval_row = await self._store.append_message(
+                    thread_id, role="approval", content=approval
+                )
+                self._publish(thread_id, {"type": "message", "message": approval_row})
+                continue
+            args = parse_tool_arguments(str(spec.get("argumentsText") or ""))
+            summary = masked_args_summary(args)
+            started_at = time.perf_counter()
+            try:
+                result = await self._registry.invoke_read(name, args)
+            except Exception as exc:  # noqa: BLE001 — tool errors are data
+                result = {"error": str(exc)[:300]}
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            result_type = (
+                "error" if isinstance(result, dict) and result.get("error") else "result"
+            )
+            tool_row = await self._store.append_message(
+                thread_id,
+                role="tool",
+                content={
+                    "callId": call_id,
+                    "name": name,
+                    "result": _untrusted(result),
+                    "durationMs": duration_ms,
+                    "maskedArgsSummary": summary,
+                    "resultType": result_type,
+                    "retried": True,
+                },
+            )
+            self._publish(thread_id, {"type": "message", "message": tool_row})
+            retried.append({"callId": call_id, "name": name, "resultType": result_type})
+        if approval is not None:
+            return {
+                "status": "awaiting_approval",
+                "approval": approval,
+                "retried": retried,
+                "skipped": skipped,
+            }
+        return {"status": "completed", "retried": retried, "skipped": skipped}
 
     async def run_turn_resume(self, thread_id: str) -> dict[str, Any]:
         """One more provider round after an approved write (no new tools)."""

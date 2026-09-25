@@ -170,6 +170,10 @@ class OpenAICompatibleProvider:
         self._config = ProviderConfig(
             base_url=_strip_base(base_url), model=model, api_key=api_key
         )
+        # N165: usage object of the LAST provider response (None when the
+        # upstream did not report one — consumers must show "unknown",
+        # never fabricate 0).
+        self.last_usage: dict | None = None
 
     # -- shared request shaping + transport (one place, P0-08a) ------------
 
@@ -282,6 +286,8 @@ class OpenAICompatibleProvider:
             raise AiInvalidResponse(
                 "The AI provider returned an unexpected response shape."
             ) from exc
+        usage = body.get("usage") if isinstance(body, dict) else None
+        self.last_usage = usage if isinstance(usage, dict) else None
         return message
 
     async def chat_completion_stream(
@@ -315,6 +321,9 @@ class OpenAICompatibleProvider:
                     continue
                 if event == "[DONE]":
                     return
+                # N165: streaming responses deliver usage on a final chunk.
+                if isinstance(event, dict) and isinstance(event.get("usage"), dict):
+                    self.last_usage = event["usage"]
                 delta = _delta_of(event)
                 if delta is None:
                     continue

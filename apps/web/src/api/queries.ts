@@ -2733,14 +2733,23 @@ export function useLibraryFavoriteToggle(ref: string) {
 
 import {
   assignTag,
+  createAgentRecipe,
   createAgentThread,
   decideAgentApproval,
+  deleteAgentRecipe,
   deleteAgentThread,
   getGraph,
   listAgentMessages,
+  listAgentRecipes,
   listAgentThreads,
   listTags,
+  pauseAgentThread,
+  resumeAgentThread,
+  retryAgentThread,
+  reviseAgentApproval,
+  runAgentRecipe,
   sendAgentMessage,
+  undoAgentStep,
   unassignTag,
 } from './client'
 
@@ -3908,5 +3917,107 @@ export function useMailMessageDetail(listUuid: string | null, messageId: string 
     queryKey: ['mail', 'message-detail', listUuid, messageId],
     queryFn: ({ signal }) => getMailMessageDetail(listUuid!, messageId!, signal),
     enabled: listUuid !== null && messageId !== null,
+  })
+}
+
+// ---- N164–N170 Agent ops（暂停续接 / 批准修订 / 步骤重试 / 差异撤销 / 配方）----
+
+/** N164：暂停运行中的回合（在工具间检查点冻结）。 */
+export function useAgentPauseMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => pauseAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N164：续接暂停的回合（已执行步骤绝不重复；过期批准 → 重新确认）。 */
+export function useAgentResumeMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => resumeAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N167：批准前修订参数（旧批准作废，产生新批准行）。 */
+export function useAgentReviseApprovalMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { approvalId: string; newArgs: Record<string, unknown> }) =>
+      reviseAgentApproval(threadId, vars.approvalId, vars.newArgs),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N168：失败步骤单独重试（可能产生新的写批准）。 */
+export function useAgentRetryMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => retryAgentThread(threadId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N169：按 stepId 差异撤销一次写副作用。 */
+export function useAgentUndoMutation(threadId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (stepId: string) => undoAgentStep(threadId, stepId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'messages', threadId] })
+    },
+  })
+}
+
+/** N170：配方列表。 */
+export function useAgentRecipes() {
+  return useQuery({
+    queryKey: ['agent', 'recipes'],
+    queryFn: ({ signal }) => listAgentRecipes(signal),
+  })
+}
+
+export function useCreateAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: {
+      name: string
+      input: string
+      toolWhitelist: string[]
+      scope?: Record<string, unknown> | null
+    }) => createAgentRecipe(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'recipes'] })
+    },
+  })
+}
+
+export function useDeleteAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recipeId: string) => deleteAgentRecipe(recipeId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'recipes'] })
+    },
+  })
+}
+
+/** N170：运行配方 = 创建新会话并以配方输入开启第一回合。 */
+export function useRunAgentRecipeMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (recipeId: string) => runAgentRecipe(recipeId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['agent', 'threads'] })
+    },
   })
 }

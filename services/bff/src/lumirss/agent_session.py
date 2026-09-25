@@ -32,6 +32,9 @@ _UNSET = object()
 
 ALLOWED_TOOL_POLICY_MODES = ("all", "readonly")
 MAX_OPS_PER_TURN_LIMIT = 50
+# N165: per-thread budget bounds.
+MAX_TOOL_CALLS_BUDGET_LIMIT = 200
+MAX_TURNS_BUDGET_LIMIT = 100
 
 
 class ThreadSettingsInvalid(ValueError):
@@ -44,6 +47,31 @@ class SearchInvalid(ValueError):
 
 class BranchInvalid(ValueError):
     """分支请求非法（消息序号越界），映射 422。"""
+
+
+def validate_budget(budget: Any) -> dict | None:
+    """N165：线程级预算 {maxToolCalls, maxTurns}（键皆可缺省）。"""
+    if budget is None:
+        return None
+    if not isinstance(budget, dict):
+        raise ThreadSettingsInvalid("budget 必须是对象或 null。")
+    unknown = set(budget) - {"maxToolCalls", "maxTurns"}
+    if unknown:
+        raise ThreadSettingsInvalid(f"budget 含未知键：{sorted(unknown)}")
+    clean: dict[str, Any] = {}
+    for key, limit in (
+        ("maxToolCalls", MAX_TOOL_CALLS_BUDGET_LIMIT),
+        ("maxTurns", MAX_TURNS_BUDGET_LIMIT),
+    ):
+        value = budget.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ThreadSettingsInvalid(f"{key} 必须是整数。")
+        if not 1 <= value <= limit:
+            raise ThreadSettingsInvalid(f"{key} 必须在 1–{limit}。")
+        clean[key] = value
+    return clean or None
 
 
 def validate_scope(scope: Any) -> dict | None:
@@ -124,7 +152,7 @@ class AgentSessionStore:
     async def get_settings(self, thread_id: str) -> dict[str, Any]:
         await self._db.migrate()
         row = await self._db.fetch_one(
-            "SELECT id, title, scope_json, tool_policy_json, branch_of FROM agent_threads WHERE id = ?",
+            "SELECT id, title, scope_json, tool_policy_json, budget_json, branch_of FROM agent_threads WHERE id = ?",
             (thread_id,),
         )
         if row is None:
@@ -143,6 +171,7 @@ class AgentSessionStore:
             "title": str(row["title"]),
             "scope": _load(row["scope_json"]),
             "toolPolicy": _load(row["tool_policy_json"]),
+            "budget": _load(row["budget_json"]),
             "branchOf": row["branch_of"],
         }
 
@@ -153,6 +182,7 @@ class AgentSessionStore:
         title: str | None = None,
         scope: Any = _UNSET,
         tool_policy: Any = _UNSET,
+        budget: Any = _UNSET,
     ) -> dict[str, Any]:
         current = await self.get_settings(thread_id)
         if not current:
@@ -163,15 +193,17 @@ class AgentSessionStore:
             if tool_policy is _UNSET
             else validate_tool_policy(tool_policy)
         )
+        new_budget = current["budget"] if budget is _UNSET else validate_budget(budget)
         new_title = (
             str(title).strip()[:100] if title is not None else current["title"]
         )
         await self._db.execute(
-            "UPDATE agent_threads SET title = ?, scope_json = ?, tool_policy_json = ? WHERE id = ?",
+            "UPDATE agent_threads SET title = ?, scope_json = ?, tool_policy_json = ?, budget_json = ? WHERE id = ?",
             (
                 new_title,
                 json.dumps(new_scope, ensure_ascii=False) if new_scope else None,
                 json.dumps(new_policy, ensure_ascii=False) if new_policy else None,
+                json.dumps(new_budget, ensure_ascii=False) if new_budget else None,
                 thread_id,
             ),
         )
